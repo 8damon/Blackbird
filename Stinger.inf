@@ -1,0 +1,46 @@
+;
+; STINGER.inf - non-PnP KMDF service install
+;
+
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = System
+ClassGuid   = {4d36e97d-e325-11ce-bfc1-08002be10318}
+Provider    = %ManufacturerName%
+CatalogFile = STINGER.cat
+DriverVer   = ; stamped by StampInf
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir = 12
+DriverCopy = 12
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+stingr.sys = 1,,
+
+[DefaultInstall.NTamd64]
+CopyFiles = DriverCopy
+
+[DefaultInstall.NTamd64.Services]
+AddService = stingr,0x00000002,stingr_Service_Inst
+
+[DefaultUninstall.NTamd64.Services]
+DelService = stingr,0x00000200
+
+[DriverCopy]
+stingr.sys
+
+[stingr_Service_Inst]
+DisplayName   = %STINGER.SVCDESC%
+ServiceType   = 1 ; SERVICE_KERNEL_DRIVER
+StartType     = 3 ; SERVICE_DEMAND_START
+ErrorControl  = 1 ; SERVICE_ERROR_NORMAL
+ServiceBinary = %12%\stingr.sys
+
+[Strings]
+ManufacturerName = "TITAN Softwork Solutions"
+DiskName = "STINGER Installation Disk"
+STINGER.SVCDESC = "STINGER Service"

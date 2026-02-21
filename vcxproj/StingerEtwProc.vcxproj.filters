@@ -5,10 +5,34 @@
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
       <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
     </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4B04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\user\sensor\stinger_etw_printer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\user\sensor\stinger_etw_props.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\user\sensor\stinger_etw_symbols.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="..\user\sensor\stinger_sensor.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\user\sensor\stinger_etw_printer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\user\sensor\stinger_etw_props.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\user\sensor\stinger_etw_symbols.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

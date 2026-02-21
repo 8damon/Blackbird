@@ -1,9 +1,11 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
-#include <tlhelp32.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "..\..\abi\stinger_ioctl.h"
+#include "stinger_event_printer.h"
+#include "stinger_symbol_resolver.h"
 
 typedef struct _TEST_STATE {
     BOOL SawHandle;
@@ -11,51 +13,22 @@ typedef struct _TEST_STATE {
     DWORD Polls;
 } TEST_STATE;
 
-static DWORD
-FindOtherProcessId(void)
-{
-    HANDLE snap;
-    PROCESSENTRY32W pe;
-    DWORD self = GetCurrentProcessId();
-
-    snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snap == INVALID_HANDLE_VALUE) {
-        return 0;
-    }
-
-    ZeroMemory(&pe, sizeof(pe));
-    pe.dwSize = sizeof(pe);
-
-    if (!Process32FirstW(snap, &pe)) {
-        CloseHandle(snap);
-        return 0;
-    }
-
-    do {
-        if (pe.th32ProcessID != 0 && pe.th32ProcessID != self) {
-            CloseHandle(snap);
-            return pe.th32ProcessID;
-        }
-    } while (Process32NextW(snap, &pe));
-
-    CloseHandle(snap);
-    return 0;
-}
+#define STINGER_CHILD_ARG "--idle-child"
+#define STINGER_CHILD_ARGW L"--idle-child"
 
 static BOOL
 Subscribe(HANDLE h, DWORD pid, DWORD mask)
 {
     STINGER_SUBSCRIBE_REQUEST req;
     DWORD bytes = 0;
-    BOOL ok;
 
     ZeroMemory(&req, sizeof(req));
     req.ProcessId = pid;
     req.StreamMask = mask;
 
-    ok = DeviceIoControl(
+    return DeviceIoControl(
         h,
-        IOCTL_STINGER_SUBSCRIBE,
+        (DWORD)IOCTL_STINGER_SUBSCRIBE,
         &req,
         sizeof(req),
         NULL,
@@ -63,7 +36,6 @@ Subscribe(HANDLE h, DWORD pid, DWORD mask)
         &bytes,
         NULL
     );
-    return ok;
 }
 
 static BOOL
@@ -71,14 +43,13 @@ Unsubscribe(HANDLE h, DWORD pid)
 {
     STINGER_UNSUBSCRIBE_REQUEST req;
     DWORD bytes = 0;
-    BOOL ok;
 
     ZeroMemory(&req, sizeof(req));
     req.ProcessId = pid;
 
-    ok = DeviceIoControl(
+    return DeviceIoControl(
         h,
-        IOCTL_STINGER_UNSUBSCRIBE,
+        (DWORD)IOCTL_STINGER_UNSUBSCRIBE,
         &req,
         sizeof(req),
         NULL,
@@ -86,7 +57,6 @@ Unsubscribe(HANDLE h, DWORD pid)
         &bytes,
         NULL
     );
-    return ok;
 }
 
 static void
@@ -102,7 +72,7 @@ PumpEvents(HANDLE h, TEST_STATE* state, DWORD maxMs)
         ZeroMemory(&rec, sizeof(rec));
         ok = DeviceIoControl(
             h,
-            IOCTL_STINGER_GET_EVENT,
+            (DWORD)IOCTL_STINGER_GET_EVENT,
             NULL,
             0,
             &rec,
@@ -121,6 +91,8 @@ PumpEvents(HANDLE h, TEST_STATE* state, DWORD maxMs)
             printf("[FAIL] IOCTL_STINGER_GET_EVENT err=%lu\n", err);
             return;
         }
+
+        STINGEREventPrinterPrintRecord(&rec);
 
         if (rec.Header.Type == StingerEventTypeHandle) {
             state->SawHandle = TRUE;
@@ -147,21 +119,64 @@ GenerateThreadEvent(void)
 static void
 GenerateHandleEvent(void)
 {
-    DWORD pid = FindOtherProcessId();
+    WCHAR imagePath[MAX_PATH];
+    WCHAR cmdLine[MAX_PATH + 64];
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    DWORD waitResult;
     HANDLE p;
+    DWORD len;
 
-    if (pid == 0) {
+    ZeroMemory(&si, sizeof(si));
+    ZeroMemory(&pi, sizeof(pi));
+    si.cb = sizeof(si);
+
+    len = GetModuleFileNameW(NULL, imagePath, (DWORD)RTL_NUMBER_OF(imagePath));
+    if (len == 0 || len >= RTL_NUMBER_OF(imagePath)) {
         return;
     }
 
-    p = OpenProcess(PROCESS_VM_WRITE | PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (swprintf_s(cmdLine, RTL_NUMBER_OF(cmdLine), L"\"%ls\" %ls", imagePath, STINGER_CHILD_ARGW) < 0) {
+        return;
+    }
+
+    if (!CreateProcessW(
+            imagePath,
+            cmdLine,
+            NULL,
+            NULL,
+            FALSE,
+            CREATE_NO_WINDOW,
+            NULL,
+            NULL,
+            &si,
+            &pi)) {
+        return;
+    }
+
+    Sleep(100);
+
+    p = OpenProcess(
+        PROCESS_VM_WRITE | PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION,
+        FALSE,
+        pi.dwProcessId
+    );
     if (p != NULL) {
         CloseHandle(p);
     }
+
+    waitResult = WaitForSingleObject(pi.hProcess, 1000);
+    if (waitResult == WAIT_TIMEOUT) {
+        (void)TerminateProcess(pi.hProcess, 0);
+        (void)WaitForSingleObject(pi.hProcess, 2000);
+    }
+
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
 }
 
 int __cdecl
-main(void)
+main(int argc, char** argv)
 {
     HANDLE h;
     STINGER_STATS_RESPONSE stats;
@@ -171,6 +186,12 @@ main(void)
     TEST_STATE state;
     STINGER_SUBSCRIBE_REQUEST badReq;
 
+    if (argc > 1 && strcmp(argv[1], STINGER_CHILD_ARG) == 0) {
+        Sleep(7000);
+        return 0;
+    }
+
+    STINGERSymbolResolverInitialize();
     ZeroMemory(&state, sizeof(state));
 
     h = CreateFileW(
@@ -195,6 +216,7 @@ main(void)
     }
     if (h == INVALID_HANDLE_VALUE) {
         printf("[FAIL] CreateFile \\\\.\\Global\\StingerCtl/\\\\.\\StingerCtl err=%lu\n", GetLastError());
+        STINGERSymbolResolverCleanup();
         return 1;
     }
 
@@ -203,7 +225,7 @@ main(void)
     badReq.StreamMask = 0;
     ok = DeviceIoControl(
         h,
-        IOCTL_STINGER_SUBSCRIBE,
+        (DWORD)IOCTL_STINGER_SUBSCRIBE,
         &badReq,
         sizeof(badReq),
         NULL,
@@ -214,6 +236,7 @@ main(void)
     if (ok || GetLastError() != ERROR_INVALID_PARAMETER) {
         printf("[FAIL] invalid subscribe stream mask was not rejected\n");
         CloseHandle(h);
+        STINGERSymbolResolverCleanup();
         return 1;
     }
     printf("[PASS] invalid stream mask rejected\n");
@@ -222,16 +245,18 @@ main(void)
     if (!ok) {
         printf("[FAIL] subscribe err=%lu\n", GetLastError());
         CloseHandle(h);
+        STINGERSymbolResolverCleanup();
         return 1;
     }
     printf("[PASS] subscribed pid=%lu\n", selfPid);
 
     ZeroMemory(&stats, sizeof(stats));
-    ok = DeviceIoControl(h, IOCTL_STINGER_GET_STATS, NULL, 0, &stats, sizeof(stats), &bytes, NULL);
+    ok = DeviceIoControl(h, (DWORD)IOCTL_STINGER_GET_STATS, NULL, 0, &stats, sizeof(stats), &bytes, NULL);
     if (!ok) {
         printf("[FAIL] get stats err=%lu\n", GetLastError());
         Unsubscribe(h, selfPid);
         CloseHandle(h);
+        STINGERSymbolResolverCleanup();
         return 1;
     }
     printf("[PASS] stats subscriptionCount=%u queueDepth=%u dropped=%u\n",
@@ -245,10 +270,11 @@ main(void)
         printf("[FAIL] did not receive thread event within timeout\n");
         Unsubscribe(h, selfPid);
         CloseHandle(h);
+        STINGERSymbolResolverCleanup();
         return 1;
     }
     if (!state.SawHandle) {
-        printf("[WARN] no handle event observed (target access constraints may block this in hardened VMs)\n");
+        printf("[WARN] no handle event observed (callback policy/telemetry constraints may block this path)\n");
     } else {
         printf("[PASS] received handle event\n");
     }
@@ -258,11 +284,13 @@ main(void)
     if (!ok) {
         printf("[FAIL] unsubscribe err=%lu\n", GetLastError());
         CloseHandle(h);
+        STINGERSymbolResolverCleanup();
         return 1;
     }
     printf("[PASS] unsubscribe succeeded\n");
 
     CloseHandle(h);
+    STINGERSymbolResolverCleanup();
     printf("[OK] IOCTL smoke test complete. polls=%lu\n", state.Polls);
     return 0;
 }

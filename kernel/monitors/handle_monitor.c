@@ -59,6 +59,12 @@ static KEVENT g_HandleAllWorkDone;
 static volatile LONG g_HandleMonitorStopping = 0;
 static BOOLEAN g_HandleMonitorRegistered = FALSE;
 
+#if defined(DBG) && DBG
+#define STINGER_DBG_PRINT(_level, ...) DbgPrintEx(DPFLTR_IHVDRIVER_ID, (_level), __VA_ARGS__)
+#else
+#define STINGER_DBG_PRINT(_level, ...) ((void)0)
+#endif
+
 typedef struct _STINGER_HANDLE_WORK {
     WORK_QUEUE_ITEM WorkItem;
     HANDLE CallerPid;
@@ -97,6 +103,11 @@ STINGERHandleTryAcquireWorkSlot(
         current = InterlockedCompareExchange(&g_HandleOutstandingWork, 0, 0);
         if (current >= STINGER_HANDLE_MAX_OUTSTANDING_WORK) {
             InterlockedIncrement(&g_HandleDroppedWork);
+            STINGER_DBG_PRINT(
+                DPFLTR_WARNING_LEVEL,
+                "STINGER[DBG]: handle monitor work queue full (max=%lu).\n",
+                STINGER_HANDLE_MAX_OUTSTANDING_WORK
+            );
             return FALSE;
         }
 
@@ -288,6 +299,12 @@ STINGERClassifyUserOrigin(
     status = ZwOpenProcess(&processHandle, PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, &objectAttributes, &clientId);
     Telemetry->OpenProcessStatus = status;
     if (!NT_SUCCESS(status)) {
+        STINGER_DBG_PRINT(
+            DPFLTR_TRACE_LEVEL,
+            "STINGER[DBG]: ZwOpenProcess failed callerPid=%p status=0x%08X.\n",
+            CallerProcessId,
+            (ULONG)status
+        );
         return;
     }
 
@@ -303,6 +320,13 @@ STINGERClassifyUserOrigin(
     Telemetry->BasicInfoStatus = status;
     if (NT_SUCCESS(status)) {
         Telemetry->OriginProtect = mbi.Protect;
+    } else {
+        STINGER_DBG_PRINT(
+            DPFLTR_TRACE_LEVEL,
+            "STINGER[DBG]: ZwQueryVirtualMemory(basic) failed callerPid=%p status=0x%08X.\n",
+            CallerProcessId,
+            (ULONG)status
+        );
     }
 
     RtlZeroMemory(sectionNameRaw, sizeof(sectionNameRaw));
@@ -326,6 +350,13 @@ STINGERClassifyUserOrigin(
             RtlCopyMemory(Telemetry->OriginPath, sectionName->Buffer, copyChars * sizeof(WCHAR));
             Telemetry->OriginPath[copyChars] = L'\0';
         }
+    } else {
+        STINGER_DBG_PRINT(
+            DPFLTR_TRACE_LEVEL,
+            "STINGER[DBG]: ZwQueryVirtualMemory(section) failed callerPid=%p status=0x%08X.\n",
+            CallerProcessId,
+            (ULONG)status
+        );
     }
 
     ZwClose(processHandle);
@@ -379,6 +410,19 @@ STINGERHandleWorkRoutine(
         fromNtdll,
         fromExe,
         &telemetry
+    );
+
+    STINGER_DBG_PRINT(
+        DPFLTR_INFO_LEVEL,
+        "STINGER[DBG]: handle event caller=%p target=%p access=0x%08X class=%s open=0x%08X basic=0x%08X section=0x%08X frames=%lu.\n",
+        work->CallerPid,
+        work->TargetPid,
+        work->DesiredAccess,
+        STINGERHandleClassToString(classification),
+        (ULONG)telemetry.OpenProcessStatus,
+        (ULONG)telemetry.BasicInfoStatus,
+        (ULONG)telemetry.SectionNameStatus,
+        work->FrameCount
     );
 
 Exit:
@@ -440,6 +484,13 @@ STINGERProcessPreOperation(
     }
 
     if (!STINGERHandleTryAcquireWorkSlot()) {
+        STINGER_DBG_PRINT(
+            DPFLTR_WARNING_LEVEL,
+            "STINGER[DBG]: dropping handle preop caller=%p target=%p access=0x%08X (work slot unavailable).\n",
+            callerPid,
+            targetPid,
+            desiredAccess
+        );
         return OB_PREOP_SUCCESS;
     }
 
@@ -449,6 +500,10 @@ STINGERProcessPreOperation(
         'hdtT'
     );
     if (work == NULL) {
+        STINGER_DBG_PRINT(
+            DPFLTR_ERROR_LEVEL,
+            "STINGER[DBG]: ExAllocatePool2 failed for handle work item.\n"
+        );
         STINGERHandleReleaseWorkSlot();
         return OB_PREOP_SUCCESS;
     }
@@ -470,11 +525,26 @@ STINGERProcessPreOperation(
         copyCount = 0;
         RtlZeroMemory(work->Frames, sizeof(work->Frames));
         InterlockedIncrement(&g_HandleStackCaptureFaults);
+        STINGER_DBG_PRINT(
+            DPFLTR_WARNING_LEVEL,
+            "STINGER[DBG]: RtlWalkFrameChain fault caller=%p target=%p access=0x%08X.\n",
+            callerPid,
+            targetPid,
+            desiredAccess
+        );
     }
     work->FrameCount = copyCount;
 
     ExInitializeWorkItem(&work->WorkItem, STINGERHandleWorkRoutine, work);
     ExQueueWorkItem(&work->WorkItem, DelayedWorkQueue);
+    STINGER_DBG_PRINT(
+        DPFLTR_TRACE_LEVEL,
+        "STINGER[DBG]: queued handle work caller=%p target=%p access=0x%08X frames=%lu.\n",
+        callerPid,
+        targetPid,
+        desiredAccess,
+        copyCount
+    );
 
     return OB_PREOP_SUCCESS;
 }

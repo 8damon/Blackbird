@@ -3,10 +3,10 @@
     <Platform Name="ARM64" />
     <Platform Name="x64" />
   </Configurations>
-  <Project Path="projects/Stinger.vcxproj" Id="ad0afc30-b1b3-1a4a-8717-dd97f06db715">
+  <Project Path="vcxproj/Stinger.vcxproj" Id="ad0afc30-b1b3-1a4a-8717-dd97f06db715">
     <Deploy />
   </Project>
-  <Project Path="projects/StingerClient.vcxproj" Id="4f018f92-d42d-4b95-a097-d810aa358507" />
-  <Project Path="projects/StingerIoctlTest.vcxproj" Id="6c70d45a-9d7a-4fa9-9736-6ed89c7671d0" />
-  <Project Path="projects/StingerEtwProc.vcxproj" Id="83d67a8a-0906-4629-bac6-6021c0d72a4d" />
+  <Project Path="vcxproj/StingerClient.vcxproj" Id="4f018f92-d42d-4b95-a097-d810aa358507" />
+  <Project Path="vcxproj/StingerEtwProc.vcxproj" Id="83d67a8a-0906-4629-bac6-6021c0d72a4d" />
+  <Project Path="vcxproj/StingerIoctlTest.vcxproj" Id="6c70d45a-9d7a-4fa9-9736-6ed89c7671d0" />
 </Solution>

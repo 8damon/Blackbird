@@ -106,7 +106,15 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\user\sensor\stinger_etw_printer.c" />
+    <ClCompile Include="..\user\sensor\stinger_etw_props.c" />
+    <ClCompile Include="..\user\sensor\stinger_etw_symbols.c" />
     <ClCompile Include="..\user\sensor\stinger_sensor.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\user\sensor\stinger_etw_printer.h" />
+    <ClInclude Include="..\user\sensor\stinger_etw_props.h" />
+    <ClInclude Include="..\user\sensor\stinger_etw_symbols.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

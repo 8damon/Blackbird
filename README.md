@@ -1,9 +1,12 @@
-# Stinger: Kernel Telemetry Driver for Malware Analysis
+<h1 align="center">Stinger</h1>
+<p align="center"><b>Kernel Telemetry Driver for Malware Analysis</b></p>
 
-Stinger is a KMDF-based telemetry platform for research, incident response, and forensic operations in controlled VM environments.  
-It combines kernel-level event capture with operator-controlled targeting so teams can trace suspicious process behavior with low-latency signal collection.
+<p align="center">
+  <img src="https://img.shields.io/badge/Language-C-00599C?logo=c&logoColor=white&style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Framework-KMDF-0A0A0A?style=for-the-badge" />
+</p>
 
-## Why It Matters
+## Operatives
 
 - Captures high-value process/thread telemetry from kernel context.
 - Supports targeted IOCTL subscriptions for mission-specific monitoring.

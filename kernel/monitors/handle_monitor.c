@@ -12,6 +12,10 @@
 #define PROCESS_VM_WRITE 0x0020
 #endif
 
+#ifndef PROCESS_VM_OPERATION
+#define PROCESS_VM_OPERATION 0x0008
+#endif
+
 #ifndef PROCESS_QUERY_LIMITED_INFORMATION
 #define PROCESS_QUERY_LIMITED_INFORMATION 0x1000
 #endif
@@ -226,6 +230,7 @@ STINGERLogHandleTelemetry(
         }
 
         memoryRelated =
+            ((DesiredAccess & PROCESS_VM_OPERATION) != 0) ||
             ((DesiredAccess & PROCESS_VM_READ) != 0) ||
             ((DesiredAccess & PROCESS_VM_WRITE) != 0) ||
             ((DesiredAccess & PROCESS_ALL_ACCESS) != 0);
@@ -268,13 +273,82 @@ STINGERLogHandleTelemetry(
             (INT32)Telemetry->SectionNameStatus
         );
 
+        if (Class == STINGERHandleDirectSyscallSuspect) {
+            ULONG severity = 3;
+
+            if (memoryRelated || ((intentFlags & STINGER_INTENT_THREAD_CONTEXT) != 0)) {
+                severity = 4;
+            }
+
+            STINGEREtwLogDetectionEvent(
+                "DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION",
+                severity,
+                CallerPid,
+                TargetPid,
+                intentFlags,
+                (UINT32)DesiredAccess,
+                0,
+                L"sensitive handle operation originated from executable user region outside ntdll"
+            );
+        }
+
         if (intentFlags != 0) {
+            UINT32 priorIntentFlags = 0;
+            BOOLEAN hadPriorIntent;
+
+            hadPriorIntent = STINGERCorrelationQueryRecentIntent(
+                CallerPid,
+                TargetPid,
+                10000,
+                &priorIntentFlags,
+                NULL,
+                NULL
+            );
+
             STINGERCorrelationRecordHandleIntent(
                 CallerPid,
                 TargetPid,
                 DesiredAccess,
                 intentFlags
             );
+
+            if (!hadPriorIntent) {
+                priorIntentFlags = 0;
+            }
+
+            if ((priorIntentFlags & (STINGER_INTENT_PROCESS_MEMORY | STINGER_INTENT_THREAD_CONTEXT)) !=
+                    (STINGER_INTENT_PROCESS_MEMORY | STINGER_INTENT_THREAD_CONTEXT) &&
+                ((priorIntentFlags | intentFlags) & (STINGER_INTENT_PROCESS_MEMORY | STINGER_INTENT_THREAD_CONTEXT)) ==
+                    (STINGER_INTENT_PROCESS_MEMORY | STINGER_INTENT_THREAD_CONTEXT)) {
+                UINT32 corrFlags = 0;
+                UINT32 corrAccess = 0;
+                UINT32 corrAgeMs = 0;
+                ULONG severity = 3;
+
+                (void)STINGERCorrelationQueryRecentIntent(
+                    CallerPid,
+                    TargetPid,
+                    10000,
+                    &corrFlags,
+                    &corrAccess,
+                    &corrAgeMs
+                );
+
+                if ((corrFlags & STINGER_INTENT_DUP_HANDLE) != 0) {
+                    severity = 4;
+                }
+
+                STINGEREtwLogDetectionEvent(
+                    "POSSIBLE_PROCESS_HOLLOWING_OR_INJECTION_INTENT_CHAIN",
+                    severity,
+                    CallerPid,
+                    TargetPid,
+                    corrFlags,
+                    corrAccess,
+                    corrAgeMs,
+                    L"observed process-memory and thread-context handle intent chain against target process"
+                );
+            }
         }
     }
 }
@@ -533,6 +607,7 @@ STINGERProcessPreOperation(
         targetPid = PsGetProcessId(targetProcess);
 
         hasVmWriteOrFull =
+            ((desiredAccess & PROCESS_VM_OPERATION) != 0) ||
             ((desiredAccess & PROCESS_VM_WRITE) != 0) ||
             ((desiredAccess & PROCESS_ALL_ACCESS) != 0);
     } else if (OperationInformation->ObjectType == *PsThreadType) {

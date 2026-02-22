@@ -1,78 +1,71 @@
-## Stinger Sensor
+## User-Mode Tools
 
-`stinger_sensor.exe` is a read-only user-mode ETW consumer for the kernel driver provider:
+Document revision: `2026-02-22`
 
-- Provider: `Stinger.Kernel`
-- GUID: `D6C73F8A-6AD8-4F4B-A363-3D2FA31CD0E2`
-- decodes detailed handle/thread telemetry fields (access masks, status codes, image paths)
-- resolves stack/origin/start addresses with user+kernel symbol enrichment when available
-- prints event metadata useful for triage (`pid/tid/cpu/opcode/version/timestamp delta`)
+## StingerEtwProc (ETW Consumer)
+
+`StingerEtwProc.exe` is the read-only ETW consumer for provider `Stinger.Kernel`:
+
+- Provider GUID: `D6C73F8A-6AD8-4F4B-A363-3D2FA31CD0E2`
+- Decodes handle/thread/process/image/registry/detection events
+- Resolves stack, origin, and start addresses using user+kernel symbols when available
+- Prints triage-focused metadata (`pid/tid/cpu/opcode/version/timestamp delta`)
 
 ### Build
 
-From Visual Studio project `projects/StingerEtwProc.vcxproj`, or from a Visual Studio Developer Command Prompt:
-
-```bat
-cd C:\$ARSENAL\Kernel\Tartan\user\sensor
-build_sensor.cmd
-```
+Build Visual Studio project `vcxproj/StingerEtwProc.vcxproj`.
 
 ### Run
 
 Run elevated:
 
 ```bat
-stinger_sensor.exe
+StingerEtwProc.exe
 ```
 
 Press `Ctrl+C` to stop.
 
-For richer symbol resolution:
+Optional symbol path:
 
 ```powershell
 $env:_NT_SYMBOL_PATH = "srv*C:\symbols*https://msdl.microsoft.com/download/symbols"
 ```
 
-## Stinger Client (IOCTL)
+## StingerClient (IOCTL Consumer)
 
-`stinger_client.exe` subscribes directly to the driver control plane and receives queued events.
+`StingerClient.exe` subscribes directly to the control plane and drains queued IOCTL events.
 
-Build from Visual Studio project `projects/StingerClient.vcxproj`, or:
-
-```bat
-cd C:\$ARSENAL\Kernel\Tartan\user\sensor
-build_client.cmd
-```
-
-Run elevated:
+Build project `vcxproj/StingerClient.vcxproj`, then run elevated:
 
 ```bat
-stinger_client.exe 4242 handle,memory,thread
+StingerClient.exe 4242 handle,memory,thread
 ```
 
-## Stinger IOCTL Test
+## StingerTestSuite (IOCTL + ETW Validation)
 
-`stinger_ioctl_test.exe` runs a smoke/integration check against `\\.\StingerCtl`:
+`StingerTestSuite.exe` (from `user/sensor/stinger_ioctl_test.c`) is the current end-to-end validation harness.
 
-- verifies invalid subscribe input rejection
-- subscribes current PID
-- validates stats path
-- attempts to generate and read thread/handle events
-- prints decoded event payload fields from IOCTL records
-- resolves user/kernel addresses to `module!symbol+offset` when symbols are available
-- unsubscribes and exits with pass/fail status
+Build project `vcxproj/StingerIoctlTest.vcxproj`.
 
-Build from Visual Studio project `projects/StingerIoctlTest.vcxproj`.
+What it validates:
 
-Optional symbol path setup for richer kernel/user symbol resolution:
+- Control-device open path
+- Invalid subscription mask rejection
+- Self + child PID subscriptions
+- IOCTL stats query
+- IOCTL handle/thread event delivery and detailed decoding
+- Correlation/intent flags (`MemoryRelated`, `ThreadObject`, `DuplicateOperation`, and thread correlation flags)
+- ETW family coverage (`HandleTelemetry`, `ThreadTelemetry`, `ProcessTelemetry`, `ImageTelemetry`, `RegistryTelemetry`, `DetectionTelemetry`)
+- Fast multi-client parallel IOCTL fanout (3 parallel subscribers)
 
-```powershell
-$env:_NT_SYMBOL_PATH = "srv*C:\symbols*https://msdl.microsoft.com/download/symbols"
-```
+Pass/fail summary is emitted as:
 
-### Security Model
+- `[OK] StingerTestSuite complete. tests-passed=X/Y polls=Z`
+- `[FAIL] StingerTestSuite complete. tests-passed=X/Y polls=Z`
 
-- Driver control device is ACL-restricted (`SYSTEM` and `Administrators`).
-- Driver enforces user-mode request origin for IOCTL control operations.
-- IOCTLs only configure per-handle subscriptions and read telemetry; no mutation/path to disable protections.
-- ETW path remains one-way kernel-to-user telemetry.
+## Security Model
+
+- Control device ACL is restricted to `SYSTEM` and `Administrators`.
+- IOCTL control path enforces user-mode origin (`WdfRequestGetRequestorMode == UserMode`).
+- IOCTL interface is telemetry/control-plane only (subscribe/unsubscribe/read/stats).
+- ETW is one-way kernel-to-user telemetry.

@@ -114,6 +114,12 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\abi\stinger_ioctl.h" />
+    <ClInclude Include="..\user\sensor\stinger_sensor_core.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="StingerSensorCore.vcxproj">
+      <Project>{09D208CD-EEEC-4B23-915D-D9F380F5CC9B}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

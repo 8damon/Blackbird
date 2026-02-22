@@ -6,5 +6,10 @@ if "%VSCMD_VER%"=="" (
   exit /b 1
 )
 
-cl /nologo /W4 /WX /Zi /Od /TC stinger_sensor.c /link /DEBUG /INCREMENTAL:NO /OUT:stinger_sensor.exe
+set ROOT=%~dp0..\..
+
+msbuild "%ROOT%\vcxproj\StingerSensorCore.vcxproj" /p:Configuration=Debug /p:Platform=x64 /m:1
+if errorlevel 1 exit /b %ERRORLEVEL%
+
+msbuild "%ROOT%\vcxproj\StingerEtwProc.vcxproj" /p:Configuration=Debug /p:Platform=x64 /m:1
 exit /b %ERRORLEVEL%

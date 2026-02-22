@@ -11,13 +11,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\user\sensor\stinger_event_printer.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\user\sensor\stinger_symbol_resolver.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\user\sensor\stinger_ioctl_test.c">
+    <ClCompile Include="..\user\sensor\stinger_sensor_core.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -25,13 +19,7 @@
     <ClInclude Include="..\abi\stinger_ioctl.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\user\sensor\stinger_event_printer.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\user\sensor\stinger_sensor_core.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\user\sensor\stinger_symbol_resolver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

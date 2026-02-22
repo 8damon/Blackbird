@@ -80,6 +80,9 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -92,6 +95,9 @@
       <ControlFlowGuard>false</ControlFlowGuard>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <ClCompile>
@@ -100,6 +106,9 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <ClCompile>
@@ -108,6 +117,9 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\user\sensor\stinger_etw_printer.c" />
@@ -118,7 +130,13 @@
   <ItemGroup>
     <ClInclude Include="..\user\sensor\stinger_etw_printer.h" />
     <ClInclude Include="..\user\sensor\stinger_etw_props.h" />
+    <ClInclude Include="..\user\sensor\stinger_sensor_core.h" />
     <ClInclude Include="..\user\sensor\stinger_etw_symbols.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="StingerSensorCore.vcxproj">
+      <Project>{09D208CD-EEEC-4B23-915D-D9F380F5CC9B}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

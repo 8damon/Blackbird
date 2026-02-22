@@ -141,14 +141,22 @@
     <ClCompile Include="..\kernel\core\control.c" />
     <ClCompile Include="..\kernel\core\driver.c" />
     <ClCompile Include="..\kernel\telemetry\etw.c" />
+    <ClCompile Include="..\kernel\monitors\correlation.c" />
     <ClCompile Include="..\kernel\monitors\handle_monitor.c" />
+    <ClCompile Include="..\kernel\monitors\image_monitor.c" />
+    <ClCompile Include="..\kernel\monitors\process_monitor.c" />
+    <ClCompile Include="..\kernel\monitors\registry_monitor.c" />
     <ClCompile Include="..\kernel\monitors\thread_monitor.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\abi\stinger_ioctl.h" />
     <ClInclude Include="..\kernel\core\control.h" />
     <ClInclude Include="..\kernel\telemetry\etw.h" />
+    <ClInclude Include="..\kernel\monitors\correlation.h" />
     <ClInclude Include="..\kernel\monitors\handle_monitor.h" />
+    <ClInclude Include="..\kernel\monitors\image_monitor.h" />
+    <ClInclude Include="..\kernel\monitors\process_monitor.h" />
+    <ClInclude Include="..\kernel\monitors\registry_monitor.h" />
     <ClInclude Include="..\kernel\monitors\thread_monitor.h" />
   </ItemGroup>
   <ItemGroup>

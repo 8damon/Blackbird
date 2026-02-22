@@ -54,6 +54,18 @@
     <ClCompile Include="..\kernel\monitors\handle_monitor.c">
       <Filter>Source Files\Monitors</Filter>
     </ClCompile>
+    <ClCompile Include="..\kernel\monitors\correlation.c">
+      <Filter>Source Files\Monitors</Filter>
+    </ClCompile>
+    <ClCompile Include="..\kernel\monitors\image_monitor.c">
+      <Filter>Source Files\Monitors</Filter>
+    </ClCompile>
+    <ClCompile Include="..\kernel\monitors\process_monitor.c">
+      <Filter>Source Files\Monitors</Filter>
+    </ClCompile>
+    <ClCompile Include="..\kernel\monitors\registry_monitor.c">
+      <Filter>Source Files\Monitors</Filter>
+    </ClCompile>
     <ClCompile Include="..\kernel\monitors\thread_monitor.c">
       <Filter>Source Files\Monitors</Filter>
     </ClCompile>
@@ -66,6 +78,18 @@
       <Filter>Header Files\Core</Filter>
     </ClInclude>
     <ClInclude Include="..\kernel\monitors\handle_monitor.h">
+      <Filter>Header Files\Monitors</Filter>
+    </ClInclude>
+    <ClInclude Include="..\kernel\monitors\correlation.h">
+      <Filter>Header Files\Monitors</Filter>
+    </ClInclude>
+    <ClInclude Include="..\kernel\monitors\image_monitor.h">
+      <Filter>Header Files\Monitors</Filter>
+    </ClInclude>
+    <ClInclude Include="..\kernel\monitors\process_monitor.h">
+      <Filter>Header Files\Monitors</Filter>
+    </ClInclude>
+    <ClInclude Include="..\kernel\monitors\registry_monitor.h">
       <Filter>Header Files\Monitors</Filter>
     </ClInclude>
     <ClInclude Include="..\kernel\monitors\thread_monitor.h">

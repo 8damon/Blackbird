@@ -1,6 +1,7 @@
 #include <ntddk.h>
 #include "..\core\control.h"
 #include "..\telemetry\etw.h"
+#include "correlation.h"
 #include "handle_monitor.h"
 
 #ifndef PROCESS_VM_READ
@@ -13,6 +14,18 @@
 
 #ifndef PROCESS_QUERY_LIMITED_INFORMATION
 #define PROCESS_QUERY_LIMITED_INFORMATION 0x1000
+#endif
+
+#ifndef THREAD_SET_CONTEXT
+#define THREAD_SET_CONTEXT 0x0010
+#endif
+
+#ifndef THREAD_SUSPEND_RESUME
+#define THREAD_SUSPEND_RESUME 0x0002
+#endif
+
+#ifndef THREAD_GET_CONTEXT
+#define THREAD_GET_CONTEXT 0x0008
 #endif
 
 #ifndef _MEMORY_BASIC_INFORMATION
@@ -45,10 +58,12 @@ NTSYSAPI NTSTATUS NTAPI ZwQueryVirtualMemory(
 #define RTL_WALK_USER_MODE_STACK 0x00000001
 #endif
 
+NTKERNELAPI HANDLE PsGetThreadProcessId(_In_ PETHREAD Thread);
+
 #define STINGER_HANDLE_MAX_OUTSTANDING_WORK 2048
 
 static PVOID g_ProcessObRegistrationHandle = NULL;
-static OB_OPERATION_REGISTRATION g_OperationRegistration;
+static OB_OPERATION_REGISTRATION g_OperationRegistration[2];
 static OB_CALLBACK_REGISTRATION g_CallbackRegistration;
 static UNICODE_STRING g_CallbackAltitude;
 static const WCHAR g_CallbackAltitudeBuffer[] = L"385000.424242";
@@ -58,8 +73,19 @@ static volatile LONG g_HandleStackCaptureFaults = 0;
 static KEVENT g_HandleAllWorkDone;
 static volatile LONG g_HandleMonitorStopping = 0;
 static BOOLEAN g_HandleMonitorRegistered = FALSE;
+static volatile LONG g_HandleCallbackDropLogCounter = 0;
+static volatile LONG g_HandleAllocFailureCounter = 0;
+static volatile LONG g_HandleStackFaultLogCounter = 0;
 
-#if defined(DBG) && DBG
+/*
+ * Hot-path debug tracing is disabled by default to prevent KD console flooding.
+ * Define STINGER_VERBOSE_HOTPATH_DEBUG=1 for local deep diagnostics.
+ */
+#if !defined(STINGER_VERBOSE_HOTPATH_DEBUG)
+#define STINGER_VERBOSE_HOTPATH_DEBUG 0
+#endif
+
+#if defined(DBG) && DBG && STINGER_VERBOSE_HOTPATH_DEBUG
 #define STINGER_DBG_PRINT(_level, ...) DbgPrintEx(DPFLTR_IHVDRIVER_ID, (_level), __VA_ARGS__)
 #else
 #define STINGER_DBG_PRINT(_level, ...) ((void)0)
@@ -70,6 +96,8 @@ typedef struct _STINGER_HANDLE_WORK {
     HANDLE CallerPid;
     HANDLE TargetPid;
     ACCESS_MASK DesiredAccess;
+    BOOLEAN IsThreadObject;
+    BOOLEAN IsDuplicateOperation;
     ULONG FrameCount;
     PVOID Frames[8];
 } STINGER_HANDLE_WORK, *PSTINGER_HANDLE_WORK;
@@ -153,6 +181,8 @@ STINGERLogHandleTelemetry(
     _In_ HANDLE CallerPid,
     _In_ HANDLE TargetPid,
     _In_ ACCESS_MASK DesiredAccess,
+    _In_ BOOLEAN IsThreadObject,
+    _In_ BOOLEAN IsDuplicateOperation,
     _In_ BOOLEAN ExecProtect,
     _In_ BOOLEAN FromNtdll,
     _In_ BOOLEAN FromExe,
@@ -183,6 +213,7 @@ STINGERLogHandleTelemetry(
         UINT32 flags = 0;
         UINT32 classId = StingerHandleClassUnknown;
         BOOLEAN memoryRelated;
+        UINT32 intentFlags = 0;
 
         if (ExecProtect) {
             flags |= STINGER_HANDLE_FLAG_EXEC_PROTECT;
@@ -200,6 +231,19 @@ STINGERLogHandleTelemetry(
             ((DesiredAccess & PROCESS_ALL_ACCESS) != 0);
         if (memoryRelated) {
             flags |= STINGER_HANDLE_FLAG_MEMORY_RELATED;
+            intentFlags |= STINGER_INTENT_PROCESS_MEMORY;
+        }
+        if (IsThreadObject) {
+            flags |= STINGER_HANDLE_FLAG_THREAD_OBJECT;
+            if ((DesiredAccess & THREAD_SET_CONTEXT) != 0 ||
+                (DesiredAccess & THREAD_GET_CONTEXT) != 0 ||
+                (DesiredAccess & THREAD_SUSPEND_RESUME) != 0) {
+                intentFlags |= STINGER_INTENT_THREAD_CONTEXT;
+            }
+        }
+        if (IsDuplicateOperation) {
+            flags |= STINGER_HANDLE_FLAG_DUPLICATE_OPERATION;
+            intentFlags |= STINGER_INTENT_DUP_HANDLE;
         }
 
         if (Class == STINGERHandleLegitimateSyscall) {
@@ -223,6 +267,15 @@ STINGERLogHandleTelemetry(
             (INT32)Telemetry->BasicInfoStatus,
             (INT32)Telemetry->SectionNameStatus
         );
+
+        if (intentFlags != 0) {
+            STINGERCorrelationRecordHandleIntent(
+                CallerPid,
+                TargetPid,
+                DesiredAccess,
+                intentFlags
+            );
+        }
     }
 }
 
@@ -406,6 +459,8 @@ STINGERHandleWorkRoutine(
         work->CallerPid,
         work->TargetPid,
         work->DesiredAccess,
+        work->IsThreadObject,
+        work->IsDuplicateOperation,
         execProtect,
         fromNtdll,
         fromExe,
@@ -441,11 +496,16 @@ STINGERProcessPreOperation(
     HANDLE callerPid;
     HANDLE targetPid;
     PEPROCESS targetProcess;
+    PETHREAD targetThread;
     PSTINGER_HANDLE_WORK work;
     PVOID userFrames[16] = { 0 };
     ULONG frameCount;
     ULONG copyCount;
     BOOLEAN hasVmWriteOrFull;
+    BOOLEAN hasThreadContextAccess;
+    BOOLEAN isThreadObject = FALSE;
+    BOOLEAN isDuplicateOperation = FALSE;
+    LONG failureCounter;
 
     UNREFERENCED_PARAMETER(RegistrationContext);
 
@@ -457,33 +517,59 @@ STINGERProcessPreOperation(
         return OB_PREOP_SUCCESS;
     }
 
-    if (OperationInformation->ObjectType != *PsProcessType) {
-        return OB_PREOP_SUCCESS;
-    }
-
     if (OperationInformation->Operation == OB_OPERATION_HANDLE_CREATE) {
         desiredAccess = OperationInformation->Parameters->CreateHandleInformation.DesiredAccess;
     } else if (OperationInformation->Operation == OB_OPERATION_HANDLE_DUPLICATE) {
         desiredAccess = OperationInformation->Parameters->DuplicateHandleInformation.DesiredAccess;
+        isDuplicateOperation = TRUE;
     } else {
         return OB_PREOP_SUCCESS;
     }
 
-    hasVmWriteOrFull =
-        ((desiredAccess & PROCESS_VM_WRITE) != 0) ||
-        ((desiredAccess & PROCESS_ALL_ACCESS) != 0);
-    if (!hasVmWriteOrFull) {
+    hasVmWriteOrFull = FALSE;
+    hasThreadContextAccess = FALSE;
+    if (OperationInformation->ObjectType == *PsProcessType) {
+        targetProcess = (PEPROCESS)OperationInformation->Object;
+        targetPid = PsGetProcessId(targetProcess);
+
+        hasVmWriteOrFull =
+            ((desiredAccess & PROCESS_VM_WRITE) != 0) ||
+            ((desiredAccess & PROCESS_ALL_ACCESS) != 0);
+    } else if (OperationInformation->ObjectType == *PsThreadType) {
+        isThreadObject = TRUE;
+        targetThread = (PETHREAD)OperationInformation->Object;
+        targetPid = PsGetThreadProcessId(targetThread);
+
+        hasThreadContextAccess =
+            ((desiredAccess & THREAD_SET_CONTEXT) != 0) ||
+            ((desiredAccess & THREAD_GET_CONTEXT) != 0) ||
+            ((desiredAccess & THREAD_SUSPEND_RESUME) != 0);
+    } else {
+        return OB_PREOP_SUCCESS;
+    }
+
+    if (!hasVmWriteOrFull && !hasThreadContextAccess) {
         return OB_PREOP_SUCCESS;
     }
 
     callerPid = PsGetCurrentProcessId();
-    targetProcess = (PEPROCESS)OperationInformation->Object;
-    targetPid = PsGetProcessId(targetProcess);
     if (callerPid == targetPid) {
         return OB_PREOP_SUCCESS;
     }
 
     if (!STINGERHandleTryAcquireWorkSlot()) {
+        failureCounter = InterlockedIncrement(&g_HandleCallbackDropLogCounter);
+        if (failureCounter == 1 || ((failureCounter & 0xFF) == 0)) {
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_WARNING_LEVEL,
+                "STINGER: handle callback drop caller=%p target=%p access=0x%08X total=%lu.\n",
+                callerPid,
+                targetPid,
+                desiredAccess,
+                (ULONG)failureCounter
+            );
+        }
         STINGER_DBG_PRINT(
             DPFLTR_WARNING_LEVEL,
             "STINGER[DBG]: dropping handle preop caller=%p target=%p access=0x%08X (work slot unavailable).\n",
@@ -500,6 +586,18 @@ STINGERProcessPreOperation(
         'hdtT'
     );
     if (work == NULL) {
+        failureCounter = InterlockedIncrement(&g_HandleAllocFailureCounter);
+        if (failureCounter == 1 || ((failureCounter & 0xFF) == 0)) {
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_ERROR_LEVEL,
+                "STINGER: handle callback alloc failure caller=%p target=%p access=0x%08X total=%lu.\n",
+                callerPid,
+                targetPid,
+                desiredAccess,
+                (ULONG)failureCounter
+            );
+        }
         STINGER_DBG_PRINT(
             DPFLTR_ERROR_LEVEL,
             "STINGER[DBG]: ExAllocatePool2 failed for handle work item.\n"
@@ -512,6 +610,8 @@ STINGERProcessPreOperation(
     work->CallerPid = callerPid;
     work->TargetPid = targetPid;
     work->DesiredAccess = desiredAccess;
+    work->IsThreadObject = isThreadObject;
+    work->IsDuplicateOperation = isDuplicateOperation;
 
     frameCount = 0;
     copyCount = 0;
@@ -525,6 +625,18 @@ STINGERProcessPreOperation(
         copyCount = 0;
         RtlZeroMemory(work->Frames, sizeof(work->Frames));
         InterlockedIncrement(&g_HandleStackCaptureFaults);
+        failureCounter = InterlockedIncrement(&g_HandleStackFaultLogCounter);
+        if (failureCounter == 1 || ((failureCounter & 0xFF) == 0)) {
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_WARNING_LEVEL,
+                "STINGER: handle callback stack capture fault caller=%p target=%p access=0x%08X total=%lu.\n",
+                callerPid,
+                targetPid,
+                desiredAccess,
+                (ULONG)failureCounter
+            );
+        }
         STINGER_DBG_PRINT(
             DPFLTR_WARNING_LEVEL,
             "STINGER[DBG]: RtlWalkFrameChain fault caller=%p target=%p access=0x%08X.\n",
@@ -569,16 +681,21 @@ STINGERHandleMonitorInitialize(
     InterlockedExchange(&g_HandleStackCaptureFaults, 0);
 
     RtlZeroMemory(&g_OperationRegistration, sizeof(g_OperationRegistration));
-    g_OperationRegistration.ObjectType = PsProcessType;
-    g_OperationRegistration.Operations = OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE;
-    g_OperationRegistration.PreOperation = STINGERProcessPreOperation;
-    g_OperationRegistration.PostOperation = NULL;
+    g_OperationRegistration[0].ObjectType = PsProcessType;
+    g_OperationRegistration[0].Operations = OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE;
+    g_OperationRegistration[0].PreOperation = STINGERProcessPreOperation;
+    g_OperationRegistration[0].PostOperation = NULL;
+
+    g_OperationRegistration[1].ObjectType = PsThreadType;
+    g_OperationRegistration[1].Operations = OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE;
+    g_OperationRegistration[1].PreOperation = STINGERProcessPreOperation;
+    g_OperationRegistration[1].PostOperation = NULL;
 
     RtlZeroMemory(&g_CallbackRegistration, sizeof(g_CallbackRegistration));
     g_CallbackRegistration.Version = OB_FLT_REGISTRATION_VERSION;
-    g_CallbackRegistration.OperationRegistrationCount = 1;
+    g_CallbackRegistration.OperationRegistrationCount = RTL_NUMBER_OF(g_OperationRegistration);
     g_CallbackRegistration.RegistrationContext = NULL;
-    g_CallbackRegistration.OperationRegistration = &g_OperationRegistration;
+    g_CallbackRegistration.OperationRegistration = g_OperationRegistration;
     RtlInitUnicodeString(&g_CallbackAltitude, g_CallbackAltitudeBuffer);
     g_CallbackRegistration.Altitude = g_CallbackAltitude;
 

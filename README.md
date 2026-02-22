@@ -10,10 +10,6 @@
   <img src="./diagram/Stinger_KM_Telemetry_Arch.png" width="900" />
 </p>
 
-<p align="center">
-  <img src="./diagram/Stinger_KM_Telemetry_Arch.png" width="900" />
-</p>
-
 ---
 
 ## Executive Summary

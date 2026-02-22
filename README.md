@@ -1,5 +1,5 @@
 <h1 align="center">Stinger</h1>
-<p align="center"><b>Kernel Telemetry Driver for Threat Detection, Forensics, and Security Engineering Demonstration</b></p>
+<p align="center"><b>Kernel Telemetry Driver for Threat Detection, Malware Analysis, Forensics & Threat-Emulation</b></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Language-C-00599C?logo=c&logoColor=white&style=for-the-badge" />

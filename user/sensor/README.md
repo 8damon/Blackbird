@@ -17,6 +17,19 @@ What it provides:
 - ETW real-time session lifecycle (start/run/stop)
 - Multi-provider ETW enablement and callback dispatch with event-name resolution
 
+Exports:
+
+- `STINGERSCOpenControlDevice`
+- `STINGERSCSubscribe`
+- `STINGERSCUnsubscribe`
+- `STINGERSCGetEvent`
+- `STINGERSCGetStats`
+- `STINGERSCParseStreamMaskA`
+- `STINGERSCStopSessionByName`
+- `STINGERSCStartEtwSession`
+- `STINGERSCRunEtwSession`
+- `STINGERSCStopEtwSession`
+
 Build project `vcxproj/StingerSensorCore.vcxproj`.
 
 ## StingerEtwProc (ETW Consumer)

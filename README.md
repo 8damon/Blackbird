@@ -1,4 +1,4 @@
-<h1 align="center">Stinger</h1>
+<h1 align="center">STINGER</h1>
 <p align="center"><b>Windows Kernel Telemetry for High-Signal Threat Triage, Forensics & Malware Analysis</b></p>
 
 <p align="center">

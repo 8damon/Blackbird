@@ -34,5 +34,8 @@
     <ClInclude Include="..\user\sensor\stinger_etw_symbols.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\user\sensor\stinger_sensor_core.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

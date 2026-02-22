@@ -1,116 +1,153 @@
 <h1 align="center">Stinger</h1>
-<p align="center"><b>Kernel Telemetry Driver for Threat Detection, Malware Analysis, Forensics & Threat-Emulation</b></p>
+<p align="center"><b>Windows Kernel Telemetry for High-Signal Threat Triage, Forensics & Malware Analysis</b></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Language-C-00599C?logo=c&logoColor=white&style=for-the-badge" />
   <img src="https://img.shields.io/badge/Framework-KMDF-0A0A0A?style=for-the-badge" />
 </p>
 
-## What Is Stinger?
+---
 
-Stinger is a Windows kernel telemetry driver and companion user-mode tooling that captures high-value execution signals for malware analysis and threat triage.  
-It focuses on behavior that often appears in process injection and post-exploitation workflows:
+## Executive Summary
 
-- Sensitive process/thread handle operations
-- Remote thread activity and start-address heuristics
-- Process and image lifecycle context
-- High-value registry path activity
-- Correlated detection events tying intent to execution
+**Stinger is a KMDF kernel telemetry driver + user-mode tooling that exposes high-value execution signals commonly associated with injection and post-exploitation.**  
+It is designed for **triage, forensics, malware analysis, and threat emulation in labs/VMs** where teams need kernel-level visibility **without deploying a full EDR stack or attaching a kernel debugger**.
 
-## Why Stinger Was Written
+Stinger provides:
+- **High-signal telemetry**
+- **Correlation**
+- **Two consumption paths**:
+  - **IOCTL per-client queues** for targeted, process-scoped capture
+  - **ETW provider (`Stinger.Kernel`)** for scalable ingestion and tooling
 
-Many teams have one of two options:
+---
 
-- Raw telemetry that is too noisy and hard to operationalize quickly
-- High-level detections that hide low-level context analysts need to verify intent
+## What Gap It Covers
 
-Stinger is designed to bridge that gap by emitting telemetry that is:
+In many environments, teams end up choosing between:
 
-- Low enough level to preserve forensic context (addresses, access masks, call stacks)
-- Structured enough to consume in tools and tests
-- Focused on a narrow, high-signal threat surface instead of broad indiscriminate logging
+1) **Generic telemetry** (high volume, hard to operationalize quickly), or  
+2) **EDR detections** (high level, but hides the low-level context needed to validate intent)
 
-## What Problem It Helps Solve
+**Stinger bridges that gap** by emitting telemetry that is:
+- Low-level enough to preserve forensic context (access masks, addresses, call stacks, outcomes)
+- Structured and testable (stable ABI, deterministic records, validation suite)
+- Focused on a narrow, high-signal threat surface (injection-adjacent behavior)
 
-Stinger helps teams answer questions such as:
+> Stinger is not a replacement for an EDR.  
+> It’s an **inspectable kernel telemetry plane** suitable for labs/VMs/IR triage and engineering workflows.
 
-- Which process opened another process/thread, with what access rights, and from where?
-- Was a thread created remotely, and did its start address look suspicious relative to image boundaries?
-- Was there recent handle intent (process memory, thread context, duplicate handle) before thread activity?
-- Was high-value persistence-oriented registry activity observed in the same run?
+---
 
-## How Stinger Works (High Level)
+## What Questions Stinger Answers
 
-1. Kernel monitors capture events from process, image, registry, handle, and thread paths.
-2. Handle and thread paths produce IOCTL-deliverable records for subscribed clients.
-3. All monitor families emit ETW events through `Stinger.Kernel`.
-4. Correlation logic links recent handle intent to later thread activity.
-5. Detection telemetry is emitted when heuristics indicate suspicious combinations.
-6. User-mode tools consume either:
-   - IOCTL queue (`StingerClient`, `StingerTestSuite`)
-   - ETW stream (`StingerEtwProc`, `StingerTestSuite`)
+- Which process opened another process/thread, with **what access rights**, and **from where**?
+- Did a thread appear to be created remotely, and does its **start address** look suspicious relative to loaded image boundaries?
+- Was there **recent intent** (process memory / thread context / duplicate handle activity) before thread execution?
+- Was high-value persistence-oriented **registry activity** observed in the same run?
+- What **correlated detections** can be produced when intent and execution line up?
 
-## Core Capabilities
+---
 
-- Process-scoped, per-client IOCTL subscriptions on `\\.\Global\StingerCtl` / `\\.\StingerCtl`
-- Handle telemetry with origin address, protection, path, status fields, and stack frames
-- Thread telemetry with:
-  - remote creator checks
-  - start-address and image-range heuristics
-  - intent correlation flags
-  - start-region execution context
-- ETW telemetry for process, image, registry, and detection surfaces
-- Rate-limited debug tracing for queue drops and callback/monitor failure conditions
-- Multi-client IOCTL fanout validation in `StingerTestSuite`
+## Core Signals (High Value Surface)
+
+Stinger focuses on behavior commonly observed in:
+- Process injection workflows
+- Post-exploitation handle acquisition
+- Remote thread creation + suspicious start regions
+- Persistence-oriented registry activity
+
+**Telemetry families:**
+- Handle operations (process/thread handles, access masks, origin metadata)
+- Thread execution (remote creator, start-address heuristics, execution-region context)
+- Process lifecycle context
+- Image load context
+- High-value registry activity
+- Correlated detection events (intent -> execution)
+
+---
+
+## Technical Highlights (for engineers)
+
+- **KMDF control plane** with per-handle client contexts and independent event queues
+- **Stable ABI header** (`abi/stinger_ioctl.h`) defining IOCTL codes + record layouts
+- **Per-client subscription model**: PID + stream mask
+- **Per-client sequencing + bounded queues** with drop accounting and rate-limited drop logging
+- **Multi-client fanout** validated under parallel polling (`StingerTestSuite`)
+- Dual output plane:
+  - **IOCTL**: low-latency, targeted pull model
+  - **ETW**: scalable push model for broader pipelines
+
+---
+
+## Interfaces
+
+### Device Endpoints
+- Preferred: `\\.\Global\StingerCtl`
+- Legacy: `\\.\StingerCtl`
+
+### IOCTL Model (Targeted Pull)
+- Subscribe per client handle (PID + stream mask)
+- Poll `GET_EVENT` until queue is empty (`NO_MORE_ENTRIES`)
+- Query health via `GET_STATS`
+
+### ETW Model (Scalable Push)
+- Provider: `Stinger.Kernel`
+- GUID: `{D6C73F8A-6AD8-4F4B-A363-3D2FA31CD0E2}`
+- Event families: `HandleTelemetry`, `ThreadTelemetry`, `ProcessTelemetry`, `ImageTelemetry`, `RegistryTelemetry`, `DetectionTelemetry`
+
+(Full contract in `API.md` and `abi/stinger_ioctl.h`.)
+
+---
+
+## Validation and Test Coverage
+
+`StingerTestSuite` performs end-to-end verification:
+- IOCTL subscription + event delivery
+- Handle/thread intent correlation flags
+- Multi-client parallel fanout
+- ETW ingestion coverage across core event families
+
+Example successful run:
+- `[OK] StingerTestSuite complete. tests-passed=33/33 polls=15`
+
+---
+
+## Security and Scope
+
+- Control device ACL restricted to **SYSTEM** and **Administrators**
+- IOCTL control path rejects non-user-mode requestors
+- Stinger is **telemetry + detection aid**, not a prevention platform
+- Symbol enrichment depends on symbol availability and environment policy
+
+---
 
 ## Repository Layout
 
 - `kernel/`
   - `core/`: driver lifecycle and IOCTL control plane
-  - `monitors/`: handle/thread/process/image/registry monitoring and intent correlation
+  - `monitors/`: handle/thread/process/image/registry monitoring and correlation
   - `telemetry/`: ETW provider emission
 - `abi/`
-  - `stinger_ioctl.h`: shared IOCTL ABI
+  - `stinger_ioctl.h`: shared IOCTL ABI contract
 - `user/sensor/`
-  - `stinger_client.c`: manual IOCTL subscriber
-  - `stinger_ioctl_test.c`: `StingerTestSuite` source
-  - `stinger_sensor.c`: ETW consumer (`StingerEtwProc`)
-- `vcxproj/`
-  - `Stinger.vcxproj`: kernel driver
-  - `StingerClient.vcxproj`: IOCTL client
-  - `StingerIoctlTest.vcxproj`: `StingerTestSuite` binary
-  - `StingerEtwProc.vcxproj`: ETW consumer
+  - `StingerClient`: manual IOCTL subscriber
+  - `StingerTestSuite`: end-to-end validation
+  - `StingerEtwProc`: ETW consumer
 
-## Build and Run
+---
+
+## Build and Run (Lab / VM)
 
 1. Open `Stinger.slnx` in Visual Studio.
-2. Build `vcxproj/Stinger.vcxproj` (`x64` or `ARM64` as needed).
+2. Build `vcxproj/Stinger.vcxproj` (`x64` or `ARM64`).
 3. Install and start the driver.
-4. Build and run:
-   - `StingerTestSuite.exe` for end-to-end validation and coverage checks
-   - `StingerClient.exe <pid> handle,memory,thread` for focused IOCTL consumption
-   - `StingerEtwProc.exe` for enriched ETW output
+4. Run:
+   - `StingerTestSuite.exe` for full validation
+   - `StingerClient.exe <pid> handle,memory,thread` for targeted IOCTL capture
+   - `StingerEtwProc.exe` for ETW stream output
 
-## Example Validation Outcome
-
-Successful full-surface run pattern:
-
-- `[OK] StingerTestSuite complete. tests-passed=33/33 polls=15`
-- Includes verification of:
-  - IOCTL core paths
-  - intent/correlation flags
-  - multi-client parallel fanout
-  - ETW core families (`handle/thread/process/image/registry/detection`)
-
-## Security and Scope Notes
-
-- Control device ACL is restricted (`SYSTEM` and `Administrators`)
-- IOCTL control path accepts user-mode callers only
-- Stinger is telemetry and detection aid, not a prevention/response platform by itself
-- Kernel stack symbol resolution depends on symbol availability and environment policy
-
-## Documentation
-
-- `INSTALL.md`: installation and runtime workflow
-- `API.md`: IOCTL + ETW contract and usage guide
-- `user/sensor/README.md`: user-mode tool details
+Documentation:
+- `INSTALL.md` (install/runtime workflow)
+- `API.md` (IOCTL + ETW contract)
+- `user/sensor/README.md` (tooling details)

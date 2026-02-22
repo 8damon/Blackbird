@@ -21,9 +21,40 @@ This document describes the current Stinger control-plane and telemetry contract
 - IOCTL event families:
   - handle
   - thread
+- Shared user-mode SDK:
+  - `StingerSensorCore.dll` / `user/sensor/stinger_sensor_core.h`
+  - exported `STINGERSC*` APIs for IOCTL and ETW session management
 - ETW provider:
   - name: `Stinger.Kernel`
   - GUID: `{D6C73F8A-6AD8-4F4B-A363-3D2FA31CD0E2}`
+
+## Shared User-Mode SDK (`StingerSensorCore`)
+
+The preferred integration surface for user-mode consumers is:
+
+- header: `user/sensor/stinger_sensor_core.h`
+- binary: `StingerSensorCore.dll`
+
+Current exports:
+
+- IOCTL control-plane wrappers:
+  - `STINGERSCOpenControlDevice`
+  - `STINGERSCSubscribe`
+  - `STINGERSCUnsubscribe`
+  - `STINGERSCGetEvent`
+  - `STINGERSCGetStats`
+  - `STINGERSCParseStreamMaskA`
+- ETW session wrappers:
+  - `STINGERSCStopSessionByName`
+  - `STINGERSCStartEtwSession`
+  - `STINGERSCRunEtwSession`
+  - `STINGERSCStopEtwSession`
+
+Consumers currently using these exports:
+
+- `StingerClient`
+- `StingerEtwProc`
+- `StingerTestSuite`
 
 ## IOCTL Interface
 
@@ -192,9 +223,15 @@ Current event names:
 ### Current Detection Names
 
 - `REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT`
+- `REMOTE_THREAD_START_IN_NON_IMAGE_EXECUTABLE_REGION`
 - `REMOTE_THREAD_OUTSIDE_MAIN_IMAGE`
 - `THREAD_ACTIVITY_WITH_THREAD_CONTEXT_INTENT`
 - `HIGH_VALUE_REGISTRY_ACTIVITY`
+- `DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION`
+- `POSSIBLE_PROCESS_HOLLOWING_OR_INJECTION_INTENT_CHAIN`
+- `POSSIBLE_MANUAL_MAP_OR_HOLLOWING_EXECUTION`
+- `SUSPICIOUS_NTDLL_IMAGE_PATH`
+- `MULTIPLE_NTDLL_IMAGE_MAPPINGS`
 
 ## Quick Integration Flow (IOCTL)
 
@@ -204,6 +241,14 @@ Current event names:
 4. Handle `NO_MORE_ENTRIES` as empty queue
 5. Query `IOCTL_STINGER_GET_STATS` for health and drops
 6. Unsubscribe and close handle
+
+Using `StingerSensorCore` helpers, the same flow is:
+
+1. `STINGERSCOpenControlDevice`
+2. `STINGERSCSubscribe`
+3. loop on `STINGERSCGetEvent`
+4. `STINGERSCGetStats` for queue/drop health
+5. `STINGERSCUnsubscribe` and close handle
 
 ## Minimal Pseudocode
 

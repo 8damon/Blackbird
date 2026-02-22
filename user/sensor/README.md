@@ -2,6 +2,23 @@
 
 Document revision: `2026-02-22`
 
+## Shared Library: StingerSensorCore
+
+`StingerSensorCore.dll` is the common user-mode integration layer used by:
+
+- `StingerClient.exe`
+- `StingerEtwProc.exe`
+- `StingerTestSuite.exe`
+
+What it provides:
+
+- IOCTL helpers (`open/subscribe/unsubscribe/get-event/get-stats`)
+- Stream-mask parsing helper
+- ETW real-time session lifecycle (start/run/stop)
+- Multi-provider ETW enablement and callback dispatch with event-name resolution
+
+Build project `vcxproj/StingerSensorCore.vcxproj`.
+
 ## StingerEtwProc (ETW Consumer)
 
 `StingerEtwProc.exe` is the read-only ETW consumer for provider `Stinger.Kernel`:
@@ -13,7 +30,7 @@ Document revision: `2026-02-22`
 
 ### Build
 
-Build Visual Studio project `vcxproj/StingerEtwProc.vcxproj`.
+Build Visual Studio project `vcxproj/StingerEtwProc.vcxproj` (depends on `StingerSensorCore`).
 
 ### Run
 
@@ -35,7 +52,7 @@ $env:_NT_SYMBOL_PATH = "srv*C:\symbols*https://msdl.microsoft.com/download/symbo
 
 `StingerClient.exe` subscribes directly to the control plane and drains queued IOCTL events.
 
-Build project `vcxproj/StingerClient.vcxproj`, then run elevated:
+Build project `vcxproj/StingerClient.vcxproj` (depends on `StingerSensorCore`), then run elevated:
 
 ```bat
 StingerClient.exe 4242 handle,memory,thread
@@ -45,7 +62,7 @@ StingerClient.exe 4242 handle,memory,thread
 
 `StingerTestSuite.exe` (from `user/sensor/stinger_ioctl_test.c`) is the current end-to-end validation harness.
 
-Build project `vcxproj/StingerIoctlTest.vcxproj`.
+Build project `vcxproj/StingerIoctlTest.vcxproj` (depends on `StingerSensorCore`).
 
 What it validates:
 

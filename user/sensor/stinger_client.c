@@ -5,6 +5,7 @@
 #include <strsafe.h>
 #include <winioctl.h>
 #include "..\..\abi\stinger_ioctl.h"
+#include "stinger_sensor_core.h"
 
 static void
 PrintUsage(void)
@@ -12,33 +13,6 @@ PrintUsage(void)
     printf("Usage: stinger_client.exe <pid> <streams>\n");
     printf("streams: handle,memory,thread (comma-separated)\n");
     printf("example: stinger_client.exe 4242 handle,memory,thread\n");
-}
-
-static DWORD
-ParseStreams(_In_z_ const char* text)
-{
-    DWORD mask = 0;
-    char* copy;
-    char* ctx = NULL;
-    char* tok;
-
-    copy = _strdup(text);
-    if (copy == NULL) {
-        return 0;
-    }
-
-    for (tok = strtok_s(copy, ",", &ctx); tok != NULL; tok = strtok_s(NULL, ",", &ctx)) {
-        if (_stricmp(tok, "handle") == 0) {
-            mask |= STINGER_STREAM_HANDLE;
-        } else if (_stricmp(tok, "memory") == 0) {
-            mask |= STINGER_STREAM_MEMORY;
-        } else if (_stricmp(tok, "thread") == 0) {
-            mask |= STINGER_STREAM_THREAD;
-        }
-    }
-
-    free(copy);
-    return mask;
 }
 
 static const char*
@@ -107,8 +81,6 @@ int __cdecl
 main(int argc, char** argv)
 {
     HANDLE h = INVALID_HANDLE_VALUE;
-    STINGER_SUBSCRIBE_REQUEST sub;
-    STINGER_UNSUBSCRIBE_REQUEST unsub;
     STINGER_EVENT_RECORD record;
     DWORD bytes;
     DWORD pid;
@@ -121,50 +93,19 @@ main(int argc, char** argv)
     }
 
     pid = strtoul(argv[1], NULL, 10);
-    streams = ParseStreams(argv[2]);
+    streams = STINGERSCParseStreamMaskA(argv[2]);
     if (pid == 0 || streams == 0) {
         PrintUsage();
         return 1;
     }
 
-    h = CreateFileW(
-        L"\\\\.\\Global\\StingerCtl",
-        GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_READ | FILE_SHARE_WRITE,
-        NULL,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL,
-        NULL
-    );
-    if (h == INVALID_HANDLE_VALUE) {
-        h = CreateFileW(
-            L"\\\\.\\StingerCtl",
-            GENERIC_READ | GENERIC_WRITE,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
-            NULL,
-            OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL,
-            NULL
-        );
-    }
+    h = STINGERSCOpenControlDevice();
     if (h == INVALID_HANDLE_VALUE) {
         printf("CreateFile failed (\\\\.\\Global\\StingerCtl / \\\\.\\StingerCtl): %lu\n", GetLastError());
         return 1;
     }
 
-    ZeroMemory(&sub, sizeof(sub));
-    sub.ProcessId = pid;
-    sub.StreamMask = streams;
-    ok = DeviceIoControl(
-        h,
-        IOCTL_STINGER_SUBSCRIBE,
-        &sub,
-        sizeof(sub),
-        NULL,
-        0,
-        &bytes,
-        NULL
-    );
+    ok = STINGERSCSubscribe(h, pid, streams);
     if (!ok) {
         printf("subscribe failed: %lu\n", GetLastError());
         CloseHandle(h);
@@ -174,17 +115,7 @@ main(int argc, char** argv)
     printf("subscribed pid=%lu streams=0x%08lX. Ctrl+C to stop.\n", pid, streams);
 
     for (;;) {
-        ZeroMemory(&record, sizeof(record));
-        ok = DeviceIoControl(
-            h,
-            IOCTL_STINGER_GET_EVENT,
-            NULL,
-            0,
-            &record,
-            sizeof(record),
-            &bytes,
-            NULL
-        );
+        ok = STINGERSCGetEvent(h, &record, &bytes);
         if (!ok) {
             DWORD err = GetLastError();
             if (err == ERROR_NO_MORE_ITEMS) {
@@ -202,18 +133,7 @@ main(int argc, char** argv)
         }
     }
 
-    ZeroMemory(&unsub, sizeof(unsub));
-    unsub.ProcessId = pid;
-    (void)DeviceIoControl(
-        h,
-        IOCTL_STINGER_UNSUBSCRIBE,
-        &unsub,
-        sizeof(unsub),
-        NULL,
-        0,
-        &bytes,
-        NULL
-    );
+    (void)STINGERSCUnsubscribe(h, pid);
 
     CloseHandle(h);
     return 0;

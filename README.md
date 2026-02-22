@@ -10,10 +10,6 @@
   <img src="./diagram/Stinger_KM_Telemetry_Arch.png" width="900" />
 </p>
 
-<p align="center">
-  <img src="./diagram/Stinger_KM_Telemetry_Arch.png" width="900" />
-</p>
-
 ---
 
 ## Executive Summary
@@ -90,6 +86,24 @@ Stinger focuses on behavior commonly observed in:
 
 ## Interfaces
 
+### Shared User-Mode SDK
+
+Preferred integration surface for user-mode consumers:
+- `user/sensor/stinger_sensor_core.h`
+- `StingerSensorCore.dll`
+
+Exports:
+- `STINGERSCOpenControlDevice`
+- `STINGERSCSubscribe`
+- `STINGERSCUnsubscribe`
+- `STINGERSCGetEvent`
+- `STINGERSCGetStats`
+- `STINGERSCParseStreamMaskA`
+- `STINGERSCStopSessionByName`
+- `STINGERSCStartEtwSession`
+- `STINGERSCRunEtwSession`
+- `STINGERSCStopEtwSession`
+
 ### Device Endpoints
 - Preferred: `\\.\Global\StingerCtl`
 - Legacy: `\\.\StingerCtl`
@@ -139,9 +153,12 @@ Example successful run:
 - `abi/`
   - `stinger_ioctl.h`: shared IOCTL ABI contract
 - `user/sensor/`
+  - `stinger_sensor_core.c/.h`: shared user-mode SDK (IOCTL + ETW session helpers)
   - `StingerClient`: manual IOCTL subscriber
   - `StingerTestSuite`: end-to-end validation
   - `StingerEtwProc`: ETW consumer
+- `vcxproj/`
+  - `StingerSensorCore.vcxproj`: shared user-mode DLL project
 
 ---
 
@@ -151,6 +168,7 @@ Example successful run:
 2. Build `vcxproj/Stinger.vcxproj` (`x64` or `ARM64`).
 3. Install and start the driver.
 4. Run:
+   - `StingerSensorCore.dll` (built automatically by dependent projects)
    - `StingerTestSuite.exe` for full validation
    - `StingerClient.exe <pid> handle,memory,thread` for targeted IOCTL capture
    - `StingerEtwProc.exe` for ETW stream output

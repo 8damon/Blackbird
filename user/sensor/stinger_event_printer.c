@@ -91,6 +91,12 @@ STINGERPrintHandleFlags(UINT32 flags)
     if ((flags & STINGER_HANDLE_FLAG_MEMORY_RELATED) != 0) {
         printf("MemoryRelated ");
     }
+    if ((flags & STINGER_HANDLE_FLAG_THREAD_OBJECT) != 0) {
+        printf("ThreadObject ");
+    }
+    if ((flags & STINGER_HANDLE_FLAG_DUPLICATE_OPERATION) != 0) {
+        printf("DuplicateOp ");
+    }
     printf("\n");
 }
 
@@ -113,6 +119,21 @@ STINGERPrintThreadFlags(UINT32 flags)
     }
     if ((flags & STINGER_THREAD_FLAG_OUTSIDE_MAIN_IMG) != 0) {
         printf("OutsideMainImage ");
+    }
+    if ((flags & STINGER_THREAD_FLAG_CORRELATED_INTENT) != 0) {
+        printf("CorrelatedIntent ");
+    }
+    if ((flags & STINGER_THREAD_FLAG_CORR_MEMORY) != 0) {
+        printf("IntentProcessMemory ");
+    }
+    if ((flags & STINGER_THREAD_FLAG_CORR_THREAD_CTX) != 0) {
+        printf("IntentThreadContext ");
+    }
+    if ((flags & STINGER_THREAD_FLAG_CORR_DUP_HANDLE) != 0) {
+        printf("IntentDupHandle ");
+    }
+    if ((flags & STINGER_THREAD_FLAG_START_REGION_EXEC) != 0) {
+        printf("StartRegionExec ");
     }
     printf("\n");
 }

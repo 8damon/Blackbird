@@ -40,6 +40,7 @@ static FAST_MUTEX g_ClientListLock;
 static LIST_ENTRY g_ClientList;
 static LONG g_ClientCount = 0;
 static volatile LONG g_ControlInitialized = 0;
+static volatile LONG g_ControlQueueDropLogCounter = 0;
 
 static
 BOOLEAN
@@ -123,10 +124,22 @@ STINGERClientEnqueueEvent(
 )
 {
     PSTINGER_EVENT_NODE node;
+    LONG dropLogCounter;
 
     node = (PSTINGER_EVENT_NODE)ExAllocatePool2(POOL_FLAG_NON_PAGED, sizeof(*node), STINGER_POOL_TAG);
     if (node == NULL) {
         Client->DroppedEvents += 1;
+        dropLogCounter = InterlockedIncrement(&g_ControlQueueDropLogCounter);
+        if (dropLogCounter == 1 || ((dropLogCounter & 0xFF) == 0)) {
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_WARNING_LEVEL,
+                "STINGER: queue drop (alloc failure) totalDrops=%lu clientDrops=%u queueDepth=%u.\n",
+                (ULONG)dropLogCounter,
+                Client->DroppedEvents,
+                Client->QueueDepth
+            );
+        }
         return;
     }
 
@@ -139,6 +152,18 @@ STINGERClientEnqueueEvent(
         ExFreePoolWithTag(oldNode, STINGER_POOL_TAG);
         Client->QueueDepth -= 1;
         Client->DroppedEvents += 1;
+        dropLogCounter = InterlockedIncrement(&g_ControlQueueDropLogCounter);
+        if (dropLogCounter == 1 || ((dropLogCounter & 0xFF) == 0)) {
+            DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID,
+                DPFLTR_WARNING_LEVEL,
+                "STINGER: queue drop (depth cap=%lu) totalDrops=%lu clientDrops=%u queueDepth=%u.\n",
+                STINGER_MAX_CLIENT_QUEUE_DEPTH,
+                (ULONG)dropLogCounter,
+                Client->DroppedEvents,
+                Client->QueueDepth
+            );
+        }
     }
 
     InsertTailList(&Client->EventQueue, &node->Link);

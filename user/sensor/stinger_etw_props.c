@@ -70,6 +70,29 @@ STINGERGetU32Property(
 }
 
 BOOL
+STINGERGetU8Property(
+    _In_ PEVENT_RECORD Record,
+    _In_z_ PCWSTR Name,
+    _Out_ UCHAR* Value
+)
+{
+    PBYTE raw = NULL;
+    ULONG size = 0;
+
+    *Value = 0;
+    if (!STINGERGetPropertyRaw(Record, Name, &raw, &size)) {
+        return FALSE;
+    }
+    if (size >= sizeof(UCHAR)) {
+        *Value = *(UCHAR*)raw;
+        free(raw);
+        return TRUE;
+    }
+    free(raw);
+    return FALSE;
+}
+
+BOOL
 STINGERGetI32Property(
     _In_ PEVENT_RECORD Record,
     _In_z_ PCWSTR Name,

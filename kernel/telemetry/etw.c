@@ -137,6 +137,13 @@ STINGEREtwLogThreadEvent(
     _In_ BOOLEAN GotRange,
     _In_ BOOLEAN IsRemoteCreator,
     _In_ BOOLEAN OutsideMainImage,
+    _In_ UINT32 CorrelationFlags,
+    _In_ UINT32 CorrelationAccessMask,
+    _In_ UINT32 CorrelationAgeMs,
+    _In_ ULONG StartRegionProtect,
+    _In_ ULONG StartRegionState,
+    _In_ ULONG StartRegionType,
+    _In_ NTSTATUS StartRegionStatus,
     _In_ ULONG WorkerFrameCount,
     _In_reads_opt_(WorkerFrameCount) PVOID const* WorkerFrames
 )
@@ -170,6 +177,13 @@ STINGEREtwLogThreadEvent(
         TraceLoggingBool(GotRange, "gotRange"),
         TraceLoggingBool(IsRemoteCreator, "isRemoteCreator"),
         TraceLoggingBool(OutsideMainImage, "outsideMainImage"),
+        TraceLoggingHexUInt32(CorrelationFlags, "correlationFlags"),
+        TraceLoggingHexUInt32(CorrelationAccessMask, "correlationAccessMask"),
+        TraceLoggingUInt32(CorrelationAgeMs, "correlationAgeMs"),
+        TraceLoggingHexUInt32(StartRegionProtect, "startRegionProtect"),
+        TraceLoggingHexUInt32(StartRegionState, "startRegionState"),
+        TraceLoggingHexUInt32(StartRegionType, "startRegionType"),
+        TraceLoggingHexInt32((LONG)StartRegionStatus, "startRegionStatus"),
         TraceLoggingUInt32(safeFrameCount, "workerFrameCount"),
         TraceLoggingPointer(safeFrames[0], "stack0"),
         TraceLoggingPointer(safeFrames[1], "stack1"),
@@ -179,5 +193,159 @@ STINGEREtwLogThreadEvent(
         TraceLoggingPointer(safeFrames[5], "stack5"),
         TraceLoggingPointer(safeFrames[6], "stack6"),
         TraceLoggingPointer(safeFrames[7], "stack7")
+    );
+}
+
+VOID
+STINGEREtwLogProcessEvent(
+    _In_ HANDLE ProcessId,
+    _In_ HANDLE ParentProcessId,
+    _In_ HANDLE CreatorProcessId,
+    _In_ HANDLE CreatorThreadId,
+    _In_ ULONGLONG ProcessStartKey,
+    _In_ ULONG SessionId,
+    _In_ BOOLEAN IsCreate,
+    _In_ NTSTATUS CreateStatus,
+    _In_opt_z_ PCWSTR ImagePath,
+    _In_opt_z_ PCWSTR CommandLine
+)
+{
+    PCWSTR safeImagePath;
+    PCWSTR safeCommandLine;
+
+    if (!STINGEREtwIsStarted()) {
+        return;
+    }
+
+    safeImagePath = (ImagePath != NULL) ? ImagePath : L"";
+    safeCommandLine = (CommandLine != NULL) ? CommandLine : L"";
+
+    TraceLoggingWrite(
+        g_StingerEtwProvider,
+        "ProcessTelemetry",
+        TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+        TraceLoggingBool(IsCreate, "isCreate"),
+        TraceLoggingHexInt32((LONG)CreateStatus, "createStatus"),
+        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
+        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ParentProcessId, "parentProcessId"),
+        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CreatorProcessId, "creatorProcessId"),
+        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CreatorThreadId, "creatorThreadId"),
+        TraceLoggingHexUInt64(ProcessStartKey, "processStartKey"),
+        TraceLoggingUInt32(SessionId, "sessionId"),
+        TraceLoggingWideString(safeImagePath, "imagePath"),
+        TraceLoggingWideString(safeCommandLine, "commandLine")
+    );
+}
+
+VOID
+STINGEREtwLogImageLoadEvent(
+    _In_ HANDLE ProcessId,
+    _In_ PVOID ImageBase,
+    _In_ SIZE_T ImageSize,
+    _In_ BOOLEAN IsSystemModeImage,
+    _In_ BOOLEAN IsSignatureLevelKnown,
+    _In_ UCHAR SignatureLevel,
+    _In_ UCHAR SignatureType,
+    _In_opt_z_ PCWSTR ImagePath
+)
+{
+    PCWSTR safePath;
+
+    if (!STINGEREtwIsStarted()) {
+        return;
+    }
+
+    safePath = (ImagePath != NULL) ? ImagePath : L"";
+
+    TraceLoggingWrite(
+        g_StingerEtwProvider,
+        "ImageTelemetry",
+        TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
+        TraceLoggingPointer(ImageBase, "imageBase"),
+        TraceLoggingUInt64((ULONGLONG)ImageSize, "imageSize"),
+        TraceLoggingBool(IsSystemModeImage, "isSystemModeImage"),
+        TraceLoggingBool(IsSignatureLevelKnown, "isSignatureLevelKnown"),
+        TraceLoggingUInt8(SignatureLevel, "signatureLevel"),
+        TraceLoggingUInt8(SignatureType, "signatureType"),
+        TraceLoggingWideString(safePath, "imagePath")
+    );
+}
+
+VOID
+STINGEREtwLogRegistryEvent(
+    _In_z_ PCSTR Operation,
+    _In_ HANDLE ProcessId,
+    _In_ ULONG SessionId,
+    _In_ ULONG NotifyClass,
+    _In_ ULONG DataType,
+    _In_ ULONG DataSize,
+    _In_ BOOLEAN IsHighValuePath,
+    _In_opt_z_ PCWSTR KeyPath,
+    _In_opt_z_ PCWSTR ValueName
+)
+{
+    PCSTR safeOperation;
+    PCWSTR safeKeyPath;
+    PCWSTR safeValueName;
+
+    if (!STINGEREtwIsStarted()) {
+        return;
+    }
+
+    safeOperation = (Operation != NULL) ? Operation : "UNKNOWN";
+    safeKeyPath = (KeyPath != NULL) ? KeyPath : L"";
+    safeValueName = (ValueName != NULL) ? ValueName : L"";
+
+    TraceLoggingWrite(
+        g_StingerEtwProvider,
+        "RegistryTelemetry",
+        TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+        TraceLoggingString(safeOperation, "operation"),
+        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
+        TraceLoggingUInt32(SessionId, "sessionId"),
+        TraceLoggingUInt32(NotifyClass, "notifyClass"),
+        TraceLoggingUInt32(DataType, "dataType"),
+        TraceLoggingUInt32(DataSize, "dataSize"),
+        TraceLoggingBool(IsHighValuePath, "isHighValuePath"),
+        TraceLoggingWideString(safeKeyPath, "keyPath"),
+        TraceLoggingWideString(safeValueName, "valueName")
+    );
+}
+
+VOID
+STINGEREtwLogDetectionEvent(
+    _In_z_ PCSTR DetectionName,
+    _In_ ULONG Severity,
+    _In_ HANDLE ProcessId,
+    _In_ HANDLE TargetPid,
+    _In_ UINT32 CorrelationFlags,
+    _In_ UINT32 CorrelationAccessMask,
+    _In_ UINT32 CorrelationAgeMs,
+    _In_opt_z_ PCWSTR Reason
+)
+{
+    PCSTR safeName;
+    PCWSTR safeReason;
+
+    if (!STINGEREtwIsStarted()) {
+        return;
+    }
+
+    safeName = (DetectionName != NULL) ? DetectionName : "UNKNOWN";
+    safeReason = (Reason != NULL) ? Reason : L"";
+
+    TraceLoggingWrite(
+        g_StingerEtwProvider,
+        "DetectionTelemetry",
+        TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+        TraceLoggingString(safeName, "detectionName"),
+        TraceLoggingUInt32(Severity, "severity"),
+        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
+        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)TargetPid, "targetPid"),
+        TraceLoggingHexUInt32(CorrelationFlags, "correlationFlags"),
+        TraceLoggingHexUInt32(CorrelationAccessMask, "correlationAccessMask"),
+        TraceLoggingUInt32(CorrelationAgeMs, "correlationAgeMs"),
+        TraceLoggingWideString(safeReason, "reason")
     );
 }

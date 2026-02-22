@@ -10,6 +10,10 @@
 #define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
 #endif
 
+#define STINGER_INTENT_PROCESS_MEMORY 0x00000001
+#define STINGER_INTENT_THREAD_CONTEXT 0x00000002
+#define STINGER_INTENT_DUP_HANDLE     0x00000004
+
 typedef struct _ACCESS_NAME_ENTRY {
     DWORD Mask;
     PCWSTR Name;
@@ -137,6 +141,79 @@ FormatProtect(
 }
 
 static void
+FormatMemState(
+    _In_ ULONG State,
+    _Out_writes_z_(OutputChars) PWSTR Output,
+    _In_ size_t OutputChars
+)
+{
+    if (OutputChars == 0) {
+        return;
+    }
+
+    if (State == MEM_COMMIT) {
+        (void)StringCchCopyW(Output, OutputChars, L"COMMIT");
+    } else if (State == MEM_RESERVE) {
+        (void)StringCchCopyW(Output, OutputChars, L"RESERVE");
+    } else if (State == MEM_FREE) {
+        (void)StringCchCopyW(Output, OutputChars, L"FREE");
+    } else {
+        (void)StringCchPrintfW(Output, OutputChars, L"0x%08lX", State);
+    }
+}
+
+static void
+FormatMemType(
+    _In_ ULONG Type,
+    _Out_writes_z_(OutputChars) PWSTR Output,
+    _In_ size_t OutputChars
+)
+{
+    if (OutputChars == 0) {
+        return;
+    }
+
+    if (Type == MEM_IMAGE) {
+        (void)StringCchCopyW(Output, OutputChars, L"IMAGE");
+    } else if (Type == MEM_MAPPED) {
+        (void)StringCchCopyW(Output, OutputChars, L"MAPPED");
+    } else if (Type == MEM_PRIVATE) {
+        (void)StringCchCopyW(Output, OutputChars, L"PRIVATE");
+    } else {
+        (void)StringCchPrintfW(Output, OutputChars, L"0x%08lX", Type);
+    }
+}
+
+static void
+FormatCorrelationFlags(
+    _In_ ULONG Flags,
+    _Out_writes_z_(OutputChars) PWSTR Output,
+    _In_ size_t OutputChars
+)
+{
+    BOOL first = TRUE;
+
+    if (OutputChars == 0) {
+        return;
+    }
+    Output[0] = L'\0';
+
+    if ((Flags & STINGER_INTENT_PROCESS_MEMORY) != 0) {
+        AppendFlag(Output, OutputChars, L"ProcessMemory", &first);
+    }
+    if ((Flags & STINGER_INTENT_THREAD_CONTEXT) != 0) {
+        AppendFlag(Output, OutputChars, L"ThreadContext", &first);
+    }
+    if ((Flags & STINGER_INTENT_DUP_HANDLE) != 0) {
+        AppendFlag(Output, OutputChars, L"DuplicateHandle", &first);
+    }
+
+    if (first) {
+        (void)StringCchCopyW(Output, OutputChars, L"<none>");
+    }
+}
+
+static void
 FormatHandleClass(
     _In_z_ PCSTR EventClass,
     _Out_writes_z_(OutputChars) PWSTR Output,
@@ -193,6 +270,29 @@ FormatProcessImage(
         (void)StringCchPrintfW(Output, OutputChars, L"<pid:%llu image-unknown>", Pid);
     }
     CloseHandle(process);
+}
+
+static PCWSTR
+RegistryNotifyClassToString(
+    _In_ ULONG NotifyClass
+)
+{
+    switch (NotifyClass) {
+    case 4:
+        return L"RegNtPreCreateKey";
+    case 6:
+        return L"RegNtPreCreateKeyEx";
+    case 10:
+        return L"RegNtPreOpenKey";
+    case 12:
+        return L"RegNtPreOpenKeyEx";
+    case 22:
+        return L"RegNtPreSetValueKey";
+    case 24:
+        return L"RegNtPreDeleteValueKey";
+    default:
+        return L"Other";
+    }
 }
 
 static void
@@ -347,11 +447,22 @@ PrintThreadTelemetry(_In_ PEVENT_RECORD Record)
     BOOL gotRange = FALSE;
     BOOL isRemote = FALSE;
     BOOL outsideImage = FALSE;
+    ULONG correlationFlags = 0;
+    ULONG correlationAccessMask = 0;
+    ULONG correlationAgeMs = 0;
+    ULONG startRegionProtect = 0;
+    ULONG startRegionState = 0;
+    ULONG startRegionType = 0;
+    LONG startRegionStatus = 0;
     ULONG frameCount = 0;
     WCHAR startSym[768];
     WCHAR imageSym[768];
     WCHAR processImage[MAX_PATH];
     WCHAR creatorImage[MAX_PATH];
+    WCHAR corrFlagsText[128];
+    WCHAR startProtectText[64];
+    WCHAR startStateText[64];
+    WCHAR startTypeText[64];
 
     (void)STINGERGetU64Property(Record, L"processId", &processId);
     (void)STINGERGetU64Property(Record, L"threadId", &threadId);
@@ -363,12 +474,23 @@ PrintThreadTelemetry(_In_ PEVENT_RECORD Record)
     (void)STINGERGetBoolProperty(Record, L"gotRange", &gotRange);
     (void)STINGERGetBoolProperty(Record, L"isRemoteCreator", &isRemote);
     (void)STINGERGetBoolProperty(Record, L"outsideMainImage", &outsideImage);
+    (void)STINGERGetU32Property(Record, L"correlationFlags", &correlationFlags);
+    (void)STINGERGetU32Property(Record, L"correlationAccessMask", &correlationAccessMask);
+    (void)STINGERGetU32Property(Record, L"correlationAgeMs", &correlationAgeMs);
+    (void)STINGERGetU32Property(Record, L"startRegionProtect", &startRegionProtect);
+    (void)STINGERGetU32Property(Record, L"startRegionState", &startRegionState);
+    (void)STINGERGetU32Property(Record, L"startRegionType", &startRegionType);
+    (void)STINGERGetI32Property(Record, L"startRegionStatus", &startRegionStatus);
     (void)STINGERGetU32Property(Record, L"workerFrameCount", &frameCount);
 
     STINGEREtwSymbolsFormatAddress(startAddress, startSym, RTL_NUMBER_OF(startSym));
     STINGEREtwSymbolsFormatAddress(imageBase, imageSym, RTL_NUMBER_OF(imageSym));
     FormatProcessImage(processId, processImage, RTL_NUMBER_OF(processImage));
     FormatProcessImage(creatorPid, creatorImage, RTL_NUMBER_OF(creatorImage));
+    FormatCorrelationFlags(correlationFlags, corrFlagsText, RTL_NUMBER_OF(corrFlagsText));
+    FormatProtect(startRegionProtect, startProtectText, RTL_NUMBER_OF(startProtectText));
+    FormatMemState(startRegionState, startStateText, RTL_NUMBER_OF(startStateText));
+    FormatMemType(startRegionType, startTypeText, RTL_NUMBER_OF(startTypeText));
 
     wprintf(L"\n[THREAD] pid=%016llX tid=%016llX creator=%016llX\n", processId, threadId, creatorPid);
     PrintHeaderMetadata(Record, L"ThreadTelemetry");
@@ -392,11 +514,221 @@ PrintThreadTelemetry(_In_ PEVENT_RECORD Record)
         imageSym,
         imageSize
     );
+    wprintf(
+        L"Corr   flags=0x%08lX (%ls) access=0x%08lX ageMs=%lu\n",
+        correlationFlags,
+        corrFlagsText,
+        correlationAccessMask,
+        correlationAgeMs
+    );
+    wprintf(
+        L"StartR status=%hs(0x%08X) protect=0x%08lX (%ls) state=%ls type=%ls\n",
+        NT_SUCCESS(startRegionStatus) ? "SUCCESS" : "FAIL",
+        (ULONG)startRegionStatus,
+        startRegionProtect,
+        startProtectText,
+        startStateText,
+        startTypeText
+    );
     wprintf(L"Stack  frames=%lu\n", frameCount);
     PrintStack(Record, frameCount);
     if (outsideImage) {
         wprintf(L"Alert  thread start is outside main image range\n");
     }
+    if (correlationFlags != 0) {
+        wprintf(L"Alert  thread event has recent handle-intent correlation\n");
+    }
+}
+
+static void
+PrintProcessTelemetry(_In_ PEVENT_RECORD Record)
+{
+    BOOL isCreate = FALSE;
+    LONG createStatus = 0;
+    ULONGLONG processId = 0;
+    ULONGLONG parentPid = 0;
+    ULONGLONG creatorPid = 0;
+    ULONGLONG creatorTid = 0;
+    ULONGLONG startKey = 0;
+    ULONG sessionId = 0;
+    WCHAR imagePath[1024];
+    WCHAR commandLine[1024];
+
+    imagePath[0] = L'\0';
+    commandLine[0] = L'\0';
+
+    (void)STINGERGetBoolProperty(Record, L"isCreate", &isCreate);
+    (void)STINGERGetI32Property(Record, L"createStatus", &createStatus);
+    (void)STINGERGetU64Property(Record, L"processId", &processId);
+    (void)STINGERGetU64Property(Record, L"parentProcessId", &parentPid);
+    (void)STINGERGetU64Property(Record, L"creatorProcessId", &creatorPid);
+    (void)STINGERGetU64Property(Record, L"creatorThreadId", &creatorTid);
+    (void)STINGERGetU64Property(Record, L"processStartKey", &startKey);
+    (void)STINGERGetU32Property(Record, L"sessionId", &sessionId);
+    (void)STINGERGetWideProperty(Record, L"imagePath", imagePath, RTL_NUMBER_OF(imagePath));
+    (void)STINGERGetWideProperty(Record, L"commandLine", commandLine, RTL_NUMBER_OF(commandLine));
+
+    wprintf(
+        L"\n[PROCESS] %ls pid=%016llX parent=%016llX creator=%016llX/%016llX session=%lu\n",
+        isCreate ? L"CREATE" : L"EXIT",
+        processId,
+        parentPid,
+        creatorPid,
+        creatorTid,
+        sessionId
+    );
+    PrintHeaderMetadata(Record, L"ProcessTelemetry");
+    wprintf(
+        L"Status create=%hs(0x%08X) startKey=0x%016llX\n",
+        NT_SUCCESS(createStatus) ? "SUCCESS" : "FAIL",
+        (ULONG)createStatus,
+        startKey
+    );
+    wprintf(L"Image  %ls\n", imagePath[0] ? imagePath : L"<unknown>");
+    wprintf(L"Cmd    %ls\n", commandLine[0] ? commandLine : L"<none>");
+}
+
+static void
+PrintImageTelemetry(_In_ PEVENT_RECORD Record)
+{
+    ULONGLONG processId = 0;
+    ULONGLONG imageBase = 0;
+    ULONGLONG imageSize = 0;
+    BOOL systemMode = FALSE;
+    BOOL sigKnown = FALSE;
+    UCHAR sigLevel = 0;
+    UCHAR sigType = 0;
+    WCHAR imagePath[1024];
+    WCHAR imageSym[768];
+    WCHAR processImage[MAX_PATH];
+
+    imagePath[0] = L'\0';
+
+    (void)STINGERGetU64Property(Record, L"processId", &processId);
+    (void)STINGERGetU64Property(Record, L"imageBase", &imageBase);
+    (void)STINGERGetU64Property(Record, L"imageSize", &imageSize);
+    (void)STINGERGetBoolProperty(Record, L"isSystemModeImage", &systemMode);
+    (void)STINGERGetBoolProperty(Record, L"isSignatureLevelKnown", &sigKnown);
+    (void)STINGERGetU8Property(Record, L"signatureLevel", &sigLevel);
+    (void)STINGERGetU8Property(Record, L"signatureType", &sigType);
+    (void)STINGERGetWideProperty(Record, L"imagePath", imagePath, RTL_NUMBER_OF(imagePath));
+
+    STINGEREtwSymbolsFormatAddress(imageBase, imageSym, RTL_NUMBER_OF(imageSym));
+    FormatProcessImage(processId, processImage, RTL_NUMBER_OF(processImage));
+
+    wprintf(L"\n[IMAGE] pid=%016llX base=0x%016llX size=0x%llX\n", processId, imageBase, imageSize);
+    PrintHeaderMetadata(Record, L"ImageTelemetry");
+    wprintf(L"Actor  processImage=%ls\n", processImage);
+    wprintf(L"Image  path=%ls\n", imagePath[0] ? imagePath : L"<unknown>");
+    wprintf(L"       symbol=%ls\n", imageSym);
+    wprintf(
+        L"Trust  systemMode=%u sigKnown=%u sigLevel=%u sigType=%u\n",
+        systemMode ? 1 : 0,
+        sigKnown ? 1 : 0,
+        (unsigned)sigLevel,
+        (unsigned)sigType
+    );
+}
+
+static void
+PrintRegistryTelemetry(_In_ PEVENT_RECORD Record)
+{
+    CHAR operation[64];
+    ULONGLONG processId = 0;
+    ULONG sessionId = 0;
+    ULONG notifyClass = 0;
+    ULONG dataType = 0;
+    ULONG dataSize = 0;
+    BOOL highValue = FALSE;
+    WCHAR keyPath[1024];
+    WCHAR valueName[256];
+    WCHAR processImage[MAX_PATH];
+
+    operation[0] = '\0';
+    keyPath[0] = L'\0';
+    valueName[0] = L'\0';
+
+    (void)STINGERGetAnsiProperty(Record, L"operation", operation, RTL_NUMBER_OF(operation));
+    (void)STINGERGetU64Property(Record, L"processId", &processId);
+    (void)STINGERGetU32Property(Record, L"sessionId", &sessionId);
+    (void)STINGERGetU32Property(Record, L"notifyClass", &notifyClass);
+    (void)STINGERGetU32Property(Record, L"dataType", &dataType);
+    (void)STINGERGetU32Property(Record, L"dataSize", &dataSize);
+    (void)STINGERGetBoolProperty(Record, L"isHighValuePath", &highValue);
+    (void)STINGERGetWideProperty(Record, L"keyPath", keyPath, RTL_NUMBER_OF(keyPath));
+    (void)STINGERGetWideProperty(Record, L"valueName", valueName, RTL_NUMBER_OF(valueName));
+
+    FormatProcessImage(processId, processImage, RTL_NUMBER_OF(processImage));
+
+    wprintf(
+        L"\n[REGISTRY] op=%S pid=%016llX session=%lu class=%ls(%lu)\n",
+        operation[0] ? operation : "OTHER",
+        processId,
+        sessionId,
+        RegistryNotifyClassToString(notifyClass),
+        notifyClass
+    );
+    PrintHeaderMetadata(Record, L"RegistryTelemetry");
+    wprintf(L"Actor  processImage=%ls\n", processImage);
+    wprintf(L"Path   %ls\n", keyPath[0] ? keyPath : L"<unknown>");
+    wprintf(L"Value  %ls\n", valueName[0] ? valueName : L"<none>");
+    wprintf(
+        L"Data   type=%lu size=%lu highValue=%u\n",
+        dataType,
+        dataSize,
+        highValue ? 1 : 0
+    );
+}
+
+static void
+PrintDetectionTelemetry(_In_ PEVENT_RECORD Record)
+{
+    CHAR detectionName[128];
+    ULONG severity = 0;
+    ULONGLONG processId = 0;
+    ULONGLONG targetPid = 0;
+    ULONG correlationFlags = 0;
+    ULONG correlationAccessMask = 0;
+    ULONG correlationAgeMs = 0;
+    WCHAR reason[1024];
+    WCHAR corrFlagsText[128];
+    WCHAR processImage[MAX_PATH];
+    WCHAR targetImage[MAX_PATH];
+
+    detectionName[0] = '\0';
+    reason[0] = L'\0';
+
+    (void)STINGERGetAnsiProperty(Record, L"detectionName", detectionName, RTL_NUMBER_OF(detectionName));
+    (void)STINGERGetU32Property(Record, L"severity", &severity);
+    (void)STINGERGetU64Property(Record, L"processId", &processId);
+    (void)STINGERGetU64Property(Record, L"targetPid", &targetPid);
+    (void)STINGERGetU32Property(Record, L"correlationFlags", &correlationFlags);
+    (void)STINGERGetU32Property(Record, L"correlationAccessMask", &correlationAccessMask);
+    (void)STINGERGetU32Property(Record, L"correlationAgeMs", &correlationAgeMs);
+    (void)STINGERGetWideProperty(Record, L"reason", reason, RTL_NUMBER_OF(reason));
+
+    FormatCorrelationFlags(correlationFlags, corrFlagsText, RTL_NUMBER_OF(corrFlagsText));
+    FormatProcessImage(processId, processImage, RTL_NUMBER_OF(processImage));
+    FormatProcessImage(targetPid, targetImage, RTL_NUMBER_OF(targetImage));
+
+    wprintf(
+        L"\n[DETECTION] name=%S severity=%lu pid=%016llX target=%016llX\n",
+        detectionName[0] ? detectionName : "UNKNOWN",
+        severity,
+        processId,
+        targetPid
+    );
+    PrintHeaderMetadata(Record, L"DetectionTelemetry");
+    wprintf(L"Actor  processImage=%ls\n", processImage);
+    wprintf(L"       targetImage=%ls\n", targetImage);
+    wprintf(
+        L"Corr   flags=0x%08lX (%ls) access=0x%08lX ageMs=%lu\n",
+        correlationFlags,
+        corrFlagsText,
+        correlationAccessMask,
+        correlationAgeMs
+    );
+    wprintf(L"Reason %ls\n", reason[0] ? reason : L"<none>");
 }
 
 void
@@ -417,4 +749,23 @@ STINGERPrintEtwRecord(
         PrintThreadTelemetry(Record);
         return;
     }
+    if (wcscmp(EventName, L"ProcessTelemetry") == 0) {
+        PrintProcessTelemetry(Record);
+        return;
+    }
+    if (wcscmp(EventName, L"ImageTelemetry") == 0) {
+        PrintImageTelemetry(Record);
+        return;
+    }
+    if (wcscmp(EventName, L"RegistryTelemetry") == 0) {
+        PrintRegistryTelemetry(Record);
+        return;
+    }
+    if (wcscmp(EventName, L"DetectionTelemetry") == 0) {
+        PrintDetectionTelemetry(Record);
+        return;
+    }
+
+    wprintf(L"\n[ETW] event=%ls (no formatter)\n", EventName);
+    PrintHeaderMetadata(Record, EventName);
 }

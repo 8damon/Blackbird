@@ -1,0 +1,319 @@
+#include <ntddk.h>
+#include "correlation.h"
+
+#define STINGER_CORRELATION_RING_SIZE 256
+
+typedef struct _STINGER_INTENT_ENTRY {
+    UINT64 CallerPid;
+    UINT64 TargetPid;
+    UINT32 AccessMask;
+    UINT32 IntentFlags;
+    INT64 TimestampQpc;
+} STINGER_INTENT_ENTRY, *PSTINGER_INTENT_ENTRY;
+
+static STINGER_INTENT_ENTRY g_IntentRing[STINGER_CORRELATION_RING_SIZE];
+static volatile LONG g_IntentWriteIndex = -1;
+static KSPIN_LOCK g_IntentLock;
+static volatile LONG g_CorrelationInitialized = 0;
+
+static
+UINT32
+STINGERCorrelationQpcDeltaToMs(
+    _In_ INT64 DeltaQpc
+)
+{
+    LARGE_INTEGER freq;
+    ULONGLONG freqValue;
+    ULONGLONG deltaValue;
+
+    if (DeltaQpc <= 0) {
+        return 0;
+    }
+
+    freq = KeQueryPerformanceCounter(NULL);
+    freqValue = (ULONGLONG)freq.QuadPart;
+    if (freqValue == 0) {
+        return 0;
+    }
+
+    deltaValue = (ULONGLONG)DeltaQpc;
+    return (UINT32)((deltaValue * 1000ULL) / freqValue);
+}
+
+NTSTATUS
+STINGERCorrelationInitialize(
+    VOID
+)
+{
+    if (InterlockedCompareExchange(&g_CorrelationInitialized, 1, 0) != 0) {
+        return STATUS_SUCCESS;
+    }
+
+    KeInitializeSpinLock(&g_IntentLock);
+    RtlZeroMemory(g_IntentRing, sizeof(g_IntentRing));
+    InterlockedExchange(&g_IntentWriteIndex, -1);
+    return STATUS_SUCCESS;
+}
+
+VOID
+STINGERCorrelationUninitialize(
+    VOID
+)
+{
+    if (InterlockedExchange(&g_CorrelationInitialized, 0) == 0) {
+        return;
+    }
+
+    RtlZeroMemory(g_IntentRing, sizeof(g_IntentRing));
+    InterlockedExchange(&g_IntentWriteIndex, -1);
+}
+
+VOID
+STINGERCorrelationRecordHandleIntent(
+    _In_ HANDLE CallerPid,
+    _In_ HANDLE TargetPid,
+    _In_ ACCESS_MASK AccessMask,
+    _In_ UINT32 IntentFlags
+)
+{
+    LONG idx;
+    KIRQL oldIrql;
+
+    if (InterlockedCompareExchange(&g_CorrelationInitialized, 0, 0) == 0) {
+        return;
+    }
+
+    idx = InterlockedIncrement(&g_IntentWriteIndex);
+    idx = idx % STINGER_CORRELATION_RING_SIZE;
+    if (idx < 0) {
+        idx += STINGER_CORRELATION_RING_SIZE;
+    }
+
+    KeAcquireSpinLock(&g_IntentLock, &oldIrql);
+    g_IntentRing[idx].CallerPid = (UINT64)(ULONG_PTR)CallerPid;
+    g_IntentRing[idx].TargetPid = (UINT64)(ULONG_PTR)TargetPid;
+    g_IntentRing[idx].AccessMask = (UINT32)AccessMask;
+    g_IntentRing[idx].IntentFlags = IntentFlags;
+    g_IntentRing[idx].TimestampQpc = KeQueryPerformanceCounter(NULL).QuadPart;
+    KeReleaseSpinLock(&g_IntentLock, oldIrql);
+}
+
+BOOLEAN
+STINGERCorrelationQueryRecentIntent(
+    _In_ HANDLE CallerPid,
+    _In_ HANDLE TargetPid,
+    _In_ UINT32 WindowMs,
+    _Out_opt_ UINT32* IntentFlags,
+    _Out_opt_ UINT32* AccessMask,
+    _Out_opt_ UINT32* AgeMs
+)
+{
+    UINT64 caller = (UINT64)(ULONG_PTR)CallerPid;
+    UINT64 target = (UINT64)(ULONG_PTR)TargetPid;
+    INT64 nowQpc = KeQueryPerformanceCounter(NULL).QuadPart;
+    INT64 newestDeltaQpc = MAXLONGLONG;
+    UINT32 aggregateIntentFlags = 0;
+    UINT32 aggregateAccessMask = 0;
+    UINT32 i;
+    BOOLEAN found = FALSE;
+    KIRQL oldIrql;
+
+    if (IntentFlags != NULL) {
+        *IntentFlags = 0;
+    }
+    if (AccessMask != NULL) {
+        *AccessMask = 0;
+    }
+    if (AgeMs != NULL) {
+        *AgeMs = 0;
+    }
+
+    if (InterlockedCompareExchange(&g_CorrelationInitialized, 0, 0) == 0) {
+        return FALSE;
+    }
+
+    KeAcquireSpinLock(&g_IntentLock, &oldIrql);
+    for (i = 0; i < STINGER_CORRELATION_RING_SIZE; ++i) {
+        INT64 deltaQpc;
+        UINT32 deltaMs;
+
+        if (g_IntentRing[i].TimestampQpc == 0) {
+            continue;
+        }
+        if (g_IntentRing[i].CallerPid != caller || g_IntentRing[i].TargetPid != target) {
+            continue;
+        }
+
+        deltaQpc = nowQpc - g_IntentRing[i].TimestampQpc;
+        if (deltaQpc < 0) {
+            continue;
+        }
+
+        deltaMs = STINGERCorrelationQpcDeltaToMs(deltaQpc);
+        if (deltaMs > WindowMs) {
+            continue;
+        }
+
+        found = TRUE;
+        aggregateIntentFlags |= g_IntentRing[i].IntentFlags;
+        aggregateAccessMask |= g_IntentRing[i].AccessMask;
+        if (deltaQpc < newestDeltaQpc) {
+            newestDeltaQpc = deltaQpc;
+        }
+    }
+    KeReleaseSpinLock(&g_IntentLock, oldIrql);
+
+    if (!found) {
+        return FALSE;
+    }
+
+    if (IntentFlags != NULL) {
+        *IntentFlags = aggregateIntentFlags;
+    }
+    if (AccessMask != NULL) {
+        *AccessMask = aggregateAccessMask;
+    }
+    if (AgeMs != NULL) {
+        *AgeMs = STINGERCorrelationQpcDeltaToMs(newestDeltaQpc);
+    }
+    return TRUE;
+}
+
+BOOLEAN
+STINGERCorrelationQueryRecentIntentForTarget(
+    _In_ HANDLE TargetPid,
+    _In_ UINT32 WindowMs,
+    _In_ BOOLEAN PreferExternalCaller,
+    _Out_opt_ HANDLE* CallerPid,
+    _Out_opt_ UINT32* IntentFlags,
+    _Out_opt_ UINT32* AccessMask,
+    _Out_opt_ UINT32* AgeMs
+)
+{
+    UINT64 target = (UINT64)(ULONG_PTR)TargetPid;
+    INT64 nowQpc = KeQueryPerformanceCounter(NULL).QuadPart;
+    INT64 bestDeltaQpcAny = MAXLONGLONG;
+    UINT64 bestCallerAny = 0;
+    BOOLEAN foundAny = FALSE;
+    INT64 bestDeltaQpcExternal = MAXLONGLONG;
+    UINT64 bestCallerExternal = 0;
+    BOOLEAN foundExternal = FALSE;
+    UINT64 selectedCaller = 0;
+    INT64 newestDeltaQpc = MAXLONGLONG;
+    UINT32 aggregateIntentFlags = 0;
+    UINT32 aggregateAccessMask = 0;
+    UINT32 i;
+    KIRQL oldIrql;
+
+    if (CallerPid != NULL) {
+        *CallerPid = NULL;
+    }
+    if (IntentFlags != NULL) {
+        *IntentFlags = 0;
+    }
+    if (AccessMask != NULL) {
+        *AccessMask = 0;
+    }
+    if (AgeMs != NULL) {
+        *AgeMs = 0;
+    }
+
+    if (InterlockedCompareExchange(&g_CorrelationInitialized, 0, 0) == 0) {
+        return FALSE;
+    }
+
+    KeAcquireSpinLock(&g_IntentLock, &oldIrql);
+    for (i = 0; i < STINGER_CORRELATION_RING_SIZE; ++i) {
+        INT64 deltaQpc;
+        UINT32 deltaMs;
+        BOOLEAN isExternal;
+
+        if (g_IntentRing[i].TimestampQpc == 0) {
+            continue;
+        }
+        if (g_IntentRing[i].TargetPid != target) {
+            continue;
+        }
+
+        deltaQpc = nowQpc - g_IntentRing[i].TimestampQpc;
+        if (deltaQpc < 0) {
+            continue;
+        }
+
+        deltaMs = STINGERCorrelationQpcDeltaToMs(deltaQpc);
+        if (deltaMs > WindowMs) {
+            continue;
+        }
+
+        if (deltaQpc < bestDeltaQpcAny) {
+            bestDeltaQpcAny = deltaQpc;
+            bestCallerAny = g_IntentRing[i].CallerPid;
+            foundAny = TRUE;
+        }
+
+        isExternal = (g_IntentRing[i].CallerPid != g_IntentRing[i].TargetPid);
+        if (isExternal && deltaQpc < bestDeltaQpcExternal) {
+            bestDeltaQpcExternal = deltaQpc;
+            bestCallerExternal = g_IntentRing[i].CallerPid;
+            foundExternal = TRUE;
+        }
+    }
+
+    if (PreferExternalCaller && foundExternal) {
+        selectedCaller = bestCallerExternal;
+    } else if (foundAny) {
+        selectedCaller = bestCallerAny;
+    } else {
+        selectedCaller = 0;
+    }
+
+    if (selectedCaller != 0) {
+        for (i = 0; i < STINGER_CORRELATION_RING_SIZE; ++i) {
+            INT64 deltaQpc;
+            UINT32 deltaMs;
+
+            if (g_IntentRing[i].TimestampQpc == 0) {
+                continue;
+            }
+            if (g_IntentRing[i].TargetPid != target || g_IntentRing[i].CallerPid != selectedCaller) {
+                continue;
+            }
+
+            deltaQpc = nowQpc - g_IntentRing[i].TimestampQpc;
+            if (deltaQpc < 0) {
+                continue;
+            }
+
+            deltaMs = STINGERCorrelationQpcDeltaToMs(deltaQpc);
+            if (deltaMs > WindowMs) {
+                continue;
+            }
+
+            aggregateIntentFlags |= g_IntentRing[i].IntentFlags;
+            aggregateAccessMask |= g_IntentRing[i].AccessMask;
+            if (deltaQpc < newestDeltaQpc) {
+                newestDeltaQpc = deltaQpc;
+            }
+            foundAny = TRUE;
+        }
+    }
+    KeReleaseSpinLock(&g_IntentLock, oldIrql);
+
+    if (!foundAny || selectedCaller == 0) {
+        return FALSE;
+    }
+
+    if (CallerPid != NULL) {
+        *CallerPid = (HANDLE)(ULONG_PTR)selectedCaller;
+    }
+    if (IntentFlags != NULL) {
+        *IntentFlags = aggregateIntentFlags;
+    }
+    if (AccessMask != NULL) {
+        *AccessMask = aggregateAccessMask;
+    }
+    if (AgeMs != NULL) {
+        *AgeMs = STINGERCorrelationQpcDeltaToMs(newestDeltaQpc);
+    }
+    return TRUE;
+}

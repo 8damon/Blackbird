@@ -6,6 +6,10 @@
   <img src="https://img.shields.io/badge/Framework-KMDF-0A0A0A?style=for-the-badge" />
 </p>
 
+<p align="center">
+  <img src="./diagram/Stinger_KM_Telemetry_Arch.png" width="900" />
+</p>
+
 ## What Is Stinger?
 
 Stinger is a Windows kernel telemetry driver and companion user-mode tooling that captures high-value execution signals for malware analysis and threat triage.  
@@ -47,6 +51,7 @@ Stinger helps teams answer questions such as:
 4. Correlation logic links recent handle intent to later thread activity.
 5. Detection telemetry is emitted when heuristics indicate suspicious combinations.
 6. User-mode tools consume either:
+   - Shared client DLL (`StingerSensorCore`)
    - IOCTL queue (`StingerClient`, `StingerTestSuite`)
    - ETW stream (`StingerEtwProc`, `StingerTestSuite`)
 
@@ -72,11 +77,13 @@ Stinger helps teams answer questions such as:
 - `abi/`
   - `stinger_ioctl.h`: shared IOCTL ABI
 - `user/sensor/`
+  - `stinger_sensor_core.c/.h`: shared DLL exports for IOCTL + ETW session management
   - `stinger_client.c`: manual IOCTL subscriber
   - `stinger_ioctl_test.c`: `StingerTestSuite` source
   - `stinger_sensor.c`: ETW consumer (`StingerEtwProc`)
 - `vcxproj/`
   - `Stinger.vcxproj`: kernel driver
+  - `StingerSensorCore.vcxproj`: shared user-mode DLL (`StingerSensorCore.dll`)
   - `StingerClient.vcxproj`: IOCTL client
   - `StingerIoctlTest.vcxproj`: `StingerTestSuite` binary
   - `StingerEtwProc.vcxproj`: ETW consumer
@@ -87,6 +94,7 @@ Stinger helps teams answer questions such as:
 2. Build `vcxproj/Stinger.vcxproj` (`x64` or `ARM64` as needed).
 3. Install and start the driver.
 4. Build and run:
+   - `StingerSensorCore.dll` (built automatically by dependent projects)
    - `StingerTestSuite.exe` for end-to-end validation and coverage checks
    - `StingerClient.exe <pid> handle,memory,thread` for focused IOCTL consumption
    - `StingerEtwProc.exe` for enriched ETW output

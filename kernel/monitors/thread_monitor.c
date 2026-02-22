@@ -28,6 +28,10 @@
 #define PROCESS_VM_OPERATION 0x0008
 #endif
 
+#ifndef MEM_IMAGE
+#define MEM_IMAGE 0x01000000
+#endif
+
 typedef struct _MEMORY_BASIC_INFORMATION {
     PVOID  BaseAddress;
     PVOID  AllocationBase;
@@ -435,6 +439,8 @@ STINGERThreadWorkRoutine(_In_ PVOID Context)
     ULONG startRegionState = 0;
     ULONG startRegionType = 0;
     NTSTATUS startRegionStatus = STATUS_NOT_FOUND;
+    BOOLEAN startRegionExecutable = FALSE;
+    BOOLEAN startRegionNonImage = FALSE;
     BOOLEAN correlatedIntentFound;
     HANDLE creatorPidForTelemetry;
     HANDLE correlatedCallerPid = NULL;
@@ -470,6 +476,14 @@ STINGERThreadWorkRoutine(_In_ PVOID Context)
             &startRegionState,
             &startRegionType
         );
+    }
+    if (NT_SUCCESS(startRegionStatus)) {
+        startRegionExecutable =
+            ((startRegionProtect & PAGE_EXECUTE) != 0) ||
+            ((startRegionProtect & PAGE_EXECUTE_READ) != 0) ||
+            ((startRegionProtect & PAGE_EXECUTE_READWRITE) != 0) ||
+            ((startRegionProtect & PAGE_EXECUTE_WRITECOPY) != 0);
+        startRegionNonImage = (startRegionType != MEM_IMAGE);
     }
 
     creatorPidForTelemetry = w->CreatorProcessId;
@@ -514,6 +528,17 @@ STINGERThreadWorkRoutine(_In_ PVOID Context)
             correlationAgeMs,
             L"remote thread start outside image with recent handle intent"
         );
+    } else if (isRemoteCreator && startRegionExecutable && startRegionNonImage && correlatedIntentFound) {
+        STINGEREtwLogDetectionEvent(
+            "REMOTE_THREAD_START_IN_NON_IMAGE_EXECUTABLE_REGION",
+            4,
+            creatorPidForTelemetry,
+            w->ProcessId,
+            correlationFlags,
+            correlationAccessMask,
+            correlationAgeMs,
+            L"remote thread start address is executable but not backed by MEM_IMAGE with recent handle intent"
+        );
     } else if (isRemoteCreator && outsideMainImage) {
         STINGEREtwLogDetectionEvent(
             "REMOTE_THREAD_OUTSIDE_MAIN_IMAGE",
@@ -535,6 +560,23 @@ STINGERThreadWorkRoutine(_In_ PVOID Context)
             correlationAccessMask,
             correlationAgeMs,
             L"thread context-related handle intent observed before thread event"
+        );
+    }
+
+    if (correlatedIntentFound &&
+        ((correlationFlags & (STINGER_INTENT_PROCESS_MEMORY | STINGER_INTENT_THREAD_CONTEXT)) ==
+            (STINGER_INTENT_PROCESS_MEMORY | STINGER_INTENT_THREAD_CONTEXT)) &&
+        startRegionExecutable &&
+        startRegionNonImage) {
+        STINGEREtwLogDetectionEvent(
+            "POSSIBLE_MANUAL_MAP_OR_HOLLOWING_EXECUTION",
+            4,
+            creatorPidForTelemetry,
+            w->ProcessId,
+            correlationFlags,
+            correlationAccessMask,
+            correlationAgeMs,
+            L"thread execution observed from non-image executable region with process-memory and thread-context intent"
         );
     }
 

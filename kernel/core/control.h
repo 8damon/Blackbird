@@ -45,4 +45,9 @@ STINGERControlPublishThreadEvent(
     _In_reads_opt_(FrameCount) PVOID const* Frames
 );
 
+BOOLEAN
+STINGERControlSelfCheck(
+    VOID
+);
+
 #endif

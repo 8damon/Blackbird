@@ -26,6 +26,7 @@ typedef struct _STINGER_CLIENT {
     UINT32 QueueDepth;
     UINT32 DroppedEvents;
     UINT32 SubscriptionCount;
+    volatile LONG RefCount;
     STINGER_SUBSCRIPTION Subscriptions[STINGER_MAX_CLIENT_SUBSCRIPTIONS];
 } STINGER_CLIENT, *PSTINGER_CLIENT;
 
@@ -66,6 +67,31 @@ STINGERClientFreeQueuedEvents(
 }
 
 static
+VOID
+STINGERClientRelease(
+    _Inout_ PSTINGER_CLIENT Client
+)
+{
+    if (InterlockedDecrement(&Client->RefCount) != 0) {
+        return;
+    }
+
+    ExAcquireFastMutex(&Client->Lock);
+    STINGERClientFreeQueuedEvents(Client);
+    ExReleaseFastMutex(&Client->Lock);
+    ExFreePoolWithTag(Client, STINGER_POOL_TAG);
+}
+
+static
+VOID
+STINGERClientReference(
+    _Inout_ PSTINGER_CLIENT Client
+)
+{
+    (void)InterlockedIncrement(&Client->RefCount);
+}
+
+static
 PSTINGER_CLIENT
 STINGERClientCreate(
     VOID
@@ -81,19 +107,8 @@ STINGERClientCreate(
     RtlZeroMemory(client, sizeof(*client));
     InitializeListHead(&client->EventQueue);
     ExInitializeFastMutex(&client->Lock);
+    client->RefCount = 1;
     return client;
-}
-
-static
-VOID
-STINGERClientDestroy(
-    _Inout_ PSTINGER_CLIENT Client
-)
-{
-    ExAcquireFastMutex(&Client->Lock);
-    STINGERClientFreeQueuedEvents(Client);
-    ExReleaseFastMutex(&Client->Lock);
-    ExFreePoolWithTag(Client, STINGER_POOL_TAG);
 }
 
 static
@@ -178,6 +193,9 @@ STINGERPublishRecordToSubscribers(
     _In_ STINGER_EVENT_RECORD* Record
 )
 {
+    PSTINGER_CLIENT snapshot[STINGER_MAX_TOTAL_CLIENTS];
+    UINT32 snapshotCount = 0;
+    UINT32 i;
     PLIST_ENTRY e;
 
     if (InterlockedCompareExchange(&g_ControlInitialized, 0, 0) == 0) {
@@ -187,14 +205,24 @@ STINGERPublishRecordToSubscribers(
     ExAcquireFastMutex(&g_ClientListLock);
     for (e = g_ClientList.Flink; e != &g_ClientList; e = e->Flink) {
         PSTINGER_CLIENT c = CONTAINING_RECORD(e, STINGER_CLIENT, Link);
+        if (snapshotCount >= RTL_NUMBER_OF(snapshot)) {
+            break;
+        }
+        STINGERClientReference(c);
+        snapshot[snapshotCount++] = c;
+    }
+    ExReleaseFastMutex(&g_ClientListLock);
+
+    for (i = 0; i < snapshotCount; ++i) {
+        PSTINGER_CLIENT c = snapshot[i];
         ExAcquireFastMutex(&c->Lock);
         if (STINGERClientMatchSubscription(c, MatchPid, StreamMask)) {
             Record->Header.Sequence = ++c->Sequence;
             STINGERClientEnqueueEvent(c, Record);
         }
         ExReleaseFastMutex(&c->Lock);
+        STINGERClientRelease(c);
     }
-    ExReleaseFastMutex(&g_ClientListLock);
 }
 
 EVT_WDF_DEVICE_FILE_CREATE STINGEREvtFileCreate;
@@ -228,7 +256,7 @@ STINGEREvtFileCreate(
     ExAcquireFastMutex(&g_ClientListLock);
     if (g_ClientCount >= STINGER_MAX_TOTAL_CLIENTS) {
         ExReleaseFastMutex(&g_ClientListLock);
-        STINGERClientDestroy(client);
+        STINGERClientRelease(client);
         WdfRequestComplete(Request, STATUS_QUOTA_EXCEEDED);
         return;
     }
@@ -270,7 +298,7 @@ STINGEREvtFileCleanup(
     }
     ExReleaseFastMutex(&g_ClientListLock);
 
-    STINGERClientDestroy(client);
+    STINGERClientRelease(client);
     ctx->Client = NULL;
 }
 
@@ -386,6 +414,66 @@ STINGERHandleGetStatsIoctl(
 
 static
 NTSTATUS
+STINGERHandleSetPidsIoctl(
+    _In_ PSTINGER_CLIENT Client,
+    _In_ WDFREQUEST Request
+)
+{
+    NTSTATUS status;
+    PSTINGER_SET_PIDS_REQUEST in;
+    size_t inSize;
+    UINT32 i;
+    UINT32 streamMask;
+
+    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID*)&in, &inSize);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+    UNREFERENCED_PARAMETER(inSize);
+
+    streamMask = in->StreamMask;
+    if ((streamMask & (STINGER_STREAM_HANDLE | STINGER_STREAM_MEMORY | STINGER_STREAM_THREAD)) == 0) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (in->ProcessCount == 0 || in->ProcessCount > STINGER_MAX_PID_LIST) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    ExAcquireFastMutex(&Client->Lock);
+    Client->SubscriptionCount = 0;
+
+    for (i = 0; i < in->ProcessCount; ++i) {
+        UINT32 pid = in->ProcessIds[i];
+        UINT32 j;
+        BOOLEAN seen = FALSE;
+
+        if (pid == 0) {
+            continue;
+        }
+
+        for (j = 0; j < Client->SubscriptionCount; ++j) {
+            if (Client->Subscriptions[j].ProcessId == pid) {
+                Client->Subscriptions[j].StreamMask |= streamMask;
+                seen = TRUE;
+                break;
+            }
+        }
+
+        if (!seen && Client->SubscriptionCount < STINGER_MAX_CLIENT_SUBSCRIPTIONS) {
+            Client->Subscriptions[Client->SubscriptionCount].ProcessId = pid;
+            Client->Subscriptions[Client->SubscriptionCount].StreamMask = streamMask;
+            Client->SubscriptionCount += 1;
+        }
+    }
+
+    ExReleaseFastMutex(&Client->Lock);
+
+    return (Client->SubscriptionCount != 0) ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER;
+}
+
+static
+NTSTATUS
 STINGERHandleGetEventIoctl(
     _In_ PSTINGER_CLIENT Client,
     _In_ WDFREQUEST Request,
@@ -479,6 +567,9 @@ STINGEREvtIoDeviceControl(
         break;
     case IOCTL_STINGER_GET_STATS:
         status = STINGERHandleGetStatsIoctl(ctx->Client, Request, &bytesOut);
+        break;
+    case IOCTL_STINGER_SET_PIDS:
+        status = STINGERHandleSetPidsIoctl(ctx->Client, Request);
         break;
     default:
         status = STATUS_INVALID_DEVICE_REQUEST;
@@ -699,4 +790,30 @@ STINGERControlPublishThreadEvent(
     }
 
     STINGERPublishRecordToSubscribers((UINT32)ProcessId, STINGER_STREAM_THREAD, &record);
+}
+
+BOOLEAN
+STINGERControlSelfCheck(
+    VOID
+)
+{
+    PDEVICE_OBJECT deviceObject;
+
+    if (InterlockedCompareExchange(&g_ControlInitialized, 0, 0) == 0) {
+        return FALSE;
+    }
+    if (g_ControlDevice == NULL) {
+        return FALSE;
+    }
+
+    deviceObject = WdfDeviceWdmGetDeviceObject(g_ControlDevice);
+    if (deviceObject == NULL) {
+        return FALSE;
+    }
+
+    if ((deviceObject->Flags & DO_DEVICE_INITIALIZING) != 0) {
+        return FALSE;
+    }
+
+    return TRUE;
 }

@@ -282,3 +282,15 @@ STINGERRegistryMonitorUninitialize(
     RtlZeroMemory(&g_RegistryCookie, sizeof(g_RegistryCookie));
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "STINGER: registry monitor uninitialized.\n");
 }
+
+BOOLEAN
+STINGERRegistryMonitorSelfCheck(
+    VOID
+)
+{
+    if (InterlockedCompareExchange(&g_RegistryMonitorRegistered, 0, 0) == 0) {
+        return FALSE;
+    }
+
+    return (g_RegistryCookie.QuadPart != 0);
+}

@@ -13,6 +13,11 @@ STINGEREtwUninitialize(
     VOID
 );
 
+BOOLEAN
+STINGEREtwSelfCheck(
+    VOID
+);
+
 VOID
 STINGEREtwLogHandleEvent(
     _In_z_ PCSTR EventClass,
@@ -53,6 +58,18 @@ STINGEREtwLogThreadEvent(
     _In_ NTSTATUS StartRegionStatus,
     _In_ ULONG WorkerFrameCount,
     _In_reads_opt_(WorkerFrameCount) PVOID const* WorkerFrames
+);
+
+VOID
+STINGEREtwLogApcEvent(
+    _In_z_ PCSTR EventClass,
+    _In_ HANDLE CallerPid,
+    _In_ HANDLE TargetPid,
+    _In_ ACCESS_MASK DesiredAccess,
+    _In_ BOOLEAN IsDuplicateOperation,
+    _In_ UINT32 CorrelationFlags,
+    _In_ UINT32 CorrelationAccessMask,
+    _In_ UINT32 CorrelationAgeMs
 );
 
 VOID

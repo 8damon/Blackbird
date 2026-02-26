@@ -13,4 +13,9 @@ STINGERImageMonitorUninitialize(
     VOID
 );
 
+BOOLEAN
+STINGERImageMonitorSelfCheck(
+    VOID
+);
+
 #endif

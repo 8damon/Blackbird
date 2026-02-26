@@ -4,6 +4,8 @@
 #include "..\telemetry\etw.h"
 #include "..\monitors\correlation.h"
 #include "..\monitors\handle_monitor.h"
+#include "..\monitors\apc_monitor.h"
+#include "..\monitors\anti_tamper.h"
 #include "..\monitors\image_monitor.h"
 #include "..\monitors\process_monitor.h"
 #include "..\monitors\registry_monitor.h"
@@ -28,6 +30,8 @@ typedef enum _STINGER_DRIVER_STATE {
 #define STINGER_INIT_PROCESS_MONITOR 0x20
 #define STINGER_INIT_IMAGE_MONITOR 0x40
 #define STINGER_INIT_REGISTRY_MONITOR 0x80
+#define STINGER_INIT_APC_MONITOR 0x100
+#define STINGER_INIT_ANTI_TAMPER 0x200
 
 static volatile LONG g_DriverState = STINGERStateCold;
 static volatile LONG g_InitFlags = 0;
@@ -48,11 +52,13 @@ STINGERDriverSelfTest(
     if ((flags & STINGER_INIT_ETW) == 0 ||
         (flags & STINGER_INIT_CONTROL) == 0 ||
         (flags & STINGER_INIT_CORRELATION) == 0 ||
+        (flags & STINGER_INIT_APC_MONITOR) == 0 ||
         (flags & STINGER_INIT_PROCESS_MONITOR) == 0 ||
         (flags & STINGER_INIT_IMAGE_MONITOR) == 0 ||
         (flags & STINGER_INIT_REGISTRY_MONITOR) == 0 ||
         (flags & STINGER_INIT_THREAD_MONITOR) == 0 ||
-        (flags & STINGER_INIT_HANDLE_MONITOR) == 0) {
+        (flags & STINGER_INIT_HANDLE_MONITOR) == 0 ||
+        (flags & STINGER_INIT_ANTI_TAMPER) == 0) {
         return STATUS_DEVICE_CONFIGURATION_ERROR;
     }
 
@@ -94,8 +100,14 @@ STINGEREvtDriverUnload(
     }
 
     initFlags = InterlockedExchange(&g_InitFlags, 0);
+    if ((initFlags & STINGER_INIT_ANTI_TAMPER) != 0) {
+        STINGERAntiTamperUninitialize();
+    }
     if ((initFlags & STINGER_INIT_HANDLE_MONITOR) != 0) {
         STINGERHandleMonitorUninitialize();
+    }
+    if ((initFlags & STINGER_INIT_APC_MONITOR) != 0) {
+        STINGERApcMonitorUninitialize();
     }
     if ((initFlags & STINGER_INIT_THREAD_MONITOR) != 0) {
         STINGERThreadMonitorUninitialize();
@@ -214,6 +226,23 @@ DriverEntry(
     }
     InterlockedOr(&g_InitFlags, STINGER_INIT_CORRELATION);
 
+    status = STINGERApcMonitorInitialize();
+    if (!NT_SUCCESS(status)) {
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            DPFLTR_ERROR_LEVEL,
+            "STINGER: apc monitor init failed (0x%08X).\n",
+            status
+        );
+        STINGERCorrelationUninitialize();
+        STINGERControlUninitialize();
+        STINGEREtwUninitialize();
+        InterlockedExchange(&g_InitFlags, 0);
+        InterlockedExchange(&g_DriverState, STINGERStateCold);
+        return status;
+    }
+    InterlockedOr(&g_InitFlags, STINGER_INIT_APC_MONITOR);
+
     status = STINGERProcessMonitorInitialize();
     if (!NT_SUCCESS(status)) {
         DbgPrintEx(
@@ -222,6 +251,7 @@ DriverEntry(
             "STINGER: process monitor init failed (0x%08X).\n",
             status
         );
+        STINGERApcMonitorUninitialize();
         STINGERCorrelationUninitialize();
         STINGERControlUninitialize();
         STINGEREtwUninitialize();
@@ -240,6 +270,7 @@ DriverEntry(
             status
         );
         STINGERProcessMonitorUninitialize();
+        STINGERApcMonitorUninitialize();
         STINGERCorrelationUninitialize();
         STINGERControlUninitialize();
         STINGEREtwUninitialize();
@@ -259,6 +290,7 @@ DriverEntry(
         );
         STINGERImageMonitorUninitialize();
         STINGERProcessMonitorUninitialize();
+        STINGERApcMonitorUninitialize();
         STINGERCorrelationUninitialize();
         STINGERControlUninitialize();
         STINGEREtwUninitialize();
@@ -279,6 +311,7 @@ DriverEntry(
         STINGERRegistryMonitorUninitialize();
         STINGERImageMonitorUninitialize();
         STINGERProcessMonitorUninitialize();
+        STINGERApcMonitorUninitialize();
         STINGERCorrelationUninitialize();
         STINGERControlUninitialize();
         STINGEREtwUninitialize();
@@ -300,6 +333,7 @@ DriverEntry(
         STINGERRegistryMonitorUninitialize();
         STINGERImageMonitorUninitialize();
         STINGERProcessMonitorUninitialize();
+        STINGERApcMonitorUninitialize();
         STINGERCorrelationUninitialize();
         STINGERControlUninitialize();
         STINGEREtwUninitialize();
@@ -309,13 +343,38 @@ DriverEntry(
     }
     InterlockedOr(&g_InitFlags, STINGER_INIT_HANDLE_MONITOR);
 
-    status = STINGERDriverSelfTest();
+    status = STINGERAntiTamperInitialize(DriverObject);
     if (!NT_SUCCESS(status)) {
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID,
+            DPFLTR_ERROR_LEVEL,
+            "STINGER: anti tamper init failed (0x%08X).\n",
+            status
+        );
         STINGERHandleMonitorUninitialize();
         STINGERThreadMonitorUninitialize();
         STINGERRegistryMonitorUninitialize();
         STINGERImageMonitorUninitialize();
         STINGERProcessMonitorUninitialize();
+        STINGERApcMonitorUninitialize();
+        STINGERCorrelationUninitialize();
+        STINGERControlUninitialize();
+        STINGEREtwUninitialize();
+        InterlockedExchange(&g_InitFlags, 0);
+        InterlockedExchange(&g_DriverState, STINGERStateCold);
+        return status;
+    }
+    InterlockedOr(&g_InitFlags, STINGER_INIT_ANTI_TAMPER);
+
+    status = STINGERDriverSelfTest();
+    if (!NT_SUCCESS(status)) {
+        STINGERAntiTamperUninitialize();
+        STINGERHandleMonitorUninitialize();
+        STINGERThreadMonitorUninitialize();
+        STINGERRegistryMonitorUninitialize();
+        STINGERImageMonitorUninitialize();
+        STINGERProcessMonitorUninitialize();
+        STINGERApcMonitorUninitialize();
         STINGERCorrelationUninitialize();
         STINGERControlUninitialize();
         STINGEREtwUninitialize();

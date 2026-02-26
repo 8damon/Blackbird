@@ -46,4 +46,9 @@ STINGERCorrelationQueryRecentIntentForTarget(
     _Out_opt_ UINT32* AgeMs
 );
 
+BOOLEAN
+STINGERCorrelationSelfCheck(
+    VOID
+);
+
 #endif

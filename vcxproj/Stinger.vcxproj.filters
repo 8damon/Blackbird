@@ -51,7 +51,16 @@
     <ClCompile Include="..\kernel\core\driver.c">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\kernel\core\crt_compat.c">
+      <Filter>Source Files\Core</Filter>
+    </ClCompile>
     <ClCompile Include="..\kernel\monitors\handle_monitor.c">
+      <Filter>Source Files\Monitors</Filter>
+    </ClCompile>
+    <ClCompile Include="..\kernel\monitors\anti_tamper.c">
+      <Filter>Source Files\Monitors</Filter>
+    </ClCompile>
+    <ClCompile Include="..\kernel\monitors\apc_monitor.c">
       <Filter>Source Files\Monitors</Filter>
     </ClCompile>
     <ClCompile Include="..\kernel\monitors\correlation.c">
@@ -78,6 +87,12 @@
       <Filter>Header Files\Core</Filter>
     </ClInclude>
     <ClInclude Include="..\kernel\monitors\handle_monitor.h">
+      <Filter>Header Files\Monitors</Filter>
+    </ClInclude>
+    <ClInclude Include="..\kernel\monitors\anti_tamper.h">
+      <Filter>Header Files\Monitors</Filter>
+    </ClInclude>
+    <ClInclude Include="..\kernel\monitors\apc_monitor.h">
       <Filter>Header Files\Monitors</Filter>
     </ClInclude>
     <ClInclude Include="..\kernel\monitors\correlation.h">

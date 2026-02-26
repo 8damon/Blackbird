@@ -1,6 +1,7 @@
 #include <ntddk.h>
 #include "..\core\control.h"
 #include "..\telemetry\etw.h"
+#include "apc_monitor.h"
 #include "correlation.h"
 #include "handle_monitor.h"
 
@@ -350,6 +351,15 @@ STINGERLogHandleTelemetry(
                 );
             }
         }
+
+        if (IsThreadObject) {
+            STINGERApcMonitorRecordThreadHandleIntent(
+                CallerPid,
+                TargetPid,
+                DesiredAccess,
+                IsDuplicateOperation
+            );
+        }
     }
 }
 
@@ -577,6 +587,7 @@ STINGERProcessPreOperation(
     ULONG copyCount;
     BOOLEAN hasVmWriteOrFull;
     BOOLEAN hasThreadContextAccess;
+    BOOLEAN shouldCaptureStack;
     BOOLEAN isThreadObject = FALSE;
     BOOLEAN isDuplicateOperation = FALSE;
     LONG failureCounter;
@@ -690,36 +701,42 @@ STINGERProcessPreOperation(
 
     frameCount = 0;
     copyCount = 0;
-    __try {
-        frameCount = RtlWalkFrameChain(userFrames, RTL_NUMBER_OF(userFrames), RTL_WALK_USER_MODE_STACK);
-        copyCount = (frameCount > RTL_NUMBER_OF(work->Frames)) ? RTL_NUMBER_OF(work->Frames) : frameCount;
-        if (copyCount != 0) {
-            RtlCopyMemory(work->Frames, userFrames, copyCount * sizeof(PVOID));
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        copyCount = 0;
-        RtlZeroMemory(work->Frames, sizeof(work->Frames));
-        InterlockedIncrement(&g_HandleStackCaptureFaults);
-        failureCounter = InterlockedIncrement(&g_HandleStackFaultLogCounter);
-        if (failureCounter == 1 || ((failureCounter & 0xFF) == 0)) {
-            DbgPrintEx(
-                DPFLTR_IHVDRIVER_ID,
+    shouldCaptureStack =
+        isDuplicateOperation ||
+        ((desiredAccess & (PROCESS_VM_WRITE | PROCESS_ALL_ACCESS | THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME)) != 0);
+    if (shouldCaptureStack) {
+        __try {
+            frameCount = RtlWalkFrameChain(userFrames, RTL_NUMBER_OF(userFrames), RTL_WALK_USER_MODE_STACK);
+            copyCount = (frameCount > RTL_NUMBER_OF(work->Frames)) ? RTL_NUMBER_OF(work->Frames) : frameCount;
+            if (copyCount != 0) {
+                RtlCopyMemory(work->Frames, userFrames, copyCount * sizeof(PVOID));
+            }
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            copyCount = 0;
+            RtlZeroMemory(work->Frames, sizeof(work->Frames));
+            InterlockedIncrement(&g_HandleStackCaptureFaults);
+            failureCounter = InterlockedIncrement(&g_HandleStackFaultLogCounter);
+            if (failureCounter == 1 || ((failureCounter & 0xFF) == 0)) {
+                DbgPrintEx(
+                    DPFLTR_IHVDRIVER_ID,
+                    DPFLTR_WARNING_LEVEL,
+                    "STINGER: handle callback stack capture fault caller=%p target=%p access=0x%08X total=%lu.\n",
+                    callerPid,
+                    targetPid,
+                    desiredAccess,
+                    (ULONG)failureCounter
+                );
+            }
+            STINGER_DBG_PRINT(
                 DPFLTR_WARNING_LEVEL,
-                "STINGER: handle callback stack capture fault caller=%p target=%p access=0x%08X total=%lu.\n",
+                "STINGER[DBG]: RtlWalkFrameChain fault caller=%p target=%p access=0x%08X.\n",
                 callerPid,
                 targetPid,
-                desiredAccess,
-                (ULONG)failureCounter
+                desiredAccess
             );
         }
-        STINGER_DBG_PRINT(
-            DPFLTR_WARNING_LEVEL,
-            "STINGER[DBG]: RtlWalkFrameChain fault caller=%p target=%p access=0x%08X.\n",
-            callerPid,
-            targetPid,
-            desiredAccess
-        );
     }
+
     work->FrameCount = copyCount;
 
     ExInitializeWorkItem(&work->WorkItem, STINGERHandleWorkRoutine, work);
@@ -821,4 +838,32 @@ STINGERHandleMonitorUninitialize(
         InterlockedCompareExchange(&g_HandleDroppedWork, 0, 0),
         InterlockedCompareExchange(&g_HandleStackCaptureFaults, 0, 0)
     );
+}
+
+BOOLEAN
+STINGERHandleMonitorSelfCheck(
+    VOID
+)
+{
+    if (!g_HandleMonitorRegistered) {
+        return FALSE;
+    }
+    if (g_ProcessObRegistrationHandle == NULL) {
+        return FALSE;
+    }
+    if (g_CallbackRegistration.OperationRegistrationCount != RTL_NUMBER_OF(g_OperationRegistration)) {
+        return FALSE;
+    }
+    if (g_CallbackRegistration.OperationRegistration != g_OperationRegistration) {
+        return FALSE;
+    }
+    if (g_OperationRegistration[0].PreOperation != STINGERProcessPreOperation ||
+        g_OperationRegistration[1].PreOperation != STINGERProcessPreOperation) {
+        return FALSE;
+    }
+    if (InterlockedCompareExchange(&g_HandleOutstandingWork, 0, 0) < 0) {
+        return FALSE;
+    }
+
+    return TRUE;
 }

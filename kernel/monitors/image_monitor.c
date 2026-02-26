@@ -235,3 +235,11 @@ STINGERImageMonitorUninitialize(
     RtlZeroMemory(g_NtdllTrack, sizeof(g_NtdllTrack));
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "STINGER: image monitor uninitialized.\n");
 }
+
+BOOLEAN
+STINGERImageMonitorSelfCheck(
+    VOID
+)
+{
+    return (InterlockedCompareExchange(&g_ImageMonitorRegistered, 0, 0) != 0);
+}

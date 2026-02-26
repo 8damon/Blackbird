@@ -15,6 +15,7 @@ static STINGER_INTENT_ENTRY g_IntentRing[STINGER_CORRELATION_RING_SIZE];
 static volatile LONG g_IntentWriteIndex = -1;
 static KSPIN_LOCK g_IntentLock;
 static volatile LONG g_CorrelationInitialized = 0;
+static ULONGLONG g_QpcFrequency = 1;
 
 static
 UINT32
@@ -22,22 +23,33 @@ STINGERCorrelationQpcDeltaToMs(
     _In_ INT64 DeltaQpc
 )
 {
-    LARGE_INTEGER freq;
-    ULONGLONG freqValue;
     ULONGLONG deltaValue;
 
     if (DeltaQpc <= 0) {
         return 0;
     }
 
-    freq = KeQueryPerformanceCounter(NULL);
-    freqValue = (ULONGLONG)freq.QuadPart;
-    if (freqValue == 0) {
+    deltaValue = (ULONGLONG)DeltaQpc;
+    return (UINT32)((deltaValue * 1000ULL) / g_QpcFrequency);
+}
+
+static
+ULONGLONG
+STINGERCorrelationMsToQpc(
+    _In_ UINT32 Ms
+)
+{
+    ULONGLONG ticks;
+
+    if (Ms == 0) {
         return 0;
     }
 
-    deltaValue = (ULONGLONG)DeltaQpc;
-    return (UINT32)((deltaValue * 1000ULL) / freqValue);
+    ticks = ((ULONGLONG)Ms * g_QpcFrequency) / 1000ULL;
+    if (ticks == 0) {
+        ticks = 1;
+    }
+    return ticks;
 }
 
 NTSTATUS
@@ -45,10 +57,14 @@ STINGERCorrelationInitialize(
     VOID
 )
 {
+    LARGE_INTEGER freq;
+
     if (InterlockedCompareExchange(&g_CorrelationInitialized, 1, 0) != 0) {
         return STATUS_SUCCESS;
     }
 
+    freq = KeQueryPerformanceCounter(NULL);
+    g_QpcFrequency = (freq.QuadPart > 0) ? (ULONGLONG)freq.QuadPart : 1;
     KeInitializeSpinLock(&g_IntentLock);
     RtlZeroMemory(g_IntentRing, sizeof(g_IntentRing));
     InterlockedExchange(&g_IntentWriteIndex, -1);
@@ -78,6 +94,7 @@ STINGERCorrelationRecordHandleIntent(
 {
     LONG idx;
     KIRQL oldIrql;
+    INT64 nowQpc;
 
     if (InterlockedCompareExchange(&g_CorrelationInitialized, 0, 0) == 0) {
         return;
@@ -89,12 +106,16 @@ STINGERCorrelationRecordHandleIntent(
         idx += STINGER_CORRELATION_RING_SIZE;
     }
 
+    nowQpc = KeQueryPerformanceCounter(NULL).QuadPart;
     KeAcquireSpinLock(&g_IntentLock, &oldIrql);
+
     g_IntentRing[idx].CallerPid = (UINT64)(ULONG_PTR)CallerPid;
     g_IntentRing[idx].TargetPid = (UINT64)(ULONG_PTR)TargetPid;
     g_IntentRing[idx].AccessMask = (UINT32)AccessMask;
     g_IntentRing[idx].IntentFlags = IntentFlags;
-    g_IntentRing[idx].TimestampQpc = KeQueryPerformanceCounter(NULL).QuadPart;
+
+    g_IntentRing[idx].TimestampQpc = nowQpc;
+    
     KeReleaseSpinLock(&g_IntentLock, oldIrql);
 }
 
@@ -117,6 +138,7 @@ STINGERCorrelationQueryRecentIntent(
     UINT32 i;
     BOOLEAN found = FALSE;
     KIRQL oldIrql;
+    ULONGLONG windowQpc;
 
     if (IntentFlags != NULL) {
         *IntentFlags = 0;
@@ -132,10 +154,10 @@ STINGERCorrelationQueryRecentIntent(
         return FALSE;
     }
 
+    windowQpc = STINGERCorrelationMsToQpc(WindowMs);
     KeAcquireSpinLock(&g_IntentLock, &oldIrql);
     for (i = 0; i < STINGER_CORRELATION_RING_SIZE; ++i) {
         INT64 deltaQpc;
-        UINT32 deltaMs;
 
         if (g_IntentRing[i].TimestampQpc == 0) {
             continue;
@@ -149,8 +171,7 @@ STINGERCorrelationQueryRecentIntent(
             continue;
         }
 
-        deltaMs = STINGERCorrelationQpcDeltaToMs(deltaQpc);
-        if (deltaMs > WindowMs) {
+        if ((ULONGLONG)deltaQpc > windowQpc) {
             continue;
         }
 
@@ -204,6 +225,7 @@ STINGERCorrelationQueryRecentIntentForTarget(
     UINT32 aggregateAccessMask = 0;
     UINT32 i;
     KIRQL oldIrql;
+    ULONGLONG windowQpc;
 
     if (CallerPid != NULL) {
         *CallerPid = NULL;
@@ -222,10 +244,10 @@ STINGERCorrelationQueryRecentIntentForTarget(
         return FALSE;
     }
 
+    windowQpc = STINGERCorrelationMsToQpc(WindowMs);
     KeAcquireSpinLock(&g_IntentLock, &oldIrql);
     for (i = 0; i < STINGER_CORRELATION_RING_SIZE; ++i) {
         INT64 deltaQpc;
-        UINT32 deltaMs;
         BOOLEAN isExternal;
 
         if (g_IntentRing[i].TimestampQpc == 0) {
@@ -240,8 +262,7 @@ STINGERCorrelationQueryRecentIntentForTarget(
             continue;
         }
 
-        deltaMs = STINGERCorrelationQpcDeltaToMs(deltaQpc);
-        if (deltaMs > WindowMs) {
+        if ((ULONGLONG)deltaQpc > windowQpc) {
             continue;
         }
 
@@ -270,7 +291,6 @@ STINGERCorrelationQueryRecentIntentForTarget(
     if (selectedCaller != 0) {
         for (i = 0; i < STINGER_CORRELATION_RING_SIZE; ++i) {
             INT64 deltaQpc;
-            UINT32 deltaMs;
 
             if (g_IntentRing[i].TimestampQpc == 0) {
                 continue;
@@ -284,8 +304,7 @@ STINGERCorrelationQueryRecentIntentForTarget(
                 continue;
             }
 
-            deltaMs = STINGERCorrelationQpcDeltaToMs(deltaQpc);
-            if (deltaMs > WindowMs) {
+            if ((ULONGLONG)deltaQpc > windowQpc) {
                 continue;
             }
 
@@ -316,4 +335,12 @@ STINGERCorrelationQueryRecentIntentForTarget(
         *AgeMs = STINGERCorrelationQpcDeltaToMs(newestDeltaQpc);
     }
     return TRUE;
+}
+
+BOOLEAN
+STINGERCorrelationSelfCheck(
+    VOID
+)
+{
+    return (InterlockedCompareExchange(&g_CorrelationInitialized, 0, 0) != 0);
 }

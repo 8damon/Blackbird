@@ -52,6 +52,11 @@ typedef enum _STINGER_NOTIFY_MODE {
     STINGERNotifyEx
 } STINGER_NOTIFY_MODE;
 
+typedef NTSTATUS(NTAPI* PSTINGER_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX)(
+    _In_ PSCREATETHREADNOTIFYTYPE NotifyType,
+    _In_ PVOID NotifyRoutine
+);
+
 #define STINGER_THREAD_MAX_OUTSTANDING_WORK 4096
 #define STINGER_THREAD_CORRELATION_WINDOW_MS 10000
 
@@ -139,6 +144,18 @@ STINGERThreadTryAcquireWorkSlot(
 }
 
 static
+PSTINGER_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX
+STINGERResolvePsSetCreateThreadNotifyRoutineEx(
+    VOID
+)
+{
+    UNICODE_STRING routineName;
+
+    RtlInitUnicodeString(&routineName, L"PsSetCreateThreadNotifyRoutineEx");
+    return (PSTINGER_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX)MmGetSystemRoutineAddress(&routineName);
+}
+
+static
 VOID
 STINGERThreadReleaseWorkSlot(
     VOID
@@ -172,12 +189,16 @@ STINGERLogThreadTelemetry(
 )
 {
     PVOID frames[8] = { 0 };
-    ULONG frameCount;
+    ULONG frameCount = 0;
     BOOLEAN startRegionExecutable;
+    BOOLEAN captureFrames;
 
-    frameCount = RtlWalkFrameChain(frames, RTL_NUMBER_OF(frames), 0);
-    if (frameCount > RTL_NUMBER_OF(frames)) {
-        frameCount = RTL_NUMBER_OF(frames);
+    captureFrames = IsRemoteCreator || OutsideMainImage || (CorrelationFlags != 0);
+    if (captureFrames) {
+        frameCount = RtlWalkFrameChain(frames, RTL_NUMBER_OF(frames), 0);
+        if (frameCount > RTL_NUMBER_OF(frames)) {
+            frameCount = RTL_NUMBER_OF(frames);
+        }
     }
 
     startRegionExecutable =
@@ -697,15 +718,19 @@ STINGERThreadMonitorInitialize(VOID)
     InterlockedExchange(&g_DroppedWork, 0);
     KeInitializeEvent(&g_AllWorkDone, NotificationEvent, TRUE);
 
-    NTSTATUS status;
+    NTSTATUS status = STATUS_PROCEDURE_NOT_FOUND;
+    PSTINGER_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX setNotifyRoutineEx;
 
     //
     // Try Ex first (preferred)
     //
-    status = PsSetCreateThreadNotifyRoutineEx(
-        PsCreateThreadNotifyNonSystem,
-        (PVOID)STINGERThreadNotifyRoutine
-    );
+    setNotifyRoutineEx = STINGERResolvePsSetCreateThreadNotifyRoutineEx();
+    if (setNotifyRoutineEx != NULL) {
+        status = setNotifyRoutineEx(
+            PsCreateThreadNotifyNonSystem,
+            (PVOID)STINGERThreadNotifyRoutine
+        );
+    }
 
     if (NT_SUCCESS(status)) {
         g_ThreadNotifyRegistered = TRUE;
@@ -714,9 +739,9 @@ STINGERThreadMonitorInitialize(VOID)
     }
 
     //
-    // If Ex failed with ACCESS_DENIED, fall back
+    // Ex can be unavailable or rejected; fall back.
     //
-    if (status == STATUS_ACCESS_DENIED) {
+    if (setNotifyRoutineEx == NULL || status == STATUS_ACCESS_DENIED) {
 
         status = PsSetCreateThreadNotifyRoutine(
             STINGERThreadNotifyRoutine
@@ -780,4 +805,26 @@ STINGERThreadMonitorUninitialize(VOID)
         "STINGER: thread monitor uninitialized (dropped=%ld).\n",
         InterlockedCompareExchange(&g_DroppedWork, 0, 0)
     );
+}
+
+BOOLEAN
+STINGERThreadMonitorSelfCheck(
+    VOID
+)
+{
+    LONG outstanding;
+
+    if (!g_ThreadNotifyRegistered) {
+        return FALSE;
+    }
+    if (g_NotifyMode == STINGERNotifyNone) {
+        return FALSE;
+    }
+
+    outstanding = InterlockedCompareExchange(&g_OutstandingWork, 0, 0);
+    if (outstanding < 0 || outstanding > STINGER_THREAD_MAX_OUTSTANDING_WORK) {
+        return FALSE;
+    }
+
+    return TRUE;
 }

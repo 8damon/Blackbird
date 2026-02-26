@@ -139,8 +139,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\kernel\core\control.c" />
+    <ClCompile Include="..\kernel\core\crt_compat.c" />
     <ClCompile Include="..\kernel\core\driver.c" />
     <ClCompile Include="..\kernel\telemetry\etw.c" />
+    <ClCompile Include="..\kernel\monitors\anti_tamper.c" />
+    <ClCompile Include="..\kernel\monitors\apc_monitor.c" />
     <ClCompile Include="..\kernel\monitors\correlation.c" />
     <ClCompile Include="..\kernel\monitors\handle_monitor.c" />
     <ClCompile Include="..\kernel\monitors\image_monitor.c" />
@@ -152,6 +155,8 @@
     <ClInclude Include="..\abi\stinger_ioctl.h" />
     <ClInclude Include="..\kernel\core\control.h" />
     <ClInclude Include="..\kernel\telemetry\etw.h" />
+    <ClInclude Include="..\kernel\monitors\anti_tamper.h" />
+    <ClInclude Include="..\kernel\monitors\apc_monitor.h" />
     <ClInclude Include="..\kernel\monitors\correlation.h" />
     <ClInclude Include="..\kernel\monitors\handle_monitor.h" />
     <ClInclude Include="..\kernel\monitors\image_monitor.h" />

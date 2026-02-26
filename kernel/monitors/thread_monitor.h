@@ -13,4 +13,9 @@ STINGERThreadMonitorUninitialize(
     VOID
 );
 
+BOOLEAN
+STINGERThreadMonitorSelfCheck(
+    VOID
+);
+
 #endif

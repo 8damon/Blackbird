@@ -140,3 +140,11 @@ STINGERProcessMonitorUninitialize(
 
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "STINGER: process monitor uninitialized.\n");
 }
+
+BOOLEAN
+STINGERProcessMonitorSelfCheck(
+    VOID
+)
+{
+    return (InterlockedCompareExchange(&g_ProcessMonitorRegistered, 0, 0) != 0);
+}

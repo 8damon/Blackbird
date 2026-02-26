@@ -60,6 +60,14 @@ STINGEREtwUninitialize(
     }
 }
 
+BOOLEAN
+STINGEREtwSelfCheck(
+    VOID
+)
+{
+    return STINGEREtwIsStarted();
+}
+
 VOID
 STINGEREtwLogHandleEvent(
     _In_z_ PCSTR EventClass,
@@ -193,6 +201,37 @@ STINGEREtwLogThreadEvent(
         TraceLoggingPointer(safeFrames[5], "stack5"),
         TraceLoggingPointer(safeFrames[6], "stack6"),
         TraceLoggingPointer(safeFrames[7], "stack7")
+    );
+}
+
+VOID
+STINGEREtwLogApcEvent(
+    _In_z_ PCSTR EventClass,
+    _In_ HANDLE CallerPid,
+    _In_ HANDLE TargetPid,
+    _In_ ACCESS_MASK DesiredAccess,
+    _In_ BOOLEAN IsDuplicateOperation,
+    _In_ UINT32 CorrelationFlags,
+    _In_ UINT32 CorrelationAccessMask,
+    _In_ UINT32 CorrelationAgeMs
+)
+{
+    if (!STINGEREtwIsStarted()) {
+        return;
+    }
+
+    TraceLoggingWrite(
+        g_StingerEtwProvider,
+        "ApcTelemetry",
+        TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+        TraceLoggingString((EventClass != NULL) ? EventClass : "UNKNOWN", "class"),
+        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerPid, "callerPid"),
+        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)TargetPid, "targetPid"),
+        TraceLoggingHexUInt32((ULONG)DesiredAccess, "desiredAccess"),
+        TraceLoggingBool(IsDuplicateOperation, "isDuplicateOperation"),
+        TraceLoggingHexUInt32(CorrelationFlags, "correlationFlags"),
+        TraceLoggingHexUInt32(CorrelationAccessMask, "correlationAccessMask"),
+        TraceLoggingUInt32(CorrelationAgeMs, "correlationAgeMs")
     );
 }
 

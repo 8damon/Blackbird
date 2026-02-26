@@ -13,4 +13,9 @@ STINGERRegistryMonitorUninitialize(
     VOID
 );
 
+BOOLEAN
+STINGERRegistryMonitorSelfCheck(
+    VOID
+);
+
 #endif

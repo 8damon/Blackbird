@@ -13,4 +13,9 @@ STINGERProcessMonitorUninitialize(
     VOID
 );
 
+BOOLEAN
+STINGERProcessMonitorSelfCheck(
+    VOID
+);
+
 #endif

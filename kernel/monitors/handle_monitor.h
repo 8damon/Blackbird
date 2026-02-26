@@ -13,4 +13,9 @@ STINGERHandleMonitorUninitialize(
     VOID
 );
 
+BOOLEAN
+STINGERHandleMonitorSelfCheck(
+    VOID
+);
+
 #endif

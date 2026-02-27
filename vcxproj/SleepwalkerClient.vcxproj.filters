@@ -11,27 +11,39 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\user\sensor\stinger_event_printer.c">
+    <ClCompile Include="..\user\sensor\sleepwalker_client.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\user\sensor\stinger_symbol_resolver.c">
+    <ClCompile Include="..\user\sensor\sleepwalker_etw_printer.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\user\sensor\stinger_ioctl_test.c">
+    <ClCompile Include="..\user\sensor\sleepwalker_etw_props.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\user\sensor\sleepwalker_etw_symbols.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\user\sensor\sleepwalker_symbol_common.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\abi\stinger_ioctl.h">
+    <ClInclude Include="..\abi\sleepwalker_ioctl.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\user\sensor\stinger_event_printer.h">
+    <ClInclude Include="..\user\sensor\sleepwalker_sensor_core.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\user\sensor\stinger_sensor_core.h">
+    <ClInclude Include="..\user\sensor\sleepwalker_etw_printer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\user\sensor\stinger_symbol_resolver.h">
+    <ClInclude Include="..\user\sensor\sleepwalker_etw_props.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\user\sensor\sleepwalker_etw_symbols.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\user\sensor\sleepwalker_symbol_common.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

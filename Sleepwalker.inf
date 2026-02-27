@@ -1,5 +1,5 @@
 ;
-; STINGER.inf - non-PnP KMDF service install
+; SLEEPWALKER.inf - non-PnP KMDF service install
 ;
 
 [Version]
@@ -7,7 +7,7 @@ Signature   = "$WINDOWS NT$"
 Class       = System
 ClassGuid   = {4d36e97d-e325-11ce-bfc1-08002be10318}
 Provider    = %ManufacturerName%
-CatalogFile = STINGER.cat
+CatalogFile = SLEEPWALKER.cat
 DriverVer   = ; stamped by StampInf
 PnpLockdown = 1
 
@@ -19,28 +19,28 @@ DriverCopy = 12
 1 = %DiskName%,,,""
 
 [SourceDisksFiles]
-stingr.sys = 1,,
+sleepwlkr.sys = 1,,
 
 [DefaultInstall.NTamd64]
 CopyFiles = DriverCopy
 
 [DefaultInstall.NTamd64.Services]
-AddService = stingr,0x00000002,stingr_Service_Inst
+AddService = sleepwlkr,0x00000002,sleepwlkr_Service_Inst
 
 [DefaultUninstall.NTamd64.Services]
-DelService = stingr,0x00000200
+DelService = sleepwlkr,0x00000200
 
 [DriverCopy]
-stingr.sys
+sleepwlkr.sys
 
-[stingr_Service_Inst]
-DisplayName   = %STINGER.SVCDESC%
+[sleepwlkr_Service_Inst]
+DisplayName   = %SLEEPWALKER.SVCDESC%
 ServiceType   = 1 ; SERVICE_KERNEL_DRIVER
 StartType     = 3 ; SERVICE_DEMAND_START
 ErrorControl  = 1 ; SERVICE_ERROR_NORMAL
-ServiceBinary = %12%\stingr.sys
+ServiceBinary = %12%\sleepwlkr.sys
 
 [Strings]
 ManufacturerName = "TITAN Softwork Solutions"
-DiskName = "STINGER Installation Disk"
-STINGER.SVCDESC = "STINGER Service"
+DiskName = "SLEEPWALKER Installation Disk"
+SLEEPWALKER.SVCDESC = "SLEEPWALKER Service"

@@ -40,7 +40,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <Inf Include="..\Stinger.inf">
+    <Inf Include="..\Sleepwalker.inf">
       <Filter>Driver Files</Filter>
     </Inf>
   </ItemGroup>
@@ -86,6 +86,12 @@
     <ClInclude Include="..\kernel\core\control.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\kernel\core\protection_utils.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\kernel\core\unicode_utils.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\kernel\monitors\handle_monitor.h">
       <Filter>Header Files\Monitors</Filter>
     </ClInclude>
@@ -113,7 +119,7 @@
     <ClInclude Include="..\kernel\telemetry\etw.h">
       <Filter>Header Files\Telemetry</Filter>
     </ClInclude>
-    <ClInclude Include="..\abi\stinger_ioctl.h">
+    <ClInclude Include="..\abi\sleepwalker_ioctl.h">
       <Filter>Header Files\ABI</Filter>
     </ClInclude>
   </ItemGroup>

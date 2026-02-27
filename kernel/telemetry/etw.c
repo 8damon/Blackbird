@@ -6,41 +6,39 @@
 #define TRACE_LEVEL_INFORMATION 4
 #endif
 
-TRACELOGGING_DEFINE_PROVIDER(
-    g_StingerEtwProvider,
-    "Stinger.Kernel",
-    (0xd6c73f8a, 0x6ad8, 0x4f4b, 0xa3, 0x63, 0x3d, 0x2f, 0xa3, 0x1c, 0xd0, 0xe2)
-);
+#ifndef SLEEPWALKER_MAX_DEEP_SAMPLE_BYTES
+#define SLEEPWALKER_MAX_DEEP_SAMPLE_BYTES 64
+#endif
+
+TRACELOGGING_DEFINE_PROVIDER(g_SleepwalkerEtwProvider, "Sleepwalker.Kernel",
+                             (0xd6c73f8a, 0x6ad8, 0x4f4b, 0xa3, 0x63, 0x3d, 0x2f, 0xa3, 0x1c, 0xd0, 0xe2));
 
 static volatile LONG g_EtwState = 0; // 0=stopped, 1=starting, 2=started
 
-static
-BOOLEAN
-STINGEREtwIsStarted(
-    VOID
-)
+static BOOLEAN SLEEPWALKEREtwIsStarted(VOID)
 {
     return (InterlockedCompareExchange(&g_EtwState, 0, 0) == 2);
 }
 
 NTSTATUS
-STINGEREtwInitialize(
-    VOID
-)
+SLEEPWALKEREtwInitialize(VOID)
 {
     NTSTATUS status;
     LONG prior;
 
     prior = InterlockedCompareExchange(&g_EtwState, 1, 0);
-    if (prior == 2) {
+    if (prior == 2)
+    {
         return STATUS_SUCCESS;
     }
-    if (prior != 0) {
+    if (prior != 0)
+    {
         return STATUS_DEVICE_BUSY;
     }
 
-    status = TraceLoggingRegister(g_StingerEtwProvider);
-    if (!NT_SUCCESS(status)) {
+    status = TraceLoggingRegister(g_SleepwalkerEtwProvider);
+    if (!NT_SUCCESS(status))
+    {
         InterlockedExchange(&g_EtwState, 0);
         return status;
     }
@@ -49,286 +47,218 @@ STINGEREtwInitialize(
     return STATUS_SUCCESS;
 }
 
-VOID
-STINGEREtwUninitialize(
-    VOID
-)
+VOID SLEEPWALKEREtwUninitialize(VOID)
 {
     LONG prior = InterlockedExchange(&g_EtwState, 0);
-    if (prior == 2) {
-        TraceLoggingUnregister(g_StingerEtwProvider);
+    if (prior == 2)
+    {
+        TraceLoggingUnregister(g_SleepwalkerEtwProvider);
     }
 }
 
 BOOLEAN
-STINGEREtwSelfCheck(
-    VOID
-)
+SLEEPWALKEREtwSelfCheck(VOID)
 {
-    return STINGEREtwIsStarted();
+    return SLEEPWALKEREtwIsStarted();
 }
 
-VOID
-STINGEREtwLogHandleEvent(
-    _In_z_ PCSTR EventClass,
-    _In_ HANDLE CallerPid,
-    _In_ HANDLE TargetPid,
-    _In_ ACCESS_MASK DesiredAccess,
-    _In_ PVOID OriginAddress,
-    _In_ ULONG OriginProtect,
-    _In_ BOOLEAN ExecProtect,
-    _In_ BOOLEAN FromNtdll,
-    _In_ BOOLEAN FromExe,
-    _In_opt_z_ PCWSTR OriginPath,
-    _In_ ULONG FrameCount,
-    _In_reads_opt_(FrameCount) PVOID const* Frames,
-    _In_ NTSTATUS OpenProcessStatus,
-    _In_ NTSTATUS BasicInfoStatus,
-    _In_ NTSTATUS SectionNameStatus
-)
+VOID SLEEPWALKEREtwLogHandleEvent(_In_z_ PCSTR EventClass, _In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
+                                  _In_ ACCESS_MASK DesiredAccess, _In_ PVOID OriginAddress, _In_ ULONG OriginProtect,
+                                  _In_ BOOLEAN ExecProtect, _In_ BOOLEAN FromNtdll, _In_ BOOLEAN FromExe,
+                                  _In_opt_z_ PCWSTR OriginPath, _In_ ULONG FrameCount,
+                                  _In_reads_opt_(FrameCount) PVOID const *Frames, _In_ NTSTATUS OpenProcessStatus,
+                                  _In_ NTSTATUS BasicInfoStatus, _In_ NTSTATUS SectionNameStatus,
+                                  _In_ UINT64 DeepAllocationBase, _In_ UINT64 DeepRegionSize,
+                                  _In_ ULONG DeepRegionProtect, _In_ ULONG DeepRegionState, _In_ ULONG DeepRegionType,
+                                  _In_ ULONG DeepSampleSize,
+                                  _In_reads_bytes_opt_(DeepSampleSize) const UCHAR *DeepSample)
 {
-    PVOID safeFrames[8] = { 0 };
+    PVOID safeFrames[8] = {0};
+    UCHAR safeDeepSample[SLEEPWALKER_MAX_DEEP_SAMPLE_BYTES] = {0};
     ULONG safeFrameCount = 0;
+    ULONG safeDeepSampleSize = 0;
     ULONG i;
     PCWSTR path;
 
-    if (!STINGEREtwIsStarted()) {
+    if (!SLEEPWALKEREtwIsStarted())
+    {
         return;
     }
 
-    if (Frames != NULL) {
+    if (Frames != NULL)
+    {
         safeFrameCount = (FrameCount > RTL_NUMBER_OF(safeFrames)) ? RTL_NUMBER_OF(safeFrames) : FrameCount;
-        for (i = 0; i < safeFrameCount; ++i) {
+        for (i = 0; i < safeFrameCount; ++i)
+        {
             safeFrames[i] = Frames[i];
         }
     }
+    if (DeepSample != NULL && DeepSampleSize != 0)
+    {
+        safeDeepSampleSize =
+            (DeepSampleSize > RTL_NUMBER_OF(safeDeepSample)) ? RTL_NUMBER_OF(safeDeepSample) : DeepSampleSize;
+        RtlCopyMemory(safeDeepSample, DeepSample, safeDeepSampleSize);
+    }
     path = (OriginPath != NULL) ? OriginPath : L"";
 
-    TraceLoggingWrite(
-        g_StingerEtwProvider,
-        "HandleTelemetry",
-        TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
-        TraceLoggingString((EventClass != NULL) ? EventClass : "UNKNOWN", "class"),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerPid, "callerPid"),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)TargetPid, "targetPid"),
-        TraceLoggingHexUInt32((ULONG)DesiredAccess, "desiredAccess"),
-        TraceLoggingPointer(OriginAddress, "originAddress"),
-        TraceLoggingHexUInt32(OriginProtect, "originProtect"),
-        TraceLoggingBool(ExecProtect, "execProtect"),
-        TraceLoggingBool(FromNtdll, "fromNtdll"),
-        TraceLoggingBool(FromExe, "fromExe"),
-        TraceLoggingWideString(path, "originPath"),
-        TraceLoggingUInt32(safeFrameCount, "frameCount"),
-        TraceLoggingPointer(safeFrames[0], "stack0"),
-        TraceLoggingPointer(safeFrames[1], "stack1"),
-        TraceLoggingPointer(safeFrames[2], "stack2"),
-        TraceLoggingPointer(safeFrames[3], "stack3"),
-        TraceLoggingPointer(safeFrames[4], "stack4"),
-        TraceLoggingPointer(safeFrames[5], "stack5"),
-        TraceLoggingPointer(safeFrames[6], "stack6"),
-        TraceLoggingPointer(safeFrames[7], "stack7"),
-        TraceLoggingHexInt32((LONG)OpenProcessStatus, "statusOpenProcess"),
-        TraceLoggingHexInt32((LONG)BasicInfoStatus, "statusBasicInfo"),
-        TraceLoggingHexInt32((LONG)SectionNameStatus, "statusSectionName")
-    );
+    TraceLoggingWrite(g_SleepwalkerEtwProvider, "HandleTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+                      TraceLoggingString((EventClass != NULL) ? EventClass : "UNKNOWN", "class"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerPid, "callerPid"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)TargetPid, "targetPid"),
+                      TraceLoggingHexUInt32((ULONG)DesiredAccess, "desiredAccess"),
+                      TraceLoggingPointer(OriginAddress, "originAddress"),
+                      TraceLoggingHexUInt32(OriginProtect, "originProtect"),
+                      TraceLoggingBool(ExecProtect, "execProtect"), TraceLoggingBool(FromNtdll, "fromNtdll"),
+                      TraceLoggingBool(FromExe, "fromExe"), TraceLoggingWideString(path, "originPath"),
+                      TraceLoggingUInt32(safeFrameCount, "frameCount"), TraceLoggingPointer(safeFrames[0], "stack0"),
+                      TraceLoggingPointer(safeFrames[1], "stack1"), TraceLoggingPointer(safeFrames[2], "stack2"),
+                      TraceLoggingPointer(safeFrames[3], "stack3"), TraceLoggingPointer(safeFrames[4], "stack4"),
+                      TraceLoggingPointer(safeFrames[5], "stack5"), TraceLoggingPointer(safeFrames[6], "stack6"),
+                      TraceLoggingPointer(safeFrames[7], "stack7"),
+                      TraceLoggingHexInt32((LONG)OpenProcessStatus, "statusOpenProcess"),
+                      TraceLoggingHexInt32((LONG)BasicInfoStatus, "statusBasicInfo"),
+                      TraceLoggingHexInt32((LONG)SectionNameStatus, "statusSectionName"),
+                      TraceLoggingPointer((PVOID)(ULONG_PTR)DeepAllocationBase, "deepAllocationBase"),
+                      TraceLoggingUInt64((ULONGLONG)DeepRegionSize, "deepRegionSize"),
+                      TraceLoggingHexUInt32(DeepRegionProtect, "deepRegionProtect"),
+                      TraceLoggingHexUInt32(DeepRegionState, "deepRegionState"),
+                      TraceLoggingHexUInt32(DeepRegionType, "deepRegionType"),
+                      TraceLoggingUInt32(safeDeepSampleSize, "deepSampleSize"),
+                      TraceLoggingBinary(safeDeepSample, safeDeepSampleSize, "deepSample"));
 }
 
-VOID
-STINGEREtwLogThreadEvent(
-    _In_ HANDLE ProcessId,
-    _In_ HANDLE ThreadId,
-    _In_ HANDLE CreatorPid,
-    _In_ PVOID StartAddress,
-    _In_ PVOID ImageBase,
-    _In_ SIZE_T ImageSize,
-    _In_ BOOLEAN GotStart,
-    _In_ BOOLEAN GotRange,
-    _In_ BOOLEAN IsRemoteCreator,
-    _In_ BOOLEAN OutsideMainImage,
-    _In_ UINT32 CorrelationFlags,
-    _In_ UINT32 CorrelationAccessMask,
-    _In_ UINT32 CorrelationAgeMs,
-    _In_ ULONG StartRegionProtect,
-    _In_ ULONG StartRegionState,
-    _In_ ULONG StartRegionType,
-    _In_ NTSTATUS StartRegionStatus,
-    _In_ ULONG WorkerFrameCount,
-    _In_reads_opt_(WorkerFrameCount) PVOID const* WorkerFrames
-)
+VOID SLEEPWALKEREtwLogThreadEvent(_In_ HANDLE ProcessId, _In_ HANDLE ThreadId, _In_ HANDLE CreatorPid,
+                                  _In_ PVOID StartAddress, _In_ PVOID ImageBase, _In_ SIZE_T ImageSize,
+                                  _In_ BOOLEAN GotStart, _In_ BOOLEAN GotRange, _In_ BOOLEAN IsRemoteCreator,
+                                  _In_ BOOLEAN OutsideMainImage, _In_ UINT32 CorrelationFlags,
+                                  _In_ UINT32 CorrelationAccessMask, _In_ UINT32 CorrelationAgeMs,
+                                  _In_ ULONG StartRegionProtect, _In_ ULONG StartRegionState,
+                                  _In_ ULONG StartRegionType, _In_ NTSTATUS StartRegionStatus,
+                                  _In_ ULONG WorkerFrameCount,
+                                  _In_reads_opt_(WorkerFrameCount) PVOID const *WorkerFrames)
 {
-    PVOID safeFrames[8] = { 0 };
+    PVOID safeFrames[8] = {0};
     ULONG safeFrameCount = 0;
     ULONG i;
 
-    if (!STINGEREtwIsStarted()) {
+    if (!SLEEPWALKEREtwIsStarted())
+    {
         return;
     }
 
-    if (WorkerFrames != NULL) {
+    if (WorkerFrames != NULL)
+    {
         safeFrameCount = (WorkerFrameCount > RTL_NUMBER_OF(safeFrames)) ? RTL_NUMBER_OF(safeFrames) : WorkerFrameCount;
-        for (i = 0; i < safeFrameCount; ++i) {
+        for (i = 0; i < safeFrameCount; ++i)
+        {
             safeFrames[i] = WorkerFrames[i];
         }
     }
 
-    TraceLoggingWrite(
-        g_StingerEtwProvider,
-        "ThreadTelemetry",
-        TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ThreadId, "threadId"),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CreatorPid, "creatorPid"),
-        TraceLoggingPointer(StartAddress, "startAddress"),
-        TraceLoggingPointer(ImageBase, "imageBase"),
-        TraceLoggingUInt64((ULONGLONG)ImageSize, "imageSize"),
-        TraceLoggingBool(GotStart, "gotStart"),
-        TraceLoggingBool(GotRange, "gotRange"),
-        TraceLoggingBool(IsRemoteCreator, "isRemoteCreator"),
-        TraceLoggingBool(OutsideMainImage, "outsideMainImage"),
-        TraceLoggingHexUInt32(CorrelationFlags, "correlationFlags"),
-        TraceLoggingHexUInt32(CorrelationAccessMask, "correlationAccessMask"),
-        TraceLoggingUInt32(CorrelationAgeMs, "correlationAgeMs"),
-        TraceLoggingHexUInt32(StartRegionProtect, "startRegionProtect"),
-        TraceLoggingHexUInt32(StartRegionState, "startRegionState"),
-        TraceLoggingHexUInt32(StartRegionType, "startRegionType"),
-        TraceLoggingHexInt32((LONG)StartRegionStatus, "startRegionStatus"),
-        TraceLoggingUInt32(safeFrameCount, "workerFrameCount"),
-        TraceLoggingPointer(safeFrames[0], "stack0"),
-        TraceLoggingPointer(safeFrames[1], "stack1"),
-        TraceLoggingPointer(safeFrames[2], "stack2"),
-        TraceLoggingPointer(safeFrames[3], "stack3"),
-        TraceLoggingPointer(safeFrames[4], "stack4"),
-        TraceLoggingPointer(safeFrames[5], "stack5"),
-        TraceLoggingPointer(safeFrames[6], "stack6"),
-        TraceLoggingPointer(safeFrames[7], "stack7")
-    );
+    TraceLoggingWrite(g_SleepwalkerEtwProvider, "ThreadTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ThreadId, "threadId"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CreatorPid, "creatorPid"),
+                      TraceLoggingPointer(StartAddress, "startAddress"), TraceLoggingPointer(ImageBase, "imageBase"),
+                      TraceLoggingUInt64((ULONGLONG)ImageSize, "imageSize"), TraceLoggingBool(GotStart, "gotStart"),
+                      TraceLoggingBool(GotRange, "gotRange"), TraceLoggingBool(IsRemoteCreator, "isRemoteCreator"),
+                      TraceLoggingBool(OutsideMainImage, "outsideMainImage"),
+                      TraceLoggingHexUInt32(CorrelationFlags, "correlationFlags"),
+                      TraceLoggingHexUInt32(CorrelationAccessMask, "correlationAccessMask"),
+                      TraceLoggingUInt32(CorrelationAgeMs, "correlationAgeMs"),
+                      TraceLoggingHexUInt32(StartRegionProtect, "startRegionProtect"),
+                      TraceLoggingHexUInt32(StartRegionState, "startRegionState"),
+                      TraceLoggingHexUInt32(StartRegionType, "startRegionType"),
+                      TraceLoggingHexInt32((LONG)StartRegionStatus, "startRegionStatus"),
+                      TraceLoggingUInt32(safeFrameCount, "workerFrameCount"),
+                      TraceLoggingPointer(safeFrames[0], "stack0"), TraceLoggingPointer(safeFrames[1], "stack1"),
+                      TraceLoggingPointer(safeFrames[2], "stack2"), TraceLoggingPointer(safeFrames[3], "stack3"),
+                      TraceLoggingPointer(safeFrames[4], "stack4"), TraceLoggingPointer(safeFrames[5], "stack5"),
+                      TraceLoggingPointer(safeFrames[6], "stack6"), TraceLoggingPointer(safeFrames[7], "stack7"));
 }
 
-VOID
-STINGEREtwLogApcEvent(
-    _In_z_ PCSTR EventClass,
-    _In_ HANDLE CallerPid,
-    _In_ HANDLE TargetPid,
-    _In_ ACCESS_MASK DesiredAccess,
-    _In_ BOOLEAN IsDuplicateOperation,
-    _In_ UINT32 CorrelationFlags,
-    _In_ UINT32 CorrelationAccessMask,
-    _In_ UINT32 CorrelationAgeMs
-)
+VOID SLEEPWALKEREtwLogApcEvent(_In_z_ PCSTR EventClass, _In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
+                               _In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsDuplicateOperation,
+                               _In_ UINT32 CorrelationFlags, _In_ UINT32 CorrelationAccessMask,
+                               _In_ UINT32 CorrelationAgeMs)
 {
-    if (!STINGEREtwIsStarted()) {
+    if (!SLEEPWALKEREtwIsStarted())
+    {
         return;
     }
 
-    TraceLoggingWrite(
-        g_StingerEtwProvider,
-        "ApcTelemetry",
-        TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
-        TraceLoggingString((EventClass != NULL) ? EventClass : "UNKNOWN", "class"),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerPid, "callerPid"),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)TargetPid, "targetPid"),
-        TraceLoggingHexUInt32((ULONG)DesiredAccess, "desiredAccess"),
-        TraceLoggingBool(IsDuplicateOperation, "isDuplicateOperation"),
-        TraceLoggingHexUInt32(CorrelationFlags, "correlationFlags"),
-        TraceLoggingHexUInt32(CorrelationAccessMask, "correlationAccessMask"),
-        TraceLoggingUInt32(CorrelationAgeMs, "correlationAgeMs")
-    );
+    TraceLoggingWrite(g_SleepwalkerEtwProvider, "ApcTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+                      TraceLoggingString((EventClass != NULL) ? EventClass : "UNKNOWN", "class"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerPid, "callerPid"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)TargetPid, "targetPid"),
+                      TraceLoggingHexUInt32((ULONG)DesiredAccess, "desiredAccess"),
+                      TraceLoggingBool(IsDuplicateOperation, "isDuplicateOperation"),
+                      TraceLoggingHexUInt32(CorrelationFlags, "correlationFlags"),
+                      TraceLoggingHexUInt32(CorrelationAccessMask, "correlationAccessMask"),
+                      TraceLoggingUInt32(CorrelationAgeMs, "correlationAgeMs"));
 }
 
-VOID
-STINGEREtwLogProcessEvent(
-    _In_ HANDLE ProcessId,
-    _In_ HANDLE ParentProcessId,
-    _In_ HANDLE CreatorProcessId,
-    _In_ HANDLE CreatorThreadId,
-    _In_ ULONGLONG ProcessStartKey,
-    _In_ ULONG SessionId,
-    _In_ BOOLEAN IsCreate,
-    _In_ NTSTATUS CreateStatus,
-    _In_opt_z_ PCWSTR ImagePath,
-    _In_opt_z_ PCWSTR CommandLine
-)
+VOID SLEEPWALKEREtwLogProcessEvent(_In_ HANDLE ProcessId, _In_ HANDLE ParentProcessId, _In_ HANDLE CreatorProcessId,
+                                   _In_ HANDLE CreatorThreadId, _In_ ULONGLONG ProcessStartKey, _In_ ULONG SessionId,
+                                   _In_ BOOLEAN IsCreate, _In_ NTSTATUS CreateStatus, _In_opt_z_ PCWSTR ImagePath,
+                                   _In_opt_z_ PCWSTR CommandLine)
 {
     PCWSTR safeImagePath;
     PCWSTR safeCommandLine;
 
-    if (!STINGEREtwIsStarted()) {
+    if (!SLEEPWALKEREtwIsStarted())
+    {
         return;
     }
 
     safeImagePath = (ImagePath != NULL) ? ImagePath : L"";
     safeCommandLine = (CommandLine != NULL) ? CommandLine : L"";
 
-    TraceLoggingWrite(
-        g_StingerEtwProvider,
-        "ProcessTelemetry",
-        TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
-        TraceLoggingBool(IsCreate, "isCreate"),
-        TraceLoggingHexInt32((LONG)CreateStatus, "createStatus"),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ParentProcessId, "parentProcessId"),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CreatorProcessId, "creatorProcessId"),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CreatorThreadId, "creatorThreadId"),
-        TraceLoggingHexUInt64(ProcessStartKey, "processStartKey"),
-        TraceLoggingUInt32(SessionId, "sessionId"),
-        TraceLoggingWideString(safeImagePath, "imagePath"),
-        TraceLoggingWideString(safeCommandLine, "commandLine")
-    );
+    TraceLoggingWrite(g_SleepwalkerEtwProvider, "ProcessTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+                      TraceLoggingBool(IsCreate, "isCreate"), TraceLoggingHexInt32((LONG)CreateStatus, "createStatus"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ParentProcessId, "parentProcessId"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CreatorProcessId, "creatorProcessId"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CreatorThreadId, "creatorThreadId"),
+                      TraceLoggingHexUInt64(ProcessStartKey, "processStartKey"),
+                      TraceLoggingUInt32(SessionId, "sessionId"), TraceLoggingWideString(safeImagePath, "imagePath"),
+                      TraceLoggingWideString(safeCommandLine, "commandLine"));
 }
 
-VOID
-STINGEREtwLogImageLoadEvent(
-    _In_ HANDLE ProcessId,
-    _In_ PVOID ImageBase,
-    _In_ SIZE_T ImageSize,
-    _In_ BOOLEAN IsSystemModeImage,
-    _In_ BOOLEAN IsSignatureLevelKnown,
-    _In_ UCHAR SignatureLevel,
-    _In_ UCHAR SignatureType,
-    _In_opt_z_ PCWSTR ImagePath
-)
+VOID SLEEPWALKEREtwLogImageLoadEvent(_In_ HANDLE ProcessId, _In_ PVOID ImageBase, _In_ SIZE_T ImageSize,
+                                     _In_ BOOLEAN IsSystemModeImage, _In_ BOOLEAN IsSignatureLevelKnown,
+                                     _In_ UCHAR SignatureLevel, _In_ UCHAR SignatureType, _In_opt_z_ PCWSTR ImagePath)
 {
     PCWSTR safePath;
 
-    if (!STINGEREtwIsStarted()) {
+    if (!SLEEPWALKEREtwIsStarted())
+    {
         return;
     }
 
     safePath = (ImagePath != NULL) ? ImagePath : L"";
 
-    TraceLoggingWrite(
-        g_StingerEtwProvider,
-        "ImageTelemetry",
-        TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
-        TraceLoggingPointer(ImageBase, "imageBase"),
-        TraceLoggingUInt64((ULONGLONG)ImageSize, "imageSize"),
-        TraceLoggingBool(IsSystemModeImage, "isSystemModeImage"),
-        TraceLoggingBool(IsSignatureLevelKnown, "isSignatureLevelKnown"),
-        TraceLoggingUInt8(SignatureLevel, "signatureLevel"),
-        TraceLoggingUInt8(SignatureType, "signatureType"),
-        TraceLoggingWideString(safePath, "imagePath")
-    );
+    TraceLoggingWrite(g_SleepwalkerEtwProvider, "ImageTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
+                      TraceLoggingPointer(ImageBase, "imageBase"),
+                      TraceLoggingUInt64((ULONGLONG)ImageSize, "imageSize"),
+                      TraceLoggingBool(IsSystemModeImage, "isSystemModeImage"),
+                      TraceLoggingBool(IsSignatureLevelKnown, "isSignatureLevelKnown"),
+                      TraceLoggingUInt8(SignatureLevel, "signatureLevel"),
+                      TraceLoggingUInt8(SignatureType, "signatureType"), TraceLoggingWideString(safePath, "imagePath"));
 }
 
-VOID
-STINGEREtwLogRegistryEvent(
-    _In_z_ PCSTR Operation,
-    _In_ HANDLE ProcessId,
-    _In_ ULONG SessionId,
-    _In_ ULONG NotifyClass,
-    _In_ ULONG DataType,
-    _In_ ULONG DataSize,
-    _In_ BOOLEAN IsHighValuePath,
-    _In_opt_z_ PCWSTR KeyPath,
-    _In_opt_z_ PCWSTR ValueName
-)
+VOID SLEEPWALKEREtwLogRegistryEvent(_In_z_ PCSTR Operation, _In_ HANDLE ProcessId, _In_ ULONG SessionId,
+                                    _In_ ULONG NotifyClass, _In_ ULONG DataType, _In_ ULONG DataSize,
+                                    _In_ BOOLEAN IsHighValuePath, _In_opt_z_ PCWSTR KeyPath,
+                                    _In_opt_z_ PCWSTR ValueName)
 {
     PCSTR safeOperation;
     PCWSTR safeKeyPath;
     PCWSTR safeValueName;
 
-    if (!STINGEREtwIsStarted()) {
+    if (!SLEEPWALKEREtwIsStarted())
+    {
         return;
     }
 
@@ -337,54 +267,36 @@ STINGEREtwLogRegistryEvent(
     safeValueName = (ValueName != NULL) ? ValueName : L"";
 
     TraceLoggingWrite(
-        g_StingerEtwProvider,
-        "RegistryTelemetry",
-        TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+        g_SleepwalkerEtwProvider, "RegistryTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
         TraceLoggingString(safeOperation, "operation"),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
-        TraceLoggingUInt32(SessionId, "sessionId"),
-        TraceLoggingUInt32(NotifyClass, "notifyClass"),
-        TraceLoggingUInt32(DataType, "dataType"),
-        TraceLoggingUInt32(DataSize, "dataSize"),
-        TraceLoggingBool(IsHighValuePath, "isHighValuePath"),
-        TraceLoggingWideString(safeKeyPath, "keyPath"),
-        TraceLoggingWideString(safeValueName, "valueName")
-    );
+        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"), TraceLoggingUInt32(SessionId, "sessionId"),
+        TraceLoggingUInt32(NotifyClass, "notifyClass"), TraceLoggingUInt32(DataType, "dataType"),
+        TraceLoggingUInt32(DataSize, "dataSize"), TraceLoggingBool(IsHighValuePath, "isHighValuePath"),
+        TraceLoggingWideString(safeKeyPath, "keyPath"), TraceLoggingWideString(safeValueName, "valueName"));
 }
 
-VOID
-STINGEREtwLogDetectionEvent(
-    _In_z_ PCSTR DetectionName,
-    _In_ ULONG Severity,
-    _In_ HANDLE ProcessId,
-    _In_ HANDLE TargetPid,
-    _In_ UINT32 CorrelationFlags,
-    _In_ UINT32 CorrelationAccessMask,
-    _In_ UINT32 CorrelationAgeMs,
-    _In_opt_z_ PCWSTR Reason
-)
+VOID SLEEPWALKEREtwLogDetectionEvent(_In_z_ PCSTR DetectionName, _In_ ULONG Severity, _In_ HANDLE ProcessId,
+                                     _In_ HANDLE TargetPid, _In_ UINT32 CorrelationFlags,
+                                     _In_ UINT32 CorrelationAccessMask, _In_ UINT32 CorrelationAgeMs,
+                                     _In_opt_z_ PCWSTR Reason)
 {
     PCSTR safeName;
     PCWSTR safeReason;
 
-    if (!STINGEREtwIsStarted()) {
+    if (!SLEEPWALKEREtwIsStarted())
+    {
         return;
     }
 
     safeName = (DetectionName != NULL) ? DetectionName : "UNKNOWN";
     safeReason = (Reason != NULL) ? Reason : L"";
 
-    TraceLoggingWrite(
-        g_StingerEtwProvider,
-        "DetectionTelemetry",
-        TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
-        TraceLoggingString(safeName, "detectionName"),
-        TraceLoggingUInt32(Severity, "severity"),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)TargetPid, "targetPid"),
-        TraceLoggingHexUInt32(CorrelationFlags, "correlationFlags"),
-        TraceLoggingHexUInt32(CorrelationAccessMask, "correlationAccessMask"),
-        TraceLoggingUInt32(CorrelationAgeMs, "correlationAgeMs"),
-        TraceLoggingWideString(safeReason, "reason")
-    );
+    TraceLoggingWrite(g_SleepwalkerEtwProvider, "DetectionTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+                      TraceLoggingString(safeName, "detectionName"), TraceLoggingUInt32(Severity, "severity"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)TargetPid, "targetPid"),
+                      TraceLoggingHexUInt32(CorrelationFlags, "correlationFlags"),
+                      TraceLoggingHexUInt32(CorrelationAccessMask, "correlationAccessMask"),
+                      TraceLoggingUInt32(CorrelationAgeMs, "correlationAgeMs"),
+                      TraceLoggingWideString(safeReason, "reason"));
 }

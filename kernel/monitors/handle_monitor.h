@@ -1,21 +1,14 @@
-#ifndef STINGER_HANDLE_MONITOR_H
-#define STINGER_HANDLE_MONITOR_H
+#ifndef SLEEPWALKER_HANDLE_MONITOR_H
+#define SLEEPWALKER_HANDLE_MONITOR_H
 
 #include <ntdef.h>
 
 NTSTATUS
-STINGERHandleMonitorInitialize(
-    VOID
-);
+SLEEPWALKERHandleMonitorInitialize(VOID);
 
-VOID
-STINGERHandleMonitorUninitialize(
-    VOID
-);
+VOID SLEEPWALKERHandleMonitorUninitialize(VOID);
 
 BOOLEAN
-STINGERHandleMonitorSelfCheck(
-    VOID
-);
+SLEEPWALKERHandleMonitorSelfCheck(VOID);
 
 #endif

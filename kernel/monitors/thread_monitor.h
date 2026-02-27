@@ -1,21 +1,14 @@
-#ifndef STINGER_THREAD_H
-#define STINGER_THREAD_H
+#ifndef SLEEPWALKER_THREAD_H
+#define SLEEPWALKER_THREAD_H
 
 #include <ntdef.h>
 
 NTSTATUS
-STINGERThreadMonitorInitialize(
-    VOID
-);
+SLEEPWALKERThreadMonitorInitialize(VOID);
 
-VOID
-STINGERThreadMonitorUninitialize(
-    VOID
-);
+VOID SLEEPWALKERThreadMonitorUninitialize(VOID);
 
 BOOLEAN
-STINGERThreadMonitorSelfCheck(
-    VOID
-);
+SLEEPWALKERThreadMonitorSelfCheck(VOID);
 
 #endif

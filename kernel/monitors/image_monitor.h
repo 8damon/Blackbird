@@ -1,21 +1,14 @@
-#ifndef STINGER_IMAGE_MONITOR_H
-#define STINGER_IMAGE_MONITOR_H
+#ifndef SLEEPWALKER_IMAGE_MONITOR_H
+#define SLEEPWALKER_IMAGE_MONITOR_H
 
 #include <ntdef.h>
 
 NTSTATUS
-STINGERImageMonitorInitialize(
-    VOID
-);
+SLEEPWALKERImageMonitorInitialize(VOID);
 
-VOID
-STINGERImageMonitorUninitialize(
-    VOID
-);
+VOID SLEEPWALKERImageMonitorUninitialize(VOID);
 
 BOOLEAN
-STINGERImageMonitorSelfCheck(
-    VOID
-);
+SLEEPWALKERImageMonitorSelfCheck(VOID);
 
 #endif

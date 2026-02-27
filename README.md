@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img src="./diagram/Sleepwalker_KM_Telemetry_Arch.png" width="900" />
+  <img src="./diagram/SW_LAYOUT_HIGH.png" width="900" />
 </p>
 
 ## Detection Preview

@@ -72,6 +72,12 @@ static BOOLEAN SLEEPWALKERModeAllowed(_In_ WDFREQUEST Request)
     return (WdfRequestGetRequestorMode(Request) == UserMode);
 }
 
+static ULONG SLEEPWALKERGetRequestorPid(_In_ WDFREQUEST Request)
+{
+    UNREFERENCED_PARAMETER(Request);
+    return (ULONG)(ULONG_PTR)PsGetCurrentProcessId();
+}
+
 static BOOLEAN SLEEPWALKERControlIsShutdown(VOID)
 {
     return (InterlockedCompareExchange(&g_ControlShutdown, 0, 0) != 0);
@@ -377,6 +383,8 @@ _Use_decl_annotations_ VOID SLEEPWALKEREvtFileCreate(WDFDEVICE Device, WDFREQUES
 {
     PSLEEPWALKER_FILE_CONTEXT ctx;
     PSLEEPWALKER_CLIENT client;
+    ULONG requesterPid;
+    LONG clientCountSnapshot;
 
     UNREFERENCED_PARAMETER(Device);
 
@@ -408,10 +416,20 @@ _Use_decl_annotations_ VOID SLEEPWALKEREvtFileCreate(WDFDEVICE Device, WDFREQUES
     }
     InsertTailList(&g_ClientList, &client->Link);
     g_ClientCount += 1;
+    clientCountSnapshot = g_ClientCount;
     ExReleaseFastMutex(&g_ClientListLock);
 
     ctx = SLEEPWALKERGetFileContext(FileObject);
     ctx->Client = client;
+
+    requesterPid = SLEEPWALKERGetRequestorPid(Request);
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+               DPFLTR_INFO_LEVEL,
+               "SLEEPWALKER: client attached pid=%lu activeClients=%ld fileObj=0x%p.\n",
+               requesterPid,
+               clientCountSnapshot,
+               FileObject);
+
     WdfRequestComplete(Request, STATUS_SUCCESS);
 }
 
@@ -455,6 +473,9 @@ static NTSTATUS SLEEPWALKERHandleSubscribeIoctl(_In_ PSLEEPWALKER_CLIENT Client,
     PSLEEPWALKER_SUBSCRIBE_REQUEST in;
     size_t inSize;
     UINT32 i;
+    ULONG requesterPid;
+    UINT32 subscriptionCountSnapshot;
+    UINT32 mergedMask;
 
     status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
     if (!NT_SUCCESS(status))
@@ -478,7 +499,18 @@ static NTSTATUS SLEEPWALKERHandleSubscribeIoctl(_In_ PSLEEPWALKER_CLIENT Client,
         if (Client->Subscriptions[i].ProcessId == in->ProcessId)
         {
             Client->Subscriptions[i].StreamMask |= in->StreamMask;
+            mergedMask = Client->Subscriptions[i].StreamMask;
+            subscriptionCountSnapshot = Client->SubscriptionCount;
             ExReleaseFastMutex(&Client->Lock);
+            requesterPid = SLEEPWALKERGetRequestorPid(Request);
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                       DPFLTR_INFO_LEVEL,
+                       "SLEEPWALKER: subscribe update requesterPid=%lu targetPid=%lu streamMask=0x%08X mergedMask=0x%08X subscriptions=%lu.\n",
+                       requesterPid,
+                       in->ProcessId,
+                       in->StreamMask,
+                       mergedMask,
+                       subscriptionCountSnapshot);
             return STATUS_SUCCESS;
         }
     }
@@ -492,7 +524,18 @@ static NTSTATUS SLEEPWALKERHandleSubscribeIoctl(_In_ PSLEEPWALKER_CLIENT Client,
     Client->Subscriptions[Client->SubscriptionCount].ProcessId = in->ProcessId;
     Client->Subscriptions[Client->SubscriptionCount].StreamMask = in->StreamMask;
     Client->SubscriptionCount += 1;
+    subscriptionCountSnapshot = Client->SubscriptionCount;
     ExReleaseFastMutex(&Client->Lock);
+
+    requesterPid = SLEEPWALKERGetRequestorPid(Request);
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+               DPFLTR_INFO_LEVEL,
+               "SLEEPWALKER: subscribe add requesterPid=%lu targetPid=%lu streamMask=0x%08X subscriptions=%lu.\n",
+               requesterPid,
+               in->ProcessId,
+               in->StreamMask,
+               subscriptionCountSnapshot);
+
     return STATUS_SUCCESS;
 }
 

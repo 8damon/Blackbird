@@ -26,9 +26,9 @@
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == '' or '$(VisualStudioVersion)' == '18.0'">17.0</VisualStudioVersion>
     <Configuration>Debug</Configuration>
     <Platform Condition="'$(Platform)' == ''">x64</Platform>
-    <RootNamespace>STINGER</RootNamespace>
+    <RootNamespace>SLEEPWALKER</RootNamespace>
     <WindowsTargetPlatformVersion>$(LatestTargetPlatformVersion)</WindowsTargetPlatformVersion>
-    <TargetName>stingr</TargetName>
+    <TargetName>sleepwlkr</TargetName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
@@ -93,7 +93,7 @@
     </ClCompile>
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
-      <AdditionalOptions>/d "STINGER"</AdditionalOptions>
+      <AdditionalOptions>/d "SLEEPWALKER"</AdditionalOptions>
     </DriverSign>
     <Link>
       <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
@@ -105,7 +105,7 @@
     </ClCompile>
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
-      <AdditionalOptions>/d "STINGER"</AdditionalOptions>
+      <AdditionalOptions>/d "SLEEPWALKER"</AdditionalOptions>
     </DriverSign>
     <Link>
       <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
@@ -117,7 +117,7 @@
     </ClCompile>
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
-      <AdditionalOptions>/d "STINGER"</AdditionalOptions>
+      <AdditionalOptions>/d "SLEEPWALKER"</AdditionalOptions>
     </DriverSign>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
@@ -126,11 +126,11 @@
     </ClCompile>
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
-      <AdditionalOptions>/d "STINGER"</AdditionalOptions>
+      <AdditionalOptions>/d "SLEEPWALKER"</AdditionalOptions>
     </DriverSign>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <Inf Include="..\Stinger.inf">
+    <Inf Include="..\Sleepwalker.inf">
       <SpecifyDriverVerDirectiveDate>true</SpecifyDriverVerDirectiveDate>
       <DateStamp>02/20/2026</DateStamp>
       <SpecifyDriverVerDirectiveVersion>true</SpecifyDriverVerDirectiveVersion>
@@ -152,8 +152,10 @@
     <ClCompile Include="..\kernel\monitors\thread_monitor.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\abi\stinger_ioctl.h" />
+    <ClInclude Include="..\abi\sleepwalker_ioctl.h" />
     <ClInclude Include="..\kernel\core\control.h" />
+    <ClInclude Include="..\kernel\core\protection_utils.h" />
+    <ClInclude Include="..\kernel\core\unicode_utils.h" />
     <ClInclude Include="..\kernel\telemetry\etw.h" />
     <ClInclude Include="..\kernel\monitors\anti_tamper.h" />
     <ClInclude Include="..\kernel\monitors\apc_monitor.h" />

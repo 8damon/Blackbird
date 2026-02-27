@@ -1,4 +1,4 @@
-# Stinger Install and Operator Workflow
+# Sleepwalker Install and Operator Workflow
 
 ## Prerequisites
 
@@ -7,80 +7,82 @@
 - Administrative shell
 - Test-signing enabled for non-production certs
 
+## Conventions
+
+- `<REPO_ROOT>` means the local folder where you cloned this repository.
+- Commands below assume an elevated terminal.
+
 ## 1) Build the Driver
 
-Open `Stinger.slnx` and build:
+Open the solution file (`*.slnx`) in Visual Studio and build:
 
-- Project: `projects/Stinger.vcxproj`
+- Project: `vcxproj/Sleepwalker.vcxproj`
 - Platform: `x64`
 - Configuration: `Debug` or `Release`
 
 Expected artifacts (default):
 
-- `x64\Debug\stingr.sys`
-- `x64\Debug\Stinger.inf`
+- `x64\Debug\sleepwlkr.sys`
+- `x64\Debug\Sleepwalker.inf`
 
 ## 2) Install the Driver Package
 
 From elevated terminal:
 
 ```bat
-pnputil /add-driver "C:\$ARSENAL\Kernel\Tartan\x64\Debug\Stinger.inf" /install
+cd /d "<REPO_ROOT>"
+pnputil /add-driver "Sleepwalker.inf" /install
 ```
 
 Validate package presence:
 
 ```bat
-pnputil /enum-drivers | findstr /i stinger
+pnputil /enum-drivers | findstr /i sleepwalker
 ```
 
 ## 3) Start/Stop Service
 
 ```bat
-sc query stingr
-sc start stingr
-sc stop stingr
+sc query sleepwlkr
+sc start sleepwlkr
+sc stop sleepwlkr
 ```
 
 ## 4) Build User-Mode Tools
 
 Build one or more:
 
-- `projects/StingerClient.vcxproj`
-- `projects/StingerIoctlTest.vcxproj`
-- `projects/StingerEtwProc.vcxproj`
+- `vcxproj/SleepwalkerClient.vcxproj`
+- `vcxproj/SleepwalkerIoctlTest.vcxproj`
+- `vcxproj/SleepwalkerSensorCore.vcxproj`
 
 Alternative direct compile path:
 
 ```bat
-cd C:\$ARSENAL\Kernel\Tartan\user\sensor
+cd /d "<REPO_ROOT>\\user\\sensor"
 build_client.cmd
-build_sensor.cmd
 ```
 
 ## 5) Validate IOCTL Path (Recommended)
 
 ```bat
-cd C:\$ARSENAL\Kernel\Tartan
-.\x64\Debug\StingerIoctlTest.exe
+cd /d "<REPO_ROOT>"
+.\x64\Debug\SleepwalkerIoctlTest.exe
 ```
 
 ## 6) Run Targeted Operator Client
 
 ```bat
-cd C:\$ARSENAL\Kernel\Tartan
-.\x64\Debug\StingerClient.exe 4242 handle,memory,thread
+cd /d "<REPO_ROOT>"
+.\x64\Debug\SleepwalkerClient.exe 4242 handle,memory,thread
 ```
 
-## 7) Run ETW Sensor (Optional)
+## 7) Run ETW Capture (Optional)
 
-```bat
-cd C:\$ARSENAL\Kernel\Tartan
-.\x64\Debug\StingerEtwProc.exe
-```
+Use either `SleepwalkerClient.exe` live ETW output mode or a custom consumer via `SleepwalkerSensorCore` (`SLEEPWALKERSCStartSleepwalkerEtwSession` / `SwkStartDetectionEtwSession`).
 
 ## Notes
 
-- Control plane endpoint: `\\.\StingerCtl`
+- Control plane endpoint: `\\.\SleepwalkerCtl`
 - ACL policy: `SYSTEM` and `Administrators`
 - Driver project is kernel-only; user tooling is isolated under dedicated user-mode projects

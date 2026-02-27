@@ -5,19 +5,14 @@
 #include <tdh.h>
 #include <strsafe.h>
 #include <stdio.h>
-#include "..\\user\\sensor\\stinger_sensor_core.h"
+#include "..\\user\\sensor\\sleepwalker_sensor_core.h"
 
 // {D6C73F8A-6AD8-4F4B-A363-3D2FA31CD0E2}
-static const GUID STINGER_PROVIDER_GUID =
-{ 0xd6c73f8a, 0x6ad8, 0x4f4b, { 0xa3, 0x63, 0x3d, 0x2f, 0xa3, 0x1c, 0xd0, 0xe2 } };
+static const GUID SLEEPWALKER_PROVIDER_GUID = {
+    0xd6c73f8a, 0x6ad8, 0x4f4b, {0xa3, 0x63, 0x3d, 0x2f, 0xa3, 0x1c, 0xd0, 0xe2}};
 
-static BOOL
-GetEtwAnsiProperty(
-    _In_ PEVENT_RECORD Record,
-    _In_z_ PCWSTR Name,
-    _Out_writes_z_(OutputChars) PSTR Output,
-    _In_ size_t OutputChars
-)
+static BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PSTR Output,
+                               _In_ size_t OutputChars)
 {
     PROPERTY_DATA_DESCRIPTOR descriptor;
     ULONG size = 0;
@@ -25,7 +20,8 @@ GetEtwAnsiProperty(
     TDHSTATUS status;
     BOOL ok = FALSE;
 
-    if (Record == NULL || Name == NULL || Output == NULL || OutputChars == 0) {
+    if (Record == NULL || Name == NULL || Output == NULL || OutputChars == 0)
+    {
         return FALSE;
     }
 
@@ -35,18 +31,21 @@ GetEtwAnsiProperty(
     descriptor.ArrayIndex = ULONG_MAX;
 
     status = TdhGetPropertySize(Record, 0, NULL, 1, &descriptor, &size);
-    if (status != ERROR_SUCCESS || size == 0) {
+    if (status != ERROR_SUCCESS || size == 0)
+    {
         return FALSE;
     }
 
     data = (PBYTE)malloc(size + 1);
-    if (data == NULL) {
+    if (data == NULL)
+    {
         return FALSE;
     }
     ZeroMemory(data, size + 1);
 
     status = TdhGetProperty(Record, 0, NULL, 1, &descriptor, size, data);
-    if (status == ERROR_SUCCESS) {
+    if (status == ERROR_SUCCESS)
+    {
         (void)StringCchCopyA(Output, OutputChars, (PCSTR)data);
         ok = TRUE;
     }
@@ -55,19 +54,15 @@ GetEtwAnsiProperty(
     return ok;
 }
 
-static BOOL
-GetEtwUInt32Property(
-    _In_ PEVENT_RECORD Record,
-    _In_z_ PCWSTR Name,
-    _Out_ UINT32* Value
-)
+static BOOL GetEtwUInt32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ UINT32 *Value)
 {
     PROPERTY_DATA_DESCRIPTOR descriptor;
     ULONG size = 0;
     TDHSTATUS status;
     UINT32 value = 0;
 
-    if (Record == NULL || Name == NULL || Value == NULL) {
+    if (Record == NULL || Name == NULL || Value == NULL)
+    {
         return FALSE;
     }
 
@@ -77,12 +72,14 @@ GetEtwUInt32Property(
     descriptor.ArrayIndex = ULONG_MAX;
 
     status = TdhGetPropertySize(Record, 0, NULL, 1, &descriptor, &size);
-    if (status != ERROR_SUCCESS || size < sizeof(UINT32)) {
+    if (status != ERROR_SUCCESS || size < sizeof(UINT32))
+    {
         return FALSE;
     }
 
     status = TdhGetProperty(Record, 0, NULL, 1, &descriptor, sizeof(value), (PBYTE)&value);
-    if (status != ERROR_SUCCESS) {
+    if (status != ERROR_SUCCESS)
+    {
         return FALSE;
     }
 
@@ -90,28 +87,31 @@ GetEtwUInt32Property(
     return TRUE;
 }
 
-static VOID WINAPI
-OnEvent(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName, _In_opt_ PVOID Context)
+static VOID WINAPI OnEvent(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName, _In_opt_ PVOID Context)
 {
     CHAR detectionName[128];
     UINT32 severity = 0;
 
     UNREFERENCED_PARAMETER(Context);
 
-    if (Record == NULL || EventName == NULL || EventName[0] == L'\0') {
+    if (Record == NULL || EventName == NULL || EventName[0] == L'\0')
+    {
         return;
     }
 
-    if (!IsEqualGUID(&Record->EventHeader.ProviderId, &STINGER_PROVIDER_GUID)) {
+    if (!IsEqualGUID(&Record->EventHeader.ProviderId, &SLEEPWALKER_PROVIDER_GUID))
+    {
         return;
     }
 
-    if (wcscmp(EventName, L"DetectionTelemetry") != 0) {
+    if (wcscmp(EventName, L"DetectionTelemetry") != 0)
+    {
         return;
     }
 
     detectionName[0] = '\0';
-    if (!GetEtwAnsiProperty(Record, L"detectionName", detectionName, RTL_NUMBER_OF(detectionName))) {
+    if (!GetEtwAnsiProperty(Record, L"detectionName", detectionName, RTL_NUMBER_OF(detectionName)))
+    {
         return;
     }
 
@@ -120,38 +120,40 @@ OnEvent(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName, _In_opt_ PVOID C
     if (strcmp(detectionName, "POSSIBLE_PROCESS_HOLLOWING_OR_INJECTION_INTENT_CHAIN") == 0 ||
         strcmp(detectionName, "DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION") == 0 ||
         strcmp(detectionName, "SUSPICIOUS_NTDLL_IMAGE_PATH") == 0 ||
-        strcmp(detectionName, "MULTIPLE_NTDLL_IMAGE_MAPPINGS") == 0) {
+        strcmp(detectionName, "MULTIPLE_NTDLL_IMAGE_MAPPINGS") == 0)
+    {
         printf("[ALERT] injection intent signal: %s (severity=%u)\n", detectionName, severity);
     }
 }
 
 int __cdecl wmain(void)
 {
-    STINGERSC_ETW_PROVIDER_CONFIG provider;
-    STINGERSC_ETW_SESSION_CONFIG config;
-    STINGERSC_ETW_SESSION* session = NULL;
+    SLEEPWALKERSC_ETW_PROVIDER_CONFIG provider;
+    SLEEPWALKERSC_ETW_SESSION_CONFIG config;
+    SLEEPWALKERSC_ETW_SESSION *session = NULL;
 
     ZeroMemory(&provider, sizeof(provider));
-    provider.ProviderId = STINGER_PROVIDER_GUID;
+    provider.ProviderId = SLEEPWALKER_PROVIDER_GUID;
     provider.Level = TRACE_LEVEL_INFORMATION;
     provider.MatchAnyKeyword = 0;
     provider.MatchAllKeyword = 0;
 
     ZeroMemory(&config, sizeof(config));
-    config.SessionName = L"StingerIntentChainExample";
+    config.SessionName = L"SleepwalkerIntentChainExample";
     config.Providers = &provider;
     config.ProviderCount = 1;
     config.Callback = OnEvent;
     config.CallbackContext = NULL;
 
-    if (!STINGERSCStartEtwSession(&config, &session)) {
+    if (!SLEEPWALKERSCStartEtwSession(&config, &session))
+    {
         wprintf(L"failed to start ETW session: %lu\n", GetLastError());
         return 1;
     }
 
     wprintf(L"ETW session running, press Ctrl+C to stop\n");
-    (void)STINGERSCRunEtwSession(session);
+    (void)SLEEPWALKERSCRunEtwSession(session);
 
-    STINGERSCStopEtwSession(session);
+    SLEEPWALKERSCStopEtwSession(session);
     return 0;
 }

@@ -19,35 +19,35 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{83D67A8A-0906-4629-BAC6-6021C0D72A4D}</ProjectGuid>
+    <ProjectGuid>{4F018F92-D42D-4B95-A097-D810AA358507}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>StingerEtwProc</ProjectName>
+    <ProjectName>SleepwalkerClient</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -90,10 +90,10 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <IntrinsicFunctions>true</IntrinsicFunctions>
       <StringPooling>true</StringPooling>
       <ControlFlowGuard>false</ControlFlowGuard>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -122,19 +122,22 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\user\sensor\stinger_etw_printer.c" />
-    <ClCompile Include="..\user\sensor\stinger_etw_props.c" />
-    <ClCompile Include="..\user\sensor\stinger_etw_symbols.c" />
-    <ClCompile Include="..\user\sensor\stinger_sensor.c" />
+    <ClCompile Include="..\user\sensor\sleepwalker_client.c" />
+    <ClCompile Include="..\user\sensor\sleepwalker_etw_printer.c" />
+    <ClCompile Include="..\user\sensor\sleepwalker_etw_props.c" />
+    <ClCompile Include="..\user\sensor\sleepwalker_etw_symbols.c" />
+    <ClCompile Include="..\user\sensor\sleepwalker_symbol_common.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\user\sensor\stinger_etw_printer.h" />
-    <ClInclude Include="..\user\sensor\stinger_etw_props.h" />
-    <ClInclude Include="..\user\sensor\stinger_sensor_core.h" />
-    <ClInclude Include="..\user\sensor\stinger_etw_symbols.h" />
+    <ClInclude Include="..\abi\sleepwalker_ioctl.h" />
+    <ClInclude Include="..\user\sensor\sleepwalker_etw_printer.h" />
+    <ClInclude Include="..\user\sensor\sleepwalker_etw_props.h" />
+    <ClInclude Include="..\user\sensor\sleepwalker_sensor_core.h" />
+    <ClInclude Include="..\user\sensor\sleepwalker_etw_symbols.h" />
+    <ClInclude Include="..\user\sensor\sleepwalker_symbol_common.h" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="StingerSensorCore.vcxproj">
+    <ProjectReference Include="SleepwalkerSensorCore.vcxproj">
       <Project>{09D208CD-EEEC-4B23-915D-D9F380F5CC9B}</Project>
     </ProjectReference>
   </ItemGroup>

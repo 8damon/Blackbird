@@ -22,33 +22,33 @@
     <ProjectGuid>{6C70D45A-9D7A-4FA9-9736-6ED89C7671D0}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>StingerTestSuite</ProjectName>
-    <TargetName>StingerTestSuite</TargetName>
+    <ProjectName>SleepwalkerTestSuite</ProjectName>
+    <TargetName>SleepwalkerTestSuite</TargetName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v143</PlatformToolset>
+    <PlatformToolset>v145</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -110,18 +110,22 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\user\sensor\stinger_event_printer.c" />
-    <ClCompile Include="..\user\sensor\stinger_symbol_resolver.c" />
-    <ClCompile Include="..\user\sensor\stinger_ioctl_test.c" />
+    <ClCompile Include="..\user\sensor\sleepwalker_event_printer.c" />
+    <ClCompile Include="..\user\sensor\sleepwalker_symbol_resolver.c" />
+    <ClCompile Include="..\user\sensor\sleepwalker_symbol_common.c" />
+    <ClCompile Include="..\user\sensor\sleepwalker_test_report_html.c" />
+    <ClCompile Include="..\user\sensor\sleepwalker_ioctl_test.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\abi\stinger_ioctl.h" />
-    <ClInclude Include="..\user\sensor\stinger_event_printer.h" />
-    <ClInclude Include="..\user\sensor\stinger_sensor_core.h" />
-    <ClInclude Include="..\user\sensor\stinger_symbol_resolver.h" />
+    <ClInclude Include="..\abi\sleepwalker_ioctl.h" />
+    <ClInclude Include="..\user\sensor\sleepwalker_event_printer.h" />
+    <ClInclude Include="..\user\sensor\sleepwalker_sensor_core.h" />
+    <ClInclude Include="..\user\sensor\sleepwalker_symbol_resolver.h" />
+    <ClInclude Include="..\user\sensor\sleepwalker_symbol_common.h" />
+    <ClInclude Include="..\user\sensor\sleepwalker_test_report_html.h" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="StingerSensorCore.vcxproj">
+    <ProjectReference Include="SleepwalkerSensorCore.vcxproj">
       <Project>{09D208CD-EEEC-4B23-915D-D9F380F5CC9B}</Project>
     </ProjectReference>
   </ItemGroup>

@@ -11,6 +11,7 @@ ARM64/
 Win32/
 Debug/
 Release/
+test-results/
 [Bb]in/
 [Oo]bj/
 *.obj

@@ -8,8 +8,8 @@ if "%VSCMD_VER%"=="" (
 
 set ROOT=%~dp0..\..
 
-msbuild "%ROOT%\vcxproj\StingerSensorCore.vcxproj" /p:Configuration=Debug /p:Platform=x64 /m:1
+msbuild "%ROOT%\vcxproj\SleepwalkerSensorCore.vcxproj" /p:Configuration=Debug /p:Platform=x64 /m:1
 if errorlevel 1 exit /b %ERRORLEVEL%
 
-msbuild "%ROOT%\vcxproj\StingerClient.vcxproj" /p:Configuration=Debug /p:Platform=x64 /m:1
+msbuild "%ROOT%\vcxproj\SleepwalkerClient.vcxproj" /p:Configuration=Debug /p:Platform=x64 /m:1
 exit /b %ERRORLEVEL%

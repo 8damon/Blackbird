@@ -75,6 +75,22 @@ When a `path:` target is not currently running, the client listens for Sleepwalk
 
 `SleepwalkerClient` runs in strict target mode: it programs `IOCTL_SLEEPWALKER_SET_PIDS` with the resolved target PID and filters printed IOCTL/ETW output by scope (`local`, `remote`, `both`).
 
+Policy/config mode (flat YAML-like keys, `key: value` or `key=value`) is supported:
+
+```bat
+SleepwalkerClient.exe --config user\sensor\sleepwalker_client.policy.example.yaml
+```
+
+Structured logging for SIEM/ELK ingestion:
+
+```bat
+SleepwalkerClient.exe --log-format jsonl --log-file events.swk.jsonl --high-priority-file high_priority.swk.jsonl --high-priority-min-severity 4 <target> <streams> [scope]
+```
+
+Example policy file:
+
+- `user/sensor/sleepwalker_client.policy.example.yaml`
+
 ## SleepwalkerTestSuite (IOCTL + ETW Validation)
 
 `SleepwalkerTestSuite.exe` (from `user/sensor/sleepwalker_ioctl_test.c`) is the current end-to-end validation harness.

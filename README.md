@@ -10,6 +10,18 @@
   <img src="./diagram/Sleepwalker_KM_Telemetry_Arch.png" width="900" />
 </p>
 
+## Detection Preview
+
+<p align="center">
+  <b>Legitimate Syscall Classification</b><br/>
+  <img src="./diagram/LEGIT_SYSCALL_DETECTION.png" width="900" />
+</p>
+
+<p align="center">
+  <b>Direct Syscall Suspect Classification</b><br/>
+  <img src="./diagram/DIRECT_SYSCALL_DETECTION.png" width="900" />
+</p>
+
 ---
 
 ## Executive Summary

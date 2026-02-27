@@ -8,6 +8,7 @@
 #include <tlhelp32.h>
 #include <wctype.h>
 #include <math.h>
+#include <stdarg.h>
 #include "..\..\abi\sleepwalker_ioctl.h"
 #include "sleepwalker_sensor_core.h"
 #include "sleepwalker_etw_printer.h"
@@ -81,8 +82,46 @@ typedef struct _SLEEPWALKER_LAUNCH_TARGET
     PROCESS_INFORMATION ProcessInfo;
 } SLEEPWALKER_LAUNCH_TARGET;
 
+typedef enum _SLEEPWALKER_LOG_FORMAT
+{
+    SleepwalkerLogFormatText = 0,
+    SleepwalkerLogFormatJsonl = 1
+} SLEEPWALKER_LOG_FORMAT;
+
+typedef struct _SLEEPWALKER_CLIENT_POLICY
+{
+    BOOL HasTarget;
+    BOOL HasStreams;
+    BOOL HasScope;
+    char TargetArg[512];
+    char StreamsArg[128];
+    char ScopeArg[32];
+
+    SLEEPWALKER_LOG_FORMAT LogFormat;
+    char LogFilePath[MAX_PATH];
+    char HighPriorityFilePath[MAX_PATH];
+    DWORD HighPriorityMinSeverity;
+    BOOL IoctlVerboseOverrideSet;
+    BOOL IoctlVerboseOverride;
+
+    BOOL AllowIoctlHandle;
+    BOOL AllowIoctlThread;
+    BOOL AllowEtwSleepwalker;
+    BOOL AllowEtwTi;
+} SLEEPWALKER_CLIENT_POLICY;
+
+typedef struct _SLEEPWALKER_LOGGER
+{
+    SLEEPWALKER_CLIENT_POLICY Policy;
+    FILE *LogFile;
+    FILE *HighPriorityFile;
+    DWORD TargetPid;
+} SLEEPWALKER_LOGGER;
+
 static volatile LONG g_StopRequested = 0;
 static SLEEPWALKERSC_ETW_SESSION *g_StopSession = NULL;
+static SLEEPWALKER_LOGGER g_Logger;
+static void LoggerEmitEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName);
 
 static BOOL WINAPI ConsoleCtrlHandler(_In_ DWORD CtrlType)
 {
@@ -581,6 +620,451 @@ static const char *ScopeToString(_In_ SLEEPWALKER_TARGET_SCOPE Scope)
     return "local";
 }
 
+static void TrimAsciiInPlace(_Inout_updates_z_(BufferChars) char *Text, _In_ size_t BufferChars)
+{
+    size_t len;
+    size_t start = 0;
+    size_t end;
+    size_t i;
+
+    if (Text == NULL || BufferChars == 0)
+    {
+        return;
+    }
+
+    len = strlen(Text);
+    while (start < len && (Text[start] == ' ' || Text[start] == '\t' || Text[start] == '\r' || Text[start] == '\n'))
+    {
+        start += 1;
+    }
+
+    end = len;
+    while (end > start &&
+           (Text[end - 1] == ' ' || Text[end - 1] == '\t' || Text[end - 1] == '\r' || Text[end - 1] == '\n'))
+    {
+        end -= 1;
+    }
+
+    if (start > 0)
+    {
+        for (i = 0; (start + i) < end && i + 1 < BufferChars; ++i)
+        {
+            Text[i] = Text[start + i];
+        }
+        Text[i] = '\0';
+    }
+    else
+    {
+        Text[end] = '\0';
+    }
+}
+
+static BOOL ParseBoolText(_In_z_ const char *Text, _Out_ BOOL *Value)
+{
+    if (Text == NULL || Value == NULL)
+    {
+        return FALSE;
+    }
+    if (_stricmp(Text, "1") == 0 || _stricmp(Text, "true") == 0 || _stricmp(Text, "yes") == 0 ||
+        _stricmp(Text, "on") == 0)
+    {
+        *Value = TRUE;
+        return TRUE;
+    }
+    if (_stricmp(Text, "0") == 0 || _stricmp(Text, "false") == 0 || _stricmp(Text, "no") == 0 ||
+        _stricmp(Text, "off") == 0)
+    {
+        *Value = FALSE;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static void PolicyDefaults(_Out_ SLEEPWALKER_CLIENT_POLICY *Policy)
+{
+    if (Policy == NULL)
+    {
+        return;
+    }
+    ZeroMemory(Policy, sizeof(*Policy));
+    Policy->LogFormat = SleepwalkerLogFormatText;
+    Policy->HighPriorityMinSeverity = 4;
+    Policy->AllowIoctlHandle = TRUE;
+    Policy->AllowIoctlThread = TRUE;
+    Policy->AllowEtwSleepwalker = TRUE;
+    Policy->AllowEtwTi = TRUE;
+}
+
+static BOOL PolicySetKeyValue(_Inout_ SLEEPWALKER_CLIENT_POLICY *Policy, _In_z_ const char *Key, _In_z_ const char *Value)
+{
+    BOOL b;
+    unsigned long n;
+    char *end = NULL;
+
+    if (Policy == NULL || Key == NULL || Value == NULL)
+    {
+        return FALSE;
+    }
+
+    if (_stricmp(Key, "target") == 0)
+    {
+        (void)StringCchCopyA(Policy->TargetArg, RTL_NUMBER_OF(Policy->TargetArg), Value);
+        Policy->HasTarget = (Policy->TargetArg[0] != '\0');
+        return TRUE;
+    }
+    if (_stricmp(Key, "streams") == 0)
+    {
+        (void)StringCchCopyA(Policy->StreamsArg, RTL_NUMBER_OF(Policy->StreamsArg), Value);
+        Policy->HasStreams = (Policy->StreamsArg[0] != '\0');
+        return TRUE;
+    }
+    if (_stricmp(Key, "scope") == 0)
+    {
+        (void)StringCchCopyA(Policy->ScopeArg, RTL_NUMBER_OF(Policy->ScopeArg), Value);
+        Policy->HasScope = (Policy->ScopeArg[0] != '\0');
+        return TRUE;
+    }
+    if (_stricmp(Key, "log.format") == 0)
+    {
+        if (_stricmp(Value, "jsonl") == 0 || _stricmp(Value, "json") == 0)
+        {
+            Policy->LogFormat = SleepwalkerLogFormatJsonl;
+            return TRUE;
+        }
+        if (_stricmp(Value, "text") == 0 || _stricmp(Value, "console") == 0)
+        {
+            Policy->LogFormat = SleepwalkerLogFormatText;
+            return TRUE;
+        }
+        return FALSE;
+    }
+    if (_stricmp(Key, "log.file") == 0)
+    {
+        (void)StringCchCopyA(Policy->LogFilePath, RTL_NUMBER_OF(Policy->LogFilePath), Value);
+        return TRUE;
+    }
+    if (_stricmp(Key, "log.high_priority_file") == 0 || _stricmp(Key, "high_priority.file") == 0)
+    {
+        (void)StringCchCopyA(Policy->HighPriorityFilePath, RTL_NUMBER_OF(Policy->HighPriorityFilePath), Value);
+        return TRUE;
+    }
+    if (_stricmp(Key, "log.high_priority_min_severity") == 0 || _stricmp(Key, "high_priority.min_severity") == 0)
+    {
+        n = strtoul(Value, &end, 10);
+        if (end == Value || *end != '\0')
+        {
+            return FALSE;
+        }
+        Policy->HighPriorityMinSeverity = (DWORD)n;
+        return TRUE;
+    }
+    if (_stricmp(Key, "output.ioctl_verbose") == 0)
+    {
+        if (!ParseBoolText(Value, &b))
+        {
+            return FALSE;
+        }
+        Policy->IoctlVerboseOverrideSet = TRUE;
+        Policy->IoctlVerboseOverride = b;
+        return TRUE;
+    }
+    if (_stricmp(Key, "filter.ioctl.handle") == 0)
+    {
+        if (!ParseBoolText(Value, &b))
+        {
+            return FALSE;
+        }
+        Policy->AllowIoctlHandle = b;
+        return TRUE;
+    }
+    if (_stricmp(Key, "filter.ioctl.thread") == 0)
+    {
+        if (!ParseBoolText(Value, &b))
+        {
+            return FALSE;
+        }
+        Policy->AllowIoctlThread = b;
+        return TRUE;
+    }
+    if (_stricmp(Key, "filter.etw.sleepwalker") == 0)
+    {
+        if (!ParseBoolText(Value, &b))
+        {
+            return FALSE;
+        }
+        Policy->AllowEtwSleepwalker = b;
+        return TRUE;
+    }
+    if (_stricmp(Key, "filter.etw.ti") == 0)
+    {
+        if (!ParseBoolText(Value, &b))
+        {
+            return FALSE;
+        }
+        Policy->AllowEtwTi = b;
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+static BOOL LoadPolicyFile(_In_z_ const char *Path, _Inout_ SLEEPWALKER_CLIENT_POLICY *Policy)
+{
+    FILE *f;
+    char line[1024];
+    DWORD lineNo = 0;
+
+    if (Path == NULL || Path[0] == '\0' || Policy == NULL)
+    {
+        return FALSE;
+    }
+
+    f = fopen(Path, "rb");
+    if (f == NULL)
+    {
+        return FALSE;
+    }
+
+    while (fgets(line, (int)sizeof(line), f) != NULL)
+    {
+        char key[256];
+        char value[768];
+        const char *sep = NULL;
+        size_t keyLen;
+
+        lineNo += 1;
+        TrimAsciiInPlace(line, RTL_NUMBER_OF(line));
+        if (line[0] == '\0' || line[0] == '#' || line[0] == ';')
+        {
+            continue;
+        }
+
+        sep = strchr(line, ':');
+        if (sep == NULL)
+        {
+            sep = strchr(line, '=');
+        }
+        if (sep == NULL)
+        {
+            continue;
+        }
+
+        keyLen = (size_t)(sep - line);
+        if (keyLen == 0 || keyLen >= RTL_NUMBER_OF(key))
+        {
+            continue;
+        }
+
+        ZeroMemory(key, sizeof(key));
+        ZeroMemory(value, sizeof(value));
+        memcpy(key, line, keyLen);
+        key[keyLen] = '\0';
+        (void)StringCchCopyA(value, RTL_NUMBER_OF(value), sep + 1);
+        TrimAsciiInPlace(key, RTL_NUMBER_OF(key));
+        TrimAsciiInPlace(value, RTL_NUMBER_OF(value));
+
+        if (value[0] != '\0' && value[0] == '"' && value[strlen(value) - 1] == '"')
+        {
+            memmove(value, value + 1, strlen(value));
+            if (value[0] != '\0')
+            {
+                value[strlen(value) - 1] = '\0';
+            }
+        }
+
+        if (!PolicySetKeyValue(Policy, key, value))
+        {
+            printf("[WARN] config ignored key '%s' at %s:%lu\n", key, Path, (unsigned long)lineNo);
+        }
+    }
+
+    fclose(f);
+    return TRUE;
+}
+
+static void JsonEscapeA(_In_z_ const char *Input, _Out_writes_z_(OutputChars) char *Output, _In_ size_t OutputChars)
+{
+    size_t i;
+    size_t w = 0;
+
+    if (Output == NULL || OutputChars == 0)
+    {
+        return;
+    }
+    Output[0] = '\0';
+    if (Input == NULL)
+    {
+        return;
+    }
+
+    for (i = 0; Input[i] != '\0' && w + 2 < OutputChars; ++i)
+    {
+        char ch = Input[i];
+        if (ch == '\\' || ch == '"')
+        {
+            Output[w++] = '\\';
+            Output[w++] = ch;
+        }
+        else if (ch == '\r')
+        {
+            Output[w++] = '\\';
+            Output[w++] = 'r';
+        }
+        else if (ch == '\n')
+        {
+            Output[w++] = '\\';
+            Output[w++] = 'n';
+        }
+        else if (ch == '\t')
+        {
+            Output[w++] = '\\';
+            Output[w++] = 't';
+        }
+        else if ((unsigned char)ch < 0x20)
+        {
+            continue;
+        }
+        else
+        {
+            Output[w++] = ch;
+        }
+    }
+    Output[w] = '\0';
+}
+
+static void WideToUtf8(_In_opt_z_ const WCHAR *Wide, _Out_writes_z_(OutputChars) char *Output, _In_ size_t OutputChars)
+{
+    int converted;
+    if (Output == NULL || OutputChars == 0)
+    {
+        return;
+    }
+    Output[0] = '\0';
+    if (Wide == NULL || Wide[0] == L'\0')
+    {
+        return;
+    }
+    converted = WideCharToMultiByte(CP_UTF8, 0, Wide, -1, Output, (int)OutputChars, NULL, NULL);
+    if (converted <= 0)
+    {
+        Output[0] = '\0';
+    }
+}
+
+static void GetTimestampUtcIso(_Out_writes_z_(OutputChars) char *Output, _In_ size_t OutputChars)
+{
+    SYSTEMTIME st;
+    if (Output == NULL || OutputChars == 0)
+    {
+        return;
+    }
+    GetSystemTime(&st);
+    (void)StringCchPrintfA(Output, OutputChars, "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ", st.wYear, st.wMonth, st.wDay,
+                           st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+}
+
+static void LoggerWriteLine(_In_opt_ FILE *F, _In_z_ const char *Line)
+{
+    if (F == NULL || Line == NULL)
+    {
+        return;
+    }
+    (void)fputs(Line, F);
+    (void)fputc('\n', F);
+    (void)fflush(F);
+}
+
+static void LoggerEmitJson(_In_ DWORD Severity, _In_z_ const char *Category, _In_z_ const char *Kind, _In_ DWORD Pid,
+                           _In_ DWORD TargetPid, _In_z_ const char *Message)
+{
+    char ts[64];
+    char catEsc[128];
+    char kindEsc[128];
+    char msgEsc[2048];
+    char line[2600];
+
+    if (g_Logger.Policy.LogFormat != SleepwalkerLogFormatJsonl || g_Logger.LogFile == NULL)
+    {
+        return;
+    }
+
+    GetTimestampUtcIso(ts, RTL_NUMBER_OF(ts));
+    JsonEscapeA(Category, catEsc, RTL_NUMBER_OF(catEsc));
+    JsonEscapeA(Kind, kindEsc, RTL_NUMBER_OF(kindEsc));
+    JsonEscapeA(Message, msgEsc, RTL_NUMBER_OF(msgEsc));
+
+    (void)StringCchPrintfA(line, RTL_NUMBER_OF(line),
+                           "{\"ts\":\"%s\",\"source\":\"sleepwalker-client\",\"category\":\"%s\",\"kind\":\"%s\","
+                           "\"severity\":%lu,\"pid\":%lu,\"targetPid\":%lu,\"message\":\"%s\"}",
+                           ts, catEsc, kindEsc, (unsigned long)Severity, (unsigned long)Pid, (unsigned long)TargetPid,
+                           msgEsc);
+    LoggerWriteLine(g_Logger.LogFile, line);
+
+    if (g_Logger.HighPriorityFile != NULL && Severity >= g_Logger.Policy.HighPriorityMinSeverity)
+    {
+        LoggerWriteLine(g_Logger.HighPriorityFile, line);
+    }
+}
+
+static BOOL LoggerInitialize(_In_ const SLEEPWALKER_CLIENT_POLICY *Policy, _In_ DWORD TargetPid)
+{
+    if (Policy == NULL)
+    {
+        return FALSE;
+    }
+
+    ZeroMemory(&g_Logger, sizeof(g_Logger));
+    g_Logger.Policy = *Policy;
+    g_Logger.TargetPid = TargetPid;
+
+    if (g_Logger.Policy.LogFormat != SleepwalkerLogFormatJsonl)
+    {
+        return TRUE;
+    }
+
+    if (g_Logger.Policy.LogFilePath[0] == '\0')
+    {
+        (void)StringCchCopyA(g_Logger.Policy.LogFilePath, RTL_NUMBER_OF(g_Logger.Policy.LogFilePath), "events.swk.jsonl");
+    }
+    if (g_Logger.Policy.HighPriorityFilePath[0] == '\0')
+    {
+        (void)StringCchCopyA(g_Logger.Policy.HighPriorityFilePath, RTL_NUMBER_OF(g_Logger.Policy.HighPriorityFilePath),
+                             "high_priority.swk.jsonl");
+    }
+
+    g_Logger.LogFile = fopen(g_Logger.Policy.LogFilePath, "ab");
+    if (g_Logger.LogFile == NULL)
+    {
+        printf("[WARN] failed to open log file '%s'\n", g_Logger.Policy.LogFilePath);
+        return FALSE;
+    }
+
+    g_Logger.HighPriorityFile = fopen(g_Logger.Policy.HighPriorityFilePath, "ab");
+    if (g_Logger.HighPriorityFile == NULL)
+    {
+        printf("[WARN] failed to open high-priority log file '%s'\n", g_Logger.Policy.HighPriorityFilePath);
+    }
+
+    printf("[*] JSONL logging enabled file=%s highPriority=%s minSeverity=%lu\n", g_Logger.Policy.LogFilePath,
+           (g_Logger.HighPriorityFile != NULL) ? g_Logger.Policy.HighPriorityFilePath : "<disabled>",
+           (unsigned long)g_Logger.Policy.HighPriorityMinSeverity);
+    return TRUE;
+}
+
+static void LoggerShutdown(void)
+{
+    if (g_Logger.LogFile != NULL)
+    {
+        fclose(g_Logger.LogFile);
+        g_Logger.LogFile = NULL;
+    }
+    if (g_Logger.HighPriorityFile != NULL)
+    {
+        fclose(g_Logger.HighPriorityFile);
+        g_Logger.HighPriorityFile = NULL;
+    }
+}
+
 static BOOL GetEtwWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PWSTR Output,
                                _In_ size_t OutputChars)
 {
@@ -617,6 +1101,49 @@ static BOOL GetEtwWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _O
     if (status == ERROR_SUCCESS)
     {
         (void)StringCchCopyW(Output, OutputChars, (PCWSTR)raw);
+        ok = TRUE;
+    }
+
+    free(raw);
+    return ok;
+}
+
+static BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PSTR Output,
+                               _In_ size_t OutputChars)
+{
+    PROPERTY_DATA_DESCRIPTOR descriptor;
+    ULONG propertySize = 0;
+    TDHSTATUS status;
+    BYTE *raw = NULL;
+    BOOL ok = FALSE;
+
+    if (Record == NULL || Name == NULL || Output == NULL || OutputChars == 0)
+    {
+        return FALSE;
+    }
+
+    Output[0] = '\0';
+    ZeroMemory(&descriptor, sizeof(descriptor));
+    descriptor.PropertyName = (ULONGLONG)(ULONG_PTR)Name;
+    descriptor.ArrayIndex = ULONG_MAX;
+
+    status = TdhGetPropertySize(Record, 0, NULL, 1, &descriptor, &propertySize);
+    if (status != ERROR_SUCCESS || propertySize == 0)
+    {
+        return FALSE;
+    }
+
+    raw = (BYTE *)malloc(propertySize + 1);
+    if (raw == NULL)
+    {
+        return FALSE;
+    }
+    ZeroMemory(raw, propertySize + 1);
+
+    status = TdhGetProperty(Record, 0, NULL, 1, &descriptor, propertySize, raw);
+    if (status == ERROR_SUCCESS)
+    {
+        (void)StringCchCopyA(Output, OutputChars, (PCSTR)raw);
         ok = TRUE;
     }
 
@@ -816,6 +1343,8 @@ static VOID WINAPI LiveEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR 
     {
         return;
     }
+
+    LoggerEmitEtwRecord(Record, EventName);
 
     if (IsEqualGUID(&Record->EventHeader.ProviderId, &SLEEPWALKERSC_PROVIDER_GUID_SLEEPWALKER))
     {
@@ -1142,13 +1671,20 @@ static VOID PrimeTargetImageHint(_In_ HANDLE Device, _In_ const SLEEPWALKER_TARG
 static void PrintUsage(void)
 {
     printf("Usage: sleepwalker_client.exe shutdown\n");
-    printf("Usage: sleepwalker_client.exe <target> <streams> [scope]\n");
+    printf("Usage: sleepwalker_client.exe [--config <file>] [--log-format text|jsonl] [--log-file <path>]\n");
+    printf("                             [--high-priority-file <path>] [--high-priority-min-severity <0-10>]\n");
+    printf("                             [--ioctl-verbose 0|1] <target> <streams> [scope]\n");
     printf("target: PID | pid:<PID> | pid=<PID> | name:process.exe | name=process.exe | process.exe | path:<full-path> "
            "| path=<full-path> | launch:<full-path>\n");
     printf("streams: handle,memory,thread\n");
     printf("scope: local (default) | remote | both\n");
+    printf("config file supports key:value or key=value (YAML-like flat keys)\n");
+    printf("keys: target, streams, scope, log.format, log.file, log.high_priority_file,\n");
+    printf("      log.high_priority_min_severity, output.ioctl_verbose,\n");
+    printf("      filter.ioctl.handle, filter.ioctl.thread, filter.etw.sleepwalker, filter.etw.ti\n");
     printf("example: sleepwalker_client.exe shutdown\n");
     printf("example: sleepwalker_client.exe notepad.exe handle,thread\n");
+    printf("example: sleepwalker_client.exe --log-format jsonl --log-file events.swk.jsonl notepad.exe handle,memory,thread\n");
     printf("example: sleepwalker_client.exe path:C:\\Windows\\System32\\notepad.exe handle,memory,thread\n");
     printf("example: sleepwalker_client.exe launch:C:\\Windows\\System32\\notepad.exe handle,memory,thread\n");
     printf("example: sleepwalker_client.exe 4242 handle,memory,thread both\n");
@@ -1508,6 +2044,145 @@ static void PrintThreadEvent(_In_ const SLEEPWALKER_THREAD_EVENT *t, _In_ DWORD 
     printf("=====================================\n");
 }
 
+static void LoggerEmitIoctlRecord(_In_ const SLEEPWALKER_EVENT_RECORD *Record)
+{
+    char msg[2048];
+    const SLEEPWALKER_HANDLE_EVENT *h;
+    const SLEEPWALKER_THREAD_EVENT *t;
+
+    if (Record == NULL)
+    {
+        return;
+    }
+
+    if (Record->Header.Type == SleepwalkerEventTypeHandle)
+    {
+        if (!g_Logger.Policy.AllowIoctlHandle)
+        {
+            return;
+        }
+
+        h = &Record->Data.Handle;
+        (void)StringCchPrintfA(msg, RTL_NUMBER_OF(msg),
+                               "seq=%lu class=%u caller=%llu target=%llu access=0x%08X flags=0x%08X origin=0x%llX",
+                               (unsigned long)Record->Header.Sequence, (unsigned)h->ClassId,
+                               (unsigned long long)h->CallerPid, (unsigned long long)h->TargetPid, h->DesiredAccess,
+                               h->Flags, (unsigned long long)h->OriginAddress);
+        LoggerEmitJson((h->ClassId == SleepwalkerHandleClassDirectSyscallSuspect) ? 4u : 2u, "ioctl", "handle",
+                       (DWORD)h->CallerPid, (DWORD)h->TargetPid, msg);
+        return;
+    }
+
+    if (Record->Header.Type == SleepwalkerEventTypeThread)
+    {
+        if (!g_Logger.Policy.AllowIoctlThread)
+        {
+            return;
+        }
+
+        t = &Record->Data.Thread;
+        (void)StringCchPrintfA(msg, RTL_NUMBER_OF(msg),
+                               "seq=%lu process=%llu thread=%llu creator=%llu flags=0x%08X start=0x%llX imageBase=0x%llX",
+                               (unsigned long)Record->Header.Sequence, (unsigned long long)t->ProcessId,
+                               (unsigned long long)t->ThreadId, (unsigned long long)t->CreatorPid, t->Flags,
+                               (unsigned long long)t->StartAddress, (unsigned long long)t->ImageBase);
+        LoggerEmitJson(((t->Flags & SLEEPWALKER_THREAD_FLAG_CORRELATED_INTENT) != 0) ? 3u : 1u, "ioctl", "thread",
+                       (DWORD)t->CreatorPid, (DWORD)t->ProcessId, msg);
+        return;
+    }
+}
+
+static void LoggerEmitEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName)
+{
+    ULONGLONG processId = 0;
+    ULONGLONG callerPid = 0;
+    ULONGLONG targetPid = 0;
+    ULONGLONG severity = 0;
+    WCHAR reasonW[384];
+    char detectionName[192];
+    char reason[512];
+    char eventNameUtf8[128];
+    char provider[32];
+    char message[2048];
+    DWORD actorPid = 0;
+    DWORD target = 0;
+
+    if (Record == NULL)
+    {
+        return;
+    }
+
+    if (IsEqualGUID(&Record->EventHeader.ProviderId, &SLEEPWALKERSC_PROVIDER_GUID_SLEEPWALKER))
+    {
+        if (!g_Logger.Policy.AllowEtwSleepwalker)
+        {
+            return;
+        }
+        (void)StringCchCopyA(provider, RTL_NUMBER_OF(provider), "sleepwalker");
+    }
+    else if (IsEqualGUID(&Record->EventHeader.ProviderId, &SLEEPWALKERSC_PROVIDER_GUID_TI))
+    {
+        if (!g_Logger.Policy.AllowEtwTi)
+        {
+            return;
+        }
+        (void)StringCchCopyA(provider, RTL_NUMBER_OF(provider), "ti");
+    }
+    else
+    {
+        return;
+    }
+
+    (void)GetEtwU64Property(Record, L"processId", &processId);
+    (void)GetEtwU64Property(Record, L"callerPid", &callerPid);
+    (void)GetEtwU64Property(Record, L"targetPid", &targetPid);
+    if (processId == 0)
+    {
+        processId = callerPid;
+    }
+    if (processId > 0 && processId <= 0xFFFFFFFFull)
+    {
+        actorPid = (DWORD)processId;
+    }
+    if (targetPid > 0 && targetPid <= 0xFFFFFFFFull)
+    {
+        target = (DWORD)targetPid;
+    }
+
+    ZeroMemory(eventNameUtf8, sizeof(eventNameUtf8));
+    if (EventName != NULL && EventName[0] != L'\0')
+    {
+        WideToUtf8(EventName, eventNameUtf8, RTL_NUMBER_OF(eventNameUtf8));
+    }
+    if (eventNameUtf8[0] == '\0')
+    {
+        (void)StringCchCopyA(eventNameUtf8, RTL_NUMBER_OF(eventNameUtf8), "unknown");
+    }
+
+    if (EventName != NULL && wcscmp(EventName, L"DetectionTelemetry") == 0)
+    {
+        ZeroMemory(reasonW, sizeof(reasonW));
+        ZeroMemory(detectionName, sizeof(detectionName));
+        ZeroMemory(reason, sizeof(reason));
+        (void)GetEtwAnsiProperty(Record, L"detectionName", detectionName, RTL_NUMBER_OF(detectionName));
+        (void)GetEtwWideProperty(Record, L"reason", reasonW, RTL_NUMBER_OF(reasonW));
+        (void)GetEtwU64Property(Record, L"severity", &severity);
+        WideToUtf8(reasonW, reason, RTL_NUMBER_OF(reason));
+        if (detectionName[0] == '\0')
+        {
+            (void)StringCchCopyA(detectionName, RTL_NUMBER_OF(detectionName), "UNKNOWN");
+        }
+        (void)StringCchPrintfA(message, RTL_NUMBER_OF(message), "event=%s detection=%s reason=%s", eventNameUtf8,
+                               detectionName, (reason[0] != '\0') ? reason : "<none>");
+        LoggerEmitJson((severity != 0 && severity <= 10) ? (DWORD)severity : 4u, provider, "detection", actorPid,
+                       target, message);
+        return;
+    }
+
+    (void)StringCchPrintfA(message, RTL_NUMBER_OF(message), "event=%s", eventNameUtf8);
+    LoggerEmitJson(1u, provider, "event", actorPid, target, message);
+}
+
 int __cdecl main(int argc, char **argv)
 {
     HANDLE h;
@@ -1526,13 +2201,117 @@ int __cdecl main(int argc, char **argv)
     BOOL symbolsInitialized = FALSE;
     BOOL ioctlVerbose = TRUE;
     BOOL rc = FALSE;
+    SLEEPWALKER_CLIENT_POLICY policy;
+    const char *configPath = NULL;
+    const char *targetArg = NULL;
+    const char *streamsArg = NULL;
+    const char *scopeArg = NULL;
+    const char *positional[3];
+    int positionalCount = 0;
+    int i;
 
     (void)SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
     ZeroMemory(&attach, sizeof(attach));
     ZeroMemory(&liveEtw, sizeof(liveEtw));
     ZeroMemory(&launchTarget, sizeof(launchTarget));
+    PolicyDefaults(&policy);
+    for (i = 0; i < (int)RTL_NUMBER_OF(positional); ++i)
+    {
+        positional[i] = NULL;
+    }
 
-    if (argc == 2 && _stricmp(argv[1], "shutdown") == 0)
+    for (i = 1; i < argc; ++i)
+    {
+        const char *arg = argv[i];
+        if (_stricmp(arg, "--config") == 0)
+        {
+            if (i + 1 >= argc)
+            {
+                PrintUsage();
+                return 1;
+            }
+            configPath = argv[++i];
+        }
+    }
+
+    if (configPath != NULL)
+    {
+        if (!LoadPolicyFile(configPath, &policy))
+        {
+            printf("[-] failed to load config '%s' (%lu)\n", configPath, GetLastError());
+            return 1;
+        }
+        printf("[*] loaded config: %s\n", configPath);
+    }
+
+    positionalCount = 0;
+    for (i = 0; i < (int)RTL_NUMBER_OF(positional); ++i)
+    {
+        positional[i] = NULL;
+    }
+    for (i = 1; i < argc; ++i)
+    {
+        const char *arg = argv[i];
+        if (_stricmp(arg, "--config") == 0)
+        {
+            i += 1;
+            continue;
+        }
+        if (_stricmp(arg, "--log-format") == 0)
+        {
+            if (i + 1 >= argc || !PolicySetKeyValue(&policy, "log.format", argv[++i]))
+            {
+                PrintUsage();
+                return 1;
+            }
+            continue;
+        }
+        if (_stricmp(arg, "--log-file") == 0)
+        {
+            if (i + 1 >= argc || !PolicySetKeyValue(&policy, "log.file", argv[++i]))
+            {
+                PrintUsage();
+                return 1;
+            }
+            continue;
+        }
+        if (_stricmp(arg, "--high-priority-file") == 0)
+        {
+            if (i + 1 >= argc || !PolicySetKeyValue(&policy, "log.high_priority_file", argv[++i]))
+            {
+                PrintUsage();
+                return 1;
+            }
+            continue;
+        }
+        if (_stricmp(arg, "--high-priority-min-severity") == 0)
+        {
+            if (i + 1 >= argc || !PolicySetKeyValue(&policy, "log.high_priority_min_severity", argv[++i]))
+            {
+                PrintUsage();
+                return 1;
+            }
+            continue;
+        }
+        if (_stricmp(arg, "--ioctl-verbose") == 0)
+        {
+            if (i + 1 >= argc || !PolicySetKeyValue(&policy, "output.ioctl_verbose", argv[++i]))
+            {
+                PrintUsage();
+                return 1;
+            }
+            continue;
+        }
+
+        if (positionalCount >= 3)
+        {
+            PrintUsage();
+            return 1;
+        }
+        positional[positionalCount++] = arg;
+    }
+
+    if (positionalCount == 1 && _stricmp(positional[0], "shutdown") == 0)
     {
         h = SLEEPWALKERSCOpenControlDevice();
         if (h == INVALID_HANDLE_VALUE)
@@ -1554,27 +2333,44 @@ int __cdecl main(int argc, char **argv)
         return 0;
     }
 
-    if (argc != 3 && argc != 4)
+    targetArg = (positionalCount > 0) ? positional[0] : NULL;
+    streamsArg = (positionalCount > 1) ? positional[1] : NULL;
+    scopeArg = (positionalCount > 2) ? positional[2] : NULL;
+
+    if (targetArg == NULL && policy.HasTarget)
+    {
+        targetArg = policy.TargetArg;
+    }
+    if (streamsArg == NULL && policy.HasStreams)
+    {
+        streamsArg = policy.StreamsArg;
+    }
+    if (scopeArg == NULL && policy.HasScope)
+    {
+        scopeArg = policy.ScopeArg;
+    }
+
+    if (targetArg == NULL || streamsArg == NULL)
     {
         PrintUsage();
         return 1;
     }
 
-    streams = SLEEPWALKERSCParseStreamMaskA(argv[2]);
+    streams = SLEEPWALKERSCParseStreamMaskA(streamsArg);
     if (streams == 0)
     {
         PrintUsage();
         return 1;
     }
-    if (argc == 4 && !ParseScopeArg(argv[3], &scope))
+    if (scopeArg != NULL && !ParseScopeArg(scopeArg, &scope))
     {
         PrintUsage();
         return 1;
     }
 
-    if (!ResolveTargetSpec(argv[1], &targetSpec))
+    if (!ResolveTargetSpec(targetArg, &targetSpec))
     {
-        printf("[-] Invalid target '%s'.\n", argv[1]);
+        printf("[-] Invalid target '%s'.\n", targetArg);
         return 1;
     }
 
@@ -1587,7 +2383,7 @@ int __cdecl main(int argc, char **argv)
         }
         else
         {
-            printf("[-] Could not resolve target '%s': %lu\n", argv[1], err);
+            printf("[-] Could not resolve target '%s': %lu\n", targetArg, err);
         }
         return 1;
     }
@@ -1603,6 +2399,12 @@ int __cdecl main(int argc, char **argv)
     attach.StreamMask = streams;
     attach.TargetPid = targetPid;
     attach.Scope = scope;
+    if (policy.IoctlVerboseOverrideSet)
+    {
+        ioctlVerbose = policy.IoctlVerboseOverride;
+    }
+
+    (void)LoggerInitialize(&policy, targetPid);
 
     if (!AttachProgramTargetPid(&attach))
     {
@@ -1664,6 +2466,9 @@ int __cdecl main(int argc, char **argv)
         {
             continue;
         }
+
+        LoggerEmitIoctlRecord(&record);
+
         if (!ioctlVerbose)
         {
             continue;
@@ -1718,6 +2523,7 @@ Cleanup:
         launchTarget.Active = FALSE;
     }
 
+    LoggerShutdown();
     CloseHandle(h);
     return rc ? 0 : 1;
 }

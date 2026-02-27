@@ -2,6 +2,18 @@
 
 This document is a practical, task-oriented guide for using Sleepwalker in labs/VMs.
 
+## Output Examples
+
+Representative operator/test outputs:
+
+<p align="center">
+  <img src="./diagram/IOCTL_EVENT_HANDLE.png" width="900" />
+</p>
+
+<p align="center">
+  <img src="./diagram/TEST_PASS.png" width="700" />
+</p>
+
 Contents:
 
 - See `usage/README.md` for example workflows and code snippets.

@@ -105,6 +105,8 @@ In many environments, teams end up choosing between:
 ## Core Signals (High Value Surface)
 
 Sleepwalker focuses on behavior commonly observed in:
+- Direct-syscalls
+- Syscall monitoring
 - Process injection workflows
 - Post-exploitation handle acquisition
 - Remote thread creation + suspicious start regions

@@ -1,21 +1,14 @@
-#ifndef STINGER_PROCESS_MONITOR_H
-#define STINGER_PROCESS_MONITOR_H
+#ifndef SLEEPWALKER_PROCESS_MONITOR_H
+#define SLEEPWALKER_PROCESS_MONITOR_H
 
 #include <ntdef.h>
 
 NTSTATUS
-STINGERProcessMonitorInitialize(
-    VOID
-);
+SLEEPWALKERProcessMonitorInitialize(VOID);
 
-VOID
-STINGERProcessMonitorUninitialize(
-    VOID
-);
+VOID SLEEPWALKERProcessMonitorUninitialize(VOID);
 
 BOOLEAN
-STINGERProcessMonitorSelfCheck(
-    VOID
-);
+SLEEPWALKERProcessMonitorSelfCheck(VOID);
 
 #endif

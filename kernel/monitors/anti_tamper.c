@@ -10,31 +10,32 @@
 #include "..\core\control.h"
 #include "..\telemetry\etw.h"
 
-#define STINGER_TAMPER_CHECK_PERIOD_MS 5000
+#define SLEEPWALKER_TAMPER_CHECK_PERIOD_MS 5000
 
-#define STINGER_TAMPER_MAJOR_FN_CHANGED       0x00000001
-#define STINGER_TAMPER_UNLOAD_CHANGED         0x00000002
-#define STINGER_TAMPER_FASTIO_CHANGED         0x00000004
-#define STINGER_TAMPER_OBJECT_TYPE_INVALID    0x00000008
-#define STINGER_TAMPER_OBJECT_SIZE_INVALID    0x00000010
-#define STINGER_TAMPER_EXTENSION_MISSING      0x00000020
-#define STINGER_TAMPER_CONTROL_INTEGRITY      0x00000040
-#define STINGER_TAMPER_ETW_INTEGRITY          0x00000080
-#define STINGER_TAMPER_IOCTL_DISPATCH_INVALID 0x00000100
-#define STINGER_TAMPER_MAJOR_PTR_INVALID      0x00000200
-#define STINGER_TAMPER_DRIVER_IMAGE_INVALID   0x00000400
-#define STINGER_TAMPER_CHECK_IRQL_INVALID     0x00000800
-#define STINGER_TAMPER_MONITOR_INTEGRITY      0x00001000
+#define SLEEPWALKER_TAMPER_MAJOR_FN_CHANGED 0x00000001
+#define SLEEPWALKER_TAMPER_UNLOAD_CHANGED 0x00000002
+#define SLEEPWALKER_TAMPER_FASTIO_CHANGED 0x00000004
+#define SLEEPWALKER_TAMPER_OBJECT_TYPE_INVALID 0x00000008
+#define SLEEPWALKER_TAMPER_OBJECT_SIZE_INVALID 0x00000010
+#define SLEEPWALKER_TAMPER_EXTENSION_MISSING 0x00000020
+#define SLEEPWALKER_TAMPER_CONTROL_INTEGRITY 0x00000040
+#define SLEEPWALKER_TAMPER_ETW_INTEGRITY 0x00000080
+#define SLEEPWALKER_TAMPER_IOCTL_DISPATCH_INVALID 0x00000100
+#define SLEEPWALKER_TAMPER_MAJOR_PTR_INVALID 0x00000200
+#define SLEEPWALKER_TAMPER_DRIVER_IMAGE_INVALID 0x00000400
+#define SLEEPWALKER_TAMPER_CHECK_IRQL_INVALID 0x00000800
+#define SLEEPWALKER_TAMPER_MONITOR_INTEGRITY 0x00001000
 
-typedef struct _STINGER_DISPATCH_SNAPSHOT {
+typedef struct _SLEEPWALKER_DISPATCH_SNAPSHOT
+{
     PDRIVER_DISPATCH MajorFunction[IRP_MJ_MAXIMUM_FUNCTION + 1];
     PDRIVER_UNLOAD DriverUnload;
     PFAST_IO_DISPATCH FastIoDispatch;
     CSHORT Type;
     CSHORT Size;
-} STINGER_DISPATCH_SNAPSHOT;
+} SLEEPWALKER_DISPATCH_SNAPSHOT;
 
-static STINGER_DISPATCH_SNAPSHOT g_Snapshot;
+static SLEEPWALKER_DISPATCH_SNAPSHOT g_Snapshot;
 static PDRIVER_OBJECT g_DriverObject = NULL;
 static KTIMER g_Timer;
 static KDPC g_TimerDpc;
@@ -45,24 +46,17 @@ static volatile LONG g_Initialized = 0;
 static volatile LONG g_LastTamperMask = 0;
 static KEVENT g_WorkDrainEvent;
 
-static
-BOOLEAN
-STINGERIsKernelPointer(
-    _In_opt_ PVOID Address
-)
+static BOOLEAN SLEEPWALKERIsKernelPointer(_In_opt_ PVOID Address)
 {
-    if (Address == NULL) {
+    if (Address == NULL)
+    {
         return FALSE;
     }
 
     return ((ULONG_PTR)Address >= (ULONG_PTR)MmSystemRangeStart);
 }
 
-static
-VOID
-STINGERAntiTamperWorkRoutine(
-    _In_ PVOID Context
-)
+static VOID SLEEPWALKERAntiTamperWorkRoutine(_In_ PVOID Context)
 {
     PDRIVER_OBJECT driverObject;
     ULONG tamperMask = 0;
@@ -73,90 +67,89 @@ STINGERAntiTamperWorkRoutine(
     UNREFERENCED_PARAMETER(Context);
 
     driverObject = g_DriverObject;
-    if (driverObject == NULL) {
+    if (driverObject == NULL)
+    {
         InterlockedExchange(&g_WorkQueued, 0);
         KeSetEvent(&g_WorkDrainEvent, IO_NO_INCREMENT, FALSE);
         return;
     }
 
-    if (irql != PASSIVE_LEVEL) {
-        tamperMask |= STINGER_TAMPER_CHECK_IRQL_INVALID;
+    if (irql != PASSIVE_LEVEL)
+    {
+        tamperMask |= SLEEPWALKER_TAMPER_CHECK_IRQL_INVALID;
     }
 
-    for (i = 0; i <= IRP_MJ_MAXIMUM_FUNCTION; ++i) {
-        if (driverObject->MajorFunction[i] != g_Snapshot.MajorFunction[i]) {
-            tamperMask |= STINGER_TAMPER_MAJOR_FN_CHANGED;
+    for (i = 0; i <= IRP_MJ_MAXIMUM_FUNCTION; ++i)
+    {
+        if (driverObject->MajorFunction[i] != g_Snapshot.MajorFunction[i])
+        {
+            tamperMask |= SLEEPWALKER_TAMPER_MAJOR_FN_CHANGED;
         }
-        if (!STINGERIsKernelPointer((PVOID)driverObject->MajorFunction[i])) {
-            tamperMask |= STINGER_TAMPER_MAJOR_PTR_INVALID;
+        if (!SLEEPWALKERIsKernelPointer((PVOID)driverObject->MajorFunction[i]))
+        {
+            tamperMask |= SLEEPWALKER_TAMPER_MAJOR_PTR_INVALID;
         }
     }
 
-    if (!STINGERIsKernelPointer((PVOID)driverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL])) {
-        tamperMask |= STINGER_TAMPER_IOCTL_DISPATCH_INVALID;
+    if (!SLEEPWALKERIsKernelPointer((PVOID)driverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]))
+    {
+        tamperMask |= SLEEPWALKER_TAMPER_IOCTL_DISPATCH_INVALID;
     }
 
-    if (driverObject->DriverUnload != g_Snapshot.DriverUnload) {
-        tamperMask |= STINGER_TAMPER_UNLOAD_CHANGED;
+    if (driverObject->DriverUnload != g_Snapshot.DriverUnload)
+    {
+        tamperMask |= SLEEPWALKER_TAMPER_UNLOAD_CHANGED;
     }
-    if (driverObject->FastIoDispatch != g_Snapshot.FastIoDispatch) {
-        tamperMask |= STINGER_TAMPER_FASTIO_CHANGED;
+    if (driverObject->FastIoDispatch != g_Snapshot.FastIoDispatch)
+    {
+        tamperMask |= SLEEPWALKER_TAMPER_FASTIO_CHANGED;
     }
-    if (driverObject->Type != g_Snapshot.Type) {
-        tamperMask |= STINGER_TAMPER_OBJECT_TYPE_INVALID;
+    if (driverObject->Type != g_Snapshot.Type)
+    {
+        tamperMask |= SLEEPWALKER_TAMPER_OBJECT_TYPE_INVALID;
     }
-    if (driverObject->Size != g_Snapshot.Size) {
-        tamperMask |= STINGER_TAMPER_OBJECT_SIZE_INVALID;
+    if (driverObject->Size != g_Snapshot.Size)
+    {
+        tamperMask |= SLEEPWALKER_TAMPER_OBJECT_SIZE_INVALID;
     }
-    if (driverObject->DriverExtension == NULL) {
-        tamperMask |= STINGER_TAMPER_EXTENSION_MISSING;
+    if (driverObject->DriverExtension == NULL)
+    {
+        tamperMask |= SLEEPWALKER_TAMPER_EXTENSION_MISSING;
     }
-    if (!STINGERIsKernelPointer(driverObject->DriverStart) ||
-        driverObject->DriverSize == 0 ||
-        driverObject->DriverSection == NULL ||
-        !STINGERIsKernelPointer((PVOID)driverObject->DriverInit)) {
-        tamperMask |= STINGER_TAMPER_DRIVER_IMAGE_INVALID;
+    if (!SLEEPWALKERIsKernelPointer(driverObject->DriverStart) || driverObject->DriverSize == 0 ||
+        driverObject->DriverSection == NULL || !SLEEPWALKERIsKernelPointer((PVOID)driverObject->DriverInit))
+    {
+        tamperMask |= SLEEPWALKER_TAMPER_DRIVER_IMAGE_INVALID;
     }
-    if (!STINGERControlSelfCheck()) {
-        tamperMask |= STINGER_TAMPER_CONTROL_INTEGRITY;
+    if (!SLEEPWALKERControlSelfCheck())
+    {
+        tamperMask |= SLEEPWALKER_TAMPER_CONTROL_INTEGRITY;
     }
-    if (!STINGEREtwSelfCheck()) {
-        tamperMask |= STINGER_TAMPER_ETW_INTEGRITY;
+    if (!SLEEPWALKEREtwSelfCheck())
+    {
+        tamperMask |= SLEEPWALKER_TAMPER_ETW_INTEGRITY;
     }
-    if (!STINGERHandleMonitorSelfCheck() ||
-        !STINGERThreadMonitorSelfCheck() ||
-        !STINGERProcessMonitorSelfCheck() ||
-        !STINGERImageMonitorSelfCheck() ||
-        !STINGERRegistryMonitorSelfCheck() ||
-        !STINGERApcMonitorSelfCheck() ||
-        !STINGERCorrelationSelfCheck()) {
-        tamperMask |= STINGER_TAMPER_MONITOR_INTEGRITY;
+    if (!SLEEPWALKERHandleMonitorSelfCheck() || !SLEEPWALKERThreadMonitorSelfCheck() ||
+        !SLEEPWALKERProcessMonitorSelfCheck() || !SLEEPWALKERImageMonitorSelfCheck() ||
+        !SLEEPWALKERRegistryMonitorSelfCheck() || !SLEEPWALKERApcMonitorSelfCheck() ||
+        !SLEEPWALKERCorrelationSelfCheck())
+    {
+        tamperMask |= SLEEPWALKER_TAMPER_MONITOR_INTEGRITY;
     }
 
     prevMask = InterlockedExchange(&g_LastTamperMask, (LONG)tamperMask);
-    if (prevMask != (LONG)tamperMask) {
-        if (tamperMask != 0) {
-            STINGEREtwLogDetectionEvent(
-                "DRIVER_DISPATCH_OR_OBJECT_TAMPER",
-                5,
-                PsGetCurrentProcessId(),
-                NULL,
-                tamperMask,
-                0,
-                0,
-                L"driver dispatch/object integrity drift detected"
-            );
-        } else if (prevMask != 0) {
-            STINGEREtwLogDetectionEvent(
-                "DRIVER_DISPATCH_OR_OBJECT_TAMPER_CLEARED",
-                2,
-                PsGetCurrentProcessId(),
-                NULL,
-                0,
-                0,
-                0,
-                L"driver dispatch/object integrity returned to expected state"
-            );
+    if (prevMask != (LONG)tamperMask)
+    {
+        if (tamperMask != 0)
+        {
+            SLEEPWALKEREtwLogDetectionEvent("DRIVER_DISPATCH_OR_OBJECT_TAMPER", 5, PsGetCurrentProcessId(), NULL,
+                                            tamperMask, 0, 0, L"driver dispatch/object integrity drift detected");
+        }
+        else if (prevMask != 0)
+        {
+            SLEEPWALKEREtwLogDetectionEvent("DRIVER_DISPATCH_OR_OBJECT_TAMPER_CLEARED", 2, PsGetCurrentProcessId(),
+                                            NULL, 0, 0, 0,
+                                            L"driver dispatch/object integrity returned to expected state");
         }
     }
 
@@ -164,50 +157,48 @@ STINGERAntiTamperWorkRoutine(
     KeSetEvent(&g_WorkDrainEvent, IO_NO_INCREMENT, FALSE);
 }
 
-static
-VOID
-STINGERAntiTamperTimerDpc(
-    _In_ PKDPC Dpc,
-    _In_opt_ PVOID DeferredContext,
-    _In_opt_ PVOID SystemArgument1,
-    _In_opt_ PVOID SystemArgument2
-)
+static VOID SLEEPWALKERAntiTamperTimerDpc(_In_ PKDPC Dpc, _In_opt_ PVOID DeferredContext,
+                                          _In_opt_ PVOID SystemArgument1, _In_opt_ PVOID SystemArgument2)
 {
     UNREFERENCED_PARAMETER(Dpc);
     UNREFERENCED_PARAMETER(DeferredContext);
     UNREFERENCED_PARAMETER(SystemArgument1);
     UNREFERENCED_PARAMETER(SystemArgument2);
 
-    if (InterlockedCompareExchange(&g_Stopping, 0, 0) != 0) {
+    if (InterlockedCompareExchange(&g_Stopping, 0, 0) != 0)
+    {
         return;
     }
 
-    if (InterlockedCompareExchange(&g_WorkQueued, 1, 0) == 0) {
+    if (InterlockedCompareExchange(&g_WorkQueued, 1, 0) == 0)
+    {
         KeClearEvent(&g_WorkDrainEvent);
         ExQueueWorkItem(&g_WorkItem, DelayedWorkQueue);
     }
 }
 
 NTSTATUS
-STINGERAntiTamperInitialize(
-    _In_ PDRIVER_OBJECT DriverObject
-)
+SLEEPWALKERAntiTamperInitialize(_In_ PDRIVER_OBJECT DriverObject)
 {
     LARGE_INTEGER dueTime;
     UINT32 i;
 
-    if (KeGetCurrentIrql() != PASSIVE_LEVEL) {
+    if (KeGetCurrentIrql() != PASSIVE_LEVEL)
+    {
         return STATUS_INVALID_DEVICE_STATE;
     }
-    if (DriverObject == NULL) {
+    if (DriverObject == NULL)
+    {
         return STATUS_INVALID_PARAMETER;
     }
-    if (InterlockedCompareExchange(&g_Initialized, 1, 0) != 0) {
+    if (InterlockedCompareExchange(&g_Initialized, 1, 0) != 0)
+    {
         return STATUS_SUCCESS;
     }
 
     g_DriverObject = DriverObject;
-    for (i = 0; i <= IRP_MJ_MAXIMUM_FUNCTION; ++i) {
+    for (i = 0; i <= IRP_MJ_MAXIMUM_FUNCTION; ++i)
+    {
         g_Snapshot.MajorFunction[i] = DriverObject->MajorFunction[i];
     }
     g_Snapshot.DriverUnload = DriverObject->DriverUnload;
@@ -220,31 +211,31 @@ STINGERAntiTamperInitialize(
     InterlockedExchange(&g_LastTamperMask, 0);
 
     KeInitializeEvent(&g_WorkDrainEvent, NotificationEvent, TRUE);
-    ExInitializeWorkItem(&g_WorkItem, STINGERAntiTamperWorkRoutine, NULL);
+    ExInitializeWorkItem(&g_WorkItem, SLEEPWALKERAntiTamperWorkRoutine, NULL);
     KeInitializeTimer(&g_Timer);
-    KeInitializeDpc(&g_TimerDpc, STINGERAntiTamperTimerDpc, NULL);
+    KeInitializeDpc(&g_TimerDpc, SLEEPWALKERAntiTamperTimerDpc, NULL);
 
-    dueTime.QuadPart = -(LONGLONG)STINGER_TAMPER_CHECK_PERIOD_MS * 10000LL;
-    KeSetTimerEx(&g_Timer, dueTime, STINGER_TAMPER_CHECK_PERIOD_MS, &g_TimerDpc);
+    dueTime.QuadPart = -(LONGLONG)SLEEPWALKER_TAMPER_CHECK_PERIOD_MS * 10000LL;
+    KeSetTimerEx(&g_Timer, dueTime, SLEEPWALKER_TAMPER_CHECK_PERIOD_MS, &g_TimerDpc);
     return STATUS_SUCCESS;
 }
 
-VOID
-STINGERAntiTamperUninitialize(
-    VOID
-)
+VOID SLEEPWALKERAntiTamperUninitialize(VOID)
 {
-    if (KeGetCurrentIrql() != PASSIVE_LEVEL) {
+    if (KeGetCurrentIrql() != PASSIVE_LEVEL)
+    {
         return;
     }
-    if (InterlockedExchange(&g_Initialized, 0) == 0) {
+    if (InterlockedExchange(&g_Initialized, 0) == 0)
+    {
         return;
     }
 
     InterlockedExchange(&g_Stopping, 1);
     KeCancelTimer(&g_Timer);
 
-    if (InterlockedCompareExchange(&g_WorkQueued, 0, 0) != 0) {
+    if (InterlockedCompareExchange(&g_WorkQueued, 0, 0) != 0)
+    {
         KeWaitForSingleObject(&g_WorkDrainEvent, Executive, KernelMode, FALSE, NULL);
     }
 

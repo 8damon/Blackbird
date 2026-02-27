@@ -1,16 +1,11 @@
-#ifndef STINGER_ANTI_TAMPER_H
-#define STINGER_ANTI_TAMPER_H
+#ifndef SLEEPWALKER_ANTI_TAMPER_H
+#define SLEEPWALKER_ANTI_TAMPER_H
 
 #include <ntdef.h>
 
 NTSTATUS
-STINGERAntiTamperInitialize(
-    _In_ PDRIVER_OBJECT DriverObject
-);
+SLEEPWALKERAntiTamperInitialize(_In_ PDRIVER_OBJECT DriverObject);
 
-VOID
-STINGERAntiTamperUninitialize(
-    VOID
-);
+VOID SLEEPWALKERAntiTamperUninitialize(VOID);
 
 #endif

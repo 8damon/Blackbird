@@ -1,6 +1,5 @@
 #include <ntddk.h>
 #include "apc_monitor.h"
-#include "correlation.h"
 #include "..\telemetry\etw.h"
 
 #ifndef THREAD_SET_CONTEXT
@@ -11,54 +10,56 @@
 #define THREAD_SUSPEND_RESUME 0x0002
 #endif
 
-#define STINGER_APC_COOLDOWN_MS 2000
-#define STINGER_APC_RING_SIZE 64
+#ifndef THREAD_GET_CONTEXT
+#define THREAD_GET_CONTEXT 0x0008
+#endif
 
-typedef struct _STINGER_APC_RING_ENTRY {
+#ifndef THREAD_ALL_ACCESS
+#define THREAD_ALL_ACCESS (STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFFF)
+#endif
+
+#define SLEEPWALKER_APC_COOLDOWN_MS 2000
+#define SLEEPWALKER_APC_RING_SIZE 64
+
+typedef struct _SLEEPWALKER_APC_RING_ENTRY
+{
     UINT64 CallerPid;
     UINT64 TargetPid;
     UINT32 Kind;
     INT64 TimestampQpc;
-} STINGER_APC_RING_ENTRY;
+} SLEEPWALKER_APC_RING_ENTRY;
 
-typedef enum _STINGER_APC_EVENT_KIND {
-    STINGERApcKindRemoteApc = 1,
-    STINGERApcKindRemoteApcWithMemory = 2,
-    STINGERApcKindThreadHijack = 3
-} STINGER_APC_EVENT_KIND;
+typedef enum _SLEEPWALKER_APC_EVENT_KIND
+{
+    SLEEPWALKERApcKindRemoteApc = 1,
+    SLEEPWALKERApcKindThreadHijack = 2
+} SLEEPWALKER_APC_EVENT_KIND;
 
-static STINGER_APC_RING_ENTRY g_ApcRing[STINGER_APC_RING_SIZE];
+static SLEEPWALKER_APC_RING_ENTRY g_ApcRing[SLEEPWALKER_APC_RING_SIZE];
 static volatile LONG g_ApcRingWriteIndex = -1;
 static KSPIN_LOCK g_ApcRingLock;
 static volatile LONG g_ApcMonitorInitialized = 0;
 static ULONGLONG g_ApcQpcFrequency = 1;
 
-static
-ULONGLONG
-STINGERApcMsToQpc(
-    _In_ UINT32 Ms
-)
+static ULONGLONG SLEEPWALKERApcMsToQpc(_In_ UINT32 Ms)
 {
     ULONGLONG ticks;
 
-    if (Ms == 0) {
+    if (Ms == 0)
+    {
         return 0;
     }
 
     ticks = ((ULONGLONG)Ms * g_ApcQpcFrequency) / 1000ULL;
-    if (ticks == 0) {
+    if (ticks == 0)
+    {
         ticks = 1;
     }
     return ticks;
 }
 
-static
-BOOLEAN
-STINGERApcShouldEmit(
-    _In_ HANDLE CallerPid,
-    _In_ HANDLE TargetPid,
-    _In_ STINGER_APC_EVENT_KIND Kind
-)
+static BOOLEAN SLEEPWALKERApcShouldEmit(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
+                                        _In_ SLEEPWALKER_APC_EVENT_KIND Kind)
 {
     UINT64 caller = (UINT64)(ULONG_PTR)CallerPid;
     UINT64 target = (UINT64)(ULONG_PTR)TargetPid;
@@ -69,37 +70,42 @@ STINGERApcShouldEmit(
     LONG writeIndex;
     ULONGLONG cooldownQpc;
 
-    cooldownQpc = STINGERApcMsToQpc(STINGER_APC_COOLDOWN_MS);
+    cooldownQpc = SLEEPWALKERApcMsToQpc(SLEEPWALKER_APC_COOLDOWN_MS);
     KeAcquireSpinLock(&g_ApcRingLock, &oldIrql);
 
-    for (i = 0; i < STINGER_APC_RING_SIZE; ++i) {
+    for (i = 0; i < SLEEPWALKER_APC_RING_SIZE; ++i)
+    {
         INT64 deltaQpc;
 
-        if (g_ApcRing[i].TimestampQpc == 0) {
+        if (g_ApcRing[i].TimestampQpc == 0)
+        {
             continue;
         }
-        if (g_ApcRing[i].CallerPid != caller ||
-            g_ApcRing[i].TargetPid != target ||
-            g_ApcRing[i].Kind != (UINT32)Kind) {
+        if (g_ApcRing[i].CallerPid != caller || g_ApcRing[i].TargetPid != target || g_ApcRing[i].Kind != (UINT32)Kind)
+        {
             continue;
         }
 
         deltaQpc = nowQpc - g_ApcRing[i].TimestampQpc;
-        if (deltaQpc < 0) {
+        if (deltaQpc < 0)
+        {
             continue;
         }
 
-        if ((ULONGLONG)deltaQpc < cooldownQpc) {
+        if ((ULONGLONG)deltaQpc < cooldownQpc)
+        {
             allow = FALSE;
             break;
         }
     }
 
-    if (allow) {
+    if (allow)
+    {
         writeIndex = InterlockedIncrement(&g_ApcRingWriteIndex);
-        writeIndex %= STINGER_APC_RING_SIZE;
-        if (writeIndex < 0) {
-            writeIndex += STINGER_APC_RING_SIZE;
+        writeIndex %= SLEEPWALKER_APC_RING_SIZE;
+        if (writeIndex < 0)
+        {
+            writeIndex += SLEEPWALKER_APC_RING_SIZE;
         }
 
         g_ApcRing[writeIndex].CallerPid = caller;
@@ -113,13 +119,12 @@ STINGERApcShouldEmit(
 }
 
 NTSTATUS
-STINGERApcMonitorInitialize(
-    VOID
-)
+SLEEPWALKERApcMonitorInitialize(VOID)
 {
     LARGE_INTEGER freq;
 
-    if (InterlockedCompareExchange(&g_ApcMonitorInitialized, 1, 0) != 0) {
+    if (InterlockedCompareExchange(&g_ApcMonitorInitialized, 1, 0) != 0)
+    {
         return STATUS_SUCCESS;
     }
 
@@ -131,12 +136,10 @@ STINGERApcMonitorInitialize(
     return STATUS_SUCCESS;
 }
 
-VOID
-STINGERApcMonitorUninitialize(
-    VOID
-)
+VOID SLEEPWALKERApcMonitorUninitialize(VOID)
 {
-    if (InterlockedExchange(&g_ApcMonitorInitialized, 0) == 0) {
+    if (InterlockedExchange(&g_ApcMonitorInitialized, 0) == 0)
+    {
         return;
     }
 
@@ -144,92 +147,45 @@ STINGERApcMonitorUninitialize(
     InterlockedExchange(&g_ApcRingWriteIndex, -1);
 }
 
-VOID
-STINGERApcMonitorRecordThreadHandleIntent(
-    _In_ HANDLE CallerPid,
-    _In_ HANDLE TargetPid,
-    _In_ ACCESS_MASK DesiredAccess,
-    _In_ BOOLEAN IsDuplicateOperation
-)
+VOID SLEEPWALKERApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
+                                                   _In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsDuplicateOperation)
 {
     BOOLEAN hasSetContext;
     BOOLEAN hasSuspendResume;
-    UINT32 corrFlags = 0;
-    UINT32 corrAccess = 0;
-    UINT32 corrAgeMs = 0;
-    BOOLEAN correlated = FALSE;
-    BOOLEAN hasMemoryIntent;
 
-    if (InterlockedCompareExchange(&g_ApcMonitorInitialized, 0, 0) == 0) {
+    if (InterlockedCompareExchange(&g_ApcMonitorInitialized, 0, 0) == 0)
+    {
         return;
     }
 
-    if (CallerPid == TargetPid) {
+    if (CallerPid == TargetPid)
+    {
         return;
     }
 
     hasSetContext = ((DesiredAccess & THREAD_SET_CONTEXT) != 0);
     hasSuspendResume = ((DesiredAccess & THREAD_SUSPEND_RESUME) != 0);
-    if (!hasSetContext && !hasSuspendResume) {
+    if (!hasSetContext && !hasSuspendResume)
+    {
         return;
     }
 
-    correlated = STINGERCorrelationQueryRecentIntent(
-        CallerPid,
-        TargetPid,
-        10000,
-        &corrFlags,
-        &corrAccess,
-        &corrAgeMs
-    );
-    hasMemoryIntent = ((corrFlags & STINGER_INTENT_PROCESS_MEMORY) != 0);
-
-    if (hasSetContext && STINGERApcShouldEmit(CallerPid, TargetPid, STINGERApcKindRemoteApc)) {
-        STINGEREtwLogApcEvent(
-            "REMOTE_APC_INTENT",
-            CallerPid,
-            TargetPid,
-            DesiredAccess,
-            IsDuplicateOperation,
-            corrFlags,
-            corrAccess,
-            corrAgeMs
-        );
-    }
-
-    if (hasSetContext && hasMemoryIntent &&
-        STINGERApcShouldEmit(CallerPid, TargetPid, STINGERApcKindRemoteApcWithMemory)) {
-        STINGEREtwLogDetectionEvent(
-            "REMOTE_APC_CREATION_SUSPECT",
-            4,
-            CallerPid,
-            TargetPid,
-            corrFlags,
-            corrAccess,
-            correlated ? corrAgeMs : 0,
-            L"thread set-context intent against remote process with recent process-memory intent; compatible with queued APC injection semantics"
-        );
+    if (hasSetContext && SLEEPWALKERApcShouldEmit(CallerPid, TargetPid, SLEEPWALKERApcKindRemoteApc))
+    {
+        SLEEPWALKEREtwLogApcEvent("REMOTE_APC_INTENT", CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation, 0, 0,
+                                  0);
     }
 
     if (hasSetContext && hasSuspendResume &&
-        STINGERApcShouldEmit(CallerPid, TargetPid, STINGERApcKindThreadHijack)) {
-        STINGEREtwLogDetectionEvent(
-            "THREAD_HIJACK_INTENT",
-            hasMemoryIntent ? 4 : 3,
-            CallerPid,
-            TargetPid,
-            corrFlags,
-            corrAccess,
-            correlated ? corrAgeMs : 0,
-            L"remote thread set-context and suspend/resume intent observed; possible thread hijack workflow"
-        );
+        SLEEPWALKERApcShouldEmit(CallerPid, TargetPid, SLEEPWALKERApcKindThreadHijack))
+    {
+        SLEEPWALKEREtwLogApcEvent("THREAD_CONTEXT_INTENT", CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation, 0,
+                                  0, 0);
     }
 }
 
 BOOLEAN
-STINGERApcMonitorSelfCheck(
-    VOID
-)
+SLEEPWALKERApcMonitorSelfCheck(VOID)
 {
     return (InterlockedCompareExchange(&g_ApcMonitorInitialized, 0, 0) != 0);
 }

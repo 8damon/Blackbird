@@ -1,4 +1,4 @@
-<h1 align="center">STINGER</h1>
+<h1 align="center">SLEEPWALKER</h1>
 <p align="center"><b>Windows Kernel Telemetry for High-Signal Threat Triage, Forensics & Malware Analysis</b></p>
 
 <p align="center">
@@ -7,22 +7,22 @@
 </p>
 
 <p align="center">
-  <img src="./diagram/Stinger_KM_Telemetry_Arch.png" width="900" />
+  <img src="./diagram/Sleepwalker_KM_Telemetry_Arch.png" width="900" />
 </p>
 
 ---
 
 ## Executive Summary
 
-**Stinger is a KMDF kernel telemetry driver + user-mode tooling that exposes high-value execution signals commonly associated with injection and post-exploitation.**  
+**Sleepwalker is a KMDF kernel telemetry driver + user-mode tooling that exposes high-value execution signals commonly associated with injection and post-exploitation.**  
 It is designed for **triage, forensics, malware analysis, and threat emulation in labs/VMs** where teams need kernel-level visibility **without deploying a full EDR stack or attaching a kernel debugger**.
 
-Stinger provides:
+Sleepwalker provides:
 - **High-signal telemetry**
 - **Correlation**
 - **Two consumption paths**:
   - **IOCTL per-client queues** for targeted, process-scoped capture
-  - **ETW provider (`Stinger.Kernel`)** for scalable ingestion and tooling
+  - **ETW provider (`Sleepwalker.Kernel`)** for scalable ingestion and tooling
 
 ---
 
@@ -33,17 +33,17 @@ In many environments, teams end up choosing between:
 1) **Generic telemetry** (high volume, hard to operationalize quickly), or  
 2) **EDR detections** (high level, but hides the low-level context needed to validate intent)
 
-**Stinger bridges that gap** by emitting telemetry that is:
+**Sleepwalker bridges that gap** by emitting telemetry that is:
 - Low-level enough to preserve forensic context (access masks, addresses, call stacks, outcomes)
 - Structured and testable (stable ABI, deterministic records, validation suite)
 - Focused on a narrow, high-signal threat surface (injection-adjacent behavior)
 
-> Stinger is not a replacement for an EDR.  
+> Sleepwalker is not a replacement for an EDR.  
 > It’s an **inspectable kernel telemetry plane** suitable for labs/VMs/IR triage and engineering workflows.
 
 ---
 
-## What Questions Stinger Answers
+## What Questions Sleepwalker Answers
 
 - Which process opened another process/thread, with **what access rights**, and **from where**?
 - Did a thread appear to be created remotely, and does its **start address** look suspicious relative to loaded image boundaries?
@@ -55,7 +55,7 @@ In many environments, teams end up choosing between:
 
 ## Core Signals (High Value Surface)
 
-Stinger focuses on behavior commonly observed in:
+Sleepwalker focuses on behavior commonly observed in:
 - Process injection workflows
 - Post-exploitation handle acquisition
 - Remote thread creation + suspicious start regions
@@ -74,10 +74,10 @@ Stinger focuses on behavior commonly observed in:
 ## Technical Highlights (for engineers)
 
 - **KMDF control plane** with per-handle client contexts and independent event queues
-- **Stable ABI header** (`abi/stinger_ioctl.h`) defining IOCTL codes + record layouts
+- **Stable ABI header** (`abi/sleepwalker_ioctl.h`) defining IOCTL codes + record layouts
 - **Per-client subscription model**: PID + stream mask
 - **Per-client sequencing + bounded queues** with drop accounting and rate-limited drop logging
-- **Multi-client fanout** validated under parallel polling (`StingerTestSuite`)
+- **Multi-client fanout** validated under parallel polling (`SleepwalkerTestSuite`)
 - Dual output plane:
   - **IOCTL**: low-latency, targeted pull model
   - **ETW**: scalable push model for broader pipelines
@@ -89,24 +89,33 @@ Stinger focuses on behavior commonly observed in:
 ### Shared User-Mode SDK
 
 Preferred integration surface for user-mode consumers:
-- `user/sensor/stinger_sensor_core.h`
-- `StingerSensorCore.dll`
+- `user/sensor/sleepwalker_sensor_core.h`
+- `SleepwalkerSensorCore.dll`
 
 Exports:
-- `STINGERSCOpenControlDevice`
-- `STINGERSCSubscribe`
-- `STINGERSCUnsubscribe`
-- `STINGERSCGetEvent`
-- `STINGERSCGetStats`
-- `STINGERSCParseStreamMaskA`
-- `STINGERSCStopSessionByName`
-- `STINGERSCStartEtwSession`
-- `STINGERSCRunEtwSession`
-- `STINGERSCStopEtwSession`
+- `SLEEPWALKERSCOpenControlDevice`
+- `SLEEPWALKERSCSubscribe`
+- `SLEEPWALKERSCUnsubscribe`
+- `SLEEPWALKERSCSetPids`
+- `SLEEPWALKERSCGetEvent`
+- `SLEEPWALKERSCGetStats`
+- `SLEEPWALKERSCQueryProcessImagePath`
+- `SLEEPWALKERSCSetShutdownMode`
+- `SLEEPWALKERSCParseStreamMaskA`
+- `SLEEPWALKERSCStopSessionByName`
+- `SLEEPWALKERSCStartEtwSession`
+- `SLEEPWALKERSCStartSleepwalkerEtwSession`
+- `SwkStartDetectionEtwSession`
+- `SLEEPWALKERSCRunEtwSession`
+- `SLEEPWALKERSCStopEtwSession`
+
+Typed detection callback surface:
+- `SwkDetectionEvent`
+- `SwkDetectionCallback`
 
 ### Device Endpoints
-- Preferred: `\\.\Global\StingerCtl`
-- Legacy: `\\.\StingerCtl`
+- Preferred: `\\.\Global\SleepwalkerCtl`
+- Legacy: `\\.\SleepwalkerCtl`
 
 ### IOCTL Model (Targeted Pull)
 - Subscribe per client handle (PID + stream mask)
@@ -114,24 +123,32 @@ Exports:
 - Query health via `GET_STATS`
 
 ### ETW Model (Scalable Push)
-- Provider: `Stinger.Kernel`
+- Provider: `Sleepwalker.Kernel`
 - GUID: `{D6C73F8A-6AD8-4F4B-A363-3D2FA31CD0E2}`
 - Event families: `HandleTelemetry`, `ThreadTelemetry`, `ProcessTelemetry`, `ImageTelemetry`, `RegistryTelemetry`, `DetectionTelemetry`
 
-(Full contract in `API.md` and `abi/stinger_ioctl.h`.)
+(Full contract in `API.md` and `abi/sleepwalker_ioctl.h`.)
 
 ---
 
 ## Validation and Test Coverage
 
-`StingerTestSuite` performs end-to-end verification:
+`SleepwalkerTestSuite` performs end-to-end verification:
 - IOCTL subscription + event delivery
 - Handle/thread intent correlation flags
 - Multi-client parallel fanout
 - ETW ingestion coverage across core event families
+- Per-check timing/cycle telemetry for incident-grade run profiling
+
+Default suite mode reflects architecture boundaries:
+- Kernel correlation-dependent checks are optional (reported as skip by default)
+- APC ETW coverage is optional (reported as skip by default)
+- Strict modes are available through:
+- `SLEEPWALKER_TEST_REQUIRE_KERNEL_CORRELATION=1`
+- `SLEEPWALKER_TEST_REQUIRE_APC=1`
 
 Example successful run:
-- `[OK] StingerTestSuite complete. tests-passed=33/33 polls=15`
+- `[OK] SleepwalkerTestSuite complete. tests-passed=X/Y tests-failed=0 tests-skipped=S polls=Z`
 
 ---
 
@@ -139,7 +156,7 @@ Example successful run:
 
 - Control device ACL restricted to **SYSTEM** and **Administrators**
 - IOCTL control path rejects non-user-mode requestors
-- Stinger is **telemetry + detection aid**, not a prevention platform
+- Sleepwalker is **telemetry + detection aid**, not a prevention platform
 - Symbol enrichment depends on symbol availability and environment policy
 
 ---
@@ -151,29 +168,28 @@ Example successful run:
   - `monitors/`: handle/thread/process/image/registry monitoring and correlation
   - `telemetry/`: ETW provider emission
 - `abi/`
-  - `stinger_ioctl.h`: shared IOCTL ABI contract
+  - `sleepwalker_ioctl.h`: shared IOCTL ABI contract
 - `user/sensor/`
-  - `stinger_sensor_core.c/.h`: shared user-mode SDK (IOCTL + ETW session helpers)
-  - `StingerClient`: manual IOCTL subscriber
-  - `StingerTestSuite`: end-to-end validation
-  - `StingerEtwProc`: ETW consumer
+  - `sleepwalker_sensor_core.c/.h`: shared user-mode SDK (IOCTL + ETW session helpers)
+  - `SleepwalkerClient`: manual IOCTL subscriber
+  - `SleepwalkerTestSuite`: end-to-end validation
 - `vcxproj/`
-  - `StingerSensorCore.vcxproj`: shared user-mode DLL project
+  - `SleepwalkerSensorCore.vcxproj`: shared user-mode DLL project
 
 ---
 
 ## Build and Run (Lab / VM)
 
-1. Open `Stinger.slnx` in Visual Studio.
-2. Build `vcxproj/Stinger.vcxproj` (`x64` or `ARM64`).
+1. Open `Sleepwalker.slnx` in Visual Studio.
+2. Build `vcxproj/Sleepwalker.vcxproj` (`x64` or `ARM64`).
 3. Install and start the driver.
 4. Run:
-   - `StingerSensorCore.dll` (built automatically by dependent projects)
-   - `StingerTestSuite.exe` for full validation
-   - `StingerClient.exe <pid> handle,memory,thread` for targeted IOCTL capture
-   - `StingerEtwProc.exe` for ETW stream output
+   - `SleepwalkerSensorCore.dll` (built automatically by dependent projects)
+   - `SleepwalkerTestSuite.exe` for full validation
+   - `SleepwalkerClient.exe <pid> handle,memory,thread` for targeted IOCTL capture
 
 Documentation:
 - `INSTALL.md` (install/runtime workflow)
 - `API.md` (IOCTL + ETW contract)
+- `USAGE.md` (practical usage guide + examples)
 - `user/sensor/README.md` (tooling details)

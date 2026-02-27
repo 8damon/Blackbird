@@ -12,15 +12,52 @@
 
 ## Detection Preview
 
-<p align="center">
-  <b>Legitimate Syscall Classification</b><br/>
-  <img src="./diagram/LEGIT_SYSCALL_DETECTION.png" width="900" />
-</p>
+```ps1
+[HANDLE] DIRECT-SYSCALL-SUSPECT  0000000000002978 -> 0000000000001088  access=0x00001032 (CREATE_THREAD|VM_READ|VM_WRITE|QUERY_LIMITED_INFO)
+Meta   event=HandleTelemetry pid=4 tid=5192 cpu=5 lvl=4 op=0 ver=0 ts=0x01DCA7C573BE0D3D dt=0x14
+Actor  callerImage=R:\.NIGHTDAY\TTK\DirectSyscallTest.exe
+       targetImage=\Device\HarddiskVolume5\.NIGHTDAY\TTK\DirectSyscallTest.exe
+Origin addr=0x00007FF6DF2DF1DA (DirectSyscallTest.exe)
+       path=\Device\HarddiskVolume5\.NIGHTDAY\TTK\DirectSyscallTest.exe
+       protect=0x00000040 (XRW) exec=1 fromNtdll=0 fromExe=1
+Status open=SUCCESS(0x00000000) basic=SUCCESS(0x00000000) section=SUCCESS(0x00000000)
+Deep   allocBase=0x00007FF6DF2C0000 regionSize=0x1000 protect=0x00000040 (XRW) state=COMMIT type=IMAGE
+       backing=image committed=1 privateCommit=0 imageCommit=1 mappedCommit=0
+       sampleSize=64 entropy=0.691 opcodes=04 75 42 63 D7 1D 00 00 00 00 00 00 00 00 00 00 ...
+Stack  frames=8
+       #0 0x00007FF6DF2DF1DA (DirectSyscallTest.exe)
+       #1 0x00007FF6DF2D2C91 (DirectSyscallTest.exe)
+       #2 0x00007FF6DF2D3A09 (DirectSyscallTest.exe)
+       #3 0x00007FF6DF2D38B2 (DirectSyscallTest.exe)
+       #4 0x00007FF6DF2D376E (DirectSyscallTest.exe)
+       #5 0x00007FF6DF2D3A9E (DirectSyscallTest.exe)
+       #6 0x00007FFDF6F87374 (KERNEL32!BaseThreadInitThunk+0x14)
+       #7 0x00007FFDF745CC91 (ntdll!RtlUserThreadStart+0x21)
+Alert  direct-syscall-suspect classification observed
+```
 
-<p align="center">
-  <b>Direct Syscall Suspect Classification</b><br/>
-  <img src="./diagram/DIRECT_SYSCALL_DETECTION.png" width="900" />
-</p>
+```ps1
+[HANDLE] LEGITIMATE-SYSCALL  0000000000002978 -> 0000000000001088  access=0x00001000 (QUERY_LIMITED_INFO)
+Meta   event=HandleTelemetry pid=4 tid=5192 cpu=5 lvl=4 op=0 ver=0 ts=0x01DCA7C573BE1898 dt=0xB5B
+Actor  callerImage=R:\.NIGHTDAY\TTK\DirectSyscallTest.exe
+       targetImage=\Device\HarddiskVolume5\.NIGHTDAY\TTK\DirectSyscallTest.exe
+Origin addr=0x00007FFDF74ADD24 (ntdll!NtDuplicateObject+0x14)
+       path=\Device\HarddiskVolume3\Windows\System32\ntdll.dll
+       protect=0x00000020 (XR) exec=1 fromNtdll=1 fromExe=0
+Status open=SUCCESS(0x00000000) basic=SUCCESS(0x00000000) section=SUCCESS(0x00000000)
+Deep   allocBase=0x00007FFDF7410000 regionSize=0x80000 protect=0x00000020 (XR) state=COMMIT type=IMAGE
+       backing=image committed=1 privateCommit=0 imageCommit=1 mappedCommit=0
+       sampleSize=0 entropy=0.000 opcodes=<none>
+Stack  frames=8
+       #0 0x00007FFDF74ADD24 (ntdll!NtDuplicateObject+0x14)
+       #1 0x00007FFDF746F4EE (ntdll!RtlReportSilentProcessExit+0xDE)
+       #2 0x00007FFDF4D2E2AF (KERNELBASE!TerminateProcess+0x1F)
+       #3 0x00007FF6DF2D2D60 (DirectSyscallTest.exe)
+       #4 0x00007FF6DF2D3A09 (DirectSyscallTest.exe)
+       #5 0x00007FF6DF2D38B2 (DirectSyscallTest.exe)
+       #6 0x00007FF6DF2D376E (DirectSyscallTest.exe)
+       #7 0x00007FF6DF2D3A9E (DirectSyscallTest.exe)
+```
 
 ---
 

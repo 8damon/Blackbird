@@ -2,6 +2,18 @@
 
 This document describes the current Sleepwalker control-plane and telemetry contract for engineers, detection content authors, and integrators.
 
+## Telemetry Contract Visual
+
+<p align="center">
+  <img src="./diagram/Sleepwalker_KM_Telemetry_Arch.png" width="900" />
+</p>
+
+## IOCTL Record Example
+
+<p align="center">
+  <img src="./diagram/IOCTL_EVENT_HANDLE.png" width="900" />
+</p>
+
 ## Revision and Scope
 
 - Document revision: `2026-02-27`

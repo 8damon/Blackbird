@@ -1,5 +1,15 @@
 # Sleepwalker Install and Operator Workflow
 
+## Deployment/Validation Visuals
+
+<p align="center">
+  <img src="./diagram/TEST_PASS.png" width="700" />
+</p>
+
+<p align="center">
+  <img src="./diagram/TEST_WEB_INTERFACE_PASS.png" width="900" />
+</p>
+
 ## Prerequisites
 
 - Windows VM for analysis/testing

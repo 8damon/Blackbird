@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <img src="./diagram/SLEEPWALKER_KMDF_HIGH.png" width="900" />
+  <img src="./diagram/SLEEPWALKER_DIA.png" width="900" />
 </p>
 
 ## Detection Preview

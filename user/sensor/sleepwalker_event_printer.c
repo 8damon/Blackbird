@@ -113,6 +113,42 @@ static void SLEEPWALKERPrintHandleFlags(UINT32 flags)
     {
         printf("DuplicateOp ");
     }
+    if ((flags & SLEEPWALKER_HANDLE_FLAG_RETURN_ADDRESS_VALID) != 0)
+    {
+        printf("ReturnAddressValid ");
+    }
+    if ((flags & SLEEPWALKER_HANDLE_FLAG_STACK_VALIDATED) != 0)
+    {
+        printf("StackValidated ");
+    }
+    if ((flags & SLEEPWALKER_HANDLE_FLAG_STACK_SPOOF_SUSPECT) != 0)
+    {
+        printf("StackSpoofSuspect ");
+    }
+    if ((flags & SLEEPWALKER_HANDLE_FLAG_SYSCALL_EXPORT_MATCH) != 0)
+    {
+        printf("SyscallExportMatch ");
+    }
+    if ((flags & SLEEPWALKER_HANDLE_FLAG_SYSCALL_EXPORT_MISMATCH) != 0)
+    {
+        printf("SyscallExportMismatch ");
+    }
+    if ((flags & SLEEPWALKER_HANDLE_FLAG_MODULE_CHAIN_SANE) != 0)
+    {
+        printf("ModuleChainSane ");
+    }
+    if ((flags & SLEEPWALKER_HANDLE_FLAG_UNWIND_METADATA_VALID) != 0)
+    {
+        printf("UnwindMetadataValid ");
+    }
+    if ((flags & SLEEPWALKER_HANDLE_FLAG_TEB_STACK_BOUNDS_VALID) != 0)
+    {
+        printf("TebStackBoundsValid ");
+    }
+    if ((flags & SLEEPWALKER_HANDLE_FLAG_FRAMES_OUTSIDE_TEB_STACK) != 0)
+    {
+        printf("FramesOutsideTebStack ");
+    }
     printf("\n");
 }
 

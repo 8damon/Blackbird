@@ -56,6 +56,9 @@ static volatile LONG g_ControlQueueDropLogCounter = 0;
 static volatile LONG g_ControlTotalQueuedEvents = 0;
 static volatile LONG g_QueryImageInflight = 0;
 static volatile LONG g_QueryImageThrottleCounter = 0;
+static volatile LONG g_IoctlGetEventDeliverCounter = 0;
+static volatile LONG g_IoctlGetEventEmptyCounter = 0;
+static volatile LONG g_IoctlGetStatsCounter = 0;
 
 NTSYSAPI
 NTSTATUS
@@ -76,6 +79,29 @@ static ULONG SLEEPWALKERGetRequestorPid(_In_ WDFREQUEST Request)
 {
     UNREFERENCED_PARAMETER(Request);
     return (ULONG)(ULONG_PTR)PsGetCurrentProcessId();
+}
+
+static PCSTR SLEEPWALKERIoctlName(_In_ ULONG Ioctl)
+{
+    switch (Ioctl)
+    {
+    case IOCTL_SLEEPWALKER_SUBSCRIBE:
+        return "SUBSCRIBE";
+    case IOCTL_SLEEPWALKER_UNSUBSCRIBE:
+        return "UNSUBSCRIBE";
+    case IOCTL_SLEEPWALKER_GET_EVENT:
+        return "GET_EVENT";
+    case IOCTL_SLEEPWALKER_GET_STATS:
+        return "GET_STATS";
+    case IOCTL_SLEEPWALKER_SET_PIDS:
+        return "SET_PIDS";
+    case IOCTL_SLEEPWALKER_QUERY_PROCESS_IMAGE:
+        return "QUERY_PROCESS_IMAGE";
+    case IOCTL_SLEEPWALKER_SET_SHUTDOWN_MODE:
+        return "SET_SHUTDOWN_MODE";
+    default:
+        return "UNKNOWN_IOCTL";
+    }
 }
 
 static BOOLEAN SLEEPWALKERControlIsShutdown(VOID)
@@ -438,6 +464,11 @@ _Use_decl_annotations_ VOID SLEEPWALKEREvtFileCleanup(WDFFILEOBJECT FileObject)
     PSLEEPWALKER_FILE_CONTEXT ctx = SLEEPWALKERGetFileContext(FileObject);
     PSLEEPWALKER_CLIENT client = ctx->Client;
     PLIST_ENTRY e;
+    LONG clientCountSnapshot = 0;
+    UINT32 subscriptionCountSnapshot = 0;
+    UINT32 queueDepthSnapshot = 0;
+    UINT32 droppedSnapshot = 0;
+    ULONG requesterPid;
 
     if (client == NULL)
     {
@@ -458,10 +489,28 @@ _Use_decl_annotations_ VOID SLEEPWALKEREvtFileCleanup(WDFFILEOBJECT FileObject)
             {
                 g_ClientCount -= 1;
             }
+            clientCountSnapshot = g_ClientCount;
             break;
         }
     }
     ExReleaseFastMutex(&g_ClientListLock);
+
+    ExAcquireFastMutex(&client->Lock);
+    subscriptionCountSnapshot = client->SubscriptionCount;
+    queueDepthSnapshot = client->QueueDepth;
+    droppedSnapshot = client->DroppedEvents;
+    ExReleaseFastMutex(&client->Lock);
+
+    requesterPid = (ULONG)(ULONG_PTR)PsGetCurrentProcessId();
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+               DPFLTR_INFO_LEVEL,
+               "SLEEPWALKER: client detached pid=%lu activeClients=%ld subscriptions=%lu queueDepth=%lu dropped=%lu fileObj=0x%p.\n",
+               requesterPid,
+               clientCountSnapshot,
+               subscriptionCountSnapshot,
+               queueDepthSnapshot,
+               droppedSnapshot,
+               FileObject);
 
     SLEEPWALKERClientRelease(client);
     ctx->Client = NULL;
@@ -545,6 +594,8 @@ static NTSTATUS SLEEPWALKERHandleUnsubscribeIoctl(_In_ PSLEEPWALKER_CLIENT Clien
     PSLEEPWALKER_UNSUBSCRIBE_REQUEST in;
     size_t inSize;
     UINT32 i;
+    ULONG requesterPid;
+    UINT32 subscriptionCountSnapshot;
 
     status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
     if (!NT_SUCCESS(status))
@@ -568,11 +619,25 @@ static NTSTATUS SLEEPWALKERHandleUnsubscribeIoctl(_In_ PSLEEPWALKER_CLIENT Clien
                 Client->Subscriptions[i] = Client->Subscriptions[tail];
             }
             Client->SubscriptionCount -= 1;
+            subscriptionCountSnapshot = Client->SubscriptionCount;
             ExReleaseFastMutex(&Client->Lock);
+            requesterPid = SLEEPWALKERGetRequestorPid(Request);
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                       DPFLTR_INFO_LEVEL,
+                       "SLEEPWALKER: unsubscribe requesterPid=%lu targetPid=%lu subscriptions=%lu.\n",
+                       requesterPid,
+                       in->ProcessId,
+                       subscriptionCountSnapshot);
             return STATUS_SUCCESS;
         }
     }
     ExReleaseFastMutex(&Client->Lock);
+    requesterPid = SLEEPWALKERGetRequestorPid(Request);
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+               DPFLTR_WARNING_LEVEL,
+               "SLEEPWALKER: unsubscribe miss requesterPid=%lu targetPid=%lu status=STATUS_NOT_FOUND.\n",
+               requesterPid,
+               in->ProcessId);
     return STATUS_NOT_FOUND;
 }
 
@@ -582,6 +647,8 @@ static NTSTATUS SLEEPWALKERHandleGetStatsIoctl(_In_ PSLEEPWALKER_CLIENT Client, 
     NTSTATUS status;
     PSLEEPWALKER_STATS_RESPONSE out;
     size_t outSize;
+    LONG statsCounter;
+    ULONG requesterPid;
 
     *BytesOut = 0;
 
@@ -603,6 +670,19 @@ static NTSTATUS SLEEPWALKERHandleGetStatsIoctl(_In_ PSLEEPWALKER_CLIENT Client, 
     ExReleaseFastMutex(&Client->Lock);
 
     *BytesOut = sizeof(*out);
+    statsCounter = InterlockedIncrement(&g_IoctlGetStatsCounter);
+    if (statsCounter == 1 || ((statsCounter & 0x7F) == 0))
+    {
+        requesterPid = SLEEPWALKERGetRequestorPid(Request);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                   DPFLTR_INFO_LEVEL,
+                   "SLEEPWALKER: get-stats requesterPid=%lu count=%ld subscriptions=%lu queueDepth=%lu dropped=%lu.\n",
+                   requesterPid,
+                   statsCounter,
+                   out->SubscriptionCount,
+                   out->QueueDepth,
+                   out->DroppedEvents);
+    }
     return STATUS_SUCCESS;
 }
 
@@ -613,6 +693,8 @@ static NTSTATUS SLEEPWALKERHandleSetPidsIoctl(_In_ PSLEEPWALKER_CLIENT Client, _
     size_t inSize;
     UINT32 i;
     UINT32 streamMask;
+    UINT32 appliedCount;
+    ULONG requesterPid;
 
     status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
     if (!NT_SUCCESS(status))
@@ -668,9 +750,18 @@ static NTSTATUS SLEEPWALKERHandleSetPidsIoctl(_In_ PSLEEPWALKER_CLIENT Client, _
         }
     }
 
+    appliedCount = Client->SubscriptionCount;
     ExReleaseFastMutex(&Client->Lock);
+    requesterPid = SLEEPWALKERGetRequestorPid(Request);
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+               DPFLTR_INFO_LEVEL,
+               "SLEEPWALKER: set-pids requesterPid=%lu requestedCount=%lu appliedCount=%lu streamMask=0x%08X.\n",
+               requesterPid,
+               in->ProcessCount,
+               appliedCount,
+               streamMask);
 
-    return (Client->SubscriptionCount != 0) ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER;
+    return (appliedCount != 0) ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER;
 }
 
 static NTSTATUS SLEEPWALKERResolveProcessImagePath(_In_ UINT32 ProcessId, _Out_writes_z_(OutputChars) PWSTR Output,
@@ -726,6 +817,7 @@ static NTSTATUS SLEEPWALKERHandleQueryProcessImageIoctl(_In_ PSLEEPWALKER_CLIENT
     PSLEEPWALKER_QUERY_PROCESS_IMAGE_RESPONSE out;
     size_t inSize;
     size_t outSize;
+    ULONG requesterPid;
 
     *BytesOut = 0;
     if (SLEEPWALKERControlIsShutdown())
@@ -780,6 +872,13 @@ static NTSTATUS SLEEPWALKERHandleQueryProcessImageIoctl(_In_ PSLEEPWALKER_CLIENT
 
     SLEEPWALKERReleaseQueryInflightSlot();
     *BytesOut = sizeof(*out);
+    requesterPid = SLEEPWALKERGetRequestorPid(Request);
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+               NT_SUCCESS(out->Status) ? DPFLTR_INFO_LEVEL : DPFLTR_WARNING_LEVEL,
+               "SLEEPWALKER: query-process-image requesterPid=%lu targetPid=%lu status=0x%08X.\n",
+               requesterPid,
+               in->ProcessId,
+               out->Status);
     return STATUS_SUCCESS;
 }
 
@@ -789,6 +888,10 @@ static NTSTATUS SLEEPWALKERHandleGetEventIoctl(_In_ PSLEEPWALKER_CLIENT Client, 
     NTSTATUS status;
     PSLEEPWALKER_EVENT_RECORD out;
     size_t outSize;
+    UINT32 queueDepthSnapshot = 0;
+    LONG emptyCounter;
+    LONG deliverCounter;
+    ULONG requesterPid;
 
     *BytesOut = 0;
     if (SLEEPWALKERControlIsShutdown())
@@ -809,6 +912,16 @@ static NTSTATUS SLEEPWALKERHandleGetEventIoctl(_In_ PSLEEPWALKER_CLIENT Client, 
     if (IsListEmpty(&Client->EventQueue))
     {
         ExReleaseFastMutex(&Client->Lock);
+        emptyCounter = InterlockedIncrement(&g_IoctlGetEventEmptyCounter);
+        if (emptyCounter == 1 || ((emptyCounter & 0x1FF) == 0))
+        {
+            requesterPid = SLEEPWALKERGetRequestorPid(Request);
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                       DPFLTR_INFO_LEVEL,
+                       "SLEEPWALKER: get-event empty requesterPid=%lu emptyCount=%ld.\n",
+                       requesterPid,
+                       emptyCounter);
+        }
         return STATUS_NO_MORE_ENTRIES;
     }
 
@@ -820,18 +933,39 @@ static NTSTATUS SLEEPWALKERHandleGetEventIoctl(_In_ PSLEEPWALKER_CLIENT Client, 
         {
             Client->QueueDepth -= 1;
         }
+        queueDepthSnapshot = Client->QueueDepth;
         ExFreePoolWithTag(node, SLEEPWALKER_POOL_TAG);
         SLEEPWALKERReleaseGlobalQueueSlot();
     }
     ExReleaseFastMutex(&Client->Lock);
 
     *BytesOut = sizeof(*out);
+    deliverCounter = InterlockedIncrement(&g_IoctlGetEventDeliverCounter);
+    if (deliverCounter == 1 || ((deliverCounter & 0x1FF) == 0))
+    {
+        requesterPid = SLEEPWALKERGetRequestorPid(Request);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                   DPFLTR_INFO_LEVEL,
+                   "SLEEPWALKER: get-event delivered requesterPid=%lu deliveredCount=%ld queueDepthNow=%lu eventType=%lu seq=%lu.\n",
+                   requesterPid,
+                   deliverCounter,
+                   queueDepthSnapshot,
+                   out->Header.Type,
+                   out->Header.Sequence);
+    }
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS SLEEPWALKERHandleSetShutdownModeIoctl(_In_ PSLEEPWALKER_CLIENT Client)
+static NTSTATUS SLEEPWALKERHandleSetShutdownModeIoctl(_In_ PSLEEPWALKER_CLIENT Client, _In_ WDFREQUEST Request)
 {
+    ULONG requesterPid;
+
     UNREFERENCED_PARAMETER(Client);
+    requesterPid = SLEEPWALKERGetRequestorPid(Request);
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+               DPFLTR_WARNING_LEVEL,
+               "SLEEPWALKER: shutdown mode requested by requesterPid=%lu.\n",
+               requesterPid);
     SLEEPWALKERControlBeginShutdown();
     return STATUS_SUCCESS;
 }
@@ -843,19 +977,33 @@ _Use_decl_annotations_ VOID SLEEPWALKEREvtIoDeviceControl(WDFQUEUE Queue, WDFREQ
     PSLEEPWALKER_FILE_CONTEXT ctx;
     NTSTATUS status = STATUS_INVALID_DEVICE_REQUEST;
     size_t bytesOut = 0;
+    ULONG requesterPid;
 
     UNREFERENCED_PARAMETER(Queue);
     UNREFERENCED_PARAMETER(OutputBufferLength);
     UNREFERENCED_PARAMETER(InputBufferLength);
+    requesterPid = SLEEPWALKERGetRequestorPid(Request);
 
     if (KeGetCurrentIrql() != PASSIVE_LEVEL)
     {
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                   DPFLTR_ERROR_LEVEL,
+                   "SLEEPWALKER: ioctl rejected requesterPid=%lu ioctl=%s(0x%08X) reason=IRQL.\n",
+                   requesterPid,
+                   SLEEPWALKERIoctlName(IoControlCode),
+                   IoControlCode);
         WdfRequestComplete(Request, STATUS_INVALID_DEVICE_STATE);
         return;
     }
 
     if (!SLEEPWALKERModeAllowed(Request))
     {
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                   DPFLTR_WARNING_LEVEL,
+                   "SLEEPWALKER: ioctl denied requesterPid=%lu ioctl=%s(0x%08X) reason=non-usermode.\n",
+                   requesterPid,
+                   SLEEPWALKERIoctlName(IoControlCode),
+                   IoControlCode);
         WdfRequestComplete(Request, STATUS_ACCESS_DENIED);
         return;
     }
@@ -863,6 +1011,12 @@ _Use_decl_annotations_ VOID SLEEPWALKEREvtIoDeviceControl(WDFQUEUE Queue, WDFREQ
     fileObj = WdfRequestGetFileObject(Request);
     if (fileObj == NULL)
     {
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                   DPFLTR_WARNING_LEVEL,
+                   "SLEEPWALKER: ioctl invalid file-object requesterPid=%lu ioctl=%s(0x%08X).\n",
+                   requesterPid,
+                   SLEEPWALKERIoctlName(IoControlCode),
+                   IoControlCode);
         WdfRequestComplete(Request, STATUS_INVALID_HANDLE);
         return;
     }
@@ -870,6 +1024,12 @@ _Use_decl_annotations_ VOID SLEEPWALKEREvtIoDeviceControl(WDFQUEUE Queue, WDFREQ
     ctx = SLEEPWALKERGetFileContext(fileObj);
     if (ctx->Client == NULL)
     {
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                   DPFLTR_WARNING_LEVEL,
+                   "SLEEPWALKER: ioctl invalid client context requesterPid=%lu ioctl=%s(0x%08X).\n",
+                   requesterPid,
+                   SLEEPWALKERIoctlName(IoControlCode),
+                   IoControlCode);
         WdfRequestComplete(Request, STATUS_INVALID_HANDLE);
         return;
     }
@@ -877,6 +1037,12 @@ _Use_decl_annotations_ VOID SLEEPWALKEREvtIoDeviceControl(WDFQUEUE Queue, WDFREQ
     if (SLEEPWALKERControlIsShutdown() && IoControlCode != IOCTL_SLEEPWALKER_GET_STATS &&
         IoControlCode != IOCTL_SLEEPWALKER_SET_SHUTDOWN_MODE)
     {
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                   DPFLTR_INFO_LEVEL,
+                   "SLEEPWALKER: ioctl rejected during shutdown requesterPid=%lu ioctl=%s(0x%08X).\n",
+                   requesterPid,
+                   SLEEPWALKERIoctlName(IoControlCode),
+                   IoControlCode);
         WdfRequestComplete(Request, STATUS_DEVICE_NOT_READY);
         return;
     }
@@ -902,11 +1068,28 @@ _Use_decl_annotations_ VOID SLEEPWALKEREvtIoDeviceControl(WDFQUEUE Queue, WDFREQ
         status = SLEEPWALKERHandleQueryProcessImageIoctl(ctx->Client, Request, &bytesOut);
         break;
     case IOCTL_SLEEPWALKER_SET_SHUTDOWN_MODE:
-        status = SLEEPWALKERHandleSetShutdownModeIoctl(ctx->Client);
+        status = SLEEPWALKERHandleSetShutdownModeIoctl(ctx->Client, Request);
         break;
     default:
         status = STATUS_INVALID_DEVICE_REQUEST;
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                   DPFLTR_WARNING_LEVEL,
+                   "SLEEPWALKER: unsupported ioctl requesterPid=%lu ioctl=0x%08X.\n",
+                   requesterPid,
+                   IoControlCode);
         break;
+    }
+
+    if (IoControlCode != IOCTL_SLEEPWALKER_GET_EVENT || (!NT_SUCCESS(status) && status != STATUS_NO_MORE_ENTRIES))
+    {
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                   NT_SUCCESS(status) ? DPFLTR_INFO_LEVEL : DPFLTR_WARNING_LEVEL,
+                   "SLEEPWALKER: ioctl complete requesterPid=%lu ioctl=%s(0x%08X) status=0x%08X bytes=%Iu.\n",
+                   requesterPid,
+                   SLEEPWALKERIoctlName(IoControlCode),
+                   IoControlCode,
+                   status,
+                   bytesOut);
     }
 
     WdfRequestCompleteWithInformation(Request, status, bytesOut);
@@ -944,6 +1127,9 @@ SLEEPWALKERControlInitialize(_In_ WDFDRIVER Driver)
     InterlockedExchange(&g_ControlTotalQueuedEvents, 0);
     InterlockedExchange(&g_QueryImageInflight, 0);
     InterlockedExchange(&g_QueryImageThrottleCounter, 0);
+    InterlockedExchange(&g_IoctlGetEventDeliverCounter, 0);
+    InterlockedExchange(&g_IoctlGetEventEmptyCounter, 0);
+    InterlockedExchange(&g_IoctlGetStatsCounter, 0);
 
     RtlInitUnicodeString(&sddl, L"D:P(A;;GA;;;SY)(A;;GA;;;BA)");
     devInit = WdfControlDeviceInitAllocate(Driver, &sddl);

@@ -1,8 +1,8 @@
 param(
     [string]$DriverName = "sleepwlkr",
     [string]$ControllerName = "SleepwlkrController",
-    [string]$DriverSys = ".\x64\Debug\sleepwlkr.sys",
-    [string]$ControllerExe = ".\x64\Debug\SleepwlkrController.exe"
+    [string]$DriverSys = "..\x64\Debug\sleepwlkr.sys",
+    [string]$ControllerExe = "..\x64\Debug\SleepwlkrController.exe"
 )
 
 $ErrorActionPreference = "Stop"
@@ -39,12 +39,12 @@ function Resolve-ArtifactPath {
 
 $driverSrc = Resolve-ArtifactPath `
     -PreferredPath $DriverSys `
-    -FallbackPaths @(".\x64\Debug\sleepwlkr.sys", ".\x64\Release\sleepwlkr.sys", ".\sleepwlkr.sys") `
+    -FallbackPaths @("..\x64\Debug\sleepwlkr.sys", "..\x64\Release\sleepwlkr.sys", ".\sleepwlkr.sys") `
     -Label "Driver .sys"
 
 $controllerSrc = Resolve-ArtifactPath `
     -PreferredPath $ControllerExe `
-    -FallbackPaths @(".\x64\Debug\SleepwlkrController.exe", ".\x64\Release\SleepwlkrController.exe", ".\SleepwlkrController.exe") `
+    -FallbackPaths @("..\x64\Debug\SleepwlkrController.exe", "..\x64\Release\SleepwlkrController.exe", ".\SleepwlkrController.exe") `
     -Label "Controller .exe"
 
 $driverDst = Join-Path $env:windir "System32\drivers\sleepwlkr.sys"

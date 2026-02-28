@@ -62,6 +62,7 @@ sc stop sleepwlkr
 
 Build one or more:
 
+- `vcxproj/SleepwalkerController.vcxproj`
 - `vcxproj/SleepwalkerClient.vcxproj`
 - `vcxproj/SleepwalkerIoctlTest.vcxproj`
 - `vcxproj/SleepwalkerSensorCore.vcxproj`
@@ -73,21 +74,48 @@ cd /d "<REPO_ROOT>\\user\\sensor"
 build_client.cmd
 ```
 
-## 5) Validate IOCTL Path (Recommended)
+## 5) Install/Run Controller Service (Recommended)
+
+Install/update the Session 0 broker service:
+
+```powershell
+cd "<REPO_ROOT>"
+powershell -ExecutionPolicy Bypass -File .\usage\install-controller-service.ps1
+```
+
+Validate:
+
+```bat
+sc query SleepwlkrController
+```
+
+Uninstall:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\usage\install-controller-service.ps1 -Uninstall
+```
+
+## 6) Validate IOCTL Path (Recommended)
 
 ```bat
 cd /d "<REPO_ROOT>"
 .\x64\Debug\SleepwalkerIoctlTest.exe
 ```
 
-## 6) Run Targeted Operator Client
+## 7) Run Targeted Operator Client
 
 ```bat
 cd /d "<REPO_ROOT>"
 .\x64\Debug\SleepwalkerClient.exe 4242 handle,memory,thread
 ```
 
-## 7) Run ETW Capture (Optional)
+Use `--direct` to bypass broker and speak to the driver directly:
+
+```bat
+.\x64\Debug\SleepwalkerClient.exe --direct 4242 handle,memory,thread
+```
+
+## 8) Run ETW Capture (Optional)
 
 Use either `SleepwalkerClient.exe` live ETW output mode or a custom consumer via `SleepwalkerSensorCore` (`SLEEPWALKERSCStartSleepwalkerEtwSession` / `SwkStartDetectionEtwSession`).
 

@@ -53,6 +53,10 @@ The preferred integration surface for user-mode consumers is:
 
 Current exports:
 
+- Protocol selection helpers:
+  - `SLEEPWALKERSCUseServiceProtocol`
+  - `SLEEPWALKERSCUseClientProtocol`
+  - `SLEEPWALKERSCGetProtocolMode`
 - IOCTL control-plane wrappers:
   - `SLEEPWALKERSCOpenControlDevice`
   - `SLEEPWALKERSCSubscribe`
@@ -78,6 +82,7 @@ Consumers currently using these exports:
 
 - `SleepwalkerClient`
 - `SleepwalkerTestSuite`
+- `SleepwlkrController`
 
 ## IOCTL Interface
 

@@ -6,6 +6,7 @@
 #include <evntcons.h>
 #include <winioctl.h>
 #include "..\..\abi\sleepwalker_ioctl.h"
+#include "..\..\abi\sleepwalker_ipc.h"
 
 #ifdef SLEEPWALKERSC_EXPORTS
 #define SLEEPWALKERSC_API __declspec(dllexport)
@@ -57,10 +58,22 @@ extern "C"
 
     typedef VOID(WINAPI *SwkDetectionCallback)(_In_ const SwkDetectionEvent *Event, _In_opt_ PVOID Context);
 
+    typedef enum _SLEEPWALKERSC_PROTOCOL_MODE
+    {
+        SLEEPWALKERSC_PROTOCOL_SERVICE = 0,
+        SLEEPWALKERSC_PROTOCOL_CLIENT = 1
+    } SLEEPWALKERSC_PROTOCOL_MODE;
+
     extern SLEEPWALKERSC_API const GUID SLEEPWALKERSC_PROVIDER_GUID_SLEEPWALKER;
     extern SLEEPWALKERSC_API const GUID SLEEPWALKERSC_PROVIDER_GUID_TI;
 
+    SLEEPWALKERSC_API VOID SLEEPWALKERSCUseServiceProtocol(VOID);
+    SLEEPWALKERSC_API BOOL SLEEPWALKERSCUseClientProtocol(_In_opt_z_ PCWSTR PipeName, _In_ DWORD ConnectTimeoutMs);
+    SLEEPWALKERSC_API SLEEPWALKERSC_PROTOCOL_MODE SLEEPWALKERSCGetProtocolMode(VOID);
+
     SLEEPWALKERSC_API HANDLE SLEEPWALKERSCOpenControlDevice(VOID);
+    SLEEPWALKERSC_API BOOL SLEEPWALKERSCGetBrokerInfo(_Out_opt_ UINT32 *Capabilities,
+                                                       _Out_opt_ BOOL *ThreatIntelEnabled);
     SLEEPWALKERSC_API BOOL SLEEPWALKERSCSubscribe(_In_ HANDLE Device, _In_ DWORD ProcessId, _In_ DWORD StreamMask);
     SLEEPWALKERSC_API BOOL SLEEPWALKERSCUnsubscribe(_In_ HANDLE Device, _In_ DWORD ProcessId);
     SLEEPWALKERSC_API BOOL SLEEPWALKERSCSetPids(_In_ HANDLE Device, _In_reads_(ProcessCount) const DWORD *ProcessIds,
@@ -73,6 +86,8 @@ extern "C"
                                                               _Out_writes_z_(OutputChars) PWSTR Output,
                                                               _In_ DWORD OutputChars);
     SLEEPWALKERSC_API BOOL SLEEPWALKERSCSetShutdownMode(_In_ HANDLE Device);
+    SLEEPWALKERSC_API BOOL SLEEPWALKERSCGetEtwEvent(_In_ HANDLE Device, _Out_ SLEEPWALKER_IPC_ETW_EVENT *Event,
+                                                     _In_ DWORD TimeoutMs);
     SLEEPWALKERSC_API DWORD SLEEPWALKERSCParseStreamMaskA(_In_z_ const char *Text);
 
     SLEEPWALKERSC_API ULONG SLEEPWALKERSCStopSessionByName(_In_z_ PCWSTR SessionName);

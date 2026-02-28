@@ -220,12 +220,16 @@ Example successful run:
   - `telemetry/`: ETW provider emission
 - `abi/`
   - `sleepwalker_ioctl.h`: shared IOCTL ABI contract
+  - `sleepwalker_ipc.h`: service/client IPC ABI contract
 - `user/sensor/`
   - `sleepwalker_sensor_core.c/.h`: shared user-mode SDK (IOCTL + ETW session helpers)
   - `SleepwalkerClient`: manual IOCTL subscriber
   - `SleepwalkerTestSuite`: end-to-end validation
+- `user/controller/`
+  - `sleepwalker_controller.c`: Session 0 broker service (single driver handle + ETW TI session + IPC)
 - `vcxproj/`
   - `SleepwalkerSensorCore.vcxproj`: shared user-mode DLL project
+  - `SleepwalkerController.vcxproj`: controller service executable
 
 ---
 
@@ -234,7 +238,8 @@ Example successful run:
 1. Open `Sleepwalker.slnx` in Visual Studio.
 2. Build `vcxproj/Sleepwalker.vcxproj` (`x64` or `ARM64`).
 3. Install and start the driver.
-4. Run:
+4. Install/start `SleepwlkrController` (recommended) via `usage/install-controller-service.ps1`.
+5. Run:
    - `SleepwalkerSensorCore.dll` (built automatically by dependent projects)
    - `SleepwalkerTestSuite.exe` for full validation
    - `SleepwalkerClient.exe <pid> handle,memory,thread` for targeted IOCTL capture

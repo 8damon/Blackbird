@@ -11,10 +11,7 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\user\sensor\sleepwalker_etw_props.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="..\user\sensor\sleepwalker_sensor_core.c">
+    <ClCompile Include="..\user\controller\sleepwalker_controller.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -26,9 +23,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\user\sensor\sleepwalker_sensor_core.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="..\user\sensor\sleepwalker_etw_props.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

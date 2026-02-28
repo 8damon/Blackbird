@@ -1,6 +1,6 @@
 ## User-Mode Tools
 
-Document revision: `2026-02-27`
+Document revision: `2026-02-28`
 
 ## Shared Library: SleepwalkerSensorCore
 
@@ -19,6 +19,9 @@ What it provides:
 Exports:
 
 - `SLEEPWALKERSCOpenControlDevice`
+- `SLEEPWALKERSCUseServiceProtocol`
+- `SLEEPWALKERSCUseClientProtocol`
+- `SLEEPWALKERSCGetProtocolMode`
 - `SLEEPWALKERSCSubscribe`
 - `SLEEPWALKERSCUnsubscribe`
 - `SLEEPWALKERSCSetPids`
@@ -43,12 +46,18 @@ Build project `vcxproj/SleepwalkerSensorCore.vcxproj`.
 
 ## SleepwalkerClient (IOCTL Consumer)
 
-`SleepwalkerClient.exe` subscribes directly to the control plane and drains queued IOCTL events.
+`SleepwalkerClient.exe` is broker-first: it connects to `SleepwlkrController` over named-pipe IPC and falls back to direct driver mode if the service is unavailable.
 
 Build project `vcxproj/SleepwalkerClient.vcxproj` (depends on `SleepwalkerSensorCore`), then run elevated:
 
 ```bat
 SleepwalkerClient.exe 4242 handle,memory,thread
+```
+
+Force direct mode:
+
+```bat
+SleepwalkerClient.exe --direct 4242 handle,memory,thread
 ```
 
 Optional scope argument:

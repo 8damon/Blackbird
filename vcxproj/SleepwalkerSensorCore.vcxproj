@@ -119,6 +119,7 @@
     <ClCompile Include="..\user\sensor\sleepwalker_sensor_core.c" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\abi\sleepwalker_ipc.h" />
     <ClInclude Include="..\abi\sleepwalker_ioctl.h" />
     <ClInclude Include="..\user\sensor\sleepwalker_etw_props.h" />
     <ClInclude Include="..\user\sensor\sleepwalker_sensor_core.h" />

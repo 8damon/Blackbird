@@ -28,6 +28,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\abi\sleepwalker_ipc.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="..\abi\sleepwalker_ioctl.h">
       <Filter>Header Files</Filter>
     </ClInclude>

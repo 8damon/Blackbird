@@ -82,6 +82,28 @@ typedef struct _ETW_CAPTURE
     BOOL TiProviderEnabled;
 } ETW_CAPTURE;
 
+typedef struct _BROKER_ETW_CAPTURE
+{
+    HANDLE Device;
+    HANDLE TraceThread;
+    volatile LONG StopRequested;
+    volatile LONG HandleEvents;
+    volatile LONG ThreadEvents;
+    volatile LONG ProcessEvents;
+    volatile LONG ImageEvents;
+    volatile LONG RegistryEvents;
+    volatile LONG ApcEvents;
+    volatile LONG DetectionEvents;
+    volatile LONG TiEvents;
+    volatile LONG TiAllocVmEvents;
+    volatile LONG TiProtectVmEvents;
+    volatile LONG TiWriteVmEvents;
+    volatile LONG TiSyscallUsageEvents;
+    volatile LONG TiUnknownTaskEvents;
+    volatile LONG UnknownEvents;
+    BOOL TiProviderEnabled;
+} BROKER_ETW_CAPTURE;
+
 typedef struct _SUITE_RESULTS
 {
     INT Total;
@@ -1209,6 +1231,33 @@ static BOOL Unsubscribe(HANDLE h, DWORD pid)
 
 static HANDLE OpenControlDeviceHandle(void)
 {
+    const char *brokerPipe = getenv("SLEEPWALKER_TEST_BROKER_PIPE");
+    WCHAR brokerPipeWide[MAX_PATH];
+
+    if (!EnvFlagEnabled("SLEEPWALKER_TEST_DIRECT_IO", FALSE))
+    {
+        ZeroMemory(brokerPipeWide, sizeof(brokerPipeWide));
+        if (brokerPipe != NULL && brokerPipe[0] != '\0')
+        {
+            if (MultiByteToWideChar(CP_UTF8, 0, brokerPipe, -1, brokerPipeWide, RTL_NUMBER_OF(brokerPipeWide)) <= 0 &&
+                MultiByteToWideChar(CP_ACP, 0, brokerPipe, -1, brokerPipeWide, RTL_NUMBER_OF(brokerPipeWide)) <= 0)
+            {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return INVALID_HANDLE_VALUE;
+            }
+        }
+
+        if (SLEEPWALKERSCUseClientProtocol((brokerPipe != NULL && brokerPipe[0] != '\0') ? brokerPipeWide : NULL, 1500))
+        {
+            HANDLE device = SLEEPWALKERSCOpenControlDevice();
+            if (device != INVALID_HANDLE_VALUE)
+            {
+                return device;
+            }
+        }
+    }
+
+    SLEEPWALKERSCUseServiceProtocol();
     return SLEEPWALKERSCOpenControlDevice();
 }
 
@@ -1971,6 +2020,202 @@ static VOID StopEtwCapture(_Inout_ ETW_CAPTURE *cap)
     g_ActiveEtwCapture = NULL;
 }
 
+static VOID BrokerCaptureCountEvent(_Inout_ BROKER_ETW_CAPTURE *cap, _In_ const SLEEPWALKER_IPC_ETW_EVENT *event)
+{
+    if (cap == NULL || event == NULL)
+    {
+        return;
+    }
+
+    if (event->Source == SleepwalkerIpcEtwSourceThreatIntel)
+    {
+        InterlockedIncrement(&cap->TiEvents);
+        switch (event->Task)
+        {
+        case 1:
+            InterlockedIncrement(&cap->TiAllocVmEvents);
+            break;
+        case 2:
+            InterlockedIncrement(&cap->TiProtectVmEvents);
+            break;
+        case 7:
+            InterlockedIncrement(&cap->TiWriteVmEvents);
+            break;
+        case 13:
+            InterlockedIncrement(&cap->TiSyscallUsageEvents);
+            break;
+        default:
+            InterlockedIncrement(&cap->TiUnknownTaskEvents);
+            break;
+        }
+        return;
+    }
+
+    if (event->Source != SleepwalkerIpcEtwSourceSleepwalker || event->EventName[0] == L'\0')
+    {
+        InterlockedIncrement(&cap->UnknownEvents);
+        return;
+    }
+
+    if (wcscmp(event->EventName, L"HandleTelemetry") == 0)
+    {
+        InterlockedIncrement(&cap->HandleEvents);
+    }
+    else if (wcscmp(event->EventName, L"ThreadTelemetry") == 0)
+    {
+        InterlockedIncrement(&cap->ThreadEvents);
+    }
+    else if (wcscmp(event->EventName, L"ProcessTelemetry") == 0)
+    {
+        InterlockedIncrement(&cap->ProcessEvents);
+    }
+    else if (wcscmp(event->EventName, L"ImageTelemetry") == 0)
+    {
+        InterlockedIncrement(&cap->ImageEvents);
+    }
+    else if (wcscmp(event->EventName, L"RegistryTelemetry") == 0)
+    {
+        InterlockedIncrement(&cap->RegistryEvents);
+    }
+    else if (wcscmp(event->EventName, L"ApcTelemetry") == 0)
+    {
+        InterlockedIncrement(&cap->ApcEvents);
+    }
+    else if (wcscmp(event->EventName, L"DetectionTelemetry") == 0)
+    {
+        InterlockedIncrement(&cap->DetectionEvents);
+    }
+    else
+    {
+        InterlockedIncrement(&cap->UnknownEvents);
+    }
+}
+
+static DWORD WINAPI BrokerEtwConsumerThreadProc(_In_ LPVOID Context)
+{
+    BROKER_ETW_CAPTURE *cap = (BROKER_ETW_CAPTURE *)Context;
+
+    if (cap == NULL || cap->Device == NULL || cap->Device == INVALID_HANDLE_VALUE)
+    {
+        return 1;
+    }
+
+    while (InterlockedCompareExchange(&cap->StopRequested, 0, 0) == 0)
+    {
+        SLEEPWALKER_IPC_ETW_EVENT event;
+        BOOL ok = SLEEPWALKERSCGetEtwEvent(cap->Device, &event, 500);
+        if (!ok)
+        {
+            DWORD err = GetLastError();
+            if (err == ERROR_NO_MORE_ITEMS)
+            {
+                continue;
+            }
+            if (err == ERROR_NOT_READY || err == ERROR_OPERATION_ABORTED || err == ERROR_DEVICE_NOT_CONNECTED ||
+                err == ERROR_BROKEN_PIPE)
+            {
+                break;
+            }
+            if (err == ERROR_NOT_SUPPORTED || err == ERROR_INVALID_FUNCTION)
+            {
+                break;
+            }
+            Sleep(60);
+            continue;
+        }
+
+        BrokerCaptureCountEvent(cap, &event);
+    }
+
+    return 0;
+}
+
+static BOOL StartBrokerEtwCapture(_Out_ BROKER_ETW_CAPTURE *cap)
+{
+    UINT32 capabilities = 0;
+    BOOL tiEnabled = FALSE;
+
+    if (cap == NULL)
+    {
+        return FALSE;
+    }
+
+    ZeroMemory(cap, sizeof(*cap));
+    cap->Device = INVALID_HANDLE_VALUE;
+
+    if (!SLEEPWALKERSCGetBrokerInfo(&capabilities, &tiEnabled))
+    {
+        return FALSE;
+    }
+    if ((capabilities & SLEEPWALKER_IPC_CAP_ETW_TI_UPLINK) == 0)
+    {
+        SetLastError(ERROR_NOT_SUPPORTED);
+        return FALSE;
+    }
+
+    cap->Device = SLEEPWALKERSCOpenControlDevice();
+    if (cap->Device == INVALID_HANDLE_VALUE)
+    {
+        return FALSE;
+    }
+
+    cap->TiProviderEnabled = tiEnabled;
+    cap->StopRequested = 0;
+    cap->TraceThread = CreateThread(NULL, 0, BrokerEtwConsumerThreadProc, cap, 0, NULL);
+    if (cap->TraceThread == NULL)
+    {
+        CloseHandle(cap->Device);
+        cap->Device = INVALID_HANDLE_VALUE;
+        return FALSE;
+    }
+
+    Sleep(150);
+    return TRUE;
+}
+
+static VOID StopBrokerEtwCapture(_Inout_ BROKER_ETW_CAPTURE *cap)
+{
+    if (cap == NULL)
+    {
+        return;
+    }
+
+    InterlockedExchange(&cap->StopRequested, 1);
+    if (cap->TraceThread != NULL)
+    {
+        (void)WaitForSingleObject(cap->TraceThread, 5000);
+        CloseHandle(cap->TraceThread);
+        cap->TraceThread = NULL;
+    }
+
+    if (cap->Device != NULL && cap->Device != INVALID_HANDLE_VALUE)
+    {
+        CloseHandle(cap->Device);
+        cap->Device = INVALID_HANDLE_VALUE;
+    }
+}
+
+static BOOL WaitForBrokerEtwEventCoverage(_In_ BROKER_ETW_CAPTURE *cap, _In_ DWORD maxMs, _In_ BOOL requireApcTelemetry)
+{
+    ULONGLONG start = GetTickCount64();
+
+    while ((GetTickCount64() - start) < maxMs)
+    {
+        if (InterlockedCompareExchange(&cap->HandleEvents, 0, 0) > 0 &&
+            InterlockedCompareExchange(&cap->ThreadEvents, 0, 0) > 0 &&
+            InterlockedCompareExchange(&cap->ProcessEvents, 0, 0) > 0 &&
+            InterlockedCompareExchange(&cap->ImageEvents, 0, 0) > 0 &&
+            InterlockedCompareExchange(&cap->RegistryEvents, 0, 0) > 0 &&
+            (!requireApcTelemetry || InterlockedCompareExchange(&cap->ApcEvents, 0, 0) > 0) &&
+            InterlockedCompareExchange(&cap->DetectionEvents, 0, 0) > 0)
+        {
+            return TRUE;
+        }
+        Sleep(100);
+    }
+    return FALSE;
+}
+
 static BOOL WaitForEtwEventCoverage(_In_ ETW_CAPTURE *cap, _In_ DWORD maxMs, _In_ BOOL requireApcTelemetry)
 {
     ULONGLONG start = GetTickCount64();
@@ -2017,8 +2262,12 @@ int __cdecl main(int argc, char **argv)
     BOOL setPidsApplied = FALSE;
     DWORD multiClientPolls = 0;
     ETW_CAPTURE etw;
+    BROKER_ETW_CAPTURE brokerEtw;
     BOOL etwStarted = FALSE;
     BOOL etwCoverageMet = FALSE;
+    BOOL brokerMode = FALSE;
+    BOOL brokerEtwStarted = FALSE;
+    BOOL brokerEtwCoverageMet = FALSE;
     BOOL requireKernelCorrelationSignals = FALSE;
     BOOL requireApcTelemetry = FALSE;
     SUITE_RESULTS results;
@@ -2035,6 +2284,7 @@ int __cdecl main(int argc, char **argv)
     ZeroMemory(&expected, sizeof(expected));
     ZeroMemory(&child, sizeof(child));
     ZeroMemory(&etw, sizeof(etw));
+    ZeroMemory(&brokerEtw, sizeof(brokerEtw));
     ZeroMemory(&results, sizeof(results));
     reportReady = SuiteInitReport(&results);
     if (!reportReady)
@@ -2054,11 +2304,23 @@ int __cdecl main(int argc, char **argv)
     {
         goto Cleanup;
     }
+    brokerMode = (SLEEPWALKERSCGetProtocolMode() == SLEEPWALKERSC_PROTOCOL_CLIENT);
+    printf("[INFO] transport mode=%s\n", brokerMode ? "service-broker" : "direct");
 
     RunIoctlContractTests(h, selfPid, &results);
 
     etwStarted = StartEtwCapture(&etw);
     RecordResult(&results, etwStarted, "started ETW capture session", "failed to start ETW capture session");
+    if (brokerMode)
+    {
+        brokerEtwStarted = StartBrokerEtwCapture(&brokerEtw);
+        RecordResult(&results, brokerEtwStarted, "started broker ETW/TI uplink capture",
+                     "failed to start broker ETW/TI uplink capture");
+        if (brokerEtwStarted && !brokerEtw.TiProviderEnabled)
+        {
+            printf("[INFO] broker ETW started without TI provider (service fallback or unavailable)\n");
+        }
+    }
 
     ZeroMemory(&badReq, sizeof(badReq));
     badReq.ProcessId = selfPid;
@@ -2470,6 +2732,56 @@ int __cdecl main(int argc, char **argv)
                InterlockedCompareExchange(&etw.TiUnknownTaskEvents, 0, 0));
     }
 
+    if (brokerEtwStarted)
+    {
+        brokerEtwCoverageMet = WaitForBrokerEtwEventCoverage(&brokerEtw, 10000, requireApcTelemetry);
+        RecordResult(&results, brokerEtwCoverageMet,
+                     requireApcTelemetry ? "broker ETW uplink received all core event families (including APC)"
+                                         : "broker ETW uplink received all core event families (APC optional)",
+                     requireApcTelemetry ? "broker ETW uplink missing one or more core event families (including APC)"
+                                         : "broker ETW uplink missing one or more core event families (APC optional)");
+
+        RecordResult(&results, (InterlockedCompareExchange(&brokerEtw.DetectionEvents, 0, 0) > 0),
+                     "broker ETW uplink DetectionTelemetry observed",
+                     "broker ETW uplink DetectionTelemetry missing");
+
+        if (generatedVmApiCalls)
+        {
+            if (brokerEtw.TiProviderEnabled)
+            {
+                RecordResult(&results, (InterlockedCompareExchange(&brokerEtw.TiAllocVmEvents, 0, 0) > 0),
+                             "broker TI AllocVM API-call observed", "broker TI AllocVM API-call missing");
+                RecordResult(&results, (InterlockedCompareExchange(&brokerEtw.TiWriteVmEvents, 0, 0) > 0),
+                             "broker TI WriteVM API-call observed", "broker TI WriteVM API-call missing");
+                RecordResult(&results, (InterlockedCompareExchange(&brokerEtw.TiProtectVmEvents, 0, 0) > 0),
+                             "broker TI ProtectVM API-call observed", "broker TI ProtectVM API-call missing");
+            }
+            else
+            {
+                RecordSkip(&results, "broker TI AllocVM API-call check skipped (provider unavailable)");
+                RecordSkip(&results, "broker TI WriteVM API-call check skipped (provider unavailable)");
+                RecordSkip(&results, "broker TI ProtectVM API-call check skipped (provider unavailable)");
+            }
+        }
+
+        printf("[INFO] broker ETW counts handle=%ld thread=%ld process=%ld image=%ld registry=%ld apc=%ld detection=%ld "
+               "ti=%ld unknown=%ld tiTask{alloc=%ld protect=%ld write=%ld syscallUsage=%ld tiUnknown=%ld}\n",
+               InterlockedCompareExchange(&brokerEtw.HandleEvents, 0, 0),
+               InterlockedCompareExchange(&brokerEtw.ThreadEvents, 0, 0),
+               InterlockedCompareExchange(&brokerEtw.ProcessEvents, 0, 0),
+               InterlockedCompareExchange(&brokerEtw.ImageEvents, 0, 0),
+               InterlockedCompareExchange(&brokerEtw.RegistryEvents, 0, 0),
+               InterlockedCompareExchange(&brokerEtw.ApcEvents, 0, 0),
+               InterlockedCompareExchange(&brokerEtw.DetectionEvents, 0, 0),
+               InterlockedCompareExchange(&brokerEtw.TiEvents, 0, 0),
+               InterlockedCompareExchange(&brokerEtw.UnknownEvents, 0, 0),
+               InterlockedCompareExchange(&brokerEtw.TiAllocVmEvents, 0, 0),
+               InterlockedCompareExchange(&brokerEtw.TiProtectVmEvents, 0, 0),
+               InterlockedCompareExchange(&brokerEtw.TiWriteVmEvents, 0, 0),
+               InterlockedCompareExchange(&brokerEtw.TiSyscallUsageEvents, 0, 0),
+               InterlockedCompareExchange(&brokerEtw.TiUnknownTaskEvents, 0, 0));
+    }
+
 Cleanup:
     if (subscribedChild)
     {
@@ -2488,6 +2800,10 @@ Cleanup:
     if (etwStarted)
     {
         StopEtwCapture(&etw);
+    }
+    if (brokerEtwStarted)
+    {
+        StopBrokerEtwCapture(&brokerEtw);
     }
 
     if (h != INVALID_HANDLE_VALUE)

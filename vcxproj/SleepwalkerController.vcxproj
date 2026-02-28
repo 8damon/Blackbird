@@ -19,10 +19,11 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{4F018F92-D42D-4B95-A097-D810AA358507}</ProjectGuid>
+    <ProjectGuid>{69D04453-3FD0-4F4E-A5D2-5DFED2F10E25}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
-    <ProjectName>SleepwalkerClient</ProjectName>
+    <ProjectName>SleepwalkerController</ProjectName>
+    <TargetName>SleepwlkrController</TargetName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
@@ -80,9 +81,6 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
-    <Link>
-      <AdditionalDependencies>tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -95,9 +93,6 @@
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <IntrinsicFunctions>true</IntrinsicFunctions>
     </ClCompile>
-    <Link>
-      <AdditionalDependencies>tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <ClCompile>
@@ -106,9 +101,6 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
-    <Link>
-      <AdditionalDependencies>tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <ClCompile>
@@ -117,25 +109,14 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
-    <Link>
-      <AdditionalDependencies>tdh.lib;%(AdditionalDependencies)</AdditionalDependencies>
-    </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\user\sensor\sleepwalker_client.c" />
-    <ClCompile Include="..\user\sensor\sleepwalker_etw_printer.c" />
-    <ClCompile Include="..\user\sensor\sleepwalker_etw_props.c" />
-    <ClCompile Include="..\user\sensor\sleepwalker_etw_symbols.c" />
-    <ClCompile Include="..\user\sensor\sleepwalker_symbol_common.c" />
+    <ClCompile Include="..\user\controller\sleepwalker_controller.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\abi\sleepwalker_ipc.h" />
     <ClInclude Include="..\abi\sleepwalker_ioctl.h" />
-    <ClInclude Include="..\user\sensor\sleepwalker_etw_printer.h" />
-    <ClInclude Include="..\user\sensor\sleepwalker_etw_props.h" />
     <ClInclude Include="..\user\sensor\sleepwalker_sensor_core.h" />
-    <ClInclude Include="..\user\sensor\sleepwalker_etw_symbols.h" />
-    <ClInclude Include="..\user\sensor\sleepwalker_symbol_common.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="SleepwalkerSensorCore.vcxproj">

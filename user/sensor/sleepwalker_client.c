@@ -75,6 +75,13 @@ typedef struct _SLEEPWALKER_LIVE_ETW_CONTEXT
     volatile LONG SessionEnded;
 } SLEEPWALKER_LIVE_ETW_CONTEXT;
 
+typedef struct _SLEEPWALKER_BROKER_ETW_CONTEXT
+{
+    HANDLE Device;
+    BOOL ThreatIntelEnabled;
+    volatile LONG SessionEnded;
+} SLEEPWALKER_BROKER_ETW_CONTEXT;
+
 typedef struct _SLEEPWALKER_LAUNCH_TARGET
 {
     BOOL Active;
@@ -122,6 +129,7 @@ static volatile LONG g_StopRequested = 0;
 static SLEEPWALKERSC_ETW_SESSION *g_StopSession = NULL;
 static SLEEPWALKER_LOGGER g_Logger;
 static void LoggerEmitEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName);
+static void LoggerEmitBrokerEtwEvent(_In_ const SLEEPWALKER_IPC_ETW_EVENT *Event);
 
 static BOOL WINAPI ConsoleCtrlHandler(_In_ DWORD CtrlType)
 {
@@ -199,6 +207,49 @@ static BOOL ConvertArgToWide(_In_z_ const char *Text, _Out_writes_z_(OutputChars
         converted = MultiByteToWideChar(CP_ACP, 0, Text, -1, Output, (int)OutputChars);
     }
     return (converted > 0);
+}
+
+static HANDLE OpenControlDeviceWithBrokerFallback(_In_ BOOL ForceDirect, _In_opt_z_ const char *BrokerPipeUtf8,
+                                                  _Out_opt_ BOOL *UsingBroker)
+{
+    HANDLE device;
+    WCHAR brokerPipeWide[MAX_PATH];
+    PCWSTR pipeName = NULL;
+
+    if (UsingBroker != NULL)
+    {
+        *UsingBroker = FALSE;
+    }
+
+    if (!ForceDirect)
+    {
+        ZeroMemory(brokerPipeWide, sizeof(brokerPipeWide));
+        if (BrokerPipeUtf8 != NULL && BrokerPipeUtf8[0] != '\0')
+        {
+            if (!ConvertArgToWide(BrokerPipeUtf8, brokerPipeWide, RTL_NUMBER_OF(brokerPipeWide)))
+            {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return INVALID_HANDLE_VALUE;
+            }
+            pipeName = brokerPipeWide;
+        }
+
+        if (SLEEPWALKERSCUseClientProtocol(pipeName, 1500))
+        {
+            device = SLEEPWALKERSCOpenControlDevice();
+            if (device != INVALID_HANDLE_VALUE)
+            {
+                if (UsingBroker != NULL)
+                {
+                    *UsingBroker = TRUE;
+                }
+                return device;
+            }
+        }
+    }
+
+    SLEEPWALKERSCUseServiceProtocol();
+    return SLEEPWALKERSCOpenControlDevice();
 }
 
 static VOID StripWrappingQuotesInPlace(_Inout_updates_z_(BufferChars) WCHAR *Buffer, _In_ size_t BufferChars)
@@ -1540,6 +1591,95 @@ static BOOL StartLiveEtw(_Inout_ SLEEPWALKER_LIVE_ETW_CONTEXT *Live, _Out_ HANDL
     return TRUE;
 }
 
+static DWORD WINAPI BrokerEtwRunThreadProc(_In_ LPVOID Context)
+{
+    SLEEPWALKER_BROKER_ETW_CONTEXT *broker = (SLEEPWALKER_BROKER_ETW_CONTEXT *)Context;
+
+    if (broker == NULL || broker->Device == NULL || broker->Device == INVALID_HANDLE_VALUE)
+    {
+        return 1;
+    }
+
+    while (InterlockedCompareExchange(&g_StopRequested, 0, 0) == 0)
+    {
+        SLEEPWALKER_IPC_ETW_EVENT event;
+        BOOL ok;
+        DWORD err;
+
+        ok = SLEEPWALKERSCGetEtwEvent(broker->Device, &event, 500);
+        if (ok)
+        {
+            LoggerEmitBrokerEtwEvent(&event);
+            continue;
+        }
+
+        err = GetLastError();
+        if (err == ERROR_NO_MORE_ITEMS)
+        {
+            continue;
+        }
+        if (err == ERROR_OPERATION_ABORTED || err == ERROR_NOT_READY || err == ERROR_DEVICE_NOT_CONNECTED ||
+            err == ERROR_BROKEN_PIPE)
+        {
+            break;
+        }
+        if (err == ERROR_NOT_SUPPORTED || err == ERROR_INVALID_FUNCTION)
+        {
+            printf("[WARN] broker ETW uplink unsupported by service build.\n");
+            break;
+        }
+
+        printf("[WARN] broker ETW uplink read failed: %lu\n", err);
+        Sleep(100);
+    }
+
+    InterlockedExchange(&broker->SessionEnded, 1);
+    return 0;
+}
+
+static BOOL StartBrokerEtw(_Inout_ SLEEPWALKER_BROKER_ETW_CONTEXT *Broker, _Out_ HANDLE *ThreadHandle)
+{
+    UINT32 capabilities = 0;
+    BOOL tiEnabled = FALSE;
+
+    if (Broker == NULL || ThreadHandle == NULL)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    *ThreadHandle = NULL;
+    ZeroMemory(Broker, sizeof(*Broker));
+
+    if (!SLEEPWALKERSCGetBrokerInfo(&capabilities, &tiEnabled))
+    {
+        return FALSE;
+    }
+    if ((capabilities & SLEEPWALKER_IPC_CAP_ETW_TI_UPLINK) == 0)
+    {
+        SetLastError(ERROR_NOT_SUPPORTED);
+        return FALSE;
+    }
+
+    Broker->Device = SLEEPWALKERSCOpenControlDevice();
+    if (Broker->Device == INVALID_HANDLE_VALUE)
+    {
+        return FALSE;
+    }
+    Broker->ThreatIntelEnabled = tiEnabled;
+    Broker->SessionEnded = 0;
+
+    *ThreadHandle = CreateThread(NULL, 0, BrokerEtwRunThreadProc, Broker, 0, NULL);
+    if (*ThreadHandle == NULL)
+    {
+        CloseHandle(Broker->Device);
+        Broker->Device = INVALID_HANDLE_VALUE;
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 static BOOL LaunchTargetSuspended(_In_ const SLEEPWALKER_TARGET_SPEC *Spec, _Out_ SLEEPWALKER_LAUNCH_TARGET *Launch,
                                   _Out_ DWORD *Pid)
 {
@@ -1671,7 +1811,7 @@ static VOID PrimeTargetImageHint(_In_ HANDLE Device, _In_ const SLEEPWALKER_TARG
 static void PrintUsage(void)
 {
     printf("Usage: sleepwalker_client.exe shutdown\n");
-    printf("Usage: sleepwalker_client.exe [--config <file>] [--log-format text|jsonl] [--log-file <path>]\n");
+    printf("Usage: sleepwalker_client.exe [--config <file>] [--direct] [--broker-pipe <name>] [--log-format text|jsonl] [--log-file <path>]\n");
     printf("                             [--high-priority-file <path>] [--high-priority-min-severity <0-10>]\n");
     printf("                             [--ioctl-verbose 0|1] <target> <streams> [scope]\n");
     printf("target: PID | pid:<PID> | pid=<PID> | name:process.exe | name=process.exe | process.exe | path:<full-path> "
@@ -2183,15 +2323,102 @@ static void LoggerEmitEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR Eve
     LoggerEmitJson(1u, provider, "event", actorPid, target, message);
 }
 
+static void LoggerEmitBrokerEtwEvent(_In_ const SLEEPWALKER_IPC_ETW_EVENT *Event)
+{
+    char provider[32];
+    char eventNameUtf8[160];
+    char message[2048];
+    DWORD actorPid = 0;
+    DWORD targetPid = 0;
+    DWORD severity = 1;
+    const char *kind = "event";
+
+    if (Event == NULL)
+    {
+        return;
+    }
+
+    if (Event->Source == SleepwalkerIpcEtwSourceSleepwalker)
+    {
+        if (!g_Logger.Policy.AllowEtwSleepwalker)
+        {
+            return;
+        }
+        (void)StringCchCopyA(provider, RTL_NUMBER_OF(provider), "sleepwalker-broker");
+    }
+    else if (Event->Source == SleepwalkerIpcEtwSourceThreatIntel)
+    {
+        if (!g_Logger.Policy.AllowEtwTi)
+        {
+            return;
+        }
+        (void)StringCchCopyA(provider, RTL_NUMBER_OF(provider), "ti-broker");
+    }
+    else
+    {
+        return;
+    }
+
+    if (Event->PrimaryPid != 0 && Event->PrimaryPid <= 0xFFFFFFFFull)
+    {
+        actorPid = (DWORD)Event->PrimaryPid;
+    }
+    else
+    {
+        actorPid = Event->EventProcessId;
+    }
+    if (Event->SecondaryPid != 0 && Event->SecondaryPid <= 0xFFFFFFFFull)
+    {
+        targetPid = (DWORD)Event->SecondaryPid;
+    }
+
+    eventNameUtf8[0] = '\0';
+    if (Event->EventName[0] != L'\0')
+    {
+        WideToUtf8(Event->EventName, eventNameUtf8, RTL_NUMBER_OF(eventNameUtf8));
+    }
+    if (eventNameUtf8[0] == '\0')
+    {
+        (void)StringCchCopyA(eventNameUtf8, RTL_NUMBER_OF(eventNameUtf8), "unknown");
+    }
+
+    if (Event->DetectionName[0] != '\0')
+    {
+        severity = (Event->Severity >= 1 && Event->Severity <= 10) ? Event->Severity : 4;
+        kind = "detection";
+        (void)StringCchPrintfA(message, RTL_NUMBER_OF(message), "event=%s detection=%s", eventNameUtf8,
+                               Event->DetectionName);
+        printf("\n[ETW-BROKER] detection=%s severity=%u event=%s actor=%lu target=%lu\n", Event->DetectionName,
+               (unsigned)severity, eventNameUtf8, (unsigned long)actorPid, (unsigned long)targetPid);
+    }
+    else
+    {
+        (void)StringCchPrintfA(message, RTL_NUMBER_OF(message), "event=%s task=%u opcode=%u", eventNameUtf8,
+                               (unsigned)Event->Task, (unsigned)Event->Opcode);
+        if (Event->Source == SleepwalkerIpcEtwSourceThreatIntel)
+        {
+            printf("\n[ETW-BROKER][TI] event=%s task=%u actor=%lu target=%lu\n", eventNameUtf8, (unsigned)Event->Task,
+                   (unsigned long)actorPid, (unsigned long)targetPid);
+        }
+    }
+
+    LoggerEmitJson(severity, provider, kind, actorPid, targetPid, message);
+}
+
 int __cdecl main(int argc, char **argv)
 {
     HANDLE h;
     HANDLE liveEtwThread = NULL;
+    HANDLE brokerEtwThread = NULL;
     SLEEPWALKER_EVENT_RECORD record;
     SLEEPWALKER_TARGET_SPEC targetSpec;
     SLEEPWALKER_ATTACH_CONTEXT attach;
     SLEEPWALKER_LIVE_ETW_CONTEXT liveEtw;
+    SLEEPWALKER_BROKER_ETW_CONTEXT brokerEtw;
     SLEEPWALKER_LAUNCH_TARGET launchTarget;
+    UINT32 brokerCaps = 0;
+    BOOL brokerThreatIntel = FALSE;
+    BOOL brokerHasEtwUplink = FALSE;
     DWORD bytes;
     DWORD targetPid;
     DWORD streams;
@@ -2206,13 +2433,17 @@ int __cdecl main(int argc, char **argv)
     const char *targetArg = NULL;
     const char *streamsArg = NULL;
     const char *scopeArg = NULL;
+    const char *brokerPipeArg = NULL;
     const char *positional[3];
     int positionalCount = 0;
     int i;
+    BOOL forceDirectIo = FALSE;
+    BOOL usingBroker = FALSE;
 
     (void)SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
     ZeroMemory(&attach, sizeof(attach));
     ZeroMemory(&liveEtw, sizeof(liveEtw));
+    ZeroMemory(&brokerEtw, sizeof(brokerEtw));
     ZeroMemory(&launchTarget, sizeof(launchTarget));
     PolicyDefaults(&policy);
     for (i = 0; i < (int)RTL_NUMBER_OF(positional); ++i)
@@ -2255,6 +2486,21 @@ int __cdecl main(int argc, char **argv)
         if (_stricmp(arg, "--config") == 0)
         {
             i += 1;
+            continue;
+        }
+        if (_stricmp(arg, "--direct") == 0)
+        {
+            forceDirectIo = TRUE;
+            continue;
+        }
+        if (_stricmp(arg, "--broker-pipe") == 0)
+        {
+            if (i + 1 >= argc)
+            {
+                PrintUsage();
+                return 1;
+            }
+            brokerPipeArg = argv[++i];
             continue;
         }
         if (_stricmp(arg, "--log-format") == 0)
@@ -2313,7 +2559,7 @@ int __cdecl main(int argc, char **argv)
 
     if (positionalCount == 1 && _stricmp(positional[0], "shutdown") == 0)
     {
-        h = SLEEPWALKERSCOpenControlDevice();
+        h = OpenControlDeviceWithBrokerFallback(forceDirectIo, brokerPipeArg, &usingBroker);
         if (h == INVALID_HANDLE_VALUE)
         {
             printf("[-] CreateFile failed (\\\\.\\Global\\SleepwalkerCtl / \\\\.\\SleepwalkerCtl): %lu\n",
@@ -2388,12 +2634,13 @@ int __cdecl main(int argc, char **argv)
         return 1;
     }
 
-    h = SLEEPWALKERSCOpenControlDevice();
+    h = OpenControlDeviceWithBrokerFallback(forceDirectIo, brokerPipeArg, &usingBroker);
     if (h == INVALID_HANDLE_VALUE)
     {
         printf("[-] CreateFile failed (\\\\.\\Global\\SleepwalkerCtl / \\\\.\\SleepwalkerCtl): %lu\n", GetLastError());
         return 1;
     }
+    printf("[*] Driver channel: %s\n", usingBroker ? "service-broker" : "direct");
 
     attach.Device = h;
     attach.StreamMask = streams;
@@ -2431,7 +2678,36 @@ int __cdecl main(int argc, char **argv)
     SLEEPWALKEREtwSymbolsInitialize();
     symbolsInitialized = TRUE;
 
-    if (!StartLiveEtw(&liveEtw, &liveEtwThread))
+    if (usingBroker)
+    {
+        if (SLEEPWALKERSCGetBrokerInfo(&brokerCaps, &brokerThreatIntel))
+        {
+            brokerHasEtwUplink = ((brokerCaps & SLEEPWALKER_IPC_CAP_ETW_TI_UPLINK) != 0);
+        }
+        if (brokerHasEtwUplink && StartBrokerEtw(&brokerEtw, &brokerEtwThread))
+        {
+            printf("[*] Broker mode active; ETW uplink enabled (service TI=%s).\n",
+                   brokerEtw.ThreatIntelEnabled ? "on" : "off");
+            printf("[*] Suppressing duplicate IOCTL event dump while broker ETW uplink is active.\n");
+            ioctlVerbose = FALSE;
+        }
+        else
+        {
+            printf("[WARN] Broker mode active, but ETW uplink unavailable (%lu). Falling back to local ETW session.\n",
+                   GetLastError());
+            if (!StartLiveEtw(&liveEtw, &liveEtwThread))
+            {
+                printf("[WARN] live ETW stream unavailable: %lu (continuing with IOCTL stream only)\n", GetLastError());
+            }
+            else
+            {
+                printf("[*] Live ETW stream started locally (Sleepwalker provider + TI if available).\n");
+                printf("[*] Suppressing duplicate IOCTL event dump while ETW formatter is active.\n");
+                ioctlVerbose = FALSE;
+            }
+        }
+    }
+    else if (!StartLiveEtw(&liveEtw, &liveEtwThread))
     {
         printf("[WARN] live ETW stream unavailable: %lu (continuing with IOCTL stream only)\n", GetLastError());
     }
@@ -2487,6 +2763,18 @@ int __cdecl main(int argc, char **argv)
     rc = TRUE;
 
 Cleanup:
+    InterlockedExchange(&g_StopRequested, 1);
+    if (brokerEtwThread != NULL)
+    {
+        (void)WaitForSingleObject(brokerEtwThread, 3000);
+        CloseHandle(brokerEtwThread);
+        brokerEtwThread = NULL;
+    }
+    if (brokerEtw.Device != NULL && brokerEtw.Device != INVALID_HANDLE_VALUE)
+    {
+        CloseHandle(brokerEtw.Device);
+        brokerEtw.Device = INVALID_HANDLE_VALUE;
+    }
     if (liveEtw.Session != NULL)
     {
         SLEEPWALKERSCStopEtwSession(liveEtw.Session);

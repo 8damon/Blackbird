@@ -1,5 +1,5 @@
 <h1 align="center">SLEEPWALKER</h1>
-<p align="center"><b>Windows Kernel Telemetry + Correlation for Injection, Hollowing, APC, and Syscall Abuse Detection</b></p>
+<p align="center"><b>Windows Kernel Telemetry for High-Signal Threat Triage, Forensics & Malware Analysis</b></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Language-C-00599C?logo=c&logoColor=white&style=for-the-badge" />

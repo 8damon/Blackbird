@@ -1,13 +1,14 @@
 static void PrintUsage(void)
 {
     printf("Usage: sleepwalker_client.exe shutdown\n");
-    printf("Usage: sleepwalker_client.exe [--config <file>] [--direct] [--broker-pipe <name>] [--log-format text|jsonl] [--log-file <path>]\n");
+    printf("Usage: sleepwalker_client.exe [--config <file>] [--broker-pipe <name>] [--log-format text|jsonl] [--log-file <path>]\n");
     printf("                             [--high-priority-file <path>] [--high-priority-min-severity <0-10>]\n");
     printf("                             [--ioctl-verbose 0|1] <target> <streams> [scope]\n");
     printf("target: PID | pid:<PID> | pid=<PID> | name:process.exe | name=process.exe | process.exe | path:<full-path> "
            "| path=<full-path> | launch:<full-path>\n");
-    printf("streams: handle,memory,thread\n");
+    printf("streams: handle,memory,thread[,etw]\n");
     printf("scope: local (default) | remote | both\n");
+    printf("transport is service-broker IPC (SleepwlkrController) only.\n");
     printf("config file supports key:value or key=value (YAML-like flat keys)\n");
     printf("keys: target, streams, scope, log.format, log.file, log.high_priority_file,\n");
     printf("      log.high_priority_min_severity, output.ioctl_verbose,\n");
@@ -15,6 +16,7 @@ static void PrintUsage(void)
     printf("example: sleepwalker_client.exe shutdown\n");
     printf("example: sleepwalker_client.exe notepad.exe handle,thread\n");
     printf("example: sleepwalker_client.exe --log-format jsonl --log-file events.swk.jsonl notepad.exe handle,memory,thread\n");
+    printf("example: sleepwalker_client.exe notepad.exe handle,memory,thread,etw\n");
     printf("example: sleepwalker_client.exe path:C:\\Windows\\System32\\notepad.exe handle,memory,thread\n");
     printf("example: sleepwalker_client.exe launch:C:\\Windows\\System32\\notepad.exe handle,memory,thread\n");
     printf("example: sleepwalker_client.exe 4242 handle,memory,thread both\n");
@@ -322,7 +324,7 @@ static void PrintHandleEvent(_In_ const SLEEPWALKER_HANDLE_EVENT *h, _In_ DWORD 
         FormatOpcodePreviewA(h->DeepSample, h->DeepSampleSize, deepOpcodes, RTL_NUMBER_OF(deepOpcodes));
     }
 
-    printf("===== [SLEEPWALKER][HANDLE] seq=%lu =====\n", sequence);
+    printf("[SLEEPWALKER][HANDLE] seq=%lu\n", sequence);
     printf("class=%s callerPid=%016llX targetPid=%016llX access=0x%08X\n", userClass, (unsigned long long)h->CallerPid,
            (unsigned long long)h->TargetPid, h->DesiredAccess);
     wprintf(L"origin=0x%016llX (%ls)\n", (unsigned long long)h->OriginAddress, originResolved);
@@ -350,7 +352,7 @@ static void PrintHandleEvent(_In_ const SLEEPWALKER_HANDLE_EVENT *h, _In_ DWORD 
     {
         printf("[ALERT] direct-syscall-suspect classification observed\n");
     }
-    printf("=====================================\n");
+    printf("\n");
 }
 
 static void PrintThreadEvent(_In_ const SLEEPWALKER_THREAD_EVENT *t, _In_ DWORD sequence)
@@ -363,7 +365,7 @@ static void PrintThreadEvent(_In_ const SLEEPWALKER_THREAD_EVENT *t, _In_ DWORD 
     SLEEPWALKEREtwSymbolsFormatAddressForProcess((DWORD)t->ProcessId, t->ImageBase, imageResolved,
                                                  RTL_NUMBER_OF(imageResolved));
 
-    printf("===== [SLEEPWALKER][THREAD] seq=%lu =====\n", sequence);
+    printf("[SLEEPWALKER][THREAD] seq=%lu\n", sequence);
     printf("pid=%016llX tid=%016llX creatorPid=%016llX flags=0x%08X\n", (unsigned long long)t->ProcessId,
            (unsigned long long)t->ThreadId, (unsigned long long)t->CreatorPid, t->Flags);
     wprintf(L"start=0x%016llX (%ls)\n", (unsigned long long)t->StartAddress, startResolved);
@@ -371,6 +373,6 @@ static void PrintThreadEvent(_In_ const SLEEPWALKER_THREAD_EVENT *t, _In_ DWORD 
             (unsigned long long)t->ImageSize);
     PrintThreadFlags(t->Flags);
     PrintResolvedFrames((DWORD)t->ProcessId, t->Frames, t->FrameCount);
-    printf("=====================================\n");
+    printf("\n");
 }
 

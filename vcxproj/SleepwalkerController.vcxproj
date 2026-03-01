@@ -92,7 +92,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <StringPooling>true</StringPooling>
-      <ControlFlowGuard>true</ControlFlowGuard>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
       <BufferSecurityCheck>true</BufferSecurityCheck>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -123,7 +123,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <StringPooling>true</StringPooling>
-      <ControlFlowGuard>true</ControlFlowGuard>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
       <BufferSecurityCheck>true</BufferSecurityCheck>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -143,6 +143,14 @@
     <ClInclude Include="..\abi\sleepwalker_ipc.h" />
     <ClInclude Include="..\abi\sleepwalker_ioctl.h" />
     <ClInclude Include="..\user\sensor\sleepwalker_sensor_core.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\user\controller\core\README.md" />
+    <None Include="..\user\controller\core\monitoring\sleepwalker_controller_subscriptions.inc" />
+    <None Include="..\user\controller\core\monitoring\sleepwalker_controller_etw_monitor.inc" />
+    <None Include="..\user\controller\core\correlation\sleepwalker_controller_hollowing.inc" />
+    <None Include="..\user\controller\core\ipc\sleepwalker_controller_ipc.inc" />
+    <None Include="..\user\controller\core\runtime\sleepwalker_controller_runtime.inc" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="SleepwalkerSensorCore.vcxproj">

@@ -243,6 +243,7 @@ Example successful run:
    - `SleepwalkerSensorCore.dll` (built automatically by dependent projects)
    - `SleepwalkerTestSuite.exe` for full validation
    - `SleepwalkerClient.exe <pid> handle,memory,thread` for targeted IOCTL capture
+   - `SleepwalkerClient.exe <pid> handle,memory,thread,etw` to include broker ETW uplink output
 
 Documentation:
 - `INSTALL.md` (install/runtime workflow)

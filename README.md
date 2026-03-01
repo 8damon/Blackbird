@@ -1,5 +1,5 @@
 <h1 align="center">SLEEPWALKER</h1>
-<p align="center"><b>Windows Kernel Telemetry for High-Signal Threat Triage, Forensics & Malware Analysis</b></p>
+<p align="center"><b>Windows Kernel Telemetry + Correlation for Injection, Hollowing, APC, and Syscall Abuse Detection</b></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/Language-C-00599C?logo=c&logoColor=white&style=for-the-badge" />
@@ -9,6 +9,20 @@
 <p align="center">
   <img src="./diagram/SLEEPWALKER_DIA.png" width="900" />
 </p>
+
+## Detections
+
+- Process injection activity, including remote-thread execution patterns.
+- Thread hijack behavior (suspend/set-context/resume style intent chains).
+- APC-based injection indicators, including remote APC and hijack-adjacent APC patterns.
+- Process hollowing mark-chains (medium/strong) and TxF-suspect hollowing chains.
+- Direct-syscall abuse indicators versus normal syscall paths.
+- Suspicious process/thread handle operations with exact access rights (for example `PROCESS_VM_WRITE`, `PROCESS_CREATE_THREAD`, `THREAD_SET_CONTEXT`).
+- Memory abuse patterns such as alloc/write/protect sequences and writable-to-executable transitions.
+- Thread start addresses outside expected image ranges or in non-image executable regions.
+- Suspicious `ntdll` image path/mapping anomalies.
+- High-value registry activity tied to persistence/evasion surfaces.
+- Driver dispatch/object tamper drift and tamper-clear transitions.
 
 ## Detection Preview
 
@@ -61,77 +75,70 @@ Stack  frames=8
 
 ---
 
-## Executive Summary
+## Platform Summary
 
-**Sleepwalker is a KMDF kernel telemetry driver + user-mode tooling that exposes high-value execution signals commonly associated with injection and post-exploitation.**  
-It is designed for **triage, forensics, malware analysis, and threat emulation in labs/VMs** where teams need kernel-level visibility **without deploying a full EDR stack or attaching a kernel debugger**.
+Sleepwalker is a KMDF kernel telemetry driver plus a user-mode service/client stack for process-scoped monitoring and correlated detection.
 
-Sleepwalker provides:
-- **High-signal telemetry**
-- **Correlation**
-- **Two consumption paths**:
-  - **IOCTL per-client queues** for targeted, process-scoped capture
-  - **ETW provider (`Sleepwalker.Kernel`)** for scalable ingestion and tooling
+It captures low-level events (handle, thread, process, image, registry, APC, optional TI API-call surface), then emits detections with severity and reason strings over IOCTL and ETW.
 
----
+## What Sleepwalker Detects
 
-## What Gap It Covers
+### Injection and Hollowing Correlation
 
-In many environments, teams end up choosing between:
+Kernel detections:
+- `REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT`
+- `REMOTE_THREAD_START_IN_NON_IMAGE_EXECUTABLE_REGION`
+- `REMOTE_THREAD_OUTSIDE_MAIN_IMAGE`
+- `THREAD_ACTIVITY_WITH_THREAD_CONTEXT_INTENT`
+- `THREAD_HIJACK_INTENT`
+- `REMOTE_APC_CREATION_SUSPECT`
+- `POSSIBLE_PROCESS_HOLLOWING_OR_INJECTION_INTENT_CHAIN`
+- `POSSIBLE_MANUAL_MAP_OR_HOLLOWING_EXECUTION`
+- `KERNEL_PROCESS_HOLLOWING_MARK_CHAIN_MEDIUM`
+- `KERNEL_PROCESS_HOLLOWING_MARK_CHAIN_STRONG`
 
-1) **Generic telemetry** (high volume, hard to operationalize quickly), or  
-2) **EDR detections** (high level, but hides the low-level context needed to validate intent)
+Controller synthetic detections (ETW/TI-assisted mark-chain):
+- `PROCESS_HOLLOWING_MARK_CHAIN_MEDIUM`
+- `PROCESS_HOLLOWING_MARK_CHAIN_STRONG`
+- `PROCESS_HOLLOWING_TXF_SUSPECT_CHAIN`
 
-**Sleepwalker bridges that gap** by emitting telemetry that is:
-- Low-level enough to preserve forensic context (access masks, addresses, call stacks, outcomes)
-- Structured and testable (stable ABI, deterministic records, validation suite)
-- Focused on a narrow, high-signal threat surface (injection-adjacent behavior)
+### Direct-Syscall and Stack Integrity
 
-> Sleepwalker is not a replacement for an EDR.  
-> It’s an **inspectable kernel telemetry plane** suitable for labs/VMs/IR triage and engineering workflows.
+- `DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION`
+- `STACK_INTEGRITY_ANOMALY_ON_HANDLE_OP`
+- `SUSPICIOUS_NTDLL_IMAGE_PATH`
+- `MULTIPLE_NTDLL_IMAGE_MAPPINGS`
 
----
+### Registry and Tamper Surface
 
-## What Questions Sleepwalker Answers
+- `HIGH_VALUE_REGISTRY_ACTIVITY`
+- `DRIVER_DISPATCH_OR_OBJECT_TAMPER`
+- `DRIVER_DISPATCH_OR_OBJECT_TAMPER_CLEARED`
 
-- Which process opened another process/thread, with **what access rights**, and **from where**?
-- Did a thread appear to be created remotely, and does its **start address** look suspicious relative to loaded image boundaries?
-- Was there **recent intent** (process memory / thread context / duplicate handle activity) before thread execution?
-- Was high-value persistence-oriented **registry activity** observed in the same run?
-- What **correlated detections** can be produced when intent and execution line up?
+## Telemetry It Emits
 
----
+Raw telemetry families:
+- `HandleTelemetry` with access masks, origin address/module, memory protections, deep sample metadata, and stack frames
+- `ThreadTelemetry` with creator PID, start address, image-range checks, correlation flags, and stack frames
+- `ProcessTelemetry`
+- `ImageTelemetry`
+- `RegistryTelemetry`
+- `ApcTelemetry`
+- `DetectionTelemetry`
 
-## Core Signals (High Value Surface)
+Optional TI task categories (when provider access is available through the controller):
+- `ALLOCVM`
+- `WRITEVM`
+- `PROTECTVM`
+- syscall usage metadata from TI task records
 
-Sleepwalker focuses on behavior commonly observed in:
-- Direct-syscalls
-- Syscall monitoring
-- Process injection workflows
-- Post-exploitation handle acquisition
-- Remote thread creation + suspicious start regions
-- Persistence-oriented registry activity
+## Detection Model
 
-**Telemetry families:**
-- Handle operations (process/thread handles, access masks, origin metadata)
-- Thread execution (remote creator, start-address heuristics, execution-region context)
-- Process lifecycle context
-- Image load context
-- High-value registry activity
-- Correlated detection events (intent -> execution)
-
----
-
-## Technical Highlights (for engineers)
-
-- **KMDF control plane** with per-handle client contexts and independent event queues
-- **Stable ABI header** (`abi/sleepwalker_ioctl.h`) defining IOCTL codes + record layouts
-- **Per-client subscription model**: PID + stream mask
-- **Per-client sequencing + bounded queues** with drop accounting and rate-limited drop logging
-- **Multi-client fanout** validated under parallel polling (`SleepwalkerTestSuite`)
-- Dual output plane:
-  - **IOCTL**: low-latency, targeted pull model
-  - **ETW**: scalable push model for broader pipelines
+1. Monitors emit intent/signal marks from handle, thread, APC, image, registry, and memory-surface events.
+2. Correlation layers combine those marks into detections with stronger confidence.
+3. Output is available through:
+   - IOCTL queues (`\\.\Global\SleepwalkerCtl`) for per-client targeted pull
+   - ETW provider `Sleepwalker.Kernel` for scalable streaming
 
 ---
 
@@ -176,7 +183,7 @@ Typed detection callback surface:
 ### ETW Model (Scalable Push)
 - Provider: `Sleepwalker.Kernel`
 - GUID: `{D6C73F8A-6AD8-4F4B-A363-3D2FA31CD0E2}`
-- Event families: `HandleTelemetry`, `ThreadTelemetry`, `ProcessTelemetry`, `ImageTelemetry`, `RegistryTelemetry`, `DetectionTelemetry`
+- Event families: `HandleTelemetry`, `ThreadTelemetry`, `ProcessTelemetry`, `ImageTelemetry`, `RegistryTelemetry`, `ApcTelemetry`, `DetectionTelemetry`
 
 (Full contract in `API.md` and `abi/sleepwalker_ioctl.h`.)
 
@@ -194,9 +201,7 @@ Typed detection callback surface:
 Default suite mode reflects architecture boundaries:
 - Kernel correlation-dependent checks are optional (reported as skip by default)
 - APC ETW coverage is optional (reported as skip by default)
-- Strict modes are available through:
-- `SLEEPWALKER_TEST_REQUIRE_KERNEL_CORRELATION=1`
-- `SLEEPWALKER_TEST_REQUIRE_APC=1`
+- Strict modes are available through `SLEEPWALKER_TEST_REQUIRE_KERNEL_CORRELATION=1` and `SLEEPWALKER_TEST_REQUIRE_APC=1`
 
 Example successful run:
 - `[OK] SleepwalkerTestSuite complete. tests-passed=X/Y tests-failed=0 tests-skipped=S polls=Z`
@@ -223,7 +228,7 @@ Example successful run:
   - `sleepwalker_ipc.h`: service/client IPC ABI contract
 - `user/sensor/`
   - `sleepwalker_sensor_core.c/.h`: shared user-mode SDK (IOCTL + ETW session helpers)
-  - `SleepwalkerClient`: manual IOCTL subscriber
+  - `SleepwalkerClient`: manual subscriber (broker-first; optional ETW uplink output)
   - `SleepwalkerTestSuite`: end-to-end validation
 - `user/controller/`
   - `sleepwalker_controller.c`: Session 0 broker service (single driver handle + ETW TI session + IPC)
@@ -236,7 +241,7 @@ Example successful run:
 ## Build and Run (Lab / VM)
 
 1. Open `Sleepwalker.slnx` in Visual Studio.
-2. Build `vcxproj/Sleepwalker.vcxproj` (`x64` or `ARM64`).
+2. Build `vcxproj/Sleepwalker.vcxproj` (`x64`).
 3. Install and start the driver.
 4. Install/start `SleepwlkrController` (recommended) via `usage/install-controller-service.ps1`.
 5. Run:

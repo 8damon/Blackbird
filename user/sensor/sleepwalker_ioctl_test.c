@@ -70,6 +70,8 @@ typedef struct _ETW_CAPTURE
     volatile LONG DetectIntentChain;
     volatile LONG DetectDirectSyscallSuspect;
     volatile LONG DetectManualMapOrHollowingExec;
+    volatile LONG DetectKernelHollowingMarkMedium;
+    volatile LONG DetectKernelHollowingMarkStrong;
     volatile LONG DetectSuspiciousNtdllPath;
     volatile LONG DetectMultipleNtdllMappings;
     volatile LONG DetectRemoteApcCreationSuspect;
@@ -100,8 +102,12 @@ typedef struct _BROKER_ETW_CAPTURE
     volatile LONG TiWriteVmEvents;
     volatile LONG TiSyscallUsageEvents;
     volatile LONG TiUnknownTaskEvents;
+    volatile LONG DetectHollowingMarkMedium;
+    volatile LONG DetectHollowingMarkStrong;
+    volatile LONG DetectHollowingTxfChain;
     volatile LONG UnknownEvents;
     BOOL TiProviderEnabled;
+    DWORD TiEnableError;
 } BROKER_ETW_CAPTURE;
 
 typedef struct _SUITE_RESULTS
@@ -129,6 +135,8 @@ typedef struct _SUITE_RESULTS
 
 #define SLEEPWALKER_CHILD_ARG "--idle-child"
 #define SLEEPWALKER_CHILD_ARGW L"--idle-child"
+#define SLEEPWALKER_CHILD_SPAWN_AND_TOUCH_ARG "--spawn-and-touch"
+#define SLEEPWALKER_CHILD_SPAWN_AND_TOUCH_ARGW L"--spawn-and-touch"
 #define SLEEPWALKER_SUITE_ETW_SESSION L"SleepwalkerTestSuiteSession"
 #define SLEEPWALKER_MULTI_CLIENT_COUNT 3
 #define SLEEPWALKER_MULTI_CLIENT_TIMEOUT_MS 8000

@@ -19,9 +19,14 @@
 #define SLEEPWALKER_CONTROLLER_ETW_LEGACY_PREFIXW L"SleepwlkrController-"
 #define SLEEPWALKER_CONTROLLER_ETW_MAX_QUERY_SESSIONS 64u
 #define SLEEPWALKER_CONTROLLER_MAX_CLIENTS 256u
-#define SLEEPWALKER_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS 64u
+#define SLEEPWALKER_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS 256u
 #define SLEEPWALKER_CONTROLLER_MAX_CLIENT_QUEUE_DEPTH 1024u
 #define SLEEPWALKER_CONTROLLER_MAX_CLIENT_ETW_QUEUE_DEPTH 2048u
+#define SLEEPWALKER_CONTROLLER_DYNAMIC_SUBSCRIPTION_TTL_MS 120000u
+#define SLEEPWALKER_CONTROLLER_DYNAMIC_SUBSCRIPTION_MAX_DEPTH 3u
+#define SLEEPWALKER_CONTROLLER_HOLLOW_MAX_ENTRIES 256u
+#define SLEEPWALKER_CONTROLLER_HOLLOW_WINDOW_MS 30000u
+#define SLEEPWALKER_CONTROLLER_HOLLOW_LARGE_ALLOC_BYTES 0x8000ull
 #define SLEEPWALKER_CONTROLLER_DRIVER_STREAM_MASK \
     (SLEEPWALKER_STREAM_HANDLE | SLEEPWALKER_STREAM_MEMORY | SLEEPWALKER_STREAM_THREAD)
 
@@ -29,6 +34,10 @@ typedef struct _SLEEPWALKER_CONTROLLER_SUBSCRIPTION
 {
     DWORD ProcessId;
     DWORD StreamMask;
+    BOOL Dynamic;
+    DWORD SourceProcessId;
+    UINT32 Depth;
+    ULONGLONG LastSeenTick;
 } SLEEPWALKER_CONTROLLER_SUBSCRIPTION, *PSLEEPWALKER_CONTROLLER_SUBSCRIPTION;
 
 typedef struct _SLEEPWALKER_CONTROLLER_EVENT_NODE
@@ -62,6 +71,21 @@ typedef struct _SLEEPWALKER_CONTROLLER_CLIENT
     DWORD EtwDroppedEvents;
 } SLEEPWALKER_CONTROLLER_CLIENT, *PSLEEPWALKER_CONTROLLER_CLIENT;
 
+typedef struct _SLEEPWALKER_CONTROLLER_HOLLOW_ENTRY
+{
+    BOOL Active;
+    DWORD ActorPid;
+    DWORD TargetPid;
+    ULONGLONG FirstSeenTick;
+    ULONGLONG LastSeenTick;
+    ULONGLONG LastAllocBase;
+    ULONGLONG LastAllocSize;
+    ULONG LastAllocProtect;
+    UINT64 Marks;
+    ULONGLONG LastMediumEmitTick;
+    ULONGLONG LastStrongEmitTick;
+} SLEEPWALKER_CONTROLLER_HOLLOW_ENTRY, *PSLEEPWALKER_CONTROLLER_HOLLOW_ENTRY;
+
 static SERVICE_STATUS_HANDLE g_ServiceStatusHandle = NULL;
 static SERVICE_STATUS g_ServiceStatus;
 static HANDLE g_StopEvent = NULL;
@@ -71,16 +95,20 @@ static HANDLE g_EtwThread = NULL;
 static HANDLE g_DriverHandle = INVALID_HANDLE_VALUE;
 static SLEEPWALKERSC_ETW_SESSION *g_EtwSession = NULL;
 static BOOL g_ThreatIntelEnabled = FALSE;
+static DWORD g_ThreatIntelEnableError = ERROR_SUCCESS;
 static volatile LONG g_EtwDetectionEvents = 0;
 static volatile LONG g_EtwTiEvents = 0;
 static CRITICAL_SECTION g_ClientListLock;
 static CRITICAL_SECTION g_DriverLock;
 static CRITICAL_SECTION g_DriverConfigLock;
 static BOOL g_LocksInitialized = FALSE;
+static volatile LONG g_DriverSubscriptionsDirty = 0;
 static PSLEEPWALKER_CONTROLLER_CLIENT g_ClientList = NULL;
 static DWORD g_ClientCount = 0;
 static DWORD g_ProgrammedPids[SLEEPWALKER_MAX_PID_LIST];
 static DWORD g_ProgrammedPidCount = 0;
+static SRWLOCK g_HollowLock = SRWLOCK_INIT;
+static SLEEPWALKER_CONTROLLER_HOLLOW_ENTRY g_HollowEntries[SLEEPWALKER_CONTROLLER_HOLLOW_MAX_ENTRIES];
 
 static VOID ControllerLog(_In_z_ _Printf_format_string_ PCSTR Format, ...)
 {
@@ -219,7 +247,9 @@ static VOID ControllerCleanupStaleEtwSessions(VOID)
     }
 }
 
-#include "core/sleepwalker_controller_subscriptions.inc"
-#include "core/sleepwalker_controller_ipc.inc"
-#include "core/sleepwalker_controller_runtime.inc"
+#include "core/monitoring/sleepwalker_controller_subscriptions.inc"
+#include "core/monitoring/sleepwalker_controller_etw_monitor.inc"
+#include "core/correlation/sleepwalker_controller_hollowing.inc"
+#include "core/ipc/sleepwalker_controller_ipc.inc"
+#include "core/runtime/sleepwalker_controller_runtime.inc"
 

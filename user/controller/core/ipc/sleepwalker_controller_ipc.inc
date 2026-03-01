@@ -91,6 +91,13 @@ static DWORD ControllerClientSubscribe(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Cl
         if (Client->Subscriptions[i].ProcessId == Request->ProcessId)
         {
             Client->Subscriptions[i].StreamMask |= Request->StreamMask;
+            if (Client->Subscriptions[i].Dynamic)
+            {
+                Client->Subscriptions[i].Dynamic = FALSE;
+                Client->Subscriptions[i].SourceProcessId = 0;
+                Client->Subscriptions[i].Depth = 0;
+                Client->Subscriptions[i].LastSeenTick = 0;
+            }
             LeaveCriticalSection(&Client->Lock);
             ControllerLog("[IPC] subscribe update clientPid=%lu targetPid=%lu streamMask=0x%08lX\n", Client->ProcessId,
                           Request->ProcessId, Request->StreamMask);
@@ -110,6 +117,10 @@ static DWORD ControllerClientSubscribe(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Cl
 
     Client->Subscriptions[Client->SubscriptionCount].ProcessId = Request->ProcessId;
     Client->Subscriptions[Client->SubscriptionCount].StreamMask = Request->StreamMask;
+    Client->Subscriptions[Client->SubscriptionCount].Dynamic = FALSE;
+    Client->Subscriptions[Client->SubscriptionCount].SourceProcessId = 0;
+    Client->Subscriptions[Client->SubscriptionCount].Depth = 0;
+    Client->Subscriptions[Client->SubscriptionCount].LastSeenTick = 0;
     Client->SubscriptionCount += 1;
     LeaveCriticalSection(&Client->Lock);
     ControllerLog("[IPC] subscribe add clientPid=%lu targetPid=%lu streamMask=0x%08lX\n", Client->ProcessId,
@@ -127,6 +138,8 @@ static DWORD ControllerClientUnsubscribe(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *
                                          _In_ const SLEEPWALKER_UNSUBSCRIBE_REQUEST *Request)
 {
     DWORD i;
+    DWORD removedPid = 0;
+    BOOL changed = FALSE;
 
     if (Client == NULL || Request == NULL || Request->ProcessId == 0)
     {
@@ -138,15 +151,19 @@ static DWORD ControllerClientUnsubscribe(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *
     {
         if (Client->Subscriptions[i].ProcessId == Request->ProcessId)
         {
-            DWORD tail = Client->SubscriptionCount - 1;
-            if (i != tail)
+            removedPid = Client->Subscriptions[i].ProcessId;
+            ControllerRemoveSubscriptionAtLocked(Client, i);
+            changed = TRUE;
+            if (removedPid != 0)
             {
-                Client->Subscriptions[i] = Client->Subscriptions[tail];
+                changed |= ControllerDropDynamicDescendantsLocked(Client, removedPid);
             }
-            Client->SubscriptionCount -= 1;
             LeaveCriticalSection(&Client->Lock);
             ControllerLog("[IPC] unsubscribe clientPid=%lu targetPid=%lu\n", Client->ProcessId, Request->ProcessId);
-            (void)ControllerApplyDriverSubscriptions();
+            if (changed)
+            {
+                (void)ControllerApplyDriverSubscriptions();
+            }
             return ERROR_SUCCESS;
         }
     }
@@ -168,6 +185,7 @@ static DWORD ControllerClientSetPids(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Clie
 
     EnterCriticalSection(&Client->Lock);
     Client->SubscriptionCount = 0;
+    ZeroMemory(Client->Subscriptions, sizeof(Client->Subscriptions));
     for (i = 0; i < Request->ProcessCount; ++i)
     {
         DWORD pid = Request->ProcessIds[i];
@@ -184,6 +202,10 @@ static DWORD ControllerClientSetPids(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Clie
             if (Client->Subscriptions[j].ProcessId == pid)
             {
                 Client->Subscriptions[j].StreamMask |= Request->StreamMask;
+                Client->Subscriptions[j].Dynamic = FALSE;
+                Client->Subscriptions[j].SourceProcessId = 0;
+                Client->Subscriptions[j].Depth = 0;
+                Client->Subscriptions[j].LastSeenTick = 0;
                 seen = TRUE;
                 break;
             }
@@ -193,6 +215,10 @@ static DWORD ControllerClientSetPids(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Clie
         {
             Client->Subscriptions[Client->SubscriptionCount].ProcessId = pid;
             Client->Subscriptions[Client->SubscriptionCount].StreamMask = Request->StreamMask;
+            Client->Subscriptions[Client->SubscriptionCount].Dynamic = FALSE;
+            Client->Subscriptions[Client->SubscriptionCount].SourceProcessId = 0;
+            Client->Subscriptions[Client->SubscriptionCount].Depth = 0;
+            Client->Subscriptions[Client->SubscriptionCount].LastSeenTick = 0;
             Client->SubscriptionCount += 1;
         }
     }
@@ -351,6 +377,7 @@ static DWORD ControllerHandleClientCommand(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT
         Response->Payload.HandshakeResponse.Capabilities =
             SLEEPWALKER_IPC_CAP_DRIVER_PROXY | SLEEPWALKER_IPC_CAP_ETW_TI_SESSION | SLEEPWALKER_IPC_CAP_ETW_TI_UPLINK;
         Response->Payload.HandshakeResponse.ThreatIntelEnabled = g_ThreatIntelEnabled ? 1u : 0u;
+        Response->Payload.HandshakeResponse.Reserved = g_ThreatIntelEnableError;
         break;
     case SleepwalkerIpcCommandSubscribe:
         err = ControllerClientSubscribe(Client, &Request->Payload.SubscribeRequest);
@@ -435,7 +462,7 @@ static VOID ControllerDetachClient(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Client
     }
     LeaveCriticalSection(&g_ClientListLock);
 
-    (void)ControllerApplyDriverSubscriptions();
+    ControllerMarkDriverSubscriptionsDirty();
 }
 static DWORD WINAPI ControllerClientThreadProc(_In_ LPVOID Context)
 {
@@ -485,7 +512,6 @@ static DWORD WINAPI ControllerClientThreadProc(_In_ LPVOID Context)
     ControllerDetachClient(client);
     if (client->Pipe != INVALID_HANDLE_VALUE)
     {
-        (void)FlushFileBuffers(client->Pipe);
         (void)DisconnectNamedPipe(client->Pipe);
         CloseHandle(client->Pipe);
         client->Pipe = INVALID_HANDLE_VALUE;

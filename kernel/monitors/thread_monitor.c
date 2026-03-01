@@ -2,7 +2,8 @@
 #include "..\core\control.h"
 #include "..\core\protection_utils.h"
 #include "..\telemetry\etw.h"
-#include "correlation.h"
+#include "..\correlation\intent_store.h"
+#include "..\correlation\hollowing_engine.h"
 #include "thread_monitor.h"
 
 #ifndef ThreadQuerySetWin32StartAddress
@@ -59,6 +60,7 @@ typedef NTSTATUS(NTAPI *PSLEEPWALKER_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX)(_In
                                                                              _In_ PVOID NotifyRoutine);
 
 #define SLEEPWALKER_THREAD_MAX_OUTSTANDING_WORK 4096
+#define SLEEPWALKER_THREAD_CORRELATION_WINDOW_MS 5000
 
 static SLEEPWALKER_NOTIFY_MODE g_NotifyMode = SLEEPWALKERNotifyNone;
 
@@ -377,6 +379,7 @@ static VOID SLEEPWALKERThreadWorkRoutine(_In_ PVOID Context)
     BOOLEAN startRegionExecutable = FALSE;
     BOOLEAN startRegionNonImage = FALSE;
     HANDLE creatorPidForTelemetry;
+    BOOLEAN hasCorrelation = FALSE;
 
     PAGED_CODE(); // worker should run at PASSIVE_LEVEL
 
@@ -426,15 +429,30 @@ static VOID SLEEPWALKERThreadWorkRoutine(_In_ PVOID Context)
     }
 
     creatorPidForTelemetry = w->CreatorProcessId;
+    if (creatorPidForTelemetry == NULL)
+    {
+        creatorPidForTelemetry = w->ProcessId;
+    }
+
+    hasCorrelation = SLEEPWALKERHollowingResolveThreadCorrelation(
+        w->ProcessId, creatorPidForTelemetry, SLEEPWALKER_THREAD_CORRELATION_WINDOW_MS, &creatorPidForTelemetry,
+        &correlationFlags, &correlationAccessMask, &correlationAgeMs);
+    if (!hasCorrelation)
+    {
+        correlationFlags = 0;
+        correlationAccessMask = 0;
+        correlationAgeMs = 0;
+    }
+
     isRemoteCreator = (creatorPidForTelemetry != w->ProcessId);
-    correlationFlags = 0;
-    correlationAccessMask = 0;
-    correlationAgeMs = 0;
 
     SLEEPWALKERLogThreadTelemetry(w->ProcessId, w->ThreadId, creatorPidForTelemetry, threadStart, imageBase, imageSize,
                                   gotStart, gotRange, isRemoteCreator, outsideMainImage, correlationFlags,
                                   correlationAccessMask, correlationAgeMs, startRegionProtect, startRegionState,
                                   startRegionType, startRegionStatus);
+    SLEEPWALKERHollowingObserveThread(w->ProcessId, creatorPidForTelemetry, outsideMainImage, gotStart,
+                                      startRegionExecutable, startRegionNonImage, correlationFlags,
+                                      correlationAccessMask, correlationAgeMs);
 
 Exit:
     if (w->Process)

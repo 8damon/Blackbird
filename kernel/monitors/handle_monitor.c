@@ -4,6 +4,8 @@
 #include "..\core\protection_utils.h"
 #include "..\core\unicode_utils.h"
 #include "..\telemetry\etw.h"
+#include "apc_monitor.h"
+#include "..\correlation\intent_store.h"
 #include "handle_monitor.h"
 
 #ifndef PROCESS_VM_READ
@@ -16,6 +18,10 @@
 
 #ifndef PROCESS_VM_OPERATION
 #define PROCESS_VM_OPERATION 0x0008
+#endif
+
+#ifndef PROCESS_CREATE_THREAD
+#define PROCESS_CREATE_THREAD 0x0002
 #endif
 
 #ifndef PROCESS_QUERY_LIMITED_INFORMATION
@@ -875,8 +881,9 @@ static BOOLEAN SLEEPWALKERValidateModuleChainSanity(_In_ HANDLE ProcessHandle, _
 {
     ULONG i;
     ULONG inspectCount;
-    ULONG firstNtdllIndex = (ULONG)-1;
-    PVOID preNtdllBase = NULL;
+    BOOLEAN sawNtdll = FALSE;
+    BOOLEAN sawHeadNtdll = FALSE;
+    BOOLEAN sawNonNtdll = FALSE;
     PVOID ntdllBase = NULL;
 
     if (ProcessHandle == NULL || Frames == NULL || FrameCount == 0)
@@ -901,32 +908,29 @@ static BOOLEAN SLEEPWALKERValidateModuleChainSanity(_In_ HANDLE ProcessHandle, _
             return FALSE;
         }
 
-        if (firstNtdllIndex == (ULONG)-1)
+        if (isNtdll)
         {
-            if (isNtdll)
+            sawNtdll = TRUE;
+            if (i <= 2U)
             {
-                firstNtdllIndex = i;
+                sawHeadNtdll = TRUE;
+            }
+            if (ntdllBase == NULL)
+            {
                 ntdllBase = frameBase;
             }
-            else if (preNtdllBase == NULL)
-            {
-                preNtdllBase = frameBase;
-            }
-            else if (preNtdllBase != frameBase)
+            else if (ntdllBase != frameBase)
             {
                 return FALSE;
             }
         }
         else
         {
-            if (!isNtdll || frameBase != ntdllBase)
-            {
-                return FALSE;
-            }
+            sawNonNtdll = TRUE;
         }
     }
 
-    return (firstNtdllIndex != (ULONG)-1) && (firstNtdllIndex <= 3U);
+    return (sawNtdll && sawHeadNtdll && sawNonNtdll);
 }
 
 static BOOLEAN SLEEPWALKERModuleContainsUnwindForRva(_In_ PEPROCESS SourceProcess, _In_ PVOID ModuleBase,
@@ -1173,6 +1177,7 @@ static VOID SLEEPWALKERLogHandleTelemetry(_In_ SLEEPWALKER_HANDLE_CLASSIFICATION
 {
     UINT32 flags = 0;
     BOOLEAN memoryRelated;
+    BOOLEAN stackIntegrityAnomaly;
     UINT32 classId;
 
     SLEEPWALKEREtwLogHandleEvent(
@@ -1197,7 +1202,8 @@ static VOID SLEEPWALKERLogHandleTelemetry(_In_ SLEEPWALKER_HANDLE_CLASSIFICATION
     }
 
     memoryRelated = ((DesiredAccess & PROCESS_VM_OPERATION) != 0) || ((DesiredAccess & PROCESS_VM_READ) != 0) ||
-                    ((DesiredAccess & PROCESS_VM_WRITE) != 0) || ((DesiredAccess & PROCESS_ALL_ACCESS) != 0);
+                    ((DesiredAccess & PROCESS_VM_WRITE) != 0) || ((DesiredAccess & PROCESS_CREATE_THREAD) != 0) ||
+                    ((DesiredAccess & PROCESS_ALL_ACCESS) != 0);
     if (memoryRelated)
     {
         flags |= SLEEPWALKER_HANDLE_FLAG_MEMORY_RELATED;
@@ -1267,6 +1273,26 @@ static VOID SLEEPWALKERLogHandleTelemetry(_In_ SLEEPWALKER_HANDLE_CLASSIFICATION
     else if (Class == SLEEPWALKERHandleDirectSyscallSuspect)
     {
         classId = SleepwalkerHandleClassDirectSyscallSuspect;
+    }
+
+    if (Class == SLEEPWALKERHandleDirectSyscallSuspect)
+    {
+        SLEEPWALKEREtwLogDetectionEvent("DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION", 4, CallerPid, TargetPid, 0,
+                                        (UINT32)DesiredAccess, 0,
+                                        L"handle operation classified as direct-syscall suspect");
+    }
+
+    stackIntegrityAnomaly = (Telemetry->StackSpoofSuspect || !Telemetry->StackValidated ||
+                             !Telemetry->ReturnAddressValid ||
+                             (Telemetry->ModuleChainChecked && !Telemetry->ModuleChainSane) ||
+                             (Telemetry->UnwindMetadataChecked && !Telemetry->UnwindMetadataValid) ||
+                             (Telemetry->TebStackBoundsChecked &&
+                              (!Telemetry->TebStackBoundsValid || !Telemetry->FramesOutsideTebStack)));
+    if (stackIntegrityAnomaly && (Class == SLEEPWALKERHandleDirectSyscallSuspect))
+    {
+        SLEEPWALKEREtwLogDetectionEvent(
+            "STACK_INTEGRITY_ANOMALY_ON_HANDLE_OP", 5, CallerPid, TargetPid, 0, (UINT32)DesiredAccess, 0,
+            L"stack, return-address, unwind, module chain, or teb bounds integrity failed");
     }
 
     SLEEPWALKERControlPublishHandleEvent(
@@ -1537,18 +1563,16 @@ static VOID SLEEPWALKERHandleWorkRoutine(_In_ PVOID Context)
     fromNtdll = SLEEPWALKERUnicodeContainsInsensitive(&originPathUs, L"ntdll.dll", 9);
     fromExe = SLEEPWALKERUnicodeContainsInsensitive(&originPathUs, L".exe", 4);
     if (fromNtdll && telemetry.StackValidated && !telemetry.StackSpoofSuspect && telemetry.ReturnAddressValid &&
-        telemetry.SyscallExportChecked && telemetry.SyscallExportMatch && telemetry.ModuleChainChecked &&
+        telemetry.ModuleChainChecked &&
         telemetry.ModuleChainSane && telemetry.UnwindMetadataChecked && telemetry.UnwindMetadataValid &&
         telemetry.TebStackBoundsChecked && telemetry.TebStackBoundsValid && telemetry.FramesOutsideTebStack)
     {
         classification = SLEEPWALKERHandleLegitimateSyscall;
     }
-    else if ((telemetry.SyscallExportChecked && !telemetry.SyscallExportMatch) ||
-             (telemetry.ModuleChainChecked && !telemetry.ModuleChainSane) ||
+    else if ((telemetry.ModuleChainChecked && !telemetry.ModuleChainSane) ||
              (telemetry.UnwindMetadataChecked && !telemetry.UnwindMetadataValid) ||
              (telemetry.TebStackBoundsChecked && (!telemetry.TebStackBoundsValid || !telemetry.FramesOutsideTebStack)) ||
-             (execProtect && (!fromNtdll || !telemetry.StackValidated || telemetry.StackSpoofSuspect ||
-                              !telemetry.ReturnAddressValid)))
+             (execProtect && (!fromNtdll || !telemetry.StackValidated || telemetry.StackSpoofSuspect)))
     {
         classification = SLEEPWALKERHandleDirectSyscallSuspect;
     }
@@ -1588,6 +1612,7 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
     ULONG copyCount;
     BOOLEAN hasVmWriteOrFull;
     BOOLEAN hasThreadContextAccess;
+    UINT32 intentFlags;
     BOOLEAN shouldCaptureStack;
     BOOLEAN isThreadObject = FALSE;
     BOOLEAN isDuplicateOperation = FALSE;
@@ -1627,6 +1652,7 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
         targetPid = PsGetProcessId(targetProcess);
 
         hasVmWriteOrFull = ((desiredAccess & PROCESS_VM_OPERATION) != 0) || ((desiredAccess & PROCESS_VM_WRITE) != 0) ||
+                           ((desiredAccess & PROCESS_CREATE_THREAD) != 0) ||
                            ((desiredAccess & PROCESS_ALL_ACCESS) != 0);
     }
     else if (OperationInformation->ObjectType == *PsThreadType)
@@ -1651,6 +1677,29 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
 
     callerPid = PsGetCurrentProcessId();
     callerTid = PsGetCurrentThreadId();
+
+    intentFlags = 0;
+    if (hasVmWriteOrFull)
+    {
+        intentFlags |= SLEEPWALKER_INTENT_PROCESS_MEMORY;
+    }
+    if (hasThreadContextAccess)
+    {
+        intentFlags |= SLEEPWALKER_INTENT_THREAD_CONTEXT;
+    }
+    if (isDuplicateOperation && (intentFlags != 0))
+    {
+        intentFlags |= SLEEPWALKER_INTENT_DUP_HANDLE;
+    }
+
+    if (intentFlags != 0)
+    {
+        SLEEPWALKERCorrelationRecordHandleIntent(callerPid, targetPid, desiredAccess, intentFlags);
+    }
+    if (isThreadObject)
+    {
+        SLEEPWALKERApcMonitorRecordThreadHandleIntent(callerPid, targetPid, desiredAccess, isDuplicateOperation);
+    }
 
     if (!SLEEPWALKERHandleTryAcquireWorkSlot())
     {
@@ -1696,7 +1745,9 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
     copyCount = 0;
     shouldCaptureStack =
         isDuplicateOperation ||
-        ((desiredAccess & (PROCESS_VM_WRITE | PROCESS_ALL_ACCESS | THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME)) != 0);
+        ((desiredAccess &
+          (PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD | PROCESS_ALL_ACCESS | THREAD_SET_CONTEXT |
+           THREAD_SUSPEND_RESUME)) != 0);
     if (shouldCaptureStack)
     {
         __try

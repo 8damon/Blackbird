@@ -14,6 +14,9 @@
     <Filter Include="Source Files\Telemetry">
       <UniqueIdentifier>{FF11D598-F8A2-4E52-9BB9-B6F6FF90CCF8}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\Correlation">
+      <UniqueIdentifier>{9752D0C8-ED3B-4B94-B150-6126B3F08E49}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Header Files">
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
@@ -26,6 +29,9 @@
     </Filter>
     <Filter Include="Header Files\Telemetry">
       <UniqueIdentifier>{58A789E2-4585-40F6-946E-AFCB8AA10567}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Correlation">
+      <UniqueIdentifier>{5D34695C-8C09-4C2B-8B65-EA830A2F7495}</UniqueIdentifier>
     </Filter>
     <Filter Include="Header Files\ABI">
       <UniqueIdentifier>{6F1BDA0C-CA16-4CF5-A322-C77F20EE6474}</UniqueIdentifier>
@@ -63,8 +69,11 @@
     <ClCompile Include="..\kernel\monitors\apc_monitor.c">
       <Filter>Source Files\Monitors</Filter>
     </ClCompile>
-    <ClCompile Include="..\kernel\monitors\correlation.c">
-      <Filter>Source Files\Monitors</Filter>
+    <ClCompile Include="..\kernel\correlation\intent_store.c">
+      <Filter>Source Files\Correlation</Filter>
+    </ClCompile>
+    <ClCompile Include="..\kernel\correlation\hollowing_engine.c">
+      <Filter>Source Files\Correlation</Filter>
     </ClCompile>
     <ClCompile Include="..\kernel\monitors\image_monitor.c">
       <Filter>Source Files\Monitors</Filter>
@@ -101,8 +110,11 @@
     <ClInclude Include="..\kernel\monitors\apc_monitor.h">
       <Filter>Header Files\Monitors</Filter>
     </ClInclude>
-    <ClInclude Include="..\kernel\monitors\correlation.h">
-      <Filter>Header Files\Monitors</Filter>
+    <ClInclude Include="..\kernel\correlation\intent_store.h">
+      <Filter>Header Files\Correlation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\kernel\correlation\hollowing_engine.h">
+      <Filter>Header Files\Correlation</Filter>
     </ClInclude>
     <ClInclude Include="..\kernel\monitors\image_monitor.h">
       <Filter>Header Files\Monitors</Filter>

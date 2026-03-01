@@ -170,10 +170,14 @@ VOID SLEEPWALKERApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ H
         return;
     }
 
-    if (hasSetContext && SLEEPWALKERApcShouldEmit(CallerPid, TargetPid, SLEEPWALKERApcKindRemoteApc))
+    if (hasSetContext && !hasSuspendResume &&
+        SLEEPWALKERApcShouldEmit(CallerPid, TargetPid, SLEEPWALKERApcKindRemoteApc))
     {
         SLEEPWALKEREtwLogApcEvent("REMOTE_APC_INTENT", CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation, 0, 0,
                                   0);
+        SLEEPWALKEREtwLogDetectionEvent("REMOTE_APC_CREATION_SUSPECT", 4, CallerPid, TargetPid, 0,
+                                        (UINT32)DesiredAccess, 0,
+                                        L"remote thread handle set-context intent suggests APC-style execution");
     }
 
     if (hasSetContext && hasSuspendResume &&
@@ -181,6 +185,8 @@ VOID SLEEPWALKERApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ H
     {
         SLEEPWALKEREtwLogApcEvent("THREAD_CONTEXT_INTENT", CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation, 0,
                                   0, 0);
+        SLEEPWALKEREtwLogDetectionEvent("THREAD_HIJACK_INTENT", 5, CallerPid, TargetPid, 0, (UINT32)DesiredAccess, 0,
+                                        L"thread set-context plus suspend/resume intent indicates hijack pattern");
     }
 }
 

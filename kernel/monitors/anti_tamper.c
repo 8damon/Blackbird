@@ -6,7 +6,8 @@
 #include "image_monitor.h"
 #include "registry_monitor.h"
 #include "apc_monitor.h"
-#include "correlation.h"
+#include "..\correlation\intent_store.h"
+#include "..\correlation\hollowing_engine.h"
 #include "..\core\control.h"
 #include "..\telemetry\etw.h"
 
@@ -132,7 +133,7 @@ static VOID SLEEPWALKERAntiTamperWorkRoutine(_In_ PVOID Context)
     if (!SLEEPWALKERHandleMonitorSelfCheck() || !SLEEPWALKERThreadMonitorSelfCheck() ||
         !SLEEPWALKERProcessMonitorSelfCheck() || !SLEEPWALKERImageMonitorSelfCheck() ||
         !SLEEPWALKERRegistryMonitorSelfCheck() || !SLEEPWALKERApcMonitorSelfCheck() ||
-        !SLEEPWALKERCorrelationSelfCheck())
+        !SLEEPWALKERCorrelationSelfCheck() || !SLEEPWALKERHollowingEngineSelfCheck())
     {
         tamperMask |= SLEEPWALKER_TAMPER_MONITOR_INTEGRITY;
     }

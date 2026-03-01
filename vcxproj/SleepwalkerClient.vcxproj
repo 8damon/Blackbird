@@ -94,7 +94,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <StringPooling>true</StringPooling>
-      <ControlFlowGuard>true</ControlFlowGuard>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
       <BufferSecurityCheck>true</BufferSecurityCheck>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -129,7 +129,7 @@
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <StringPooling>true</StringPooling>
-      <ControlFlowGuard>true</ControlFlowGuard>
+      <ControlFlowGuard>Guard</ControlFlowGuard>
       <BufferSecurityCheck>true</BufferSecurityCheck>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <IntrinsicFunctions>true</IntrinsicFunctions>

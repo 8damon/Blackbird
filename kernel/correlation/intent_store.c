@@ -1,5 +1,5 @@
 #include <ntddk.h>
-#include "correlation.h"
+#include "intent_store.h"
 
 #define SLEEPWALKER_CORRELATION_RING_SIZE 256
 
@@ -58,7 +58,7 @@ SLEEPWALKERCorrelationInitialize(VOID)
         return STATUS_SUCCESS;
     }
 
-    freq = KeQueryPerformanceCounter(NULL);
+    KeQueryPerformanceCounter(&freq);
     g_QpcFrequency = (freq.QuadPart > 0) ? (ULONGLONG)freq.QuadPart : 1;
     KeInitializeSpinLock(&g_IntentLock);
     RtlZeroMemory(g_IntentRing, sizeof(g_IntentRing));

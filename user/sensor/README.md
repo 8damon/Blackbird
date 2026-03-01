@@ -30,6 +30,7 @@ Exports:
 - `SLEEPWALKERSCQueryProcessImagePath`
 - `SLEEPWALKERSCSetShutdownMode`
 - `SLEEPWALKERSCParseStreamMaskA`
+- `SLEEPWALKERSCGetBrokerThreatIntelEnableError`
 - `SLEEPWALKERSCStopSessionByName`
 - `SLEEPWALKERSCStartEtwSession`
 - `SLEEPWALKERSCStartSleepwalkerEtwSession`
@@ -46,7 +47,7 @@ Build project `vcxproj/SleepwalkerSensorCore.vcxproj`.
 
 ## SleepwalkerClient (IOCTL Consumer)
 
-`SleepwalkerClient.exe` is broker-first: it connects to `SleepwlkrController` over named-pipe IPC and falls back to direct driver mode if the service is unavailable.
+`SleepwalkerClient.exe` is broker-only: it uses `SleepwlkrController` over named-pipe IPC and does not open the driver directly.
 
 Build project `vcxproj/SleepwalkerClient.vcxproj` (depends on `SleepwalkerSensorCore`), then run elevated:
 
@@ -54,11 +55,10 @@ Build project `vcxproj/SleepwalkerClient.vcxproj` (depends on `SleepwalkerSensor
 SleepwalkerClient.exe 4242 handle,memory,thread
 ```
 
-Force direct mode:
+`<streams>` accepts `handle,memory,thread` with optional `,etw`:
 
-```bat
-SleepwalkerClient.exe --direct 4242 handle,memory,thread
-```
+- `handle,memory,thread` prints IOCTL telemetry only.
+- `handle,memory,thread,etw` prints IOCTL telemetry plus broker ETW uplink events.
 
 Optional scope argument:
 
@@ -109,8 +109,9 @@ Build project `vcxproj/SleepwalkerIoctlTest.vcxproj` (depends on `SleepwalkerSen
 What it validates:
 
 - Control-device open path
+- Broker transport contract (`service-broker` required)
 - Invalid subscription mask rejection
-- Self + child PID subscriptions
+- Self + broker-dynamic child coverage
 - IOCTL stats query
 - IOCTL handle/thread event delivery and detailed decoding
 - Correlation/intent flags (`MemoryRelated`, `ThreadObject`, `DuplicateOperation`)
@@ -123,6 +124,8 @@ What it validates:
 
 Runtime knobs:
 
+- `SLEEPWALKER_TEST_BROKER_PIPE=\\\\.\\pipe\\<name>`
+  - Overrides broker pipe name for the client protocol handshake.
 - `SLEEPWALKER_TEST_REQUIRE_KERNEL_CORRELATION=1`
   - Enforces kernel correlation-dependent checks (IOCTL thread correlation flags + related ETW detections).
   - Default is off; those checks are reported as `[SKIP]` to align with user-mode correlation architecture.

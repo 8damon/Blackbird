@@ -4,6 +4,7 @@ SLEEPWALKERSC_API VOID SLEEPWALKERSCUseServiceProtocol(VOID)
     g_SleepwalkerProtocolMode = SLEEPWALKERSC_PROTOCOL_SERVICE;
     InterlockedExchange(&g_SleepwalkerBrokerCapabilities, 0);
     InterlockedExchange(&g_SleepwalkerBrokerThreatIntelEnabled, 0);
+    InterlockedExchange(&g_SleepwalkerBrokerThreatIntelEnableError, 0);
     ReleaseSRWLockExclusive(&g_SleepwalkerProtocolLock);
 }
 
@@ -37,6 +38,7 @@ SLEEPWALKERSC_API BOOL SLEEPWALKERSCUseClientProtocol(_In_opt_z_ PCWSTR PipeName
     g_SleepwalkerProtocolMode = SLEEPWALKERSC_PROTOCOL_CLIENT;
     InterlockedExchange(&g_SleepwalkerBrokerCapabilities, 0);
     InterlockedExchange(&g_SleepwalkerBrokerThreatIntelEnabled, 0);
+    InterlockedExchange(&g_SleepwalkerBrokerThreatIntelEnableError, 0);
     ReleaseSRWLockExclusive(&g_SleepwalkerProtocolLock);
     return TRUE;
 }
@@ -246,6 +248,7 @@ SLEEPWALKERSCOpenControlDevice(VOID)
     {
         InterlockedExchange(&g_SleepwalkerBrokerCapabilities, 0);
         InterlockedExchange(&g_SleepwalkerBrokerThreatIntelEnabled, 0);
+        InterlockedExchange(&g_SleepwalkerBrokerThreatIntelEnableError, 0);
         h = CreateFileW(L"\\\\.\\Global\\SleepwalkerCtl", GENERIC_READ | GENERIC_WRITE,
                         FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
         if (h == INVALID_HANDLE_VALUE)
@@ -296,6 +299,8 @@ SLEEPWALKERSCOpenControlDevice(VOID)
         InterlockedExchange(&g_SleepwalkerBrokerCapabilities, (LONG)response.Payload.HandshakeResponse.Capabilities);
         InterlockedExchange(&g_SleepwalkerBrokerThreatIntelEnabled,
                             response.Payload.HandshakeResponse.ThreatIntelEnabled ? 1 : 0);
+        InterlockedExchange(&g_SleepwalkerBrokerThreatIntelEnableError,
+                            (LONG)response.Payload.HandshakeResponse.Reserved);
 
         return h;
     }
@@ -318,6 +323,22 @@ BOOL SLEEPWALKERSCGetBrokerInfo(_Out_opt_ UINT32 *Capabilities, _Out_opt_ BOOL *
         *ThreatIntelEnabled = (InterlockedCompareExchange(&g_SleepwalkerBrokerThreatIntelEnabled, 0, 0) != 0);
     }
     return TRUE;
+}
+
+DWORD SLEEPWALKERSCGetBrokerThreatIntelEnableError(VOID)
+{
+    if (!SLEEPWALKERSCIsClientProtocol())
+    {
+        SetLastError(ERROR_NOT_SUPPORTED);
+        return ERROR_NOT_SUPPORTED;
+    }
+
+    return (DWORD)InterlockedCompareExchange(&g_SleepwalkerBrokerThreatIntelEnableError, 0, 0);
+}
+
+DWORD SLEEPWALKERSCGetLastThreatIntelEnableError(VOID)
+{
+    return (DWORD)InterlockedCompareExchange(&g_SleepwalkerLastTiEnableError, 0, 0);
 }
 
 BOOL SLEEPWALKERSCSubscribe(_In_ HANDLE Device, _In_ DWORD ProcessId, _In_ DWORD StreamMask)
@@ -610,4 +631,3 @@ SLEEPWALKERSCParseStreamMaskA(_In_z_ const char *Text)
     return mask;
 }
 
-ULONG

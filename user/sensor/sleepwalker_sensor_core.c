@@ -46,6 +46,8 @@ static DWORD g_SleepwalkerPipeTimeoutMs = 3000;
 static volatile LONG g_SleepwalkerIpcSequence = 1;
 static volatile LONG g_SleepwalkerBrokerCapabilities = 0;
 static volatile LONG g_SleepwalkerBrokerThreatIntelEnabled = 0;
+static volatile LONG g_SleepwalkerBrokerThreatIntelEnableError = 0;
+static volatile LONG g_SleepwalkerLastTiEnableError = 0;
 static SRWLOCK g_SleepwalkerProtocolLock = SRWLOCK_INIT;
 
 #include "core/sleepwalker_sensor_core_protocol.inc"

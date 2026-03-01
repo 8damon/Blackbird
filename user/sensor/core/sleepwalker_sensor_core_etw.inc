@@ -1,4 +1,51 @@
-SLEEPWALKERSCStopSessionByName(_In_z_ PCWSTR SessionName)
+static BOOL SLEEPWALKERSCTryEnablePrivilege(_In_z_ PCWSTR PrivilegeName)
+{
+    HANDLE token = NULL;
+    TOKEN_PRIVILEGES tp;
+    LUID luid;
+    BOOL ok = FALSE;
+
+    if (PrivilegeName == NULL || PrivilegeName[0] == L'\0')
+    {
+        return FALSE;
+    }
+
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &token))
+    {
+        return FALSE;
+    }
+
+    if (!LookupPrivilegeValueW(NULL, PrivilegeName, &luid))
+    {
+        CloseHandle(token);
+        return FALSE;
+    }
+
+    ZeroMemory(&tp, sizeof(tp));
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Luid = luid;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+    SetLastError(ERROR_SUCCESS);
+    ok = AdjustTokenPrivileges(token, FALSE, &tp, sizeof(tp), NULL, NULL);
+    if (!ok || GetLastError() == ERROR_NOT_ALL_ASSIGNED)
+    {
+        CloseHandle(token);
+        return FALSE;
+    }
+
+    CloseHandle(token);
+    return TRUE;
+}
+
+static VOID SLEEPWALKERSCTryEnableEtwPrivileges(VOID)
+{
+    (void)SLEEPWALKERSCTryEnablePrivilege(L"SeSystemProfilePrivilege");
+    (void)SLEEPWALKERSCTryEnablePrivilege(L"SeDebugPrivilege");
+    (void)SLEEPWALKERSCTryEnablePrivilege(L"SeSecurityPrivilege");
+}
+
+ULONG SLEEPWALKERSCStopSessionByName(_In_z_ PCWSTR SessionName)
 {
     ULONG status;
     const ULONG propsBytes = sizeof(EVENT_TRACE_PROPERTIES) + (1024 * sizeof(WCHAR));
@@ -69,6 +116,8 @@ BOOL SLEEPWALKERSCStartEtwSession(_In_ const SLEEPWALKERSC_ETW_SESSION_CONFIG *C
         return FALSE;
     }
 
+    SLEEPWALKERSCTryEnableEtwPrivileges();
+
     (void)SLEEPWALKERSCStopSessionByName(internal->SessionName);
     Sleep(80);
 
@@ -85,7 +134,11 @@ BOOL SLEEPWALKERSCStartEtwSession(_In_ const SLEEPWALKERSC_ETW_SESSION_CONFIG *C
     props->Wnode.BufferSize = propsBytes;
     props->Wnode.Flags = WNODE_FLAG_TRACED_GUID;
     props->Wnode.ClientContext = 1;
-    props->LogFileMode = EVENT_TRACE_REAL_TIME_MODE;
+    /*
+     * Use secure real-time sessions so protected providers (for example TI on
+     * hardened builds) can be enabled when the caller token is otherwise valid.
+     */
+    props->LogFileMode = EVENT_TRACE_REAL_TIME_MODE | EVENT_TRACE_SECURE_MODE;
     props->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
     loggerName = (PWSTR)((PBYTE)props + props->LoggerNameOffset);
     (void)StringCchCopyW(loggerName, 512, internal->SessionName);
@@ -123,6 +176,10 @@ BOOL SLEEPWALKERSCStartEtwSession(_In_ const SLEEPWALKERSC_ETW_SESSION_CONFIG *C
                                 Config->Providers[i].MatchAnyKeyword, Config->Providers[i].MatchAllKeyword, 0, NULL);
         if (status != ERROR_SUCCESS)
         {
+            if (IsEqualGUID(&Config->Providers[i].ProviderId, &SLEEPWALKERSC_PROVIDER_GUID_TI))
+            {
+                (void)InterlockedExchange(&g_SleepwalkerLastTiEnableError, (LONG)status);
+            }
             (void)SLEEPWALKERSCStopSessionByName(internal->SessionName);
             free(props);
             CloseHandle(internal->RunStoppedEvent);
@@ -167,6 +224,7 @@ BOOL SLEEPWALKERSCStartSleepwalkerEtwSession(_In_z_ PCWSTR SessionName, _In_ BOO
     BOOL started = FALSE;
     BOOL startedWithTi = FALSE;
     DWORD err = ERROR_SUCCESS;
+    DWORD tiErr = ERROR_SUCCESS;
 
     if (ThreatIntelEnabled != NULL)
     {
@@ -176,6 +234,8 @@ BOOL SLEEPWALKERSCStartSleepwalkerEtwSession(_In_z_ PCWSTR SessionName, _In_ BOO
     {
         *Session = NULL;
     }
+
+    (void)InterlockedExchange(&g_SleepwalkerLastTiEnableError, ERROR_SUCCESS);
 
     if (SessionName == NULL || Callback == NULL || Session == NULL)
     {
@@ -212,8 +272,11 @@ BOOL SLEEPWALKERSCStartSleepwalkerEtwSession(_In_z_ PCWSTR SessionName, _In_ BOO
     {
         err = GetLastError();
     }
+    tiErr = (DWORD)InterlockedCompareExchange(&g_SleepwalkerLastTiEnableError, 0, 0);
 
-    if (!started && EnableThreatIntelProvider && err == ERROR_ACCESS_DENIED)
+    if (!started && EnableThreatIntelProvider &&
+        (tiErr != ERROR_SUCCESS || err == ERROR_ACCESS_DENIED || err == ERROR_PRIVILEGE_NOT_HELD ||
+         err == ERROR_NOT_FOUND || err == ERROR_INVALID_PARAMETER))
     {
         sleepwalkerOnlyProvider = providers[0];
         config.Providers = &sleepwalkerOnlyProvider;
@@ -227,10 +290,18 @@ BOOL SLEEPWALKERSCStartSleepwalkerEtwSession(_In_z_ PCWSTR SessionName, _In_ BOO
         {
             err = GetLastError();
         }
+        if (tiErr == ERROR_SUCCESS)
+        {
+            tiErr = err;
+        }
     }
 
     if (!started)
     {
+        if (tiErr != ERROR_SUCCESS)
+        {
+            (void)InterlockedExchange(&g_SleepwalkerLastTiEnableError, (LONG)tiErr);
+        }
         SetLastError(err);
         return FALSE;
     }
@@ -238,6 +309,14 @@ BOOL SLEEPWALKERSCStartSleepwalkerEtwSession(_In_z_ PCWSTR SessionName, _In_ BOO
     if (ThreatIntelEnabled != NULL)
     {
         *ThreatIntelEnabled = startedWithTi;
+    }
+    if (startedWithTi)
+    {
+        (void)InterlockedExchange(&g_SleepwalkerLastTiEnableError, ERROR_SUCCESS);
+    }
+    else if (tiErr != ERROR_SUCCESS)
+    {
+        (void)InterlockedExchange(&g_SleepwalkerLastTiEnableError, (LONG)tiErr);
     }
     return TRUE;
 }

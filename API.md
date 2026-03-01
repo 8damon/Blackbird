@@ -16,7 +16,7 @@ This document describes the current Sleepwalker control-plane and telemetry cont
 
 ## Revision and Scope
 
-- Document revision: `2026-02-27`
+- Document revision: `2026-03-01`
 - ABI source of truth: `abi/sleepwalker_ioctl.h`
 - Compatibility note: no explicit in-band ABI version field is currently exposed; pin integration by commit/date and validate with `SleepwalkerTestSuite`.
 
@@ -57,6 +57,7 @@ Current exports:
   - `SLEEPWALKERSCUseServiceProtocol`
   - `SLEEPWALKERSCUseClientProtocol`
   - `SLEEPWALKERSCGetProtocolMode`
+  - `SLEEPWALKERSCGetBrokerThreatIntelEnableError`
 - IOCTL control-plane wrappers:
   - `SLEEPWALKERSCOpenControlDevice`
   - `SLEEPWALKERSCSubscribe`
@@ -123,7 +124,7 @@ Consumers currently using these exports:
 - Subscriptions are scoped to each opened file handle to the control device.
 - One client can subscribe multiple `(ProcessId, StreamMask)` entries.
 - Current limits:
-  - max subscriptions per client: `64`
+  - max subscriptions per client: `256`
   - max queue depth per client: `1024`
   - max concurrent clients: `256`
 - Each client has isolated:
@@ -137,6 +138,25 @@ Consumers currently using these exports:
 - Handle events route on `(CallerPid OR TargetPid)` + stream-mask intersection.
 - Thread events route on `(ProcessId OR CreatorPid)` + stream-mask intersection.
 - Per-client dedupe guarantees at most one queued copy of a given emitted record.
+
+### Service-Broker Dynamic Expansion
+
+When using `SleepwlkrController` broker mode (`SLEEPWALKERSCUseClientProtocol`), the controller can expand monitoring
+beyond the initially seeded PID list by building a relation graph per client:
+
+- Relation edges considered for expansion:
+  - handle events: `callerPid -> targetPid`
+  - thread events: `creatorPid -> processId`
+  - process telemetry: `creator/parent -> child process`
+  - ETW bridge relation when present: `PrimaryPid -> SecondaryPid`
+- Dynamic entries inherit the source subscription stream mask.
+- Guardrails:
+  - max dynamic depth from explicit seed: `3`
+  - dynamic entry inactivity TTL: `120000 ms`
+- Cleanup behavior:
+  - explicit `unsubscribe(rootPid)` drops dynamic descendants rooted at that PID for that client.
+  - explicit `subscribe(pid)` upgrades an existing dynamic entry for `pid` to explicit.
+  - `set-pids` replaces the explicit seed set; dynamic entries are rebuilt from fresh runtime relations.
 
 ## Event Record Structure
 
@@ -275,12 +295,23 @@ Current event names:
 - `REMOTE_THREAD_START_IN_NON_IMAGE_EXECUTABLE_REGION`
 - `REMOTE_THREAD_OUTSIDE_MAIN_IMAGE`
 - `THREAD_ACTIVITY_WITH_THREAD_CONTEXT_INTENT`
+- `THREAD_HIJACK_INTENT`
+- `REMOTE_APC_CREATION_SUSPECT`
 - `HIGH_VALUE_REGISTRY_ACTIVITY`
 - `DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION`
 - `POSSIBLE_PROCESS_HOLLOWING_OR_INJECTION_INTENT_CHAIN`
 - `POSSIBLE_MANUAL_MAP_OR_HOLLOWING_EXECUTION`
+- `KERNEL_PROCESS_HOLLOWING_MARK_CHAIN_MEDIUM`
+- `KERNEL_PROCESS_HOLLOWING_MARK_CHAIN_STRONG`
+- `STACK_INTEGRITY_ANOMALY_ON_HANDLE_OP`
 - `SUSPICIOUS_NTDLL_IMAGE_PATH`
 - `MULTIPLE_NTDLL_IMAGE_MAPPINGS`
+- `DRIVER_DISPATCH_OR_OBJECT_TAMPER`
+- `DRIVER_DISPATCH_OR_OBJECT_TAMPER_CLEARED`
+- broker-synthesized correlation detections (controller ETW uplink):
+  - `PROCESS_HOLLOWING_MARK_CHAIN_MEDIUM`
+  - `PROCESS_HOLLOWING_MARK_CHAIN_STRONG`
+  - `PROCESS_HOLLOWING_TXF_SUSPECT_CHAIN`
 
 ## Quick Integration Flow (IOCTL)
 

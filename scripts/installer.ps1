@@ -1,11 +1,14 @@
 param(
     [string]$DriverName = "sleepwlkr",
     [string]$ControllerName = "SleepwlkrController",
-    [string]$DriverSys = "..\x64\Debug\sleepwlkr.sys",
-    [string]$ControllerExe = "..\x64\Debug\SleepwlkrController.exe"
+    [string]$DriverSys = "..\sleepwlkr.sys",
+    [string]$ControllerExe = "..\SleepwlkrController.exe",
+    [string]$SensorCoreDll = "..\SleepwalkerSensorCore.dll"
 )
 
 $ErrorActionPreference = "Stop"
+$scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$repoRoot = (Resolve-Path (Join-Path $scriptRoot "..")).Path
 
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
         [Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -28,7 +31,12 @@ function Resolve-ArtifactPath {
             continue
         }
 
-        $resolved = Resolve-Path -LiteralPath $candidate -ErrorAction SilentlyContinue
+        $pathToTry = $candidate
+        if (-not [System.IO.Path]::IsPathRooted($pathToTry)) {
+            $pathToTry = Join-Path $repoRoot $pathToTry
+        }
+
+        $resolved = Resolve-Path -LiteralPath $pathToTry -ErrorAction SilentlyContinue
         if ($null -ne $resolved) {
             return $resolved.Path
         }
@@ -37,36 +45,75 @@ function Resolve-ArtifactPath {
     throw "$Label not found. Tried: $($candidates -join ', ')"
 }
 
+function Invoke-Sc {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments,
+        [int[]]$AllowedExitCodes = @(0)
+    )
+
+    & sc.exe @Arguments | Out-Null
+    if ($AllowedExitCodes -notcontains $LASTEXITCODE) {
+        throw "sc.exe $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+    }
+}
+
 $driverSrc = Resolve-ArtifactPath `
     -PreferredPath $DriverSys `
-    -FallbackPaths @("..\x64\Debug\sleepwlkr.sys", "..\x64\Release\sleepwlkr.sys", ".\sleepwlkr.sys") `
+    -FallbackPaths @(
+        "vcxproj\x64\Debug\sleepwlkr.sys",
+        "vcxproj\x64\Release\sleepwlkr.sys",
+        "x64\Debug\sleepwlkr.sys",
+        "x64\Release\sleepwlkr.sys",
+        "sleepwlkr.sys"
+    ) `
     -Label "Driver .sys"
 
 $controllerSrc = Resolve-ArtifactPath `
     -PreferredPath $ControllerExe `
-    -FallbackPaths @("..\x64\Debug\SleepwlkrController.exe", "..\x64\Release\SleepwlkrController.exe", ".\SleepwlkrController.exe") `
+    -FallbackPaths @(
+        "vcxproj\x64\Debug\SleepwlkrController.exe",
+        "vcxproj\x64\Release\SleepwlkrController.exe",
+        "x64\Debug\SleepwlkrController.exe",
+        "x64\Release\SleepwlkrController.exe",
+        "SleepwlkrController.exe"
+    ) `
     -Label "Controller .exe"
+
+$sensorCoreSrc = Resolve-ArtifactPath `
+    -PreferredPath $SensorCoreDll `
+    -FallbackPaths @(
+        "vcxproj\x64\Debug\SleepwalkerSensorCore.dll",
+        "vcxproj\x64\Release\SleepwalkerSensorCore.dll",
+        "x64\Debug\SleepwalkerSensorCore.dll",
+        "x64\Release\SleepwalkerSensorCore.dll",
+        "SleepwalkerSensorCore.dll"
+    ) `
+    -Label "SensorCore .dll"
 
 $driverDst = Join-Path $env:windir "System32\drivers\sleepwlkr.sys"
 $controllerDir = Join-Path $env:ProgramFiles "Sleepwalker"
 $controllerDst = Join-Path $controllerDir "SleepwlkrController.exe"
+$sensorCoreDst = Join-Path $controllerDir "SleepwalkerSensorCore.dll"
 
 New-Item -ItemType Directory -Path $controllerDir -Force | Out-Null
 Copy-Item -LiteralPath $driverSrc -Destination $driverDst -Force
 Copy-Item -LiteralPath $controllerSrc -Destination $controllerDst -Force
+Copy-Item -LiteralPath $sensorCoreSrc -Destination $sensorCoreDst -Force
 
-sc.exe stop $DriverName | Out-Null
-sc.exe delete $DriverName | Out-Null
-sc.exe create $DriverName type= kernel start= demand error= normal binPath= "$driverDst" DisplayName= "Sleepwalker Driver" | Out-Null
+Invoke-Sc -Arguments @("stop", $DriverName) -AllowedExitCodes @(0, 1060, 1062)
+Invoke-Sc -Arguments @("delete", $DriverName) -AllowedExitCodes @(0, 1060)
+Invoke-Sc -Arguments @("create", $DriverName, "type=", "kernel", "start=", "demand", "error=", "normal", "binPath=", $driverDst, "DisplayName=", "Sleepwalker Driver")
 
-sc.exe stop $ControllerName | Out-Null
-sc.exe delete $ControllerName | Out-Null
-sc.exe create $ControllerName type= own start= auto obj= LocalSystem binPath= "`"$controllerDst`"" DisplayName= "Sleepwalker Controller Service" | Out-Null
-sc.exe failure $ControllerName reset= 60 actions= restart/5000/restart/5000/restart/5000 | Out-Null
+Invoke-Sc -Arguments @("stop", $ControllerName) -AllowedExitCodes @(0, 1060, 1062)
+Invoke-Sc -Arguments @("delete", $ControllerName) -AllowedExitCodes @(0, 1060)
+Invoke-Sc -Arguments @("create", $ControllerName, "type=", "own", "start=", "auto", "obj=", "LocalSystem", "binPath=", "`"$controllerDst`"", "DisplayName=", "Sleepwalker Controller Service")
+Invoke-Sc -Arguments @("failure", $ControllerName, "reset=", "60", "actions=", "restart/5000/restart/5000/restart/5000")
 
-sc.exe start $DriverName | Out-Null
-sc.exe start $ControllerName | Out-Null
+Invoke-Sc -Arguments @("start", $DriverName)
+Invoke-Sc -Arguments @("start", $ControllerName)
 
 Write-Host "[*] Installed and started $DriverName + $ControllerName"
 Write-Host "    Driver:     $driverDst"
 Write-Host "    Controller: $controllerDst"
+Write-Host "    SensorCore: $sensorCoreDst"

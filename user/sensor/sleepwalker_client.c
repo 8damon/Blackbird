@@ -79,6 +79,9 @@ typedef struct _SLEEPWALKER_BROKER_ETW_CONTEXT
 {
     HANDLE Device;
     BOOL ThreatIntelEnabled;
+    DWORD TiEnableError;
+    DWORD TargetPid;
+    SLEEPWALKER_TARGET_SCOPE Scope;
     volatile LONG SessionEnded;
 } SLEEPWALKER_BROKER_ETW_CONTEXT;
 

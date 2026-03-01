@@ -65,8 +65,8 @@ static BOOL ConvertArgToWide(_In_z_ const char *Text, _Out_writes_z_(OutputChars
     return (converted > 0);
 }
 
-static HANDLE OpenControlDeviceWithBrokerFallback(_In_ BOOL ForceDirect, _In_opt_z_ const char *BrokerPipeUtf8,
-                                                  _Out_opt_ BOOL *UsingBroker)
+static HANDLE OpenControlDeviceByPolicy(_In_opt_z_ const char *BrokerPipeUtf8,
+                                        _Out_opt_ BOOL *UsingBroker)
 {
     HANDLE device;
     WCHAR brokerPipeWide[MAX_PATH];
@@ -77,35 +77,33 @@ static HANDLE OpenControlDeviceWithBrokerFallback(_In_ BOOL ForceDirect, _In_opt
         *UsingBroker = FALSE;
     }
 
-    if (!ForceDirect)
+    ZeroMemory(brokerPipeWide, sizeof(brokerPipeWide));
+    if (BrokerPipeUtf8 != NULL && BrokerPipeUtf8[0] != '\0')
     {
-        ZeroMemory(brokerPipeWide, sizeof(brokerPipeWide));
-        if (BrokerPipeUtf8 != NULL && BrokerPipeUtf8[0] != '\0')
+        if (!ConvertArgToWide(BrokerPipeUtf8, brokerPipeWide, RTL_NUMBER_OF(brokerPipeWide)))
         {
-            if (!ConvertArgToWide(BrokerPipeUtf8, brokerPipeWide, RTL_NUMBER_OF(brokerPipeWide)))
-            {
-                SetLastError(ERROR_INVALID_PARAMETER);
-                return INVALID_HANDLE_VALUE;
-            }
-            pipeName = brokerPipeWide;
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return INVALID_HANDLE_VALUE;
         }
-
-        if (SLEEPWALKERSCUseClientProtocol(pipeName, 1500))
-        {
-            device = SLEEPWALKERSCOpenControlDevice();
-            if (device != INVALID_HANDLE_VALUE)
-            {
-                if (UsingBroker != NULL)
-                {
-                    *UsingBroker = TRUE;
-                }
-                return device;
-            }
-        }
+        pipeName = brokerPipeWide;
     }
 
-    SLEEPWALKERSCUseServiceProtocol();
-    return SLEEPWALKERSCOpenControlDevice();
+    if (!SLEEPWALKERSCUseClientProtocol(pipeName, 1500))
+    {
+        return INVALID_HANDLE_VALUE;
+    }
+
+    device = SLEEPWALKERSCOpenControlDevice();
+    if (device == INVALID_HANDLE_VALUE)
+    {
+        return INVALID_HANDLE_VALUE;
+    }
+
+    if (UsingBroker != NULL)
+    {
+        *UsingBroker = TRUE;
+    }
+    return device;
 }
 
 static VOID StripWrappingQuotesInPlace(_Inout_updates_z_(BufferChars) WCHAR *Buffer, _In_ size_t BufferChars)
@@ -1233,6 +1231,39 @@ static BOOL EtwRecordMatchesTargetPid(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWS
     }
 
     return FALSE;
+}
+
+static BOOL BrokerEtwEventMatchesTargetPid(_In_ const SLEEPWALKER_IPC_ETW_EVENT *Event, _In_ DWORD TargetPid,
+                                           _In_ SLEEPWALKER_TARGET_SCOPE Scope)
+{
+    DWORD actorPid = 0;
+    DWORD secondaryPid = 0;
+    BOOL localMatch;
+    BOOL remoteMatch;
+
+    if (Event == NULL || TargetPid == 0)
+    {
+        return FALSE;
+    }
+
+    if (Event->PrimaryPid != 0 && Event->PrimaryPid <= 0xFFFFFFFFull)
+    {
+        actorPid = (DWORD)Event->PrimaryPid;
+    }
+    else if (Event->EventProcessId != 0)
+    {
+        actorPid = Event->EventProcessId;
+    }
+
+    if (Event->SecondaryPid != 0 && Event->SecondaryPid <= 0xFFFFFFFFull)
+    {
+        secondaryPid = (DWORD)Event->SecondaryPid;
+    }
+
+    localMatch = (actorPid == TargetPid);
+    remoteMatch = (secondaryPid == TargetPid && actorPid != TargetPid);
+
+    return ScopeMatches(Scope, localMatch, remoteMatch);
 }
 
 static VOID WINAPI LiveEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName, _In_opt_ PVOID Context)

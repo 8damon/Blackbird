@@ -101,7 +101,9 @@ static BOOL StartLiveEtw(_Inout_ SLEEPWALKER_LIVE_ETW_CONTEXT *Live, _Out_ HANDL
 
     if (!tiEnabled)
     {
-        printf("[*] ETW TI provider unavailable; continuing with Sleepwalker provider only.\n");
+        DWORD tiErr = SLEEPWALKERSCGetLastThreatIntelEnableError();
+        printf("[*] ETW TI provider unavailable (tiEnableErr=%lu); continuing with Sleepwalker provider only.\n",
+               tiErr);
     }
 
     *ThreadHandle = CreateThread(NULL, 0, LiveEtwRunThreadProc, Live, 0, NULL);
@@ -134,6 +136,10 @@ static DWORD WINAPI BrokerEtwRunThreadProc(_In_ LPVOID Context)
         ok = SLEEPWALKERSCGetEtwEvent(broker->Device, &event, 500);
         if (ok)
         {
+            if (!BrokerEtwEventMatchesTargetPid(&event, broker->TargetPid, broker->Scope))
+            {
+                continue;
+            }
             LoggerEmitBrokerEtwEvent(&event);
             continue;
         }
@@ -162,7 +168,8 @@ static DWORD WINAPI BrokerEtwRunThreadProc(_In_ LPVOID Context)
     return 0;
 }
 
-static BOOL StartBrokerEtw(_Inout_ SLEEPWALKER_BROKER_ETW_CONTEXT *Broker, _Out_ HANDLE *ThreadHandle)
+static BOOL StartBrokerEtw(_Inout_ SLEEPWALKER_BROKER_ETW_CONTEXT *Broker, _Out_ HANDLE *ThreadHandle,
+                           _In_ DWORD SeedPid, _In_ DWORD StreamMask, _In_ SLEEPWALKER_TARGET_SCOPE Scope)
 {
     UINT32 capabilities = 0;
     BOOL tiEnabled = FALSE;
@@ -191,7 +198,21 @@ static BOOL StartBrokerEtw(_Inout_ SLEEPWALKER_BROKER_ETW_CONTEXT *Broker, _Out_
     {
         return FALSE;
     }
+
+    if (SeedPid != 0)
+    {
+        if (!SLEEPWALKERSCSetPids(Broker->Device, &SeedPid, 1, StreamMask))
+        {
+            CloseHandle(Broker->Device);
+            Broker->Device = INVALID_HANDLE_VALUE;
+            return FALSE;
+        }
+    }
+
     Broker->ThreatIntelEnabled = tiEnabled;
+    Broker->TiEnableError = SLEEPWALKERSCGetBrokerThreatIntelEnableError();
+    Broker->TargetPid = SeedPid;
+    Broker->Scope = Scope;
     Broker->SessionEnded = 0;
 
     *ThreadHandle = CreateThread(NULL, 0, BrokerEtwRunThreadProc, Broker, 0, NULL);

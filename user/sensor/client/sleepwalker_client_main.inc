@@ -219,15 +219,59 @@ static void LoggerEmitBrokerEtwEvent(_In_ const SLEEPWALKER_IPC_ETW_EVENT *Event
     LoggerEmitJson(severity, provider, kind, actorPid, targetPid, message);
 }
 
+static BOOL StreamsArgRequestsEtw(_In_opt_z_ const char *Text)
+{
+    char *copy;
+    char *tok;
+    char *ctx = NULL;
+    BOOL requested = FALSE;
+
+    if (Text == NULL || Text[0] == '\0')
+    {
+        return FALSE;
+    }
+
+    copy = _strdup(Text);
+    if (copy == NULL)
+    {
+        return FALSE;
+    }
+
+    for (tok = strtok_s(copy, ",", &ctx); tok != NULL; tok = strtok_s(NULL, ",", &ctx))
+    {
+        char *start = tok;
+        char *end;
+
+        while (*start == ' ' || *start == '\t' || *start == '\r' || *start == '\n')
+        {
+            start += 1;
+        }
+
+        end = start + strlen(start);
+        while (end > start && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n'))
+        {
+            end -= 1;
+        }
+        *end = '\0';
+
+        if (_stricmp(start, "etw") == 0)
+        {
+            requested = TRUE;
+            break;
+        }
+    }
+
+    free(copy);
+    return requested;
+}
+
 int __cdecl main(int argc, char **argv)
 {
     HANDLE h;
-    HANDLE liveEtwThread = NULL;
     HANDLE brokerEtwThread = NULL;
     SLEEPWALKER_EVENT_RECORD record;
     SLEEPWALKER_TARGET_SPEC targetSpec;
     SLEEPWALKER_ATTACH_CONTEXT attach;
-    SLEEPWALKER_LIVE_ETW_CONTEXT liveEtw;
     SLEEPWALKER_BROKER_ETW_CONTEXT brokerEtw;
     SLEEPWALKER_LAUNCH_TARGET launchTarget;
     UINT32 brokerCaps = 0;
@@ -241,6 +285,7 @@ int __cdecl main(int argc, char **argv)
     BOOL ok;
     BOOL symbolsInitialized = FALSE;
     BOOL ioctlVerbose = TRUE;
+    BOOL etwRequested = FALSE;
     BOOL rc = FALSE;
     SLEEPWALKER_CLIENT_POLICY policy;
     const char *configPath = NULL;
@@ -251,12 +296,10 @@ int __cdecl main(int argc, char **argv)
     const char *positional[3];
     int positionalCount = 0;
     int i;
-    BOOL forceDirectIo = FALSE;
     BOOL usingBroker = FALSE;
 
     (void)SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
     ZeroMemory(&attach, sizeof(attach));
-    ZeroMemory(&liveEtw, sizeof(liveEtw));
     ZeroMemory(&brokerEtw, sizeof(brokerEtw));
     ZeroMemory(&launchTarget, sizeof(launchTarget));
     PolicyDefaults(&policy);
@@ -304,8 +347,8 @@ int __cdecl main(int argc, char **argv)
         }
         if (_stricmp(arg, "--direct") == 0)
         {
-            forceDirectIo = TRUE;
-            continue;
+            printf("[-] --direct is no longer supported. client transport is broker-only.\n");
+            return 1;
         }
         if (_stricmp(arg, "--broker-pipe") == 0)
         {
@@ -373,11 +416,11 @@ int __cdecl main(int argc, char **argv)
 
     if (positionalCount == 1 && _stricmp(positional[0], "shutdown") == 0)
     {
-        h = OpenControlDeviceWithBrokerFallback(forceDirectIo, brokerPipeArg, &usingBroker);
+        h = OpenControlDeviceByPolicy(brokerPipeArg, &usingBroker);
         if (h == INVALID_HANDLE_VALUE)
         {
-            printf("[-] CreateFile failed (\\\\.\\Global\\SleepwalkerCtl / \\\\.\\SleepwalkerCtl): %lu\n",
-                   GetLastError());
+            err = GetLastError();
+            printf("[-] broker IPC open failed (%lu). Ensure SleepwlkrController is running.\n", err);
             return 1;
         }
 
@@ -422,6 +465,7 @@ int __cdecl main(int argc, char **argv)
         PrintUsage();
         return 1;
     }
+    etwRequested = StreamsArgRequestsEtw(streamsArg);
     if (scopeArg != NULL && !ParseScopeArg(scopeArg, &scope))
     {
         PrintUsage();
@@ -448,13 +492,14 @@ int __cdecl main(int argc, char **argv)
         return 1;
     }
 
-    h = OpenControlDeviceWithBrokerFallback(forceDirectIo, brokerPipeArg, &usingBroker);
+    h = OpenControlDeviceByPolicy(brokerPipeArg, &usingBroker);
     if (h == INVALID_HANDLE_VALUE)
     {
-        printf("[-] CreateFile failed (\\\\.\\Global\\SleepwalkerCtl / \\\\.\\SleepwalkerCtl): %lu\n", GetLastError());
+        err = GetLastError();
+        printf("[-] broker IPC open failed (%lu). Ensure SleepwlkrController is running.\n", err);
         return 1;
     }
-    printf("[*] Driver channel: %s\n", usingBroker ? "service-broker" : "direct");
+    printf("[*] Driver channel: service-broker\n");
 
     attach.Device = h;
     attach.StreamMask = streams;
@@ -488,7 +533,6 @@ int __cdecl main(int argc, char **argv)
         printf("[*] Launched target resumed pid=%lu\n", targetPid);
     }
 
-    liveEtw.Attach = &attach;
     SLEEPWALKEREtwSymbolsInitialize();
     symbolsInitialized = TRUE;
 
@@ -498,38 +542,36 @@ int __cdecl main(int argc, char **argv)
         {
             brokerHasEtwUplink = ((brokerCaps & SLEEPWALKER_IPC_CAP_ETW_TI_UPLINK) != 0);
         }
-        if (brokerHasEtwUplink && StartBrokerEtw(&brokerEtw, &brokerEtwThread))
+        if (etwRequested && brokerHasEtwUplink &&
+            StartBrokerEtw(&brokerEtw, &brokerEtwThread, targetPid, streams, scope))
         {
-            printf("[*] Broker mode active; ETW uplink enabled (service TI=%s).\n",
-                   brokerEtw.ThreatIntelEnabled ? "on" : "off");
-            printf("[*] Suppressing duplicate IOCTL event dump while broker ETW uplink is active.\n");
-            ioctlVerbose = FALSE;
-        }
-        else
-        {
-            printf("[WARN] Broker mode active, but ETW uplink unavailable (%lu). Falling back to local ETW session.\n",
-                   GetLastError());
-            if (!StartLiveEtw(&liveEtw, &liveEtwThread))
+            printf("[*] Broker mode active; ETW uplink enabled (service TI=%s tiEnableErr=%lu).\n",
+                   brokerEtw.ThreatIntelEnabled ? "on" : "off", brokerEtw.TiEnableError);
+            if (ioctlVerbose)
             {
-                printf("[WARN] live ETW stream unavailable: %lu (continuing with IOCTL stream only)\n", GetLastError());
+                printf("[*] IOCTL verbose output remains enabled. Use --ioctl-verbose 0 to suppress duplicate dumps.\n");
             }
             else
             {
-                printf("[*] Live ETW stream started locally (Sleepwalker provider + TI if available).\n");
-                printf("[*] Suppressing duplicate IOCTL event dump while ETW formatter is active.\n");
-                ioctlVerbose = FALSE;
+                printf("[*] IOCTL verbose output disabled; showing broker ETW uplink only.\n");
             }
         }
-    }
-    else if (!StartLiveEtw(&liveEtw, &liveEtwThread))
-    {
-        printf("[WARN] live ETW stream unavailable: %lu (continuing with IOCTL stream only)\n", GetLastError());
-    }
-    else
-    {
-        printf("[*] Live ETW stream started (Sleepwalker provider + TI if available).\n");
-        printf("[*] Suppressing duplicate IOCTL event dump while ETW formatter is active.\n");
-        ioctlVerbose = FALSE;
+        else if (etwRequested)
+        {
+            if (brokerHasEtwUplink)
+            {
+                printf("[WARN] ETW requested, but broker ETW uplink start failed (%lu). Continuing with broker IOCTL stream.\n",
+                       GetLastError());
+            }
+            else
+            {
+                printf("[WARN] ETW requested, but broker ETW uplink is unavailable in this service build.\n");
+            }
+        }
+        else
+        {
+            printf("[*] ETW uplink disabled (add ',etw' to streams to enable broker ETW output).\n");
+        }
     }
 
     while (InterlockedCompareExchange(&g_StopRequested, 0, 0) == 0)
@@ -588,17 +630,6 @@ Cleanup:
     {
         CloseHandle(brokerEtw.Device);
         brokerEtw.Device = INVALID_HANDLE_VALUE;
-    }
-    if (liveEtw.Session != NULL)
-    {
-        SLEEPWALKERSCStopEtwSession(liveEtw.Session);
-        g_StopSession = NULL;
-    }
-    if (liveEtwThread != NULL)
-    {
-        (void)WaitForSingleObject(liveEtwThread, 3000);
-        CloseHandle(liveEtwThread);
-        liveEtwThread = NULL;
     }
     SLEEPWALKERFlushEtwPrinterState();
     if (symbolsInitialized)

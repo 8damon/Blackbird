@@ -93,6 +93,14 @@ static VOID WINAPI SleepwalkerEtwRecordCallback(_In_ PEVENT_RECORD Record, _In_o
             {
                 InterlockedIncrement(&cap->DetectManualMapOrHollowingExec);
             }
+            else if (strcmp(detectionName, "KERNEL_PROCESS_HOLLOWING_MARK_CHAIN_MEDIUM") == 0)
+            {
+                InterlockedIncrement(&cap->DetectKernelHollowingMarkMedium);
+            }
+            else if (strcmp(detectionName, "KERNEL_PROCESS_HOLLOWING_MARK_CHAIN_STRONG") == 0)
+            {
+                InterlockedIncrement(&cap->DetectKernelHollowingMarkStrong);
+            }
             else if (strcmp(detectionName, "SUSPICIOUS_NTDLL_IMAGE_PATH") == 0)
             {
                 InterlockedIncrement(&cap->DetectSuspiciousNtdllPath);
@@ -192,7 +200,8 @@ static BOOL StartEtwCapture(_Out_ ETW_CAPTURE *cap)
 
     if (!cap->TiProviderEnabled)
     {
-        printf("[INFO] ETW started without TI provider (access denied or unavailable)\n");
+        printf("[INFO] ETW started without TI provider (tiEnableErr=%lu)\n",
+               SLEEPWALKERSCGetLastThreatIntelEnableError());
     }
 
     g_ActiveEtwCapture = cap;
@@ -296,6 +305,18 @@ static VOID BrokerCaptureCountEvent(_Inout_ BROKER_ETW_CAPTURE *cap, _In_ const 
     else if (wcscmp(event->EventName, L"DetectionTelemetry") == 0)
     {
         InterlockedIncrement(&cap->DetectionEvents);
+        if (strcmp(event->DetectionName, "PROCESS_HOLLOWING_MARK_CHAIN_MEDIUM") == 0)
+        {
+            InterlockedIncrement(&cap->DetectHollowingMarkMedium);
+        }
+        else if (strcmp(event->DetectionName, "PROCESS_HOLLOWING_MARK_CHAIN_STRONG") == 0)
+        {
+            InterlockedIncrement(&cap->DetectHollowingMarkStrong);
+        }
+        else if (strcmp(event->DetectionName, "PROCESS_HOLLOWING_TXF_SUSPECT_CHAIN") == 0)
+        {
+            InterlockedIncrement(&cap->DetectHollowingTxfChain);
+        }
     }
     else
     {
@@ -342,7 +363,8 @@ static DWORD WINAPI BrokerEtwConsumerThreadProc(_In_ LPVOID Context)
     return 0;
 }
 
-static BOOL StartBrokerEtwCapture(_Out_ BROKER_ETW_CAPTURE *cap)
+static BOOL StartBrokerEtwCapture(_Out_ BROKER_ETW_CAPTURE *cap, _In_reads_opt_(SeedCount) const DWORD *SeedPids,
+                                  _In_ DWORD SeedCount, _In_ DWORD StreamMask)
 {
     UINT32 capabilities = 0;
     BOOL tiEnabled = FALSE;
@@ -371,7 +393,18 @@ static BOOL StartBrokerEtwCapture(_Out_ BROKER_ETW_CAPTURE *cap)
         return FALSE;
     }
 
+    if (SeedPids != NULL && SeedCount > 0)
+    {
+        if (!SLEEPWALKERSCSetPids(cap->Device, SeedPids, SeedCount, StreamMask))
+        {
+            CloseHandle(cap->Device);
+            cap->Device = INVALID_HANDLE_VALUE;
+            return FALSE;
+        }
+    }
+
     cap->TiProviderEnabled = tiEnabled;
+    cap->TiEnableError = SLEEPWALKERSCGetBrokerThreatIntelEnableError();
     cap->StopRequested = 0;
     cap->TraceThread = CreateThread(NULL, 0, BrokerEtwConsumerThreadProc, cap, 0, NULL);
     if (cap->TraceThread == NULL)
@@ -448,4 +481,3 @@ static BOOL WaitForEtwEventCoverage(_In_ ETW_CAPTURE *cap, _In_ DWORD maxMs, _In
     }
     return FALSE;
 }
-

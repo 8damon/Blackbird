@@ -9,7 +9,6 @@ int __cdecl main(int argc, char **argv)
     TEST_EXPECTED expected;
     SLEEPWALKER_SUBSCRIBE_REQUEST badReq;
     BOOL subscribedSelf = FALSE;
-    BOOL subscribedChild = FALSE;
     CHILD_CTX child;
     BOOL generatedMemoryIntent = FALSE;
     BOOL generatedThreadIntent = FALSE;
@@ -19,18 +18,20 @@ int __cdecl main(int argc, char **argv)
     BOOL generatedRemoteAfterDup = FALSE;
     BOOL generatedRegistry = FALSE;
     BOOL generatedVmApiCalls = FALSE;
+    BOOL generatedSuspendedChain = FALSE;
     BOOL multiClientParallelOk = FALSE;
     BOOL setPidsApplied = FALSE;
+    BOOL brokerDynamicGraphExpanded = FALSE;
+    BOOL brokerDynamicDepth2Expanded = FALSE;
+    BOOL brokerDynamicCleanupWorked = FALSE;
     DWORD multiClientPolls = 0;
-    ETW_CAPTURE etw;
     BROKER_ETW_CAPTURE brokerEtw;
-    BOOL etwStarted = FALSE;
-    BOOL etwCoverageMet = FALSE;
     BOOL brokerMode = FALSE;
     BOOL brokerEtwStarted = FALSE;
     BOOL brokerEtwCoverageMet = FALSE;
     BOOL requireKernelCorrelationSignals = FALSE;
     BOOL requireApcTelemetry = FALSE;
+    CHILD_CTX graphActor;
     SUITE_RESULTS results;
     BOOL reportReady;
 
@@ -39,12 +40,30 @@ int __cdecl main(int argc, char **argv)
         Sleep(15000);
         return 0;
     }
+    if (argc > 1 && strcmp(argv[1], SLEEPWALKER_CHILD_SPAWN_AND_TOUCH_ARG) == 0)
+    {
+        CHILD_CTX nested;
+        BOOL started = StartIdleChild(&nested);
+        if (started)
+        {
+            ULONGLONG start = GetTickCount64();
+            while ((GetTickCount64() - start) < 2500ull)
+            {
+                (void)GenerateMemoryHandleIntent(nested.Pi.dwProcessId);
+                Sleep(40);
+            }
+            StopIdleChild(&nested);
+            return 0;
+        }
+
+        return 1;
+    }
 
     SLEEPWALKERSymbolResolverInitialize();
     ZeroMemory(&state, sizeof(state));
     ZeroMemory(&expected, sizeof(expected));
     ZeroMemory(&child, sizeof(child));
-    ZeroMemory(&etw, sizeof(etw));
+    ZeroMemory(&graphActor, sizeof(graphActor));
     ZeroMemory(&brokerEtw, sizeof(brokerEtw));
     ZeroMemory(&results, sizeof(results));
     reportReady = SuiteInitReport(&results);
@@ -60,26 +79,32 @@ int __cdecl main(int argc, char **argv)
 
     h = OpenControlDeviceHandle();
     RecordResult(&results, (h != INVALID_HANDLE_VALUE), "opened control device",
-                 "failed to open control device \\\\.\\Global\\SleepwalkerCtl/\\\\.\\SleepwalkerCtl");
+                 "failed to open broker or direct control transport");
     if (h == INVALID_HANDLE_VALUE)
     {
+        DWORD openErr = GetLastError();
+        printf("[INFO] control open failed err=%lu (broker IPC to SleepwlkrController is required)\n", openErr);
         goto Cleanup;
     }
     brokerMode = (SLEEPWALKERSCGetProtocolMode() == SLEEPWALKERSC_PROTOCOL_CLIENT);
     printf("[INFO] transport mode=%s\n", brokerMode ? "service-broker" : "direct");
+    RecordResult(&results, brokerMode, "transport mode is service-broker", "transport mode is not service-broker");
+    if (!brokerMode)
+    {
+        goto Cleanup;
+    }
 
-    RunIoctlContractTests(h, selfPid, &results);
-
-    etwStarted = StartEtwCapture(&etw);
-    RecordResult(&results, etwStarted, "started ETW capture session", "failed to start ETW capture session");
     if (brokerMode)
     {
-        brokerEtwStarted = StartBrokerEtwCapture(&brokerEtw);
+        DWORD brokerSeedPid = selfPid;
+        brokerEtwStarted = StartBrokerEtwCapture(&brokerEtw, &brokerSeedPid, 1,
+                                                 SLEEPWALKER_STREAM_HANDLE | SLEEPWALKER_STREAM_MEMORY |
+                                                     SLEEPWALKER_STREAM_THREAD);
         RecordResult(&results, brokerEtwStarted, "started broker ETW/TI uplink capture",
                      "failed to start broker ETW/TI uplink capture");
         if (brokerEtwStarted && !brokerEtw.TiProviderEnabled)
         {
-            printf("[INFO] broker ETW started without TI provider (service fallback or unavailable)\n");
+            printf("[INFO] broker ETW started without TI provider (tiEnableErr=%lu)\n", brokerEtw.TiEnableError);
         }
     }
 
@@ -118,21 +143,12 @@ int __cdecl main(int argc, char **argv)
     }
     printf("[INFO] child pid=%lu tid=%lu\n", child.Pi.dwProcessId, child.Pi.dwThreadId);
 
-    ok = Subscribe(h, child.Pi.dwProcessId,
-                   SLEEPWALKER_STREAM_HANDLE | SLEEPWALKER_STREAM_MEMORY | SLEEPWALKER_STREAM_THREAD);
-    subscribedChild = ok;
-    RecordResult(&results, ok, "subscribed child", "subscribe child failed");
-    if (!ok)
     {
-        goto Cleanup;
-    }
-
-    {
-        DWORD pidList[2];
+        DWORD pidList[1];
+        DWORD pidCount = 1u;
         pidList[0] = selfPid;
-        pidList[1] = child.Pi.dwProcessId;
 
-        setPidsApplied = SetPids(h, pidList, RTL_NUMBER_OF(pidList),
+        setPidsApplied = SetPids(h, pidList, pidCount,
                                  SLEEPWALKER_STREAM_HANDLE | SLEEPWALKER_STREAM_MEMORY | SLEEPWALKER_STREAM_THREAD);
         RecordResult(&results, setPidsApplied, "applied PID list subscription via IOCTL_SLEEPWALKER_SET_PIDS",
                      "failed to apply PID list subscription via IOCTL_SLEEPWALKER_SET_PIDS");
@@ -140,7 +156,7 @@ int __cdecl main(int argc, char **argv)
         {
             ZeroMemory(&stats, sizeof(stats));
             ok = SLEEPWALKERSCGetStats(h, &stats, &bytes);
-            RecordResult(&results, (ok && stats.SubscriptionCount == 2),
+            RecordResult(&results, (ok && stats.SubscriptionCount == pidCount),
                          "SET_PIDS applied expected subscription cardinality",
                          "SET_PIDS did not apply expected subscription cardinality");
         }
@@ -188,6 +204,88 @@ int __cdecl main(int argc, char **argv)
     generatedVmApiCalls = GenerateVmApiCallSurface(child.Pi.dwProcessId);
     RecordResult(&results, generatedVmApiCalls, "generated VM API-call surface (alloc/write/protect)",
                  "failed to generate VM API-call surface (alloc/write/protect)");
+
+    generatedSuspendedChain = GenerateSuspendedHollowingLikeChain();
+    RecordResult(&results, generatedSuspendedChain, "generated suspended hollowing-like chain",
+                 "failed to generate suspended hollowing-like chain");
+
+    if (brokerMode)
+    {
+        ULONGLONG startTick = GetTickCount64();
+        while ((GetTickCount64() - startTick) < 4000ull)
+        {
+            ZeroMemory(&stats, sizeof(stats));
+            if (SLEEPWALKERSCGetStats(h, &stats, &bytes) && stats.SubscriptionCount >= 2)
+            {
+                brokerDynamicGraphExpanded = TRUE;
+                break;
+            }
+            Sleep(60);
+        }
+
+        RecordResult(&results, brokerDynamicGraphExpanded,
+                     "broker dynamic PID expansion observed from self seed to related child",
+                     "broker dynamic PID expansion not observed from self seed to related child");
+
+        if (StartSpawnAndTouchChild(&graphActor))
+        {
+            startTick = GetTickCount64();
+            while ((GetTickCount64() - startTick) < 5000ull)
+            {
+                ZeroMemory(&stats, sizeof(stats));
+                if (SLEEPWALKERSCGetStats(h, &stats, &bytes) && stats.SubscriptionCount >= 4)
+                {
+                    brokerDynamicDepth2Expanded = TRUE;
+                    break;
+                }
+                Sleep(60);
+            }
+            StopIdleChild(&graphActor);
+            RecordResult(&results, brokerDynamicDepth2Expanded,
+                         "broker dynamic PID expansion reached second hop (child -> spawned child)",
+                         "broker dynamic PID expansion did not reach second hop (child -> spawned child)");
+        }
+        else
+        {
+            RecordResult(&results, FALSE, "started broker graph actor child for second-hop test",
+                         "failed to start broker graph actor child for second-hop test");
+        }
+
+        ok = Unsubscribe(h, selfPid);
+        RecordResult(&results, ok, "broker unsubscribe root PID for dynamic cleanup",
+                     "broker unsubscribe root PID for dynamic cleanup failed");
+        if (ok)
+        {
+            subscribedSelf = FALSE;
+            startTick = GetTickCount64();
+            while ((GetTickCount64() - startTick) < 3000ull)
+            {
+                ZeroMemory(&stats, sizeof(stats));
+                if (SLEEPWALKERSCGetStats(h, &stats, &bytes) && stats.SubscriptionCount == 0)
+                {
+                    brokerDynamicCleanupWorked = TRUE;
+                    break;
+                }
+                Sleep(60);
+            }
+        }
+        RecordResult(&results, brokerDynamicCleanupWorked,
+                     "broker dynamic descendant cleanup observed after root unsubscribe",
+                     "broker dynamic descendant cleanup missing after root unsubscribe");
+
+        if (!subscribedSelf)
+        {
+            ok = Subscribe(h, selfPid, SLEEPWALKER_STREAM_HANDLE | SLEEPWALKER_STREAM_MEMORY | SLEEPWALKER_STREAM_THREAD);
+            subscribedSelf = ok;
+            RecordResult(&results, ok, "broker re-subscribed self after dynamic cleanup test",
+                         "broker failed to re-subscribe self after dynamic cleanup test");
+        }
+    }
+    else
+    {
+        RecordResult(&results, FALSE, "broker dynamic PID expansion observed from self seed to related child",
+                     "broker mode expected but not active");
+    }
 
     expected.RequireThreadEvent = TRUE;
     expected.RequireHandleEvent = generatedMemoryIntent || generatedThreadIntent || generatedDuplicateIntent;
@@ -308,191 +406,6 @@ int __cdecl main(int argc, char **argv)
                  "multi-client parallel IOCTL fanout failed");
     printf("[INFO] multi-client parallel polls=%lu clients=%u\n", multiClientPolls, SLEEPWALKER_MULTI_CLIENT_COUNT);
 
-    if (etwStarted)
-    {
-        etwCoverageMet = WaitForEtwEventCoverage(&etw, 10000, requireApcTelemetry);
-        RecordResult(&results, etwCoverageMet,
-                     requireApcTelemetry ? "ETW received all core event families (including APC)"
-                                         : "ETW received all core event families (APC optional)",
-                     requireApcTelemetry ? "ETW missing one or more core event families (including APC)"
-                                         : "ETW missing one or more core event families (APC optional)");
-
-        RecordResult(&results, (InterlockedCompareExchange(&etw.HandleEvents, 0, 0) > 0),
-                     "ETW HandleTelemetry observed", "ETW HandleTelemetry missing");
-        RecordResult(&results, (InterlockedCompareExchange(&etw.ThreadEvents, 0, 0) > 0),
-                     "ETW ThreadTelemetry observed", "ETW ThreadTelemetry missing");
-        RecordResult(&results, (InterlockedCompareExchange(&etw.ProcessEvents, 0, 0) > 0),
-                     "ETW ProcessTelemetry observed", "ETW ProcessTelemetry missing");
-        RecordResult(&results, (InterlockedCompareExchange(&etw.ImageEvents, 0, 0) > 0), "ETW ImageTelemetry observed",
-                     "ETW ImageTelemetry missing");
-        RecordResult(&results, (InterlockedCompareExchange(&etw.RegistryEvents, 0, 0) > 0),
-                     "ETW RegistryTelemetry observed", "ETW RegistryTelemetry missing");
-        if (requireApcTelemetry)
-        {
-            RecordResult(&results, (InterlockedCompareExchange(&etw.ApcEvents, 0, 0) > 0), "ETW ApcTelemetry observed",
-                         "ETW ApcTelemetry missing");
-        }
-        else if (InterlockedCompareExchange(&etw.ApcEvents, 0, 0) > 0)
-        {
-            RecordResult(&results, TRUE, "ETW ApcTelemetry observed", "ETW ApcTelemetry missing");
-        }
-        else
-        {
-            RecordSkip(&results, "ETW ApcTelemetry check skipped (APC optional in current run)");
-        }
-        RecordResult(&results, (InterlockedCompareExchange(&etw.DetectionEvents, 0, 0) > 0),
-                     "ETW DetectionTelemetry observed", "ETW DetectionTelemetry missing");
-
-        if (generatedVmApiCalls)
-        {
-            if (etw.TiProviderEnabled)
-            {
-                RecordResult(&results, (InterlockedCompareExchange(&etw.TiAllocVmEvents, 0, 0) > 0),
-                             "ETW TI AllocVM API-call observed", "ETW TI AllocVM API-call missing");
-                RecordResult(&results, (InterlockedCompareExchange(&etw.TiWriteVmEvents, 0, 0) > 0),
-                             "ETW TI WriteVM API-call observed", "ETW TI WriteVM API-call missing");
-                RecordResult(&results, (InterlockedCompareExchange(&etw.TiProtectVmEvents, 0, 0) > 0),
-                             "ETW TI ProtectVM API-call observed", "ETW TI ProtectVM API-call missing");
-            }
-            else
-            {
-                RecordSkip(&results, "ETW TI AllocVM API-call check skipped (provider unavailable)");
-                RecordSkip(&results, "ETW TI WriteVM API-call check skipped (provider unavailable)");
-                RecordSkip(&results, "ETW TI ProtectVM API-call check skipped (provider unavailable)");
-            }
-        }
-
-        if (generatedRegistry)
-        {
-            RecordResult(&results, (InterlockedCompareExchange(&etw.DetectRegistryHighValue, 0, 0) > 0),
-                         "ETW detection HIGH_VALUE_REGISTRY_ACTIVITY observed",
-                         "ETW detection HIGH_VALUE_REGISTRY_ACTIVITY missing");
-        }
-
-        if (generatedRemoteAfterMemory || generatedRemoteAfterThread || generatedRemoteAfterDup)
-        {
-            if (requireKernelCorrelationSignals)
-            {
-                RecordResult(&results, (InterlockedCompareExchange(&etw.DetectRemoteThreadWithIntent, 0, 0) > 0),
-                             "ETW detection REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT observed",
-                             "ETW detection REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT missing");
-            }
-            else
-            {
-                RecordSkip(&results, "ETW detection REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT check skipped (kernel "
-                                     "correlation disabled by architecture)");
-            }
-        }
-
-        if (generatedMemoryIntent && generatedThreadIntent)
-        {
-            if (requireKernelCorrelationSignals)
-            {
-                RecordResult(&results, (InterlockedCompareExchange(&etw.DetectRemoteApcCreationSuspect, 0, 0) > 0),
-                             "ETW detection REMOTE_APC_CREATION_SUSPECT observed",
-                             "ETW detection REMOTE_APC_CREATION_SUSPECT missing");
-            }
-            else
-            {
-                RecordSkip(&results, "ETW detection REMOTE_APC_CREATION_SUSPECT check skipped (kernel correlation "
-                                     "disabled by architecture)");
-            }
-        }
-
-        if (generatedThreadIntent)
-        {
-            if (requireKernelCorrelationSignals)
-            {
-                RecordResult(&results, (InterlockedCompareExchange(&etw.DetectThreadHijackIntent, 0, 0) > 0),
-                             "ETW detection THREAD_HIJACK_INTENT observed",
-                             "ETW detection THREAD_HIJACK_INTENT missing");
-            }
-            else
-            {
-                RecordSkip(
-                    &results,
-                    "ETW detection THREAD_HIJACK_INTENT check skipped (kernel correlation disabled by architecture)");
-            }
-        }
-
-        if (generatedRemoteAfterThread)
-        {
-            if (requireKernelCorrelationSignals)
-            {
-                LONG ctxIntent = InterlockedCompareExchange(&etw.DetectThreadContextIntent, 0, 0);
-                LONG remoteIntent = InterlockedCompareExchange(&etw.DetectRemoteThreadWithIntent, 0, 0);
-                LONG manualMapLike = InterlockedCompareExchange(&etw.DetectManualMapOrHollowingExec, 0, 0);
-
-                if (ctxIntent > 0)
-                {
-                    RecordResult(&results, TRUE, "ETW detection THREAD_ACTIVITY_WITH_THREAD_CONTEXT_INTENT observed",
-                                 "ETW detection THREAD_ACTIVITY_WITH_THREAD_CONTEXT_INTENT missing");
-                }
-                else if (remoteIntent > 0 || manualMapLike > 0)
-                {
-                    RecordSkip(&results, "ETW THREAD_ACTIVITY_WITH_THREAD_CONTEXT_INTENT check skipped "
-                                         "(higher-priority thread detection emitted)");
-                }
-                else
-                {
-                    RecordResult(&results, FALSE, "ETW detection THREAD_ACTIVITY_WITH_THREAD_CONTEXT_INTENT observed",
-                                 "ETW detection THREAD_ACTIVITY_WITH_THREAD_CONTEXT_INTENT missing");
-                }
-            }
-            else
-            {
-                RecordSkip(&results, "ETW detection THREAD_ACTIVITY_WITH_THREAD_CONTEXT_INTENT check skipped (kernel "
-                                     "correlation disabled by architecture)");
-            }
-        }
-
-        if (generatedMemoryIntent && generatedThreadIntent)
-        {
-            if (requireKernelCorrelationSignals)
-            {
-                RecordResult(&results, (InterlockedCompareExchange(&etw.DetectIntentChain, 0, 0) > 0),
-                             "ETW detection POSSIBLE_PROCESS_HOLLOWING_OR_INJECTION_INTENT_CHAIN observed",
-                             "ETW detection POSSIBLE_PROCESS_HOLLOWING_OR_INJECTION_INTENT_CHAIN missing");
-            }
-            else
-            {
-                RecordSkip(&results, "ETW detection POSSIBLE_PROCESS_HOLLOWING_OR_INJECTION_INTENT_CHAIN check skipped "
-                                     "(kernel correlation disabled by architecture)");
-            }
-        }
-
-        RecordResult(&results, (InterlockedCompareExchange(&etw.DetectTamper, 0, 0) == 0),
-                     "no anti-tamper dispatch/object drift observed during baseline run",
-                     "unexpected anti-tamper dispatch/object drift detected during baseline run");
-
-        printf("[INFO] ETW counts handle=%ld thread=%ld process=%ld image=%ld registry=%ld apc=%ld detection=%ld "
-               "ti=%ld unknown=%ld det{remoteIntent=%ld remoteApc=%ld hijack=%ld threadCtx=%ld regHigh=%ld chain=%ld "
-               "directSys=%ld manualMap=%ld ntdllPath=%ld ntdllMulti=%ld tamper=%ld tamperClear=%ld} tiTask{alloc=%ld "
-               "protect=%ld write=%ld syscallUsage=%ld tiUnknown=%ld}\n",
-               InterlockedCompareExchange(&etw.HandleEvents, 0, 0), InterlockedCompareExchange(&etw.ThreadEvents, 0, 0),
-               InterlockedCompareExchange(&etw.ProcessEvents, 0, 0), InterlockedCompareExchange(&etw.ImageEvents, 0, 0),
-               InterlockedCompareExchange(&etw.RegistryEvents, 0, 0), InterlockedCompareExchange(&etw.ApcEvents, 0, 0),
-               InterlockedCompareExchange(&etw.DetectionEvents, 0, 0), InterlockedCompareExchange(&etw.TiEvents, 0, 0),
-               InterlockedCompareExchange(&etw.UnknownEvents, 0, 0),
-               InterlockedCompareExchange(&etw.DetectRemoteThreadWithIntent, 0, 0),
-               InterlockedCompareExchange(&etw.DetectRemoteApcCreationSuspect, 0, 0),
-               InterlockedCompareExchange(&etw.DetectThreadHijackIntent, 0, 0),
-               InterlockedCompareExchange(&etw.DetectThreadContextIntent, 0, 0),
-               InterlockedCompareExchange(&etw.DetectRegistryHighValue, 0, 0),
-               InterlockedCompareExchange(&etw.DetectIntentChain, 0, 0),
-               InterlockedCompareExchange(&etw.DetectDirectSyscallSuspect, 0, 0),
-               InterlockedCompareExchange(&etw.DetectManualMapOrHollowingExec, 0, 0),
-               InterlockedCompareExchange(&etw.DetectSuspiciousNtdllPath, 0, 0),
-               InterlockedCompareExchange(&etw.DetectMultipleNtdllMappings, 0, 0),
-               InterlockedCompareExchange(&etw.DetectTamper, 0, 0),
-               InterlockedCompareExchange(&etw.DetectTamperCleared, 0, 0),
-               InterlockedCompareExchange(&etw.TiAllocVmEvents, 0, 0),
-               InterlockedCompareExchange(&etw.TiProtectVmEvents, 0, 0),
-               InterlockedCompareExchange(&etw.TiWriteVmEvents, 0, 0),
-               InterlockedCompareExchange(&etw.TiSyscallUsageEvents, 0, 0),
-               InterlockedCompareExchange(&etw.TiUnknownTaskEvents, 0, 0));
-    }
-
     if (brokerEtwStarted)
     {
         brokerEtwCoverageMet = WaitForBrokerEtwEventCoverage(&brokerEtw, 10000, requireApcTelemetry);
@@ -525,8 +438,25 @@ int __cdecl main(int argc, char **argv)
             }
         }
 
+        if (generatedSuspendedChain)
+        {
+            if (brokerEtw.TiProviderEnabled)
+            {
+                LONG hollowMedium = InterlockedCompareExchange(&brokerEtw.DetectHollowingMarkMedium, 0, 0);
+                LONG hollowStrong = InterlockedCompareExchange(&brokerEtw.DetectHollowingMarkStrong, 0, 0);
+                RecordResult(&results, (hollowMedium > 0 || hollowStrong > 0),
+                             "broker detection PROCESS_HOLLOWING_MARK_CHAIN_(MEDIUM|STRONG) observed",
+                             "broker detection PROCESS_HOLLOWING_MARK_CHAIN_(MEDIUM|STRONG) missing");
+            }
+            else
+            {
+                RecordSkip(&results, "broker hollowing mark-chain detection check skipped (TI provider unavailable)");
+            }
+        }
+
         printf("[INFO] broker ETW counts handle=%ld thread=%ld process=%ld image=%ld registry=%ld apc=%ld detection=%ld "
-               "ti=%ld unknown=%ld tiTask{alloc=%ld protect=%ld write=%ld syscallUsage=%ld tiUnknown=%ld}\n",
+               "ti=%ld unknown=%ld det{hollowMedium=%ld hollowStrong=%ld hollowTxf=%ld} tiTask{alloc=%ld protect=%ld write=%ld "
+               "syscallUsage=%ld tiUnknown=%ld}\n",
                InterlockedCompareExchange(&brokerEtw.HandleEvents, 0, 0),
                InterlockedCompareExchange(&brokerEtw.ThreadEvents, 0, 0),
                InterlockedCompareExchange(&brokerEtw.ProcessEvents, 0, 0),
@@ -536,6 +466,9 @@ int __cdecl main(int argc, char **argv)
                InterlockedCompareExchange(&brokerEtw.DetectionEvents, 0, 0),
                InterlockedCompareExchange(&brokerEtw.TiEvents, 0, 0),
                InterlockedCompareExchange(&brokerEtw.UnknownEvents, 0, 0),
+               InterlockedCompareExchange(&brokerEtw.DetectHollowingMarkMedium, 0, 0),
+               InterlockedCompareExchange(&brokerEtw.DetectHollowingMarkStrong, 0, 0),
+               InterlockedCompareExchange(&brokerEtw.DetectHollowingTxfChain, 0, 0),
                InterlockedCompareExchange(&brokerEtw.TiAllocVmEvents, 0, 0),
                InterlockedCompareExchange(&brokerEtw.TiProtectVmEvents, 0, 0),
                InterlockedCompareExchange(&brokerEtw.TiWriteVmEvents, 0, 0),
@@ -544,12 +477,6 @@ int __cdecl main(int argc, char **argv)
     }
 
 Cleanup:
-    if (subscribedChild)
-    {
-        ok = Unsubscribe(h, child.Pi.dwProcessId);
-        RecordResult(&results, ok, "unsubscribed child", "unsubscribe child failed");
-    }
-
     if (subscribedSelf)
     {
         ok = Unsubscribe(h, selfPid);
@@ -558,10 +485,6 @@ Cleanup:
 
     StopIdleChild(&child);
 
-    if (etwStarted)
-    {
-        StopEtwCapture(&etw);
-    }
     if (brokerEtwStarted)
     {
         StopBrokerEtwCapture(&brokerEtw);

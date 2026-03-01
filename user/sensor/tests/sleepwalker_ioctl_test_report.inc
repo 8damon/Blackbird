@@ -873,23 +873,3 @@ static VOID RecordSkip(_Inout_ SUITE_RESULTS *Results, _In_z_ const char *SkipTe
     Results->Skipped += 1;
     SuiteRecordCheck(Results, SleepwalkerReportCheckSkip, SkipText);
 }
-
-static BOOL ErrorInList(_In_ DWORD Actual, _In_reads_(ExpectedCount) const DWORD *Expected, _In_ size_t ExpectedCount)
-{
-    size_t i;
-
-    if (Expected == NULL || ExpectedCount == 0)
-    {
-        return FALSE;
-    }
-
-    for (i = 0; i < ExpectedCount; ++i)
-    {
-        if (Actual == Expected[i])
-        {
-            return TRUE;
-        }
-    }
-    return FALSE;
-}
-

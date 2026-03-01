@@ -132,6 +132,7 @@ static DWORD WINAPI ControllerDriverPumpThreadProc(_In_ LPVOID Context)
             {
                 SLEEPWALKER_STATS_RESPONSE stats;
                 DWORD statsBytes = 0;
+                ControllerMarkDriverSubscriptionsDirty();
                 (void)ControllerApplyDriverSubscriptions();
                 driverOpenFailures = 0;
                 ZeroMemory(&stats, sizeof(stats));
@@ -157,7 +158,11 @@ static DWORD WINAPI ControllerDriverPumpThreadProc(_In_ LPVOID Context)
             Sleep(250);
             continue;
         }
+        LeaveCriticalSection(&g_DriverLock);
 
+        (void)ControllerApplyDriverSubscriptionsIfDirty();
+
+        EnterCriticalSection(&g_DriverLock);
         ok = SLEEPWALKERSCGetEvent(g_DriverHandle, &record, &bytes);
         if (!ok)
         {
@@ -192,6 +197,8 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
     ULONGLONG processId = 0;
     ULONGLONG callerPid = 0;
     ULONGLONG targetPid = 0;
+    ULONGLONG parentProcessId = 0;
+    ULONGLONG creatorProcessId = 0;
     ULONG severity = 0;
 
     UNREFERENCED_PARAMETER(Context);
@@ -253,6 +260,34 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
 
     event.PrimaryPid = processId;
     event.SecondaryPid = targetPid;
+    ControllerProcessHollowingEtwRecord(Record, EventName, &event);
+
+    if (EventName != NULL && wcscmp(EventName, L"ProcessTelemetry") == 0)
+    {
+        DWORD sourcePid32 = 0;
+        DWORD childPid32 = 0;
+
+        (void)ControllerEtwGetU64Property(Record, L"parentProcessId", &parentProcessId);
+        (void)ControllerEtwGetU64Property(Record, L"creatorProcessId", &creatorProcessId);
+        if (processId != 0 && processId <= 0xFFFFFFFFull)
+        {
+            childPid32 = (DWORD)processId;
+            if (creatorProcessId != 0 && creatorProcessId <= 0xFFFFFFFFull)
+            {
+                sourcePid32 = (DWORD)creatorProcessId;
+            }
+            else if (parentProcessId != 0 && parentProcessId <= 0xFFFFFFFFull)
+            {
+                sourcePid32 = (DWORD)parentProcessId;
+            }
+        }
+
+        if (sourcePid32 != 0 && childPid32 != 0 && sourcePid32 != childPid32)
+        {
+            ControllerExpandMonitoringGraph(sourcePid32, childPid32, SLEEPWALKER_CONTROLLER_DRIVER_STREAM_MASK);
+        }
+    }
+
     ControllerDispatchEtwEvent(&event);
 }
 
@@ -276,14 +311,18 @@ static DWORD WINAPI ControllerEtwThreadProc(_In_ LPVOID Context)
 
 static BOOL ControllerStartEtwSession(VOID)
 {
+    DWORD tiErr = ERROR_SUCCESS;
+
     ControllerCleanupStaleEtwSessions();
     (void)InterlockedExchange(&g_EtwTiEvents, 0);
     (void)InterlockedExchange(&g_EtwDetectionEvents, 0);
     g_ThreatIntelEnabled = FALSE;
+    g_ThreatIntelEnableError = ERROR_SUCCESS;
     if (!SLEEPWALKERSCStartSleepwalkerEtwSession(SLEEPWALKER_CONTROLLER_ETW_SESSION_NAMEW, TRUE, ControllerEtwCallback,
                                                  NULL, &g_EtwSession, &g_ThreatIntelEnabled))
     {
         DWORD err = GetLastError();
+        g_ThreatIntelEnableError = err;
         ControllerLog("[WARN] SleepwlkrController: failed to start ETW TI session name=%ws (%lu)\n",
                       SLEEPWALKER_CONTROLLER_ETW_SESSION_NAMEW, err);
         g_EtwSession = NULL;
@@ -301,8 +340,10 @@ static BOOL ControllerStartEtwSession(VOID)
         return FALSE;
     }
 
-    ControllerLog("[*] SleepwlkrController: ETW session started. threat-intel=%s\n",
-                  g_ThreatIntelEnabled ? "enabled" : "fallback-disabled");
+    tiErr = SLEEPWALKERSCGetLastThreatIntelEnableError();
+    g_ThreatIntelEnableError = tiErr;
+    ControllerLog("[*] SleepwlkrController: ETW session started. threat-intel=%s tiEnableErr=%lu\n",
+                  g_ThreatIntelEnabled ? "enabled" : "fallback-disabled", tiErr);
     return TRUE;
 }
 
@@ -340,6 +381,7 @@ static BOOL ControllerStartCore(VOID)
     g_LocksInitialized = TRUE;
 
     ControllerLog("[*] SleepwlkrController: core start requested\n");
+    ControllerResetHollowingState();
 
     g_StopEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
     if (g_StopEvent == NULL)
@@ -460,6 +502,8 @@ static VOID ControllerStopCore(VOID)
         CloseHandle(g_StopEvent);
         g_StopEvent = NULL;
     }
+
+    ControllerResetHollowingState();
 
     ControllerLog("[*] SleepwlkrController: core stopped\n");
 

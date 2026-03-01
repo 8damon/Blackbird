@@ -3,6 +3,248 @@ static BOOL ControllerIsValidStreamMask(_In_ DWORD StreamMask)
     return ((StreamMask & SLEEPWALKER_CONTROLLER_DRIVER_STREAM_MASK) != 0);
 }
 
+static BOOL ControllerApplyDriverSubscriptions(VOID);
+static VOID ControllerMarkDriverSubscriptionsDirty(VOID)
+{
+    (void)InterlockedExchange(&g_DriverSubscriptionsDirty, 1);
+}
+
+static BOOL ControllerApplyDriverSubscriptionsIfDirty(VOID)
+{
+    if (InterlockedCompareExchange(&g_DriverSubscriptionsDirty, 0, 1) == 1)
+    {
+        return ControllerApplyDriverSubscriptions();
+    }
+    return TRUE;
+}
+
+static LONG ControllerFindSubscriptionIndexLocked(_In_ const SLEEPWALKER_CONTROLLER_CLIENT *Client, _In_ DWORD ProcessId)
+{
+    DWORD i;
+
+    if (Client == NULL || ProcessId == 0)
+    {
+        return -1;
+    }
+
+    for (i = 0; i < Client->SubscriptionCount; ++i)
+    {
+        if (Client->Subscriptions[i].ProcessId == ProcessId)
+        {
+            return (LONG)i;
+        }
+    }
+
+    return -1;
+}
+
+static VOID ControllerRemoveSubscriptionAtLocked(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Client, _In_ DWORD Index)
+{
+    DWORD tail;
+
+    if (Client == NULL || Client->SubscriptionCount == 0 || Index >= Client->SubscriptionCount)
+    {
+        return;
+    }
+
+    tail = Client->SubscriptionCount - 1;
+    if (Index != tail)
+    {
+        Client->Subscriptions[Index] = Client->Subscriptions[tail];
+    }
+    ZeroMemory(&Client->Subscriptions[tail], sizeof(Client->Subscriptions[tail]));
+    Client->SubscriptionCount -= 1;
+}
+
+static BOOL ControllerPruneDynamicSubscriptionsLocked(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Client, _In_ ULONGLONG NowTick)
+{
+    BOOL changed = FALSE;
+    DWORD i = 0;
+
+    if (Client == NULL)
+    {
+        return FALSE;
+    }
+
+    while (i < Client->SubscriptionCount)
+    {
+        const SLEEPWALKER_CONTROLLER_SUBSCRIPTION *sub = &Client->Subscriptions[i];
+        if (sub->Dynamic &&
+            (sub->LastSeenTick == 0 ||
+             (NowTick - sub->LastSeenTick) > (ULONGLONG)SLEEPWALKER_CONTROLLER_DYNAMIC_SUBSCRIPTION_TTL_MS))
+        {
+            DWORD expiredPid = sub->ProcessId;
+            ControllerRemoveSubscriptionAtLocked(Client, i);
+            changed = TRUE;
+            ControllerLog("[MON] dynamic subscription expired clientPid=%lu targetPid=%lu\n", Client->ProcessId,
+                          expiredPid);
+            continue;
+        }
+        i += 1;
+    }
+
+    return changed;
+}
+
+static BOOL ControllerDropDynamicDescendantsLocked(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Client, _In_ DWORD RootProcessId)
+{
+    DWORD pending[SLEEPWALKER_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS];
+    DWORD pendingHead = 0;
+    DWORD pendingTail = 0;
+    BOOL changed = FALSE;
+
+    if (Client == NULL || RootProcessId == 0)
+    {
+        return FALSE;
+    }
+
+    pending[pendingTail++] = RootProcessId;
+    while (pendingHead < pendingTail)
+    {
+        DWORD current = pending[pendingHead++];
+        DWORD i = 0;
+
+        while (i < Client->SubscriptionCount)
+        {
+            const SLEEPWALKER_CONTROLLER_SUBSCRIPTION *sub = &Client->Subscriptions[i];
+            if (sub->Dynamic && sub->SourceProcessId == current)
+            {
+                DWORD removedPid = sub->ProcessId;
+                if (pendingTail < RTL_NUMBER_OF(pending) && removedPid != 0 && removedPid != current)
+                {
+                    pending[pendingTail++] = removedPid;
+                }
+                ControllerRemoveSubscriptionAtLocked(Client, i);
+                changed = TRUE;
+                ControllerLog("[MON] dynamic subscription removed clientPid=%lu targetPid=%lu sourcePid=%lu\n",
+                              Client->ProcessId, removedPid, current);
+                continue;
+            }
+            i += 1;
+        }
+    }
+
+    return changed;
+}
+
+static BOOL ControllerTryExpandClientRelationLocked(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Client, _In_ DWORD SourceProcessId,
+                                                    _In_ DWORD TargetProcessId, _In_ DWORD RelationStreamMask)
+{
+    ULONGLONG nowTick;
+    LONG sourceIndex;
+    LONG targetIndex;
+    PSLEEPWALKER_CONTROLLER_SUBSCRIPTION sourceSub;
+    BOOL changed = FALSE;
+
+    if (Client == NULL || SourceProcessId == 0 || TargetProcessId == 0 || SourceProcessId == TargetProcessId ||
+        RelationStreamMask == 0)
+    {
+        return FALSE;
+    }
+
+    nowTick = GetTickCount64();
+    changed = ControllerPruneDynamicSubscriptionsLocked(Client, nowTick);
+
+    sourceIndex = ControllerFindSubscriptionIndexLocked(Client, SourceProcessId);
+    if (sourceIndex < 0)
+    {
+        return changed;
+    }
+
+    sourceSub = &Client->Subscriptions[sourceIndex];
+    if ((sourceSub->StreamMask & RelationStreamMask) == 0)
+    {
+        return changed;
+    }
+
+    if (sourceSub->Dynamic)
+    {
+        sourceSub->LastSeenTick = nowTick;
+    }
+
+    targetIndex = ControllerFindSubscriptionIndexLocked(Client, TargetProcessId);
+    if (targetIndex >= 0)
+    {
+        PSLEEPWALKER_CONTROLLER_SUBSCRIPTION targetSub = &Client->Subscriptions[targetIndex];
+        const DWORD mergedMask = (targetSub->StreamMask | sourceSub->StreamMask);
+        if (mergedMask != targetSub->StreamMask)
+        {
+            targetSub->StreamMask = mergedMask;
+            changed = TRUE;
+        }
+
+        if (targetSub->Dynamic)
+        {
+            UINT32 candidateDepth = sourceSub->Dynamic ? (sourceSub->Depth + 1u) : 1u;
+            if (candidateDepth <= SLEEPWALKER_CONTROLLER_DYNAMIC_SUBSCRIPTION_MAX_DEPTH)
+            {
+                if (targetSub->Depth == 0 || candidateDepth < targetSub->Depth ||
+                    (candidateDepth == targetSub->Depth && targetSub->SourceProcessId != SourceProcessId))
+                {
+                    targetSub->Depth = candidateDepth;
+                    targetSub->SourceProcessId = SourceProcessId;
+                    changed = TRUE;
+                }
+            }
+            targetSub->LastSeenTick = nowTick;
+        }
+
+        return changed;
+    }
+    else
+    {
+        UINT32 targetDepth = sourceSub->Dynamic ? (sourceSub->Depth + 1u) : 1u;
+        DWORD slot;
+
+        if (targetDepth > SLEEPWALKER_CONTROLLER_DYNAMIC_SUBSCRIPTION_MAX_DEPTH ||
+            Client->SubscriptionCount >= SLEEPWALKER_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS)
+        {
+            return changed;
+        }
+
+        slot = Client->SubscriptionCount;
+        Client->Subscriptions[slot].ProcessId = TargetProcessId;
+        Client->Subscriptions[slot].StreamMask = sourceSub->StreamMask;
+        Client->Subscriptions[slot].Dynamic = TRUE;
+        Client->Subscriptions[slot].SourceProcessId = SourceProcessId;
+        Client->Subscriptions[slot].Depth = targetDepth;
+        Client->Subscriptions[slot].LastSeenTick = nowTick;
+        Client->SubscriptionCount += 1;
+        ControllerLog("[MON] dynamic subscription add clientPid=%lu sourcePid=%lu targetPid=%lu depth=%u mask=0x%08lX\n",
+                      Client->ProcessId, SourceProcessId, TargetProcessId, targetDepth, Client->Subscriptions[slot].StreamMask);
+        return TRUE;
+    }
+}
+
+static VOID ControllerExpandMonitoringGraph(_In_ DWORD SourceProcessId, _In_ DWORD TargetProcessId,
+                                            _In_ DWORD RelationStreamMask)
+{
+    PSLEEPWALKER_CONTROLLER_CLIENT client;
+    BOOL changed = FALSE;
+
+    if (SourceProcessId == 0 || TargetProcessId == 0 || SourceProcessId == TargetProcessId || RelationStreamMask == 0)
+    {
+        return;
+    }
+
+    EnterCriticalSection(&g_ClientListLock);
+    for (client = g_ClientList; client != NULL; client = client->Next)
+    {
+        EnterCriticalSection(&client->Lock);
+        if (ControllerTryExpandClientRelationLocked(client, SourceProcessId, TargetProcessId, RelationStreamMask))
+        {
+            changed = TRUE;
+        }
+        LeaveCriticalSection(&client->Lock);
+    }
+    LeaveCriticalSection(&g_ClientListLock);
+
+    if (changed)
+    {
+        (void)ControllerApplyDriverSubscriptions();
+    }
+}
+
 static BOOL ControllerRecordMatchesSubscription(_In_ const SLEEPWALKER_EVENT_RECORD *Record, _In_ DWORD ProcessId,
                                                 _In_ DWORD StreamMask)
 {
@@ -213,6 +455,7 @@ static BOOL ControllerCollectUnionPidSet(_Out_writes_(SLEEPWALKER_MAX_PID_LIST) 
 {
     PSLEEPWALKER_CONTROLLER_CLIENT client;
     DWORD outCount = 0;
+    ULONGLONG nowTick = GetTickCount64();
 
     if (ProcessIds == NULL || ProcessCount == NULL)
     {
@@ -225,6 +468,7 @@ static BOOL ControllerCollectUnionPidSet(_Out_writes_(SLEEPWALKER_MAX_PID_LIST) 
         DWORD i;
 
         EnterCriticalSection(&client->Lock);
+        (void)ControllerPruneDynamicSubscriptionsLocked(client, nowTick);
         for (i = 0; i < client->SubscriptionCount; ++i)
         {
             DWORD pid = client->Subscriptions[i].ProcessId;
@@ -277,6 +521,7 @@ static BOOL ControllerApplyDriverSubscriptions(VOID)
     if (g_DriverHandle == INVALID_HANDLE_VALUE)
     {
         SetLastError(ERROR_DEVICE_NOT_CONNECTED);
+        ControllerMarkDriverSubscriptionsDirty();
         ok = FALSE;
         goto Exit;
     }
@@ -309,6 +554,7 @@ static BOOL ControllerApplyDriverSubscriptions(VOID)
     {
         ControllerLog("[DRIVER][WARN] failed to program pid subscriptions count=%lu (%lu)\n", desiredCount,
                       GetLastError());
+        ControllerMarkDriverSubscriptionsDirty();
     }
 
 Exit:
@@ -316,9 +562,33 @@ Exit:
     LeaveCriticalSection(&g_DriverConfigLock);
     return ok;
 }
+
 static VOID ControllerDispatchDriverRecord(_In_ const SLEEPWALKER_EVENT_RECORD *Record)
 {
     PSLEEPWALKER_CONTROLLER_CLIENT client;
+    DWORD sourcePid = 0;
+    DWORD targetPid = 0;
+    DWORD relationMask = 0;
+
+    if (Record == NULL)
+    {
+        return;
+    }
+
+    if (Record->Header.Type == SleepwalkerEventTypeHandle)
+    {
+        sourcePid = (DWORD)Record->Data.Handle.CallerPid;
+        targetPid = (DWORD)Record->Data.Handle.TargetPid;
+        relationMask = SLEEPWALKER_STREAM_HANDLE;
+    }
+    else if (Record->Header.Type == SleepwalkerEventTypeThread)
+    {
+        sourcePid = (DWORD)Record->Data.Thread.CreatorPid;
+        targetPid = (DWORD)Record->Data.Thread.ProcessId;
+        relationMask = SLEEPWALKER_STREAM_THREAD;
+    }
+
+    ControllerExpandMonitoringGraph(sourcePid, targetPid, relationMask);
 
     EnterCriticalSection(&g_ClientListLock);
     for (client = g_ClientList; client != NULL; client = client->Next)
@@ -332,200 +602,3 @@ static VOID ControllerDispatchDriverRecord(_In_ const SLEEPWALKER_EVENT_RECORD *
     }
     LeaveCriticalSection(&g_ClientListLock);
 }
-
-static BOOL ControllerEtwGetPropertyRaw(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                                        _Outptr_result_bytebuffer_(*OutSize) PBYTE *OutBuffer, _Out_ ULONG *OutSize)
-{
-    TDHSTATUS status;
-    PROPERTY_DATA_DESCRIPTOR descriptor;
-
-    if (Record == NULL || Name == NULL || OutBuffer == NULL || OutSize == NULL)
-    {
-        return FALSE;
-    }
-
-    *OutBuffer = NULL;
-    *OutSize = 0;
-
-    ZeroMemory(&descriptor, sizeof(descriptor));
-    descriptor.PropertyName = (ULONGLONG)(ULONG_PTR)Name;
-    descriptor.ArrayIndex = ULONG_MAX;
-
-    status = TdhGetPropertySize(Record, 0, NULL, 1, &descriptor, OutSize);
-    if (status != ERROR_SUCCESS || *OutSize == 0)
-    {
-        return FALSE;
-    }
-
-    *OutBuffer = (PBYTE)calloc(1, *OutSize + sizeof(WCHAR));
-    if (*OutBuffer == NULL)
-    {
-        *OutSize = 0;
-        return FALSE;
-    }
-
-    status = TdhGetProperty(Record, 0, NULL, 1, &descriptor, *OutSize, *OutBuffer);
-    if (status != ERROR_SUCCESS)
-    {
-        free(*OutBuffer);
-        *OutBuffer = NULL;
-        *OutSize = 0;
-        return FALSE;
-    }
-
-    return TRUE;
-}
-
-static BOOL ControllerEtwGetU64Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ ULONGLONG *Value)
-{
-    PBYTE raw = NULL;
-    ULONG size = 0;
-
-    if (Value == NULL)
-    {
-        return FALSE;
-    }
-    *Value = 0;
-
-    if (!ControllerEtwGetPropertyRaw(Record, Name, &raw, &size))
-    {
-        return FALSE;
-    }
-
-    if (size >= sizeof(ULONGLONG))
-    {
-        *Value = *(ULONGLONG *)raw;
-        free(raw);
-        return TRUE;
-    }
-    if (size >= sizeof(ULONG))
-    {
-        *Value = *(ULONG *)raw;
-        free(raw);
-        return TRUE;
-    }
-
-    free(raw);
-    return FALSE;
-}
-
-static BOOL ControllerEtwGetU32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ ULONG *Value)
-{
-    PBYTE raw = NULL;
-    ULONG size = 0;
-
-    if (Value == NULL)
-    {
-        return FALSE;
-    }
-    *Value = 0;
-
-    if (!ControllerEtwGetPropertyRaw(Record, Name, &raw, &size))
-    {
-        return FALSE;
-    }
-    if (size >= sizeof(ULONG))
-    {
-        *Value = *(ULONG *)raw;
-        free(raw);
-        return TRUE;
-    }
-
-    free(raw);
-    return FALSE;
-}
-
-static BOOL ControllerEtwGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                                         _Out_writes_z_(OutputChars) PSTR Output, _In_ size_t OutputChars)
-{
-    PBYTE raw = NULL;
-    ULONG size = 0;
-
-    if (Output == NULL || OutputChars == 0)
-    {
-        return FALSE;
-    }
-    Output[0] = '\0';
-
-    if (!ControllerEtwGetPropertyRaw(Record, Name, &raw, &size))
-    {
-        return FALSE;
-    }
-
-    if (size > 0)
-    {
-        (void)StringCchCopyA(Output, OutputChars, (PCSTR)raw);
-        free(raw);
-        return TRUE;
-    }
-
-    free(raw);
-    return FALSE;
-}
-
-static BOOL ControllerEtwEventMatchesPid(_In_ const SLEEPWALKER_IPC_ETW_EVENT *Event, _In_ DWORD ProcessId)
-{
-    if (Event == NULL || ProcessId == 0)
-    {
-        return FALSE;
-    }
-
-    if (Event->EventProcessId == ProcessId)
-    {
-        return TRUE;
-    }
-    if (Event->PrimaryPid != 0 && Event->PrimaryPid <= 0xFFFFFFFFull && (DWORD)Event->PrimaryPid == ProcessId)
-    {
-        return TRUE;
-    }
-    if (Event->SecondaryPid != 0 && Event->SecondaryPid <= 0xFFFFFFFFull && (DWORD)Event->SecondaryPid == ProcessId)
-    {
-        return TRUE;
-    }
-
-    return FALSE;
-}
-
-static BOOL ControllerClientHasEtwMatchLocked(_In_ const SLEEPWALKER_CONTROLLER_CLIENT *Client,
-                                              _In_ const SLEEPWALKER_IPC_ETW_EVENT *Event)
-{
-    DWORD i;
-
-    if (Client == NULL || Event == NULL)
-    {
-        return FALSE;
-    }
-
-    for (i = 0; i < Client->SubscriptionCount; ++i)
-    {
-        if (ControllerEtwEventMatchesPid(Event, Client->Subscriptions[i].ProcessId))
-        {
-            return TRUE;
-        }
-    }
-
-    return FALSE;
-}
-
-static VOID ControllerDispatchEtwEvent(_In_ const SLEEPWALKER_IPC_ETW_EVENT *Event)
-{
-    PSLEEPWALKER_CONTROLLER_CLIENT client;
-
-    if (Event == NULL)
-    {
-        return;
-    }
-
-    EnterCriticalSection(&g_ClientListLock);
-    for (client = g_ClientList; client != NULL; client = client->Next)
-    {
-        EnterCriticalSection(&client->Lock);
-        if (ControllerClientHasEtwMatchLocked(client, Event))
-        {
-            (void)ControllerClientEnqueueEtwEventLocked(client, Event);
-        }
-        LeaveCriticalSection(&client->Lock);
-    }
-    LeaveCriticalSection(&g_ClientListLock);
-}
-

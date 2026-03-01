@@ -17,32 +17,30 @@ static HANDLE OpenControlDeviceHandle(void)
 {
     const char *brokerPipe = getenv("SLEEPWALKER_TEST_BROKER_PIPE");
     WCHAR brokerPipeWide[MAX_PATH];
+    HANDLE device;
 
-    if (!EnvFlagEnabled("SLEEPWALKER_TEST_DIRECT_IO", FALSE))
+    ZeroMemory(brokerPipeWide, sizeof(brokerPipeWide));
+    if (brokerPipe != NULL && brokerPipe[0] != '\0')
     {
-        ZeroMemory(brokerPipeWide, sizeof(brokerPipeWide));
-        if (brokerPipe != NULL && brokerPipe[0] != '\0')
+        if (MultiByteToWideChar(CP_UTF8, 0, brokerPipe, -1, brokerPipeWide, RTL_NUMBER_OF(brokerPipeWide)) <= 0 &&
+            MultiByteToWideChar(CP_ACP, 0, brokerPipe, -1, brokerPipeWide, RTL_NUMBER_OF(brokerPipeWide)) <= 0)
         {
-            if (MultiByteToWideChar(CP_UTF8, 0, brokerPipe, -1, brokerPipeWide, RTL_NUMBER_OF(brokerPipeWide)) <= 0 &&
-                MultiByteToWideChar(CP_ACP, 0, brokerPipe, -1, brokerPipeWide, RTL_NUMBER_OF(brokerPipeWide)) <= 0)
-            {
-                SetLastError(ERROR_INVALID_PARAMETER);
-                return INVALID_HANDLE_VALUE;
-            }
-        }
-
-        if (SLEEPWALKERSCUseClientProtocol((brokerPipe != NULL && brokerPipe[0] != '\0') ? brokerPipeWide : NULL, 1500))
-        {
-            HANDLE device = SLEEPWALKERSCOpenControlDevice();
-            if (device != INVALID_HANDLE_VALUE)
-            {
-                return device;
-            }
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return INVALID_HANDLE_VALUE;
         }
     }
 
-    SLEEPWALKERSCUseServiceProtocol();
-    return SLEEPWALKERSCOpenControlDevice();
+    if (!SLEEPWALKERSCUseClientProtocol((brokerPipe != NULL && brokerPipe[0] != '\0') ? brokerPipeWide : NULL, 1500))
+    {
+        return INVALID_HANDLE_VALUE;
+    }
+
+    device = SLEEPWALKERSCOpenControlDevice();
+    if (device == INVALID_HANDLE_VALUE)
+    {
+        return INVALID_HANDLE_VALUE;
+    }
+    return device;
 }
 
 static DWORD WINAPI MultiClientWorkerThreadProc(_In_ LPVOID Context)
@@ -271,4 +269,3 @@ static void GenerateLocalThreadEvent(void)
         CloseHandle(t);
     }
 }
-

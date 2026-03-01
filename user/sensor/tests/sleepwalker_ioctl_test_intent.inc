@@ -29,6 +29,38 @@ static BOOL StartIdleChild(CHILD_CTX *child)
     return TRUE;
 }
 
+static BOOL StartSpawnAndTouchChild(CHILD_CTX *child)
+{
+    WCHAR imagePath[MAX_PATH];
+    WCHAR cmdLine[MAX_PATH + 80];
+    STARTUPINFOW si;
+    DWORD len;
+
+    ZeroMemory(child, sizeof(*child));
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+
+    len = GetModuleFileNameW(NULL, imagePath, (DWORD)RTL_NUMBER_OF(imagePath));
+    if (len == 0 || len >= RTL_NUMBER_OF(imagePath))
+    {
+        return FALSE;
+    }
+
+    if (swprintf_s(cmdLine, RTL_NUMBER_OF(cmdLine), L"\"%ls\" %ls", imagePath, SLEEPWALKER_CHILD_SPAWN_AND_TOUCH_ARGW) <
+        0)
+    {
+        return FALSE;
+    }
+
+    if (!CreateProcessW(imagePath, cmdLine, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &child->Pi))
+    {
+        return FALSE;
+    }
+
+    child->Started = TRUE;
+    return TRUE;
+}
+
 static void StopIdleChild(CHILD_CTX *child)
 {
     DWORD waitResult;
@@ -147,6 +179,7 @@ static BOOL GenerateRemoteThreadLoadLibraryIntent(DWORD pid)
     BOOL ok = FALSE;
     SIZE_T written = 0;
     DWORD waitResult;
+    DWORD attempt = 0;
 
     localKernel32 = GetModuleHandleW(L"kernel32.dll");
     if (localKernel32 == NULL)
@@ -160,7 +193,16 @@ static BOOL GenerateRemoteThreadLoadLibraryIntent(DWORD pid)
         return FALSE;
     }
 
-    if (!FindRemoteModuleBase(pid, L"KERNEL32.DLL", &remoteKernel32))
+    for (attempt = 0; attempt < 40; ++attempt)
+    {
+        if (FindRemoteModuleBase(pid, L"KERNEL32.DLL", &remoteKernel32))
+        {
+            break;
+        }
+        Sleep(50);
+    }
+
+    if (remoteKernel32 == 0)
     {
         return FALSE;
     }
@@ -188,8 +230,16 @@ static BOOL GenerateRemoteThreadLoadLibraryIntent(DWORD pid)
         goto Exit;
     }
 
-    thread = CreateRemoteThread(process, NULL, 0, (LPTHREAD_START_ROUTINE)(ULONG_PTR)remoteStartAddress, remoteBuffer,
-                                0, NULL);
+    for (attempt = 0; attempt < 3; ++attempt)
+    {
+        thread = CreateRemoteThread(process, NULL, 0, (LPTHREAD_START_ROUTINE)(ULONG_PTR)remoteStartAddress,
+                                    remoteBuffer, 0, NULL);
+        if (thread != NULL)
+        {
+            break;
+        }
+        Sleep(40);
+    }
     if (thread == NULL)
     {
         goto Exit;
@@ -271,6 +321,86 @@ Exit:
     return ok;
 }
 
+static BOOL GenerateSuspendedHollowingLikeChain(VOID)
+{
+    WCHAR imagePath[MAX_PATH];
+    WCHAR cmdLine[MAX_PATH + 64];
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+    HANDLE process = NULL;
+    LPVOID remote = NULL;
+    BYTE payload[4096];
+    SIZE_T written = 0;
+    DWORD oldProtect = 0;
+    BOOL chainOk = FALSE;
+    BOOL resumed = FALSE;
+
+    ZeroMemory(&si, sizeof(si));
+    ZeroMemory(&pi, sizeof(pi));
+    ZeroMemory(payload, sizeof(payload));
+    si.cb = sizeof(si);
+
+    if (GetModuleFileNameW(NULL, imagePath, RTL_NUMBER_OF(imagePath)) == 0)
+    {
+        return FALSE;
+    }
+    if (swprintf_s(cmdLine, RTL_NUMBER_OF(cmdLine), L"\"%ls\" %ls", imagePath, SLEEPWALKER_CHILD_ARGW) < 0)
+    {
+        return FALSE;
+    }
+
+    if (!CreateProcessW(imagePath, cmdLine, NULL, NULL, FALSE, CREATE_NO_WINDOW | CREATE_SUSPENDED, NULL, NULL, &si,
+                        &pi))
+    {
+        return FALSE;
+    }
+
+    process = pi.hProcess;
+    remote = VirtualAllocEx(process, NULL, 0x20000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (remote != NULL)
+    {
+        for (DWORD i = 0; i < (DWORD)sizeof(payload); ++i)
+        {
+            payload[i] = (BYTE)(0xA5u ^ i);
+        }
+
+        if (WriteProcessMemory(process, remote, payload, sizeof(payload), &written) && written == sizeof(payload))
+        {
+            if (VirtualProtectEx(process, remote, 0x20000, PAGE_EXECUTE_READ, &oldProtect))
+            {
+                CONTEXT ctx;
+                ZeroMemory(&ctx, sizeof(ctx));
+                ctx.ContextFlags = CONTEXT_CONTROL;
+                if (GetThreadContext(pi.hThread, &ctx))
+                {
+                    (void)SetThreadContext(pi.hThread, &ctx);
+                }
+                chainOk = TRUE;
+            }
+        }
+    }
+
+    if (ResumeThread(pi.hThread) != (DWORD)-1)
+    {
+        resumed = TRUE;
+    }
+
+    if (resumed)
+    {
+        (void)WaitForSingleObject(process, 400);
+    }
+    (void)TerminateProcess(process, 0);
+    (void)WaitForSingleObject(process, 1500);
+
+    if (remote != NULL)
+    {
+        (void)VirtualFreeEx(process, remote, 0, MEM_RELEASE);
+    }
+    CloseHandle(pi.hThread);
+    CloseHandle(process);
+    return chainOk;
+}
+
 static BOOL GenerateRegistryHighValueActivity(void)
 {
     HKEY key = NULL;
@@ -295,4 +425,3 @@ static BOOL GenerateRegistryHighValueActivity(void)
 
     return (status == ERROR_SUCCESS);
 }
-

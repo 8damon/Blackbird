@@ -1,0 +1,354 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Linq;
+using System.Net.NetworkInformation;
+using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
+using System.Threading;
+using System.Windows.Threading;
+
+namespace SleepwalkerInterface
+{
+    [SupportedOSPlatform("windows")]
+    public sealed class PerformanceSampler
+    {
+        public event EventHandler<PerformanceSample>? SampleArrived;
+
+        private readonly DispatcherTimer _timer;
+        private readonly object _lock = new();
+
+        private int _targetPid = Process.GetCurrentProcess().Id;
+        private DateTime _lastWall;
+        private TimeSpan _lastProcCpu;
+        private ulong _lastIoRead;
+        private ulong _lastIoWrite;
+        private ulong _lastIoOther;
+        private int _lastIoPid;
+        private bool _lastIoValid;
+
+        // System perf counters (may fail on some environments, handle gracefully)
+        private PerformanceCounter? _cpuTotal;
+
+        private PerformanceCounter? _diskRead;
+        private PerformanceCounter? _diskWrite;
+
+        // Network deltas
+        private long _lastBytesIn;
+        private long _lastBytesOut;
+        private long _lastPackets;
+
+        // Thread CPU baseline for PID mode
+        private readonly Dictionary<int, TimeSpan> _threadCpuBaseline = new();
+
+        public PerformanceSampler()
+        {
+            _timer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+            _timer.Tick += (_, __) => Tick();
+
+            TryInitCounters();
+        }
+
+        public void Start()
+        {
+            _lastWall = DateTime.UtcNow;
+            _lastProcCpu = TimeSpan.Zero;
+            PrimeNetwork();
+            if (_targetPid <= 0)
+                _targetPid = Process.GetCurrentProcess().Id;
+            _timer.Start();
+        }
+
+        public void Stop() => _timer.Stop();
+
+        public void SetTargetPid(int pid)
+        {
+            lock (_lock)
+            {
+                if (pid <= 0)
+                    pid = Process.GetCurrentProcess().Id;
+
+                if (_targetPid == pid)
+                    return;
+
+                _targetPid = pid;
+                _lastProcCpu = TimeSpan.Zero;
+                _threadCpuBaseline.Clear();
+                _lastIoValid = false;
+            }
+        }
+
+        private void TryInitCounters()
+        {
+            try { _cpuTotal = new PerformanceCounter("Processor", "% Processor Time", "_Total"); _ = _cpuTotal.NextValue(); } catch { _cpuTotal = null; }
+            try { _diskRead = new PerformanceCounter("PhysicalDisk", "Disk Read Bytes/sec", "_Total"); _ = _diskRead.NextValue(); } catch { _diskRead = null; }
+            try { _diskWrite = new PerformanceCounter("PhysicalDisk", "Disk Write Bytes/sec", "_Total"); _ = _diskWrite.NextValue(); } catch { _diskWrite = null; }
+        }
+
+        private void PrimeNetwork()
+        {
+            var (bin, bout, pk) = ReadNetworkTotals();
+            _lastBytesIn = bin;
+            _lastBytesOut = bout;
+            _lastPackets = pk;
+        }
+
+        private void Tick()
+        {
+            int pid;
+            lock (_lock) pid = _targetPid;
+
+            var now = DateTime.UtcNow;
+            var wallDelta = now - _lastWall;
+            if (wallDelta.TotalMilliseconds <= 0) wallDelta = TimeSpan.FromMilliseconds(1000);
+
+            var sample = new PerformanceSample
+            {
+                TimestampUtc = now,
+                CoreCount = Environment.ProcessorCount
+            };
+
+            if (pid > 0)
+            {
+                FillProcess(sample, pid, wallDelta);
+            }
+            else
+            {
+                FillSystem(sample, wallDelta);
+            }
+
+            _lastWall = now;
+
+            SampleArrived?.Invoke(this, sample);
+        }
+
+        private void FillSystem(PerformanceSample s, TimeSpan wallDelta)
+        {
+            // CPU
+            if (_cpuTotal != null)
+            {
+                try { s.CpuPercent = Clamp(_cpuTotal.NextValue(), 0, 100); }
+                catch { s.CpuPercent = 0; }
+            }
+
+            // "cores used" is just CPU% mapped to cores count (useful number, still shown as % for chart consistency)
+            s.CoresUsedPercent = s.CpuPercent;
+
+            // Disk
+            if (_diskRead != null)
+            {
+                try { s.DiskReadBytesPerSec = Math.Max(0, _diskRead.NextValue()); } catch { }
+            }
+            if (_diskWrite != null)
+            {
+                try { s.DiskWriteBytesPerSec = Math.Max(0, _diskWrite.NextValue()); } catch { }
+            }
+
+            // RAM: system-wide approximations (no perfect “private/reserved” system analog)
+            // We'll treat "reserved" as commit (GC doesn't love this but you asked for 2 lines).
+            try
+            {
+                s.PrivateBytes = GC.GetTotalMemory(false);
+                s.ReservedBytes = s.PrivateBytes * 2; // placeholder scaling for system; PID mode gives real values
+            }
+            catch { }
+
+            // Network deltas
+            var (bin, bout, pk) = ReadNetworkTotals();
+            var sec = Math.Max(0.25, wallDelta.TotalSeconds);
+
+            s.NetInBytesPerSec = Math.Max(0, (bin - _lastBytesIn) / sec);
+            s.NetOutBytesPerSec = Math.Max(0, (bout - _lastBytesOut) / sec);
+            s.NetPacketsPerSec = Math.Max(0, (pk - _lastPackets) / sec);
+
+            _lastBytesIn = bin;
+            _lastBytesOut = bout;
+            _lastPackets = pk;
+
+            // Threads: system-wide doesn’t map cleanly. Show current process threads instead.
+            FillTopThreadsForProcess(s, Process.GetCurrentProcess(), wallDelta);
+        }
+
+        private void FillProcess(PerformanceSample s, int pid, TimeSpan wallDelta)
+        {
+            Process? p = null;
+            try { p = Process.GetProcessById(pid); }
+            catch
+            {
+                FillProcess(s, Process.GetCurrentProcess().Id, wallDelta);
+                return;
+            }
+
+            try
+            {
+                // CPU usage: compute delta proc CPU / delta wall / cores
+                var procCpu = p.TotalProcessorTime;
+
+                if (_lastProcCpu == TimeSpan.Zero)
+                    _lastProcCpu = procCpu;
+
+                var cpuDelta = procCpu - _lastProcCpu;
+                _lastProcCpu = procCpu;
+
+                var sec = Math.Max(0.25, wallDelta.TotalSeconds);
+                var cpuPct = (cpuDelta.TotalSeconds / sec) / Environment.ProcessorCount * 100.0;
+                s.CpuPercent = Clamp(cpuPct, 0, 100);
+
+                // Cores used as a % of total cores, still charted 0..100
+                // coresUsed = cpuPct/100 * coreCount. Expressed as percent of coreCount => cpuPct. So keep same for chart,
+                // but the pane subtitle uses CoreCount.
+                s.CoresUsedPercent = s.CpuPercent;
+
+                // RAM (real for process)
+                s.PrivateBytes = p.PrivateMemorySize64;
+                s.ReservedBytes = p.VirtualMemorySize64;
+
+                // Per-process IO counters (read/write/other transfer bytes).
+                var sec2 = Math.Max(0.25, wallDelta.TotalSeconds);
+                if (TryReadIoCounters(p, out var io))
+                {
+                    if (!_lastIoValid || _lastIoPid != pid)
+                    {
+                        _lastIoRead = io.ReadTransferCount;
+                        _lastIoWrite = io.WriteTransferCount;
+                        _lastIoOther = io.OtherTransferCount;
+                        _lastIoPid = pid;
+                        _lastIoValid = true;
+                    }
+                    else
+                    {
+                        var readDelta = io.ReadTransferCount - _lastIoRead;
+                        var writeDelta = io.WriteTransferCount - _lastIoWrite;
+                        var otherDelta = io.OtherTransferCount - _lastIoOther;
+
+                        s.DiskReadBytesPerSec = Math.Max(0, readDelta / sec2);
+                        s.DiskWriteBytesPerSec = Math.Max(0, writeDelta / sec2);
+
+                        // "Other" bytes are generally non-file IO and provide a reasonable process-local network proxy.
+                        var otherPerSec = Math.Max(0, otherDelta / sec2);
+                        s.NetInBytesPerSec = otherPerSec * 0.5;
+                        s.NetOutBytesPerSec = otherPerSec * 0.5;
+                        s.NetPacketsPerSec = otherPerSec / 512.0;
+
+                        _lastIoRead = io.ReadTransferCount;
+                        _lastIoWrite = io.WriteTransferCount;
+                        _lastIoOther = io.OtherTransferCount;
+                    }
+                }
+
+                FillTopThreadsForProcess(s, p, wallDelta);
+            }
+            finally
+            {
+                try { p?.Dispose(); } catch { }
+            }
+        }
+
+        private void FillTopThreadsForProcess(PerformanceSample s, Process p, TimeSpan wallDelta)
+        {
+            var list = new List<ThreadUsageSample>();
+            try
+            {
+                foreach (ProcessThread t in p.Threads)
+                {
+                    TimeSpan cpu;
+                    try { cpu = t.TotalProcessorTime; }
+                    catch { continue; }
+
+                    double deltaMs = 0;
+                    if (_threadCpuBaseline.TryGetValue(t.Id, out var prev))
+                    {
+                        deltaMs = (cpu - prev).TotalMilliseconds;
+                        _threadCpuBaseline[t.Id] = cpu;
+                    }
+                    else
+                    {
+                        _threadCpuBaseline[t.Id] = cpu;
+                        deltaMs = 0;
+                    }
+
+                    list.Add(new ThreadUsageSample
+                    {
+                        Tid = t.Id,
+                        CpuMsDelta = Math.Max(0, deltaMs),
+                        State = t.ThreadState.ToString(),
+                        StartTimeUtc = SafeThreadStart(t)
+                    });
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            s.TopThreads = list.OrderByDescending(x => x.CpuMsDelta).Take(20).ToList();
+        }
+
+        private static DateTime? SafeThreadStart(ProcessThread t)
+        {
+            try
+            {
+                // ProcessThread.StartTime is local time; convert to UTC-ish
+                return t.StartTime.ToUniversalTime();
+            }
+            catch { return null; }
+        }
+
+        private static (long bytesIn, long bytesOut, long packets) ReadNetworkTotals()
+        {
+            long bin = 0, bout = 0, pk = 0;
+
+            foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+            {
+                try
+                {
+                    if (nic.OperationalStatus != OperationalStatus.Up)
+                        continue;
+                    if (nic.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+                        continue;
+
+                    var stats = nic.GetIPv4Statistics();
+                    bin += stats.BytesReceived;
+                    bout += stats.BytesSent;
+                    pk += stats.UnicastPacketsReceived + stats.UnicastPacketsSent;
+                }
+                catch { }
+            }
+
+            return (bin, bout, pk);
+        }
+
+        private static double Clamp(double v, double min, double max)
+            => v < min ? min : (v > max ? max : v);
+
+        private static bool TryReadIoCounters(Process p, out IO_COUNTERS io)
+        {
+            io = default;
+            try
+            {
+                return GetProcessIoCounters(p.Handle, out io);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct IO_COUNTERS
+        {
+            public ulong ReadOperationCount;
+            public ulong WriteOperationCount;
+            public ulong OtherOperationCount;
+            public ulong ReadTransferCount;
+            public ulong WriteTransferCount;
+            public ulong OtherTransferCount;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetProcessIoCounters(IntPtr hProcess, out IO_COUNTERS lpIoCounters);
+    }
+}

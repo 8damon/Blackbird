@@ -1,0 +1,38 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+
+    <AssemblyName>SleepwalkerInterface</AssemblyName>
+    <Product>SleepwalkerInterface</Product>
+
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RestoreIgnoreFailedSources>true</RestoreIgnoreFailedSources>
+    <NuGetAudit>false</NuGetAudit>
+    <ApplicationIcon>rs\SW_APPICO.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishSelfContained>true</PublishSelfContained>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <UseAppHost>true</UseAppHost>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="rs\SW_APPICO.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Properties\" />
+  </ItemGroup>
+
+</Project>

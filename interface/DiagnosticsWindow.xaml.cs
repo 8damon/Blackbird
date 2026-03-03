@@ -1,0 +1,69 @@
+using System;
+using System.Windows;
+using System.Windows.Threading;
+
+namespace SleepwalkerInterface
+{
+    public partial class DiagnosticsWindow : Window
+    {
+        private readonly int _targetPid;
+        private readonly DispatcherTimer _stateTimer;
+
+        public DiagnosticsWindow(int pid)
+        {
+            InitializeComponent();
+            WindowThemeHelper.ApplyDarkTitleBar(this);
+
+            _targetPid = pid > 0 ? pid : Environment.ProcessId;
+            TargetBlock.Text = $"PID {_targetPid}";
+            LoadSnapshot();
+            RefreshState();
+
+            _stateTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+            _stateTimer.Tick += (_, __) => RefreshState();
+            _stateTimer.Start();
+
+            OutputCapture.LineReceived += OutputCapture_LineReceived;
+            Closed += (_, __) =>
+            {
+                OutputCapture.LineReceived -= OutputCapture_LineReceived;
+                _stateTimer.Stop();
+            };
+        }
+
+        private void LoadSnapshot()
+        {
+            var lines = OutputCapture.Snapshot();
+            OutputBox.Text = string.Join(Environment.NewLine, lines);
+            OutputBox.ScrollToEnd();
+        }
+
+        private void RefreshState()
+        {
+            StateBox.Text = string.Join(Environment.NewLine, DiagnosticsState.SnapshotLines());
+            StateBox.ScrollToHome();
+        }
+
+        private void OutputCapture_LineReceived(string line)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                if (OutputBox.LineCount > 5000)
+                    OutputBox.Clear();
+
+                if (OutputBox.Text.Length > 0)
+                    OutputBox.AppendText(Environment.NewLine);
+                OutputBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {line}");
+                OutputBox.ScrollToEnd();
+            });
+        }
+
+        private void Clear_Click(object sender, RoutedEventArgs e) => OutputBox.Clear();
+        private void RefreshState_Click(object sender, RoutedEventArgs e) => RefreshState();
+
+        private void Close_Click(object sender, RoutedEventArgs e) => Close();
+    }
+}

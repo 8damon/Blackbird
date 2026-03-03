@@ -1,0 +1,124 @@
+<UserControl x:Class="SleepwalkerInterface.HeuristicsPane"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource WinPanelBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Background="{DynamicResource HeuristicsHeaderBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       Margin="10,0,8,0"
+                       VerticalAlignment="Center"
+                       FontWeight="SemiBold"
+                       FontSize="12"
+                       Text="Heuristics"/>
+
+            <TextBlock x:Name="SummaryBlock"
+                       Grid.Column="1"
+                       Margin="0,0,8,0"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource WinMutedTextBrush}"
+                       Text="No detections yet"/>
+
+            <Button Grid.Column="2"
+                    x:Name="HeurBtnReorder"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="⇅"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Reorder ETW/Heuristics panes"
+                    Click="HeurBtnReorder_Click"/>
+            <Button Grid.Column="3"
+                    x:Name="HeurBtnFloat"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="⧉"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Float / re-dock pane"
+                    Click="HeurBtnFloat_Click"/>
+            <Button Grid.Column="4"
+                    x:Name="HeurBtnClose"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="✕"
+                    Width="22"
+                    Height="22"
+                    Margin="4,4,6,4"
+                    ToolTip="Hide pane"
+                    Click="HeurBtnClose_Click"/>
+        </Grid>
+
+        <Border Grid.Row="1"
+                Margin="8,8,8,0"
+                Padding="8,6"
+                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                BorderThickness="1"
+                Background="{DynamicResource WinPanelBrush}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="20"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="20"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="20"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" x:Name="CountLowBlock" Text="Low: 0"/>
+                <TextBlock Grid.Column="2" x:Name="CountMediumBlock" Text="Medium: 0"/>
+                <TextBlock Grid.Column="4" x:Name="CountHighBlock" Text="High: 0"/>
+                <TextBlock Grid.Column="6" x:Name="CountCriticalBlock" Text="Critical: 0"/>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2"
+                Margin="8,8,8,8"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="1">
+            <Grid>
+                <DataGrid x:Name="HeuristicsGrid"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserResizeRows="False"
+                          ColumnHeaderHeight="24"
+                          RowHeight="22">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Timestamp" Width="120" Binding="{Binding TimestampUtc, StringFormat=HH:mm:ss.fff}"/>
+                        <DataGridTextColumn Header="Severity" Width="70" Binding="{Binding Severity}"/>
+                        <DataGridTextColumn Header="Detection" Width="260" Binding="{Binding DetectionName}"/>
+                        <DataGridTextColumn Header="Actor" Width="75" Binding="{Binding ActorPid}"/>
+                        <DataGridTextColumn Header="Target" Width="75" Binding="{Binding TargetPid}"/>
+                        <DataGridTextColumn Header="Source" Width="120" Binding="{Binding Source}"/>
+                        <DataGridTextColumn Header="Event" Width="180" Binding="{Binding EventName}"/>
+                        <DataGridTextColumn Header="Details" Width="*" Binding="{Binding Details}"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <Border x:Name="HeuristicsNoDataOverlay"
+                        Background="{DynamicResource NoDataOverlayBrush}"
+                        IsHitTestVisible="False"
+                        Visibility="Collapsed">
+                    <TextBlock Text="NO DATA"
+                               FontSize="40"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource WinTextBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Opacity="0.72"/>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

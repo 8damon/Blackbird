@@ -1,0 +1,365 @@
+<Window x:Class="SleepwalkerInterface.ProcessPickerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Process Filter"
+        Height="760"
+        Width="1360"
+        MinHeight="620"
+        MinWidth="1080"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource WinBgBrush}">
+
+    <Window.Resources>
+        <Style x:Key="ProcessRowStyle"
+               TargetType="DataGridRow"
+               BasedOn="{StaticResource {x:Type DataGridRow}}">
+            <Setter Property="Background" Value="{Binding RowBackground}"/>
+            <Setter Property="BorderBrush" Value="{Binding RowBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{Binding RowForeground}"/>
+        </Style>
+
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#FF121212"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#FFD8D8D8"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#334C8FD2"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFF1F5FF"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#FF1C1C1C"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#FFD8D8D8"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#FF141414"/>
+        <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="#FFD8D8D8"/>
+
+        <Style x:Key="PickerComboToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="ToggleRoot"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ToggleRoot" Property="BorderBrush" Value="#FF3E3E3E"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="ToggleRoot" Property="BorderBrush" Value="{DynamicResource WinAccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PickerComboStyle"
+               TargetType="ComboBox"
+               BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Background" Value="#FF121212"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid SnapsToDevicePixels="True">
+                            <ToggleButton x:Name="DropDownToggle"
+                                          Style="{DynamicResource PickerComboToggleStyle}"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="1"
+                                          Focusable="False"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                          ClickMode="Press">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="20"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ContentPresenter Grid.Column="0"
+                                                      Margin="6,0,2,0"
+                                                      VerticalAlignment="Center"
+                                                      HorizontalAlignment="Left"
+                                                      Content="{TemplateBinding SelectionBoxItem}"
+                                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"/>
+                                    <Path Grid.Column="1"
+                                          Width="8"
+                                          Height="5"
+                                          Stretch="Fill"
+                                          Fill="{DynamicResource WinMutedTextBrush}"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Data="M 0 0 L 8 0 L 4 5 Z"/>
+                                </Grid>
+                            </ToggleButton>
+
+                            <Popup x:Name="PART_Popup"
+                                   Placement="Bottom"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   PopupAnimation="Fade">
+                                <Border Background="#FF121212"
+                                        BorderBrush="{DynamicResource WinBorderBrush}"
+                                        BorderThickness="1"
+                                        SnapsToDevicePixels="True"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
+                                    <ScrollViewer CanContentScroll="True"
+                                                  SnapsToDevicePixels="True"
+                                                  Background="#FF121212">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="DropDownToggle" Property="BorderBrush" Value="#FF3E3E3E"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="DropDownToggle" Property="BorderBrush" Value="{DynamicResource WinAccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PickerComboItemStyle"
+               TargetType="ComboBoxItem"
+               BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+            <Setter Property="Background" Value="#FF121212"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="6,2"/>
+            <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter Property="Background" Value="#FF2A2A2A"/>
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#334C8FD2"/>
+                    <Setter Property="Foreground" Value="#FFF1F5FF"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="146"/>
+            <RowDefinition Height="8"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0"
+                   Text="Display entries matching these conditions:"
+                   FontWeight="SemiBold"
+                   Margin="2,0,0,8"/>
+
+        <Grid Grid.Row="1" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220"/>
+                <ColumnDefinition Width="130"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="40"/>
+                <ColumnDefinition Width="120"/>
+            </Grid.ColumnDefinitions>
+
+            <ComboBox x:Name="FilterColumnBox" Grid.Column="0" SelectedIndex="0"
+                      Style="{DynamicResource PickerComboStyle}"
+                      ItemContainerStyle="{DynamicResource PickerComboItemStyle}">
+                <ComboBoxItem Content="Architecture"/>
+                <ComboBoxItem Content="Process Name"/>
+                <ComboBoxItem Content="App Name"/>
+                <ComboBoxItem Content="Company"/>
+                <ComboBoxItem Content="File Name"/>
+                <ComboBoxItem Content="PID"/>
+                <ComboBoxItem Content="CPU %"/>
+                <ComboBoxItem Content="Integrity"/>
+                <ComboBoxItem Content="Signed"/>
+                <ComboBoxItem Content="Sandbox"/>
+                <ComboBoxItem Content="Relation"/>
+                <ComboBoxItem Content="Parent"/>
+                <ComboBoxItem Content="Path"/>
+            </ComboBox>
+
+            <ComboBox x:Name="FilterRelationBox" Grid.Column="1" SelectedIndex="0"
+                      Style="{DynamicResource PickerComboStyle}"
+                      ItemContainerStyle="{DynamicResource PickerComboItemStyle}">
+                <ComboBoxItem Content="is"/>
+                <ComboBoxItem Content="contains"/>
+                <ComboBoxItem Content="begins with"/>
+                <ComboBoxItem Content="ends with"/>
+                <ComboBoxItem Content="greater than"/>
+                <ComboBoxItem Content="less than"/>
+            </ComboBox>
+
+            <TextBox x:Name="FilterValueBox"
+                     Grid.Column="2"
+                     Margin="4,0"
+                     VerticalContentAlignment="Center"
+                     KeyDown="FilterValueBox_KeyDown"/>
+
+            <TextBlock Grid.Column="3"
+                       Text="then"
+                       VerticalAlignment="Center"
+                       HorizontalAlignment="Center"
+                       Foreground="{DynamicResource WinMutedTextBrush}"/>
+
+            <ComboBox x:Name="FilterActionBox" Grid.Column="4" SelectedIndex="0"
+                      Style="{StaticResource PickerComboStyle}"
+                      ItemContainerStyle="{StaticResource PickerComboItemStyle}">
+                <ComboBoxItem Content="Include"/>
+                <ComboBoxItem Content="Exclude"/>
+            </ComboBox>
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="280"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="120"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Button Grid.Column="0" Content="Reset" Width="90" Click="ResetRules_Click"/>
+            <Button Grid.Column="1" Content="Add" Width="90" Margin="8,0,0,0" Click="AddRule_Click"/>
+            <Button Grid.Column="2" Content="Up" Width="64" Margin="8,0,0,0" Click="MoveRuleUp_Click"/>
+            <Button Grid.Column="3" Content="Down" Width="64" Margin="8,0,0,0" Click="MoveRuleDown_Click"/>
+
+            <TextBlock Grid.Column="5"
+                       Text="Quick search:"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource WinMutedTextBrush}"
+                       Margin="0,0,8,0"/>
+            <TextBox Grid.Column="6"
+                     x:Name="QuickSearchBox"
+                     TextChanged="QuickSearchBox_TextChanged"/>
+
+            <TextBlock Grid.Column="7"
+                       Text="Refresh:"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource WinMutedTextBrush}"
+                       Margin="12,0,6,0"/>
+            <ComboBox Grid.Column="8"
+                      x:Name="RefreshIntervalBox"
+                      Style="{DynamicResource PickerComboStyle}"
+                      ItemContainerStyle="{DynamicResource PickerComboItemStyle}"
+                      SelectionChanged="RefreshIntervalBox_SelectionChanged">
+                <ComboBoxItem Content="1s"/>
+                <ComboBoxItem Content="2s" IsSelected="True"/>
+                <ComboBoxItem Content="5s"/>
+            </ComboBox>
+
+            <Button Grid.Column="9"
+                    Content="Refresh Now"
+                    Margin="8,0,0,0"
+                    Click="Refresh_Click"/>
+            <Button Grid.Column="10"
+                    Content="Remove"
+                    Width="90"
+                    Margin="8,0,0,0"
+                    Click="RemoveRule_Click"/>
+        </Grid>
+
+        <DataGrid Grid.Row="3"
+                  x:Name="RulesGrid"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  SelectionMode="Single"
+                  ColumnHeaderHeight="24"
+                  RowHeight="22"
+                  CanUserResizeRows="False"
+                  CanUserAddRows="False"
+                  CanUserDeleteRows="False"
+                  CanUserReorderColumns="True"
+                  CanUserResizeColumns="True"
+                  CurrentCellChanged="RulesGrid_CurrentCellChanged">
+            <DataGrid.Columns>
+                <DataGridTemplateColumn Header="" Width="34">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"
+                                      Click="RuleEnabled_Click"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Column" Binding="{Binding Column}" Width="190" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Relation" Binding="{Binding Relation}" Width="130" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*" IsReadOnly="True"/>
+                <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="100" IsReadOnly="True"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <DataGrid Grid.Row="5"
+                  x:Name="ProcessGrid"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  SelectionMode="Single"
+                  ColumnHeaderHeight="24"
+                  RowHeight="22"
+                  CanUserResizeRows="False"
+                  CanUserReorderColumns="True"
+                  CanUserResizeColumns="True"
+                  RowStyle="{DynamicResource ProcessRowStyle}"
+                  MouseDoubleClick="ProcessGrid_MouseDoubleClick">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Process" Binding="{Binding Name}" Width="140"/>
+                <DataGridTextColumn Header="App" Binding="{Binding AppName}" Width="140"/>
+                <DataGridTextColumn Header="Company" Binding="{Binding Company}" Width="140"/>
+                <DataGridTextColumn Header="File Name" Binding="{Binding FileName}" Width="150"/>
+                <DataGridTextColumn Header="Arch" Binding="{Binding Architecture}" Width="74"/>
+                <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="70"/>
+                <DataGridTextColumn Header="CPU %" Binding="{Binding CpuPercent}" Width="65"/>
+                <DataGridTextColumn Header="Integrity" Binding="{Binding IntegrityLevel}" Width="90"/>
+                <DataGridTextColumn Header="Signed" Binding="{Binding SignedStatus}" Width="66"/>
+                <DataGridTextColumn Header="Sandbox" Binding="{Binding SandboxStatus}" Width="88"/>
+                <DataGridTextColumn Header="Relation" Binding="{Binding Relation}" Width="70"/>
+                <DataGridTextColumn Header="Parent" Binding="{Binding ParentName}" Width="145"/>
+                <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <DockPanel Grid.Row="6" Margin="0,8,0,0" LastChildFill="False">
+            <TextBlock x:Name="ResultCountBlock"
+                       DockPanel.Dock="Left"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource WinMutedTextBrush}"/>
+            <Button Content="Open .exe..."
+                    DockPanel.Dock="Left"
+                    Margin="12,0,0,0"
+                    Click="OpenExe_Click"/>
+            <Button Content="Cancel"
+                    DockPanel.Dock="Right"
+                    Click="Cancel_Click"/>
+            <Button Content="Use Selected"
+                    DockPanel.Dock="Right"
+                    Margin="0,0,8,0"
+                    Click="Select_Click"/>
+        </DockPanel>
+    </Grid>
+</Window>

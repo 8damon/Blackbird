@@ -1,0 +1,277 @@
+<UserControl x:Class="SleepwalkerInterface.PerformancePane"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:SleepwalkerInterface"
+             Background="{DynamicResource WinPanelBrush}">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0"
+              Background="{DynamicResource PerformanceHeaderBrush}"
+              MouseLeftButtonDown="Header_MouseLeftButtonDown"
+              MouseMove="Header_MouseMove"
+              MouseLeftButtonUp="Header_MouseLeftButtonUp">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="4"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Background="{DynamicResource PerformanceHeaderAccentBrush}"/>
+
+            <TextBlock Grid.Column="1"
+                       Text="Performance"
+                       Margin="8,0,10,0"
+                       FontWeight="SemiBold"
+                       FontSize="12"
+                       VerticalAlignment="Center"/>
+
+            <TextBlock x:Name="PerfSubTitle"
+                       Grid.Column="2"
+                       HorizontalAlignment="Left"
+                       Margin="0,0,8,0"
+                       Foreground="{DynamicResource WinMutedTextBrush}"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"/>
+
+            <Button Grid.Column="3"
+                    x:Name="PerfBtnReorder"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="⇅"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Reorder panes"
+                    Click="PerfBtnReorder_Click"/>
+            <Button Grid.Column="4"
+                    x:Name="PerfBtnFloat"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="⧉"
+                    Width="22"
+                    Height="22"
+                    Click="PerfBtnFloat_Click"/>
+            <Button Grid.Column="5"
+                    x:Name="PerfBtnClose"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="✕"
+                    Width="22"
+                    Height="22"
+                    Margin="4,4,6,4"
+                    Click="PerfBtnClose_Click"/>
+        </Grid>
+
+        <!-- Body -->
+        <Grid Grid.Row="1" Margin="8">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="2*" MinHeight="190"/>
+                <RowDefinition Height="2"/>
+                <RowDefinition Height="*" MinHeight="150"/>
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" ClipToBounds="True" Margin="0,0,0,2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <local:PerformanceChartControl x:Name="CpuChart" Grid.Column="0" Title="CPU (0–100%)" Margin="0,0,6,0"/>
+                <local:PerformanceChartControl x:Name="DiskChart" Grid.Column="1" Title="Disk IO" Margin="0,0,6,0"/>
+                <local:PerformanceChartControl x:Name="RamChart" Grid.Column="2" Title="RAM" Margin="0,0,6,0"/>
+                <local:PerformanceChartControl x:Name="NetChart" Grid.Column="3" Title="Network"/>
+            </Grid>
+
+            <GridSplitter Grid.Row="1"
+                          Height="2"
+                          Background="{DynamicResource WinSubtleBorderBrush}"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"/>
+
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="540"/>
+                    <ColumnDefinition Width="2"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Top threads -->
+                <Border Grid.Column="0"
+                        Background="{DynamicResource WinPanelBrush}"
+                        BorderBrush="{DynamicResource WinBorderBrush}"
+                        BorderThickness="1"
+                        Padding="8"
+                        ClipToBounds="True"
+                        Margin="0,0,0,0">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <DockPanel Grid.Row="0" LastChildFill="False">
+                            <TextBlock Text="Top Threads (Current process)" FontWeight="SemiBold"/>
+                            <TextBlock Text="Double-click to inspect stack"
+                                       Margin="10,0,0,0"
+                                       Foreground="{DynamicResource WinMutedTextBrush}"/>
+                        </DockPanel>
+
+                        <DataGrid Grid.Row="1" x:Name="ThreadsGrid"
+                                  AutoGenerateColumns="False"
+                                  HeadersVisibility="Column"
+                                  IsReadOnly="True"
+                                  Margin="0,6,0,0"
+                                  ColumnHeaderHeight="24"
+                                  RowHeight="22"
+                                  CanUserResizeRows="False"
+                                  MouseDoubleClick="ThreadsGrid_MouseDoubleClick">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="TID" Binding="{Binding Tid}" Width="70"/>
+                                <DataGridTextColumn Header="CPU ms" Binding="{Binding CpuMs}" Width="90"/>
+                                <DataGridTextColumn Header="State" Binding="{Binding State}" Width="100"/>
+                                <DataGridTextColumn Header="Start" Binding="{Binding StartTime}" Width="95"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </Border>
+
+                <GridSplitter Grid.Column="1"
+                              Width="2"
+                              Background="{DynamicResource WinSubtleBorderBrush}"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch"/>
+
+                <Border Grid.Column="2"
+                        Background="{DynamicResource WinPanelBrush}"
+                        BorderBrush="{DynamicResource WinBorderBrush}"
+                        BorderThickness="1"
+                        Padding="8">
+                    <Grid x:Name="ProcessDetailsLayout" SizeChanged="ProcessDetailsLayout_SizeChanged">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition x:Name="ModulesColumn" Width="3*"/>
+                            <ColumnDefinition x:Name="DetailsSplitterColumn" Width="2"/>
+                            <ColumnDefinition x:Name="MemoryColumn" Width="2*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="0"/>
+                            <RowDefinition Height="0"/>
+                        </Grid.RowDefinitions>
+
+                        <Border x:Name="ModulesPanel"
+                                Grid.Row="0"
+                                Grid.Column="0"
+                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                BorderThickness="0,0,1,0"
+                                Padding="0,0,6,0">
+                            <TabControl>
+                                <TabItem Header="Modules">
+                                    <DataGrid x:Name="ModulesGrid"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="22"
+                                              MouseDoubleClick="ModulesGrid_MouseDoubleClick">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Module" Binding="{Binding Name}" Width="170"/>
+                                            <DataGridTextColumn Header="Base" Binding="{Binding BaseAddress}" Width="130"/>
+                                            <DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="85"/>
+                                            <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="*"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+
+                                <TabItem Header="PE">
+                                    <DataGrid x:Name="PeInfoGrid"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="22">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Field" Binding="{Binding Field}" Width="220"/>
+                                            <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                            </TabControl>
+                        </Border>
+
+                        <GridSplitter x:Name="DetailsSplitter"
+                                      Grid.Row="0"
+                                      Grid.Column="1"
+                                      Width="2"
+                                      Background="{DynamicResource WinSubtleBorderBrush}"
+                                      HorizontalAlignment="Stretch"
+                                      VerticalAlignment="Stretch"/>
+
+                        <Border x:Name="MemoryPanel"
+                                Grid.Row="0"
+                                Grid.Column="2"
+                                Padding="6,0,0,0">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+
+                                <DockPanel Grid.Row="0" Margin="0,0,0,6" LastChildFill="False">
+                                    <TextBlock Text="Memory"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center"/>
+                                    <ToggleButton x:Name="MemoryViewToggle"
+                                                  Margin="8,0,0,0"
+                                                  Padding="8,2"
+                                                  VerticalAlignment="Center"
+                                                  Checked="MemoryViewToggle_Checked"
+                                                  Unchecked="MemoryViewToggle_Unchecked"
+                                                  Content="Treemap"/>
+                                </DockPanel>
+
+                                <Grid Grid.Row="1">
+                                    <DataGrid x:Name="MemoryGrid"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="22">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Metric" Binding="{Binding Metric}" Width="220"/>
+                                            <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+
+                                    <Grid x:Name="MemoryTreemapHost"
+                                          Visibility="Collapsed">
+                                        <Border BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                BorderThickness="1"
+                                                Background="{DynamicResource WinPanelBrush}">
+                                            <Canvas x:Name="MemoryTreemapCanvas"/>
+                                        </Border>
+
+                                        <TextBlock x:Name="MemoryTreemapNoData"
+                                                   Text="NO DATA"
+                                                   FontSize="28"
+                                                   FontWeight="Bold"
+                                                   Foreground="{DynamicResource WinMutedTextBrush}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="Collapsed"/>
+                                    </Grid>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

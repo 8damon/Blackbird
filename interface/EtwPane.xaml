@@ -1,0 +1,195 @@
+<UserControl x:Class="SleepwalkerInterface.EtwPane"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource WinPanelBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="2"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Background="{DynamicResource EtwHeaderBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       Margin="10,0,8,0"
+                       VerticalAlignment="Center"
+                       FontWeight="SemiBold"
+                       FontSize="12"
+                       Text="Sleepwalker ETW / ETW-TI"/>
+
+            <TextBlock x:Name="SummaryBlock"
+                       Grid.Column="1"
+                       Margin="0,0,8,0"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource WinMutedTextBrush}"
+                       Text="No ETW events yet"/>
+
+            <Button Grid.Column="2"
+                    x:Name="EtwBtnReorder"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="⇅"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Reorder ETW/Heuristics panes"
+                    Click="EtwBtnReorder_Click"/>
+            <Button Grid.Column="3"
+                    x:Name="EtwBtnFloat"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="⧉"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Float / re-dock pane"
+                    Click="EtwBtnFloat_Click"/>
+            <Button Grid.Column="4"
+                    x:Name="EtwBtnClose"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="✕"
+                    Width="22"
+                    Height="22"
+                    Margin="4,4,6,4"
+                    ToolTip="Hide pane"
+                    Click="EtwBtnClose_Click"/>
+        </Grid>
+
+        <Border Grid.Row="1"
+                x:Name="SleepwalkerSectionBorder"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="1"
+                Margin="8,8,8,4">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Background="{DynamicResource EtwFeedHeaderBrush}" Padding="8,6,8,4">
+                    <TextBlock FontWeight="SemiBold" Text="Sleepwalker ETW Feed"/>
+                </Border>
+
+                <DataGrid Grid.Row="1"
+                          x:Name="SleepwalkerGrid"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserResizeRows="False"
+                          ColumnHeaderHeight="24"
+                          RowHeight="22"
+                          Margin="0,0,0,0">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Timestamp" Width="120" Binding="{Binding TimestampUtc, StringFormat=HH:mm:ss.fff}"/>
+                        <DataGridTextColumn Header="Event" Width="160" Binding="{Binding EventName}"/>
+                        <DataGridTextColumn Header="Actor" Width="75" Binding="{Binding ActorPid}"/>
+                        <DataGridTextColumn Header="Target" Width="75" Binding="{Binding TargetPid}"/>
+                        <DataGridTextColumn Header="Severity" Width="70" Binding="{Binding Severity}"/>
+                        <DataGridTextColumn Header="Detection" Width="220" Binding="{Binding DetectionName}"/>
+                        <DataGridTextColumn Header="Details" Width="*" Binding="{Binding Details}"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <Border x:Name="SleepwalkerNoDataOverlay"
+                        Grid.RowSpan="2"
+                        Background="{DynamicResource NoDataOverlayBrush}"
+                        IsHitTestVisible="False"
+                        Visibility="Collapsed">
+                    <TextBlock Text="NO DATA"
+                               FontSize="40"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource WinTextBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Opacity="0.72"/>
+                </Border>
+            </Grid>
+        </Border>
+
+        <GridSplitter Grid.Row="2"
+                      x:Name="SectionSplitter"
+                      Height="2"
+                      Background="{DynamicResource WinSubtleBorderBrush}"
+                      HorizontalAlignment="Stretch"
+                      VerticalAlignment="Stretch"/>
+
+        <Border Grid.Row="3"
+                x:Name="TiSectionBorder"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="1"
+                Margin="8,4,8,8">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0" Background="{DynamicResource EtwTiHeaderBrush}" Padding="8,6,8,4">
+                    <TextBlock FontWeight="SemiBold" Text="ETW-TI Task Graph"/>
+                </Border>
+
+                <ItemsControl Grid.Row="1" x:Name="TaskBars" Margin="8,0,8,8">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="58"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="40"/>
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Grid.Column="0" Text="{Binding Label}" VerticalAlignment="Center"/>
+                                <ProgressBar Grid.Column="1"
+                                             Height="14"
+                                             Maximum="{Binding MaxCount}"
+                                             Value="{Binding Count}"/>
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding Count}"
+                                           HorizontalAlignment="Right"
+                                           VerticalAlignment="Center"
+                                           Margin="6,0,0,0"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <DataGrid Grid.Row="2"
+                          x:Name="TiGrid"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserResizeRows="False"
+                          ColumnHeaderHeight="24"
+                          RowHeight="22">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Timestamp" Width="120" Binding="{Binding TimestampUtc, StringFormat=HH:mm:ss.fff}"/>
+                        <DataGridTextColumn Header="Event" Width="160" Binding="{Binding EventName}"/>
+                        <DataGridTextColumn Header="Task" Width="58" Binding="{Binding Task}"/>
+                        <DataGridTextColumn Header="Op" Width="55" Binding="{Binding Opcode}"/>
+                        <DataGridTextColumn Header="Actor" Width="75" Binding="{Binding ActorPid}"/>
+                        <DataGridTextColumn Header="Target" Width="75" Binding="{Binding TargetPid}"/>
+                        <DataGridTextColumn Header="Details" Width="*" Binding="{Binding Details}"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <Border x:Name="TiNoDataOverlay"
+                        Grid.RowSpan="3"
+                        Background="{DynamicResource NoDataOverlayBrush}"
+                        IsHitTestVisible="False"
+                        Visibility="Collapsed">
+                    <TextBlock Text="NO DATA"
+                               FontSize="40"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource WinTextBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Opacity="0.72"/>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

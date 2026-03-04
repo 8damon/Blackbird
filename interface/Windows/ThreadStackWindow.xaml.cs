@@ -96,14 +96,9 @@ namespace SleepwalkerInterface
 
             double w = StackMapCanvas.ActualWidth;
             double h = StackMapCanvas.ActualHeight;
-            double x0 = 26;
-            double x1 = Math.Max(x0 + 20, w - 10);
-            ulong range = result.StackBase - result.StackTop;
-            if (range == 0)
-            {
-                StackMapNoDataOverlay.Visibility = Visibility.Visible;
-                return;
-            }
+            double xContext = 10;
+            double x0 = 28;
+            double x1 = Math.Max(x0 + 20, w - 8);
 
             var framePointers = Frames
                 .Select(f => f.FramePointerRaw)
@@ -124,6 +119,7 @@ namespace SleepwalkerInterface
             Brush textBrush = ResolveBrush("WinMutedTextBrush", Color.FromRgb(0x9A, 0x9A, 0x9A));
             Brush zoomBrush = ResolveBrush("ExplorerOverlayBrush", Color.FromArgb(0x88, 0x18, 0x18, 0x18));
             Brush zoomBorderBrush = ResolveBrush("WinBorderBrush", Color.FromRgb(0x42, 0x42, 0x42));
+            Brush contextBrush = ResolveBrush("WinBorderBrush", Color.FromRgb(0x48, 0x48, 0x48));
 
             static double MapInRange(ulong topAddress, ulong bottomAddress, ulong value, double yTop, double yBottom)
             {
@@ -138,25 +134,37 @@ namespace SleepwalkerInterface
                 return yTop + (t * (yBottom - yTop));
             }
 
-            StackMapCanvas.Children.Add(new Rectangle
-            {
-                Width = x1 - x0,
-                Height = h,
-                Stroke = laneBrush,
-                StrokeThickness = 1
-            });
-            Canvas.SetLeft(StackMapCanvas.Children[^1], x0);
-            Canvas.SetTop(StackMapCanvas.Children[^1], 0);
-
             ulong usedHigh = framePointers[0];
             ulong usedLow = framePointers[framePointers.Count - 1];
             if (result.StackPointer >= result.StackTop && result.StackPointer <= result.StackBase)
             {
-                if (result.StackPointer > usedHigh) usedHigh = result.StackPointer;
-                if (result.StackPointer < usedLow) usedLow = result.StackPointer;
+                if (result.StackPointer > usedHigh)
+                {
+                    usedHigh = result.StackPointer;
+                }
+
+                if (result.StackPointer < usedLow)
+                {
+                    usedLow = result.StackPointer;
+                }
             }
 
-            ulong pad = Math.Min((ulong)0x400, Math.Max((ulong)0x80, (usedHigh - usedLow) / 3));
+            ulong totalRange = result.StackBase - result.StackTop;
+            if (totalRange == 0)
+            {
+                StackMapNoDataOverlay.Visibility = Visibility.Visible;
+                return;
+            }
+
+            ulong usedRange = (usedHigh > usedLow) ? (usedHigh - usedLow) : 1;
+            ulong padCandidate = usedRange / 2;
+            if (padCandidate < 0x80)
+            {
+                padCandidate = 0x80;
+            }
+
+            ulong maxPad = totalRange / 4;
+            ulong pad = (padCandidate < maxPad) ? padCandidate : maxPad;
             if (usedHigh + pad < result.StackBase)
             {
                 usedHigh += pad;
@@ -175,13 +183,37 @@ namespace SleepwalkerInterface
                 usedLow = result.StackTop;
             }
 
-            double zoomYTop = MapInRange(result.StackBase, result.StackTop, usedHigh, 0, h);
-            double zoomYBottom = MapInRange(result.StackBase, result.StackTop, usedLow, 0, h);
-            if (zoomYBottom < zoomYTop + 20)
+            // Full stack context rail (absolute memory range).
+            StackMapCanvas.Children.Add(new Line
             {
-                double center = (zoomYTop + zoomYBottom) * 0.5;
-                zoomYTop = Math.Max(0, center - 10);
-                zoomYBottom = Math.Min(h, center + 10);
+                X1 = xContext,
+                X2 = xContext,
+                Y1 = 4,
+                Y2 = h - 4,
+                Stroke = contextBrush,
+                StrokeThickness = 1
+            });
+
+            double contextWinTop = MapInRange(result.StackBase, result.StackTop, usedHigh, 4, h - 4);
+            double contextWinBottom = MapInRange(result.StackBase, result.StackTop, usedLow, 4, h - 4);
+            StackMapCanvas.Children.Add(new Rectangle
+            {
+                Width = 6,
+                Height = Math.Max(2, contextWinBottom - contextWinTop),
+                Fill = zoomBrush,
+                Stroke = zoomBorderBrush,
+                StrokeThickness = 1
+            });
+            Canvas.SetLeft(StackMapCanvas.Children[^1], xContext - 3);
+            Canvas.SetTop(StackMapCanvas.Children[^1], contextWinTop);
+
+            // Active-window lane where frame pointers are expanded for readability.
+            double zoomYTop = 8;
+            double zoomYBottom = h - 8;
+            if (zoomYBottom <= zoomYTop)
+            {
+                StackMapNoDataOverlay.Visibility = Visibility.Visible;
+                return;
             }
 
             StackMapCanvas.Children.Add(new Rectangle
@@ -195,13 +227,60 @@ namespace SleepwalkerInterface
             Canvas.SetLeft(StackMapCanvas.Children[^1], x0);
             Canvas.SetTop(StackMapCanvas.Children[^1], zoomYTop);
 
-            double lastLabelY = double.NegativeInfinity;
-            const double minLabelGap = 12.0;
+            var yExact = framePointers
+                .Select(fp => Math.Max(zoomYTop, Math.Min(zoomYBottom, MapInRange(usedHigh, usedLow, fp, zoomYTop, zoomYBottom))))
+                .ToArray();
+            var yRendered = yExact.ToArray();
+
+            const double minGap = 10.0;
+            for (int i = 1; i < yRendered.Length; i += 1)
+            {
+                yRendered[i] = Math.Max(yRendered[i], yRendered[i - 1] + minGap);
+            }
+            for (int i = yRendered.Length - 2; i >= 0; i -= 1)
+            {
+                yRendered[i] = Math.Min(yRendered[i], yRendered[i + 1] - minGap);
+            }
+
+            if (yRendered.Length > 0)
+            {
+                if (yRendered[^1] > zoomYBottom)
+                {
+                    double shiftDown = yRendered[^1] - zoomYBottom;
+                    for (int i = 0; i < yRendered.Length; i += 1)
+                    {
+                        yRendered[i] -= shiftDown;
+                    }
+                }
+                if (yRendered[0] < zoomYTop)
+                {
+                    double shiftUp = zoomYTop - yRendered[0];
+                    for (int i = 0; i < yRendered.Length; i += 1)
+                    {
+                        yRendered[i] += shiftUp;
+                    }
+                }
+            }
+
             for (int i = 0; i < framePointers.Count; i += 1)
             {
                 ulong fp = framePointers[i];
-                double y = MapInRange(usedHigh, usedLow, fp, zoomYTop, zoomYBottom);
-                y = Math.Max(1, Math.Min(h - 1, y));
+                double y = Math.Max(1, Math.Min(h - 1, yRendered[i]));
+                double ye = Math.Max(1, Math.Min(h - 1, yExact[i]));
+
+                if (Math.Abs(y - ye) > 1.5)
+                {
+                    StackMapCanvas.Children.Add(new Line
+                    {
+                        X1 = x1 - 12,
+                        X2 = x1 - 2,
+                        Y1 = ye,
+                        Y2 = y,
+                        Stroke = laneBrush,
+                        StrokeThickness = 0.8,
+                        Opacity = 0.65
+                    });
+                }
 
                 StackMapCanvas.Children.Add(new Line
                 {
@@ -214,18 +293,14 @@ namespace SleepwalkerInterface
                     Opacity = 0.7
                 });
 
-                if ((y - lastLabelY) >= minLabelGap)
+                StackMapCanvas.Children.Add(new TextBlock
                 {
-                    StackMapCanvas.Children.Add(new TextBlock
-                    {
-                        Text = $"0x{fp:X}",
-                        FontSize = 10,
-                        Foreground = textBrush
-                    });
-                    Canvas.SetLeft(StackMapCanvas.Children[^1], x0 + 4);
-                    Canvas.SetTop(StackMapCanvas.Children[^1], Math.Max(0, y - 7));
-                    lastLabelY = y;
-                }
+                    Text = $"0x{fp:X}",
+                    FontSize = 10,
+                    Foreground = textBrush
+                });
+                Canvas.SetLeft(StackMapCanvas.Children[^1], x0 + 4);
+                Canvas.SetTop(StackMapCanvas.Children[^1], Math.Max(0, y - 7));
             }
 
             if (result.StackPointer >= result.StackTop && result.StackPointer <= result.StackBase)
@@ -251,6 +326,17 @@ namespace SleepwalkerInterface
                 });
                 Canvas.SetLeft(StackMapCanvas.Children[^1], 2);
                 Canvas.SetTop(StackMapCanvas.Children[^1], Math.Max(0, rspY - 8));
+
+                double rspContextY = MapInRange(result.StackBase, result.StackTop, result.StackPointer, 4, h - 4);
+                StackMapCanvas.Children.Add(new Ellipse
+                {
+                    Width = 5,
+                    Height = 5,
+                    Fill = rspBrush,
+                    Stroke = rspBrush
+                });
+                Canvas.SetLeft(StackMapCanvas.Children[^1], xContext - 2.5);
+                Canvas.SetTop(StackMapCanvas.Children[^1], rspContextY - 2.5);
             }
         }
 

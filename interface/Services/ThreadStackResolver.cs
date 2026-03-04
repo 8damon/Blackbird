@@ -36,7 +36,7 @@ namespace SleepwalkerInterface
         public static ThreadStackResolveResult Resolve(int pid, int tid, string state)
         {
             if (!Environment.Is64BitProcess)
-                return new ThreadStackResolveResult(new List<StackFrameRow>(), "", 0, 0, 0, null);
+                return new ThreadStackResolveResult(new List<StackFrameRow>(), "", 0, 0, 0, null, 0);
 
             if (tid == GetCurrentThreadId())
                 return ResolveCurrentThreadManaged(pid, tid, state);
@@ -57,7 +57,7 @@ namespace SleepwalkerInterface
 
                 hThread = OpenThread(THREAD_QUERY_INFORMATION | THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, false, (uint)tid);
                 if (hThread == IntPtr.Zero)
-                    return new ThreadStackResolveResult(new List<StackFrameRow>(), "", 0, 0, 0, null);
+                    return new ThreadStackResolveResult(new List<StackFrameRow>(), "", 0, 0, 0, null, 0);
 
                 TryReadThreadMetadata(hProcess, hThread, out ulong tebAddress, out ulong stackBase, out ulong stackTop, out ushort? tebFlags);
 
@@ -80,15 +80,15 @@ namespace SleepwalkerInterface
                 };
 
                 if (!GetThreadContext(hThread, ref context))
-                    return new ThreadStackResolveResult(new List<StackFrameRow>(), "", tebAddress, stackBase, stackTop, tebFlags);
+                    return new ThreadStackResolveResult(new List<StackFrameRow>(), "", tebAddress, stackBase, stackTop, tebFlags, 0);
 
                 var moduleRanges = BuildModuleRanges(pid);
                 var frames = WalkFrames(hProcess, hThread, ref context, moduleRanges, symbolsReady);
-                return new ThreadStackResolveResult(frames, "", tebAddress, stackBase, stackTop, tebFlags);
+                return new ThreadStackResolveResult(frames, "", tebAddress, stackBase, stackTop, tebFlags, context.Rsp);
             }
             catch
             {
-                return new ThreadStackResolveResult(new List<StackFrameRow>(), "", 0, 0, 0, null);
+                return new ThreadStackResolveResult(new List<StackFrameRow>(), "", 0, 0, 0, null, 0);
             }
             finally
             {
@@ -129,7 +129,7 @@ namespace SleepwalkerInterface
                 });
             }
 
-            return new ThreadStackResolveResult(frames, "", 0, 0, 0, null);
+            return new ThreadStackResolveResult(frames, "", 0, 0, 0, null, 0);
         }
 
         private static void TryReadThreadMetadata(
@@ -228,7 +228,9 @@ namespace SleepwalkerInterface
                     Index = rows.Count,
                     Address = $"0x{addr:X}",
                     Module = module,
-                    Symbol = symbol
+                    Symbol = symbol,
+                    InstructionPointerRaw = addr,
+                    FramePointerRaw = frame.AddrFrame.Offset
                 });
             }
 
@@ -609,6 +611,7 @@ namespace SleepwalkerInterface
         public ulong StackBase { get; }
         public ulong StackTop { get; }
         public ushort? TebFlags { get; }
+        public ulong StackPointer { get; }
 
         public ThreadStackResolveResult(
             IReadOnlyList<StackFrameRow> frames,
@@ -616,7 +619,8 @@ namespace SleepwalkerInterface
             ulong tebAddress,
             ulong stackBase,
             ulong stackTop,
-            ushort? tebFlags)
+            ushort? tebFlags,
+            ulong stackPointer)
         {
             Frames = frames;
             Note = note;
@@ -624,6 +628,7 @@ namespace SleepwalkerInterface
             StackBase = stackBase;
             StackTop = stackTop;
             TebFlags = tebFlags;
+            StackPointer = stackPointer;
         }
     }
 }

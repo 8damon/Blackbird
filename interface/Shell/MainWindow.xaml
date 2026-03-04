@@ -103,6 +103,28 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="CommandBarButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="{DynamicResource CommandBarButtonBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource WinSubtleBorderBrush}"/>
+        </Style>
+
+        <Style x:Key="StatusLinkButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="4,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinMutedTextBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Margin="{TemplateBinding Padding}"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid x:Name="RootGrid" Background="{DynamicResource WinBgBrush}">
@@ -114,7 +136,7 @@
 
         <!-- Command bar -->
         <Border Grid.Row="0"
-                Background="{DynamicResource WinHeaderBrush}"
+                Background="{DynamicResource CommandBarBackgroundBrush}"
                 BorderBrush="{DynamicResource WinBorderBrush}"
                 BorderThickness="0,0,0,1"
                 Padding="10,8">
@@ -127,18 +149,14 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="PID"
-                               Margin="0,0,6,0"
-                               Foreground="{DynamicResource WinMutedTextBrush}"
-                               VerticalAlignment="Center"/>
-                    <TextBox Width="110" x:Name="PidBox" Margin="0,0,6,0"/>
-                    <Button Content="Find Process" Click="FindProcess_Click"/>
-                    <Button Content="Connect" Click="Connect_Click"/>
-                    <Button Content="Launch" Click="Launch_Click"/>
-                    <Button Content="Preflight" Click="Preflight_Click"/>
-                    <Button Content="Driver Start" Click="DriverStart_Click"/>
-                    <Button Content="Driver Stop" Click="DriverStop_Click"/>
-                    <Button Content="Controller Restart" Click="ControllerRestart_Click"/>
+                    <TextBox x:Name="PidBox" Visibility="Collapsed"/>
+                    <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Select Target" Click="FindProcess_Click"/>
+                    <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Connect" Click="Connect_Click"/>
+                    <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Launch" Click="Launch_Click"/>
+                    <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Preflight" Click="Preflight_Click"/>
+                    <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Driver Start" Click="DriverStart_Click"/>
+                    <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Driver Stop" Click="DriverStop_Click"/>
+                    <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Controller Restart" Click="ControllerRestart_Click"/>
                 </StackPanel>
 
                 <Border Grid.Column="1"
@@ -166,7 +184,7 @@
                                Text="Status: Disconnected"
                                Margin="0,0,18,0"
                                VerticalAlignment="Center"
-                               Foreground="{DynamicResource WinMutedTextBrush}"/>
+                               Visibility="Collapsed"/>
                     <TextBlock x:Name="RangeBlock"
                                Text="Range:"
                                VerticalAlignment="Center"
@@ -218,7 +236,7 @@
                             <DataTemplate>
                                 <Border BorderBrush="{Binding AccentBrush}"
                                         BorderThickness="1"
-                                        Height="84"
+                                        Height="96"
                                         Background="{DynamicResource WinPanelBrush}">
                                     <Grid>
                                         <Grid.Style>
@@ -260,12 +278,35 @@
                                                        FontWeight="SemiBold"
                                                        FontSize="12"/>
                                         </Border>
+
+                                        <Border x:Name="DetailsBadge"
+                                                Margin="6,0,6,6"
+                                                VerticalAlignment="Bottom"
+                                                Background="{DynamicResource ExplorerOverlayBrush}"
+                                                Padding="6,3"
+                                                Visibility="Collapsed">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding DetailPrimary}"
+                                                           FontSize="10"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding DetailSecondary}"
+                                                           FontSize="10"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                            </StackPanel>
+                                        </Border>
                                     </Grid>
                                 </Border>
 
                                 <DataTemplate.Triggers>
                                     <DataTrigger Binding="{Binding HasData}" Value="False">
                                         <Setter TargetName="NoDataBadge" Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding ShowDetails}" Value="True">
+                                        <Setter TargetName="DetailsBadge" Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsEnabled}" Value="False">
+                                        <Setter TargetName="DetailsBadge" Property="Visibility" Value="Collapsed"/>
                                     </DataTrigger>
                                 </DataTemplate.Triggers>
                             </DataTemplate>
@@ -283,12 +324,33 @@
             <!-- Docked panes + process tabs -->
             <Grid Grid.Column="2" Margin="2,0,0,0">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="IpcUplinkColumn" Width="0"/>
+                    <ColumnDefinition x:Name="IpcUplinkSplitterColumn" Width="0"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition x:Name="IntelligenceSplitterColumn" Width="2"/>
                     <ColumnDefinition x:Name="IntelligenceColumn" Width="430"/>
                 </Grid.ColumnDefinitions>
 
-                <Grid Grid.Column="0">
+                <Border Grid.Column="0"
+                        x:Name="IpcUplinkDockBorder"
+                        BorderBrush="{DynamicResource WinBorderBrush}"
+                        BorderThickness="1"
+                        MinWidth="360"
+                        Margin="0,0,3,0"
+                        Background="{DynamicResource WinPanelBrush}"
+                        Visibility="Collapsed">
+                    <local:IpcUplinkPane x:Name="IpcUplinkPaneHost"/>
+                </Border>
+
+                <GridSplitter Grid.Column="1"
+                              x:Name="IpcUplinkSplitter"
+                              Width="2"
+                              Background="{DynamicResource WinSubtleBorderBrush}"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch"
+                              Visibility="Collapsed"/>
+
+                <Grid Grid.Column="2">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="34"/>
                         <RowDefinition Height="*"/>
@@ -430,14 +492,14 @@
                     </Grid>
                 </Grid>
 
-                <GridSplitter Grid.Column="1"
+                <GridSplitter Grid.Column="3"
                               x:Name="IntelligenceSplitter"
                               Width="2"
                               Background="{DynamicResource WinSubtleBorderBrush}"
                               HorizontalAlignment="Stretch"
                               VerticalAlignment="Stretch"/>
 
-                <Grid Grid.Column="2" x:Name="IntelligenceDock">
+                <Grid Grid.Column="4" x:Name="IntelligenceDock">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="2"/>
@@ -473,21 +535,41 @@
 
         <!-- Status bar -->
         <Border Grid.Row="2"
+                x:Name="BottomStatusBar"
                 Background="{DynamicResource WinHeaderBrush}"
                 BorderBrush="{DynamicResource WinBorderBrush}"
                 BorderThickness="0,1,0,0">
-            <DockPanel Margin="8,0">
-                <TextBlock DockPanel.Dock="Left"
-                           Text="Ready"
-                           Foreground="{DynamicResource WinMutedTextBrush}"
-                           VerticalAlignment="Center"/>
-                <Button DockPanel.Dock="Right"
-                        Content="Diagnostics"
-                        Click="Diagnostics_Click"/>
-                <Button DockPanel.Dock="Right"
-                        Content="Reset Dock"
-                        Click="ResetDock_Click"/>
-            </DockPanel>
+            <Grid Margin="8,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="1"
+                        x:Name="BottomStatusButton"
+                        Style="{DynamicResource StatusLinkButtonStyle}"
+                        Click="Diagnostics_Click"
+                        ToolTip="Open diagnostics">
+                    <TextBlock x:Name="UplinkStatusBlock"
+                               Text="UPLINK CHECKING..."
+                               FontWeight="Bold"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Center"
+                               Foreground="{DynamicResource WinMutedTextBrush}"/>
+                </Button>
+
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center">
+                    <Button Content="Diagnostics"
+                            Click="Diagnostics_Click"/>
+                    <Button Content="Reset Dock"
+                            Margin="8,0,0,0"
+                            Click="ResetDock_Click"/>
+                </StackPanel>
+            </Grid>
         </Border>
     </Grid>
 </Window>

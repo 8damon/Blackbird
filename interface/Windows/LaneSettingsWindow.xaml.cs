@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace SleepwalkerInterface
 {
@@ -14,20 +15,26 @@ namespace SleepwalkerInterface
         private readonly MainWindow _host;
         private readonly ObservableCollection<LaneFilterRule> _rules = new();
         private readonly ObservableCollection<LaneStateRow> _lanes = new();
+        private Brush _laneEnabledRowBrush = Brushes.Transparent;
+        private Brush _laneDisabledRowBrush = Brushes.Transparent;
 
         public LaneSettingsWindow(MainWindow host)
         {
             InitializeComponent();
-            WindowThemeHelper.ApplyDarkTitleBar(this);
+            WindowThemeHelper.ApplyTitleBarTheme(this, App.IsDarkTheme);
             _host = host ?? throw new ArgumentNullException(nameof(host));
             RulesGrid.ItemsSource = _rules;
             LaneGrid.ItemsSource = _lanes;
+            RefreshThemePalette();
 
             Loaded += (_, __) =>
             {
                 RefreshLaneList();
+                PopulateRuleValueChoices();
                 ApplyRules();
             };
+            Closed += (_, __) => App.ThemeChanged -= OnThemeChanged;
+            App.ThemeChanged += OnThemeChanged;
         }
 
         private void Refresh_Click(object sender, RoutedEventArgs e)
@@ -50,7 +57,7 @@ namespace SleepwalkerInterface
             string field = (RuleFieldBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Lane";
             string relation = (RuleRelationBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "contains";
             string action = (RuleActionBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Include";
-            string value = RuleValueBox.Text?.Trim() ?? "";
+            string value = (RuleValueBox.SelectedItem as string) ?? RuleValueBox.Text?.Trim() ?? "";
 
             if (string.IsNullOrWhiteSpace(value))
                 return;
@@ -64,8 +71,14 @@ namespace SleepwalkerInterface
                 Action = action
             });
 
+            RuleValueBox.SelectedItem = null;
             RuleValueBox.Text = "";
             ApplyRules();
+        }
+
+        private void RuleFieldBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            PopulateRuleValueChoices();
         }
 
         private void RemoveRule_Click(object sender, RoutedEventArgs e)
@@ -134,6 +147,43 @@ namespace SleepwalkerInterface
                     Group = group
                 });
             }
+
+            PopulateRuleValueChoices();
+        }
+
+        private void PopulateRuleValueChoices()
+        {
+            if (RuleValueBox == null)
+            {
+                return;
+            }
+
+            string selectedField = (RuleFieldBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Lane";
+            string priorText = (RuleValueBox.SelectedItem as string) ?? RuleValueBox.Text ?? string.Empty;
+
+            IEnumerable<string> values = selectedField.Equals("Group", StringComparison.OrdinalIgnoreCase)
+                ? _lanes.Select(x => x.Group).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase)
+                : _lanes.Select(x => x.Key).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase);
+
+            var ordered = values.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
+            RuleValueBox.ItemsSource = ordered;
+
+            if (ordered.Count == 0)
+            {
+                RuleValueBox.SelectedItem = null;
+                RuleValueBox.Text = string.Empty;
+                return;
+            }
+
+            string? exact = ordered.FirstOrDefault(x => string.Equals(x, priorText, StringComparison.OrdinalIgnoreCase));
+            if (exact != null)
+            {
+                RuleValueBox.SelectedItem = exact;
+                return;
+            }
+
+            RuleValueBox.SelectedItem = null;
+            RuleValueBox.Text = string.Empty;
         }
 
         private void ApplyRules()
@@ -158,8 +208,8 @@ namespace SleepwalkerInterface
                 lane.State = state ? "On" : "Off";
                 lane.Source = source;
                 lane.RowBackground = state
-                    ? Brush(0x2A, 0x28, 0x5B, 0x2E)
-                    : Brush(0x2A, 0x5B, 0x28, 0x28);
+                    ? _laneEnabledRowBrush
+                    : _laneDisabledRowBrush;
 
                 _host.EventsPaneHost.Timeline.SetLaneVisible(lane.Key, state);
             }
@@ -195,11 +245,32 @@ namespace SleepwalkerInterface
 
         private void Close_Click(object sender, RoutedEventArgs e) => Close();
 
-        private static SolidColorBrush Brush(byte a, byte r, byte g, byte b)
+        private void OnThemeChanged(bool _)
         {
-            var bsh = new SolidColorBrush(Color.FromArgb(a, r, g, b));
-            bsh.Freeze();
-            return bsh;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                WindowThemeHelper.ApplyTitleBarTheme(this, App.IsDarkTheme);
+                RefreshThemePalette();
+                ApplyRules();
+            }), DispatcherPriority.Background);
+        }
+
+        private void RefreshThemePalette()
+        {
+            _laneEnabledRowBrush = ResolveBrush("LaneRowEnabledBrush", Color.FromArgb(0x2A, 0x28, 0x5B, 0x2E));
+            _laneDisabledRowBrush = ResolveBrush("LaneRowDisabledBrush", Color.FromArgb(0x2A, 0x5B, 0x28, 0x28));
+        }
+
+        private static Brush ResolveBrush(string key, Color fallback)
+        {
+            if (Application.Current?.TryFindResource(key) is Brush brush)
+            {
+                return brush;
+            }
+
+            var solid = new SolidColorBrush(fallback);
+            solid.Freeze();
+            return solid;
         }
     }
 

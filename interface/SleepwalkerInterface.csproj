@@ -13,7 +13,9 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <RestoreIgnoreFailedSources>true</RestoreIgnoreFailedSources>
     <NuGetAudit>false</NuGetAudit>
-    <ApplicationIcon>rs\SW_APPICO.ico</ApplicationIcon>
+    <ApplicationIcon>Resources\SW_B.ico</ApplicationIcon>
+    <UnifiedOutputDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\x64\$(Configuration)\'))</UnifiedOutputDir>
+    <PublishDir Condition="'$(PublishDir)' == ''">$(UnifiedOutputDir)</PublishDir>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
@@ -28,11 +30,28 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="rs\SW_APPICO.ico" />
+    <Compile Remove="rs\**" />
+    <EmbeddedResource Remove="rs\**" />
+    <None Remove="rs\**" />
+    <Page Remove="rs\**" />
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Properties\" />
+    <Content Include="Resources\SW_B.ico" />
   </ItemGroup>
+
+  <Target Name="CopyInterfaceBuildToUnifiedOutput" AfterTargets="Build" Condition="'$(IsCrossTargetingBuild)' != 'true'">
+    <ItemGroup>
+      <_InterfaceBuildArtifacts Include="$(TargetPath)" />
+      <_InterfaceBuildArtifacts Include="$(TargetDir)$(AssemblyName).deps.json" Condition="Exists('$(TargetDir)$(AssemblyName).deps.json')" />
+      <_InterfaceBuildArtifacts Include="$(TargetDir)$(AssemblyName).runtimeconfig.json" Condition="Exists('$(TargetDir)$(AssemblyName).runtimeconfig.json')" />
+      <_InterfaceBuildArtifacts Include="$(TargetDir)$(AssemblyName).pdb" Condition="Exists('$(TargetDir)$(AssemblyName).pdb')" />
+    </ItemGroup>
+    <MakeDir Directories="$(UnifiedOutputDir)" />
+    <Copy SourceFiles="@(_InterfaceBuildArtifacts)"
+          DestinationFiles="@(_InterfaceBuildArtifacts->'$(UnifiedOutputDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(_InterfaceBuildArtifacts)' != ''" />
+  </Target>
 
 </Project>

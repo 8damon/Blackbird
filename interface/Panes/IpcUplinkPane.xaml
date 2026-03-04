@@ -1,0 +1,251 @@
+<UserControl x:Class="SleepwalkerInterface.IpcUplinkPane"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Name="RootPane"
+             Background="{DynamicResource WinPanelBrush}">
+    <UserControl.Resources>
+        <Style x:Key="ReadoutCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource ExplorerPreviewBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource WinSubtleBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="8,6"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Background="{DynamicResource CommandBarBackgroundBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       Margin="10,0,8,0"
+                       VerticalAlignment="Center"
+                       FontWeight="SemiBold"
+                       FontSize="12"
+                       Text="IPC Uplink"/>
+
+            <Button Grid.Column="1"
+                    x:Name="IpcBtnClose"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="✕"
+                    Width="22"
+                    Height="22"
+                    Margin="4,4,6,4"
+                    ToolTip="Hide pane"
+                    Click="IpcBtnClose_Click"/>
+        </Grid>
+
+        <Border Grid.Row="1"
+                Margin="8,8,8,0"
+                Padding="8,6"
+                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                BorderThickness="1"
+                Background="{DynamicResource WinPanelBrush}">
+            <StackPanel>
+                <TextBlock x:Name="SummaryPrimaryBlock"
+                           FontWeight="SemiBold"
+                           Text="No IPC diagnostics yet"/>
+                <TextBlock x:Name="SummarySecondaryBlock"
+                           Margin="0,2,0,0"
+                           Foreground="{DynamicResource WinMutedTextBrush}"
+                           Text="Enable uplink and wait for stats sample."/>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="2"
+                Margin="8,8,8,8"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="1"
+                Background="{DynamicResource WinPanelBrush}">
+            <Grid Margin="8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="8"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="8"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="14"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="14"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="TRANSPORT"
+                                   Margin="0,0,6,0"
+                                   FontSize="10"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                        <Border MinWidth="130"
+                                Padding="8,2"
+                                Background="{DynamicResource WinHeaderBrush}"
+                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                BorderThickness="1">
+                            <TextBlock x:Name="TransportModeBlock"
+                                       FontSize="11"
+                                       FontWeight="SemiBold"
+                                       Text="PIPE-RPC"/>
+                        </Border>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="HEALTH"
+                                   Margin="0,0,6,0"
+                                   FontSize="10"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                        <Border x:Name="HealthBadge"
+                                MinWidth="92"
+                                Padding="8,2"
+                                BorderThickness="1"
+                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                Background="{DynamicResource WinHeaderBrush}">
+                            <TextBlock x:Name="HealthStateBlock"
+                                       FontSize="11"
+                                       FontWeight="Bold"
+                                       Text="STANDBY"/>
+                        </Border>
+                    </StackPanel>
+
+                    <TextBlock Grid.Column="4"
+                               x:Name="TimestampBlock"
+                               FontFamily="Consolas"
+                               FontSize="11"
+                               Foreground="{DynamicResource WinMutedTextBrush}"
+                               Text="--:--:--.---"
+                               VerticalAlignment="Center"/>
+                </Grid>
+
+                <UniformGrid Grid.Row="2"
+                             Rows="3"
+                             Columns="2">
+                    <Border Style="{DynamicResource ReadoutCardStyle}" Margin="0,0,4,4">
+                        <StackPanel>
+                            <TextBlock Text="IOCTL RATE" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                            <TextBlock x:Name="IoctlRateValue" FontSize="19" FontWeight="Bold" Text="-" />
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{DynamicResource ReadoutCardStyle}" Margin="4,0,0,4">
+                        <StackPanel>
+                            <TextBlock Text="ETW RATE" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                            <TextBlock x:Name="EtwRateValue" FontSize="19" FontWeight="Bold" Text="-" />
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{DynamicResource ReadoutCardStyle}" Margin="0,4,4,4">
+                        <StackPanel>
+                            <TextBlock Text="ERRORS" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                            <TextBlock x:Name="ErrorsValue" FontSize="19" FontWeight="Bold" Text="-" />
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{DynamicResource ReadoutCardStyle}" Margin="4,4,0,4">
+                        <StackPanel>
+                            <TextBlock Text="DRIVER QUEUE" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                            <TextBlock x:Name="DriverQueueValue" FontSize="19" FontWeight="Bold" Text="-" />
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{DynamicResource ReadoutCardStyle}" Margin="0,4,4,0">
+                        <StackPanel>
+                            <TextBlock Text="BUFFER SIZE" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                            <TextBlock x:Name="BufferSizeValue" FontSize="19" FontWeight="Bold" Text="-" />
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{DynamicResource ReadoutCardStyle}" Margin="4,4,0,0">
+                        <StackPanel>
+                            <TextBlock Text="UI BACKLOG" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                            <TextBlock x:Name="UiBacklogValue" FontSize="19" FontWeight="Bold" Text="-" />
+                        </StackPanel>
+                    </Border>
+                </UniformGrid>
+
+                <Border Grid.Row="4"
+                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                        BorderThickness="1"
+                        Background="{DynamicResource WinPanelBrush}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="28"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <Border Grid.Row="0"
+                                Background="{DynamicResource WinHeaderBrush}"
+                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                BorderThickness="0,0,0,1"
+                                Padding="8,0">
+                            <DockPanel LastChildFill="False">
+                                <TextBlock Text="Counters"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="live IPC telemetry"
+                                           Margin="8,0,0,0"
+                                           Foreground="{DynamicResource WinMutedTextBrush}"/>
+                            </DockPanel>
+                        </Border>
+
+                        <ScrollViewer Grid.Row="1"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      Padding="4">
+                            <ItemsControl ItemsSource="{Binding ElementName=RootPane, Path=MetricRows}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{DynamicResource ReadoutCardStyle}"
+                                                Width="230"
+                                                Margin="4">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Name}"
+                                                           FontSize="10"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{DynamicResource WinMutedTextBrush}"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding Value}"
+                                                           FontSize="14"
+                                                           FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+
+                        <Border x:Name="NoDataOverlay"
+                                Grid.RowSpan="2"
+                                Background="{DynamicResource NoDataOverlayBrush}"
+                                IsHitTestVisible="False"
+                                Visibility="Collapsed">
+                            <TextBlock Text="NO DATA"
+                                       FontSize="36"
+                                       FontWeight="Bold"
+                                       Foreground="{DynamicResource WinTextBrush}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Opacity="0.72"/>
+                        </Border>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

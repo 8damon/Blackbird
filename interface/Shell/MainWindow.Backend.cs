@@ -22,6 +22,9 @@ namespace SleepwalkerInterface
         private readonly ConcurrentQueue<IoctlParsedEvent> _pendingIoctlEvents = new();
         private readonly ConcurrentQueue<SleepwalkerNative.SwIpcEtwEvent> _pendingEtwEvents = new();
         private readonly ConcurrentQueue<string> _pendingStatusLines = new();
+        private long _pendingIoctlCount;
+        private long _pendingEtwCount;
+        private long _pendingStatusCount;
         private int _backendUiFlushScheduled;
         private const int MaxBackendUiItemsPerFlush = 600;
 
@@ -29,6 +32,7 @@ namespace SleepwalkerInterface
         {
             EtwPaneHost.ClearAll();
             HeuristicsPaneHost.ClearAll();
+            IpcUplinkPaneHost.SetInactive("No IPC diagnostics yet", "Enable uplink and wait for stats sample.");
             RefreshExplorerDataBadges();
             DiagnosticsState.SetValue("UI", "Initialized");
         }
@@ -42,6 +46,9 @@ namespace SleepwalkerInterface
             {
                 return;
             }
+
+            _hasIpcUplinkData = false;
+            SetIpcUplinkExplorerDetails("Enable to inspect IPC internals", "Waiting for session diagnostics...", hasData: false);
 
             int generation = ++_backendGeneration;
             try
@@ -57,6 +64,7 @@ namespace SleepwalkerInterface
                     }
 
                     _pendingIoctlEvents.Enqueue(record);
+                    Interlocked.Increment(ref _pendingIoctlCount);
                     ScheduleBackendUiFlush(generation);
                 };
 
@@ -68,6 +76,7 @@ namespace SleepwalkerInterface
                     }
 
                     _pendingEtwEvents.Enqueue(etw);
+                    Interlocked.Increment(ref _pendingEtwCount);
                     ScheduleBackendUiFlush(generation);
                 };
 
@@ -83,6 +92,19 @@ namespace SleepwalkerInterface
                         $"subs={stats.SubscriptionCount} depth={stats.QueueDepth} dropped={stats.DroppedEvents}");
                 }));
 
+                session.IpcDiagnostics += diag => Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    if (generation != _backendGeneration)
+                    {
+                        return;
+                    }
+
+                    diag.PendingIoctlUiQueue = (int)Math.Min(int.MaxValue, Math.Max(0, Interlocked.Read(ref _pendingIoctlCount)));
+                    diag.PendingEtwUiQueue = (int)Math.Min(int.MaxValue, Math.Max(0, Interlocked.Read(ref _pendingEtwCount)));
+                    diag.PendingStatusUiQueue = (int)Math.Min(int.MaxValue, Math.Max(0, Interlocked.Read(ref _pendingStatusCount)));
+                    UpdateIpcUplinkExplorer(diag);
+                }));
+
                 session.Status += text =>
                 {
                     if (generation != _backendGeneration)
@@ -91,6 +113,7 @@ namespace SleepwalkerInterface
                     }
 
                     _pendingStatusLines.Enqueue($"[session pid={pid}] {text}");
+                    Interlocked.Increment(ref _pendingStatusCount);
                     ScheduleBackendUiFlush(generation);
                 };
 
@@ -100,13 +123,31 @@ namespace SleepwalkerInterface
             }
             catch (Exception ex)
             {
+                string displayError = FormatSessionStartError(ex);
                 _backendSession = null;
-                StatusBlock.Text = $"Status: Session start failed ({ex.Message})";
-                OutputCapture.AppendLine($"Session start failed for PID {pid}: {ex.Message}");
+                StatusBlock.Text = $"Status: Session start failed ({displayError})";
+                OutputCapture.AppendLine($"Session start failed for PID {pid}: {displayError}");
                 DiagnosticsState.SetValue("Session", $"Start failed PID {pid}");
-                DiagnosticsState.SetValue("Connectivity", $"Session start failed: {ex.Message}");
+                DiagnosticsState.SetValue("Connectivity", $"Session start failed: {displayError}");
+                SetIpcUplinkExplorerDetails("Session start failed", displayError, hasData: false);
                 SetBackendConnectivity(false);
             }
+        }
+
+        private static string FormatSessionStartError(Exception ex)
+        {
+            if (ex is EntryPointNotFoundException)
+            {
+                return "IPC runtime DLL is outdated (missing export). Rebuild/deploy SleepwalkerSensorCore.dll and controller.";
+            }
+
+            if (ex is System.ComponentModel.Win32Exception wx &&
+                (wx.NativeErrorCode == 127 || wx.NativeErrorCode == SleepwalkerNative.ErrorInvalidFunction))
+            {
+                return "IPC runtime DLL/controller mismatch (missing function). Rebuild/deploy latest SleepwalkerSensorCore.dll and controller.";
+            }
+
+            return ex.Message;
         }
 
         private void StopBackendSession()
@@ -126,6 +167,8 @@ namespace SleepwalkerInterface
 
             _backendSession = null;
             ClearPendingBackendUiQueues();
+            _hasIpcUplinkData = false;
+            SetIpcUplinkExplorerDetails("Session stopped", "No live IPC diagnostics", hasData: false);
             DiagnosticsState.SetValue("Session", "Stopped");
         }
 
@@ -152,6 +195,7 @@ namespace SleepwalkerInterface
 
             while (processed < MaxBackendUiItemsPerFlush && _pendingIoctlEvents.TryDequeue(out var ioctl))
             {
+                Interlocked.Decrement(ref _pendingIoctlCount);
                 var telemetry = MapIoctlRecord(ioctl);
                 if (telemetry != null)
                 {
@@ -163,6 +207,7 @@ namespace SleepwalkerInterface
 
             while (processed < MaxBackendUiItemsPerFlush && _pendingEtwEvents.TryDequeue(out var etw))
             {
+                Interlocked.Decrement(ref _pendingEtwCount);
                 HandleBrokerEtwEvent(etw);
                 processed += 1;
             }
@@ -170,6 +215,7 @@ namespace SleepwalkerInterface
             int statusLines = 0;
             while (statusLines < 32 && _pendingStatusLines.TryDequeue(out var status))
             {
+                Interlocked.Decrement(ref _pendingStatusCount);
                 OutputCapture.AppendLine(status);
                 statusLines += 1;
             }
@@ -182,7 +228,9 @@ namespace SleepwalkerInterface
 
         private bool HasPendingBackendUiData()
         {
-            return !_pendingIoctlEvents.IsEmpty || !_pendingEtwEvents.IsEmpty || !_pendingStatusLines.IsEmpty;
+            return Interlocked.Read(ref _pendingIoctlCount) > 0 ||
+                   Interlocked.Read(ref _pendingEtwCount) > 0 ||
+                   Interlocked.Read(ref _pendingStatusCount) > 0;
         }
 
         private void ClearPendingBackendUiQueues()
@@ -199,7 +247,77 @@ namespace SleepwalkerInterface
             {
             }
 
+            Interlocked.Exchange(ref _pendingIoctlCount, 0);
+            Interlocked.Exchange(ref _pendingEtwCount, 0);
+            Interlocked.Exchange(ref _pendingStatusCount, 0);
             Interlocked.Exchange(ref _backendUiFlushScheduled, 0);
+        }
+
+        private void UpdateIpcUplinkExplorer(BackendIpcDiagnosticsView diag)
+        {
+            _hasIpcUplinkData = true;
+            SetExplorerHasData("IPC Uplink", true);
+            IpcUplinkPaneHost.UpdateDiagnostics(diag);
+
+            var item = FindExplorerItem("IPC Uplink");
+            if (item == null)
+            {
+                return;
+            }
+
+            double queueScore = Math.Min(100.0, diag.DriverQueueDepth);
+            double backlogScore = Math.Min(100.0, (diag.PendingIoctlUiQueue + diag.PendingEtwUiQueue + diag.PendingStatusUiQueue) * 2.0);
+            double dropScore = diag.DriverDroppedEvents == 0
+                ? 0.0
+                : Math.Min(100.0, Math.Log10(diag.DriverDroppedEvents + 1) * 24.0);
+            double pressure = Math.Min(100.0, Math.Max(queueScore, backlogScore) + dropScore);
+
+            item.PushPreviewValue(pressure);
+
+            string transport = diag.SharedRingEnabled ? "shared-ring+event" : "pipe-rpc";
+            string ringState = diag.SharedRingEnabled ? "ring:ready" : $"ring:required(err={diag.SharedRingError})";
+            string primary = $"{transport} | {ringState} | buf {FormatIpcBytes(diag.IoctlReadBufferBytes)} | caps 0x{diag.BrokerCapabilities:X8}";
+            string secondary =
+                $"drvQ={diag.DriverQueueDepth} drop={diag.DriverDroppedEvents} uiQ i={diag.PendingIoctlUiQueue} e={diag.PendingEtwUiQueue} i/s={diag.IoctlEventsPerSec:0} e/s={diag.EtwEventsPerSec:0}";
+
+            SetIpcUplinkExplorerDetails(primary, secondary, hasData: true);
+
+            DiagnosticsState.SetValue(
+                "IPC Uplink",
+                $"mode={transport} ringErr={diag.SharedRingError} queueDepth={diag.DriverQueueDepth} dropped={diag.DriverDroppedEvents} pending(ioctl={diag.PendingIoctlUiQueue},etw={diag.PendingEtwUiQueue},status={diag.PendingStatusUiQueue}) rate(ioctl={diag.IoctlEventsPerSec:0.0}/s,etw={diag.EtwEventsPerSec:0.0}/s) errors(ioctl={diag.IoctlErrorsTotal},etw={diag.EtwErrorsTotal})");
+        }
+
+        private void SetIpcUplinkExplorerDetails(string primary, string secondary, bool hasData)
+        {
+            var item = FindExplorerItem("IPC Uplink");
+            if (item == null)
+            {
+                return;
+            }
+
+            item.DetailPrimary = primary;
+            item.DetailSecondary = secondary;
+            item.HasData = hasData;
+
+            if (!hasData)
+            {
+                IpcUplinkPaneHost.SetInactive(primary, secondary);
+            }
+        }
+
+        private static string FormatIpcBytes(int bytes)
+        {
+            if (bytes < 1024)
+            {
+                return $"{bytes} B";
+            }
+
+            if (bytes < 1024 * 1024)
+            {
+                return $"{(bytes / 1024.0):0.0} KB";
+            }
+
+            return $"{(bytes / (1024.0 * 1024.0)):0.00} MB";
         }
 
         private TelemetryEvent? MapIoctlRecord(IoctlParsedEvent record)
@@ -405,7 +523,7 @@ namespace SleepwalkerInterface
             {
                 _lastConnectivityIssueSignature = null;
                 DiagnosticsState.SetValue("Connectivity", "OK");
-                StatusBlock.Text = "Status: Driver/service uplink healthy";
+                StatusBlock.Text = "UPLINK CONNECTED";
                 SetBackendConnectivity(true);
                 return;
             }
@@ -413,10 +531,9 @@ namespace SleepwalkerInterface
             string detail = string.Join("; ", issues);
             string signature = detail;
             string msg = $"Could not fully connect to driver/service: {detail}";
-
             DiagnosticsState.SetValue("Connectivity", $"FAILED: {detail}");
             OutputCapture.AppendLine(msg);
-            StatusBlock.Text = "Status: Driver/service uplink failed";
+            StatusBlock.Text = "UPLINK FAILED";
             SetBackendConnectivity(false);
 
             bool shouldWarn = userInitiated || !string.Equals(_lastConnectivityIssueSignature, signature, StringComparison.Ordinal);

@@ -5,6 +5,8 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -14,9 +16,10 @@ namespace SleepwalkerInterface
 {
     public partial class MainWindow : Window
     {
-        private readonly ObservableCollection<TelemetryEvent> _allEvents = new();
+        private readonly List<TelemetryEvent> _allEvents = new();
         private readonly ObservableCollection<TelemetryEvent> _focusedEvents = new();
         private const int MaxTimelineEvents = 50000;
+        private const int TimelineTrimBatch = 512;
         private bool _viewportRefreshPending;
         private DateTime _latestEventTimestampUtc;
 
@@ -48,11 +51,19 @@ namespace SleepwalkerInterface
         private int _samplerPid;
         private bool _performanceOnTop;
         private bool _hasPerformanceData;
+        private bool _hasIpcUplinkData;
         private bool _connectivityHealthy = true;
         private bool _themeSelectorReady;
         private bool _draggingEventsPaneHeader;
         private bool _draggingPerformancePaneHeader;
+        private bool _openingProcessPicker;
+        private Process? _targetExitWatchProcess;
+        private int _targetExitWatchPid;
         private Vector _floatingPaneDragOffset;
+
+        private const uint ProcessSynchronize = 0x00100000;
+        private const uint ProcessVmRead = 0x0010;
+        private const uint ProcessQueryLimitedInformation = 0x1000;
 
         public MainWindow()
         {
@@ -112,12 +123,14 @@ namespace SleepwalkerInterface
             HeuristicsPaneHost.ReorderRequested += (_, __) => ToggleIntelPaneOrder();
             HeuristicsPaneHost.FloatRequested += (_, __) => ToggleHeuristicsFloatDock();
             HeuristicsPaneHost.CloseRequested += (_, __) => HideHeuristicsPane();
+            IpcUplinkPaneHost.CloseRequested += (_, __) => HideIpcUplinkPane();
 
             // Explorer setup
             SetupExplorer();
             SetupProcessTabs();
             InitializeThemeSelector();
             InitializeBackendUi();
+            ApplyUplinkStatusVisual(healthy: null);
 
             UpdateScrollBar();
             FocusViewport();
@@ -125,14 +138,12 @@ namespace SleepwalkerInterface
             // Performance sampler + UI sync
             _perf = new PerformanceSampler();
             _perf.SampleArrived += Perf_SampleArrived;
-            _perf.Start();
-            _perf.SetTargetPid(TryGetPid());
 
             // Make performance pane aware of capture start immediately
             PerformancePaneHost.SetCaptureStart(_captureStartUtc);
             PerformancePaneHost.SetPid(TryGetPid());
             SyncPerformanceViewToTimeline();
-            StartBackendForPid(TryGetPid());
+            StartLiveCaptureForPid(TryGetPid());
             _ = RunPreflightAsync(TryGetPid());
             StatusBlock.Text = $"Status: Connected to PID {TryGetPid()}";
             ApplyPaneOrder();
@@ -182,6 +193,7 @@ namespace SleepwalkerInterface
                 _heuristicsFloatWindow = null;
             }
             SaveIntelSessionState(_currentSession?.Pid ?? 0);
+            StopTargetExitWatcher();
             StopBackendSession();
             HideDockPreview();
         }
@@ -196,12 +208,25 @@ namespace SleepwalkerInterface
             _explorer.Add(new GraphExplorerItem("Sleepwalker ETW", new SolidColorBrush(Color.FromRgb(0xD2, 0x89, 0x34))) { IsEnabled = true });
             _explorer.Add(new GraphExplorerItem("ETW-TI", new SolidColorBrush(Color.FromRgb(0xB4, 0x6F, 0xE1))) { IsEnabled = true });
             _explorer.Add(new GraphExplorerItem("Heuristics", new SolidColorBrush(Color.FromRgb(0xD2, 0x55, 0x55))) { IsEnabled = true });
+            _explorer.Add(new GraphExplorerItem("IPC Uplink", new SolidColorBrush(Color.FromRgb(0x4A, 0xC1, 0xC6)))
+            {
+                IsEnabled = false,
+                ShowDetails = true,
+                DetailPrimary = "Enable to inspect IPC internals",
+                DetailSecondary = "Waiting for session diagnostics..."
+            });
 
             GraphExplorer.ItemsSource = _explorer;
 
             foreach (var item in _explorer)
             {
-                item.PropertyChanged += (_, __) => ApplyDockVisibilityFromExplorer();
+                item.PropertyChanged += (_, args) =>
+                {
+                    if (string.Equals(args.PropertyName, nameof(GraphExplorerItem.IsEnabled), StringComparison.Ordinal))
+                    {
+                        ApplyDockVisibilityFromExplorer();
+                    }
+                };
             }
 
             RefreshExplorerDataBadges();
@@ -225,12 +250,14 @@ namespace SleepwalkerInterface
             SetExplorerHasData("Sleepwalker ETW", EtwPaneHost.SleepwalkerCount > 0);
             SetExplorerHasData("ETW-TI", EtwPaneHost.TiCount > 0);
             SetExplorerHasData("Heuristics", HeuristicsPaneHost.ItemCount > 0);
+            SetExplorerHasData("IPC Uplink", _hasIpcUplinkData);
         }
 
         private void ApplyDockVisibilityFromExplorer()
         {
             bool showEvents = _explorer.FirstOrDefault(x => x.Name == "Events")?.IsEnabled ?? true;
             bool showPerf = _explorer.FirstOrDefault(x => x.Name == "Performance")?.IsEnabled ?? true;
+            bool showIpcUplink = _explorer.FirstOrDefault(x => x.Name == "IPC Uplink")?.IsEnabled ?? false;
             bool showSwEtw = _explorer.FirstOrDefault(x => x.Name == "Sleepwalker ETW")?.IsEnabled ?? true;
             bool showTiEtw = _explorer.FirstOrDefault(x => x.Name == "ETW-TI")?.IsEnabled ?? true;
             bool showEtw = showSwEtw || showTiEtw;
@@ -268,6 +295,10 @@ namespace SleepwalkerInterface
 
             EtwDockBorder.Visibility = showEtwContent ? Visibility.Visible : Visibility.Collapsed;
             HeuristicsDockBorder.Visibility = showHeuristicsContent ? Visibility.Visible : Visibility.Collapsed;
+            IpcUplinkDockBorder.Visibility = showIpcUplink ? Visibility.Visible : Visibility.Collapsed;
+            IpcUplinkColumn.Width = showIpcUplink ? new GridLength(380) : new GridLength(0);
+            IpcUplinkSplitterColumn.Width = showIpcUplink ? new GridLength(2) : new GridLength(0);
+            IpcUplinkSplitter.Visibility = showIpcUplink ? Visibility.Visible : Visibility.Collapsed;
 
             bool row0Visible = (Grid.GetRow(EtwDockBorder) == 0 && showEtwContent) ||
                                (Grid.GetRow(HeuristicsDockBorder) == 0 && showHeuristicsContent);
@@ -325,6 +356,186 @@ namespace SleepwalkerInterface
 
             // Keep performance view aligned to timeline window
             SyncPerformanceViewToTimeline();
+        }
+
+        private void StartLiveCaptureForPid(int pid)
+        {
+            if (pid <= 0 || _perf == null)
+                return;
+
+            _perf.SetTargetPid(pid);
+            _perf.Start();
+            _samplerPid = pid;
+            StartTargetExitWatcher(pid);
+            StartBackendForPid(pid);
+        }
+
+        private void StartTargetExitWatcher(int pid)
+        {
+            StopTargetExitWatcher();
+            if (pid <= 0)
+                return;
+
+            try
+            {
+                var process = Process.GetProcessById(pid);
+                process.EnableRaisingEvents = true;
+                process.Exited += TargetExitWatchProcess_Exited;
+                _targetExitWatchProcess = process;
+                _targetExitWatchPid = pid;
+                if (process.HasExited)
+                {
+                    HandleTargetProcessExit(pid);
+                }
+            }
+            catch
+            {
+                StopTargetExitWatcher();
+            }
+        }
+
+        private void StopTargetExitWatcher()
+        {
+            if (_targetExitWatchProcess != null)
+            {
+                try
+                {
+                    _targetExitWatchProcess.Exited -= TargetExitWatchProcess_Exited;
+                }
+                catch
+                {
+                }
+
+                try
+                {
+                    _targetExitWatchProcess.Dispose();
+                }
+                catch
+                {
+                }
+            }
+
+            _targetExitWatchProcess = null;
+            _targetExitWatchPid = 0;
+        }
+
+        private void TargetExitWatchProcess_Exited(object? sender, EventArgs e)
+        {
+            int pid = 0;
+            if (sender is Process p)
+            {
+                try
+                {
+                    pid = p.Id;
+                }
+                catch
+                {
+                    pid = 0;
+                }
+            }
+
+            if (pid <= 0)
+                pid = _targetExitWatchPid;
+
+            Dispatcher.BeginInvoke(new Action(() => HandleTargetProcessExit(pid)));
+        }
+
+        private void HandleTargetProcessExit(int pid)
+        {
+            if (pid <= 0 || _currentSession == null || _currentSession.Pid != pid || _currentSession.TargetExited)
+                return;
+
+            _currentSession.TargetExited = true;
+            MarkSessionExited(_currentSession);
+            StopTargetExitWatcher();
+            StopBackendSession();
+            _perf?.Stop();
+            _samplerPid = 0;
+
+            AppendEvent(new TelemetryEvent
+            {
+                TimestampUtc = DateTime.UtcNow,
+                PID = pid,
+                TID = 0,
+                Group = "Session",
+                SubType = "ProcessExit",
+                Summary = "TARGET PROCESS EXITED",
+                Details = "Data capture stopped for this tab."
+            });
+
+            StatusBlock.Text = $"TARGET {pid} EXITED - DATA CAPTURE STOPPED";
+            ThemedMessageBox.Show(
+                this,
+                $"Target process {pid} exited.\n\nData capture has been stopped for this tab.",
+                "Target Exited",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+
+        private static void MarkSessionExited(ProcessSessionTab tab)
+        {
+            const string suffix = " [EXITED]";
+            if (!tab.Title.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                tab.Title = tab.Title + suffix;
+            }
+        }
+
+        private bool TryOpenTargetProcess(int pid, out string processName, out string failure, out bool accessDenied)
+        {
+            processName = string.Empty;
+            failure = string.Empty;
+            accessDenied = false;
+
+            Process? process = null;
+            try
+            {
+                process = Process.GetProcessById(pid);
+                processName = process.ProcessName;
+                if (process.HasExited)
+                {
+                    failure = $"TARGET PID {pid} HAS EXITED";
+                    return false;
+                }
+            }
+            catch (ArgumentException)
+            {
+                failure = $"PID {pid} NOT FOUND";
+                return false;
+            }
+            catch (InvalidOperationException)
+            {
+                failure = $"PID {pid} IS NOT AVAILABLE";
+                return false;
+            }
+            catch (Win32Exception ex)
+            {
+                accessDenied = ex.NativeErrorCode == 5;
+                failure = accessDenied ? $"ACCESS DENIED TO PID {pid}" : $"FAILED TO OPEN PID {pid} (WIN32 {ex.NativeErrorCode})";
+                return false;
+            }
+            finally
+            {
+                try
+                {
+                    process?.Dispose();
+                }
+                catch
+                {
+                }
+            }
+
+            IntPtr handle = OpenProcess(ProcessQueryLimitedInformation | ProcessVmRead | ProcessSynchronize, false, unchecked((uint)pid));
+            if (handle == IntPtr.Zero)
+            {
+                int err = Marshal.GetLastWin32Error();
+                accessDenied = err == 5;
+                failure = accessDenied ? $"ACCESS DENIED TO PID {pid}" : $"FAILED TO OPEN PID {pid} (WIN32 {err})";
+                return false;
+            }
+
+            _ = CloseHandle(handle);
+            return true;
         }
 
         private int TryGetPid()
@@ -438,14 +649,38 @@ namespace SleepwalkerInterface
             _currentSession = tab;
             PidBox.Text = tab.Pid.ToString();
 
-            if (_samplerPid != tab.Pid)
+            RestoreSessionState(tab);
+
+            if (tab.TargetExited)
             {
-                _perf?.SetTargetPid(tab.Pid);
-                _samplerPid = tab.Pid;
+                StopTargetExitWatcher();
+                StopBackendSession();
+                _perf?.Stop();
+                _samplerPid = 0;
+                StatusBlock.Text = $"TARGET {tab.Pid} EXITED - DATA CAPTURE STOPPED";
+                return;
             }
 
-            RestoreSessionState(tab);
-            StartBackendForPid(tab.Pid);
+            if (!TryOpenTargetProcess(tab.Pid, out _, out var failure, out var accessDenied))
+            {
+                StopTargetExitWatcher();
+                StopBackendSession();
+                _perf?.Stop();
+                _samplerPid = 0;
+                if (!accessDenied)
+                {
+                    tab.TargetExited = true;
+                    MarkSessionExited(tab);
+                    StatusBlock.Text = $"TARGET {tab.Pid} EXITED - DATA CAPTURE STOPPED";
+                }
+                else
+                {
+                    StatusBlock.Text = $"ACCESS DENIED TO PID {tab.Pid} - DATA CAPTURE STOPPED";
+                }
+                return;
+            }
+
+            StartLiveCaptureForPid(tab.Pid);
         }
 
         private void SyncPerformanceViewToTimeline()
@@ -471,14 +706,19 @@ namespace SleepwalkerInterface
             SetExplorerHasData("Events", _connectivityHealthy && _allEvents.Count > 0);
             EventsPaneHost.SetHasData(true);
 
-            while (_allEvents.Count > MaxTimelineEvents)
+            if (_allEvents.Count > MaxTimelineEvents + TimelineTrimBatch)
             {
-                _allEvents.RemoveAt(0);
+                int removeCount = _allEvents.Count - MaxTimelineEvents;
+                _allEvents.RemoveRange(0, removeCount);
             }
 
-            while (EventsPaneHost.Timeline.Items.Count > MaxTimelineEvents)
+            if (EventsPaneHost.Timeline.Items.Count > MaxTimelineEvents + TimelineTrimBatch)
             {
-                EventsPaneHost.Timeline.Items.RemoveAt(0);
+                int removeCount = EventsPaneHost.Timeline.Items.Count - MaxTimelineEvents;
+                for (int i = 0; i < removeCount; i += 1)
+                {
+                    EventsPaneHost.Timeline.Items.RemoveAt(0);
+                }
             }
 
             if (_currentSession != null && _currentSession.Events.Count > MaxTimelineEvents)
@@ -492,9 +732,42 @@ namespace SleepwalkerInterface
         internal void SetBackendConnectivity(bool healthy)
         {
             _connectivityHealthy = healthy;
+            ApplyUplinkStatusVisual(healthy);
             EventsPaneHost.SetConnectivityHealthy(healthy);
             EventsPaneHost.SetHasData(_allEvents.Count > 0);
             RefreshExplorerDataBadges();
+        }
+
+        private void ApplyUplinkStatusVisual(bool? healthy)
+        {
+            if (StatusBlock == null || UplinkStatusBlock == null || BottomStatusBar == null)
+                return;
+
+            if (healthy == true)
+            {
+                StatusBlock.Text = "UPLINK CONNECTED";
+                StatusBlock.SetResourceReference(TextBlock.ForegroundProperty, "StatusConnectedBrush");
+                UplinkStatusBlock.Text = "UPLINK CONNECTED";
+                UplinkStatusBlock.SetResourceReference(TextBlock.ForegroundProperty, "StatusConnectedBrush");
+                BottomStatusBar.SetResourceReference(Border.BackgroundProperty, "WinPanelBrush");
+                return;
+            }
+
+            if (healthy == false)
+            {
+                StatusBlock.Text = "UPLINK FAILED";
+                StatusBlock.SetResourceReference(TextBlock.ForegroundProperty, "StatusFailedBrush");
+                UplinkStatusBlock.Text = "UPLINK FAILED";
+                UplinkStatusBlock.SetResourceReference(TextBlock.ForegroundProperty, "StatusFailedBrush");
+                BottomStatusBar.SetResourceReference(Border.BackgroundProperty, "StatusBarFailedBrush");
+                return;
+            }
+
+            StatusBlock.Text = "UPLINK CHECKING...";
+            StatusBlock.SetResourceReference(TextBlock.ForegroundProperty, "WinMutedTextBrush");
+            UplinkStatusBlock.Text = "UPLINK CHECKING...";
+            UplinkStatusBlock.SetResourceReference(TextBlock.ForegroundProperty, "WinMutedTextBrush");
+            BottomStatusBar.SetResourceReference(Border.BackgroundProperty, "WinPanelBrush");
         }
 
         private void InitializeThemeSelector()
@@ -791,6 +1064,13 @@ namespace SleepwalkerInterface
             ApplyDockVisibilityFromExplorer();
         }
 
+        private void HideIpcUplinkPane()
+        {
+            var ipc = FindExplorerItem("IPC Uplink");
+            if (ipc != null) ipc.IsEnabled = false;
+            ApplyDockVisibilityFromExplorer();
+        }
+
         private void ShowPerformancePane()
         {
             _performancePaneVisible = true;
@@ -885,6 +1165,8 @@ namespace SleepwalkerInterface
             if (ti != null) ti.IsEnabled = true;
             var heur = FindExplorerItem("Heuristics");
             if (heur != null) heur.IsEnabled = true;
+            var ipc = FindExplorerItem("IPC Uplink");
+            if (ipc != null) ipc.IsEnabled = false;
             _performanceOnTop = false;
             _heuristicsOnTop = false;
             ApplyPaneOrder();
@@ -921,35 +1203,9 @@ namespace SleepwalkerInterface
             w.Show();
         }
 
-        private void FindProcess_Click(object sender, RoutedEventArgs e)
-        {
-            var picker = new ProcessPickerWindow
-            {
-                Owner = this
-            };
+        private async void FindProcess_Click(object sender, RoutedEventArgs e) => await OpenProcessPickerAndConnectAsync();
 
-            bool? result = picker.ShowDialog();
-            if (result != true || picker.SelectedPid <= 0)
-                return;
-
-            PidBox.Text = picker.SelectedPid.ToString();
-            Connect_Click(sender, e);
-        }
-
-        private void NewProcessTab_Click(object sender, RoutedEventArgs e)
-        {
-            var picker = new ProcessPickerWindow
-            {
-                Owner = this
-            };
-
-            bool? result = picker.ShowDialog();
-            if (result != true || picker.SelectedPid <= 0)
-                return;
-
-            PidBox.Text = picker.SelectedPid.ToString();
-            Connect_Click(sender, e);
-        }
+        private async void NewProcessTab_Click(object sender, RoutedEventArgs e) => await OpenProcessPickerAndConnectAsync();
 
         private void CloseProcessTab_Click(object sender, RoutedEventArgs e)
         {
@@ -987,7 +1243,14 @@ namespace SleepwalkerInterface
                 return;
 
             SwitchToSession(tab);
-            StatusBlock.Text = $"Status: Connected to {tab.Title}";
+            if (tab.TargetExited)
+            {
+                StatusBlock.Text = $"TARGET {tab.Pid} EXITED - DATA CAPTURE STOPPED";
+            }
+            else
+            {
+                StatusBlock.Text = $"CONNECTED TO {tab.Title}";
+            }
         }
 
         // -------------------------------
@@ -998,45 +1261,91 @@ namespace SleepwalkerInterface
             int pid = TryGetPid();
             if (pid <= 0)
             {
-                StatusBlock.Text = "Status: Enter a valid PID";
+                StatusBlock.Text = "ENTER A VALID PID";
                 return;
             }
+
+            if (!TryOpenTargetProcess(pid, out var processName, out var failure, out var accessDenied))
+            {
+                StatusBlock.Text = failure;
+                if (accessDenied)
+                {
+                    ThemedMessageBox.Show(
+                        this,
+                        $"Access denied while opening PID {pid}. The process handle could not be opened with required access rights.",
+                        "Target Attach Failed",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                }
+
+                return;
+            }
+
+            StatusBlock.Text = $"CONNECTED TO {processName} ({pid})";
+            var tab = AddOrSelectProcessTab(pid, $"{processName} ({pid})", select: true);
+            tab.TargetExited = false;
+            if (!ReferenceEquals(_currentSession, tab))
+            {
+                SwitchToSession(tab);
+            }
+            else
+            {
+                StartLiveCaptureForPid(pid);
+            }
+
+            _ = RunPreflightAsync(pid);
+        }
+
+        private async void Launch_Click(object sender, RoutedEventArgs e) => await OpenProcessPickerAndConnectAsync();
+
+        private async Task OpenProcessPickerAndConnectAsync()
+        {
+            if (_openingProcessPicker)
+                return;
+
+            _openingProcessPicker = true;
+            LoadingWindow? loading = null;
 
             try
             {
-                var p = Process.GetProcessById(pid);
-                StatusBlock.Text = $"Status: Connected to {p.ProcessName} ({pid})";
-                var tab = AddOrSelectProcessTab(pid, $"{p.ProcessName} ({pid})", select: true);
-                if (!ReferenceEquals(_currentSession, tab))
-                    SwitchToSession(tab);
-                else if (_samplerPid != pid)
+                loading = new LoadingWindow
                 {
-                    _perf?.SetTargetPid(pid);
-                    _samplerPid = pid;
+                    Owner = this
+                };
+                loading.SetProgress(14, "Preparing process picker...", "Initializing process view shell.");
+                loading.Show();
+                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+
+                var picker = new ProcessPickerWindow
+                {
+                    Owner = this
+                };
+
+                loading.SetProgress(58, "Scanning processes...", "Building initial process list and filters.");
+                picker.PrimeForFirstShow();
+                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
+
+                loading.SetProgress(100, "Opening picker...", "Process picker is ready.");
+                await Task.Delay(90);
+                loading.Close();
+                loading = null;
+
+                bool? result = picker.ShowDialog();
+                if (result != true || picker.SelectedPid <= 0)
+                    return;
+
+                PidBox.Text = picker.SelectedPid.ToString();
+                Connect_Click(this, new RoutedEventArgs());
+            }
+            finally
+            {
+                if (loading != null && loading.IsVisible)
+                {
+                    loading.Close();
                 }
 
-                StartBackendForPid(pid);
-                _ = RunPreflightAsync(pid);
+                _openingProcessPicker = false;
             }
-            catch
-            {
-                StatusBlock.Text = $"Status: PID {pid} not found";
-            }
-        }
-
-        private void Launch_Click(object sender, RoutedEventArgs e)
-        {
-            var picker = new ProcessPickerWindow
-            {
-                Owner = this
-            };
-
-            bool? result = picker.ShowDialog();
-            if (result != true || picker.SelectedPid <= 0)
-                return;
-
-            PidBox.Text = picker.SelectedPid.ToString();
-            Connect_Click(sender, e);
         }
 
         private void Suspend_Click(object sender, RoutedEventArgs e) { }
@@ -1469,6 +1778,13 @@ namespace SleepwalkerInterface
         }
 
         public string? GetLaneFocus() => _laneFocusKey;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(uint desiredAccess, bool inheritHandle, uint processId);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr hObject);
     }
 
     public sealed class ProcessSessionTab : INotifyPropertyChanged
@@ -1481,6 +1797,7 @@ namespace SleepwalkerInterface
         public double ViewDurationSeconds { get; set; } = 120;
         public double ViewStartSeconds { get; set; }
         public string? LaneFocusKey { get; set; }
+        public bool TargetExited { get; set; }
 
         public int Pid
         {

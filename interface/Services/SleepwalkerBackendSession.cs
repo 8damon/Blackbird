@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,10 +17,23 @@ namespace SleepwalkerInterface
         private Task? _statsTask;
         private IntPtr _ioctlHandle;
         private IntPtr _etwHandle;
+        private uint _brokerCapabilities;
+        private bool _sharedRingEnabled;
+        private uint _sharedRingError;
+        private long _ioctlEvents;
+        private long _etwEvents;
+        private long _ioctlErrors;
+        private long _etwErrors;
+        private long _ioctlEmptyPolls;
+        private long _etwEmptyPolls;
+        private DateTime _lastStatsSnapshotUtc = DateTime.UtcNow;
+        private long _lastStatsIoctlEvents;
+        private long _lastStatsEtwEvents;
 
         public event Action<IoctlParsedEvent>? IoctlEvent;
         public event Action<SleepwalkerNative.SwIpcEtwEvent>? EtwEvent;
         public event Action<BackendStatsView>? Stats;
+        public event Action<BackendIpcDiagnosticsView>? IpcDiagnostics;
         public event Action<string>? Status;
 
         public int TargetPid => _targetPid;
@@ -74,8 +88,45 @@ namespace SleepwalkerInterface
                     throw SleepwalkerNative.LastError("SetPids(etw) failed");
                 }
 
+                if (SleepwalkerNative.GetBrokerInfo(out uint capabilities, out _))
+                {
+                    _brokerCapabilities = capabilities;
+                }
+                _sharedRingError = SleepwalkerNative.GetLastSharedRingError();
+
+                bool hasIoctlRing = false;
+                bool hasEtwRing = false;
+                if (SleepwalkerNative.HasSharedChannel(_ioctlHandle, out bool ioctlIoctlReady, out _))
+                {
+                    hasIoctlRing = ioctlIoctlReady;
+                }
+                if (SleepwalkerNative.HasSharedChannel(_etwHandle, out _, out bool etwEtwReady))
+                {
+                    hasEtwRing = etwEtwReady;
+                }
+
+                _sharedRingEnabled = hasIoctlRing && hasEtwRing;
+                if (_sharedRingEnabled)
+                {
+                    _brokerCapabilities |= SleepwalkerNative.IpcCapSharedRing;
+                    _sharedRingError = 0;
+                }
+                else
+                {
+                    _brokerCapabilities &= ~SleepwalkerNative.IpcCapSharedRing;
+                }
+
+                if (!_sharedRingEnabled)
+                {
+                    int err = _sharedRingError == 0 ? SleepwalkerNative.ErrorNotSupported : unchecked((int)_sharedRingError);
+                    throw new Win32Exception(err, $"Shared-ring IPC required but unavailable (err={_sharedRingError})");
+                }
+
                 Status?.Invoke($"Session started for PID {_targetPid}");
                 DiagnosticsState.SetValue("Session", $"pid={_targetPid} stream=0x{_streamMask:X8}");
+                DiagnosticsState.SetValue("IPC Mode", "SharedRing+Event");
+                DiagnosticsState.SetValue("IPC Shared Ring",
+                    $"enabled={_sharedRingEnabled} ioctl={hasIoctlRing} etw={hasEtwRing} err={_sharedRingError}");
 
                 _ioctlTask = Task.Run(() => IoctlPump(_cts.Token));
                 _etwTask = Task.Run(() => EtwPump(_cts.Token));
@@ -92,6 +143,8 @@ namespace SleepwalkerInterface
         {
             IntPtr buffer = Marshal.AllocHGlobal(SleepwalkerNative.EventReadBufferBytes);
             byte[] managed = new byte[SleepwalkerNative.EventReadBufferBytes];
+            int idleBackoffMs = _sharedRingEnabled ? 2 : 12;
+            int idleBackoffMaxMs = _sharedRingEnabled ? 24 : 80;
             try
             {
                 while (!ct.IsCancellationRequested)
@@ -102,16 +155,19 @@ namespace SleepwalkerInterface
                         int len = (int)Math.Min(bytes, (uint)managed.Length);
                         if (len <= 0)
                         {
-                            ct.WaitHandle.WaitOne(2);
+                            ct.WaitHandle.WaitOne(idleBackoffMs);
+                            idleBackoffMs = Math.Min(idleBackoffMaxMs, idleBackoffMs + 2);
                             continue;
                         }
 
                         Marshal.Copy(buffer, managed, 0, len);
                         if (SleepwalkerNative.TryParseIoctlEvent(managed, len, out var parsed))
                         {
+                            Interlocked.Increment(ref _ioctlEvents);
                             DiagnosticsState.Increment("IOCTL Events");
                             IoctlEvent?.Invoke(parsed);
                         }
+                        idleBackoffMs = _sharedRingEnabled ? 2 : 12;
 
                         continue;
                     }
@@ -119,7 +175,9 @@ namespace SleepwalkerInterface
                     int err = Marshal.GetLastWin32Error();
                     if (err == SleepwalkerNative.ErrorNoMoreEntries)
                     {
-                        ct.WaitHandle.WaitOne(8);
+                        Interlocked.Increment(ref _ioctlEmptyPolls);
+                        ct.WaitHandle.WaitOne(idleBackoffMs);
+                        idleBackoffMs = Math.Min(idleBackoffMaxMs, idleBackoffMs + 4);
                         continue;
                     }
 
@@ -131,9 +189,11 @@ namespace SleepwalkerInterface
                         break;
                     }
 
+                    Interlocked.Increment(ref _ioctlErrors);
                     DiagnosticsState.Increment("IOCTL Errors");
                     DiagnosticsState.SetValue("IOCTL LastError", err.ToString());
                     ct.WaitHandle.WaitOne(40);
+                    idleBackoffMs = _sharedRingEnabled ? 2 : 12;
                 }
             }
             finally
@@ -149,10 +209,11 @@ namespace SleepwalkerInterface
                 bool ok = SleepwalkerNative.GetEtwEvent(_etwHandle, out var etw, 500);
                 if (ok)
                 {
+                    Interlocked.Increment(ref _etwEvents);
                     DiagnosticsState.Increment("ETW Events");
                     if (etw.Source == SleepwalkerNative.IpcEtwSourceThreatIntel)
                     {
-                        DiagnosticsState.Increment("ETW-TI Events");
+                        DiagnosticsState.Increment("ETW ThreatIntel Events");
                     }
                     EtwEvent?.Invoke(etw);
                     continue;
@@ -161,6 +222,7 @@ namespace SleepwalkerInterface
                 int err = Marshal.GetLastWin32Error();
                 if (err == SleepwalkerNative.ErrorNoMoreItems)
                 {
+                    Interlocked.Increment(ref _etwEmptyPolls);
                     continue;
                 }
 
@@ -179,6 +241,7 @@ namespace SleepwalkerInterface
                     return;
                 }
 
+                Interlocked.Increment(ref _etwErrors);
                 DiagnosticsState.Increment("ETW Errors");
                 DiagnosticsState.SetValue("ETW LastError", err.ToString());
                 ct.WaitHandle.WaitOne(40);
@@ -191,13 +254,49 @@ namespace SleepwalkerInterface
             {
                 if (SleepwalkerNative.GetStats(_ioctlHandle, out var stats, out _))
                 {
+                    DateTime now = DateTime.UtcNow;
+                    double elapsed = (now - _lastStatsSnapshotUtc).TotalSeconds;
+                    if (elapsed <= 0)
+                    {
+                        elapsed = 0.001;
+                    }
+
+                    long ioctlTotal = Interlocked.Read(ref _ioctlEvents);
+                    long etwTotal = Interlocked.Read(ref _etwEvents);
+                    long ioctlDelta = Math.Max(0, ioctlTotal - _lastStatsIoctlEvents);
+                    long etwDelta = Math.Max(0, etwTotal - _lastStatsEtwEvents);
+
                     Stats?.Invoke(new BackendStatsView
                     {
-                        TimestampUtc = DateTime.UtcNow,
+                        TimestampUtc = now,
                         SubscriptionCount = stats.SubscriptionCount,
                         QueueDepth = stats.QueueDepth,
                         DroppedEvents = stats.DroppedEvents
                     });
+
+                    IpcDiagnostics?.Invoke(new BackendIpcDiagnosticsView
+                    {
+                        TimestampUtc = now,
+                        BrokerCapabilities = _brokerCapabilities,
+                        SharedRingEnabled = _sharedRingEnabled,
+                        SharedRingError = _sharedRingError,
+                        IoctlReadBufferBytes = SleepwalkerNative.EventReadBufferBytes,
+                        SubscriptionCount = stats.SubscriptionCount,
+                        DriverQueueDepth = stats.QueueDepth,
+                        DriverDroppedEvents = stats.DroppedEvents,
+                        IoctlEventsTotal = ioctlTotal,
+                        EtwEventsTotal = etwTotal,
+                        IoctlErrorsTotal = Interlocked.Read(ref _ioctlErrors),
+                        EtwErrorsTotal = Interlocked.Read(ref _etwErrors),
+                        IoctlEmptyPolls = Interlocked.Read(ref _ioctlEmptyPolls),
+                        EtwEmptyPolls = Interlocked.Read(ref _etwEmptyPolls),
+                        IoctlEventsPerSec = ioctlDelta / elapsed,
+                        EtwEventsPerSec = etwDelta / elapsed
+                    });
+
+                    _lastStatsSnapshotUtc = now;
+                    _lastStatsIoctlEvents = ioctlTotal;
+                    _lastStatsEtwEvents = etwTotal;
 
                     DiagnosticsState.SetValue(
                         "Driver Queue",
@@ -246,13 +345,13 @@ namespace SleepwalkerInterface
         {
             if (_ioctlHandle != IntPtr.Zero && _ioctlHandle != new IntPtr(-1))
             {
-                _ = SleepwalkerNative.CloseHandle(_ioctlHandle);
+                _ = SleepwalkerNative.CloseControlDevice(_ioctlHandle);
                 _ioctlHandle = IntPtr.Zero;
             }
 
             if (_etwHandle != IntPtr.Zero && _etwHandle != new IntPtr(-1))
             {
-                _ = SleepwalkerNative.CloseHandle(_etwHandle);
+                _ = SleepwalkerNative.CloseControlDevice(_etwHandle);
                 _etwHandle = IntPtr.Zero;
             }
         }

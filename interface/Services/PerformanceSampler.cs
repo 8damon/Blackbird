@@ -6,7 +6,6 @@ using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
-using System.Windows.Threading;
 
 namespace SleepwalkerInterface
 {
@@ -15,8 +14,9 @@ namespace SleepwalkerInterface
     {
         public event EventHandler<PerformanceSample>? SampleArrived;
 
-        private readonly DispatcherTimer _timer;
+        private Timer? _timer;
         private readonly object _lock = new();
+        private int _tickActive;
 
         private int _targetPid = Process.GetCurrentProcess().Id;
         private DateTime _lastWall;
@@ -43,12 +43,6 @@ namespace SleepwalkerInterface
 
         public PerformanceSampler()
         {
-            _timer = new DispatcherTimer(DispatcherPriority.Background)
-            {
-                Interval = TimeSpan.FromSeconds(1)
-            };
-            _timer.Tick += (_, __) => Tick();
-
             TryInitCounters();
         }
 
@@ -57,20 +51,26 @@ namespace SleepwalkerInterface
             _lastWall = DateTime.UtcNow;
             _lastProcCpu = TimeSpan.Zero;
             PrimeNetwork();
-            if (_targetPid <= 0)
-                _targetPid = Process.GetCurrentProcess().Id;
-            _timer.Start();
+            lock (_lock)
+            {
+                _timer?.Dispose();
+                _timer = new Timer(_ => Tick(), null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
+            }
         }
 
-        public void Stop() => _timer.Stop();
+        public void Stop()
+        {
+            lock (_lock)
+            {
+                _timer?.Dispose();
+                _timer = null;
+            }
+        }
 
         public void SetTargetPid(int pid)
         {
             lock (_lock)
             {
-                if (pid <= 0)
-                    pid = Process.GetCurrentProcess().Id;
-
                 if (_targetPid == pid)
                     return;
 
@@ -98,8 +98,18 @@ namespace SleepwalkerInterface
 
         private void Tick()
         {
+            if (Interlocked.Exchange(ref _tickActive, 1) != 0)
+            {
+                return;
+            }
+
+            try
+            {
             int pid;
             lock (_lock) pid = _targetPid;
+
+            if (pid <= 0)
+                    return;
 
             var now = DateTime.UtcNow;
             var wallDelta = now - _lastWall;
@@ -111,18 +121,16 @@ namespace SleepwalkerInterface
                 CoreCount = Environment.ProcessorCount
             };
 
-            if (pid > 0)
-            {
-                FillProcess(sample, pid, wallDelta);
-            }
-            else
-            {
-                FillSystem(sample, wallDelta);
-            }
-
             _lastWall = now;
+            if (!FillProcess(sample, pid, wallDelta))
+                return;
 
             SampleArrived?.Invoke(this, sample);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _tickActive, 0);
+            }
         }
 
         private void FillSystem(PerformanceSample s, TimeSpan wallDelta)
@@ -172,14 +180,13 @@ namespace SleepwalkerInterface
             FillTopThreadsForProcess(s, Process.GetCurrentProcess(), wallDelta);
         }
 
-        private void FillProcess(PerformanceSample s, int pid, TimeSpan wallDelta)
+        private bool FillProcess(PerformanceSample s, int pid, TimeSpan wallDelta)
         {
             Process? p = null;
             try { p = Process.GetProcessById(pid); }
             catch
             {
-                FillProcess(s, Process.GetCurrentProcess().Id, wallDelta);
-                return;
+                return false;
             }
 
             try
@@ -240,6 +247,11 @@ namespace SleepwalkerInterface
                 }
 
                 FillTopThreadsForProcess(s, p, wallDelta);
+                return true;
+            }
+            catch
+            {
+                return false;
             }
             finally
             {
@@ -258,6 +270,13 @@ namespace SleepwalkerInterface
                     try { cpu = t.TotalProcessorTime; }
                     catch { continue; }
 
+                    string state = t.ThreadState.ToString();
+                    string waitReason = "";
+                    if (t.ThreadState == System.Diagnostics.ThreadState.Wait)
+                    {
+                        try { waitReason = t.WaitReason.ToString(); } catch { waitReason = ""; }
+                    }
+
                     double deltaMs = 0;
                     if (_threadCpuBaseline.TryGetValue(t.Id, out var prev))
                     {
@@ -274,7 +293,9 @@ namespace SleepwalkerInterface
                     {
                         Tid = t.Id,
                         CpuMsDelta = Math.Max(0, deltaMs),
-                        State = t.ThreadState.ToString(),
+                        State = state,
+                        WaitReason = waitReason,
+                        Kind = InferThreadKind(state, waitReason),
                         StartTimeUtc = SafeThreadStart(t)
                     });
                 }
@@ -285,6 +306,35 @@ namespace SleepwalkerInterface
             }
 
             s.TopThreads = list.OrderByDescending(x => x.CpuMsDelta).Take(20).ToList();
+        }
+
+        private static string InferThreadKind(string state, string waitReason)
+        {
+            if (!string.IsNullOrWhiteSpace(waitReason))
+            {
+                if (waitReason.Equals("Suspended", StringComparison.OrdinalIgnoreCase) ||
+                    waitReason.Equals("UserRequest", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "Normal";
+                }
+
+                if (waitReason.Equals("ExecutionDelay", StringComparison.OrdinalIgnoreCase) ||
+                    waitReason.Equals("WrQueue", StringComparison.OrdinalIgnoreCase) ||
+                    waitReason.Equals("WrLpcReceive", StringComparison.OrdinalIgnoreCase) ||
+                    waitReason.Equals("WrLpcReply", StringComparison.OrdinalIgnoreCase) ||
+                    waitReason.Equals("WrExecutive", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "ThreadPool/System";
+                }
+            }
+
+            if (state.Equals("Wait", StringComparison.OrdinalIgnoreCase) ||
+                state.Equals("Transition", StringComparison.OrdinalIgnoreCase))
+            {
+                return "System/Runtime";
+            }
+
+            return "Normal";
         }
 
         private static DateTime? SafeThreadStart(ProcessThread t)

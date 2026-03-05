@@ -113,7 +113,7 @@ namespace SleepwalkerInterface
             {
                 if (h != IntPtr.Zero && h != new IntPtr(-1))
                 {
-                    _ = SleepwalkerNative.CloseHandle(h);
+                    _ = SleepwalkerNative.CloseControlDevice(h);
                 }
             }
 

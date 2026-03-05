@@ -492,7 +492,7 @@ Cleanup:
 
     if (h != INVALID_HANDLE_VALUE)
     {
-        CloseHandle(h);
+        (void)SLEEPWALKERSCCloseControlDevice(h);
     }
 
     SLEEPWALKERSymbolResolverCleanup();

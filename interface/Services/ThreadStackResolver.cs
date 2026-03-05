@@ -36,7 +36,7 @@ namespace SleepwalkerInterface
         public static ThreadStackResolveResult Resolve(int pid, int tid, string state)
         {
             if (!Environment.Is64BitProcess)
-                return new ThreadStackResolveResult(new List<StackFrameRow>(), "", 0, 0, 0, null, 0);
+                return new ThreadStackResolveResult(new List<StackFrameRow>(), "", 0, 0, 0, null, 0, null);
 
             if (tid == GetCurrentThreadId())
                 return ResolveCurrentThreadManaged(pid, tid, state);
@@ -57,7 +57,7 @@ namespace SleepwalkerInterface
 
                 hThread = OpenThread(THREAD_QUERY_INFORMATION | THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, false, (uint)tid);
                 if (hThread == IntPtr.Zero)
-                    return new ThreadStackResolveResult(new List<StackFrameRow>(), "", 0, 0, 0, null, 0);
+                    return new ThreadStackResolveResult(new List<StackFrameRow>(), "", 0, 0, 0, null, 0, null);
 
                 TryReadThreadMetadata(hProcess, hThread, out ulong tebAddress, out ulong stackBase, out ulong stackTop, out ushort? tebFlags);
 
@@ -80,15 +80,15 @@ namespace SleepwalkerInterface
                 };
 
                 if (!GetThreadContext(hThread, ref context))
-                    return new ThreadStackResolveResult(new List<StackFrameRow>(), "", tebAddress, stackBase, stackTop, tebFlags, 0);
+                    return new ThreadStackResolveResult(new List<StackFrameRow>(), "", tebAddress, stackBase, stackTop, tebFlags, 0, null);
 
                 var moduleRanges = BuildModuleRanges(pid);
                 var frames = WalkFrames(hProcess, hThread, ref context, moduleRanges, symbolsReady);
-                return new ThreadStackResolveResult(frames, "", tebAddress, stackBase, stackTop, tebFlags, context.Rsp);
+                return new ThreadStackResolveResult(frames, "", tebAddress, stackBase, stackTop, tebFlags, context.Rsp, BuildSnapshot(context));
             }
             catch
             {
-                return new ThreadStackResolveResult(new List<StackFrameRow>(), "", 0, 0, 0, null, 0);
+                return new ThreadStackResolveResult(new List<StackFrameRow>(), "", 0, 0, 0, null, 0, null);
             }
             finally
             {
@@ -129,7 +129,38 @@ namespace SleepwalkerInterface
                 });
             }
 
-            return new ThreadStackResolveResult(frames, "", 0, 0, 0, null, 0);
+            return new ThreadStackResolveResult(frames, "", 0, 0, 0, null, 0, null);
+        }
+
+        private static ThreadContextSnapshot BuildSnapshot(CONTEXT64 context)
+        {
+            return new ThreadContextSnapshot
+            {
+                Rip = context.Rip,
+                Rsp = context.Rsp,
+                Rbp = context.Rbp,
+                Rax = context.Rax,
+                Rbx = context.Rbx,
+                Rcx = context.Rcx,
+                Rdx = context.Rdx,
+                Rsi = context.Rsi,
+                Rdi = context.Rdi,
+                R8 = context.R8,
+                R9 = context.R9,
+                R10 = context.R10,
+                R11 = context.R11,
+                R12 = context.R12,
+                R13 = context.R13,
+                R14 = context.R14,
+                R15 = context.R15,
+                Dr0 = context.Dr0,
+                Dr1 = context.Dr1,
+                Dr2 = context.Dr2,
+                Dr3 = context.Dr3,
+                Dr6 = context.Dr6,
+                Dr7 = context.Dr7,
+                EFlags = context.EFlags
+            };
         }
 
         private static void TryReadThreadMetadata(
@@ -612,6 +643,7 @@ namespace SleepwalkerInterface
         public ulong StackTop { get; }
         public ushort? TebFlags { get; }
         public ulong StackPointer { get; }
+        public ThreadContextSnapshot? ContextSnapshot { get; }
 
         public ThreadStackResolveResult(
             IReadOnlyList<StackFrameRow> frames,
@@ -620,7 +652,8 @@ namespace SleepwalkerInterface
             ulong stackBase,
             ulong stackTop,
             ushort? tebFlags,
-            ulong stackPointer)
+            ulong stackPointer,
+            ThreadContextSnapshot? contextSnapshot)
         {
             Frames = frames;
             Note = note;
@@ -629,6 +662,35 @@ namespace SleepwalkerInterface
             StackTop = stackTop;
             TebFlags = tebFlags;
             StackPointer = stackPointer;
+            ContextSnapshot = contextSnapshot;
         }
+    }
+
+    internal sealed class ThreadContextSnapshot
+    {
+        public ulong Rip { get; set; }
+        public ulong Rsp { get; set; }
+        public ulong Rbp { get; set; }
+        public ulong Rax { get; set; }
+        public ulong Rbx { get; set; }
+        public ulong Rcx { get; set; }
+        public ulong Rdx { get; set; }
+        public ulong Rsi { get; set; }
+        public ulong Rdi { get; set; }
+        public ulong R8 { get; set; }
+        public ulong R9 { get; set; }
+        public ulong R10 { get; set; }
+        public ulong R11 { get; set; }
+        public ulong R12 { get; set; }
+        public ulong R13 { get; set; }
+        public ulong R14 { get; set; }
+        public ulong R15 { get; set; }
+        public ulong Dr0 { get; set; }
+        public ulong Dr1 { get; set; }
+        public ulong Dr2 { get; set; }
+        public ulong Dr3 { get; set; }
+        public ulong Dr6 { get; set; }
+        public ulong Dr7 { get; set; }
+        public uint EFlags { get; set; }
     }
 }

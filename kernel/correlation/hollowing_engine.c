@@ -178,8 +178,8 @@ static VOID SLEEPWALKERHollowEvaluateMarkDetectionsLocked(_Inout_ PSLEEPWALKER_H
     hasDupIntent = ((Entry->Marks & SLEEPWALKER_HOLLOW_MARK_DUP_HANDLE_INTENT) != 0);
     suspiciousStart = (hasOutside || hasNonImageExec);
 
-    medium = hasRemote && suspiciousStart && (hasMemoryIntent || hasThreadCtxIntent || hasDupIntent);
-    strong = hasRemote && suspiciousStart && hasMemoryIntent && (hasThreadCtxIntent || hasDupIntent);
+    medium = hasRemote && suspiciousStart && hasMemoryIntent && (hasThreadCtxIntent || hasDupIntent);
+    strong = hasRemote && hasNonImageExec && hasMemoryIntent && (hasThreadCtxIntent || hasDupIntent);
 
     if (strong)
     {
@@ -196,7 +196,7 @@ static VOID SLEEPWALKERHollowEvaluateMarkDetectionsLocked(_Inout_ PSLEEPWALKER_H
             Emit->CorrelationFlags = Entry->CorrelationFlags;
             Emit->CorrelationAccessMask = Entry->CorrelationAccessMask;
             Emit->CorrelationAgeMs = Entry->CorrelationAgeMs;
-            Emit->Reason = L"kernel hollowing mark-chain (strong)";
+            Emit->Reason = L"kernel hollowing mark-chain strong (remote non-image exec + memory/thread intent)";
             return;
         }
     }
@@ -216,7 +216,7 @@ static VOID SLEEPWALKERHollowEvaluateMarkDetectionsLocked(_Inout_ PSLEEPWALKER_H
             Emit->CorrelationFlags = Entry->CorrelationFlags;
             Emit->CorrelationAccessMask = Entry->CorrelationAccessMask;
             Emit->CorrelationAgeMs = Entry->CorrelationAgeMs;
-            Emit->Reason = L"kernel hollowing mark-chain (medium)";
+            Emit->Reason = L"kernel hollowing mark-chain medium (memory intent + suspicious remote start)";
         }
     }
 }
@@ -391,48 +391,36 @@ VOID SLEEPWALKERHollowingObserveThread(_In_ HANDLE ProcessId, _In_opt_ HANDLE Ac
     hasMemoryIntent = ((CorrelationFlags & SLEEPWALKER_INTENT_PROCESS_MEMORY) != 0);
     hasDuplicateIntent = ((CorrelationFlags & SLEEPWALKER_INTENT_DUP_HANDLE) != 0);
 
-    if (isRemoteCreator && CorrelationFlags != 0)
+    if (isRemoteCreator && hasMemoryIntent && (hasThreadContextIntent || hasDuplicateIntent))
     {
-        SLEEPWALKEREtwLogDetectionEvent("REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT", 4, actor, ProcessId,
+        SLEEPWALKEREtwLogDetectionEvent("REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT", 5, actor, ProcessId,
                                         CorrelationFlags, CorrelationAccessMask, CorrelationAgeMs,
-                                        L"remote thread activity correlated with recent handle intent");
+                                        L"remote thread correlated with memory+thread-context/dup handle intent");
     }
-    if (remoteNonImageExec)
+    if (remoteNonImageExec && hasMemoryIntent)
     {
-        SLEEPWALKEREtwLogDetectionEvent("REMOTE_THREAD_START_IN_NON_IMAGE_EXECUTABLE_REGION", 5, actor, ProcessId,
+        SLEEPWALKEREtwLogDetectionEvent("REMOTE_THREAD_START_IN_NON_IMAGE_EXECUTABLE_REGION", 6, actor, ProcessId,
                                         CorrelationFlags, CorrelationAccessMask, CorrelationAgeMs,
-                                        L"remote thread start address resolved to executable non-image memory");
+                                        L"remote thread start resolved to executable non-image memory with memory intent");
     }
-    if (isRemoteCreator && OutsideMainImage)
+    if (isRemoteCreator && hasThreadContextIntent && hasMemoryIntent && (OutsideMainImage || remoteNonImageExec))
     {
-        SLEEPWALKEREtwLogDetectionEvent("REMOTE_THREAD_OUTSIDE_MAIN_IMAGE", 3, actor, ProcessId, CorrelationFlags,
+        SLEEPWALKEREtwLogDetectionEvent("THREAD_HIJACK_INTENT", 6, actor, ProcessId, CorrelationFlags,
                                         CorrelationAccessMask, CorrelationAgeMs,
-                                        L"remote thread start address is outside target main image range");
-    }
-    if (hasThreadContextIntent && (isRemoteCreator || OutsideMainImage || remoteNonImageExec))
-    {
-        SLEEPWALKEREtwLogDetectionEvent("THREAD_ACTIVITY_WITH_THREAD_CONTEXT_INTENT", 4, actor, ProcessId,
-                                        CorrelationFlags, CorrelationAccessMask, CorrelationAgeMs,
-                                        L"thread activity observed after thread-context handle intent");
-    }
-    if (isRemoteCreator && hasThreadContextIntent && (OutsideMainImage || remoteNonImageExec))
-    {
-        SLEEPWALKEREtwLogDetectionEvent("THREAD_HIJACK_INTENT", 5, actor, ProcessId, CorrelationFlags,
-                                        CorrelationAccessMask, CorrelationAgeMs,
-                                        L"thread-context intent combined with suspicious remote thread execution");
+                                        L"thread-context + memory intent combined with suspicious remote execution");
     }
     if (isRemoteCreator && (OutsideMainImage || remoteNonImageExec) && hasMemoryIntent &&
         (hasThreadContextIntent || hasDuplicateIntent))
     {
-        SLEEPWALKEREtwLogDetectionEvent("POSSIBLE_PROCESS_HOLLOWING_OR_INJECTION_INTENT_CHAIN", 6, actor, ProcessId,
+        SLEEPWALKEREtwLogDetectionEvent("POSSIBLE_PROCESS_HOLLOWING_OR_INJECTION_INTENT_CHAIN", 7, actor, ProcessId,
                                         CorrelationFlags, CorrelationAccessMask, CorrelationAgeMs,
-                                        L"memory and thread intent chain indicates potential hollowing/injection");
+                                        L"memory + thread intent chain with suspicious remote start indicates hollowing/injection");
     }
-    if (isRemoteCreator && (OutsideMainImage || remoteNonImageExec) && (hasMemoryIntent || hasDuplicateIntent))
+    if (isRemoteCreator && remoteNonImageExec && hasMemoryIntent && hasThreadContextIntent)
     {
         SLEEPWALKEREtwLogDetectionEvent("POSSIBLE_MANUAL_MAP_OR_HOLLOWING_EXECUTION", 6, actor, ProcessId,
                                         CorrelationFlags, CorrelationAccessMask, CorrelationAgeMs,
-                                        L"remote execution from suspicious region after memory/duplicate intent");
+                                        L"remote non-image execution with memory+thread context intent");
     }
 
     if (isRemoteCreator)

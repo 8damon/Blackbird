@@ -1,0 +1,246 @@
+<Window x:Class="SleepwalkerInterface.DirectSyscallSuspectWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Direct Syscall Suspects"
+        Height="760"
+        Width="1360"
+        MinHeight="560"
+        MinWidth="1040"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        Background="{DynamicResource WinPanelBrush}">
+    <Window.Resources>
+        <Style x:Key="TitleBarGlyphButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="MinWidth" Value="26"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Root"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
+                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
+                                <Setter TargetName="Root" Property="BorderThickness" Value="1"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource WinBorderBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    <Grid Margin="0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="{DynamicResource WinPanelBrush}"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="1"
+                Padding="10,8"
+                MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                    <TextBlock x:Name="HeaderBlock"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               Text="Direct Syscall Suspects"/>
+                    <TextBlock x:Name="SummaryBlock"
+                               Margin="0,2,0,0"
+                               Foreground="{DynamicResource WinMutedTextBrush}"
+                               Text="No suspect entries"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            Margin="8,0,0,0"
+                            VerticalAlignment="Center">
+                    <Button Style="{StaticResource TitleBarGlyphButtonStyle}"
+                            Content="&#xE921;"
+                            Click="WindowMinimize_Click"/>
+                    <Button Style="{StaticResource TitleBarGlyphButtonStyle}"
+                            Content="&#xE922;"
+                            Margin="4,0,0,0"
+                            Click="WindowMaximize_Click"/>
+                    <Button Style="{StaticResource TitleBarGlyphButtonStyle}"
+                            Content="&#xE8BB;"
+                            Margin="4,0,0,0"
+                            Click="WindowClose_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2.3*"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="1.7*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Background="{DynamicResource WinPanelBrush}"
+                    BorderBrush="{DynamicResource WinBorderBrush}"
+                    BorderThickness="1">
+                <DataGrid x:Name="SuspectsGrid"
+                          Margin="8"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          RowHeight="22"
+                          ColumnHeaderHeight="24"
+                          Background="{DynamicResource WinPanelBrush}"
+                          RowBackground="{DynamicResource WinPanelBrush}"
+                          AlternatingRowBackground="{DynamicResource WinPanelBrush}"
+                          BorderBrush="{DynamicResource WinBorderBrush}"
+                          HorizontalGridLinesBrush="{DynamicResource WinSubtleBorderBrush}"
+                          VerticalGridLinesBrush="{DynamicResource WinSubtleBorderBrush}"
+                          SelectionChanged="SuspectsGrid_SelectionChanged">
+                    <DataGrid.GroupStyle>
+                        <GroupStyle>
+                            <GroupStyle.ContainerStyle>
+                                <Style TargetType="{x:Type GroupItem}">
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="{x:Type GroupItem}">
+                                                <Expander IsExpanded="False">
+                                                    <Expander.Header>
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="180"/>
+                                                                <ColumnDefinition Width="140"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="52"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0"
+                                                                       FontWeight="SemiBold"
+                                                                       Text="{Binding Name}"/>
+                                                            <TextBlock Grid.Column="1"
+                                                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                                                       Text="{Binding Items[0].TimestampUtc, StringFormat=HH:mm:ss.fff}"/>
+                                                            <TextBlock Grid.Column="2"
+                                                                       Margin="8,0,6,0"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                                                       Text="{Binding Items[0].DetectionSummary}"/>
+                                                            <TextBlock Grid.Column="3"
+                                                                       HorizontalAlignment="Right"
+                                                                       FontWeight="SemiBold"
+                                                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                                                       Text="{Binding ItemCount, StringFormat={}x{0}}"/>
+                                                        </Grid>
+                                                    </Expander.Header>
+                                                    <ItemsPresenter/>
+                                                </Expander>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </GroupStyle.ContainerStyle>
+                        </GroupStyle>
+                    </DataGrid.GroupStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Time" Width="110" Binding="{Binding TimestampUtc, StringFormat=HH:mm:ss.fff}"/>
+                        <DataGridTextColumn Header="Syscall" Width="190" Binding="{Binding SyscallLabel}"/>
+                        <DataGridTextColumn Header="Actor" Width="180" Binding="{Binding Actor}"/>
+                        <DataGridTextColumn Header="Target" Width="180" Binding="{Binding Target}"/>
+                        <DataGridTextColumn Header="Detection" Width="*" Binding="{Binding Detection}"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Border>
+
+            <Border Grid.Column="2"
+                    Background="{DynamicResource WinPanelBrush}"
+                    BorderBrush="{DynamicResource WinBorderBrush}"
+                    BorderThickness="1"
+                    Padding="10,8">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel>
+                        <TextBlock Text="Syscall Overview" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="OverviewBlock"
+                                   Margin="0,4,0,10"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"
+                                   TextWrapping="Wrap"/>
+
+                        <TextBlock Text="Arguments / Context" FontWeight="SemiBold"/>
+                        <DataGrid x:Name="ArgumentsGrid"
+                                  Margin="0,4,0,10"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  CanUserResizeRows="False"
+                                  ColumnHeaderHeight="22"
+                                  RowHeight="22"
+                                  MinHeight="72">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Field" Width="140" Binding="{Binding Key}"/>
+                                <DataGridTextColumn Header="Value" Width="*" Binding="{Binding Value}"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <TextBlock Text="Execution Context" FontWeight="SemiBold"/>
+                        <DataGrid x:Name="ContextGrid"
+                                  Margin="0,4,0,10"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  CanUserResizeRows="False"
+                                  ColumnHeaderHeight="22"
+                                  RowHeight="22"
+                                  MinHeight="72">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Field" Width="140" Binding="{Binding Key}"/>
+                                <DataGridTextColumn Header="Value" Width="*" Binding="{Binding Value}"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <Button x:Name="OpenDisassemblyButton"
+                                Content="Open Disassembly Window"
+                                Width="190"
+                                Height="24"
+                                HorizontalAlignment="Left"
+                                Margin="0,0,0,10"
+                                Click="OpenDisassemblyButton_Click"/>
+
+                        <Expander Margin="0,6,0,0"
+                                  Header="Raw Event"
+                                  IsExpanded="False">
+                            <TextBox x:Name="RawBox"
+                                     Margin="0,6,0,0"
+                                     IsReadOnly="True"
+                                     TextWrapping="Wrap"
+                                     VerticalScrollBarVisibility="Auto"
+                                     MinHeight="120"
+                                     Background="{DynamicResource WinHeaderBrush}"
+                                     Foreground="{DynamicResource WinTextBrush}"
+                                     BorderBrush="{DynamicResource WinBorderBrush}"/>
+                        </Expander>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

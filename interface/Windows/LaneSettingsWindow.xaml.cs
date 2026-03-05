@@ -37,6 +37,20 @@ namespace SleepwalkerInterface
             App.ThemeChanged += OnThemeChanged;
         }
 
+        private void Root_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton != MouseButton.Left || e.ClickCount != 1)
+                return;
+
+            try
+            {
+                DragMove();
+            }
+            catch
+            {
+            }
+        }
+
         private void Refresh_Click(object sender, RoutedEventArgs e)
         {
             RefreshLaneList();

@@ -2,12 +2,16 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Thread Stack"
-        Height="920"
-        Width="640"
+        Height="960"
+        Width="1180"
+        MinHeight="720"
+        MinWidth="980"
         WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="CanResize"
         Background="{DynamicResource WinBgBrush}">
 
-    <Grid Margin="10">
+    <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -15,113 +19,356 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock x:Name="HeaderBlock" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <!-- Header -->
+        <Border Grid.Row="0"
+                Background="{DynamicResource WinPanelBrush}"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="1"
+                Padding="10,8"
+                Margin="0,0,0,6"
+                MouseLeftButtonDown="Root_MouseLeftButtonDown">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                    <TextBlock x:Name="HeaderBlock"
+                               FontSize="16"
+                               FontWeight="SemiBold"/>
+                    <TextBlock x:Name="HeaderStateBlock"
+                               Margin="0,2,0,0"
+                               FontSize="11"
+                               Foreground="{DynamicResource WinMutedTextBrush}"/>
+                </StackPanel>
+                <Button Grid.Column="1"
+                        Content="✕"
+                        Width="26"
+                        Height="24"
+                        Margin="8,0,0,0"
+                        VerticalAlignment="Top"
+                        Click="Close_Click"/>
+            </Grid>
+        </Border>
 
-        <TextBlock Grid.Row="1"
-                   x:Name="ThreadMetaBlock"
-                   Margin="0,0,0,8"
-                   Foreground="{DynamicResource WinMutedTextBrush}"
-                   TextWrapping="Wrap"/>
+        <!-- Secondary metadata -->
+        <Border Grid.Row="1"
+                Background="{DynamicResource WinPanelBrush}"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="1"
+                Padding="6"
+                Margin="0,0,0,6">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.1*"/>
+                    <ColumnDefinition Width="1.8*"/>
+                    <ColumnDefinition Width="1.4*"/>
+                </Grid.ColumnDefinitions>
 
+                <Border Grid.Column="0"
+                        Background="{DynamicResource WinHeaderBrush}"
+                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                        BorderThickness="1"
+                        Margin="0,0,6,0"
+                        Padding="6">
+                    <StackPanel>
+                        <TextBlock Text="Thread Snapshot"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"
+                                   Margin="0,0,0,5"/>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="56"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="PID" Foreground="{DynamicResource WinMutedTextBrush}" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="PidBlock" FontFamily="Consolas" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="TID" Foreground="{DynamicResource WinMutedTextBrush}" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="TidBlock" FontFamily="Consolas" />
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="State" Foreground="{DynamicResource WinMutedTextBrush}" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" x:Name="StateMetaBlock" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Column="1"
+                        Background="{DynamicResource WinHeaderBrush}"
+                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                        BorderThickness="1"
+                        Margin="0,0,6,0"
+                        Padding="6">
+                    <StackPanel>
+                        <TextBlock Text="Bounds And Pointers"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"
+                                   Margin="0,0,0,5"/>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="54"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="66"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Base" Foreground="{DynamicResource WinMutedTextBrush}" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="StackBaseMetaBlock" FontFamily="Consolas" />
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="RIP" Foreground="{DynamicResource WinMutedTextBrush}" />
+                            <TextBlock Grid.Row="0" Grid.Column="3" x:Name="RipMetaBlock" FontFamily="Consolas" Text="N/A" />
+
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Top" Foreground="{DynamicResource WinMutedTextBrush}" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="StackTopMetaBlock" FontFamily="Consolas" />
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="RSP" Foreground="{DynamicResource WinMutedTextBrush}" />
+                            <TextBlock Grid.Row="1" Grid.Column="3" x:Name="RspMetaBlock" FontFamily="Consolas" Text="N/A" />
+
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Span" Foreground="{DynamicResource WinMutedTextBrush}" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" x:Name="StackSpanMetaBlock" FontFamily="Consolas" Text="N/A" />
+                            <TextBlock Grid.Row="2" Grid.Column="2" Text="Active" Foreground="{DynamicResource WinMutedTextBrush}" />
+                            <TextBlock Grid.Row="2" Grid.Column="3" x:Name="ActiveSpanMetaBlock" FontFamily="Consolas" Text="N/A" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Column="2"
+                        Background="{DynamicResource WinHeaderBrush}"
+                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                        BorderThickness="1"
+                        Padding="6">
+                    <StackPanel>
+                        <TextBlock Text="Context"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"
+                                   Margin="0,0,0,5"/>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="74"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="TEB" Foreground="{DynamicResource WinMutedTextBrush}" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="TebBlock" FontFamily="Consolas" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="TEB Flags" Foreground="{DynamicResource WinMutedTextBrush}" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="TebFlagsMetaBlock" FontFamily="Consolas" />
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="EFLAGS" Foreground="{DynamicResource WinMutedTextBrush}" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" x:Name="EFlagsMetaBlock" FontFamily="Consolas" Text="N/A" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- Main content -->
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="220"/>
-                <ColumnDefinition Width="8"/>
-                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="3*" MinWidth="680"/>
+                <ColumnDefinition Width="2"/>
+                <ColumnDefinition Width="2*" MinWidth="420"/>
             </Grid.ColumnDefinitions>
 
+            <!-- Left: User stack -->
             <Border Grid.Column="0"
+                    BorderBrush="{DynamicResource WinBorderBrush}"
+                    BorderThickness="1"
+                    Background="{DynamicResource WinPanelBrush}">
+                <Grid Margin="6">
+                    <DataGrid x:Name="UserStackGrid"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              ColumnHeaderHeight="26"
+                              RowHeight="24"
+                              CanUserResizeRows="False"
+                              GridLinesVisibility="None"
+                              HeadersVisibility="Column"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                              SelectionMode="Single"
+                              SelectionUnit="FullRow">
+                        <DataGrid.Resources>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Padding" Value="6,2,6,2"/>
+                                <Setter Property="FontFamily" Value="Consolas"/>
+                                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                            </Style>
+                            <Style TargetType="DataGridRow">
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="VerticalAlignment" Value="Center"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                            <Style x:Key="StackGridTextStyle" TargetType="TextBlock">
+                                <Setter Property="VerticalAlignment" Value="Center"/>
+                                <Setter Property="TextWrapping" Value="NoWrap"/>
+                            </Style>
+                            <Style x:Key="StackGridIndexTextStyle" TargetType="TextBlock" BasedOn="{StaticResource StackGridTextStyle}">
+                                <Setter Property="Padding" Value="8,0,0,0"/>
+                            </Style>
+                        </DataGrid.Resources>
+
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="#" Binding="{Binding Index}" Width="36" ElementStyle="{StaticResource StackGridIndexTextStyle}"/>
+                            <DataGridTextColumn Header="RIP" Binding="{Binding Address}" Width="118" ElementStyle="{StaticResource StackGridTextStyle}"/>
+                            <DataGridTextColumn Header="RBP" Binding="{Binding FramePointer}" Width="118" ElementStyle="{StaticResource StackGridTextStyle}"/>
+                            <DataGridTextColumn Header="Frame" Binding="{Binding FrameSpan}" Width="72" ElementStyle="{StaticResource StackGridTextStyle}"/>
+                            <DataGridTextColumn Header="Module" Binding="{Binding Module}" Width="118" ElementStyle="{StaticResource StackGridTextStyle}"/>
+                            <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="*" ElementStyle="{StaticResource StackGridTextStyle}"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+
+            <GridSplitter Grid.Column="1"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"
+                          Width="2"
+                          Background="{DynamicResource WinSubtleBorderBrush}"
+                          ResizeBehavior="PreviousAndNext"
+                          ShowsPreview="True"/>
+
+            <!-- Right: Registers -->
+            <Border Grid.Column="2"
                     BorderBrush="{DynamicResource WinBorderBrush}"
                     BorderThickness="1"
                     Background="{DynamicResource WinPanelBrush}">
                 <Grid>
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="24"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
-                        <RowDefinition Height="24"/>
                     </Grid.RowDefinitions>
 
                     <Border Grid.Row="0"
                             Background="{DynamicResource WinHeaderBrush}"
                             BorderBrush="{DynamicResource WinSubtleBorderBrush}"
                             BorderThickness="0,0,0,1"
-                            Padding="8,0">
-                        <TextBlock Text="Stack Memory"
+                            Padding="8,4">
+                        <TextBlock Text="Registers"
                                    FontWeight="SemiBold"
                                    FontSize="11"/>
                     </Border>
 
-                    <Grid Grid.Row="1" Margin="6">
-                        <Canvas x:Name="StackMapCanvas"
-                                Background="{DynamicResource ExplorerPreviewBackgroundBrush}"
-                                ClipToBounds="True"
-                                SizeChanged="StackMapCanvas_SizeChanged"/>
-                        <Border x:Name="StackMapNoDataOverlay"
-                                Background="{DynamicResource NoDataOverlayBrush}"
-                                IsHitTestVisible="False"
-                                Visibility="Collapsed">
-                            <TextBlock Text="NO STACK MAP"
-                                       FontWeight="Bold"
-                                       FontSize="16"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       Foreground="{DynamicResource WinTextBrush}"
-                                       Opacity="0.72"/>
-                        </Border>
-                    </Grid>
+                    <ScrollViewer Grid.Row="1" Margin="6" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
 
-                    <Border Grid.Row="2"
-                            Background="{DynamicResource WinHeaderBrush}"
-                            BorderBrush="{DynamicResource WinSubtleBorderBrush}"
-                            BorderThickness="0,1,0,0"
-                            Padding="6,0">
-                        <DockPanel LastChildFill="False">
-                            <TextBlock x:Name="StackBaseBlock"
-                                       DockPanel.Dock="Left"
-                                       FontFamily="Consolas"
-                                       FontSize="10"
-                                       Foreground="{DynamicResource WinMutedTextBrush}"
-                                       Text="BASE: -"/>
-                            <TextBlock x:Name="StackTopBlock"
-                                       DockPanel.Dock="Right"
-                                       FontFamily="Consolas"
-                                       FontSize="10"
-                                       Foreground="{DynamicResource WinMutedTextBrush}"
-                                       Text="TOP: -"/>
-                        </DockPanel>
-                    </Border>
+                            <Border Background="{DynamicResource WinHeaderBrush}"
+                                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                    BorderThickness="1"
+                                    Padding="8"
+                                    Margin="0,0,0,6">
+                                <StackPanel>
+                                    <TextBlock Text="General Registers"
+                                               FontWeight="SemiBold"
+                                               FontSize="11"
+                                               Margin="0,0,0,8"
+                                               Foreground="{DynamicResource WinMutedTextBrush}"/>
+
+                                    <ItemsControl x:Name="GeneralRegsList">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <UniformGrid Columns="3"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Margin="4"
+                                                        Padding="6"
+                                                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                        BorderThickness="1"
+                                                        Background="{DynamicResource ExplorerPreviewBackgroundBrush}">
+                                                    <StackPanel>
+                                                        <TextBlock Text="{Binding Name}"
+                                                                   FontSize="10"
+                                                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                        <TextBlock Text="{Binding ValueText}"
+                                                                   ToolTip="{Binding ValueText}"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   FontFamily="Consolas"
+                                                                   FontSize="11"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="{DynamicResource WinHeaderBrush}"
+                                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                    BorderThickness="1"
+                                    Padding="8"
+                                    Margin="0,0,0,6">
+                                <StackPanel>
+                                    <TextBlock Text="Flags"
+                                               FontWeight="SemiBold"
+                                               FontSize="11"
+                                               Margin="0,0,0,8"
+                                               Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                    <UniformGrid Columns="2">
+                                        <TextBlock Text="EFLAGS" Foreground="{DynamicResource WinMutedTextBrush}" />
+                                        <TextBlock x:Name="EFlagsDetailBlock" FontFamily="Consolas" Text="N/A" />
+                                    </UniformGrid>
+                                    <TextBlock x:Name="EFlagsEnglishBlock"
+                                               Margin="0,8,0,0"
+                                               FontSize="10"
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource WinMutedTextBrush}"
+                                               Text="N/A"/>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Background="{DynamicResource WinHeaderBrush}"
+                                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                        BorderThickness="1"
+                                        Padding="8">
+                                <StackPanel>
+                                    <TextBlock Text="Debug Registers (DRx)"
+                                               FontWeight="SemiBold"
+                                               FontSize="11"
+                                               Margin="0,0,0,8"
+                                               Foreground="{DynamicResource WinMutedTextBrush}"/>
+
+                                    <TextBlock x:Name="DrxBitsBlock"
+                                               FontFamily="Consolas"
+                                               FontSize="11"
+                                               TextWrapping="Wrap"
+                                               Text="N/A"/>
+                                </StackPanel>
+                            </Border>
+
+                        </StackPanel>
+                    </ScrollViewer>
                 </Grid>
             </Border>
-
-            <DataGrid Grid.Column="2"
-                      x:Name="StackGrid"
-                      AutoGenerateColumns="False"
-                      IsReadOnly="True"
-                      ColumnHeaderHeight="24"
-                      RowHeight="22"
-                      CanUserResizeRows="False"
-                      GridLinesVisibility="None">
-                <DataGrid.Resources>
-                    <Style TargetType="DataGridCell">
-                        <Setter Property="BorderThickness" Value="0"/>
-                    </Style>
-                    <Style TargetType="DataGridRow">
-                        <Setter Property="BorderThickness" Value="0"/>
-                    </Style>
-                </DataGrid.Resources>
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="#" Binding="{Binding Index}" Width="56"/>
-                    <DataGridTextColumn Header="IP Address" Binding="{Binding Address}" Width="146"/>
-                    <DataGridTextColumn Header="Frame Ptr" Binding="{Binding FramePointer}" Width="146"/>
-                    <DataGridTextColumn Header="Module" Binding="{Binding Module}" Width="180"/>
-                    <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="*"/>
-                </DataGrid.Columns>
-            </DataGrid>
         </Grid>
 
-        <DockPanel Grid.Row="3" Margin="0,8,0,0" LastChildFill="False">
-            <TextBlock x:Name="NoteBlock" DockPanel.Dock="Left" VerticalAlignment="Center" Foreground="{DynamicResource WinMutedTextBrush}"/>
-            <Button DockPanel.Dock="Right" Content="Close" Padding="12,4" Click="Close_Click"/>
+        <!-- Footer -->
+        <DockPanel Grid.Row="3" Margin="0,6,0,0" LastChildFill="False">
+            <TextBlock x:Name="NoteBlock"
+                       DockPanel.Dock="Left"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource WinMutedTextBrush}"/>
+            <Button DockPanel.Dock="Right"
+                    Content="Close"
+                    Padding="12,4"
+                    Click="Close_Click"/>
         </DockPanel>
     </Grid>
 </Window>

@@ -1,7 +1,10 @@
 #include <ntddk.h>
 #include <ntimage.h>
+#include <intrin.h>
+#include <ntstrsafe.h>
 #include "..\core\control.h"
 #include "..\core\protection_utils.h"
+#include "..\core\pool_compat.h"
 #include "..\core\unicode_utils.h"
 #include "..\telemetry\etw.h"
 #include "apc_monitor.h"
@@ -194,8 +197,35 @@ typedef struct _SLEEPWALKER_HANDLE_WORK
     ACCESS_MASK DesiredAccess;
     BOOLEAN IsThreadObject;
     BOOLEAN IsDuplicateOperation;
+    UINT32 CaptureFlags;
     ULONG FrameCount;
     PVOID Frames[8];
+    ULONG FullFrameCount;
+    PVOID FullFrames[SLEEPWALKER_MAX_FULL_EVENT_FRAMES];
+    UINT64 RegRax;
+    UINT64 RegRbx;
+    UINT64 RegRcx;
+    UINT64 RegRdx;
+    UINT64 RegRsi;
+    UINT64 RegRdi;
+    UINT64 RegRbp;
+    UINT64 RegRsp;
+    UINT64 RegR8;
+    UINT64 RegR9;
+    UINT64 RegR10;
+    UINT64 RegR11;
+    UINT64 RegR12;
+    UINT64 RegR13;
+    UINT64 RegR14;
+    UINT64 RegR15;
+    UINT64 RegRip;
+    UINT64 RegEFlags;
+    UINT64 RegDr0;
+    UINT64 RegDr1;
+    UINT64 RegDr2;
+    UINT64 RegDr3;
+    UINT64 RegDr6;
+    UINT64 RegDr7;
 } SLEEPWALKER_HANDLE_WORK, *PSLEEPWALKER_HANDLE_WORK;
 
 typedef enum _SLEEPWALKER_HANDLE_CLASSIFICATION
@@ -236,7 +266,167 @@ typedef struct _SLEEPWALKER_HANDLE_TELEMETRY
     BOOLEAN TebStackBoundsChecked;
     BOOLEAN TebStackBoundsValid;
     BOOLEAN FramesOutsideTebStack;
+    UINT32 CaptureFlags;
+    ULONG FullFrameCount;
+    PVOID FullFrames[SLEEPWALKER_MAX_FULL_EVENT_FRAMES];
+    UINT64 RegRax;
+    UINT64 RegRbx;
+    UINT64 RegRcx;
+    UINT64 RegRdx;
+    UINT64 RegRsi;
+    UINT64 RegRdi;
+    UINT64 RegRbp;
+    UINT64 RegRsp;
+    UINT64 RegR8;
+    UINT64 RegR9;
+    UINT64 RegR10;
+    UINT64 RegR11;
+    UINT64 RegR12;
+    UINT64 RegR13;
+    UINT64 RegR14;
+    UINT64 RegR15;
+    UINT64 RegRip;
+    UINT64 RegEFlags;
+    UINT64 RegDr0;
+    UINT64 RegDr1;
+    UINT64 RegDr2;
+    UINT64 RegDr3;
+    UINT64 RegDr6;
+    UINT64 RegDr7;
+    UINT64 StackSnapshotAddress;
+    ULONG StackSnapshotSize;
+    UCHAR StackSnapshot[SLEEPWALKER_MAX_STACK_SNAPSHOT_BYTES];
 } SLEEPWALKER_HANDLE_TELEMETRY, *PSLEEPWALKER_HANDLE_TELEMETRY;
+
+static VOID SLEEPWALKERCaptureRegisterSnapshot(_Out_ PSLEEPWALKER_HANDLE_WORK Work)
+{
+#if defined(_M_AMD64)
+    CONTEXT context;
+
+    if (Work == NULL)
+    {
+        return;
+    }
+
+    RtlZeroMemory(&context, sizeof(context));
+    // Snapshot the callback-time CPU state as forensic context without suspending the caller thread.
+    RtlCaptureContext(&context);
+
+    Work->RegRax = context.Rax;
+    Work->RegRbx = context.Rbx;
+    Work->RegRcx = context.Rcx;
+    Work->RegRdx = context.Rdx;
+    Work->RegRsi = context.Rsi;
+    Work->RegRdi = context.Rdi;
+    Work->RegRbp = context.Rbp;
+    Work->RegRsp = context.Rsp;
+    Work->RegR8 = context.R8;
+    Work->RegR9 = context.R9;
+    Work->RegR10 = context.R10;
+    Work->RegR11 = context.R11;
+    Work->RegR12 = context.R12;
+    Work->RegR13 = context.R13;
+    Work->RegR14 = context.R14;
+    Work->RegR15 = context.R15;
+    Work->RegRip = context.Rip;
+    Work->RegEFlags = context.EFlags;
+    Work->CaptureFlags |= SLEEPWALKER_HANDLE_CAPTURE_CONTEXT_VALID;
+
+    __try
+    {
+        Work->RegDr0 = __readdr(0);
+        Work->RegDr1 = __readdr(1);
+        Work->RegDr2 = __readdr(2);
+        Work->RegDr3 = __readdr(3);
+        Work->RegDr6 = __readdr(6);
+        Work->RegDr7 = __readdr(7);
+        Work->CaptureFlags |= SLEEPWALKER_HANDLE_CAPTURE_DEBUG_REGS_VALID;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+    }
+#else
+    UNREFERENCED_PARAMETER(Work);
+#endif
+}
+
+static VOID SLEEPWALKERApplyWorkCaptureToTelemetry(_In_opt_ const SLEEPWALKER_HANDLE_WORK *Work,
+                                                   _Inout_ PSLEEPWALKER_HANDLE_TELEMETRY Telemetry)
+{
+    ULONG safeFullCount;
+
+    if (Work == NULL || Telemetry == NULL)
+    {
+        return;
+    }
+
+    Telemetry->CaptureFlags = Work->CaptureFlags;
+
+    safeFullCount = (Work->FullFrameCount > RTL_NUMBER_OF(Telemetry->FullFrames))
+                        ? RTL_NUMBER_OF(Telemetry->FullFrames)
+                        : Work->FullFrameCount;
+    Telemetry->FullFrameCount = safeFullCount;
+    if (safeFullCount != 0)
+    {
+        RtlCopyMemory(Telemetry->FullFrames, Work->FullFrames, safeFullCount * sizeof(PVOID));
+        Telemetry->CaptureFlags |= SLEEPWALKER_HANDLE_CAPTURE_FULL_FRAMES_VALID;
+    }
+
+    Telemetry->RegRax = Work->RegRax;
+    Telemetry->RegRbx = Work->RegRbx;
+    Telemetry->RegRcx = Work->RegRcx;
+    Telemetry->RegRdx = Work->RegRdx;
+    Telemetry->RegRsi = Work->RegRsi;
+    Telemetry->RegRdi = Work->RegRdi;
+    Telemetry->RegRbp = Work->RegRbp;
+    Telemetry->RegRsp = Work->RegRsp;
+    Telemetry->RegR8 = Work->RegR8;
+    Telemetry->RegR9 = Work->RegR9;
+    Telemetry->RegR10 = Work->RegR10;
+    Telemetry->RegR11 = Work->RegR11;
+    Telemetry->RegR12 = Work->RegR12;
+    Telemetry->RegR13 = Work->RegR13;
+    Telemetry->RegR14 = Work->RegR14;
+    Telemetry->RegR15 = Work->RegR15;
+    Telemetry->RegRip = Work->RegRip;
+    Telemetry->RegEFlags = Work->RegEFlags;
+    Telemetry->RegDr0 = Work->RegDr0;
+    Telemetry->RegDr1 = Work->RegDr1;
+    Telemetry->RegDr2 = Work->RegDr2;
+    Telemetry->RegDr3 = Work->RegDr3;
+    Telemetry->RegDr6 = Work->RegDr6;
+    Telemetry->RegDr7 = Work->RegDr7;
+}
+
+static VOID SLEEPWALKERCaptureStackSnapshot(_In_ PEPROCESS SourceProcess, _In_ UINT64 StackPointer,
+                                            _Inout_ PSLEEPWALKER_HANDLE_TELEMETRY Telemetry)
+{
+    NTSTATUS status;
+    SIZE_T bytesRead = 0;
+    PEPROCESS localProcess;
+
+    if (SourceProcess == NULL || Telemetry == NULL || StackPointer == 0)
+    {
+        return;
+    }
+
+    localProcess = PsGetCurrentProcess();
+    status = MmCopyVirtualMemory(SourceProcess, (PVOID)(ULONG_PTR)StackPointer, localProcess, Telemetry->StackSnapshot,
+                                 sizeof(Telemetry->StackSnapshot), KernelMode, &bytesRead);
+    if (!NT_SUCCESS(status) || bytesRead == 0)
+    {
+        return;
+    }
+
+    if (bytesRead > RTL_NUMBER_OF(Telemetry->StackSnapshot))
+    {
+        bytesRead = RTL_NUMBER_OF(Telemetry->StackSnapshot);
+    }
+
+    Telemetry->StackSnapshotAddress = StackPointer;
+    Telemetry->StackSnapshotSize = (ULONG)bytesRead;
+    Telemetry->CaptureFlags |= SLEEPWALKER_HANDLE_CAPTURE_STACK_SNAPSHOT_VALID;
+}
 
 static BOOLEAN SLEEPWALKERHandleTryAcquireWorkSlot(VOID)
 {
@@ -602,6 +792,31 @@ static PCSTR SLEEPWALKERGetExpectedSyscallExport(_In_ BOOLEAN IsThreadObject, _I
     return "NtOpenProcess";
 }
 
+static BOOLEAN SLEEPWALKERIsNtdllPath(_In_ const UNICODE_STRING *Path)
+{
+    if (Path == NULL || Path->Buffer == NULL || Path->Length == 0)
+    {
+        return FALSE;
+    }
+
+    return SLEEPWALKERUnicodeContainsInsensitive(Path, L"ntdll.dll", 9);
+}
+
+static BOOLEAN SLEEPWALKERIsSyscallStubModulePath(_In_ const UNICODE_STRING *Path)
+{
+    if (Path == NULL || Path->Buffer == NULL || Path->Length == 0)
+    {
+        return FALSE;
+    }
+
+    if (SLEEPWALKERIsNtdllPath(Path))
+    {
+        return TRUE;
+    }
+
+    return SLEEPWALKERUnicodeContainsInsensitive(Path, L"win32u.dll", 10);
+}
+
 static BOOLEAN SLEEPWALKERGetNtdllBaseFromFrames(_In_ HANDLE ProcessHandle, _In_ ULONG FrameCount,
                                                  _In_reads_(FrameCount) PVOID *Frames, _Out_ PVOID *NtdllBase)
 {
@@ -651,7 +866,7 @@ static BOOLEAN SLEEPWALKERGetNtdllBaseFromFrames(_In_ HANDLE ProcessHandle, _In_
         RtlZeroMemory(sectionPath, sizeof(sectionPath));
         SLEEPWALKERSafeCopyUnicode(sectionName, sectionPath, RTL_NUMBER_OF(sectionPath));
         RtlInitUnicodeString(&sectionUs, sectionPath);
-        if (!SLEEPWALKERUnicodeContainsInsensitive(&sectionUs, L"ntdll.dll", 9))
+        if (!SLEEPWALKERIsNtdllPath(&sectionUs))
         {
             continue;
         }
@@ -735,9 +950,9 @@ static BOOLEAN SLEEPWALKERResolveExportSyscallNumber(_In_ PEPROCESS SourceProces
     ordinalsSize = exports.NumberOfNames * sizeof(USHORT);
     funcsSize = exports.NumberOfFunctions * sizeof(ULONG);
 
-    nameRvas = (ULONG *)ExAllocatePool2(POOL_FLAG_PAGED, namesSize, 'ndtT');
-    ordinals = (USHORT *)ExAllocatePool2(POOL_FLAG_PAGED, ordinalsSize, 'odtT');
-    funcRvas = (ULONG *)ExAllocatePool2(POOL_FLAG_PAGED, funcsSize, 'fdtT');
+    nameRvas = (ULONG *)SLEEPWALKERAllocatePoolCompat(POOL_FLAG_PAGED, namesSize, 'ndtT');
+    ordinals = (USHORT *)SLEEPWALKERAllocatePoolCompat(POOL_FLAG_PAGED, ordinalsSize, 'odtT');
+    funcRvas = (ULONG *)SLEEPWALKERAllocatePoolCompat(POOL_FLAG_PAGED, funcsSize, 'fdtT');
     if (nameRvas == NULL || ordinals == NULL || funcRvas == NULL)
     {
         goto Exit;
@@ -825,7 +1040,7 @@ Exit:
 
 static BOOLEAN SLEEPWALKERQueryFrameModuleInfo(_In_ HANDLE ProcessHandle, _In_ PVOID Frame, _Out_ PVOID *AllocationBase,
                                                _Out_ BOOLEAN *Executable, _Out_ BOOLEAN *ImageBacked,
-                                               _Out_ BOOLEAN *IsNtdll)
+                                               _Out_ BOOLEAN *IsSyscallStubModule)
 {
     MEMORY_BASIC_INFORMATION mbi;
     UCHAR sectionNameRaw[1024];
@@ -835,7 +1050,7 @@ static BOOLEAN SLEEPWALKERQueryFrameModuleInfo(_In_ HANDLE ProcessHandle, _In_ P
     NTSTATUS status;
 
     if (ProcessHandle == NULL || Frame == NULL || AllocationBase == NULL || Executable == NULL || ImageBacked == NULL ||
-        IsNtdll == NULL)
+        IsSyscallStubModule == NULL)
     {
         return FALSE;
     }
@@ -843,7 +1058,7 @@ static BOOLEAN SLEEPWALKERQueryFrameModuleInfo(_In_ HANDLE ProcessHandle, _In_ P
     *AllocationBase = NULL;
     *Executable = FALSE;
     *ImageBacked = FALSE;
-    *IsNtdll = FALSE;
+    *IsSyscallStubModule = FALSE;
 
     RtlZeroMemory(&mbi, sizeof(mbi));
     status = ZwQueryVirtualMemory(ProcessHandle, Frame, SLEEPWALKERMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
@@ -872,7 +1087,7 @@ static BOOLEAN SLEEPWALKERQueryFrameModuleInfo(_In_ HANDLE ProcessHandle, _In_ P
     RtlZeroMemory(sectionPath, sizeof(sectionPath));
     SLEEPWALKERSafeCopyUnicode(sectionName, sectionPath, RTL_NUMBER_OF(sectionPath));
     RtlInitUnicodeString(&sectionUs, sectionPath);
-    *IsNtdll = SLEEPWALKERUnicodeContainsInsensitive(&sectionUs, L"ntdll.dll", 9);
+    *IsSyscallStubModule = SLEEPWALKERIsSyscallStubModulePath(&sectionUs);
     return TRUE;
 }
 
@@ -881,10 +1096,10 @@ static BOOLEAN SLEEPWALKERValidateModuleChainSanity(_In_ HANDLE ProcessHandle, _
 {
     ULONG i;
     ULONG inspectCount;
-    BOOLEAN sawNtdll = FALSE;
-    BOOLEAN sawHeadNtdll = FALSE;
-    BOOLEAN sawNonNtdll = FALSE;
-    PVOID ntdllBase = NULL;
+    BOOLEAN sawSyscallStubModule = FALSE;
+    BOOLEAN sawHeadSyscallStubModule = FALSE;
+    BOOLEAN sawNonSyscallStubModule = FALSE;
+    PVOID syscallStubModuleBase = NULL;
 
     if (ProcessHandle == NULL || Frames == NULL || FrameCount == 0)
     {
@@ -897,9 +1112,9 @@ static BOOLEAN SLEEPWALKERValidateModuleChainSanity(_In_ HANDLE ProcessHandle, _
         PVOID frameBase;
         BOOLEAN exec;
         BOOLEAN image;
-        BOOLEAN isNtdll;
+        BOOLEAN isSyscallStubModule;
 
-        if (!SLEEPWALKERQueryFrameModuleInfo(ProcessHandle, Frames[i], &frameBase, &exec, &image, &isNtdll))
+        if (!SLEEPWALKERQueryFrameModuleInfo(ProcessHandle, Frames[i], &frameBase, &exec, &image, &isSyscallStubModule))
         {
             return FALSE;
         }
@@ -908,29 +1123,29 @@ static BOOLEAN SLEEPWALKERValidateModuleChainSanity(_In_ HANDLE ProcessHandle, _
             return FALSE;
         }
 
-        if (isNtdll)
+        if (isSyscallStubModule)
         {
-            sawNtdll = TRUE;
+            sawSyscallStubModule = TRUE;
             if (i <= 2U)
             {
-                sawHeadNtdll = TRUE;
+                sawHeadSyscallStubModule = TRUE;
             }
-            if (ntdllBase == NULL)
+            if (syscallStubModuleBase == NULL)
             {
-                ntdllBase = frameBase;
+                syscallStubModuleBase = frameBase;
             }
-            else if (ntdllBase != frameBase)
+            else if (syscallStubModuleBase != frameBase)
             {
                 return FALSE;
             }
         }
         else
         {
-            sawNonNtdll = TRUE;
+            sawNonSyscallStubModule = TRUE;
         }
     }
 
-    return (sawNtdll && sawHeadNtdll && sawNonNtdll);
+    return (sawSyscallStubModule && sawHeadSyscallStubModule && sawNonSyscallStubModule);
 }
 
 static BOOLEAN SLEEPWALKERModuleContainsUnwindForRva(_In_ PEPROCESS SourceProcess, _In_ PVOID ModuleBase,
@@ -980,7 +1195,7 @@ static BOOLEAN SLEEPWALKERModuleContainsUnwindForRva(_In_ PEPROCESS SourceProces
     }
 
     tableBytes = (SIZE_T)count * sizeof(IMAGE_RUNTIME_FUNCTION_ENTRY);
-    table = (IMAGE_RUNTIME_FUNCTION_ENTRY *)ExAllocatePool2(POOL_FLAG_PAGED, tableBytes, 'udtT');
+    table = (IMAGE_RUNTIME_FUNCTION_ENTRY *)SLEEPWALKERAllocatePoolCompat(POOL_FLAG_PAGED, tableBytes, 'udtT');
     if (table == NULL)
     {
         return FALSE;
@@ -1169,6 +1384,67 @@ static PCSTR SLEEPWALKERHandleClassToString(_In_ SLEEPWALKER_HANDLE_CLASSIFICATI
     return "UNKNOWN-ORIGIN";
 }
 
+static BOOLEAN SLEEPWALKERHandleAccessIsHighRisk(_In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsThreadObject)
+{
+    if (IsThreadObject)
+    {
+        return ((DesiredAccess & THREAD_SET_CONTEXT) != 0) ||
+               ((DesiredAccess & THREAD_SUSPEND_RESUME) != 0) ||
+               ((DesiredAccess & THREAD_ALL_ACCESS) == THREAD_ALL_ACCESS);
+    }
+
+    return ((DesiredAccess & PROCESS_VM_OPERATION) != 0) ||
+           ((DesiredAccess & PROCESS_VM_WRITE) != 0) ||
+           ((DesiredAccess & PROCESS_CREATE_THREAD) != 0) ||
+           ((DesiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS);
+}
+
+static UINT32 SLEEPWALKERCountHandleAnomalySignals(_In_ BOOLEAN ExecProtect, _In_ BOOLEAN FromSyscallModule,
+                                                   _In_ const SLEEPWALKER_HANDLE_TELEMETRY *Telemetry)
+{
+    UINT32 signals = 0;
+
+    if (Telemetry == NULL)
+    {
+        return 0;
+    }
+
+    if (!Telemetry->StackValidated)
+    {
+        signals += 1;
+    }
+    if (Telemetry->StackSpoofSuspect)
+    {
+        signals += 1;
+    }
+    if (!Telemetry->ReturnAddressValid)
+    {
+        signals += 1;
+    }
+    if (Telemetry->SyscallExportChecked && !Telemetry->SyscallExportMatch)
+    {
+        signals += 1;
+    }
+    if (Telemetry->ModuleChainChecked && !Telemetry->ModuleChainSane)
+    {
+        signals += 1;
+    }
+    if (Telemetry->UnwindMetadataChecked && !Telemetry->UnwindMetadataValid)
+    {
+        signals += 1;
+    }
+    if (Telemetry->TebStackBoundsChecked && (!Telemetry->TebStackBoundsValid || !Telemetry->FramesOutsideTebStack))
+    {
+        signals += 1;
+    }
+    if (ExecProtect && !FromSyscallModule)
+    {
+        signals += 1;
+    }
+
+    return signals;
+}
+
 static VOID SLEEPWALKERLogHandleTelemetry(_In_ SLEEPWALKER_HANDLE_CLASSIFICATION Class, _In_ HANDLE CallerPid,
                                           _In_ HANDLE TargetPid, _In_ ACCESS_MASK DesiredAccess,
                                           _In_ BOOLEAN IsThreadObject, _In_ BOOLEAN IsDuplicateOperation,
@@ -1178,7 +1454,16 @@ static VOID SLEEPWALKERLogHandleTelemetry(_In_ SLEEPWALKER_HANDLE_CLASSIFICATION
     UINT32 flags = 0;
     BOOLEAN memoryRelated;
     BOOLEAN stackIntegrityAnomaly;
+    BOOLEAN highRiskAccess;
+    BOOLEAN fromSyscallModule;
+    UINT32 anomalySignals;
     UINT32 classId;
+    UNICODE_STRING originPathUs;
+    SLEEPWALKER_HANDLE_EVENT handleEvent;
+    UINT32 i;
+    UINT32 safeFrameCount;
+    UINT32 safeFullFrameCount;
+    UINT32 safeStackBytes;
 
     SLEEPWALKEREtwLogHandleEvent(
         SLEEPWALKERHandleClassToString(Class), CallerPid, TargetPid, DesiredAccess, Telemetry->OriginAddress,
@@ -1203,7 +1488,11 @@ static VOID SLEEPWALKERLogHandleTelemetry(_In_ SLEEPWALKER_HANDLE_CLASSIFICATION
 
     memoryRelated = ((DesiredAccess & PROCESS_VM_OPERATION) != 0) || ((DesiredAccess & PROCESS_VM_READ) != 0) ||
                     ((DesiredAccess & PROCESS_VM_WRITE) != 0) || ((DesiredAccess & PROCESS_CREATE_THREAD) != 0) ||
-                    ((DesiredAccess & PROCESS_ALL_ACCESS) != 0);
+                    ((DesiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS);
+    highRiskAccess = SLEEPWALKERHandleAccessIsHighRisk(DesiredAccess, IsThreadObject);
+    RtlInitUnicodeString(&originPathUs, Telemetry->OriginPath);
+    fromSyscallModule = SLEEPWALKERIsSyscallStubModulePath(&originPathUs);
+    anomalySignals = SLEEPWALKERCountHandleAnomalySignals(ExecProtect, fromSyscallModule, Telemetry);
     if (memoryRelated)
     {
         flags |= SLEEPWALKER_HANDLE_FLAG_MEMORY_RELATED;
@@ -1275,11 +1564,12 @@ static VOID SLEEPWALKERLogHandleTelemetry(_In_ SLEEPWALKER_HANDLE_CLASSIFICATION
         classId = SleepwalkerHandleClassDirectSyscallSuspect;
     }
 
-    if (Class == SLEEPWALKERHandleDirectSyscallSuspect)
+    if (Class == SLEEPWALKERHandleDirectSyscallSuspect && highRiskAccess && anomalySignals >= 3 &&
+        CallerPid != TargetPid)
     {
-        SLEEPWALKEREtwLogDetectionEvent("DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION", 4, CallerPid, TargetPid, 0,
+        SLEEPWALKEREtwLogDetectionEvent("DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION", 5, CallerPid, TargetPid, 0,
                                         (UINT32)DesiredAccess, 0,
-                                        L"handle operation classified as direct-syscall suspect");
+                                        L"direct-syscall suspect requires multiple stack/module/teb/export anomalies");
     }
 
     stackIntegrityAnomaly = (Telemetry->StackSpoofSuspect || !Telemetry->StackValidated ||
@@ -1288,20 +1578,105 @@ static VOID SLEEPWALKERLogHandleTelemetry(_In_ SLEEPWALKER_HANDLE_CLASSIFICATION
                              (Telemetry->UnwindMetadataChecked && !Telemetry->UnwindMetadataValid) ||
                              (Telemetry->TebStackBoundsChecked &&
                               (!Telemetry->TebStackBoundsValid || !Telemetry->FramesOutsideTebStack)));
-    if (stackIntegrityAnomaly && (Class == SLEEPWALKERHandleDirectSyscallSuspect))
+    if (stackIntegrityAnomaly && (Class == SLEEPWALKERHandleDirectSyscallSuspect) && highRiskAccess &&
+        anomalySignals >= 4 && CallerPid != TargetPid)
     {
         SLEEPWALKEREtwLogDetectionEvent(
-            "STACK_INTEGRITY_ANOMALY_ON_HANDLE_OP", 5, CallerPid, TargetPid, 0, (UINT32)DesiredAccess, 0,
-            L"stack, return-address, unwind, module chain, or teb bounds integrity failed");
+            "STACK_INTEGRITY_ANOMALY_ON_HANDLE_OP", 6, CallerPid, TargetPid, 0, (UINT32)DesiredAccess, 0,
+            L"high-confidence stack integrity anomaly on high-risk handle operation");
     }
 
-    SLEEPWALKERControlPublishHandleEvent(
-        (UINT64)(ULONG_PTR)CallerPid, (UINT64)(ULONG_PTR)TargetPid, (UINT32)DesiredAccess, classId,
-        (UINT64)(ULONG_PTR)Telemetry->OriginAddress, Telemetry->OriginProtect, flags,
-        (Telemetry->OriginPath[0] != L'\0') ? Telemetry->OriginPath : NULL, Telemetry->FrameCount, Telemetry->Frames,
-        (INT32)Telemetry->OpenProcessStatus, (INT32)Telemetry->BasicInfoStatus, (INT32)Telemetry->SectionNameStatus,
-        (UINT64)(ULONG_PTR)Telemetry->AllocationBase, (UINT64)Telemetry->RegionSize, Telemetry->OriginProtect,
-        Telemetry->RegionState, Telemetry->RegionType, Telemetry->DeepSampleSize, Telemetry->DeepSample);
+    if (SLEEPWALKERControlHasClientsFast())
+    {
+        RtlZeroMemory(&handleEvent, sizeof(handleEvent));
+        handleEvent.CallerPid = (UINT64)(ULONG_PTR)CallerPid;
+        handleEvent.TargetPid = (UINT64)(ULONG_PTR)TargetPid;
+        handleEvent.DesiredAccess = (UINT32)DesiredAccess;
+        handleEvent.ClassId = classId;
+        handleEvent.OriginAddress = (UINT64)(ULONG_PTR)Telemetry->OriginAddress;
+        handleEvent.OriginProtect = Telemetry->OriginProtect;
+        handleEvent.Flags = flags;
+        handleEvent.StatusOpenProcess = (INT32)Telemetry->OpenProcessStatus;
+        handleEvent.StatusBasicInfo = (INT32)Telemetry->BasicInfoStatus;
+        handleEvent.StatusSectionName = (INT32)Telemetry->SectionNameStatus;
+        handleEvent.DeepAllocationBase = (UINT64)(ULONG_PTR)Telemetry->AllocationBase;
+        handleEvent.DeepRegionSize = (UINT64)Telemetry->RegionSize;
+        handleEvent.DeepRegionProtect = Telemetry->OriginProtect;
+        handleEvent.DeepRegionState = Telemetry->RegionState;
+        handleEvent.DeepRegionType = Telemetry->RegionType;
+
+        handleEvent.DeepSampleSize = Telemetry->DeepSampleSize;
+        if (handleEvent.DeepSampleSize > RTL_NUMBER_OF(handleEvent.DeepSample))
+        {
+            handleEvent.DeepSampleSize = RTL_NUMBER_OF(handleEvent.DeepSample);
+        }
+        if (handleEvent.DeepSampleSize != 0)
+        {
+            RtlCopyMemory(handleEvent.DeepSample, Telemetry->DeepSample, handleEvent.DeepSampleSize);
+        }
+
+        if (Telemetry->OriginPath[0] != L'\0')
+        {
+            (void)RtlStringCchCopyW(handleEvent.OriginPath, RTL_NUMBER_OF(handleEvent.OriginPath), Telemetry->OriginPath);
+        }
+
+        safeFrameCount =
+            (Telemetry->FrameCount > RTL_NUMBER_OF(handleEvent.Frames)) ? RTL_NUMBER_OF(handleEvent.Frames)
+                                                                         : Telemetry->FrameCount;
+        handleEvent.FrameCount = safeFrameCount;
+        for (i = 0; i < safeFrameCount; ++i)
+        {
+            handleEvent.Frames[i] = (UINT64)(ULONG_PTR)Telemetry->Frames[i];
+        }
+
+        safeFullFrameCount =
+            (Telemetry->FullFrameCount > RTL_NUMBER_OF(handleEvent.FullFrames)) ? RTL_NUMBER_OF(handleEvent.FullFrames)
+                                                                                 : Telemetry->FullFrameCount;
+        handleEvent.FullFrameCount = safeFullFrameCount;
+        for (i = 0; i < safeFullFrameCount; ++i)
+        {
+            handleEvent.FullFrames[i] = (UINT64)(ULONG_PTR)Telemetry->FullFrames[i];
+        }
+
+        handleEvent.CaptureFlags = Telemetry->CaptureFlags;
+        handleEvent.RegRax = Telemetry->RegRax;
+        handleEvent.RegRbx = Telemetry->RegRbx;
+        handleEvent.RegRcx = Telemetry->RegRcx;
+        handleEvent.RegRdx = Telemetry->RegRdx;
+        handleEvent.RegRsi = Telemetry->RegRsi;
+        handleEvent.RegRdi = Telemetry->RegRdi;
+        handleEvent.RegRbp = Telemetry->RegRbp;
+        handleEvent.RegRsp = Telemetry->RegRsp;
+        handleEvent.RegR8 = Telemetry->RegR8;
+        handleEvent.RegR9 = Telemetry->RegR9;
+        handleEvent.RegR10 = Telemetry->RegR10;
+        handleEvent.RegR11 = Telemetry->RegR11;
+        handleEvent.RegR12 = Telemetry->RegR12;
+        handleEvent.RegR13 = Telemetry->RegR13;
+        handleEvent.RegR14 = Telemetry->RegR14;
+        handleEvent.RegR15 = Telemetry->RegR15;
+        handleEvent.RegRip = Telemetry->RegRip;
+        handleEvent.RegEFlags = Telemetry->RegEFlags;
+        handleEvent.RegDr0 = Telemetry->RegDr0;
+        handleEvent.RegDr1 = Telemetry->RegDr1;
+        handleEvent.RegDr2 = Telemetry->RegDr2;
+        handleEvent.RegDr3 = Telemetry->RegDr3;
+        handleEvent.RegDr6 = Telemetry->RegDr6;
+        handleEvent.RegDr7 = Telemetry->RegDr7;
+        handleEvent.StackSnapshotAddress = Telemetry->StackSnapshotAddress;
+        safeStackBytes = Telemetry->StackSnapshotSize;
+        if (safeStackBytes > RTL_NUMBER_OF(handleEvent.StackSnapshot))
+        {
+            safeStackBytes = RTL_NUMBER_OF(handleEvent.StackSnapshot);
+        }
+        handleEvent.StackSnapshotSize = safeStackBytes;
+        if (safeStackBytes != 0)
+        {
+            RtlCopyMemory(handleEvent.StackSnapshot, Telemetry->StackSnapshot, safeStackBytes);
+        }
+
+        SLEEPWALKERControlPublishHandleEvent(&handleEvent);
+    }
 }
 
 static VOID SLEEPWALKERCaptureDeepPathData(_In_ HANDLE CallerProcessId, _In_ BOOLEAN ShouldCapture,
@@ -1346,7 +1721,9 @@ static VOID SLEEPWALKERCaptureDeepPathData(_In_ HANDLE CallerProcessId, _In_ BOO
     }
 
     localProcess = PsGetCurrentProcess();
-    status = MmCopyVirtualMemory(sourceProcess, Mbi->BaseAddress, localProcess, Telemetry->DeepSample,
+    status = MmCopyVirtualMemory(sourceProcess,
+                                 (Telemetry->OriginAddress != NULL) ? Telemetry->OriginAddress : Mbi->BaseAddress,
+                                 localProcess, Telemetry->DeepSample,
                                  sizeof(Telemetry->DeepSample), KernelMode, &bytesRead);
     ObDereferenceObject(sourceProcess);
     if (!NT_SUCCESS(status) || bytesRead == 0)
@@ -1367,7 +1744,9 @@ static VOID SLEEPWALKERCaptureDeepPathData(_In_ HANDLE CallerProcessId, _In_ BOO
 
 static VOID SLEEPWALKERClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HANDLE CallerThreadId,
                                           _In_ BOOLEAN IsThreadObject, _In_ BOOLEAN IsDuplicateOperation, _In_ ULONG FrameCount,
-                                          _In_reads_(FrameCount) PVOID *Frames, _Out_ PSLEEPWALKER_HANDLE_TELEMETRY Telemetry)
+                                          _In_reads_(FrameCount) PVOID *Frames,
+                                          _In_opt_ const SLEEPWALKER_HANDLE_WORK *Work,
+                                          _Out_ PSLEEPWALKER_HANDLE_TELEMETRY Telemetry)
 {
     NTSTATUS status;
     OBJECT_ATTRIBUTES objectAttributes;
@@ -1380,6 +1759,7 @@ static VOID SLEEPWALKERClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HAND
     UNICODE_STRING originPathUs;
     BOOLEAN execProtect;
     BOOLEAN fromNtdll;
+    BOOLEAN fromSyscallModule;
     BOOLEAN deepPathGate;
     PVOID ntdllBase = NULL;
     PCSTR expectedExportName;
@@ -1394,6 +1774,7 @@ static VOID SLEEPWALKERClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HAND
     Telemetry->OpenProcessStatus = STATUS_UNSUCCESSFUL;
     Telemetry->BasicInfoStatus = STATUS_UNSUCCESSFUL;
     Telemetry->SectionNameStatus = STATUS_UNSUCCESSFUL;
+    SLEEPWALKERApplyWorkCaptureToTelemetry(Work, Telemetry);
 
     if (FrameCount == 0 || Frames == NULL || Frames[0] == NULL)
     {
@@ -1475,8 +1856,10 @@ static VOID SLEEPWALKERClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HAND
 
     RtlInitUnicodeString(&originPathUs, Telemetry->OriginPath);
     execProtect = SLEEPWALKERIsExecutableProtection(Telemetry->OriginProtect);
-    fromNtdll = SLEEPWALKERUnicodeContainsInsensitive(&originPathUs, L"ntdll.dll", 9);
-    deepPathGate = (execProtect && !fromNtdll);
+    fromNtdll = SLEEPWALKERIsNtdllPath(&originPathUs);
+    fromSyscallModule = SLEEPWALKERIsSyscallStubModulePath(&originPathUs);
+    // Capture sample bytes for executable origins, including ntdll/win32u stubs, so UI can disassemble real origin bytes.
+    deepPathGate = execProtect;
     SLEEPWALKERCaptureDeepPathData(CallerProcessId, deepPathGate, &mbi, Telemetry);
 
     Telemetry->StackValidated = SLEEPWALKERValidateStackFrames(processHandle, Telemetry->FrameCount, Telemetry->Frames,
@@ -1527,6 +1910,13 @@ static VOID SLEEPWALKERClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HAND
         Telemetry->TebStackBoundsValid &&
         SLEEPWALKERFramesOutsideStackBounds(Telemetry->FrameCount, Telemetry->Frames, stackLimit, stackBase);
 
+    if (sourceProcess != NULL &&
+        (Telemetry->CaptureFlags & SLEEPWALKER_HANDLE_CAPTURE_CONTEXT_VALID) != 0 &&
+        Telemetry->RegRsp != 0)
+    {
+        SLEEPWALKERCaptureStackSnapshot(sourceProcess, Telemetry->RegRsp, Telemetry);
+    }
+
     if (sourceProcess != NULL)
     {
         ObDereferenceObject(sourceProcess);
@@ -1541,7 +1931,10 @@ static VOID SLEEPWALKERHandleWorkRoutine(_In_ PVOID Context)
     UNICODE_STRING originPathUs;
     BOOLEAN execProtect;
     BOOLEAN fromNtdll;
+    BOOLEAN fromSyscallModule;
     BOOLEAN fromExe;
+    BOOLEAN highRiskAccess;
+    UINT32 anomalySignals;
     SLEEPWALKER_HANDLE_CLASSIFICATION classification = SLEEPWALKERHandleUnknown;
 
     PAGED_CODE();
@@ -1553,26 +1946,30 @@ static VOID SLEEPWALKERHandleWorkRoutine(_In_ PVOID Context)
     {
         goto Exit;
     }
+    if (!SLEEPWALKERControlHasClientsFast())
+    {
+        goto Exit;
+    }
 
     SLEEPWALKERClassifyUserOrigin(work->CallerPid, work->CallerTid, work->IsThreadObject, work->IsDuplicateOperation,
-                                  work->FrameCount, work->Frames, &telemetry);
+                                  work->FrameCount, work->Frames, work, &telemetry);
 
     RtlInitUnicodeString(&originPathUs, telemetry.OriginPath);
     execProtect = SLEEPWALKERIsExecutableProtection(telemetry.OriginProtect);
 
-    fromNtdll = SLEEPWALKERUnicodeContainsInsensitive(&originPathUs, L"ntdll.dll", 9);
+    fromNtdll = SLEEPWALKERIsNtdllPath(&originPathUs);
+    fromSyscallModule = SLEEPWALKERIsSyscallStubModulePath(&originPathUs);
     fromExe = SLEEPWALKERUnicodeContainsInsensitive(&originPathUs, L".exe", 4);
-    if (fromNtdll && telemetry.StackValidated && !telemetry.StackSpoofSuspect && telemetry.ReturnAddressValid &&
+    highRiskAccess = SLEEPWALKERHandleAccessIsHighRisk(work->DesiredAccess, work->IsThreadObject);
+    anomalySignals = SLEEPWALKERCountHandleAnomalySignals(execProtect, fromSyscallModule, &telemetry);
+    if (fromSyscallModule && telemetry.StackValidated && !telemetry.StackSpoofSuspect && telemetry.ReturnAddressValid &&
         telemetry.ModuleChainChecked &&
         telemetry.ModuleChainSane && telemetry.UnwindMetadataChecked && telemetry.UnwindMetadataValid &&
         telemetry.TebStackBoundsChecked && telemetry.TebStackBoundsValid && telemetry.FramesOutsideTebStack)
     {
         classification = SLEEPWALKERHandleLegitimateSyscall;
     }
-    else if ((telemetry.ModuleChainChecked && !telemetry.ModuleChainSane) ||
-             (telemetry.UnwindMetadataChecked && !telemetry.UnwindMetadataValid) ||
-             (telemetry.TebStackBoundsChecked && (!telemetry.TebStackBoundsValid || !telemetry.FramesOutsideTebStack)) ||
-             (execProtect && (!fromNtdll || !telemetry.StackValidated || telemetry.StackSpoofSuspect)))
+    else if (highRiskAccess && execProtect && anomalySignals >= 2)
     {
         classification = SLEEPWALKERHandleDirectSyscallSuspect;
     }
@@ -1607,12 +2004,17 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
     PEPROCESS targetProcess;
     PETHREAD targetThread;
     PSLEEPWALKER_HANDLE_WORK work;
-    PVOID userFrames[16] = {0};
+    PVOID userFrames[SLEEPWALKER_MAX_FULL_EVENT_FRAMES] = {0};
     ULONG frameCount;
     ULONG copyCount;
+    ULONG fullCopyCount;
     BOOLEAN hasVmWriteOrFull;
     BOOLEAN hasThreadContextAccess;
     UINT32 intentFlags;
+    UINT32 streamMask;
+    UINT32 callerPid32;
+    UINT32 targetPid32;
+    UINT32 secondaryPid32;
     BOOLEAN shouldCaptureStack;
     BOOLEAN isThreadObject = FALSE;
     BOOLEAN isDuplicateOperation = FALSE;
@@ -1653,7 +2055,7 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
 
         hasVmWriteOrFull = ((desiredAccess & PROCESS_VM_OPERATION) != 0) || ((desiredAccess & PROCESS_VM_WRITE) != 0) ||
                            ((desiredAccess & PROCESS_CREATE_THREAD) != 0) ||
-                           ((desiredAccess & PROCESS_ALL_ACCESS) != 0);
+                           ((desiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS);
     }
     else if (OperationInformation->ObjectType == *PsThreadType)
     {
@@ -1674,9 +2076,26 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
     {
         return OB_PREOP_SUCCESS;
     }
+    if (!SLEEPWALKERControlHasClientsFast())
+    {
+        return OB_PREOP_SUCCESS;
+    }
 
     callerPid = PsGetCurrentProcessId();
     callerTid = PsGetCurrentThreadId();
+    callerPid32 = (UINT32)(ULONG_PTR)callerPid;
+    targetPid32 = (UINT32)(ULONG_PTR)targetPid;
+    secondaryPid32 = (targetPid32 != callerPid32) ? targetPid32 : 0;
+    streamMask = SLEEPWALKER_STREAM_HANDLE;
+    if (hasVmWriteOrFull)
+    {
+        streamMask |= SLEEPWALKER_STREAM_MEMORY;
+    }
+
+    if (!SLEEPWALKERControlHasPidInterest(callerPid32, secondaryPid32, streamMask))
+    {
+        return OB_PREOP_SUCCESS;
+    }
 
     intentFlags = 0;
     if (hasVmWriteOrFull)
@@ -1718,7 +2137,8 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
     }
 
     work =
-        (PSLEEPWALKER_HANDLE_WORK)ExAllocatePool2(POOL_FLAG_NON_PAGED | POOL_FLAG_UNINITIALIZED, sizeof(*work), 'hdtT');
+        (PSLEEPWALKER_HANDLE_WORK)SLEEPWALKERAllocatePoolCompat(POOL_FLAG_NON_PAGED | POOL_FLAG_UNINITIALIZED,
+                                                                sizeof(*work), 'hdtT');
     if (work == NULL)
     {
         failureCounter = InterlockedIncrement(&g_HandleAllocFailureCounter);
@@ -1743,26 +2163,35 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
 
     frameCount = 0;
     copyCount = 0;
-    shouldCaptureStack =
-        isDuplicateOperation ||
-        ((desiredAccess &
-          (PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD | PROCESS_ALL_ACCESS | THREAD_SET_CONTEXT |
-           THREAD_SUSPEND_RESUME)) != 0);
+    fullCopyCount = 0;
+    SLEEPWALKERCaptureRegisterSnapshot(work);
+    shouldCaptureStack = isDuplicateOperation ||
+                         ((desiredAccess & (PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD |
+                                            THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME)) != 0) ||
+                         ((desiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS) ||
+                         ((desiredAccess & THREAD_ALL_ACCESS) == THREAD_ALL_ACCESS);
     if (shouldCaptureStack)
     {
         __try
         {
             frameCount = RtlWalkFrameChain(userFrames, RTL_NUMBER_OF(userFrames), RTL_WALK_USER_MODE_STACK);
             copyCount = (frameCount > RTL_NUMBER_OF(work->Frames)) ? RTL_NUMBER_OF(work->Frames) : frameCount;
+            fullCopyCount = (frameCount > RTL_NUMBER_OF(work->FullFrames)) ? RTL_NUMBER_OF(work->FullFrames) : frameCount;
             if (copyCount != 0)
             {
                 RtlCopyMemory(work->Frames, userFrames, copyCount * sizeof(PVOID));
+            }
+            if (fullCopyCount != 0)
+            {
+                RtlCopyMemory(work->FullFrames, userFrames, fullCopyCount * sizeof(PVOID));
             }
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
             copyCount = 0;
+            fullCopyCount = 0;
             RtlZeroMemory(work->Frames, sizeof(work->Frames));
+            RtlZeroMemory(work->FullFrames, sizeof(work->FullFrames));
             InterlockedIncrement(&g_HandleStackCaptureFaults);
             failureCounter = InterlockedIncrement(&g_HandleStackFaultLogCounter);
             if (failureCounter == 1 || ((failureCounter & 0xFF) == 0))
@@ -1779,6 +2208,7 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
     }
 
     work->FrameCount = copyCount;
+    work->FullFrameCount = fullCopyCount;
 
     ExInitializeWorkItem(&work->WorkItem, SLEEPWALKERHandleWorkRoutine, work);
     ExQueueWorkItem(&work->WorkItem, DelayedWorkQueue);

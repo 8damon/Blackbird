@@ -11,6 +11,7 @@
     <Product>SleepwalkerInterface</Product>
 
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <UseSharedCompilation>false</UseSharedCompilation>
     <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
     <RestoreIgnoreFailedSources>true</RestoreIgnoreFailedSources>
     <NuGetAudit>false</NuGetAudit>

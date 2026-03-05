@@ -451,4 +451,3 @@ static NTSTATUS SLEEPWALKERHandleSetShutdownModeIoctl(_In_ PSLEEPWALKER_CLIENT C
     SLEEPWALKERControlBeginShutdown();
     return STATUS_SUCCESS;
 }
-

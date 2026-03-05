@@ -1,5 +1,6 @@
 using System;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Threading;
 
 namespace SleepwalkerInterface
@@ -63,6 +64,20 @@ namespace SleepwalkerInterface
 
         private void Clear_Click(object sender, RoutedEventArgs e) => OutputBox.Clear();
         private void RefreshState_Click(object sender, RoutedEventArgs e) => RefreshState();
+
+        private void Root_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton != MouseButton.Left || e.ClickCount != 1)
+                return;
+
+            try
+            {
+                DragMove();
+            }
+            catch
+            {
+            }
+        }
 
         private void Close_Click(object sender, RoutedEventArgs e) => Close();
     }

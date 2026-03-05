@@ -7,26 +7,18 @@
         MinHeight="620"
         MinWidth="1080"
         WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="CanResize"
         Background="{DynamicResource WinBgBrush}">
 
     <Window.Resources>
         <Style x:Key="ProcessRowStyle"
-               TargetType="DataGridRow"
-               BasedOn="{StaticResource {x:Type DataGridRow}}">
+               TargetType="DataGridRow">
             <Setter Property="Background" Value="{Binding RowBackground}"/>
             <Setter Property="BorderBrush" Value="{Binding RowBorderBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Foreground" Value="{Binding RowForeground}"/>
         </Style>
-
-        <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#FF121212"/>
-        <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#FFD8D8D8"/>
-        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#334C8FD2"/>
-        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFF1F5FF"/>
-        <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#FF1C1C1C"/>
-        <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#FFD8D8D8"/>
-        <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#FF141414"/>
-        <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="#FFD8D8D8"/>
 
         <Style x:Key="PickerComboToggleStyle" TargetType="ToggleButton">
             <Setter Property="Focusable" Value="False"/>
@@ -42,7 +34,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ToggleRoot" Property="BorderBrush" Value="#FF3E3E3E"/>
+                                <Setter TargetName="ToggleRoot" Property="BorderBrush" Value="{DynamicResource InputHoverBorderBrush}"/>
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="ToggleRoot" Property="BorderBrush" Value="{DynamicResource WinAccentBrush}"/>
@@ -57,9 +49,8 @@
         </Style>
 
         <Style x:Key="PickerComboStyle"
-               TargetType="ComboBox"
-               BasedOn="{StaticResource {x:Type ComboBox}}">
-            <Setter Property="Background" Value="#FF121212"/>
+               TargetType="ComboBox">
+            <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
             <Setter Property="Padding" Value="6,2"/>
@@ -105,14 +96,14 @@
                                    Focusable="False"
                                    IsOpen="{TemplateBinding IsDropDownOpen}"
                                    PopupAnimation="Fade">
-                                <Border Background="#FF121212"
+                                <Border Background="{DynamicResource WinPanelBrush}"
                                         BorderBrush="{DynamicResource WinBorderBrush}"
                                         BorderThickness="1"
                                         SnapsToDevicePixels="True"
                                         MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
                                     <ScrollViewer CanContentScroll="True"
                                                   SnapsToDevicePixels="True"
-                                                  Background="#FF121212">
+                                                  Background="{DynamicResource WinPanelBrush}">
                                         <ItemsPresenter/>
                                     </ScrollViewer>
                                 </Border>
@@ -120,7 +111,7 @@
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="DropDownToggle" Property="BorderBrush" Value="#FF3E3E3E"/>
+                                <Setter TargetName="DropDownToggle" Property="BorderBrush" Value="{DynamicResource InputHoverBorderBrush}"/>
                             </Trigger>
                             <Trigger Property="IsKeyboardFocusWithin" Value="True">
                                 <Setter TargetName="DropDownToggle" Property="BorderBrush" Value="{DynamicResource WinAccentBrush}"/>
@@ -135,9 +126,8 @@
         </Style>
 
         <Style x:Key="PickerComboItemStyle"
-               TargetType="ComboBoxItem"
-               BasedOn="{StaticResource {x:Type ComboBoxItem}}">
-            <Setter Property="Background" Value="#FF121212"/>
+               TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
@@ -145,11 +135,11 @@
             <Setter Property="Padding" Value="6,2"/>
             <Style.Triggers>
                 <Trigger Property="IsHighlighted" Value="True">
-                    <Setter Property="Background" Value="#FF2A2A2A"/>
+                    <Setter Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
                 </Trigger>
                 <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="#334C8FD2"/>
-                    <Setter Property="Foreground" Value="#FFF1F5FF"/>
+                    <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -166,10 +156,20 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0"
-                   Text="Display entries matching these conditions:"
-                   FontWeight="SemiBold"
-                   Margin="2,0,0,8"/>
+        <DockPanel Grid.Row="0"
+                   Margin="2,0,0,8"
+                   LastChildFill="False"
+                   MouseLeftButtonDown="Root_MouseLeftButtonDown">
+            <TextBlock Text="Display entries matching these conditions:"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center"/>
+            <Button DockPanel.Dock="Right"
+                    Content="✕"
+                    Width="26"
+                    Height="24"
+                    Margin="8,0,0,0"
+                    Click="Cancel_Click"/>
+        </DockPanel>
 
         <Grid Grid.Row="1" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
@@ -222,8 +222,8 @@
                        Foreground="{DynamicResource WinMutedTextBrush}"/>
 
             <ComboBox x:Name="FilterActionBox" Grid.Column="4" SelectedIndex="0"
-                      Style="{StaticResource PickerComboStyle}"
-                      ItemContainerStyle="{StaticResource PickerComboItemStyle}">
+                      Style="{DynamicResource PickerComboStyle}"
+                      ItemContainerStyle="{DynamicResource PickerComboItemStyle}">
                 <ComboBoxItem Content="Include"/>
                 <ComboBoxItem Content="Exclude"/>
             </ComboBox>
@@ -328,7 +328,27 @@
                   RowStyle="{DynamicResource ProcessRowStyle}"
                   MouseDoubleClick="ProcessGrid_MouseDoubleClick">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Process" Binding="{Binding Name}" Width="140"/>
+                <DataGridTemplateColumn Header="Process" Width="200">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <DockPanel LastChildFill="True" Margin="2,0,2,0">
+                                <Border Width="16"
+                                        Height="16"
+                                        Margin="0,0,6,0"
+                                        VerticalAlignment="Center"
+                                        BorderThickness="0">
+                                    <Image Source="{Binding Icon}"
+                                           Width="16"
+                                           Height="16"
+                                           Stretch="Uniform"/>
+                                </Border>
+                                <TextBlock Text="{Binding Name}"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </DockPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="App" Binding="{Binding AppName}" Width="140"/>
                 <DataGridTextColumn Header="Company" Binding="{Binding Company}" Width="140"/>
                 <DataGridTextColumn Header="File Name" Binding="{Binding FileName}" Width="150"/>
@@ -345,13 +365,8 @@
         </DataGrid>
 
         <DockPanel Grid.Row="6" Margin="0,8,0,0" LastChildFill="False">
-            <TextBlock x:Name="ResultCountBlock"
-                       DockPanel.Dock="Left"
-                       VerticalAlignment="Center"
-                       Foreground="{DynamicResource WinMutedTextBrush}"/>
             <Button Content="Open .exe..."
                     DockPanel.Dock="Left"
-                    Margin="12,0,0,0"
                     Click="OpenExe_Click"/>
             <Button Content="Cancel"
                     DockPanel.Dock="Right"

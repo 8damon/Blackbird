@@ -557,7 +557,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <TextBlock Margin="0,10,0,0" Text="Access Rights" FontWeight="SemiBold"/>
+                            <TextBlock Margin="0,10,0,0" Text="Access Rights (Process / Thread)" FontWeight="SemiBold"/>
                             <Border Margin="0,4,0,0"
                                     BorderBrush="{DynamicResource WinSubtleBorderBrush}"
                                     BorderThickness="1"
@@ -584,6 +584,7 @@
                                               ColumnHeaderHeight="22"
                                               RowHeight="22"
                                               MinHeight="180"
+                                              CanUserSortColumns="False"
                                               Background="{DynamicResource WinPanelBrush}"
                                               RowBackground="{DynamicResource WinPanelBrush}"
                                               AlternatingRowBackground="{DynamicResource WinPanelBrush}"
@@ -591,22 +592,25 @@
                                               HorizontalGridLinesBrush="{DynamicResource WinSubtleBorderBrush}"
                                               VerticalGridLinesBrush="{DynamicResource WinSubtleBorderBrush}">
                                         <DataGrid.Columns>
-                                            <DataGridTextColumn Header="Right" Width="220" Binding="{Binding RightName}"/>
-                                            <DataGridTemplateColumn Header="Process" Width="90">
+                                            <DataGridTextColumn Header="Process Right" Width="*" Binding="{Binding ProcessRightName}"/>
+                                            <DataGridTemplateColumn Header="P" Width="44">
                                                 <DataGridTemplateColumn.CellTemplate>
                                                     <DataTemplate>
-                                                        <TextBlock Text="{Binding ProcessState}"
+                                                        <TextBlock Text="{Binding ProcessStateMark}"
                                                                    FontWeight="SemiBold"
+                                                                   FontFamily="Consolas"
                                                                    Foreground="{Binding ProcessStateBrush}"
                                                                    HorizontalAlignment="Center"/>
                                                     </DataTemplate>
                                                 </DataGridTemplateColumn.CellTemplate>
                                             </DataGridTemplateColumn>
-                                            <DataGridTemplateColumn Header="Thread" Width="90">
+                                            <DataGridTextColumn Header="Thread Right" Width="*" Binding="{Binding ThreadRightName}"/>
+                                            <DataGridTemplateColumn Header="T" Width="44">
                                                 <DataGridTemplateColumn.CellTemplate>
                                                     <DataTemplate>
-                                                        <TextBlock Text="{Binding ThreadState}"
+                                                        <TextBlock Text="{Binding ThreadStateMark}"
                                                                    FontWeight="SemiBold"
+                                                                   FontFamily="Consolas"
                                                                    Foreground="{Binding ThreadStateBrush}"
                                                                    HorizontalAlignment="Center"/>
                                                     </DataTemplate>

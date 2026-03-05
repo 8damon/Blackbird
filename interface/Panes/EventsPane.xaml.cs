@@ -7,11 +7,29 @@ using System.Windows.Media;
 
 namespace SleepwalkerInterface
 {
+    public sealed class EventLogEntryOpenRequestedEventArgs : EventArgs
+    {
+        public string Group { get; }
+        public string SubType { get; }
+        public string Summary { get; }
+        public TelemetryEvent? Event { get; }
+
+        public EventLogEntryOpenRequestedEventArgs(string group, string subType, string summary, TelemetryEvent? ev = null)
+        {
+            Group = group ?? string.Empty;
+            SubType = subType ?? string.Empty;
+            Summary = summary ?? string.Empty;
+            Event = ev;
+        }
+    }
+
     public partial class EventsPane : UserControl
     {
         public event RoutedEventHandler? CloseRequested;
         public event RoutedEventHandler? FloatRequested;
         public event RoutedEventHandler? SettingsRequested;
+        public event RoutedEventHandler? LogPopoutRequested;
+        public event EventHandler<EventLogEntryOpenRequestedEventArgs>? EventLogEntryOpenRequested;
         public event EventHandler<PaneHeaderDragEventArgs>? HeaderDragStarted;
         public event EventHandler<PaneHeaderDragEventArgs>? HeaderDragDelta;
         public event EventHandler<PaneHeaderDragEventArgs>? HeaderDragCompleted;
@@ -21,6 +39,7 @@ namespace SleepwalkerInterface
         private Point _headerMouseDownPos;
         private bool _hasData;
         private bool _connectivityHealthy = true;
+        private bool _eventLogDetached;
 
         public EventsPane()
         {
@@ -35,6 +54,7 @@ namespace SleepwalkerInterface
         public Button BtnCloseRef => BtnClose;
         public Button BtnFloatRef => BtnFloat;
         public Button BtnSettingsRef => BtnSettings;
+        public Button BtnLogPopoutRef => BtnLogPopout;
 
         public void SetHasData(bool hasData)
         {
@@ -48,9 +68,45 @@ namespace SleepwalkerInterface
             UpdateNoDataOverlay();
         }
 
+        public void SetEventLogDetached(bool detached)
+        {
+            _eventLogDetached = detached;
+            EventLogRow.Height = detached ? new GridLength(0) : new GridLength(1, GridUnitType.Star);
+            EventLogBorder.Visibility = detached ? Visibility.Collapsed : Visibility.Visible;
+            BtnLogPopout.ToolTip = detached ? "Re-attach event log" : "Detach event log";
+            BtnLogPopout.Content = detached ? "⇲" : "⇱";
+        }
+
         private void BtnClose_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, e);
         private void BtnFloat_Click(object sender, RoutedEventArgs e) => FloatRequested?.Invoke(this, e);
         private void BtnSettings_Click(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke(this, e);
+        private void BtnLogPopout_Click(object sender, RoutedEventArgs e) => LogPopoutRequested?.Invoke(this, e);
+        private void EventGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            TelemetryEvent? ev = GetEventFromSource(e.OriginalSource as DependencyObject)
+                ?? EventGrid.SelectedItem as TelemetryEvent;
+            if (ev == null)
+                return;
+
+            EventLogEntryOpenRequested?.Invoke(
+                this,
+                new EventLogEntryOpenRequestedEventArgs(ev.Group ?? string.Empty, ev.SubType ?? string.Empty, ev.Summary ?? string.Empty, ev));
+        }
+
+        private static TelemetryEvent? GetEventFromSource(DependencyObject? source)
+        {
+            while (source != null)
+            {
+                if (source is DataGridRow row && row.Item is TelemetryEvent ev)
+                {
+                    return ev;
+                }
+
+                source = VisualTreeHelper.GetParent(source);
+            }
+
+            return null;
+        }
 
         private void Header_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {

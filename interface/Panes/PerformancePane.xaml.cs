@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -45,22 +46,70 @@ namespace SleepwalkerInterface
         private Point _headerMouseDownPos;
         private bool _detailsStacked;
         private bool _memoryTreemapEnabled;
+        private bool _showNetworkPeers;
+        private bool _processLiveDataAvailable = true;
+        private readonly Dictionary<string, string> _reverseDnsCache = new(StringComparer.OrdinalIgnoreCase);
 
         public ObservableCollection<ThreadUsageRow> TopThreads { get; } = new();
         public ObservableCollection<ModuleInfoRow> Modules { get; } = new();
         public ObservableCollection<PeInfoRow> PeInfo { get; } = new();
         public ObservableCollection<MemoryMetricRow> MemoryMetrics { get; } = new();
+        public ObservableCollection<NetworkPeerRow> NetworkPeers { get; } = new();
 
         public PerformancePane()
         {
             InitializeComponent();
-            ThreadsGrid.ItemsSource = TopThreads;
-            ModulesGrid.ItemsSource = Modules;
-            PeInfoGrid.ItemsSource = PeInfo;
-            MemoryGrid.ItemsSource = MemoryMetrics;
-            MemoryTreemapCanvas.SizeChanged += (_, __) => UpdateMemoryTreemap();
+            if (ThreadsGrid != null) ThreadsGrid.ItemsSource = TopThreads;
+            if (ModulesGrid != null) ModulesGrid.ItemsSource = Modules;
+            if (PeInfoGrid != null) PeInfoGrid.ItemsSource = PeInfo;
+            if (MemoryGrid != null) MemoryGrid.ItemsSource = MemoryMetrics;
+            if (NetworkPeersGrid != null) NetworkPeersGrid.ItemsSource = NetworkPeers;
+            if (MemoryTreemapCanvas != null)
+            {
+                MemoryTreemapCanvas.SizeChanged += (_, __) => UpdateMemoryTreemap();
+            }
+            _showNetworkPeers = false;
+            UpdateNetworkPaneView();
             ConfigureCharts();
-            Loaded += (_, __) => UpdateDetailsLayout();
+            Loaded += (_, __) =>
+            {
+                _memoryTreemapEnabled = true;
+                if (MemoryViewToggle != null)
+                {
+                    MemoryViewToggle.IsChecked = true;
+                    MemoryViewToggle.Content = "Table";
+                }
+                if (MemoryGrid != null) MemoryGrid.Visibility = Visibility.Collapsed;
+                if (MemoryTreemapHost != null) MemoryTreemapHost.Visibility = Visibility.Visible;
+                UpdateDetailsLayout();
+                UpdateLiveDataOverlays();
+            };
+        }
+
+        private void NetworkViewSwitchButton_Click(object sender, RoutedEventArgs e)
+        {
+            _showNetworkPeers = !_showNetworkPeers;
+            UpdateNetworkPaneView();
+        }
+
+        private void UpdateNetworkPaneView()
+        {
+            if (NetChart == null || NetworkPeersGrid == null || NetworkPaneTitle == null || NetworkViewSwitchButton == null)
+                return;
+
+            if (_showNetworkPeers)
+            {
+                NetChart.Visibility = Visibility.Collapsed;
+                NetworkPeersGrid.Visibility = Visibility.Visible;
+                NetworkPaneTitle.Text = "Network Peers";
+                NetworkViewSwitchButton.Content = "Switch to Traffic";
+                return;
+            }
+
+            NetChart.Visibility = Visibility.Visible;
+            NetworkPeersGrid.Visibility = Visibility.Collapsed;
+            NetworkPaneTitle.Text = "Network Traffic";
+            NetworkViewSwitchButton.Content = "Switch to Peers";
         }
 
         private static SolidColorBrush Brush(byte r, byte g, byte b)
@@ -72,28 +121,40 @@ namespace SleepwalkerInterface
 
         private void ConfigureCharts()
         {
-            CpuChart.SetSeries(new[]
+            if (CpuChart != null)
             {
-                new ChartSeries("CPU %", Brush(0x35, 0xA8, 0xFF), SeriesScale.Percent, p => p.CpuPercent, ChartValueFormat.Percent),
-                new ChartSeries("Cores used %", Brush(0x7C, 0xD5, 0xFF), SeriesScale.Percent, p => p.CoresUsedPercent, ChartValueFormat.Percent),
-            });
+                CpuChart.SetSeries(new[]
+                {
+                    new ChartSeries("CPU %", Brush(0x35, 0xA8, 0xFF), SeriesScale.Percent, p => p.CpuPercent, ChartValueFormat.Percent),
+                    new ChartSeries("Cores used %", Brush(0x7C, 0xD5, 0xFF), SeriesScale.Percent, p => p.CoresUsedPercent, ChartValueFormat.Percent),
+                });
+            }
 
-            DiskChart.SetSeries(new[]
+            if (DiskChart != null)
             {
-                new ChartSeries("Read B/s", Brush(0xFF9A21), SeriesScale.AutoToViewMax, p => p.DiskReadBytesPerSec, ChartValueFormat.BytesPerSecond),
-                new ChartSeries("Write B/s", Brush(0xFF4545), SeriesScale.AutoToViewMax, p => p.DiskWriteBytesPerSec, ChartValueFormat.BytesPerSecond),
-            });
+                DiskChart.SetSeries(new[]
+                {
+                    new ChartSeries("Read B/s", Brush(0xFF9A21), SeriesScale.AutoToViewMax, p => p.DiskReadBytesPerSec, ChartValueFormat.BytesPerSecond),
+                    new ChartSeries("Write B/s", Brush(0xFF4545), SeriesScale.AutoToViewMax, p => p.DiskWriteBytesPerSec, ChartValueFormat.BytesPerSecond),
+                });
+            }
 
-            RamChart.SetSeries(new[]
+            if (RamChart != null)
             {
-                new ChartSeries("Private bytes", Brush(0x43, 0xF2, 0x72), SeriesScale.AutoToViewMax, p => p.PrivateBytes, ChartValueFormat.Bytes),
-            });
+                RamChart.SetSeries(new[]
+                {
+                    new ChartSeries("Private bytes", Brush(0x43, 0xF2, 0x72), SeriesScale.AutoToViewMax, p => p.PrivateBytes, ChartValueFormat.Bytes),
+                });
+            }
 
-            NetChart.SetSeries(new[]
+            if (NetChart != null)
             {
-                new ChartSeries("Inbound B/s", Brush(0xA0, 0x5B, 0xFF), SeriesScale.AutoToViewMax, p => p.NetInBytesPerSec, ChartValueFormat.BytesPerSecond),
-                new ChartSeries("Outbound B/s", Brush(0xC0, 0x86, 0xFF), SeriesScale.AutoToViewMax, p => p.NetOutBytesPerSec, ChartValueFormat.BytesPerSecond),
-            });
+                NetChart.SetSeries(new[]
+                {
+                    new ChartSeries("Inbound B/s", Brush(0xA0, 0x5B, 0xFF), SeriesScale.AutoToViewMax, p => p.NetInBytesPerSec, ChartValueFormat.BytesPerSecond),
+                    new ChartSeries("Outbound B/s", Brush(0xC0, 0x86, 0xFF), SeriesScale.AutoToViewMax, p => p.NetOutBytesPerSec, ChartValueFormat.BytesPerSecond),
+                });
+            }
         }
 
         private static SolidColorBrush Brush(uint rgb)
@@ -114,21 +175,36 @@ namespace SleepwalkerInterface
             _pid = pid;
         }
 
+        public void SetProcessLiveDataAvailable(bool available)
+        {
+            _processLiveDataAvailable = available;
+            if (!available)
+            {
+                TopThreads.Clear();
+                MemoryMetrics.Clear();
+                NetworkPeers.Clear();
+                UpdateMemoryTreemap();
+            }
+
+            UpdateLiveDataOverlays();
+        }
+
         public void SetViewWindow(DateTime viewStartUtc, DateTime viewEndUtc)
         {
             _viewStartUtc = viewStartUtc;
             _viewEndUtc = viewEndUtc;
 
-            CpuChart.SetView(_viewStartUtc, _viewEndUtc);
-            DiskChart.SetView(_viewStartUtc, _viewEndUtc);
-            RamChart.SetView(_viewStartUtc, _viewEndUtc);
-            NetChart.SetView(_viewStartUtc, _viewEndUtc);
+            CpuChart?.SetView(_viewStartUtc, _viewEndUtc);
+            DiskChart?.SetView(_viewStartUtc, _viewEndUtc);
+            RamChart?.SetView(_viewStartUtc, _viewEndUtc);
+            NetChart?.SetView(_viewStartUtc, _viewEndUtc);
 
             UpdateSubtitle();
         }
 
         public void PushSample(PerformanceSample s)
         {
+            _processLiveDataAvailable = true;
             _lastSample = s;
 
             // keep buffers (not strictly necessary for drawing but useful if you want export later)
@@ -139,18 +215,15 @@ namespace SleepwalkerInterface
             _netIn.Add(s.TimestampUtc, s.NetInBytesPerSec);
             _netOut.Add(s.TimestampUtc, s.NetOutBytesPerSec);
 
-            CpuChart.PushSample(s);
-            DiskChart.PushSample(s);
-            RamChart.PushSample(s);
-            NetChart.PushSample(s);
+            CpuChart?.PushSample(s);
+            DiskChart?.PushSample(s);
+            RamChart?.PushSample(s);
+            NetChart?.PushSample(s);
 
             // Update threads table
-            if (s.TopThreads.Count > 0)
-            {
-                TopThreads.Clear();
-                foreach (var t in s.TopThreads.Take(12))
-                    TopThreads.Add(new ThreadUsageRow(t));
-            }
+            TopThreads.Clear();
+            foreach (var t in s.TopThreads.Take(14))
+                TopThreads.Add(new ThreadUsageRow(t));
 
             if ((DateTime.UtcNow - _lastDetailsRefreshUtc).TotalSeconds >= 5.0)
             {
@@ -159,21 +232,22 @@ namespace SleepwalkerInterface
             }
 
             UpdateSubtitle();
+            UpdateLiveDataOverlays();
         }
 
         public void LoadHistory(IEnumerable<PerformanceSample> samples)
         {
             var list = samples.ToList();
-            CpuChart.SetSamples(list);
-            DiskChart.SetSamples(list);
-            RamChart.SetSamples(list);
-            NetChart.SetSamples(list);
+            CpuChart?.SetSamples(list);
+            DiskChart?.SetSamples(list);
+            RamChart?.SetSamples(list);
+            NetChart?.SetSamples(list);
 
             TopThreads.Clear();
             if (list.Count > 0)
             {
                 _lastSample = list[^1];
-                foreach (var t in _lastSample.TopThreads.Take(12))
+                foreach (var t in _lastSample.TopThreads.Take(14))
                     TopThreads.Add(new ThreadUsageRow(t));
             }
             else
@@ -183,6 +257,7 @@ namespace SleepwalkerInterface
 
             RefreshProcessDetails();
             UpdateSubtitle();
+            UpdateLiveDataOverlays();
         }
 
         private void UpdateSubtitle()
@@ -305,7 +380,7 @@ namespace SleepwalkerInterface
                 Grid.SetRow(ModulesPanel, 0);
                 Grid.SetColumn(ModulesPanel, 0);
                 Grid.SetColumnSpan(ModulesPanel, 1);
-                ModulesPanel.Padding = new Thickness(0, 0, 6, 0);
+                ModulesPanel.Padding = new Thickness(0);
                 ModulesPanel.BorderThickness = new Thickness(0, 0, 1, 0);
 
                 Grid.SetRow(DetailsSplitter, 0);
@@ -320,7 +395,7 @@ namespace SleepwalkerInterface
                 Grid.SetRow(MemoryPanel, 0);
                 Grid.SetColumn(MemoryPanel, 2);
                 Grid.SetColumnSpan(MemoryPanel, 1);
-                MemoryPanel.Padding = new Thickness(6, 0, 0, 0);
+                MemoryPanel.Padding = new Thickness(0);
                 return;
             }
 
@@ -335,7 +410,7 @@ namespace SleepwalkerInterface
             Grid.SetRow(ModulesPanel, 0);
             Grid.SetColumn(ModulesPanel, 0);
             Grid.SetColumnSpan(ModulesPanel, 3);
-            ModulesPanel.Padding = new Thickness(0, 0, 0, 6);
+            ModulesPanel.Padding = new Thickness(0);
             ModulesPanel.BorderThickness = new Thickness(0, 0, 0, 1);
 
             Grid.SetRow(DetailsSplitter, 1);
@@ -350,7 +425,7 @@ namespace SleepwalkerInterface
             Grid.SetRow(MemoryPanel, 2);
             Grid.SetColumn(MemoryPanel, 0);
             Grid.SetColumnSpan(MemoryPanel, 3);
-            MemoryPanel.Padding = new Thickness(0, 6, 0, 0);
+            MemoryPanel.Padding = new Thickness(0);
         }
 
         private static void LaunchPeView(string modulePath)
@@ -415,14 +490,18 @@ namespace SleepwalkerInterface
                 RefreshModules(process);
                 RefreshPeInfo(process);
                 RefreshMemoryMetrics(process);
+                RefreshNetworkPeers(targetPid);
+                _processLiveDataAvailable = true;
             }
             catch
             {
-                Modules.Clear();
-                PeInfo.Clear();
                 MemoryMetrics.Clear();
+                NetworkPeers.Clear();
                 UpdateMemoryTreemap();
+                _processLiveDataAvailable = false;
             }
+
+            UpdateLiveDataOverlays();
         }
 
         private void RefreshModules(Process process)
@@ -647,6 +726,181 @@ namespace SleepwalkerInterface
                 MemoryMetrics.Add(row);
 
             UpdateMemoryTreemap();
+            UpdateLiveDataOverlays();
+        }
+
+        private void RefreshNetworkPeers(int targetPid)
+        {
+            List<NetworkPeerRow> rows = ReadNetworkPeers(targetPid);
+            NetworkPeers.Clear();
+            foreach (NetworkPeerRow row in rows)
+            {
+                NetworkPeers.Add(row);
+            }
+        }
+
+        private List<NetworkPeerRow> ReadNetworkPeers(int targetPid)
+        {
+            var rows = new Dictionary<string, NetworkPeerRow>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "netstat",
+                    Arguments = "-ano",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = false,
+                    CreateNoWindow = true
+                };
+
+                using Process? process = Process.Start(psi);
+                if (process == null)
+                {
+                    return new List<NetworkPeerRow>();
+                }
+
+                string? line;
+                while ((line = process.StandardOutput.ReadLine()) != null)
+                {
+                    if (string.IsNullOrWhiteSpace(line))
+                    {
+                        continue;
+                    }
+
+                    string trimmed = line.Trim();
+                    if (!trimmed.StartsWith("TCP", StringComparison.OrdinalIgnoreCase) &&
+                        !trimmed.StartsWith("UDP", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    string[] tokens = trimmed
+                        .Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (tokens.Length < 4)
+                    {
+                        continue;
+                    }
+
+                    string protocol = tokens[0].ToUpperInvariant();
+                    string remoteEndpoint = tokens[2];
+                    string state = protocol == "TCP" && tokens.Length >= 5 ? tokens[3] : "N/A";
+                    string pidToken = protocol == "TCP" && tokens.Length >= 5 ? tokens[^1] : tokens[3];
+                    if (!int.TryParse(pidToken, out int pid) || pid != targetPid)
+                    {
+                        continue;
+                    }
+
+                    string remoteAddress = ExtractAddress(remoteEndpoint);
+                    if (remoteAddress.Length == 0 || remoteAddress == "*" || remoteAddress == "0.0.0.0" || remoteAddress == "::")
+                    {
+                        continue;
+                    }
+
+                    string key = $"{protocol}|{remoteAddress}|{state}";
+                    if (!rows.TryGetValue(key, out NetworkPeerRow? row))
+                    {
+                        row = new NetworkPeerRow
+                        {
+                            RemoteAddress = remoteAddress,
+                            Protocol = protocol,
+                            State = state,
+                            DnsName = ResolveDnsName(remoteAddress),
+                            ConnectionCount = 1
+                        };
+                        rows[key] = row;
+                    }
+                    else
+                    {
+                        row.ConnectionCount += 1;
+                    }
+                }
+            }
+            catch
+            {
+                return new List<NetworkPeerRow>();
+            }
+
+            return rows.Values
+                .OrderByDescending(x => x.ConnectionCount)
+                .ThenBy(x => x.RemoteAddress, StringComparer.OrdinalIgnoreCase)
+                .Take(128)
+                .ToList();
+        }
+
+        private string ResolveDnsName(string remoteAddress)
+        {
+            if (_reverseDnsCache.TryGetValue(remoteAddress, out string? cached))
+            {
+                return cached;
+            }
+
+            if (!IPAddress.TryParse(remoteAddress, out IPAddress? ip) ||
+                IPAddress.IsLoopback(ip))
+            {
+                _reverseDnsCache[remoteAddress] = "-";
+                return "-";
+            }
+
+            string host = "-";
+            try
+            {
+                var lookup = System.Threading.Tasks.Task.Run(() => Dns.GetHostEntry(remoteAddress));
+                if (lookup.Wait(120) && lookup.Result != null)
+                {
+                    host = string.IsNullOrWhiteSpace(lookup.Result.HostName)
+                        ? remoteAddress
+                        : lookup.Result.HostName;
+                }
+            }
+            catch
+            {
+                host = "-";
+            }
+
+            _reverseDnsCache[remoteAddress] = host;
+            return host;
+        }
+
+        private static string ExtractAddress(string endpoint)
+        {
+            if (string.IsNullOrWhiteSpace(endpoint))
+            {
+                return string.Empty;
+            }
+
+            string value = endpoint.Trim();
+            if (value.StartsWith("[", StringComparison.Ordinal))
+            {
+                int close = value.IndexOf(']');
+                if (close > 1)
+                {
+                    return value[1..close];
+                }
+            }
+
+            int lastColon = value.LastIndexOf(':');
+            if (lastColon > 0)
+            {
+                return value[..lastColon];
+            }
+
+            return value;
+        }
+
+        private void UpdateLiveDataOverlays()
+        {
+            if (ThreadsNoDataOverlay != null)
+            {
+                bool showThreadsNoData = !_processLiveDataAvailable || TopThreads.Count == 0;
+                ThreadsNoDataOverlay.Visibility = showThreadsNoData ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            if (MemoryNoDataOverlay != null)
+            {
+                bool showMemoryNoData = !_processLiveDataAvailable || MemoryMetrics.Count == 0;
+                MemoryNoDataOverlay.Visibility = showMemoryNoData ? Visibility.Visible : Visibility.Collapsed;
+            }
         }
 
         private static MemoryMetricRow CloneMetric(MemoryMetricRow src)
@@ -774,23 +1028,33 @@ namespace SleepwalkerInterface
         private void MemoryViewToggle_Checked(object sender, RoutedEventArgs e)
         {
             _memoryTreemapEnabled = true;
-            MemoryViewToggle.Content = "Table";
-            MemoryGrid.Visibility = Visibility.Collapsed;
-            MemoryTreemapHost.Visibility = Visibility.Visible;
+            if (MemoryViewToggle != null)
+                MemoryViewToggle.Content = "Table";
+            if (MemoryGrid != null)
+                MemoryGrid.Visibility = Visibility.Collapsed;
+            if (MemoryTreemapHost != null)
+                MemoryTreemapHost.Visibility = Visibility.Visible;
             UpdateMemoryTreemap();
+            UpdateLiveDataOverlays();
         }
 
         private void MemoryViewToggle_Unchecked(object sender, RoutedEventArgs e)
         {
             _memoryTreemapEnabled = false;
-            MemoryViewToggle.Content = "Treemap";
-            MemoryTreemapHost.Visibility = Visibility.Collapsed;
-            MemoryGrid.Visibility = Visibility.Visible;
+            if (MemoryViewToggle != null)
+                MemoryViewToggle.Content = "Treemap";
+            if (MemoryTreemapHost != null)
+                MemoryTreemapHost.Visibility = Visibility.Collapsed;
+            if (MemoryGrid != null)
+                MemoryGrid.Visibility = Visibility.Visible;
+            UpdateLiveDataOverlays();
         }
 
         private void UpdateMemoryTreemap()
         {
             if (!_memoryTreemapEnabled)
+                return;
+            if (MemoryTreemapCanvas == null || MemoryTreemapNoData == null)
                 return;
 
             double width = MemoryTreemapCanvas.ActualWidth;
@@ -1059,14 +1323,38 @@ namespace SleepwalkerInterface
         public int Tid { get; }
         public double CpuMs { get; }
         public string State { get; }
+        public string ThreadKind { get; }
         public string StartTime { get; }
+        public bool IsSuspended { get; }
+        public bool IsWaiting { get; }
 
         public ThreadUsageRow(ThreadUsageSample s)
         {
             Tid = s.Tid;
             CpuMs = Math.Round(s.CpuMsDelta, 2);
-            State = s.State;
+            State = BuildDisplayState(s);
+            ThreadKind = string.IsNullOrWhiteSpace(s.Kind) ? "Normal" : s.Kind.Trim();
+            IsSuspended = State.Contains("Suspended", StringComparison.OrdinalIgnoreCase);
+            IsWaiting = State.Contains("Waiting", StringComparison.OrdinalIgnoreCase);
             StartTime = s.StartTimeUtc.HasValue ? s.StartTimeUtc.Value.ToString("HH:mm:ss") : "-";
+        }
+
+        private static string BuildDisplayState(ThreadUsageSample s)
+        {
+            string state = string.IsNullOrWhiteSpace(s.State) ? "Unknown" : s.State.Trim();
+            string wait = string.IsNullOrWhiteSpace(s.WaitReason) ? string.Empty : s.WaitReason.Trim();
+            if (wait.Equals("Suspended", StringComparison.OrdinalIgnoreCase) ||
+                wait.Equals("UserRequest", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Suspended";
+            }
+
+            if (state.Equals("Wait", StringComparison.OrdinalIgnoreCase))
+            {
+                return wait.Length > 0 ? $"Waiting ({wait})" : "Waiting";
+            }
+
+            return state;
         }
     }
 
@@ -1095,5 +1383,14 @@ namespace SleepwalkerInterface
 
         public string Field { get; }
         public string Value { get; }
+    }
+
+    public sealed class NetworkPeerRow
+    {
+        public string RemoteAddress { get; set; } = "";
+        public string DnsName { get; set; } = "";
+        public string Protocol { get; set; } = "";
+        public string State { get; set; } = "";
+        public int ConnectionCount { get; set; }
     }
 }

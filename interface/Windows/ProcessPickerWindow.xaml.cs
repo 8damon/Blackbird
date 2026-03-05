@@ -8,10 +8,13 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
 namespace SleepwalkerInterface
@@ -24,15 +27,36 @@ namespace SleepwalkerInterface
         private readonly Dictionary<int, (TimeSpan cpu, DateTime ts)> _cpuBaseline = new();
         private readonly Dictionary<string, bool> _signatureCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, ProcessPathMetadata> _pathMetadataCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, ImageSource?> _iconCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ImageSource? _defaultProcessIcon;
         private readonly DispatcherTimer _refreshTimer;
         private bool _isReady;
+        private bool _initialListPrepared;
+        private bool _firstRevealComplete;
+        private Brush _rowDefaultForeground = Brushes.Black;
+        private Brush _rowUnsignedBackground = Brushes.Transparent;
+        private Brush _rowUnsignedBorder = Brushes.Transparent;
+        private Brush _rowUnsignedForeground = Brushes.Black;
+        private Brush _rowAppContainerBackground = Brushes.Transparent;
+        private Brush _rowAppContainerBorder = Brushes.Transparent;
+        private Brush _rowAppContainerForeground = Brushes.Black;
+        private Brush _rowLowIntegrityBackground = Brushes.Transparent;
+        private Brush _rowLowIntegrityBorder = Brushes.Transparent;
+        private Brush _rowElevatedBackground = Brushes.Transparent;
+        private Brush _rowElevatedBorder = Brushes.Transparent;
+        private Brush _rowSystemBackground = Brushes.Transparent;
+        private Brush _rowSystemBorder = Brushes.Transparent;
+        private Brush _rowSystemForeground = Brushes.Black;
 
         public int SelectedPid { get; private set; }
 
         public ProcessPickerWindow()
         {
             InitializeComponent();
-            WindowThemeHelper.ApplyDarkTitleBar(this);
+            Opacity = 0;
+            WindowThemeHelper.ApplyTitleBarTheme(this, App.IsDarkTheme);
+            RefreshThemePalette();
+            _defaultProcessIcon = GetDefaultProcessIcon();
 
             ProcessGrid.ItemsSource = _view;
             RulesGrid.ItemsSource = _rules;
@@ -43,14 +67,59 @@ namespace SleepwalkerInterface
             };
             _refreshTimer.Tick += (_, __) => RefreshList();
 
-            Loaded += (_, __) =>
+            Loaded += async (_, __) =>
             {
-                RefreshList();
+                EnsureInitialListPrepared();
                 _refreshTimer.Start();
+                await RevealAfterFirstRenderAsync();
             };
-            Closed += (_, __) => _refreshTimer.Stop();
+            Closed += (_, __) =>
+            {
+                _refreshTimer.Stop();
+                App.ThemeChanged -= OnThemeChanged;
+            };
+            App.ThemeChanged += OnThemeChanged;
 
             _isReady = true;
+        }
+
+        private void Root_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton != MouseButton.Left || e.ClickCount != 1)
+                return;
+
+            try
+            {
+                DragMove();
+            }
+            catch
+            {
+            }
+        }
+
+        public void PrimeForFirstShow()
+        {
+            EnsureInitialListPrepared();
+        }
+
+        private void EnsureInitialListPrepared()
+        {
+            if (_initialListPrepared)
+                return;
+
+            RefreshList();
+            _initialListPrepared = true;
+        }
+
+        private async Task RevealAfterFirstRenderAsync()
+        {
+            if (_firstRevealComplete)
+                return;
+
+            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Render);
+            Opacity = 1;
+            Activate();
+            _firstRevealComplete = true;
         }
 
         private void Refresh_Click(object sender, RoutedEventArgs e) => RefreshList();
@@ -131,18 +200,23 @@ namespace SleepwalkerInterface
             var now = DateTime.UtcNow;
             var list = new List<ProcessItem>();
             var presentPids = new HashSet<int>();
+            var seenPids = new HashSet<int>();
             string windowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
 
             foreach (var p in Process.GetProcesses())
             {
                 try
                 {
+                    if (!seenPids.Add(p.Id))
+                        continue;
+
                     presentPids.Add(p.Id);
 
                     string path = "";
                     string fileName = "";
                     string appName = "";
                     string company = "";
+                    ImageSource? icon = null;
                     string architecture = "-";
                     double cpuPct = 0;
                     string integrity = "Unknown";
@@ -179,7 +253,9 @@ namespace SleepwalkerInterface
                         fileName = meta.FileName;
                         appName = meta.AppName;
                         company = meta.Company;
+                        icon = GetProcessIcon(path);
                     }
+                    icon ??= _defaultProcessIcon;
 
                     if (string.IsNullOrWhiteSpace(appName))
                         appName = p.ProcessName;
@@ -207,6 +283,7 @@ namespace SleepwalkerInterface
                         AppName = appName,
                         Company = company,
                         FileName = fileName,
+                        Icon = icon,
                         Architecture = architecture,
                         Pid = p.Id,
                         ParentPid = parentPid,
@@ -276,7 +353,7 @@ namespace SleepwalkerInterface
 
         private void ApplyFilter()
         {
-            if (!_isReady || ProcessGrid == null || ResultCountBlock == null)
+            if (!_isReady || ProcessGrid == null)
                 return;
 
             string q = QuickSearchBox?.Text?.Trim() ?? "";
@@ -301,8 +378,6 @@ namespace SleepwalkerInterface
             _view.Clear();
             foreach (var item in filtered)
                 _view.Add(item);
-
-            ResultCountBlock.Text = $"{_view.Count} process(es)";
         }
 
         private bool PassesRules(ProcessItem item)
@@ -395,57 +470,102 @@ namespace SleepwalkerInterface
             return true;
         }
 
-        private static void ApplyRowTheme(ProcessItem item)
+        private void ApplyRowTheme(ProcessItem item)
         {
+            item.RowForeground = _rowDefaultForeground;
+
             if (item.IsUnsigned)
             {
-                item.RowBackground = Brush(0x33, 0x50, 0x1F, 0x1F);
-                item.RowBorderBrush = Brush(0xAA, 0xE3, 0x6B, 0x6B);
-                item.RowForeground = Brush(0xFF, 0xF4, 0xD7, 0xD7);
+                item.RowBackground = _rowUnsignedBackground;
+                item.RowBorderBrush = _rowUnsignedBorder;
+                item.RowForeground = _rowUnsignedForeground;
                 return;
             }
 
             if (item.IsAppContainer)
             {
-                item.RowBackground = Brush(0x33, 0x3A, 0x2A, 0x58);
-                item.RowBorderBrush = Brush(0x99, 0xB0, 0x7A, 0xE8);
-                item.RowForeground = Brushes.WhiteSmoke;
+                item.RowBackground = _rowAppContainerBackground;
+                item.RowBorderBrush = _rowAppContainerBorder;
+                item.RowForeground = _rowAppContainerForeground;
                 return;
             }
 
             if (item.IntegrityLevel.Equals("Low", StringComparison.OrdinalIgnoreCase))
             {
-                item.RowBackground = Brush(0x2D, 0x4C, 0x41, 0x1D);
-                item.RowBorderBrush = Brush(0x88, 0xD1, 0xB0, 0x5C);
+                item.RowBackground = _rowLowIntegrityBackground;
+                item.RowBorderBrush = _rowLowIntegrityBorder;
                 return;
             }
 
             if (item.IntegrityLevel.Equals("High", StringComparison.OrdinalIgnoreCase) ||
                 item.IntegrityLevel.Equals("System", StringComparison.OrdinalIgnoreCase))
             {
-                item.RowBackground = Brush(0x24, 0x2D, 0x3C, 0x52);
-                item.RowBorderBrush = Brush(0x70, 0x8A, 0xA8, 0xC7);
+                item.RowBackground = _rowElevatedBackground;
+                item.RowBorderBrush = _rowElevatedBorder;
                 return;
             }
 
             if (item.IsSystemOrWindows)
             {
-                item.RowBackground = Brush(0x22, 0x23, 0x23, 0x23);
-                item.RowBorderBrush = Brush(0x55, 0x5A, 0x5A, 0x5A);
-                item.RowForeground = Brush(0xFF, 0xB8, 0xB8, 0xB8);
+                item.RowBackground = _rowSystemBackground;
+                item.RowBorderBrush = _rowSystemBorder;
+                item.RowForeground = _rowSystemForeground;
                 return;
             }
 
             item.RowBackground = Brushes.Transparent;
             item.RowBorderBrush = Brushes.Transparent;
-            item.RowForeground = Brushes.WhiteSmoke;
+            item.RowForeground = _rowDefaultForeground;
         }
 
-        private static SolidColorBrush Brush(byte a, byte r, byte g, byte b)
+        private void OnThemeChanged(bool _)
         {
-            var bsh = new SolidColorBrush(Color.FromArgb(a, r, g, b));
-            bsh.Freeze();
-            return bsh;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                WindowThemeHelper.ApplyTitleBarTheme(this, App.IsDarkTheme);
+                RefreshThemePalette();
+                ReapplyRowThemes();
+            }), DispatcherPriority.Background);
+        }
+
+        private void RefreshThemePalette()
+        {
+            _rowDefaultForeground = ResolveBrush("ProcessRowDefaultForegroundBrush", Color.FromRgb(0xD8, 0xD8, 0xD8));
+            _rowUnsignedBackground = ResolveBrush("ProcessRowUnsignedBackgroundBrush", Color.FromArgb(0x33, 0x50, 0x1F, 0x1F));
+            _rowUnsignedBorder = ResolveBrush("ProcessRowUnsignedBorderBrush", Color.FromArgb(0xAA, 0xE3, 0x6B, 0x6B));
+            _rowUnsignedForeground = ResolveBrush("ProcessRowUnsignedForegroundBrush", Color.FromRgb(0xF4, 0xD7, 0xD7));
+            _rowAppContainerBackground = ResolveBrush("ProcessRowAppContainerBackgroundBrush", Color.FromArgb(0x33, 0x3A, 0x2A, 0x58));
+            _rowAppContainerBorder = ResolveBrush("ProcessRowAppContainerBorderBrush", Color.FromArgb(0x99, 0xB0, 0x7A, 0xE8));
+            _rowAppContainerForeground = ResolveBrush("ProcessRowAppContainerForegroundBrush", Colors.WhiteSmoke);
+            _rowLowIntegrityBackground = ResolveBrush("ProcessRowLowIntegrityBackgroundBrush", Color.FromArgb(0x2D, 0x4C, 0x41, 0x1D));
+            _rowLowIntegrityBorder = ResolveBrush("ProcessRowLowIntegrityBorderBrush", Color.FromArgb(0x88, 0xD1, 0xB0, 0x5C));
+            _rowElevatedBackground = ResolveBrush("ProcessRowElevatedBackgroundBrush", Color.FromArgb(0x24, 0x2D, 0x3C, 0x52));
+            _rowElevatedBorder = ResolveBrush("ProcessRowElevatedBorderBrush", Color.FromArgb(0x70, 0x8A, 0xA8, 0xC7));
+            _rowSystemBackground = ResolveBrush("ProcessRowSystemBackgroundBrush", Color.FromArgb(0x22, 0x23, 0x23, 0x23));
+            _rowSystemBorder = ResolveBrush("ProcessRowSystemBorderBrush", Color.FromArgb(0x55, 0x5A, 0x5A, 0x5A));
+            _rowSystemForeground = ResolveBrush("ProcessRowSystemForegroundBrush", Color.FromRgb(0xB8, 0xB8, 0xB8));
+        }
+
+        private void ReapplyRowThemes()
+        {
+            foreach (var item in _all)
+            {
+                ApplyRowTheme(item);
+            }
+
+            ProcessGrid.Items.Refresh();
+        }
+
+        private static Brush ResolveBrush(string key, Color fallback)
+        {
+            if (Application.Current?.TryFindResource(key) is Brush brush)
+            {
+                return brush;
+            }
+
+            var solid = new SolidColorBrush(fallback);
+            solid.Freeze();
+            return solid;
         }
 
         private bool IsSigned(string path)
@@ -497,6 +617,83 @@ namespace SleepwalkerInterface
 
             _pathMetadataCache[path] = result;
             return result;
+        }
+
+        private ImageSource? GetProcessIcon(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                return _defaultProcessIcon;
+            }
+
+            if (_iconCache.TryGetValue(path, out ImageSource? cached))
+            {
+                return cached;
+            }
+
+            try
+            {
+                uint cbFileInfo = (uint)Marshal.SizeOf<SHFILEINFO>();
+                const uint flags = SHGFI_ICON | SHGFI_SMALLICON;
+                IntPtr result = SHGetFileInfo(path, 0, out SHFILEINFO info, cbFileInfo, flags);
+                if (result == IntPtr.Zero || info.hIcon == IntPtr.Zero)
+                {
+                    _iconCache[path] = _defaultProcessIcon;
+                    return _defaultProcessIcon;
+                }
+
+                try
+                {
+                    BitmapSource bitmap = Imaging.CreateBitmapSourceFromHIcon(
+                        info.hIcon,
+                        Int32Rect.Empty,
+                        BitmapSizeOptions.FromWidthAndHeight(16, 16));
+                    bitmap.Freeze();
+                    _iconCache[path] = bitmap;
+                    return bitmap;
+                }
+                finally
+                {
+                    DestroyIcon(info.hIcon);
+                }
+            }
+            catch
+            {
+                _iconCache[path] = _defaultProcessIcon;
+                return _defaultProcessIcon;
+            }
+        }
+
+        private ImageSource? GetDefaultProcessIcon()
+        {
+            try
+            {
+                uint cbFileInfo = (uint)Marshal.SizeOf<SHFILEINFO>();
+                const uint flags = SHGFI_ICON | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES;
+                IntPtr result = SHGetFileInfo("dummy.exe", FILE_ATTRIBUTE_NORMAL, out SHFILEINFO info, cbFileInfo, flags);
+                if (result == IntPtr.Zero || info.hIcon == IntPtr.Zero)
+                {
+                    return null;
+                }
+
+                try
+                {
+                    BitmapSource bitmap = Imaging.CreateBitmapSourceFromHIcon(
+                        info.hIcon,
+                        Int32Rect.Empty,
+                        BitmapSizeOptions.FromWidthAndHeight(16, 16));
+                    bitmap.Freeze();
+                    return bitmap;
+                }
+                finally
+                {
+                    DestroyIcon(info.hIcon);
+                }
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private static string TryGetArchitecture(Process process)
@@ -820,6 +1017,35 @@ namespace SleepwalkerInterface
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool IsWow64Process2(IntPtr hProcess, out ushort processMachine, out ushort nativeMachine);
+
+        private const uint SHGFI_ICON = 0x000000100;
+        private const uint SHGFI_SMALLICON = 0x000000001;
+        private const uint SHGFI_USEFILEATTRIBUTES = 0x000000010;
+        private const uint FILE_ATTRIBUTE_NORMAL = 0x00000080;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct SHFILEINFO
+        {
+            public IntPtr hIcon;
+            public IntPtr iIcon;
+            public uint dwAttributes;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+            public string szDisplayName;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)]
+            public string szTypeName;
+        }
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr SHGetFileInfo(
+            string pszPath,
+            uint dwFileAttributes,
+            out SHFILEINFO psfi,
+            uint cbFileInfo,
+            uint uFlags);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DestroyIcon(IntPtr hIcon);
     }
 
     public sealed class ProcessFilterRule
@@ -845,6 +1071,7 @@ namespace SleepwalkerInterface
         public string AppName { get; init; } = "";
         public string Company { get; init; } = "";
         public string FileName { get; init; } = "";
+        public ImageSource? Icon { get; init; }
         public string Architecture { get; init; } = "-";
         public int Pid { get; init; }
         public int ParentPid { get; init; }
@@ -863,6 +1090,6 @@ namespace SleepwalkerInterface
 
         public Brush RowBackground { get; set; } = Brushes.Transparent;
         public Brush RowBorderBrush { get; set; } = Brushes.Transparent;
-        public Brush RowForeground { get; set; } = Brushes.WhiteSmoke;
+        public Brush RowForeground { get; set; } = Brushes.Black;
     }
 }

@@ -7,7 +7,7 @@
 #pragma function(strlen)
 #pragma function(wcslen)
 
-size_t __cdecl strlen(_In_opt_z_ const char *s)
+size_t __cdecl strlen(_In_z_ const char *s)
 {
     const char *p = s;
 
@@ -24,7 +24,7 @@ size_t __cdecl strlen(_In_opt_z_ const char *s)
     return (size_t)(p - s);
 }
 
-size_t __cdecl wcslen(_In_opt_z_ const wchar_t *s)
+size_t __cdecl wcslen(_In_z_ const wchar_t *s)
 {
     const wchar_t *p = s;
 

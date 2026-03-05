@@ -123,10 +123,11 @@ namespace SleepwalkerInterface
 
         private sealed class AccessMatrixRow
         {
-            public string RightName { get; set; } = "";
-            public string ProcessState { get; set; } = "OFF";
+            public string ProcessRightName { get; set; } = "";
+            public string ProcessStateMark { get; set; } = "-";
             public Brush ProcessStateBrush { get; set; } = AccessAbsentForeground;
-            public string ThreadState { get; set; } = "OFF";
+            public string ThreadRightName { get; set; } = "";
+            public string ThreadStateMark { get; set; } = "-";
             public Brush ThreadStateBrush { get; set; } = AccessAbsentForeground;
         }
 
@@ -1036,54 +1037,55 @@ namespace SleepwalkerInterface
                 AccessMaskBlock.Text = $"Mask: {(string.IsNullOrWhiteSpace(raw) ? "none" : raw)}";
                 _accessMatrixRows.Add(new AccessMatrixRow
                 {
-                    RightName = "Unparsed access",
-                    ProcessState = "-",
+                    ProcessRightName = "Unparsed access",
+                    ProcessStateMark = "-",
                     ProcessStateBrush = AccessLabelForeground,
-                    ThreadState = "-",
+                    ThreadRightName = "-",
+                    ThreadStateMark = "-",
                     ThreadStateBrush = AccessLabelForeground
                 });
                 return;
             }
 
             AccessMaskBlock.Text = $"Mask: 0x{accessMask:X8}";
-            var processRights = ProcessAccessMatrix.ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
-            var threadRights = ThreadAccessMatrix.ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
-            var orderedNames = ProcessAccessMatrix
-                .Select(x => x.Name)
-                .Concat(ThreadAccessMatrix.Select(x => x.Name))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            foreach (string rightName in orderedNames)
+            int rowCount = Math.Max(ProcessAccessMatrix.Length, ThreadAccessMatrix.Length);
+            for (int i = 0; i < rowCount; i += 1)
             {
-                string processState = "-";
+                string processRightName = string.Empty;
+                string processState = string.Empty;
                 Brush processBrush = AccessLabelForeground;
-                if (processRights.TryGetValue(rightName, out var processRight))
+                if (i < ProcessAccessMatrix.Length)
                 {
+                    var processRight = ProcessAccessMatrix[i];
+                    processRightName = processRight.Name;
                     bool on = processRight.FullMask
                         ? (accessMask & processRight.Mask) == processRight.Mask
                         : (accessMask & processRight.Mask) != 0;
-                    processState = on ? "ON" : "OFF";
+                    processState = on ? "x" : "-";
                     processBrush = on ? AccessPresentForeground : AccessAbsentForeground;
                 }
 
-                string threadState = "-";
+                string threadRightName = string.Empty;
+                string threadState = string.Empty;
                 Brush threadBrush = AccessLabelForeground;
-                if (threadRights.TryGetValue(rightName, out var threadRight))
+                if (i < ThreadAccessMatrix.Length)
                 {
+                    var threadRight = ThreadAccessMatrix[i];
+                    threadRightName = threadRight.Name;
                     bool on = threadRight.FullMask
                         ? (accessMask & threadRight.Mask) == threadRight.Mask
                         : (accessMask & threadRight.Mask) != 0;
-                    threadState = on ? "ON" : "OFF";
+                    threadState = on ? "x" : "-";
                     threadBrush = on ? AccessPresentForeground : AccessAbsentForeground;
                 }
 
                 _accessMatrixRows.Add(new AccessMatrixRow
                 {
-                    RightName = rightName,
-                    ProcessState = processState,
+                    ProcessRightName = processRightName,
+                    ProcessStateMark = processState,
                     ProcessStateBrush = processBrush,
-                    ThreadState = threadState,
+                    ThreadRightName = threadRightName,
+                    ThreadStateMark = threadState,
                     ThreadStateBrush = threadBrush
                 });
             }
@@ -1110,28 +1112,21 @@ namespace SleepwalkerInterface
         private static string BuildMemoryContext(IReadOnlyDictionary<string, string> parsed)
         {
             var lines = new List<string>();
-            AddIfPresent(lines, parsed, "origin");
-            AddIfPresent(lines, parsed, "pageBase");
-            AddIfPresent(lines, parsed, "stack0");
-            AddIfPresent(lines, parsed, "stack1");
             AddIfPresent(lines, parsed, "module");
             AddIfPresent(lines, parsed, "path");
             AddIfPresent(lines, parsed, "protect");
-            AddIfPresent(lines, parsed, "allocationBase");
             AddIfPresent(lines, parsed, "regionSize");
             AddIfPresent(lines, parsed, "regionProtect");
             AddIfPresent(lines, parsed, "regionState");
             AddIfPresent(lines, parsed, "regionType");
-            AddIfPresent(lines, parsed, "stackSnapshotAddress");
             AddIfPresent(lines, parsed, "stackSnapshotSize");
-            if (parsed.TryGetValue("stackSnapshot", out string? stackSnapshot) && !string.IsNullOrWhiteSpace(stackSnapshot))
+
+            if (lines.Count == 0)
             {
-                string compact = stackSnapshot.Trim();
-                if (compact.Length > 192)
-                {
-                    compact = compact[..192] + "...";
-                }
-                lines.Add($"stackSnapshot: {compact}");
+                // Fallback for sparse records that only include address anchors.
+                AddIfPresent(lines, parsed, "origin");
+                AddIfPresent(lines, parsed, "pageBase");
+                AddIfPresent(lines, parsed, "allocationBase");
             }
 
             if (lines.Count == 0)

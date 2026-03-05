@@ -1,0 +1,181 @@
+<Window x:Class="SleepwalkerInterface.EventLogWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Event Log"
+        Width="1100"
+        Height="760"
+        MinWidth="760"
+        MinHeight="460"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        Background="{DynamicResource WinBgBrush}">
+    <Grid Margin="10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0"
+                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    Background="{DynamicResource WinHeaderBrush}"
+                    Padding="8,4"
+                    Margin="0,0,0,8"
+                    MouseLeftButtonDown="Root_MouseLeftButtonDown">
+                <DockPanel LastChildFill="False">
+                    <TextBlock Text="Event Log"
+                               FontSize="14"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"/>
+                    <Button DockPanel.Dock="Right"
+                            Content="✕"
+                            Width="26"
+                            Height="24"
+                            Margin="8,0,0,0"
+                            Click="TopClose_Click"/>
+                </DockPanel>
+            </Border>
+
+        <Border Grid.Row="1"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="1"
+                Background="{DynamicResource WinPanelBrush}"
+                Padding="8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="1.1*"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="1.1*"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBox x:Name="SearchBox"
+                         Grid.Column="0"
+                         Height="26"
+                         VerticalContentAlignment="Center"
+                         ToolTip="Search summary/details/group/subtype/pid/tid"
+                         TextChanged="Filter_Changed"/>
+
+                <ComboBox x:Name="GroupFilterBox"
+                          Grid.Column="2"
+                          Height="26"
+                          IsEditable="False"
+                          SelectionChanged="Filter_Changed"/>
+
+                <ComboBox x:Name="SubtypeFilterBox"
+                          Grid.Column="4"
+                          Height="26"
+                          IsEditable="False"
+                          SelectionChanged="Filter_Changed"/>
+
+                <Button x:Name="ClearFilterButton"
+                        Grid.Column="6"
+                        Content="Clear"
+                        Padding="10,4"
+                        Click="ClearFilterButton_Click"/>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2"
+                Margin="0,8,0,8"
+                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                BorderThickness="1"
+                Background="{DynamicResource WinPanelBrush}"
+                Padding="8,6">
+            <DockPanel LastChildFill="False">
+                <TextBlock x:Name="SummaryBlock"
+                           DockPanel.Dock="Left"
+                           FontWeight="SemiBold"
+                           Text="Grouped events: 0"/>
+                <TextBlock x:Name="FilterStateBlock"
+                           DockPanel.Dock="Right"
+                           Foreground="{DynamicResource WinMutedTextBrush}"
+                           Text="All events"/>
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="3"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="1"
+                Background="{DynamicResource WinPanelBrush}">
+            <Grid>
+                <ListView x:Name="EventCardList"
+                          BorderThickness="0"
+                          Background="{DynamicResource WinPanelBrush}"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                          ScrollViewer.VerticalScrollBarVisibility="Auto"
+                          MouseDoubleClick="EventCardList_MouseDoubleClick"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="Padding" Value="0"/>
+                            <Setter Property="Margin" Value="0"/>
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Border Margin="8,6,8,0"
+                                    Padding="8,6"
+                                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                    BorderThickness="1"
+                                    Background="{DynamicResource ExplorerPreviewBackgroundBrush}">
+                                <StackPanel>
+                                    <DockPanel LastChildFill="False">
+                                        <Border DockPanel.Dock="Left"
+                                                Padding="6,1"
+                                                Margin="0,0,8,0"
+                                                Background="{DynamicResource ExplorerOverlayBrush}">
+                                            <TextBlock Text="{Binding CountLabel}" FontWeight="SemiBold"/>
+                                        </Border>
+                                        <TextBlock DockPanel.Dock="Left"
+                                                   Margin="0,0,8,0"
+                                                   Foreground="{DynamicResource WinMutedTextBrush}"
+                                                   Text="{Binding TimeLabel}"/>
+                                        <TextBlock DockPanel.Dock="Left"
+                                                   Margin="0,0,8,0"
+                                                   FontWeight="SemiBold"
+                                                   Text="{Binding LaneLabel}"/>
+                                        <TextBlock DockPanel.Dock="Right"
+                                                   Foreground="{DynamicResource WinMutedTextBrush}"
+                                                   Text="{Binding ActorLabel}"/>
+                                    </DockPanel>
+
+                                    <TextBlock Margin="0,4,0,0"
+                                               FontSize="12"
+                                               FontWeight="SemiBold"
+                                               Text="{Binding Summary}"/>
+
+                                    <TextBlock Margin="0,4,0,0"
+                                               TextWrapping="Wrap"
+                                               Foreground="{DynamicResource WinMutedTextBrush}"
+                                               Text="{Binding Details}"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <Border x:Name="NoDataOverlay"
+                        Background="{DynamicResource NoDataOverlayBrush}"
+                        Visibility="Collapsed"
+                        IsHitTestVisible="False">
+                    <TextBlock Text="NO DATA"
+                               FontSize="44"
+                               FontWeight="Bold"
+                               Opacity="0.72"
+                               Foreground="{DynamicResource WinTextBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"/>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

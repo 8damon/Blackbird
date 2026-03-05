@@ -2,6 +2,7 @@
 #include <wdf.h>
 #include <ntstrsafe.h>
 #include "control.h"
+#include "pool_compat.h"
 
 #define SLEEPWALKER_POOL_TAG 'lrtS'
 #define SLEEPWALKER_MAX_CLIENT_SUBSCRIPTIONS 64
@@ -69,6 +70,23 @@ NTSYSAPI
 NTSTATUS
 NTAPI
 SeLocateProcessImageName(_In_ PEPROCESS Process, _Out_ PUNICODE_STRING *pImageFileName);
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+PsLookupThreadByThreadId(_In_ HANDLE ThreadId, _Outptr_ PETHREAD *Thread);
+
+NTSYSAPI
+HANDLE
+NTAPI
+PsGetThreadProcessId(_In_ PETHREAD Thread);
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+MmCopyVirtualMemory(_In_ PEPROCESS FromProcess, _In_ const VOID *FromAddress, _In_ PEPROCESS ToProcess,
+                    _Out_writes_bytes_(BufferSize) PVOID ToAddress, _In_ SIZE_T BufferSize,
+                    _In_ KPROCESSOR_MODE PreviousMode, _Out_ PSIZE_T NumberOfBytesCopied);
 
 #include "control/control_common.inc"
 #include "control/control_ioctl_handlers.inc"

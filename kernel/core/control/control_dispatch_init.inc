@@ -133,7 +133,6 @@ SLEEPWALKERControlInitialize(_In_ WDFDRIVER Driver)
     WDF_FILEOBJECT_CONFIG fileConfig;
     PWDFDEVICE_INIT devInit;
     UNICODE_STRING deviceName;
-    UNICODE_STRING symlink;
     UNICODE_STRING globalSymlink;
     UNICODE_STRING sddl;
 
@@ -212,12 +211,7 @@ SLEEPWALKERControlInitialize(_In_ WDFDRIVER Driver)
         return status;
     }
 
-    // Best-effort legacy link for callers using \\.\SleepwalkerCtl.
-    RtlInitUnicodeString(&symlink, L"\\DosDevices\\SleepwalkerCtl");
-    (void)WdfDeviceCreateSymbolicLink(device, &symlink);
-
     g_ControlDevice = device;
     WdfControlFinishInitializing(device);
     return STATUS_SUCCESS;
 }
-

@@ -9,7 +9,7 @@
             <RowDefinition Height="32"/>
             <RowDefinition Height="2*"/>
             <RowDefinition Height="20"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition x:Name="EventLogRow" Height="*"/>
         </Grid.RowDefinitions>
 
         <!-- Pane header -->
@@ -21,6 +21,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
@@ -41,13 +42,21 @@
                     Height="22"
                     Click="BtnSettings_Click"/>
             <Button Grid.Column="3"
+                    x:Name="BtnLogPopout"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="⇱"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Detach event log"
+                    Click="BtnLogPopout_Click"/>
+            <Button Grid.Column="4"
                     x:Name="BtnFloat"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="⧉"
                     Width="22"
                     Height="22"
                     Click="BtnFloat_Click"/>
-            <Button Grid.Column="4"
+            <Button Grid.Column="5"
                     x:Name="BtnClose"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="✕"
@@ -83,10 +92,11 @@
                        Margin="6,1,8,1"/>
         </Grid>
 
-        <Border Grid.Row="3"
+        <Border x:Name="EventLogBorder"
+                Grid.Row="3"
                 BorderBrush="{DynamicResource WinSubtleBorderBrush}"
                 BorderThickness="0,1,0,0"
-                Margin="8,6,8,8">
+                Margin="4">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="24"/>
@@ -96,7 +106,7 @@
                 <Border Grid.Row="0"
                         Background="{DynamicResource WinHeaderBrush}"
                         BorderBrush="{DynamicResource WinBorderBrush}"
-                        BorderThickness="1,0,1,1"
+                        BorderThickness="0,0,0,1"
                         Padding="8,0">
                     <DockPanel LastChildFill="False">
                         <TextBlock Text="Event Log" VerticalAlignment="Center" FontWeight="SemiBold"/>
@@ -111,10 +121,12 @@
                           x:Name="EventGrid"
                           AutoGenerateColumns="False"
                           IsReadOnly="True"
+                          BorderThickness="0"
                           SelectionMode="Single"
                           ColumnHeaderHeight="24"
                           RowHeight="22"
-                          CanUserResizeRows="False">
+                          CanUserResizeRows="False"
+                          MouseDoubleClick="EventGrid_MouseDoubleClick">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Timestamp"
                                             Binding="{Binding TimestampUtc, StringFormat=HH:mm:ss.fff}"
@@ -123,8 +135,6 @@
                         <DataGridTextColumn Header="SubType" Binding="{Binding SubType}" Width="130"/>
                         <DataGridTextColumn Header="PID" Binding="{Binding PID}" Width="70"/>
                         <DataGridTextColumn Header="TID" Binding="{Binding TID}" Width="70"/>
-                        <DataGridTextColumn Header="Summary" Binding="{Binding Summary}" Width="220"/>
-                        <DataGridTextColumn Header="Details" Binding="{Binding Details}" Width="*"/>
                     </DataGrid.Columns>
                 </DataGrid>
 

@@ -397,7 +397,7 @@ static BOOL StartBrokerEtwCapture(_Out_ BROKER_ETW_CAPTURE *cap, _In_reads_opt_(
     {
         if (!SLEEPWALKERSCSetPids(cap->Device, SeedPids, SeedCount, StreamMask))
         {
-            CloseHandle(cap->Device);
+            (void)SLEEPWALKERSCCloseControlDevice(cap->Device);
             cap->Device = INVALID_HANDLE_VALUE;
             return FALSE;
         }
@@ -409,7 +409,7 @@ static BOOL StartBrokerEtwCapture(_Out_ BROKER_ETW_CAPTURE *cap, _In_reads_opt_(
     cap->TraceThread = CreateThread(NULL, 0, BrokerEtwConsumerThreadProc, cap, 0, NULL);
     if (cap->TraceThread == NULL)
     {
-        CloseHandle(cap->Device);
+        (void)SLEEPWALKERSCCloseControlDevice(cap->Device);
         cap->Device = INVALID_HANDLE_VALUE;
         return FALSE;
     }
@@ -435,7 +435,7 @@ static VOID StopBrokerEtwCapture(_Inout_ BROKER_ETW_CAPTURE *cap)
 
     if (cap->Device != NULL && cap->Device != INVALID_HANDLE_VALUE)
     {
-        CloseHandle(cap->Device);
+        (void)SLEEPWALKERSCCloseControlDevice(cap->Device);
         cap->Device = INVALID_HANDLE_VALUE;
     }
 }

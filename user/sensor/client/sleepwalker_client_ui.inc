@@ -72,7 +72,7 @@ static BOOL WideContainsInsensitive(_In_opt_z_ const WCHAR *Haystack, _In_z_ con
 static const char *ComputeUserModeHandleClass(_In_ const SLEEPWALKER_HANDLE_EVENT *h,
                                               _In_z_ const WCHAR *OriginResolved)
 {
-    BOOL fromNtdll;
+    BOOL fromKnownSyscallStub;
     BOOL execProtect;
     BOOL fromExe;
 
@@ -81,17 +81,21 @@ static const char *ComputeUserModeHandleClass(_In_ const SLEEPWALKER_HANDLE_EVEN
         return "UNKNOWN-ORIGIN";
     }
 
-    fromNtdll = ((h->Flags & SLEEPWALKER_HANDLE_FLAG_FROM_NTDLL) != 0) ||
-                WideContainsInsensitive(OriginResolved, L"ntdll!") ||
-                WideContainsInsensitive(OriginResolved, L"ntdll+");
+    fromKnownSyscallStub = ((h->Flags & SLEEPWALKER_HANDLE_FLAG_FROM_NTDLL) != 0) ||
+                           WideContainsInsensitive(OriginResolved, L"ntdll!") ||
+                           WideContainsInsensitive(OriginResolved, L"ntdll+") ||
+                           WideContainsInsensitive(OriginResolved, L"win32u!") ||
+                           WideContainsInsensitive(OriginResolved, L"win32u+") ||
+                           WideContainsInsensitive(h->OriginPath, L"ntdll.dll") ||
+                           WideContainsInsensitive(h->OriginPath, L"win32u.dll");
     execProtect = ((h->Flags & SLEEPWALKER_HANDLE_FLAG_EXEC_PROTECT) != 0);
     fromExe = ((h->Flags & SLEEPWALKER_HANDLE_FLAG_FROM_EXE) != 0);
 
-    if (execProtect && fromNtdll)
+    if (execProtect && fromKnownSyscallStub)
     {
         return "LEGITIMATE-SYSCALL";
     }
-    if (execProtect && !fromNtdll && (fromExe || h->OriginPath[0] == L'\0'))
+    if (execProtect && !fromKnownSyscallStub && (fromExe || h->OriginPath[0] == L'\0'))
     {
         return "DIRECT-SYSCALL-SUSPECT";
     }

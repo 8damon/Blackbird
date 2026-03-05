@@ -4,6 +4,7 @@
 #include <evntcons.h>
 #include <tdh.h>
 #include <strsafe.h>
+#include <ntsecapi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -48,6 +49,7 @@ static volatile LONG g_SleepwalkerBrokerCapabilities = 0;
 static volatile LONG g_SleepwalkerBrokerThreatIntelEnabled = 0;
 static volatile LONG g_SleepwalkerBrokerThreatIntelEnableError = 0;
 static volatile LONG g_SleepwalkerLastTiEnableError = 0;
+static volatile LONG g_SleepwalkerLastSharedRingError = ERROR_NOT_FOUND;
 static SRWLOCK g_SleepwalkerProtocolLock = SRWLOCK_INIT;
 
 #include "core/sleepwalker_sensor_core_protocol.inc"

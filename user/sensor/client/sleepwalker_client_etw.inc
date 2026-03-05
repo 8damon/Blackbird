@@ -203,7 +203,7 @@ static BOOL StartBrokerEtw(_Inout_ SLEEPWALKER_BROKER_ETW_CONTEXT *Broker, _Out_
     {
         if (!SLEEPWALKERSCSetPids(Broker->Device, &SeedPid, 1, StreamMask))
         {
-            CloseHandle(Broker->Device);
+            (void)SLEEPWALKERSCCloseControlDevice(Broker->Device);
             Broker->Device = INVALID_HANDLE_VALUE;
             return FALSE;
         }
@@ -218,7 +218,7 @@ static BOOL StartBrokerEtw(_Inout_ SLEEPWALKER_BROKER_ETW_CONTEXT *Broker, _Out_
     *ThreadHandle = CreateThread(NULL, 0, BrokerEtwRunThreadProc, Broker, 0, NULL);
     if (*ThreadHandle == NULL)
     {
-        CloseHandle(Broker->Device);
+        (void)SLEEPWALKERSCCloseControlDevice(Broker->Device);
         Broker->Device = INVALID_HANDLE_VALUE;
         return FALSE;
     }

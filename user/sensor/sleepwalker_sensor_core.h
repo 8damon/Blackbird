@@ -72,8 +72,12 @@ extern "C"
     SLEEPWALKERSC_API SLEEPWALKERSC_PROTOCOL_MODE SLEEPWALKERSCGetProtocolMode(VOID);
 
     SLEEPWALKERSC_API HANDLE SLEEPWALKERSCOpenControlDevice(VOID);
+    SLEEPWALKERSC_API BOOL SLEEPWALKERSCCloseControlDevice(_In_opt_ HANDLE Device);
     SLEEPWALKERSC_API BOOL SLEEPWALKERSCGetBrokerInfo(_Out_opt_ UINT32 *Capabilities,
                                                       _Out_opt_ BOOL *ThreatIntelEnabled);
+    SLEEPWALKERSC_API BOOL SLEEPWALKERSCHasSharedChannel(_In_ HANDLE Device, _Out_opt_ BOOL *HasIoctlChannel,
+                                                         _Out_opt_ BOOL *HasEtwChannel);
+    SLEEPWALKERSC_API DWORD SLEEPWALKERSCGetLastSharedRingError(VOID);
     SLEEPWALKERSC_API DWORD SLEEPWALKERSCGetBrokerThreatIntelEnableError(VOID);
     SLEEPWALKERSC_API DWORD SLEEPWALKERSCGetLastThreatIntelEnableError(VOID);
     SLEEPWALKERSC_API BOOL SLEEPWALKERSCSubscribe(_In_ HANDLE Device, _In_ DWORD ProcessId, _In_ DWORD StreamMask);

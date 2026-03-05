@@ -19,6 +19,7 @@ static DWORD WINAPI ControllerServerThreadProc(_In_ LPVOID Context)
         DWORD mode = PIPE_READMODE_MESSAGE;
         SLEEPWALKER_CONTROLLER_CLIENT *client;
         HANDLE thread;
+        DWORD slotIndex;
 
         pipe = CreateNamedPipeW(SLEEPWALKER_IPC_PIPE_NAME,
                                 PIPE_ACCESS_DUPLEX,
@@ -64,6 +65,7 @@ static DWORD WINAPI ControllerServerThreadProc(_In_ LPVOID Context)
         client->QueueDepth = 0;
         client->DroppedEvents = 0;
         client->SubscriptionCount = 0;
+        client->SlotIndex = SLEEPWALKER_CONTROLLER_INVALID_SLOT;
         InitializeCriticalSection(&client->Lock);
         if (!GetNamedPipeClientProcessId(pipe, &client->ProcessId))
         {
@@ -85,6 +87,17 @@ static DWORD WINAPI ControllerServerThreadProc(_In_ LPVOID Context)
             free(client);
             continue;
         }
+        slotIndex = ControllerAllocateClientSlotLocked();
+        if (slotIndex == SLEEPWALKER_CONTROLLER_INVALID_SLOT)
+        {
+            LeaveCriticalSection(&g_ClientListLock);
+            DeleteCriticalSection(&client->Lock);
+            CloseHandle(pipe);
+            free(client);
+            continue;
+        }
+        client->SlotIndex = slotIndex;
+        g_ClientSlots[slotIndex] = client;
         client->Next = g_ClientList;
         g_ClientList = client;
         g_ClientCount += 1;
@@ -191,6 +204,219 @@ static DWORD WINAPI ControllerDriverPumpThreadProc(_In_ LPVOID Context)
 
     return 0;
 }
+
+#ifndef SLEEPWALKER_INTENT_PROCESS_MEMORY
+#define SLEEPWALKER_INTENT_PROCESS_MEMORY 0x00000001u
+#endif
+
+#ifndef SLEEPWALKER_INTENT_THREAD_CONTEXT
+#define SLEEPWALKER_INTENT_THREAD_CONTEXT 0x00000002u
+#endif
+
+#ifndef SLEEPWALKER_INTENT_DUP_HANDLE
+#define SLEEPWALKER_INTENT_DUP_HANDLE 0x00000004u
+#endif
+
+static BOOL ControllerIsInterestingHandleAccessMask(_In_ ULONG DesiredAccess)
+{
+    return ((DesiredAccess & PROCESS_VM_OPERATION) != 0) ||
+           ((DesiredAccess & PROCESS_VM_WRITE) != 0) ||
+           ((DesiredAccess & PROCESS_CREATE_THREAD) != 0) ||
+           ((DesiredAccess & PROCESS_ALL_ACCESS) != 0) ||
+           ((DesiredAccess & THREAD_SET_CONTEXT) != 0) ||
+           ((DesiredAccess & THREAD_SUSPEND_RESUME) != 0) ||
+           ((DesiredAccess & THREAD_ALL_ACCESS) != 0);
+}
+
+static BOOL ControllerAnsiContainsInsensitive(_In_opt_z_ const CHAR *Haystack, _In_z_ const CHAR *Needle)
+{
+    size_t hayLen;
+    size_t needleLen;
+    size_t i;
+
+    if (Haystack == NULL || Needle == NULL || Needle[0] == '\0')
+    {
+        return FALSE;
+    }
+
+    hayLen = strlen(Haystack);
+    needleLen = strlen(Needle);
+    if (needleLen == 0 || hayLen < needleLen)
+    {
+        return FALSE;
+    }
+
+    for (i = 0; i <= (hayLen - needleLen); ++i)
+    {
+        if (_strnicmp(Haystack + i, Needle, needleLen) == 0)
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static BOOL ControllerShouldForwardEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName,
+                                             _In_ const SLEEPWALKER_IPC_ETW_EVENT *Event)
+{
+    ULONG desiredAccess = 0;
+    ULONG correlationFlags = 0;
+    ULONG severity = 0;
+    ULONGLONG processId = 0;
+    ULONGLONG creatorPid = 0;
+    ULONGLONG targetPid = 0;
+    CHAR className[64];
+    CHAR detectionName[RTL_NUMBER_OF(Event->DetectionName)];
+    BOOL selfTarget = FALSE;
+    BOOL handleNoiseDetection = FALSE;
+    BOOL lowSignalDetection = FALSE;
+    BOOL strongDetection = FALSE;
+
+    if (Record == NULL || Event == NULL)
+    {
+        return FALSE;
+    }
+    if (EventName == NULL || EventName[0] == L'\0')
+    {
+        return FALSE;
+    }
+
+    if (wcscmp(EventName, L"DetectionTelemetry") == 0)
+    {
+        ZeroMemory(detectionName, sizeof(detectionName));
+        (void)ControllerEtwGetAnsiProperty(Record, L"detectionName", detectionName, RTL_NUMBER_OF(detectionName));
+        (void)ControllerEtwGetU32Property(Record, L"severity", &severity);
+        (void)ControllerEtwGetU64Property(Record, L"processId", &processId);
+        (void)ControllerEtwGetU64Property(Record, L"targetPid", &targetPid);
+        if (targetPid == 0)
+        {
+            targetPid = Event->SecondaryPid;
+        }
+        if (processId == 0)
+        {
+            processId = Event->PrimaryPid;
+        }
+        selfTarget = (processId != 0 && targetPid != 0 && processId == targetPid);
+
+        (void)ControllerEtwGetU32Property(Record, L"correlationFlags", &correlationFlags);
+
+        handleNoiseDetection =
+            ControllerAnsiContainsInsensitive(detectionName, "DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION") ||
+            ControllerAnsiContainsInsensitive(detectionName, "STACK_INTEGRITY_ANOMALY_ON_HANDLE_OP") ||
+            ControllerAnsiContainsInsensitive(detectionName, "SUSPECT_HANDLE_OPERATION") ||
+            ControllerAnsiContainsInsensitive(detectionName, "ANOMALY_ON_HANDLE_OP");
+
+        if (!handleNoiseDetection &&
+            (ControllerAnsiContainsInsensitive(detectionName, "USPECT_HANDLE_OPERATION") ||
+             ControllerAnsiContainsInsensitive(detectionName, "NOMALY_ON_HANDLE_OP")))
+        {
+            handleNoiseDetection = TRUE;
+        }
+
+        lowSignalDetection =
+            ControllerAnsiContainsInsensitive(detectionName, "REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT") ||
+            ControllerAnsiContainsInsensitive(detectionName, "THREAD_ACTIVITY_WITH_THREAD_CONTEXT_INTENT") ||
+            ControllerAnsiContainsInsensitive(detectionName, "REMOTE_THREAD_OUTSIDE_MAIN_IMAGE");
+
+        strongDetection =
+            ControllerAnsiContainsInsensitive(detectionName, "PROCESS_HOLLOWING") ||
+            ControllerAnsiContainsInsensitive(detectionName, "INJECTION") ||
+            ControllerAnsiContainsInsensitive(detectionName, "THREAD_HIJACK") ||
+            ControllerAnsiContainsInsensitive(detectionName, "REMOTE_APC") ||
+            ControllerAnsiContainsInsensitive(detectionName, "NON_IMAGE_EXECUTABLE_REGION");
+
+        if (handleNoiseDetection)
+        {
+            if (selfTarget)
+            {
+                return FALSE;
+            }
+            if (severity < 7)
+            {
+                return FALSE;
+            }
+            if ((correlationFlags & (SLEEPWALKER_INTENT_PROCESS_MEMORY | SLEEPWALKER_INTENT_THREAD_CONTEXT |
+                                     SLEEPWALKER_INTENT_DUP_HANDLE)) == 0)
+            {
+                return FALSE;
+            }
+
+            return TRUE;
+        }
+
+        if (lowSignalDetection)
+        {
+            return FALSE;
+        }
+
+        if (strongDetection)
+        {
+            return (severity >= 5);
+        }
+
+        return (severity >= 6);
+    }
+
+    if (Event->Source == SleepwalkerIpcEtwSourceThreatIntel)
+    {
+        return (Event->Task == 1 || Event->Task == 2 || Event->Task == 7);
+    }
+
+    if (wcscmp(EventName, L"HandleTelemetry") == 0)
+    {
+        ZeroMemory(className, sizeof(className));
+        (void)ControllerEtwGetAnsiProperty(Record, L"class", className, RTL_NUMBER_OF(className));
+        (void)ControllerEtwGetU32Property(Record, L"desiredAccess", &desiredAccess);
+
+        if (_stricmp(className, "DIRECT-SYSCALL-SUSPECT") == 0 || _stricmp(className, "UNKNOWN-ORIGIN") == 0)
+        {
+            return TRUE;
+        }
+        return ControllerIsInterestingHandleAccessMask(desiredAccess);
+    }
+
+    if (wcscmp(EventName, L"ApcTelemetry") == 0)
+    {
+        (void)ControllerEtwGetU32Property(Record, L"desiredAccess", &desiredAccess);
+        return ((desiredAccess & (THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME)) != 0);
+    }
+
+    if (wcscmp(EventName, L"ThreadTelemetry") == 0)
+    {
+        (void)ControllerEtwGetU32Property(Record, L"correlationFlags", &correlationFlags);
+        (void)ControllerEtwGetU64Property(Record, L"processId", &processId);
+        (void)ControllerEtwGetU64Property(Record, L"creatorPid", &creatorPid);
+
+        if ((correlationFlags & (SLEEPWALKER_INTENT_PROCESS_MEMORY | SLEEPWALKER_INTENT_THREAD_CONTEXT |
+                                 SLEEPWALKER_INTENT_DUP_HANDLE)) != 0)
+        {
+            return TRUE;
+        }
+
+        if (processId != 0 && creatorPid != 0 && processId != creatorPid)
+        {
+            return TRUE;
+        }
+        return FALSE;
+    }
+
+    if (wcscmp(EventName, L"ProcessTelemetry") == 0)
+    {
+        return FALSE;
+    }
+    if (wcscmp(EventName, L"ImageTelemetry") == 0)
+    {
+        return FALSE;
+    }
+    if (wcscmp(EventName, L"RegistryTelemetry") == 0)
+    {
+        return FALSE;
+    }
+
+    return FALSE;
+}
+
 static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName, _In_opt_ PVOID Context)
 {
     SLEEPWALKER_IPC_ETW_EVENT event;
@@ -200,6 +426,9 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
     ULONGLONG parentProcessId = 0;
     ULONGLONG creatorProcessId = 0;
     ULONG severity = 0;
+    ULONG correlationFlags = 0;
+    ULONG correlationAccessMask = 0;
+    ULONG correlationAgeMs = 0;
 
     UNREFERENCED_PARAMETER(Context);
 
@@ -244,6 +473,13 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
         }
         (void)ControllerEtwGetU32Property(Record, L"severity", &severity);
         event.Severity = severity;
+        (void)ControllerEtwGetU32Property(Record, L"correlationFlags", &correlationFlags);
+        (void)ControllerEtwGetU32Property(Record, L"correlationAccessMask", &correlationAccessMask);
+        (void)ControllerEtwGetU32Property(Record, L"correlationAgeMs", &correlationAgeMs);
+        event.CorrelationFlags = (UINT32)correlationFlags;
+        event.CorrelationAccessMask = (UINT32)correlationAccessMask;
+        event.CorrelationAgeMs = (UINT32)correlationAgeMs;
+        (void)ControllerEtwGetWideProperty(Record, L"reason", event.Reason, RTL_NUMBER_OF(event.Reason));
     }
 
     (void)ControllerEtwGetU64Property(Record, L"processId", &processId);
@@ -288,6 +524,11 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
         }
     }
 
+    if (!ControllerShouldForwardEtwRecord(Record, EventName, &event))
+    {
+        return;
+    }
+
     ControllerDispatchEtwEvent(&event);
 }
 
@@ -307,6 +548,138 @@ static DWORD WINAPI ControllerEtwThreadProc(_In_ LPVOID Context)
                   InterlockedCompareExchange(&g_EtwTiEvents, 0, 0),
                   InterlockedCompareExchange(&g_EtwDetectionEvents, 0, 0));
     return status;
+}
+
+static BOOL ControllerIsThreatIntelRetryableError(_In_ DWORD ErrorCode)
+{
+    if (ErrorCode == ERROR_SUCCESS)
+    {
+        return FALSE;
+    }
+    if (ErrorCode == ERROR_ACCESS_DENIED || ErrorCode == ERROR_PRIVILEGE_NOT_HELD ||
+        ErrorCode == ERROR_NOT_SUPPORTED)
+    {
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static VOID WINAPI ControllerEtwWarmupCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName, _In_opt_ PVOID Context)
+{
+    UNREFERENCED_PARAMETER(Record);
+    UNREFERENCED_PARAMETER(EventName);
+    UNREFERENCED_PARAMETER(Context);
+}
+
+static BOOL ControllerWarmupThreatIntelProvider(_Out_opt_ DWORD *ErrorCode)
+{
+    WCHAR warmupSessionName[96];
+    SLEEPWALKERSC_ETW_PROVIDER_CONFIG provider;
+    SLEEPWALKERSC_ETW_SESSION_CONFIG config;
+    SLEEPWALKERSC_ETW_SESSION *warmupSession = NULL;
+    BOOL ok;
+    DWORD err = ERROR_SUCCESS;
+
+    ZeroMemory(&provider, sizeof(provider));
+    provider.ProviderId = SLEEPWALKERSC_PROVIDER_GUID_TI;
+    provider.Level = TRACE_LEVEL_INFORMATION;
+    provider.MatchAnyKeyword = ~0ULL;
+    provider.MatchAllKeyword = 0;
+
+    ZeroMemory(&config, sizeof(config));
+    (void)StringCchPrintfW(warmupSessionName, RTL_NUMBER_OF(warmupSessionName), L"%ws-TiWarmup",
+                           SLEEPWALKER_CONTROLLER_ETW_SESSION_NAMEW);
+    config.SessionName = warmupSessionName;
+    config.Providers = &provider;
+    config.ProviderCount = 1;
+    config.Callback = ControllerEtwWarmupCallback;
+    config.CallbackContext = NULL;
+
+    ok = SLEEPWALKERSCStartEtwSession(&config, &warmupSession);
+    if (ok)
+    {
+        // Brief hold gives the TI provider a chance to fully activate.
+        Sleep(120);
+        SLEEPWALKERSCStopEtwSession(warmupSession);
+        warmupSession = NULL;
+        err = ERROR_SUCCESS;
+    }
+    else
+    {
+        err = GetLastError();
+    }
+
+    if (ErrorCode != NULL)
+    {
+        *ErrorCode = err;
+    }
+    return ok;
+}
+
+static VOID ControllerTryRecoverThreatIntelSession(_In_ DWORD InitialTiError)
+{
+    const DWORD maxAttempts = 3;
+    DWORD attempt;
+    DWORD tiErr = InitialTiError;
+
+    if (g_EtwSession == NULL || g_ThreatIntelEnabled || !ControllerIsThreatIntelRetryableError(InitialTiError))
+    {
+        return;
+    }
+
+    for (attempt = 1; attempt <= maxAttempts && !ControllerShouldStop(); ++attempt)
+    {
+        DWORD warmErr = ERROR_SUCCESS;
+        BOOL warmOk;
+
+        ControllerLog("[ETW][WARN] TI inactive after subscribe (err=%lu). warmup+restart attempt %lu/%lu\n",
+                      tiErr, attempt, maxAttempts);
+
+        warmOk = ControllerWarmupThreatIntelProvider(&warmErr);
+        if (!warmOk)
+        {
+            ControllerLog("[ETW][WARN] TI warmup failed attempt=%lu err=%lu\n", attempt, warmErr);
+        }
+
+        SLEEPWALKERSCStopEtwSession(g_EtwSession);
+        g_EtwSession = NULL;
+        g_ThreatIntelEnabled = FALSE;
+
+        if (!SLEEPWALKERSCStartSleepwalkerEtwSession(SLEEPWALKER_CONTROLLER_ETW_SESSION_NAMEW, TRUE, ControllerEtwCallback,
+                                                     NULL, &g_EtwSession, &g_ThreatIntelEnabled))
+        {
+            DWORD restartErr = GetLastError();
+            tiErr = SLEEPWALKERSCGetLastThreatIntelEnableError();
+            ControllerLog("[ETW][WARN] restart after TI warmup failed attempt=%lu startErr=%lu tiErr=%lu\n",
+                          attempt, restartErr, tiErr);
+            if (attempt < maxAttempts)
+            {
+                Sleep(180 * attempt);
+            }
+            continue;
+        }
+
+        tiErr = SLEEPWALKERSCGetLastThreatIntelEnableError();
+        g_ThreatIntelEnableError = tiErr;
+        if (g_ThreatIntelEnabled)
+        {
+            ControllerLog("[ETW] TI provider enabled after warmup attempt %lu (tiEnableErr=%lu)\n", attempt, tiErr);
+            return;
+        }
+
+        ControllerLog("[ETW][WARN] TI still inactive after restart attempt=%lu tiEnableErr=%lu\n", attempt, tiErr);
+        if (!ControllerIsThreatIntelRetryableError(tiErr))
+        {
+            return;
+        }
+
+        if (attempt < maxAttempts)
+        {
+            Sleep(180 * attempt);
+        }
+    }
+
+    UNREFERENCED_PARAMETER(tiErr);
 }
 
 static BOOL ControllerStartEtwSession(VOID)
@@ -330,6 +703,20 @@ static BOOL ControllerStartEtwSession(VOID)
         return FALSE;
     }
 
+    tiErr = SLEEPWALKERSCGetLastThreatIntelEnableError();
+    g_ThreatIntelEnableError = tiErr;
+    if (!g_ThreatIntelEnabled)
+    {
+        ControllerTryRecoverThreatIntelSession(tiErr);
+        tiErr = SLEEPWALKERSCGetLastThreatIntelEnableError();
+        g_ThreatIntelEnableError = tiErr;
+    }
+    if (g_EtwSession == NULL)
+    {
+        ControllerLog("[WARN] SleepwlkrController: ETW session unavailable after TI recovery attempts\n");
+        return FALSE;
+    }
+
     g_EtwThread = CreateThread(NULL, 0, ControllerEtwThreadProc, NULL, 0, NULL);
     if (g_EtwThread == NULL)
     {
@@ -340,10 +727,8 @@ static BOOL ControllerStartEtwSession(VOID)
         return FALSE;
     }
 
-    tiErr = SLEEPWALKERSCGetLastThreatIntelEnableError();
-    g_ThreatIntelEnableError = tiErr;
     ControllerLog("[*] SleepwlkrController: ETW session started. threat-intel=%s tiEnableErr=%lu\n",
-                  g_ThreatIntelEnabled ? "enabled" : "fallback-disabled", tiErr);
+                  g_ThreatIntelEnabled ? "enabled" : "disabled", tiErr);
     return TRUE;
 }
 
@@ -379,6 +764,11 @@ static BOOL ControllerStartCore(VOID)
     InitializeCriticalSection(&g_DriverLock);
     InitializeCriticalSection(&g_DriverConfigLock);
     g_LocksInitialized = TRUE;
+    g_ClientList = NULL;
+    g_ClientCount = 0;
+    g_PidIndexCount = 0;
+    ZeroMemory(g_ClientSlots, sizeof(g_ClientSlots));
+    ZeroMemory(g_PidIndex, sizeof(g_PidIndex));
 
     ControllerLog("[*] SleepwlkrController: core start requested\n");
     ControllerResetHollowingState();

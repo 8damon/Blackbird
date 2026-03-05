@@ -128,6 +128,34 @@ static BOOL ControllerEtwGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWST
     return FALSE;
 }
 
+static BOOL ControllerEtwGetWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
+                                         _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
+{
+    PBYTE raw = NULL;
+    ULONG size = 0;
+
+    if (Output == NULL || OutputChars == 0)
+    {
+        return FALSE;
+    }
+    Output[0] = L'\0';
+
+    if (!ControllerEtwGetPropertyRaw(Record, Name, &raw, &size))
+    {
+        return FALSE;
+    }
+
+    if (size >= sizeof(WCHAR))
+    {
+        (void)StringCchCopyW(Output, OutputChars, (PCWSTR)raw);
+        free(raw);
+        return TRUE;
+    }
+
+    free(raw);
+    return FALSE;
+}
+
 static BOOL ControllerU64ToPid(_In_ ULONGLONG Value, _Out_ DWORD *ProcessId)
 {
     if (ProcessId == NULL || Value == 0 || Value > 0xFFFFFFFFull)

@@ -4,6 +4,7 @@ static BOOL ControllerIsValidStreamMask(_In_ DWORD StreamMask)
 }
 
 static BOOL ControllerApplyDriverSubscriptions(VOID);
+static BOOL ControllerPruneDynamicSubscriptionsLocked(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Client, _In_ ULONGLONG NowTick);
 static VOID ControllerMarkDriverSubscriptionsDirty(VOID)
 {
     (void)InterlockedExchange(&g_DriverSubscriptionsDirty, 1);
@@ -16,6 +17,146 @@ static BOOL ControllerApplyDriverSubscriptionsIfDirty(VOID)
         return ControllerApplyDriverSubscriptions();
     }
     return TRUE;
+}
+
+static DWORD ControllerAllocateClientSlotLocked(VOID)
+{
+    DWORD i;
+
+    for (i = 0; i < RTL_NUMBER_OF(g_ClientSlots); ++i)
+    {
+        if (g_ClientSlots[i] == NULL)
+        {
+            return i;
+        }
+    }
+
+    return SLEEPWALKER_CONTROLLER_INVALID_SLOT;
+}
+
+static VOID ControllerReleaseClientSlotLocked(_In_ DWORD SlotIndex)
+{
+    if (SlotIndex >= RTL_NUMBER_OF(g_ClientSlots))
+    {
+        return;
+    }
+
+    g_ClientSlots[SlotIndex] = NULL;
+}
+
+static VOID ControllerPidMaskSetBit(_Inout_updates_(SLEEPWALKER_CONTROLLER_CLIENT_MASK_DWORDS) DWORD *Mask, _In_ DWORD Bit)
+{
+    DWORD wordIndex;
+    DWORD bitIndex;
+
+    if (Mask == NULL || Bit >= SLEEPWALKER_CONTROLLER_MAX_CLIENTS)
+    {
+        return;
+    }
+
+    wordIndex = Bit / 32u;
+    bitIndex = Bit % 32u;
+    Mask[wordIndex] |= (1u << bitIndex);
+}
+
+static LONG ControllerFindPidIndexEntryLocked(_In_ DWORD ProcessId)
+{
+    DWORD i;
+
+    if (ProcessId == 0)
+    {
+        return -1;
+    }
+
+    for (i = 0; i < g_PidIndexCount; ++i)
+    {
+        if (g_PidIndex[i].ProcessId == ProcessId)
+        {
+            return (LONG)i;
+        }
+    }
+
+    return -1;
+}
+
+static BOOL ControllerAddPidIndexSubscriptionLocked(_In_ const SLEEPWALKER_CONTROLLER_CLIENT *Client, _In_ DWORD ProcessId,
+                                                    _In_ DWORD StreamMask)
+{
+    LONG entryIndex;
+    PSLEEPWALKER_CONTROLLER_PID_INDEX_ENTRY entry;
+
+    if (Client == NULL || ProcessId == 0 || StreamMask == 0 || Client->SlotIndex >= SLEEPWALKER_CONTROLLER_MAX_CLIENTS)
+    {
+        return FALSE;
+    }
+
+    entryIndex = ControllerFindPidIndexEntryLocked(ProcessId);
+    if (entryIndex < 0)
+    {
+        if (g_PidIndexCount >= RTL_NUMBER_OF(g_PidIndex))
+        {
+            return FALSE;
+        }
+
+        entry = &g_PidIndex[g_PidIndexCount];
+        ZeroMemory(entry, sizeof(*entry));
+        entry->ProcessId = ProcessId;
+        entry->StreamMask = StreamMask;
+        ControllerPidMaskSetBit(entry->ClientMask, Client->SlotIndex);
+        g_PidIndexCount += 1;
+        return TRUE;
+    }
+
+    entry = &g_PidIndex[(DWORD)entryIndex];
+    entry->StreamMask |= StreamMask;
+    ControllerPidMaskSetBit(entry->ClientMask, Client->SlotIndex);
+    return TRUE;
+}
+
+static VOID ControllerRebuildPidIndexLocked(_Out_opt_ BOOL *DynamicPruned)
+{
+    PSLEEPWALKER_CONTROLLER_CLIENT client;
+    ULONGLONG nowTick = GetTickCount64();
+    BOOL prunedAny = FALSE;
+    DWORD droppedPidCount = 0;
+
+    g_PidIndexCount = 0;
+    ZeroMemory(g_PidIndex, sizeof(g_PidIndex));
+
+    for (client = g_ClientList; client != NULL; client = client->Next)
+    {
+        DWORD i;
+
+        EnterCriticalSection(&client->Lock);
+        if (ControllerPruneDynamicSubscriptionsLocked(client, nowTick))
+        {
+            prunedAny = TRUE;
+        }
+
+        for (i = 0; i < client->SubscriptionCount; ++i)
+        {
+            const SLEEPWALKER_CONTROLLER_SUBSCRIPTION *sub = &client->Subscriptions[i];
+            if (sub->ProcessId == 0 || (sub->StreamMask & SLEEPWALKER_CONTROLLER_DRIVER_STREAM_MASK) == 0)
+            {
+                continue;
+            }
+
+            if (!ControllerAddPidIndexSubscriptionLocked(client, sub->ProcessId, sub->StreamMask))
+            {
+                droppedPidCount += 1;
+            }
+        }
+        LeaveCriticalSection(&client->Lock);
+    }
+
+    if (droppedPidCount != 0)
+    {
+        ControllerLog("[MON][WARN] pid index capacity reached, droppedSubscriptions=%lu\n", droppedPidCount);
+    }
+    if (DynamicPruned != NULL)
+    {
+        *DynamicPruned = prunedAny;
+    }
 }
 
 static LONG ControllerFindSubscriptionIndexLocked(_In_ const SLEEPWALKER_CONTROLLER_CLIENT *Client, _In_ DWORD ProcessId)
@@ -298,6 +439,145 @@ static BOOL ControllerClientHasMatchLocked(_In_ const SLEEPWALKER_CONTROLLER_CLI
     return FALSE;
 }
 
+static BOOL ControllerSharedRingPushLocked(_Inout_ volatile SLEEPWALKER_IPC_SHARED_RING_HEADER *Header,
+                                           _Inout_updates_bytes_(Header->Capacity * Header->RecordSize) PBYTE Records,
+                                           _In_ HANDLE DataEvent,
+                                           _In_reads_bytes_(RecordSize) const VOID *Record,
+                                           _In_ UINT32 RecordSize)
+{
+    LONG writeIndex;
+    LONG readIndex;
+    LONG nextIndex;
+
+    if (Header == NULL || Records == NULL || Record == NULL || DataEvent == NULL || DataEvent == INVALID_HANDLE_VALUE ||
+        RecordSize == 0 || Header->Capacity == 0 || Header->RecordSize != RecordSize)
+    {
+        return FALSE;
+    }
+
+    writeIndex = Header->WriteIndex;
+    readIndex = Header->ReadIndex;
+    if (writeIndex < 0 || readIndex < 0 || writeIndex >= (LONG)Header->Capacity || readIndex >= (LONG)Header->Capacity)
+    {
+        Header->WriteIndex = 0;
+        Header->ReadIndex = 0;
+        writeIndex = 0;
+        readIndex = 0;
+    }
+
+    nextIndex = writeIndex + 1;
+    if (nextIndex >= (LONG)Header->Capacity)
+    {
+        nextIndex = 0;
+    }
+
+    if (nextIndex == readIndex)
+    {
+        Header->DroppedCount += 1;
+        return FALSE;
+    }
+
+    (void)CopyMemory(Records + ((SIZE_T)writeIndex * (SIZE_T)RecordSize), Record, RecordSize);
+    MemoryBarrier();
+    Header->WriteIndex = nextIndex;
+    (void)SetEvent(DataEvent);
+    return TRUE;
+}
+
+static BOOL ControllerSharedRingPopLocked(_Inout_ volatile SLEEPWALKER_IPC_SHARED_RING_HEADER *Header,
+                                          _In_reads_bytes_(Header->Capacity * Header->RecordSize) const BYTE *Records,
+                                          _In_ HANDLE DataEvent,
+                                          _Out_writes_bytes_(RecordSize) VOID *Record,
+                                          _In_ UINT32 RecordSize)
+{
+    LONG writeIndex;
+    LONG readIndex;
+    LONG nextIndex;
+
+    if (Header == NULL || Records == NULL || Record == NULL || DataEvent == NULL || DataEvent == INVALID_HANDLE_VALUE ||
+        RecordSize == 0 || Header->Capacity == 0 || Header->RecordSize != RecordSize)
+    {
+        return FALSE;
+    }
+
+    writeIndex = Header->WriteIndex;
+    readIndex = Header->ReadIndex;
+    if (writeIndex < 0 || readIndex < 0 || writeIndex >= (LONG)Header->Capacity || readIndex >= (LONG)Header->Capacity)
+    {
+        Header->WriteIndex = 0;
+        Header->ReadIndex = 0;
+        return FALSE;
+    }
+
+    if (readIndex == writeIndex)
+    {
+        return FALSE;
+    }
+
+    (void)CopyMemory(Record, Records + ((SIZE_T)readIndex * (SIZE_T)RecordSize), RecordSize);
+    MemoryBarrier();
+    nextIndex = readIndex + 1;
+    if (nextIndex >= (LONG)Header->Capacity)
+    {
+        nextIndex = 0;
+    }
+    Header->ReadIndex = nextIndex;
+    if (nextIndex == Header->WriteIndex)
+    {
+        (void)ResetEvent(DataEvent);
+        MemoryBarrier();
+        if (nextIndex != Header->WriteIndex)
+        {
+            (void)SetEvent(DataEvent);
+        }
+    }
+    return TRUE;
+}
+
+static VOID ControllerClientDestroySharedRingsLocked(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Client)
+{
+    if (Client == NULL)
+    {
+        return;
+    }
+
+    Client->SharedRingEnabled = FALSE;
+
+    if (Client->IoctlSharedHeader != NULL)
+    {
+        (void)UnmapViewOfFile((PVOID)Client->IoctlSharedHeader);
+        Client->IoctlSharedHeader = NULL;
+    }
+    if (Client->IoctlSharedMapping != NULL && Client->IoctlSharedMapping != INVALID_HANDLE_VALUE)
+    {
+        (void)CloseHandle(Client->IoctlSharedMapping);
+        Client->IoctlSharedMapping = NULL;
+    }
+    if (Client->IoctlSharedDataEvent != NULL && Client->IoctlSharedDataEvent != INVALID_HANDLE_VALUE)
+    {
+        (void)CloseHandle(Client->IoctlSharedDataEvent);
+        Client->IoctlSharedDataEvent = NULL;
+    }
+    Client->IoctlSharedRecords = NULL;
+
+    if (Client->EtwSharedHeader != NULL)
+    {
+        (void)UnmapViewOfFile((PVOID)Client->EtwSharedHeader);
+        Client->EtwSharedHeader = NULL;
+    }
+    if (Client->EtwSharedMapping != NULL && Client->EtwSharedMapping != INVALID_HANDLE_VALUE)
+    {
+        (void)CloseHandle(Client->EtwSharedMapping);
+        Client->EtwSharedMapping = NULL;
+    }
+    if (Client->EtwSharedDataEvent != NULL && Client->EtwSharedDataEvent != INVALID_HANDLE_VALUE)
+    {
+        (void)CloseHandle(Client->EtwSharedDataEvent);
+        Client->EtwSharedDataEvent = NULL;
+    }
+    Client->EtwSharedRecords = NULL;
+}
+
 static VOID ControllerClientFreeQueueLocked(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Client)
 {
     PSLEEPWALKER_CONTROLLER_EVENT_NODE node = Client->QueueHead;
@@ -335,6 +615,17 @@ static BOOL ControllerClientEnqueueRecordLocked(_Inout_ SLEEPWALKER_CONTROLLER_C
 {
     PSLEEPWALKER_CONTROLLER_EVENT_NODE node;
 
+    if (Client->SharedRingEnabled && Client->IoctlSharedHeader != NULL)
+    {
+        if (!ControllerSharedRingPushLocked(Client->IoctlSharedHeader, Client->IoctlSharedRecords,
+                                            Client->IoctlSharedDataEvent, Record, sizeof(*Record)))
+        {
+            Client->DroppedEvents += 1;
+            return FALSE;
+        }
+        return TRUE;
+    }
+
     if (Client->QueueDepth >= SLEEPWALKER_CONTROLLER_MAX_CLIENT_QUEUE_DEPTH)
     {
         Client->DroppedEvents += 1;
@@ -369,6 +660,12 @@ static BOOL ControllerClientDequeueRecordLocked(_Inout_ SLEEPWALKER_CONTROLLER_C
 {
     PSLEEPWALKER_CONTROLLER_EVENT_NODE node;
 
+    if (Client->SharedRingEnabled && Client->IoctlSharedHeader != NULL)
+    {
+        return ControllerSharedRingPopLocked(Client->IoctlSharedHeader, Client->IoctlSharedRecords,
+                                             Client->IoctlSharedDataEvent, Record, sizeof(*Record));
+    }
+
     if (Client->QueueHead == NULL)
     {
         return FALSE;
@@ -394,6 +691,17 @@ static BOOL ControllerClientEnqueueEtwEventLocked(_Inout_ SLEEPWALKER_CONTROLLER
                                                   _In_ const SLEEPWALKER_IPC_ETW_EVENT *Event)
 {
     PSLEEPWALKER_CONTROLLER_ETW_EVENT_NODE node;
+
+    if (Client->SharedRingEnabled && Client->EtwSharedHeader != NULL)
+    {
+        if (!ControllerSharedRingPushLocked(Client->EtwSharedHeader, Client->EtwSharedRecords,
+                                            Client->EtwSharedDataEvent, Event, sizeof(*Event)))
+        {
+            Client->EtwDroppedEvents += 1;
+            return FALSE;
+        }
+        return TRUE;
+    }
 
     if (Client->EtwQueueDepth >= SLEEPWALKER_CONTROLLER_MAX_CLIENT_ETW_QUEUE_DEPTH)
     {
@@ -429,6 +737,12 @@ static BOOL ControllerClientDequeueEtwEventLocked(_Inout_ SLEEPWALKER_CONTROLLER
 {
     PSLEEPWALKER_CONTROLLER_ETW_EVENT_NODE node;
 
+    if (Client->SharedRingEnabled && Client->EtwSharedHeader != NULL)
+    {
+        return ControllerSharedRingPopLocked(Client->EtwSharedHeader, Client->EtwSharedRecords,
+                                             Client->EtwSharedDataEvent, Event, sizeof(*Event));
+    }
+
     if (Client->EtwQueueHead == NULL)
     {
         return FALSE;
@@ -453,9 +767,7 @@ static BOOL ControllerClientDequeueEtwEventLocked(_Inout_ SLEEPWALKER_CONTROLLER
 static BOOL ControllerCollectUnionPidSet(_Out_writes_(SLEEPWALKER_MAX_PID_LIST) DWORD *ProcessIds,
                                          _Out_ DWORD *ProcessCount)
 {
-    PSLEEPWALKER_CONTROLLER_CLIENT client;
-    DWORD outCount = 0;
-    ULONGLONG nowTick = GetTickCount64();
+    DWORD i;
 
     if (ProcessIds == NULL || ProcessCount == NULL)
     {
@@ -463,42 +775,13 @@ static BOOL ControllerCollectUnionPidSet(_Out_writes_(SLEEPWALKER_MAX_PID_LIST) 
     }
 
     EnterCriticalSection(&g_ClientListLock);
-    for (client = g_ClientList; client != NULL; client = client->Next)
+    ControllerRebuildPidIndexLocked(NULL);
+    *ProcessCount = g_PidIndexCount;
+    for (i = 0; i < g_PidIndexCount; ++i)
     {
-        DWORD i;
-
-        EnterCriticalSection(&client->Lock);
-        (void)ControllerPruneDynamicSubscriptionsLocked(client, nowTick);
-        for (i = 0; i < client->SubscriptionCount; ++i)
-        {
-            DWORD pid = client->Subscriptions[i].ProcessId;
-            DWORD j;
-            BOOL seen = FALSE;
-
-            if (pid == 0)
-            {
-                continue;
-            }
-
-            for (j = 0; j < outCount; ++j)
-            {
-                if (ProcessIds[j] == pid)
-                {
-                    seen = TRUE;
-                    break;
-                }
-            }
-
-            if (!seen && outCount < SLEEPWALKER_MAX_PID_LIST)
-            {
-                ProcessIds[outCount++] = pid;
-            }
-        }
-        LeaveCriticalSection(&client->Lock);
+        ProcessIds[i] = g_PidIndex[i].ProcessId;
     }
     LeaveCriticalSection(&g_ClientListLock);
-
-    *ProcessCount = outCount;
     return TRUE;
 }
 
@@ -569,11 +852,17 @@ static VOID ControllerDispatchDriverRecord(_In_ const SLEEPWALKER_EVENT_RECORD *
     DWORD sourcePid = 0;
     DWORD targetPid = 0;
     DWORD relationMask = 0;
+    DWORD recordMask;
+    DWORD candidateMask[SLEEPWALKER_CONTROLLER_CLIENT_MASK_DWORDS];
+    LONG entryIndex;
+    DWORD i;
+    BOOL useSlowPath;
 
     if (Record == NULL)
     {
         return;
     }
+    recordMask = Record->Header.StreamMask;
 
     if (Record->Header.Type == SleepwalkerEventTypeHandle)
     {
@@ -590,9 +879,63 @@ static VOID ControllerDispatchDriverRecord(_In_ const SLEEPWALKER_EVENT_RECORD *
 
     ControllerExpandMonitoringGraph(sourcePid, targetPid, relationMask);
 
+    useSlowPath = (InterlockedCompareExchange(&g_DriverSubscriptionsDirty, 0, 0) != 0);
     EnterCriticalSection(&g_ClientListLock);
-    for (client = g_ClientList; client != NULL; client = client->Next)
+    if (useSlowPath)
     {
+        for (client = g_ClientList; client != NULL; client = client->Next)
+        {
+            EnterCriticalSection(&client->Lock);
+            if (ControllerClientHasMatchLocked(client, Record))
+            {
+                (void)ControllerClientEnqueueRecordLocked(client, Record);
+            }
+            LeaveCriticalSection(&client->Lock);
+        }
+        LeaveCriticalSection(&g_ClientListLock);
+        return;
+    }
+
+    ZeroMemory(candidateMask, sizeof(candidateMask));
+    if (sourcePid != 0)
+    {
+        entryIndex = ControllerFindPidIndexEntryLocked(sourcePid);
+        if (entryIndex >= 0 && (g_PidIndex[(DWORD)entryIndex].StreamMask & recordMask) != 0)
+        {
+            for (i = 0; i < RTL_NUMBER_OF(candidateMask); ++i)
+            {
+                candidateMask[i] |= g_PidIndex[(DWORD)entryIndex].ClientMask[i];
+            }
+        }
+    }
+    if (targetPid != 0 && targetPid != sourcePid)
+    {
+        entryIndex = ControllerFindPidIndexEntryLocked(targetPid);
+        if (entryIndex >= 0 && (g_PidIndex[(DWORD)entryIndex].StreamMask & recordMask) != 0)
+        {
+            for (i = 0; i < RTL_NUMBER_OF(candidateMask); ++i)
+            {
+                candidateMask[i] |= g_PidIndex[(DWORD)entryIndex].ClientMask[i];
+            }
+        }
+    }
+
+    for (i = 0; i < RTL_NUMBER_OF(g_ClientSlots); ++i)
+    {
+        DWORD wordIndex = i / 32u;
+        DWORD bitMask = (1u << (i % 32u));
+
+        if ((candidateMask[wordIndex] & bitMask) == 0)
+        {
+            continue;
+        }
+
+        client = g_ClientSlots[i];
+        if (client == NULL)
+        {
+            continue;
+        }
+
         EnterCriticalSection(&client->Lock);
         if (ControllerClientHasMatchLocked(client, Record))
         {

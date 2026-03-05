@@ -75,6 +75,488 @@ static VOID ControllerPrepareResponse(_In_ const SLEEPWALKER_IPC_PACKET *Request
     Response->Status = ERROR_SUCCESS;
 }
 
+static DWORD ControllerClampSharedRingCapacity(_In_ DWORD Desired, _In_ DWORD DefaultValue, _In_ DWORD MaxValue)
+{
+    if (Desired == 0)
+    {
+        return DefaultValue;
+    }
+    if (Desired > MaxValue)
+    {
+        return MaxValue;
+    }
+    if (Desired < 64)
+    {
+        return 64;
+    }
+    return Desired;
+}
+
+static BOOL ControllerCreateSharedRing(_In_ DWORD Capacity, _In_ DWORD RecordSize, _Out_ HANDLE *MappingHandle,
+                                       _Out_ HANDLE *DataReadyEvent, _Out_ PSLEEPWALKER_IPC_SHARED_RING_HEADER *Header,
+                                       _Out_ PBYTE *Records)
+{
+    SIZE_T totalBytes;
+    HANDLE mapping;
+    PBYTE view;
+    HANDLE ready;
+    PSLEEPWALKER_IPC_SHARED_RING_HEADER hdr;
+
+    if (MappingHandle == NULL || DataReadyEvent == NULL || Header == NULL || Records == NULL || Capacity == 0 ||
+        RecordSize == 0)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    totalBytes = sizeof(*hdr) + ((SIZE_T)Capacity * (SIZE_T)RecordSize);
+    mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, (DWORD)((ULONGLONG)totalBytes >> 32),
+                                 (DWORD)(totalBytes & 0xFFFFFFFFu), NULL);
+    if (mapping == NULL)
+    {
+        return FALSE;
+    }
+
+    view = (PBYTE)MapViewOfFile(mapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, totalBytes);
+    if (view == NULL)
+    {
+        DWORD err = GetLastError();
+        (void)CloseHandle(mapping);
+        SetLastError(err);
+        return FALSE;
+    }
+
+    ready = CreateEventW(NULL, TRUE, FALSE, NULL);
+    if (ready == NULL)
+    {
+        DWORD err = GetLastError();
+        (void)UnmapViewOfFile(view);
+        (void)CloseHandle(mapping);
+        SetLastError(err);
+        return FALSE;
+    }
+
+    hdr = (PSLEEPWALKER_IPC_SHARED_RING_HEADER)view;
+    ZeroMemory(hdr, sizeof(*hdr));
+    hdr->Capacity = Capacity;
+    hdr->RecordSize = RecordSize;
+
+    *MappingHandle = mapping;
+    *DataReadyEvent = ready;
+    *Header = hdr;
+    *Records = view + sizeof(*hdr);
+    return TRUE;
+}
+
+static DWORD ControllerClientEnsureSharedRingsLocked(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Client,
+                                                     _In_ DWORD DesiredIoctlCapacity, _In_ DWORD DesiredEtwCapacity)
+{
+    DWORD ioctlCap;
+    DWORD etwCap;
+
+    if (Client == NULL)
+    {
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    if (Client->IoctlSharedHeader != NULL && Client->EtwSharedHeader != NULL && Client->IoctlSharedDataEvent != NULL &&
+        Client->EtwSharedDataEvent != NULL)
+    {
+        return ERROR_SUCCESS;
+    }
+
+    ioctlCap = ControllerClampSharedRingCapacity(DesiredIoctlCapacity, SLEEPWALKER_CONTROLLER_SHARED_IOCTL_RING_CAPACITY,
+                                                 65536);
+    etwCap = ControllerClampSharedRingCapacity(DesiredEtwCapacity, SLEEPWALKER_CONTROLLER_SHARED_ETW_RING_CAPACITY,
+                                               32768);
+
+    if (!ControllerCreateSharedRing(ioctlCap, sizeof(SLEEPWALKER_EVENT_RECORD), &Client->IoctlSharedMapping,
+                                    &Client->IoctlSharedDataEvent, &Client->IoctlSharedHeader,
+                                    &Client->IoctlSharedRecords))
+    {
+        return GetLastError();
+    }
+
+    if (!ControllerCreateSharedRing(etwCap, sizeof(SLEEPWALKER_IPC_ETW_EVENT), &Client->EtwSharedMapping,
+                                    &Client->EtwSharedDataEvent, &Client->EtwSharedHeader, &Client->EtwSharedRecords))
+    {
+        DWORD err = GetLastError();
+        ControllerClientDestroySharedRingsLocked(Client);
+        return err;
+    }
+
+    return ERROR_SUCCESS;
+}
+
+static VOID ControllerCloseRemoteHandle(_In_ HANDLE ClientProcess, _Inout_ HANDLE *RemoteHandle)
+{
+    HANDLE localHandle = NULL;
+
+    if (ClientProcess == NULL || ClientProcess == INVALID_HANDLE_VALUE || RemoteHandle == NULL || *RemoteHandle == NULL ||
+        *RemoteHandle == INVALID_HANDLE_VALUE)
+    {
+        return;
+    }
+
+    if (DuplicateHandle(ClientProcess, *RemoteHandle, GetCurrentProcess(), &localHandle, 0, FALSE,
+                        DUPLICATE_SAME_ACCESS | DUPLICATE_CLOSE_SOURCE))
+    {
+        if (localHandle != NULL && localHandle != INVALID_HANDLE_VALUE)
+        {
+            (void)CloseHandle(localHandle);
+        }
+    }
+
+    *RemoteHandle = NULL;
+}
+
+static DWORD ControllerClientOpenSharedRing(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Client,
+                                            _In_ const SLEEPWALKER_IPC_OPEN_SHARED_RING_REQUEST *Request,
+                                            _Out_ SLEEPWALKER_IPC_OPEN_SHARED_RING_RESPONSE *Response)
+{
+    DWORD err;
+    HANDLE clientProcess = NULL;
+    HANDLE ioctlMapDup = NULL;
+    HANDLE ioctlEventDup = NULL;
+    HANDLE etwMapDup = NULL;
+    HANDLE etwEventDup = NULL;
+
+    if (Client == NULL || Request == NULL || Response == NULL || Client->ProcessId == 0)
+    {
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    EnterCriticalSection(&Client->Lock);
+    err = ControllerClientEnsureSharedRingsLocked(Client, Request->DesiredIoctlCapacity, Request->DesiredEtwCapacity);
+    if (err != ERROR_SUCCESS)
+    {
+        LeaveCriticalSection(&Client->Lock);
+        return err;
+    }
+
+    clientProcess = OpenProcess(PROCESS_DUP_HANDLE, FALSE, Client->ProcessId);
+    if (clientProcess == NULL)
+    {
+        err = GetLastError();
+        LeaveCriticalSection(&Client->Lock);
+        return err;
+    }
+
+    if (!DuplicateHandle(GetCurrentProcess(), Client->IoctlSharedMapping, clientProcess, &ioctlMapDup, 0, FALSE,
+                         DUPLICATE_SAME_ACCESS) ||
+        !DuplicateHandle(GetCurrentProcess(), Client->IoctlSharedDataEvent, clientProcess, &ioctlEventDup, 0, FALSE,
+                         DUPLICATE_SAME_ACCESS) ||
+        !DuplicateHandle(GetCurrentProcess(), Client->EtwSharedMapping, clientProcess, &etwMapDup, 0, FALSE,
+                         DUPLICATE_SAME_ACCESS) ||
+        !DuplicateHandle(GetCurrentProcess(), Client->EtwSharedDataEvent, clientProcess, &etwEventDup, 0, FALSE,
+                         DUPLICATE_SAME_ACCESS))
+    {
+        err = GetLastError();
+        ControllerCloseRemoteHandle(clientProcess, &ioctlMapDup);
+        ControllerCloseRemoteHandle(clientProcess, &ioctlEventDup);
+        ControllerCloseRemoteHandle(clientProcess, &etwMapDup);
+        ControllerCloseRemoteHandle(clientProcess, &etwEventDup);
+        LeaveCriticalSection(&Client->Lock);
+        (void)CloseHandle(clientProcess);
+        return err;
+    }
+
+    ZeroMemory(Response, sizeof(*Response));
+    Response->IoctlMappingHandle = (UINT64)(ULONG_PTR)ioctlMapDup;
+    Response->IoctlDataReadyEventHandle = (UINT64)(ULONG_PTR)ioctlEventDup;
+    Response->IoctlCapacity = Client->IoctlSharedHeader->Capacity;
+    Response->IoctlRecordSize = Client->IoctlSharedHeader->RecordSize;
+    Response->EtwMappingHandle = (UINT64)(ULONG_PTR)etwMapDup;
+    Response->EtwDataReadyEventHandle = (UINT64)(ULONG_PTR)etwEventDup;
+    Response->EtwCapacity = Client->EtwSharedHeader->Capacity;
+    Response->EtwRecordSize = Client->EtwSharedHeader->RecordSize;
+    Client->SharedRingEnabled = TRUE;
+    LeaveCriticalSection(&Client->Lock);
+
+    (void)CloseHandle(clientProcess);
+    return ERROR_SUCCESS;
+}
+
+static BOOL ControllerCheckTokenMembershipRid(_In_ HANDLE Token, _In_ DWORD Rid, _Out_ BOOL *IsMember)
+{
+    SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
+    PSID sid = NULL;
+    BOOL isMember = FALSE;
+
+    if (Token == NULL || Token == INVALID_HANDLE_VALUE || IsMember == NULL)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    if (!AllocateAndInitializeSid(&ntAuthority, 2, SECURITY_BUILTIN_DOMAIN_RID, Rid, 0, 0, 0, 0, 0, 0, &sid))
+    {
+        return FALSE;
+    }
+
+    if (!CheckTokenMembership(Token, sid, &isMember))
+    {
+        DWORD err = GetLastError();
+        FreeSid(sid);
+        SetLastError(err);
+        return FALSE;
+    }
+
+    FreeSid(sid);
+    *IsMember = isMember;
+    return TRUE;
+}
+
+static BOOL ControllerCheckTokenIsLocalSystem(_In_ HANDLE Token, _Out_ BOOL *IsSystem)
+{
+    SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
+    PSID systemSid = NULL;
+    BOOL isSystem = FALSE;
+
+    if (Token == NULL || Token == INVALID_HANDLE_VALUE || IsSystem == NULL)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    if (!AllocateAndInitializeSid(&ntAuthority, 1, SECURITY_LOCAL_SYSTEM_RID, 0, 0, 0, 0, 0, 0, 0, &systemSid))
+    {
+        return FALSE;
+    }
+
+    if (!CheckTokenMembership(Token, systemSid, &isSystem))
+    {
+        DWORD err = GetLastError();
+        FreeSid(systemSid);
+        SetLastError(err);
+        return FALSE;
+    }
+
+    FreeSid(systemSid);
+    *IsSystem = isSystem;
+    return TRUE;
+}
+
+static BOOL ControllerClientIsPrivileged(_In_ const SLEEPWALKER_CONTROLLER_CLIENT *Client, _Out_ BOOL *IsPrivileged)
+{
+    HANDLE process = NULL;
+    HANDLE token = NULL;
+    BOOL isAdmin = FALSE;
+    BOOL isSystem = FALSE;
+
+    if (Client == NULL || IsPrivileged == NULL || Client->ProcessId == 0)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    *IsPrivileged = FALSE;
+    process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, Client->ProcessId);
+    if (process == NULL)
+    {
+        return FALSE;
+    }
+
+    if (!OpenProcessToken(process, TOKEN_QUERY | TOKEN_DUPLICATE, &token))
+    {
+        DWORD err = GetLastError();
+        CloseHandle(process);
+        SetLastError(err);
+        return FALSE;
+    }
+
+    if (!ControllerCheckTokenMembershipRid(token, DOMAIN_ALIAS_RID_ADMINS, &isAdmin))
+    {
+        DWORD err = GetLastError();
+        CloseHandle(token);
+        CloseHandle(process);
+        SetLastError(err);
+        return FALSE;
+    }
+
+    if (!ControllerCheckTokenIsLocalSystem(token, &isSystem))
+    {
+        DWORD err = GetLastError();
+        CloseHandle(token);
+        CloseHandle(process);
+        SetLastError(err);
+        return FALSE;
+    }
+
+    CloseHandle(token);
+    CloseHandle(process);
+    *IsPrivileged = (isAdmin || isSystem);
+    return TRUE;
+}
+
+static BOOL ControllerQueryProcessTokenUser(_In_ DWORD ProcessId, _Outptr_ PTOKEN_USER *TokenUserOut)
+{
+    HANDLE process = NULL;
+    HANDLE token = NULL;
+    DWORD tokenBytes = 0;
+    PTOKEN_USER tokenUser = NULL;
+
+    if (ProcessId == 0 || TokenUserOut == NULL)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    *TokenUserOut = NULL;
+    process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, ProcessId);
+    if (process == NULL)
+    {
+        return FALSE;
+    }
+
+    if (!OpenProcessToken(process, TOKEN_QUERY, &token))
+    {
+        DWORD err = GetLastError();
+        CloseHandle(process);
+        SetLastError(err);
+        return FALSE;
+    }
+
+    (void)GetTokenInformation(token, TokenUser, NULL, 0, &tokenBytes);
+    if (tokenBytes == 0 || GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+    {
+        DWORD err = GetLastError();
+        CloseHandle(token);
+        CloseHandle(process);
+        SetLastError(err == ERROR_SUCCESS ? ERROR_BAD_LENGTH : err);
+        return FALSE;
+    }
+
+    tokenUser = (PTOKEN_USER)calloc(1, tokenBytes);
+    if (tokenUser == NULL)
+    {
+        CloseHandle(token);
+        CloseHandle(process);
+        SetLastError(ERROR_OUTOFMEMORY);
+        return FALSE;
+    }
+
+    if (!GetTokenInformation(token, TokenUser, tokenUser, tokenBytes, &tokenBytes))
+    {
+        DWORD err = GetLastError();
+        free(tokenUser);
+        CloseHandle(token);
+        CloseHandle(process);
+        SetLastError(err);
+        return FALSE;
+    }
+
+    CloseHandle(token);
+    CloseHandle(process);
+    *TokenUserOut = tokenUser;
+    return TRUE;
+}
+
+static BOOL ControllerProcessesShareOwnerSid(_In_ DWORD ProcessIdA, _In_ DWORD ProcessIdB, _Out_ BOOL *SameOwner)
+{
+    PTOKEN_USER tokenUserA = NULL;
+    PTOKEN_USER tokenUserB = NULL;
+
+    if (SameOwner == NULL || ProcessIdA == 0 || ProcessIdB == 0)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    *SameOwner = FALSE;
+    if (!ControllerQueryProcessTokenUser(ProcessIdA, &tokenUserA))
+    {
+        return FALSE;
+    }
+
+    if (!ControllerQueryProcessTokenUser(ProcessIdB, &tokenUserB))
+    {
+        DWORD err = GetLastError();
+        free(tokenUserA);
+        SetLastError(err);
+        return FALSE;
+    }
+
+    *SameOwner = EqualSid(tokenUserA->User.Sid, tokenUserB->User.Sid) ? TRUE : FALSE;
+    free(tokenUserA);
+    free(tokenUserB);
+    return TRUE;
+}
+
+static BOOL ControllerClientCanMonitorPid(_In_ const SLEEPWALKER_CONTROLLER_CLIENT *Client, _In_ DWORD TargetPid,
+                                          _Inout_opt_ BOOL *PrivilegeResolved, _Inout_opt_ BOOL *IsPrivileged)
+{
+    BOOL privileged = FALSE;
+    DWORD targetSessionId = 0;
+    BOOL sameOwner = FALSE;
+
+    if (Client == NULL || TargetPid == 0 || Client->ProcessId == 0)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    if (TargetPid == Client->ProcessId)
+    {
+        return TRUE;
+    }
+
+    if (PrivilegeResolved != NULL && IsPrivileged != NULL && *PrivilegeResolved)
+    {
+        privileged = *IsPrivileged;
+    }
+    else
+    {
+        if (!ControllerClientIsPrivileged(Client, &privileged))
+        {
+            DWORD err = GetLastError();
+            if (err == ERROR_NO_IMPERSONATION_TOKEN)
+            {
+                privileged = TRUE;
+            }
+            else
+            {
+                return FALSE;
+            }
+        }
+        if (PrivilegeResolved != NULL)
+        {
+            *PrivilegeResolved = TRUE;
+        }
+        if (IsPrivileged != NULL)
+        {
+            *IsPrivileged = privileged;
+        }
+    }
+
+    if (privileged)
+    {
+        return TRUE;
+    }
+
+    if (!ProcessIdToSessionId(TargetPid, &targetSessionId))
+    {
+        return FALSE;
+    }
+    if (targetSessionId != Client->SessionId)
+    {
+        SetLastError(ERROR_ACCESS_DENIED);
+        return FALSE;
+    }
+
+    if (!ControllerProcessesShareOwnerSid(Client->ProcessId, TargetPid, &sameOwner))
+    {
+        return FALSE;
+    }
+    if (!sameOwner)
+    {
+        SetLastError(ERROR_ACCESS_DENIED);
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 static DWORD ControllerClientSubscribe(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Client,
                                        _In_ const SLEEPWALKER_SUBSCRIBE_REQUEST *Request)
 {
@@ -83,6 +565,11 @@ static DWORD ControllerClientSubscribe(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Cl
     if (Client == NULL || Request == NULL || Request->ProcessId == 0 || !ControllerIsValidStreamMask(Request->StreamMask))
     {
         return ERROR_INVALID_PARAMETER;
+    }
+    if (!ControllerClientCanMonitorPid(Client, Request->ProcessId, NULL, NULL))
+    {
+        DWORD err = GetLastError();
+        return (err == ERROR_SUCCESS) ? ERROR_ACCESS_DENIED : err;
     }
 
     EnterCriticalSection(&Client->Lock);
@@ -176,11 +663,28 @@ static DWORD ControllerClientSetPids(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Clie
                                      _In_ const SLEEPWALKER_SET_PIDS_REQUEST *Request)
 {
     DWORD i;
+    BOOL privilegeResolved = FALSE;
+    BOOL isPrivileged = FALSE;
 
     if (Client == NULL || Request == NULL || Request->ProcessCount > SLEEPWALKER_MAX_PID_LIST ||
         Request->ProcessCount == 0 || !ControllerIsValidStreamMask(Request->StreamMask))
     {
         return ERROR_INVALID_PARAMETER;
+    }
+
+    for (i = 0; i < Request->ProcessCount; ++i)
+    {
+        DWORD pid = Request->ProcessIds[i];
+        if (pid == 0)
+        {
+            continue;
+        }
+
+        if (!ControllerClientCanMonitorPid(Client, pid, &privilegeResolved, &isPrivileged))
+        {
+            DWORD err = GetLastError();
+            return (err == ERROR_SUCCESS) ? ERROR_ACCESS_DENIED : err;
+        }
     }
 
     EnterCriticalSection(&Client->Lock);
@@ -357,6 +861,8 @@ static PCSTR ControllerCommandName(_In_ UINT32 Command)
         return "set-shutdown-mode";
     case SleepwalkerIpcCommandGetEtwEvent:
         return "get-etw-event";
+    case SleepwalkerIpcCommandOpenSharedRing:
+        return "open-shared-ring";
     default:
         return "unknown";
     }
@@ -375,7 +881,8 @@ static DWORD ControllerHandleClientCommand(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT
     case SleepwalkerIpcCommandHandshake:
         Response->Payload.HandshakeResponse.NegotiatedVersion = SLEEPWALKER_IPC_VERSION;
         Response->Payload.HandshakeResponse.Capabilities =
-            SLEEPWALKER_IPC_CAP_DRIVER_PROXY | SLEEPWALKER_IPC_CAP_ETW_TI_SESSION | SLEEPWALKER_IPC_CAP_ETW_TI_UPLINK;
+            SLEEPWALKER_IPC_CAP_DRIVER_PROXY | SLEEPWALKER_IPC_CAP_ETW_TI_SESSION | SLEEPWALKER_IPC_CAP_ETW_TI_UPLINK |
+            SLEEPWALKER_IPC_CAP_SHARED_RING;
         Response->Payload.HandshakeResponse.ThreatIntelEnabled = g_ThreatIntelEnabled ? 1u : 0u;
         Response->Payload.HandshakeResponse.Reserved = g_ThreatIntelEnableError;
         break;
@@ -414,6 +921,10 @@ static DWORD ControllerHandleClientCommand(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT
     case SleepwalkerIpcCommandGetEtwEvent:
         err = ControllerClientGetEtwEvent(Client, Request->Payload.GetEventRequest.TimeoutMs, &Response->Payload.EtwEvent);
         break;
+    case SleepwalkerIpcCommandOpenSharedRing:
+        err = ControllerClientOpenSharedRing(Client, &Request->Payload.OpenSharedRingRequest,
+                                             &Response->Payload.OpenSharedRingResponse);
+        break;
     default:
         err = ERROR_INVALID_FUNCTION;
         break;
@@ -451,6 +962,11 @@ static VOID ControllerDetachClient(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Client
         if (*pp == Client)
         {
             *pp = Client->Next;
+            if (Client->SlotIndex != SLEEPWALKER_CONTROLLER_INVALID_SLOT)
+            {
+                ControllerReleaseClientSlotLocked(Client->SlotIndex);
+                Client->SlotIndex = SLEEPWALKER_CONTROLLER_INVALID_SLOT;
+            }
             if (g_ClientCount > 0)
             {
                 g_ClientCount -= 1;
@@ -460,6 +976,7 @@ static VOID ControllerDetachClient(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Client
         }
         pp = &(*pp)->Next;
     }
+    ControllerRebuildPidIndexLocked(NULL);
     LeaveCriticalSection(&g_ClientListLock);
 
     ControllerMarkDriverSubscriptionsDirty();
@@ -522,6 +1039,7 @@ static DWORD WINAPI ControllerClientThreadProc(_In_ LPVOID Context)
                   client->ProcessId, client->SessionId, client->SubscriptionCount, client->QueueDepth,
                   client->DroppedEvents, client->EtwQueueDepth, client->EtwDroppedEvents, disconnectErr);
     client->SubscriptionCount = 0;
+    ControllerClientDestroySharedRingsLocked(client);
     ControllerClientFreeQueueLocked(client);
     ControllerClientFreeEtwQueueLocked(client);
     LeaveCriticalSection(&client->Lock);

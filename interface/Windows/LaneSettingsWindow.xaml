@@ -7,6 +7,8 @@
         MinHeight="560"
         MinWidth="820"
         WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="CanResize"
         Background="{DynamicResource WinBgBrush}">
 
     <Window.Resources>
@@ -147,7 +149,7 @@
         </Style>
     </Window.Resources>
 
-    <Grid Margin="10">
+    <Grid Margin="10,0,10,10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -157,11 +159,21 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0"
-                   Text="Lane filters"
-                   FontWeight="SemiBold"
-                   FontSize="14"
-                   Margin="2,0,0,8"/>
+        <DockPanel Grid.Row="0"
+                   Margin="0,0,0,8"
+                   LastChildFill="False"
+                   MouseLeftButtonDown="Root_MouseLeftButtonDown">
+            <TextBlock Text="Lane Filters"
+                       FontWeight="SemiBold"
+                       FontSize="14"
+                       VerticalAlignment="Center"/>
+            <Button DockPanel.Dock="Right"
+                    Content="✕"
+                    Width="26"
+                    Height="24"
+                    Margin="8,0,0,0"
+                    Click="Close_Click"/>
+        </DockPanel>
 
         <Grid Grid.Row="1" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
@@ -262,15 +274,23 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <DockPanel Grid.Row="5" Margin="0,8,0,0" LastChildFill="False">
-            <Button DockPanel.Dock="Left" Content="Refresh lanes" Click="Refresh_Click"/>
-            <Button DockPanel.Dock="Left" Content="Add rule" Click="AddRule_Click"/>
-            <Button DockPanel.Dock="Left" Content="Remove rule" Click="RemoveRule_Click"/>
-            <Button DockPanel.Dock="Left" Content="Up" Width="58" Click="MoveRuleUp_Click"/>
-            <Button DockPanel.Dock="Left" Content="Down" Width="58" Click="MoveRuleDown_Click"/>
-            <Button DockPanel.Dock="Left" Content="Clear rules" Click="ClearRules_Click"/>
-            <Button DockPanel.Dock="Left" Content="Apply filters" Click="ApplyFilters_Click"/>
-            <Button DockPanel.Dock="Right" Content="Close" Click="Close_Click"/>
-        </DockPanel>
+        <Grid Grid.Row="5" Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left">
+                <Button Content="Refresh lanes" Height="26" Margin="0,0,6,0" Click="Refresh_Click"/>
+                <Button Content="Add rule" Height="26" Margin="0,0,6,0" Click="AddRule_Click"/>
+                <Button Content="Remove rule" Height="26" Margin="0,0,6,0" Click="RemoveRule_Click"/>
+                <Button Content="Up" Width="58" Height="26" Margin="0,0,6,0" Click="MoveRuleUp_Click"/>
+                <Button Content="Down" Width="58" Height="26" Margin="0,0,6,0" Click="MoveRuleDown_Click"/>
+                <Button Content="Clear rules" Height="26" Margin="0,0,6,0" Click="ClearRules_Click"/>
+                <Button Content="Apply filters" Height="26" Click="ApplyFilters_Click"/>
+            </StackPanel>
+
+            <Button Grid.Column="1" Content="Close" Height="26" HorizontalAlignment="Right" Click="Close_Click"/>
+        </Grid>
     </Grid>
 </Window>

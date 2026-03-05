@@ -1,5 +1,6 @@
 #include <ntddk.h>
 #include "apc_monitor.h"
+#include "..\correlation\intent_store.h"
 #include "..\telemetry\etw.h"
 
 #ifndef THREAD_SET_CONTEXT
@@ -18,8 +19,9 @@
 #define THREAD_ALL_ACCESS (STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFFF)
 #endif
 
-#define SLEEPWALKER_APC_COOLDOWN_MS 2000
+#define SLEEPWALKER_APC_COOLDOWN_MS 7000
 #define SLEEPWALKER_APC_RING_SIZE 64
+#define SLEEPWALKER_APC_INTENT_WINDOW_MS 12000
 
 typedef struct _SLEEPWALKER_APC_RING_ENTRY
 {
@@ -152,6 +154,11 @@ VOID SLEEPWALKERApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ H
 {
     BOOLEAN hasSetContext;
     BOOLEAN hasSuspendResume;
+    BOOLEAN hasRecentIntent;
+    BOOLEAN hasMemoryIntent;
+    UINT32 intentFlags = 0;
+    UINT32 intentAccessMask = 0;
+    UINT32 intentAgeMs = 0;
 
     if (InterlockedCompareExchange(&g_ApcMonitorInitialized, 0, 0) == 0)
     {
@@ -169,24 +176,28 @@ VOID SLEEPWALKERApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ H
     {
         return;
     }
+    hasRecentIntent = SLEEPWALKERCorrelationQueryRecentIntent(CallerPid, TargetPid, SLEEPWALKER_APC_INTENT_WINDOW_MS,
+                                                              &intentFlags, &intentAccessMask, &intentAgeMs);
+    hasMemoryIntent = hasRecentIntent && ((intentFlags & SLEEPWALKER_INTENT_PROCESS_MEMORY) != 0);
 
-    if (hasSetContext && !hasSuspendResume &&
+    if (hasSetContext && hasSuspendResume && hasMemoryIntent &&
         SLEEPWALKERApcShouldEmit(CallerPid, TargetPid, SLEEPWALKERApcKindRemoteApc))
     {
-        SLEEPWALKEREtwLogApcEvent("REMOTE_APC_INTENT", CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation, 0, 0,
-                                  0);
-        SLEEPWALKEREtwLogDetectionEvent("REMOTE_APC_CREATION_SUSPECT", 4, CallerPid, TargetPid, 0,
-                                        (UINT32)DesiredAccess, 0,
-                                        L"remote thread handle set-context intent suggests APC-style execution");
+        SLEEPWALKEREtwLogApcEvent("REMOTE_APC_INTENT", CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation,
+                                  intentFlags, intentAccessMask, intentAgeMs);
+        SLEEPWALKEREtwLogDetectionEvent("REMOTE_APC_CREATION_SUSPECT", 5, CallerPid, TargetPid, intentFlags,
+                                        intentAccessMask, intentAgeMs,
+                                        L"set-context plus suspend/resume with recent process-memory intent");
     }
 
-    if (hasSetContext && hasSuspendResume &&
+    if (hasSetContext && hasSuspendResume && hasMemoryIntent &&
         SLEEPWALKERApcShouldEmit(CallerPid, TargetPid, SLEEPWALKERApcKindThreadHijack))
     {
-        SLEEPWALKEREtwLogApcEvent("THREAD_CONTEXT_INTENT", CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation, 0,
-                                  0, 0);
-        SLEEPWALKEREtwLogDetectionEvent("THREAD_HIJACK_INTENT", 5, CallerPid, TargetPid, 0, (UINT32)DesiredAccess, 0,
-                                        L"thread set-context plus suspend/resume intent indicates hijack pattern");
+        SLEEPWALKEREtwLogApcEvent("THREAD_CONTEXT_INTENT", CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation,
+                                  intentFlags, intentAccessMask, intentAgeMs);
+        SLEEPWALKEREtwLogDetectionEvent("THREAD_HIJACK_INTENT", 6, CallerPid, TargetPid, intentFlags,
+                                        intentAccessMask, intentAgeMs,
+                                        L"high-confidence hijack intent chain (thread context + memory intent)");
     }
 }
 

@@ -16,12 +16,14 @@
 
 #define SLEEPWALKER_CONTROLLER_SERVICE_NAMEW L"SleepwlkrController"
 #define SLEEPWALKER_CONTROLLER_ETW_SESSION_NAMEW L"SleepwlkrControllerSession"
-#define SLEEPWALKER_CONTROLLER_ETW_LEGACY_PREFIXW L"SleepwlkrController-"
-#define SLEEPWALKER_CONTROLLER_ETW_MAX_QUERY_SESSIONS 64u
 #define SLEEPWALKER_CONTROLLER_MAX_CLIENTS 256u
+#define SLEEPWALKER_CONTROLLER_INVALID_SLOT 0xFFFFFFFFu
+#define SLEEPWALKER_CONTROLLER_CLIENT_MASK_DWORDS ((SLEEPWALKER_CONTROLLER_MAX_CLIENTS + 31u) / 32u)
 #define SLEEPWALKER_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS 256u
 #define SLEEPWALKER_CONTROLLER_MAX_CLIENT_QUEUE_DEPTH 1024u
 #define SLEEPWALKER_CONTROLLER_MAX_CLIENT_ETW_QUEUE_DEPTH 2048u
+#define SLEEPWALKER_CONTROLLER_SHARED_IOCTL_RING_CAPACITY 8192u
+#define SLEEPWALKER_CONTROLLER_SHARED_ETW_RING_CAPACITY 2048u
 #define SLEEPWALKER_CONTROLLER_DYNAMIC_SUBSCRIPTION_TTL_MS 120000u
 #define SLEEPWALKER_CONTROLLER_DYNAMIC_SUBSCRIPTION_MAX_DEPTH 3u
 #define SLEEPWALKER_CONTROLLER_HOLLOW_MAX_ENTRIES 256u
@@ -58,6 +60,7 @@ typedef struct _SLEEPWALKER_CONTROLLER_CLIENT
     HANDLE Pipe;
     DWORD ProcessId;
     DWORD SessionId;
+    DWORD SlotIndex;
     CRITICAL_SECTION Lock;
     DWORD SubscriptionCount;
     SLEEPWALKER_CONTROLLER_SUBSCRIPTION Subscriptions[SLEEPWALKER_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS];
@@ -69,7 +72,25 @@ typedef struct _SLEEPWALKER_CONTROLLER_CLIENT
     PSLEEPWALKER_CONTROLLER_ETW_EVENT_NODE EtwQueueTail;
     DWORD EtwQueueDepth;
     DWORD EtwDroppedEvents;
+    BOOL SharedRingEnabled;
+    HANDLE IoctlSharedMapping;
+    HANDLE IoctlSharedDataEvent;
+    PSLEEPWALKER_IPC_SHARED_RING_HEADER IoctlSharedHeader;
+    PBYTE IoctlSharedRecords;
+    HANDLE EtwSharedMapping;
+    HANDLE EtwSharedDataEvent;
+    PSLEEPWALKER_IPC_SHARED_RING_HEADER EtwSharedHeader;
+    PBYTE EtwSharedRecords;
 } SLEEPWALKER_CONTROLLER_CLIENT, *PSLEEPWALKER_CONTROLLER_CLIENT;
+
+typedef struct _SLEEPWALKER_CONTROLLER_PID_INDEX_ENTRY
+{
+    DWORD ProcessId;
+    DWORD StreamMask;
+    DWORD ClientMask[SLEEPWALKER_CONTROLLER_CLIENT_MASK_DWORDS];
+} SLEEPWALKER_CONTROLLER_PID_INDEX_ENTRY, *PSLEEPWALKER_CONTROLLER_PID_INDEX_ENTRY;
+
+static VOID ControllerClientDestroySharedRingsLocked(_Inout_ SLEEPWALKER_CONTROLLER_CLIENT *Client);
 
 typedef struct _SLEEPWALKER_CONTROLLER_HOLLOW_ENTRY
 {
@@ -104,9 +125,12 @@ static CRITICAL_SECTION g_DriverConfigLock;
 static BOOL g_LocksInitialized = FALSE;
 static volatile LONG g_DriverSubscriptionsDirty = 0;
 static PSLEEPWALKER_CONTROLLER_CLIENT g_ClientList = NULL;
+static PSLEEPWALKER_CONTROLLER_CLIENT g_ClientSlots[SLEEPWALKER_CONTROLLER_MAX_CLIENTS];
 static DWORD g_ClientCount = 0;
 static DWORD g_ProgrammedPids[SLEEPWALKER_MAX_PID_LIST];
 static DWORD g_ProgrammedPidCount = 0;
+static SLEEPWALKER_CONTROLLER_PID_INDEX_ENTRY g_PidIndex[SLEEPWALKER_MAX_PID_LIST];
+static DWORD g_PidIndexCount = 0;
 static SRWLOCK g_HollowLock = SRWLOCK_INIT;
 static SLEEPWALKER_CONTROLLER_HOLLOW_ENTRY g_HollowEntries[SLEEPWALKER_CONTROLLER_HOLLOW_MAX_ENTRIES];
 
@@ -179,72 +203,7 @@ static VOID ControllerStopEtwSessionByNameBestEffort(_In_z_ PCWSTR SessionName, 
 
 static VOID ControllerCleanupStaleEtwSessions(VOID)
 {
-    const ULONG propsBytes = sizeof(EVENT_TRACE_PROPERTIES) + (1024 * sizeof(WCHAR));
-    PEVENT_TRACE_PROPERTIES propsArray[SLEEPWALKER_CONTROLLER_ETW_MAX_QUERY_SESSIONS];
-    ULONG loggerCount = SLEEPWALKER_CONTROLLER_ETW_MAX_QUERY_SESSIONS;
-    ULONG status;
-    ULONG i;
-    size_t legacyPrefixChars = wcslen(SLEEPWALKER_CONTROLLER_ETW_LEGACY_PREFIXW);
-
-    ZeroMemory(propsArray, sizeof(propsArray));
     ControllerStopEtwSessionByNameBestEffort(SLEEPWALKER_CONTROLLER_ETW_SESSION_NAMEW, "pre-start");
-
-    for (i = 0; i < SLEEPWALKER_CONTROLLER_ETW_MAX_QUERY_SESSIONS; ++i)
-    {
-        propsArray[i] = (PEVENT_TRACE_PROPERTIES)calloc(1, propsBytes);
-        if (propsArray[i] == NULL)
-        {
-            loggerCount = i;
-            break;
-        }
-
-        propsArray[i]->Wnode.BufferSize = propsBytes;
-        propsArray[i]->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
-        propsArray[i]->LogFileNameOffset = sizeof(EVENT_TRACE_PROPERTIES) + (512 * sizeof(WCHAR));
-    }
-
-    if (loggerCount == 0)
-    {
-        return;
-    }
-
-    status = QueryAllTracesW(propsArray, loggerCount, &loggerCount);
-    if (status == ERROR_SUCCESS || status == ERROR_MORE_DATA)
-    {
-        for (i = 0; i < loggerCount && i < SLEEPWALKER_CONTROLLER_ETW_MAX_QUERY_SESSIONS; ++i)
-        {
-            PWSTR loggerName;
-
-            if (propsArray[i] == NULL || propsArray[i]->LoggerNameOffset == 0)
-            {
-                continue;
-            }
-
-            loggerName = (PWSTR)((PBYTE)propsArray[i] + propsArray[i]->LoggerNameOffset);
-            if (loggerName == NULL || loggerName[0] == L'\0')
-            {
-                continue;
-            }
-
-            if (_wcsnicmp(loggerName, SLEEPWALKER_CONTROLLER_ETW_LEGACY_PREFIXW, legacyPrefixChars) == 0)
-            {
-                ControllerStopEtwSessionByNameBestEffort(loggerName, "cleanup-legacy");
-            }
-        }
-    }
-    else
-    {
-        ControllerLog("[ETW][WARN] QueryAllTracesW failed status=%lu\n", status);
-    }
-
-    for (i = 0; i < SLEEPWALKER_CONTROLLER_ETW_MAX_QUERY_SESSIONS; ++i)
-    {
-        if (propsArray[i] != NULL)
-        {
-            free(propsArray[i]);
-            propsArray[i] = NULL;
-        }
-    }
 }
 
 #include "core/monitoring/sleepwalker_controller_subscriptions.inc"

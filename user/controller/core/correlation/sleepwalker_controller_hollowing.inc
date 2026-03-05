@@ -190,8 +190,12 @@ static VOID ControllerEmitSyntheticDetection(_In_ DWORD ActorPid, _In_ DWORD Tar
     event.Severity = Severity;
     event.PrimaryPid = (ActorPid != 0) ? (UINT64)ActorPid : (UINT64)TargetPid;
     event.SecondaryPid = (UINT64)TargetPid;
+    event.CorrelationFlags = 0;
+    event.CorrelationAccessMask = 0;
+    event.CorrelationAgeMs = 0;
     (void)StringCchCopyW(event.EventName, RTL_NUMBER_OF(event.EventName), L"DetectionTelemetry");
     (void)StringCchCopyA(event.DetectionName, RTL_NUMBER_OF(event.DetectionName), DetectionName);
+    (void)StringCchPrintfW(event.Reason, RTL_NUMBER_OF(event.Reason), L"synthetic chain marks=0x%llX", Marks);
 
     (void)InterlockedIncrement(&g_EtwDetectionEvents);
     ControllerDispatchEtwEvent(&event);

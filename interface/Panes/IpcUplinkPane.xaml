@@ -198,37 +198,26 @@
                             </DockPanel>
                         </Border>
 
-                        <ScrollViewer Grid.Row="1"
-                                      VerticalScrollBarVisibility="Auto"
-                                      HorizontalScrollBarVisibility="Disabled"
-                                      Padding="4">
-                            <ItemsControl ItemsSource="{Binding ElementName=RootPane, Path=MetricRows}">
-                                <ItemsControl.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <WrapPanel/>
-                                    </ItemsPanelTemplate>
-                                </ItemsControl.ItemsPanel>
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Style="{DynamicResource ReadoutCardStyle}"
-                                                Width="230"
-                                                Margin="4">
-                                            <StackPanel>
-                                                <TextBlock Text="{Binding Name}"
-                                                           FontSize="10"
-                                                           FontWeight="SemiBold"
-                                                           Foreground="{DynamicResource WinMutedTextBrush}"
-                                                           TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{Binding Value}"
-                                                           FontSize="14"
-                                                           FontWeight="SemiBold"
-                                                           TextTrimming="CharacterEllipsis"/>
-                                            </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </ScrollViewer>
+                        <DataGrid Grid.Row="1"
+                                  Margin="4"
+                                  ItemsSource="{Binding ElementName=RootPane, Path=MetricRows}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  CanUserReorderColumns="False"
+                                  CanUserSortColumns="False"
+                                  CanUserResizeRows="False"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  ColumnHeaderHeight="24"
+                                  RowHeight="24"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Counter" Width="*" Binding="{Binding Name}"/>
+                                <DataGridTextColumn Header="Value" Width="2*" Binding="{Binding Value}"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
 
                         <Border x:Name="NoDataOverlay"
                                 Grid.RowSpan="2"

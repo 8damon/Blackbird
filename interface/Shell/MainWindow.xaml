@@ -34,76 +34,6 @@
             </Setter>
         </Style>
 
-        <Style x:Key="ThemeSelectorStyle" TargetType="ComboBox">
-            <Setter Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
-            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="6,2"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ComboBox">
-                        <Grid>
-                            <Border x:Name="SelectorBorder"
-                                    Background="{TemplateBinding Background}"
-                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                    CornerRadius="2"/>
-
-                            <ContentPresenter Margin="8,1,26,1"
-                                              VerticalAlignment="Center"
-                                              HorizontalAlignment="Left"
-                                              Content="{TemplateBinding SelectionBoxItem}"
-                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
-                                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
-                                              IsHitTestVisible="False"/>
-
-                            <Path HorizontalAlignment="Right"
-                                  VerticalAlignment="Center"
-                                  Margin="0,0,8,0"
-                                  Data="M 0 0 L 8 0 L 4 4 Z"
-                                  Fill="{DynamicResource WinTextBrush}"
-                                  IsHitTestVisible="False"/>
-
-                            <ToggleButton Background="Transparent"
-                                          BorderThickness="0"
-                                          Focusable="False"
-                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
-                                          ClickMode="Press"/>
-
-                            <Popup x:Name="PART_Popup"
-                                   Placement="Bottom"
-                                   IsOpen="{TemplateBinding IsDropDownOpen}"
-                                   Focusable="False"
-                                   AllowsTransparency="True"
-                                   PopupAnimation="Fade">
-                                <Border Margin="0,2,0,0"
-                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
-                                        Background="{DynamicResource WinPanelBrush}"
-                                        BorderBrush="{DynamicResource WinBorderBrush}"
-                                        BorderThickness="1">
-                                    <ScrollViewer MaxHeight="220">
-                                        <StackPanel IsItemsHost="True"/>
-                                    </ScrollViewer>
-                                </Border>
-                            </Popup>
-                        </Grid>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="SelectorBorder" Property="BorderBrush" Value="{DynamicResource WinAccentBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsDropDownOpen" Value="True">
-                                <Setter TargetName="SelectorBorder" Property="BorderBrush" Value="{DynamicResource WinAccentBrush}"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.5"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
         <Style x:Key="CommandBarButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
             <Setter Property="Background" Value="{DynamicResource CommandBarButtonBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource WinSubtleBorderBrush}"/>
@@ -130,71 +60,130 @@
     <Grid x:Name="RootGrid" Background="{DynamicResource WinBgBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="34"/>
         </Grid.RowDefinitions>
 
-        <!-- Command bar -->
         <Border Grid.Row="0"
+                Background="{DynamicResource CommandBarBackgroundBrush}"
+                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="10,3,10,2">
+            <Border x:Name="ProcessStateBadge"
+                    BorderBrush="Transparent"
+                    BorderThickness="0"
+                    Background="Transparent"
+                    HorizontalAlignment="Left">
+                <TextBlock x:Name="ProcessStateBlock"
+                           Text="Disconnected"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource WinMutedTextBrush}"/>
+            </Border>
+        </Border>
+
+        <!-- Ribbon toolbar -->
+        <Border Grid.Row="1"
                 Background="{DynamicResource CommandBarBackgroundBrush}"
                 BorderBrush="{DynamicResource WinBorderBrush}"
                 BorderThickness="0,0,0,1"
-                Padding="10,8">
+                Padding="6,4">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="10"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <TabControl x:Name="ToolbarTabs"
+                            Grid.Column="0"
+                            BorderThickness="0"
+                            Background="Transparent">
+                    <TabItem Header="Home">
+                        <WrapPanel Margin="6,6,6,8">
+                            <Border BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                    BorderThickness="1"
+                                    Background="{DynamicResource CommandBarPanelBrush}"
+                                    Padding="8,6"
+                                    Margin="0,0,8,0">
+                                <StackPanel>
+                                    <TextBlock Text="Target" Foreground="{DynamicResource WinMutedTextBrush}" Margin="0,0,0,4"/>
+                                    <WrapPanel>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Select Target" Click="FindProcess_Click"/>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Connect" Click="Connect_Click"/>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Launch" Click="Launch_Click"/>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Border>
+                            <Border BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                    BorderThickness="1"
+                                    Background="{DynamicResource CommandBarPanelBrush}"
+                                    Padding="8,6">
+                                <StackPanel>
+                                    <TextBlock Text="Runtime" Foreground="{DynamicResource WinMutedTextBrush}" Margin="0,0,0,4"/>
+                                    <WrapPanel>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Preflight" Click="Preflight_Click"/>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Driver Start" Click="DriverStart_Click"/>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Driver Stop" Click="DriverStop_Click"/>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Controller Restart" Click="ControllerRestart_Click"/>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Border>
+                        </WrapPanel>
+                    </TabItem>
+                    <TabItem Header="Session">
+                        <WrapPanel Margin="6,6,6,8">
+                            <Border BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                    BorderThickness="1"
+                                    Background="{DynamicResource CommandBarPanelBrush}"
+                                    Padding="8,6">
+                                <StackPanel>
+                                    <TextBlock Text="Session Files" Foreground="{DynamicResource WinMutedTextBrush}" Margin="0,0,0,4"/>
+                                    <WrapPanel>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Open Session" Click="OpenSession_Click"/>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Import" Click="ImportSession_Click"/>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Save As" Click="SaveSessionAs_Click"/>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Export" Click="ExportSession_Click"/>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Border>
+                        </WrapPanel>
+                    </TabItem>
+                    <TabItem Header="Tools">
+                        <WrapPanel Margin="6,6,6,8">
+                            <Border BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                    BorderThickness="1"
+                                    Background="{DynamicResource CommandBarPanelBrush}"
+                                    Padding="8,6">
+                                <StackPanel>
+                                    <TextBlock Text="Workspace" Foreground="{DynamicResource WinMutedTextBrush}" Margin="0,0,0,4"/>
+                                    <WrapPanel>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Diagnostics" Click="Diagnostics_Click"/>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Reset Dock" Click="ResetDock_Click"/>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="New Tab" Click="NewProcessTab_Click"/>
+                                    </WrapPanel>
+                                </StackPanel>
+                            </Border>
+                        </WrapPanel>
+                    </TabItem>
+                </TabControl>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Top" Margin="10,30,0,0">
                     <TextBox x:Name="PidBox" Visibility="Collapsed"/>
-                    <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Select Target" Click="FindProcess_Click"/>
-                    <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Connect" Click="Connect_Click"/>
-                    <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Launch" Click="Launch_Click"/>
-                    <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Preflight" Click="Preflight_Click"/>
-                    <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Driver Start" Click="DriverStart_Click"/>
-                    <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Driver Stop" Click="DriverStop_Click"/>
-                    <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Controller Restart" Click="ControllerRestart_Click"/>
-                </StackPanel>
-
-                <Border Grid.Column="1"
-                        Width="1"
-                        Margin="0,2"
-                        Background="{DynamicResource WinSubtleBorderBrush}"/>
-
-                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="Theme"
-                               Margin="0,0,6,0"
-                               VerticalAlignment="Center"
-                               Foreground="{DynamicResource WinMutedTextBrush}"/>
-                    <ComboBox x:Name="ThemeSelector"
-                              Width="110"
-                              Margin="0,0,10,0"
-                              Style="{DynamicResource ThemeSelectorStyle}"
-                              Background="{DynamicResource WinHeaderBrush}"
-                              Foreground="{DynamicResource WinTextBrush}"
-                              SelectionChanged="ThemeSelector_SelectionChanged">
-                        <ComboBoxItem Content="Auto"/>
-                        <ComboBoxItem Content="Dark"/>
-                        <ComboBoxItem Content="Light"/>
-                    </ComboBox>
                     <TextBlock x:Name="StatusBlock"
                                Text="Status: Disconnected"
-                               Margin="0,0,18,0"
+                               Margin="0,0,0,4"
                                VerticalAlignment="Center"
-                               Visibility="Collapsed"/>
+                               Foreground="{DynamicResource WinMutedTextBrush}"/>
                     <TextBlock x:Name="RangeBlock"
                                Text="Range:"
                                VerticalAlignment="Center"
-                               Foreground="{DynamicResource WinTextBrush}"/>
+                               Foreground="{DynamicResource WinMutedTextBrush}"/>
                 </StackPanel>
             </Grid>
         </Border>
 
         <!-- Workspace: explorer + docked panes -->
-        <Grid Grid.Row="1" Margin="0">
+        <Grid Grid.Row="2" Margin="0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="250" MinWidth="220"/>
                 <ColumnDefinition Width="2"/>
@@ -322,13 +311,13 @@
                           VerticalAlignment="Stretch"/>
 
             <!-- Docked panes + process tabs -->
-            <Grid Grid.Column="2" Margin="2,0,0,0">
+            <Grid Grid.Column="2">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition x:Name="IpcUplinkColumn" Width="0"/>
                     <ColumnDefinition x:Name="IpcUplinkSplitterColumn" Width="0"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition x:Name="IntelligenceSplitterColumn" Width="2"/>
-                    <ColumnDefinition x:Name="IntelligenceColumn" Width="430"/>
+                    <ColumnDefinition x:Name="IntelligenceColumn" Width="560"/>
                 </Grid.ColumnDefinitions>
 
                 <Border Grid.Column="0"
@@ -336,7 +325,7 @@
                         BorderBrush="{DynamicResource WinBorderBrush}"
                         BorderThickness="1"
                         MinWidth="360"
-                        Margin="0,0,3,0"
+                        Margin="0,0,2,0"
                         Background="{DynamicResource WinPanelBrush}"
                         Visibility="Collapsed">
                     <local:IpcUplinkPane x:Name="IpcUplinkPaneHost"/>
@@ -405,7 +394,7 @@
                             <RowDefinition Height="5*"/>
                         </Grid.RowDefinitions>
 
-                        <Grid Grid.Row="0" x:Name="EventsPaneRow" Margin="0,0,0,3">
+                        <Grid Grid.Row="0" x:Name="EventsPaneRow">
                             <Border x:Name="EventsDockBorder"
                                     BorderBrush="{DynamicResource WinBorderBrush}"
                                     BorderThickness="1"
@@ -442,7 +431,7 @@
                                       HorizontalAlignment="Stretch"
                                       ShowsPreview="True"/>
 
-                        <Grid Grid.Row="2" x:Name="PerformancePaneRow" Margin="0,3,0,0">
+                        <Grid Grid.Row="2" x:Name="PerformancePaneRow">
                             <Border x:Name="PerformanceDockBorder"
                                     BorderBrush="{DynamicResource WinBorderBrush}"
                                     BorderThickness="1"
@@ -504,13 +493,14 @@
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="2"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="2"/>
+                        <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
                     <Border Grid.Row="0"
                             x:Name="EtwDockBorder"
                             BorderBrush="{DynamicResource WinBorderBrush}"
                             BorderThickness="1"
-                            Margin="0,0,0,3"
                             Background="{DynamicResource WinPanelBrush}">
                         <local:EtwPane x:Name="EtwPaneHost"/>
                     </Border>
@@ -525,18 +515,31 @@
                             x:Name="HeuristicsDockBorder"
                             BorderBrush="{DynamicResource WinBorderBrush}"
                             BorderThickness="1"
-                            Margin="0,3,0,0"
                             Background="{DynamicResource WinPanelBrush}">
                         <local:HeuristicsPane x:Name="HeuristicsPaneHost"/>
+                    </Border>
+
+                    <GridSplitter Grid.Row="3"
+                                  Height="2"
+                                  Background="{DynamicResource WinSubtleBorderBrush}"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch"/>
+
+                    <Border Grid.Row="4"
+                            x:Name="ProcessRelationsDockBorder"
+                            BorderBrush="{DynamicResource WinBorderBrush}"
+                            BorderThickness="1"
+                            Background="{DynamicResource WinPanelBrush}">
+                        <local:ProcessRelationsPane x:Name="ProcessRelationsPaneHost"/>
                     </Border>
                 </Grid>
             </Grid>
         </Grid>
 
         <!-- Status bar -->
-        <Border Grid.Row="2"
+        <Border Grid.Row="3"
                 x:Name="BottomStatusBar"
-                Background="{DynamicResource WinHeaderBrush}"
+                Background="{DynamicResource StatusBarNeutralBrush}"
                 BorderBrush="{DynamicResource WinBorderBrush}"
                 BorderThickness="0,1,0,0">
             <Grid Margin="8,0">
@@ -562,13 +565,7 @@
                 <StackPanel Grid.Column="2"
                             Orientation="Horizontal"
                             HorizontalAlignment="Right"
-                            VerticalAlignment="Center">
-                    <Button Content="Diagnostics"
-                            Click="Diagnostics_Click"/>
-                    <Button Content="Reset Dock"
-                            Margin="8,0,0,0"
-                            Click="ResetDock_Click"/>
-                </StackPanel>
+                            VerticalAlignment="Center"/>
             </Grid>
         </Border>
     </Grid>

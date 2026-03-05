@@ -6,7 +6,6 @@ using System.Collections.Specialized;
 using System.Globalization;
 using System.Linq;
 using System.Windows;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 
@@ -99,6 +98,7 @@ namespace SleepwalkerInterface
         public event EventHandler<TimeRangeSelectedEventArgs>? RangeSelected;
         public event EventHandler<LaneInteractionEventArgs>? LaneInteraction;
         public event EventHandler<TelemetryEventSelectedEventArgs>? SelectedEventChanged;
+        public event EventHandler<TelemetryEventSelectedEventArgs>? EventDoubleClicked;
 
         // Layout knobs
         public double LeftGutterWidth { get; set; } = 170;
@@ -108,7 +108,8 @@ namespace SleepwalkerInterface
         public double TopPadding { get; set; } = 6;
 
         private readonly HashSet<string> _hiddenLaneKeys = new(StringComparer.OrdinalIgnoreCase);
-        private readonly HashSet<string> _expandedGroups = new(StringComparer.OrdinalIgnoreCase);
+        // Collapsed groups. Groups are expanded by default.
+        private readonly HashSet<string> _collapsedGroups = new(StringComparer.OrdinalIgnoreCase);
 
         private readonly Dictionary<string, Brush> _brushByKey = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, Brush> _customBrushByKey = new(StringComparer.OrdinalIgnoreCase);
@@ -123,36 +124,42 @@ namespace SleepwalkerInterface
         private Point _selStart;
         private Point _selEnd;
 
-        private readonly ToolTip _tip = new();
         private TelemetryEvent? _hoveredEvent;
+        private bool _renderQueued;
 
         public TimelineControl()
         {
             SnapsToDevicePixels = true;
             Focusable = true;
 
-            ToolTipService.SetInitialShowDelay(this, 0);
-            ToolTipService.SetShowDuration(this, 60000);
-            ToolTipService.SetBetweenShowDelay(this, 0);
-
-            _tip.Placement = PlacementMode.Mouse;
-            _tip.Background = UiPalette.SurfaceBrush;
-            _tip.Foreground = UiPalette.TextBrush;
-            _tip.BorderThickness = new Thickness(1);
-            _tip.BorderBrush = UiPalette.BorderBrush;
-            _tip.Padding = new Thickness(6);
-            ToolTip = _tip;
+            // Disable hover tooltip popup. Hover still tracks for subtle marker emphasis.
+            ToolTip = null;
 
             Items.CollectionChanged += Items_CollectionChanged;
         }
 
-        private void Items_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => InvalidateVisual();
+        private void Items_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => RequestRender();
+
+        private void RequestRender()
+        {
+            if (_renderQueued)
+            {
+                return;
+            }
+
+            _renderQueued = true;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                _renderQueued = false;
+                InvalidateVisual();
+            }), System.Windows.Threading.DispatcherPriority.Render);
+        }
 
         public void SetLaneVisible(string laneKey, bool visible)
         {
             if (visible) _hiddenLaneKeys.Remove(laneKey);
             else _hiddenLaneKeys.Add(laneKey);
-            InvalidateVisual();
+            RequestRender();
         }
 
         public bool IsLaneVisible(string laneKey) => !_hiddenLaneKeys.Contains(laneKey);
@@ -160,24 +167,24 @@ namespace SleepwalkerInterface
         public void ClearAllLaneFilters()
         {
             _hiddenLaneKeys.Clear();
-            InvalidateVisual();
+            RequestRender();
         }
 
         public void SetGroupExpanded(string group, bool expanded)
         {
-            if (expanded) _expandedGroups.Add(group);
-            else _expandedGroups.Remove(group);
-            InvalidateVisual();
+            if (expanded) _collapsedGroups.Remove(group);
+            else _collapsedGroups.Add(group);
+            RequestRender();
         }
 
-        public bool IsGroupExpanded(string group) => _expandedGroups.Contains(group);
+        public bool IsGroupExpanded(string group) => !_collapsedGroups.Contains(group);
 
         public void SetLaneColor(string laneKey, Color c)
         {
             var b = new SolidColorBrush(c);
             b.Freeze();
             _customBrushByKey[laneKey] = b;
-            InvalidateVisual();
+            RequestRender();
         }
 
         private Brush BrushForKey(string laneKey)
@@ -213,16 +220,15 @@ namespace SleepwalkerInterface
         {
             _hasMouse = true;
             base.OnMouseEnter(e);
-            InvalidateVisual();
+            RequestRender();
         }
 
         protected override void OnMouseLeave(MouseEventArgs e)
         {
             _hasMouse = false;
-            _tip.IsOpen = false;
             _hoveredEvent = null;
             base.OnMouseLeave(e);
-            InvalidateVisual();
+            RequestRender();
         }
 
         protected override void OnMouseMove(MouseEventArgs e)
@@ -232,7 +238,7 @@ namespace SleepwalkerInterface
             if (_selectingRange)
             {
                 _selEnd = _mouse;
-                InvalidateVisual();
+                RequestRender();
                 return;
             }
 
@@ -243,20 +249,13 @@ namespace SleepwalkerInterface
                 if (rect.Contains(_mouse))
                 {
                     _hoveredEvent = evt;
-                    _tip.Content =
-                        $"{evt.Type}\n" +
-                        $"t={evt.TimestampUtc:HH:mm:ss.fff}Z  PID={evt.PID}  TID={evt.TID}\n" +
-                        $"{(string.IsNullOrWhiteSpace(evt.Summary) ? evt.Details : evt.Summary)}";
-
-                    _tip.IsOpen = true;
-                    InvalidateVisual();
+                    RequestRender();
                     return;
                 }
             }
 
-            _tip.IsOpen = false;
             base.OnMouseMove(e);
-            InvalidateVisual();
+            RequestRender();
         }
 
         protected override void OnMouseDown(MouseButtonEventArgs e)
@@ -273,7 +272,7 @@ namespace SleepwalkerInterface
                     // Group headers toggle expansion on click; no separate arrow affordance.
                     if (lane.IsGroupHeader && e.ChangedButton == MouseButton.Left && lane.HasChildren)
                     {
-                        bool newExpanded = !_expandedGroups.Contains(lane.Key);
+                        bool newExpanded = _collapsedGroups.Contains(lane.Key);
                         SetGroupExpanded(lane.Key, newExpanded);
                         e.Handled = true;
                         return;
@@ -294,8 +293,12 @@ namespace SleepwalkerInterface
                     {
                         SelectedEvent = evt;
                         SelectedEventChanged?.Invoke(this, new TelemetryEventSelectedEventArgs(evt));
+                        if (e.ClickCount >= 2)
+                        {
+                            EventDoubleClicked?.Invoke(this, new TelemetryEventSelectedEventArgs(evt));
+                        }
                         e.Handled = true;
-                        InvalidateVisual();
+                        RequestRender();
                         return;
                     }
                 }
@@ -305,7 +308,7 @@ namespace SleepwalkerInterface
                 _selStart = _mouse;
                 _selEnd = _selStart;
                 CaptureMouse();
-                InvalidateVisual();
+                RequestRender();
             }
 
             base.OnMouseDown(e);
@@ -322,7 +325,7 @@ namespace SleepwalkerInterface
                 if (range != null)
                     RangeSelected?.Invoke(this, range);
 
-                InvalidateVisual();
+                RequestRender();
             }
 
             base.OnMouseUp(e);
@@ -391,40 +394,30 @@ namespace SleepwalkerInterface
             // Draw grid + bottom x-axis
             DrawTimeGridAndAxis(dc, viewStartUtc, viewEndUtc, pps, chartLeft, chartRight, axisTop, dpi, typeface);
 
+            // Pre-index visible events by lane to avoid O(lanes * events) scans.
+            var eventsByLane = BuildVisibleLaneEventIndex(viewStartUtc, viewEndUtc);
+
             // Plot events into visible lanes
             foreach (var lane in _laneRows.Where(r => !r.IsGroupHeader))
             {
                 if (_hiddenLaneKeys.Contains(lane.Key))
                     continue;
 
+                if (!eventsByLane.TryGetValue(lane.Key, out var laneEvents))
+                    continue;
+
                 double yTop = lane.Y + 3;
                 double barH = Math.Max(6, lane.Height - 6);
-                string laneKey = lane.Key;
-
-                foreach (var ev in Items)
+                foreach (var ev in laneEvents)
                 {
-                    if (!EventBelongsToLane(ev, laneKey))
-                        continue;
-
-                    if (ev.TimestampUtc < viewStartUtc || ev.TimestampUtc > viewEndUtc)
-                        continue;
-
                     double x = chartLeft + (ev.TimestampUtc - viewStartUtc).TotalSeconds * pps;
 
                     double centerY = yTop + (barH / 2);
                     double radius = Math.Max(3.0, Math.Min(7.0, barH * 0.42));
                     var rect = new Rect(x - radius, centerY - radius, radius * 2, radius * 2);
 
-                    var fill = BrushForKey(laneKey);
-                    var diamond = new StreamGeometry();
-                    using (var ctx = diamond.Open())
-                    {
-                        ctx.BeginFigure(new Point(x, centerY - radius), true, true);
-                        ctx.LineTo(new Point(x + radius, centerY), true, false);
-                        ctx.LineTo(new Point(x, centerY + radius), true, false);
-                        ctx.LineTo(new Point(x - radius, centerY), true, false);
-                    }
-                    diamond.Freeze();
+                    var fill = BrushForKey(lane.Key);
+                    var diamond = CreateDiamondGeometry(x, centerY, radius);
                     dc.DrawGeometry(fill, null, diamond);
 
                     // Selection / hover outline
@@ -432,13 +425,13 @@ namespace SleepwalkerInterface
                     {
                         var pen = new Pen(UiPalette.AccentBrush, 1.5);
                         pen.Freeze();
-                        dc.DrawRectangle(null, pen, new Rect(rect.X - 2, rect.Y - 2, rect.Width + 4, rect.Height + 4));
+                        dc.DrawGeometry(null, pen, CreateDiamondGeometry(x, centerY, radius + 2));
                     }
                     else if (ReferenceEquals(ev, _hoveredEvent))
                     {
                         var pen = new Pen(UiPalette.GridStrongBrush, 1);
                         pen.Freeze();
-                        dc.DrawRectangle(null, pen, new Rect(rect.X - 1, rect.Y - 1, rect.Width + 2, rect.Height + 2));
+                        dc.DrawGeometry(null, pen, CreateDiamondGeometry(x, centerY, radius + 1));
                     }
 
                     var hitRect = new Rect(rect.X - 3, rect.Y - 3, rect.Width + 6, rect.Height + 6);
@@ -468,15 +461,16 @@ namespace SleepwalkerInterface
                     UiPalette.TextBrush,
                     dpi);
 
-                var isDark = UiPalette.Text.R < 0x80;
-                var labelBg = new SolidColorBrush(isDark
-                    ? Color.FromArgb(235, 0x2B, 0x2F, 0x34)
-                    : Color.FromArgb(235, 0xF8, 0xF8, 0xF8));
-                labelBg.Freeze();
+                double labelX = Math.Min(chartRight - ft.Width - 14, Math.Max(chartLeft + 4, _mouse.X + 8));
+                double labelY = axisTop + Math.Max(2, (AxisHeight - ft.Height - 6) / 2);
+                var bgRect = new Rect(labelX, labelY, ft.Width + 10, ft.Height + 6);
+                dc.DrawRectangle(UiPalette.SurfaceAltBrush, new Pen(UiPalette.BorderBrush, 1), bgRect);
+                dc.DrawText(ft, new Point(labelX + 5, labelY + 3));
+            }
 
-                var bgRect = new Rect(_mouse.X + 8, 4, ft.Width + 10, ft.Height + 6);
-                dc.DrawRectangle(labelBg, new Pen(UiPalette.BorderBrush, 1), bgRect);
-                dc.DrawText(ft, new Point(_mouse.X + 13, 7));
+            if (_hasMouse && _hoveredEvent != null)
+            {
+                DrawHoverEventCard(dc, _hoveredEvent, axisTop, chartLeft, chartRight, dpi, typeface);
             }
 
             // Range selection overlay
@@ -493,6 +487,76 @@ namespace SleepwalkerInterface
 
                 dc.DrawRectangle(selBrush, selPen, new Rect(x1, 0, x2 - x1, axisTop));
             }
+        }
+
+        private static StreamGeometry CreateDiamondGeometry(double x, double centerY, double radius)
+        {
+            var diamond = new StreamGeometry();
+            using (var ctx = diamond.Open())
+            {
+                ctx.BeginFigure(new Point(x, centerY - radius), true, true);
+                ctx.LineTo(new Point(x + radius, centerY), true, false);
+                ctx.LineTo(new Point(x, centerY + radius), true, false);
+                ctx.LineTo(new Point(x - radius, centerY), true, false);
+            }
+            diamond.Freeze();
+            return diamond;
+        }
+
+        private static void DrawHoverEventCard(
+            DrawingContext dc,
+            TelemetryEvent ev,
+            double axisTop,
+            double chartLeft,
+            double chartRight,
+            double dpi,
+            Typeface typeface)
+        {
+            string title = BuildHoverTitle(ev);
+            string detail = BuildHoverDetail(ev);
+            var titleFt = new FormattedText(
+                title,
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                typeface,
+                11,
+                UiPalette.TextBrush,
+                dpi);
+            var detailFt = new FormattedText(
+                detail,
+                CultureInfo.InvariantCulture,
+                FlowDirection.LeftToRight,
+                typeface,
+                10,
+                UiPalette.MutedTextBrush,
+                dpi);
+
+            double width = Math.Min(420, Math.Max(260, Math.Max(titleFt.Width, detailFt.Width) + 18));
+            double height = titleFt.Height + detailFt.Height + 12;
+            double x = Math.Min(chartRight - width - 6, chartLeft + 8);
+            double y = Math.Max(4, axisTop - height - 6);
+
+            dc.DrawRectangle(UiPalette.SurfaceAltBrush, new Pen(UiPalette.BorderBrush, 1), new Rect(x, y, width, height));
+            dc.DrawText(titleFt, new Point(x + 7, y + 3));
+            dc.DrawText(detailFt, new Point(x + 7, y + 5 + titleFt.Height));
+        }
+
+        private static string BuildHoverTitle(TelemetryEvent ev)
+        {
+            string group = string.IsNullOrWhiteSpace(ev.Group) ? "Other" : ev.Group.Trim();
+            string subType = string.IsNullOrWhiteSpace(ev.SubType) ? "event" : ev.SubType.Trim();
+            return $"{ev.TimestampUtc:HH:mm:ss.fff}Z  {group}/{subType}";
+        }
+
+        private static string BuildHoverDetail(TelemetryEvent ev)
+        {
+            string summary = string.IsNullOrWhiteSpace(ev.Summary) ? "No summary" : ev.Summary.Trim();
+            if (summary.Length > 120)
+            {
+                summary = summary[..120] + "...";
+            }
+
+            return $"PID {ev.PID}  TID {ev.TID}  {summary}";
         }
 
         private void BuildLaneRows(double axisTop)
@@ -514,7 +578,7 @@ namespace SleepwalkerInterface
                     .ToList();
 
                 bool hasChildren = subTypes.Count > 0;
-                bool expanded = hasChildren && _expandedGroups.Contains(g.Key);
+                bool expanded = hasChildren && !_collapsedGroups.Contains(g.Key);
 
                 // Group header row
                 var header = new LaneRow
@@ -574,6 +638,38 @@ namespace SleepwalkerInterface
                 if (y >= axisTop - 4)
                     break;
             }
+        }
+
+        private Dictionary<string, List<TelemetryEvent>> BuildVisibleLaneEventIndex(DateTime viewStartUtc, DateTime viewEndUtc)
+        {
+            var byLane = new Dictionary<string, List<TelemetryEvent>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var ev in Items)
+            {
+                if (ev.TimestampUtc < viewStartUtc || ev.TimestampUtc > viewEndUtc)
+                    continue;
+
+                string groupKey = ev.Group ?? "Other";
+                if (!byLane.TryGetValue(groupKey, out var groupList))
+                {
+                    groupList = new List<TelemetryEvent>();
+                    byLane[groupKey] = groupList;
+                }
+                groupList.Add(ev);
+
+                if (!string.IsNullOrWhiteSpace(ev.SubType))
+                {
+                    string subtypeKey = $"{groupKey}/{ev.SubType}";
+                    if (!byLane.TryGetValue(subtypeKey, out var subtypeList))
+                    {
+                        subtypeList = new List<TelemetryEvent>();
+                        byLane[subtypeKey] = subtypeList;
+                    }
+                    subtypeList.Add(ev);
+                }
+            }
+
+            return byLane;
         }
 
         private void DrawLaneGutter(DrawingContext dc, double dpi, Typeface typeface)

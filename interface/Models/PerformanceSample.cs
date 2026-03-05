@@ -34,6 +34,8 @@ namespace SleepwalkerInterface
         public int Tid { get; set; }
         public double CpuMsDelta { get; set; }
         public string State { get; set; } = "";
+        public string WaitReason { get; set; } = "";
+        public string Kind { get; set; } = "";
         public DateTime? StartTimeUtc { get; set; }
     }
 }

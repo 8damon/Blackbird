@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.Linq;
 using System.Windows;
 using System.Windows.Media;
 
@@ -56,8 +57,17 @@ namespace SleepwalkerInterface
                 return;
 
             // Background is set by parent card; keep this transparent.
+            if (DataContext is GraphExplorerItem explorer && !explorer.HasData)
+                return;
 
             // Try to read values (we expect ObservableCollection<double>)
+            if (Values is IEnumerable<double> series)
+            {
+                var list = series as IList<double> ?? series.ToList();
+                Draw(dc, w, h, list, Stroke);
+                return;
+            }
+
             if (DataContext is GraphExplorerItem item)
             {
                 Draw(dc, w, h, item.PreviewValues, Stroke);

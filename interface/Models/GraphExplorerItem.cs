@@ -10,6 +10,9 @@ namespace SleepwalkerInterface
     {
         private bool _isEnabled;
         private bool _hasData;
+        private bool _showDetails;
+        private string _detailPrimary = "";
+        private string _detailSecondary = "";
 
         public string Name { get; }
         public Brush AccentBrush { get; }
@@ -39,6 +42,39 @@ namespace SleepwalkerInterface
             }
         }
 
+        public bool ShowDetails
+        {
+            get => _showDetails;
+            set
+            {
+                if (_showDetails == value) return;
+                _showDetails = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public string DetailPrimary
+        {
+            get => _detailPrimary;
+            set
+            {
+                if (string.Equals(_detailPrimary, value, StringComparison.Ordinal)) return;
+                _detailPrimary = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public string DetailSecondary
+        {
+            get => _detailSecondary;
+            set
+            {
+                if (string.Equals(_detailSecondary, value, StringComparison.Ordinal)) return;
+                _detailSecondary = value;
+                OnPropertyChanged();
+            }
+        }
+
         public GraphExplorerItem(string name, Brush accent)
         {
             Name = name;
@@ -52,6 +88,11 @@ namespace SleepwalkerInterface
             PreviewValues.Add(v);
             while (PreviewValues.Count > max)
                 PreviewValues.RemoveAt(0);
+        }
+
+        public void ClearPreviewValues()
+        {
+            PreviewValues.Clear();
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;

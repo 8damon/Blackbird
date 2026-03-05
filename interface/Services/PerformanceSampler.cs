@@ -6,7 +6,6 @@ using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
-using System.Windows.Threading;
 
 namespace SleepwalkerInterface
 {
@@ -15,8 +14,9 @@ namespace SleepwalkerInterface
     {
         public event EventHandler<PerformanceSample>? SampleArrived;
 
-        private readonly DispatcherTimer _timer;
+        private Timer? _timer;
         private readonly object _lock = new();
+        private int _tickActive;
 
         private int _targetPid = Process.GetCurrentProcess().Id;
         private DateTime _lastWall;
@@ -27,28 +27,19 @@ namespace SleepwalkerInterface
         private int _lastIoPid;
         private bool _lastIoValid;
 
-        // System perf counters (may fail on some environments, handle gracefully)
         private PerformanceCounter? _cpuTotal;
 
         private PerformanceCounter? _diskRead;
         private PerformanceCounter? _diskWrite;
 
-        // Network deltas
         private long _lastBytesIn;
         private long _lastBytesOut;
         private long _lastPackets;
 
-        // Thread CPU baseline for PID mode
         private readonly Dictionary<int, TimeSpan> _threadCpuBaseline = new();
 
         public PerformanceSampler()
         {
-            _timer = new DispatcherTimer(DispatcherPriority.Background)
-            {
-                Interval = TimeSpan.FromSeconds(1)
-            };
-            _timer.Tick += (_, __) => Tick();
-
             TryInitCounters();
         }
 
@@ -57,20 +48,26 @@ namespace SleepwalkerInterface
             _lastWall = DateTime.UtcNow;
             _lastProcCpu = TimeSpan.Zero;
             PrimeNetwork();
-            if (_targetPid <= 0)
-                _targetPid = Process.GetCurrentProcess().Id;
-            _timer.Start();
+            lock (_lock)
+            {
+                _timer?.Dispose();
+                _timer = new Timer(_ => Tick(), null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
+            }
         }
 
-        public void Stop() => _timer.Stop();
+        public void Stop()
+        {
+            lock (_lock)
+            {
+                _timer?.Dispose();
+                _timer = null;
+            }
+        }
 
         public void SetTargetPid(int pid)
         {
             lock (_lock)
             {
-                if (pid <= 0)
-                    pid = Process.GetCurrentProcess().Id;
-
                 if (_targetPid == pid)
                     return;
 
@@ -98,8 +95,18 @@ namespace SleepwalkerInterface
 
         private void Tick()
         {
+            if (Interlocked.Exchange(ref _tickActive, 1) != 0)
+            {
+                return;
+            }
+
+            try
+            {
             int pid;
             lock (_lock) pid = _targetPid;
+
+            if (pid <= 0)
+                    return;
 
             var now = DateTime.UtcNow;
             var wallDelta = now - _lastWall;
@@ -111,33 +118,28 @@ namespace SleepwalkerInterface
                 CoreCount = Environment.ProcessorCount
             };
 
-            if (pid > 0)
-            {
-                FillProcess(sample, pid, wallDelta);
-            }
-            else
-            {
-                FillSystem(sample, wallDelta);
-            }
-
             _lastWall = now;
+            if (!FillProcess(sample, pid, wallDelta))
+                return;
 
             SampleArrived?.Invoke(this, sample);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _tickActive, 0);
+            }
         }
 
         private void FillSystem(PerformanceSample s, TimeSpan wallDelta)
         {
-            // CPU
             if (_cpuTotal != null)
             {
                 try { s.CpuPercent = Clamp(_cpuTotal.NextValue(), 0, 100); }
                 catch { s.CpuPercent = 0; }
             }
 
-            // "cores used" is just CPU% mapped to cores count (useful number, still shown as % for chart consistency)
             s.CoresUsedPercent = s.CpuPercent;
 
-            // Disk
             if (_diskRead != null)
             {
                 try { s.DiskReadBytesPerSec = Math.Max(0, _diskRead.NextValue()); } catch { }
@@ -147,16 +149,13 @@ namespace SleepwalkerInterface
                 try { s.DiskWriteBytesPerSec = Math.Max(0, _diskWrite.NextValue()); } catch { }
             }
 
-            // RAM: system-wide approximations (no perfect “private/reserved” system analog)
-            // We'll treat "reserved" as commit (GC doesn't love this but you asked for 2 lines).
             try
             {
                 s.PrivateBytes = GC.GetTotalMemory(false);
-                s.ReservedBytes = s.PrivateBytes * 2; // placeholder scaling for system; PID mode gives real values
+                s.ReservedBytes = s.PrivateBytes * 2;
             }
             catch { }
 
-            // Network deltas
             var (bin, bout, pk) = ReadNetworkTotals();
             var sec = Math.Max(0.25, wallDelta.TotalSeconds);
 
@@ -168,23 +167,20 @@ namespace SleepwalkerInterface
             _lastBytesOut = bout;
             _lastPackets = pk;
 
-            // Threads: system-wide doesn’t map cleanly. Show current process threads instead.
             FillTopThreadsForProcess(s, Process.GetCurrentProcess(), wallDelta);
         }
 
-        private void FillProcess(PerformanceSample s, int pid, TimeSpan wallDelta)
+        private bool FillProcess(PerformanceSample s, int pid, TimeSpan wallDelta)
         {
             Process? p = null;
             try { p = Process.GetProcessById(pid); }
             catch
             {
-                FillProcess(s, Process.GetCurrentProcess().Id, wallDelta);
-                return;
+                return false;
             }
 
             try
             {
-                // CPU usage: compute delta proc CPU / delta wall / cores
                 var procCpu = p.TotalProcessorTime;
 
                 if (_lastProcCpu == TimeSpan.Zero)
@@ -197,16 +193,11 @@ namespace SleepwalkerInterface
                 var cpuPct = (cpuDelta.TotalSeconds / sec) / Environment.ProcessorCount * 100.0;
                 s.CpuPercent = Clamp(cpuPct, 0, 100);
 
-                // Cores used as a % of total cores, still charted 0..100
-                // coresUsed = cpuPct/100 * coreCount. Expressed as percent of coreCount => cpuPct. So keep same for chart,
-                // but the pane subtitle uses CoreCount.
                 s.CoresUsedPercent = s.CpuPercent;
 
-                // RAM (real for process)
                 s.PrivateBytes = p.PrivateMemorySize64;
                 s.ReservedBytes = p.VirtualMemorySize64;
 
-                // Per-process IO counters (read/write/other transfer bytes).
                 var sec2 = Math.Max(0.25, wallDelta.TotalSeconds);
                 if (TryReadIoCounters(p, out var io))
                 {
@@ -227,7 +218,6 @@ namespace SleepwalkerInterface
                         s.DiskReadBytesPerSec = Math.Max(0, readDelta / sec2);
                         s.DiskWriteBytesPerSec = Math.Max(0, writeDelta / sec2);
 
-                        // "Other" bytes are generally non-file IO and provide a reasonable process-local network proxy.
                         var otherPerSec = Math.Max(0, otherDelta / sec2);
                         s.NetInBytesPerSec = otherPerSec * 0.5;
                         s.NetOutBytesPerSec = otherPerSec * 0.5;
@@ -240,6 +230,11 @@ namespace SleepwalkerInterface
                 }
 
                 FillTopThreadsForProcess(s, p, wallDelta);
+                return true;
+            }
+            catch
+            {
+                return false;
             }
             finally
             {
@@ -258,6 +253,13 @@ namespace SleepwalkerInterface
                     try { cpu = t.TotalProcessorTime; }
                     catch { continue; }
 
+                    string state = t.ThreadState.ToString();
+                    string waitReason = "";
+                    if (t.ThreadState == System.Diagnostics.ThreadState.Wait)
+                    {
+                        try { waitReason = t.WaitReason.ToString(); } catch { waitReason = ""; }
+                    }
+
                     double deltaMs = 0;
                     if (_threadCpuBaseline.TryGetValue(t.Id, out var prev))
                     {
@@ -274,24 +276,53 @@ namespace SleepwalkerInterface
                     {
                         Tid = t.Id,
                         CpuMsDelta = Math.Max(0, deltaMs),
-                        State = t.ThreadState.ToString(),
+                        State = state,
+                        WaitReason = waitReason,
+                        Kind = InferThreadKind(state, waitReason),
                         StartTimeUtc = SafeThreadStart(t)
                     });
                 }
             }
             catch
             {
-                // ignore
             }
 
             s.TopThreads = list.OrderByDescending(x => x.CpuMsDelta).Take(20).ToList();
+        }
+
+        private static string InferThreadKind(string state, string waitReason)
+        {
+            if (!string.IsNullOrWhiteSpace(waitReason))
+            {
+                if (waitReason.Equals("Suspended", StringComparison.OrdinalIgnoreCase) ||
+                    waitReason.Equals("UserRequest", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "Normal";
+                }
+
+                if (waitReason.Equals("ExecutionDelay", StringComparison.OrdinalIgnoreCase) ||
+                    waitReason.Equals("WrQueue", StringComparison.OrdinalIgnoreCase) ||
+                    waitReason.Equals("WrLpcReceive", StringComparison.OrdinalIgnoreCase) ||
+                    waitReason.Equals("WrLpcReply", StringComparison.OrdinalIgnoreCase) ||
+                    waitReason.Equals("WrExecutive", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "ThreadPool/System";
+                }
+            }
+
+            if (state.Equals("Wait", StringComparison.OrdinalIgnoreCase) ||
+                state.Equals("Transition", StringComparison.OrdinalIgnoreCase))
+            {
+                return "System/Runtime";
+            }
+
+            return "Normal";
         }
 
         private static DateTime? SafeThreadStart(ProcessThread t)
         {
             try
             {
-                // ProcessThread.StartTime is local time; convert to UTC-ish
                 return t.StartTime.ToUniversalTime();
             }
             catch { return null; }

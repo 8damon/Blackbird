@@ -11,22 +11,30 @@
     <Product>SleepwalkerInterface</Product>
 
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
     <RestoreIgnoreFailedSources>true</RestoreIgnoreFailedSources>
     <NuGetAudit>false</NuGetAudit>
     <ApplicationIcon>Resources\SW_B.ico</ApplicationIcon>
-    <UnifiedOutputDir>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\x64\$(Configuration)\'))</UnifiedOutputDir>
-    <PublishDir Condition="'$(PublishDir)' == ''">$(UnifiedOutputDir)</PublishDir>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <Optimize>true</Optimize>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishSelfContained>true</PublishSelfContained>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishReadyToRunUseCrossgen2>true</PublishReadyToRunUseCrossgen2>
+    <PublishReadyToRunComposite>true</PublishReadyToRunComposite>
+    <PublishReadyToRunCrossgen2ExtraArgs>--instruction-set=sse4.2,avx,avx2,fma</PublishReadyToRunCrossgen2ExtraArgs>
+    <TieredCompilation>true</TieredCompilation>
+    <TieredPGO>true</TieredPGO>
     <UseAppHost>true</UseAppHost>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <!-- WPF/XAML publish trimming is not trim-safe by default in the .NET SDK. -->
     <PublishTrimmed>false</PublishTrimmed>
+    <TrimMode Condition="'$(PublishTrimmed)' == 'true'">partial</TrimMode>
   </PropertyGroup>
 
   <ItemGroup>
@@ -40,18 +48,10 @@
     <Content Include="Resources\SW_B.ico" />
   </ItemGroup>
 
-  <Target Name="CopyInterfaceBuildToUnifiedOutput" AfterTargets="Build" Condition="'$(IsCrossTargetingBuild)' != 'true'">
-    <ItemGroup>
-      <_InterfaceBuildArtifacts Include="$(TargetPath)" />
-      <_InterfaceBuildArtifacts Include="$(TargetDir)$(AssemblyName).deps.json" Condition="Exists('$(TargetDir)$(AssemblyName).deps.json')" />
-      <_InterfaceBuildArtifacts Include="$(TargetDir)$(AssemblyName).runtimeconfig.json" Condition="Exists('$(TargetDir)$(AssemblyName).runtimeconfig.json')" />
-      <_InterfaceBuildArtifacts Include="$(TargetDir)$(AssemblyName).pdb" Condition="Exists('$(TargetDir)$(AssemblyName).pdb')" />
-    </ItemGroup>
-    <MakeDir Directories="$(UnifiedOutputDir)" />
-    <Copy SourceFiles="@(_InterfaceBuildArtifacts)"
-          DestinationFiles="@(_InterfaceBuildArtifacts->'$(UnifiedOutputDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true"
-          Condition="'@(_InterfaceBuildArtifacts)' != ''" />
-  </Target>
+  <ItemGroup>
+    <None Include="runtimeconfig.template.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 
 </Project>

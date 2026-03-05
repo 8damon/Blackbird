@@ -495,11 +495,6 @@ SLEEPWALKERSCOpenControlDevice(VOID)
         InterlockedExchange(&g_SleepwalkerBrokerThreatIntelEnableError, 0);
         h = CreateFileW(L"\\\\.\\Global\\SleepwalkerCtl", GENERIC_READ | GENERIC_WRITE,
                         FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-        if (h == INVALID_HANDLE_VALUE)
-        {
-            h = CreateFileW(L"\\\\.\\SleepwalkerCtl", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
-                            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-        }
         return h;
     }
     else

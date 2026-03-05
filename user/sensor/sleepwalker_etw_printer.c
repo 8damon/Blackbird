@@ -47,6 +47,7 @@ static const ACCESS_NAME_ENTRY g_ProcessAccessNames[] = {{PROCESS_TERMINATE, L"T
 #define SLEEPWALKER_PID_IMAGE_CACHE_CAPACITY 512
 
 static PCWSTR RegistryNotifyClassToString(_In_ ULONG NotifyClass);
+static BOOL SLEEPWALKEREventNameContainsInsensitive(_In_opt_z_ PCWSTR EventName, _In_z_ PCWSTR Needle);
 
 static SLEEPWALKER_PID_IMAGE_CACHE_ENTRY g_PidImageCache[SLEEPWALKER_PID_IMAGE_CACHE_CAPACITY];
 static ULONG g_PidImageCacheCursor = 0;
@@ -242,7 +243,7 @@ static BOOL SLEEPWALKERQueryProcessImageFromKernel(_In_ ULONGLONG Pid, _Out_writ
     }
 
     ok = SLEEPWALKERSCQueryProcessImagePath(device, (DWORD)Pid, Output, outputCharsDword);
-    CloseHandle(device);
+    (void)SLEEPWALKERSCCloseControlDevice(device);
     return ok;
 }
 
@@ -502,10 +503,46 @@ static void FormatHandleClass(_In_z_ PCSTR EventClass, _Out_writes_z_(OutputChar
     }
 }
 
+static BOOL SLEEPWALKERWideContainsInsensitive(_In_opt_z_ PCWSTR Haystack, _In_z_ PCWSTR Needle)
+{
+    WCHAR hay[1024];
+    WCHAR need[64];
+    size_t i;
+
+    if (Haystack == NULL || Needle == NULL)
+    {
+        return FALSE;
+    }
+
+    (void)StringCchCopyW(hay, RTL_NUMBER_OF(hay), Haystack);
+    (void)StringCchCopyW(need, RTL_NUMBER_OF(need), Needle);
+
+    for (i = 0; i < RTL_NUMBER_OF(hay); ++i)
+    {
+        hay[i] = (WCHAR)towlower(hay[i]);
+        if (hay[i] == L'\0')
+        {
+            break;
+        }
+    }
+    for (i = 0; i < RTL_NUMBER_OF(need); ++i)
+    {
+        need[i] = (WCHAR)towlower(need[i]);
+        if (need[i] == L'\0')
+        {
+            break;
+        }
+    }
+
+    return (wcsstr(hay, need) != NULL);
+}
+
 static void ComputeUserModeHandleClass(_In_z_ PCSTR KernelClass, _In_ BOOL ExecProtect, _In_ BOOL FromNtdll,
                                        _In_ BOOL FromExe, _In_z_ PCWSTR OriginPath,
                                        _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
 {
+    BOOL fromKnownSyscallStub;
+
     if (OutputChars == 0)
     {
         return;
@@ -519,13 +556,16 @@ static void ComputeUserModeHandleClass(_In_z_ PCSTR KernelClass, _In_ BOOL ExecP
         return;
     }
 
-    if (ExecProtect && FromNtdll)
+    fromKnownSyscallStub = (FromNtdll || SLEEPWALKERWideContainsInsensitive(OriginPath, L"ntdll.dll") ||
+                            SLEEPWALKERWideContainsInsensitive(OriginPath, L"win32u.dll"));
+
+    if (ExecProtect && fromKnownSyscallStub)
     {
         (void)StringCchCopyW(Output, OutputChars, L"LEGITIMATE-SYSCALL");
         return;
     }
 
-    if (ExecProtect && (!FromNtdll) && (FromExe || OriginPath == NULL || OriginPath[0] == L'\0'))
+    if (ExecProtect && (!fromKnownSyscallStub) && (FromExe || OriginPath == NULL || OriginPath[0] == L'\0'))
     {
         (void)StringCchCopyW(Output, OutputChars, L"DIRECT-SYSCALL-SUSPECT");
         return;

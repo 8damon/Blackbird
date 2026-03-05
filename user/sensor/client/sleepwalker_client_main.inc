@@ -427,12 +427,12 @@ int __cdecl main(int argc, char **argv)
         if (!SLEEPWALKERSCSetShutdownMode(h))
         {
             printf("[-] failed to enable shutdown mode via IOCTL_SLEEPWALKER_SET_SHUTDOWN_MODE: %lu\n", GetLastError());
-            CloseHandle(h);
+            (void)SLEEPWALKERSCCloseControlDevice(h);
             return 1;
         }
 
         printf("[*] Driver shutdown mode enabled. Active clients should exit shortly.\n");
-        CloseHandle(h);
+        (void)SLEEPWALKERSCCloseControlDevice(h);
         return 0;
     }
 
@@ -628,7 +628,7 @@ Cleanup:
     }
     if (brokerEtw.Device != NULL && brokerEtw.Device != INVALID_HANDLE_VALUE)
     {
-        CloseHandle(brokerEtw.Device);
+        (void)SLEEPWALKERSCCloseControlDevice(brokerEtw.Device);
         brokerEtw.Device = INVALID_HANDLE_VALUE;
     }
     SLEEPWALKERFlushEtwPrinterState();
@@ -657,6 +657,6 @@ Cleanup:
     }
 
     LoggerShutdown();
-    CloseHandle(h);
+    (void)SLEEPWALKERSCCloseControlDevice(h);
     return rc ? 0 : 1;
 }

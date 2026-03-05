@@ -124,6 +124,7 @@ NTSYSAPI NTSTATUS NTAPI ZwOpenThread(_Out_ PHANDLE ThreadHandle, _In_ ACCESS_MAS
 NTSYSAPI NTSTATUS NTAPI ZwQueryInformationThread(_In_ HANDLE ThreadHandle, _In_ THREADINFOCLASS ThreadInformationClass,
                                                  _Out_writes_bytes_(ThreadInformationLength) PVOID ThreadInformation,
                                                  _In_ ULONG ThreadInformationLength, _Out_opt_ PULONG ReturnLength);
+NTSYSAPI VOID NTAPI RtlCaptureContext(_Out_ PCONTEXT ContextRecord);
 
 #ifndef RTL_WALK_USER_MODE_STACK
 #define RTL_WALK_USER_MODE_STACK 0x00000001

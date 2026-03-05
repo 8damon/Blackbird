@@ -191,7 +191,7 @@ static PSLEEPWALKER_CLIENT SLEEPWALKERClientCreate(VOID)
 {
     PSLEEPWALKER_CLIENT client;
 
-    client = (PSLEEPWALKER_CLIENT)ExAllocatePool2(POOL_FLAG_NON_PAGED, sizeof(*client), SLEEPWALKER_POOL_TAG);
+    client = (PSLEEPWALKER_CLIENT)SLEEPWALKERAllocatePoolCompat(POOL_FLAG_NON_PAGED, sizeof(*client), SLEEPWALKER_POOL_TAG);
     if (client == NULL)
     {
         return NULL;
@@ -264,7 +264,7 @@ static VOID SLEEPWALKERClientEnqueueEvent(_Inout_ PSLEEPWALKER_CLIENT Client,
         return;
     }
 
-    node = (PSLEEPWALKER_EVENT_NODE)ExAllocatePool2(POOL_FLAG_NON_PAGED, sizeof(*node), SLEEPWALKER_POOL_TAG);
+    node = (PSLEEPWALKER_EVENT_NODE)SLEEPWALKERAllocatePoolCompat(POOL_FLAG_NON_PAGED, sizeof(*node), SLEEPWALKER_POOL_TAG);
     if (node == NULL)
     {
         SLEEPWALKERReleaseGlobalQueueSlot();
@@ -443,4 +443,3 @@ _Use_decl_annotations_ VOID SLEEPWALKEREvtFileCleanup(WDFFILEOBJECT FileObject)
     SLEEPWALKERClientRelease(client);
     ctx->Client = NULL;
 }
-

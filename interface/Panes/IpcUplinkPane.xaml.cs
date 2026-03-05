@@ -37,7 +37,7 @@ namespace SleepwalkerInterface
             _lastEtwErrorsTotal = 0;
             _lastErrorSeenUtc = default;
             _hasErrorBaseline = false;
-            TransportModeBlock.Text = "PIPE-RPC";
+            TransportModeBlock.Text = "SHARED-RING";
             TimestampBlock.Text = "--:--:--.---";
             SetHealthVisual("STANDBY", "WinHeaderBrush", 1.0);
             IoctlRateValue.Text = "-";
@@ -51,7 +51,7 @@ namespace SleepwalkerInterface
 
         internal void UpdateDiagnostics(BackendIpcDiagnosticsView d)
         {
-            string transport = d.SharedRingEnabled ? "shared-ring+event" : "pipe-rpc";
+            string transport = "shared-ring+event";
             SummaryPrimaryBlock.Text = $"{transport} | caps=0x{d.BrokerCapabilities:X8}";
             SummarySecondaryBlock.Text = $"driverQ={d.DriverQueueDepth} dropped={d.DriverDroppedEvents} | ioctl={d.IoctlEventsPerSec:0} ev/s etw={d.EtwEventsPerSec:0} ev/s";
             TransportModeBlock.Text = transport.ToUpperInvariant();

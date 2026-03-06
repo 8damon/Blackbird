@@ -1,0 +1,118 @@
+<Window x:Class="SleepwalkerInterface.HandleEvidenceWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:SleepwalkerInterface"
+        Title="Handle Evidence"
+        Height="860"
+        Width="1280"
+        MinHeight="680"
+        MinWidth="1040"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="SingleBorderWindow"
+        ResizeMode="CanResize"
+        Background="{DynamicResource WinBgBrush}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
+    <Window.Resources>
+        <Style x:Key="HandleInspectorTreeItemStyle"
+               TargetType="TreeViewItem"
+               BasedOn="{StaticResource {x:Type TreeViewItem}}">
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+        </Style>
+
+        <HierarchicalDataTemplate DataType="{x:Type local:InspectorFieldNode}" ItemsSource="{Binding Children}">
+            <Border x:Name="NodeBorder" Padding="2,1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="220"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="NameBlock"
+                               Grid.Column="0"
+                               Text="{Binding Name}"
+                               Foreground="{DynamicResource WinMutedTextBrush}"
+                               Margin="2,0,8,0"
+                               TextTrimming="CharacterEllipsis"/>
+                    <TextBlock x:Name="ValueBlock"
+                               Grid.Column="1"
+                               Text="{Binding Value}"
+                               FontFamily="Consolas"
+                               Foreground="{DynamicResource WinTextBrush}"
+                               TextWrapping="NoWrap"/>
+                </Grid>
+            </Border>
+            <HierarchicalDataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Kind}" Value="section">
+                    <Setter TargetName="NodeBorder" Property="Background" Value="#FF171717"/>
+                    <Setter TargetName="NameBlock" Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                    <Setter TargetName="NameBlock" Property="FontWeight" Value="SemiBold"/>
+                    <Setter TargetName="ValueBlock" Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="line">
+                    <Setter TargetName="NameBlock" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="ValueBlock" Property="Grid.Column" Value="0"/>
+                    <Setter TargetName="ValueBlock" Property="Grid.ColumnSpan" Value="2"/>
+                    <Setter TargetName="ValueBlock" Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="note">
+                    <Setter TargetName="NameBlock" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="ValueBlock" Property="Grid.Column" Value="0"/>
+                    <Setter TargetName="ValueBlock" Property="Grid.ColumnSpan" Value="2"/>
+                    <Setter TargetName="ValueBlock" Property="Foreground" Value="{DynamicResource WinMutedTextBrush}"/>
+                </DataTrigger>
+            </HierarchicalDataTemplate.Triggers>
+        </HierarchicalDataTemplate>
+    </Window.Resources>
+
+    <Grid Margin="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="{DynamicResource WinHeaderBrush}"
+                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="6,4">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock x:Name="HeaderBlock"
+                           Grid.Row="0"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           Text="Handle Evidence"/>
+
+                <TextBlock x:Name="SummaryBlock"
+                           Grid.Row="1"
+                           Margin="0,2,0,0"
+                           FontSize="11"
+                           Foreground="{DynamicResource WinMutedTextBrush}"
+                           Text="No evidence"/>
+            </Grid>
+        </Border>
+
+        <TreeView Grid.Row="1"
+                  x:Name="FieldsTreeView"
+                  Margin="0,8,0,0"
+                  Background="{DynamicResource WinPanelBrush}"
+                  BorderThickness="0"
+                  ItemContainerStyle="{StaticResource HandleInspectorTreeItemStyle}">
+            <TreeView.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Expand All" Click="ExpandAll_Click"/>
+                    <MenuItem Header="Collapse All" Click="CollapseAll_Click"/>
+                    <Separator/>
+                    <MenuItem Header="Copy Visible" Click="CopyVisible_Click"/>
+                    <MenuItem Header="Copy Raw" Click="CopyRaw_Click"/>
+                </ContextMenu>
+            </TreeView.ContextMenu>
+        </TreeView>
+    </Grid>
+</Window>

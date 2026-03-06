@@ -218,16 +218,7 @@ namespace SleepwalkerInterface
 
         private void Root_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (e.ChangedButton != MouseButton.Left || e.ClickCount != 1)
-                return;
-
-            try
-            {
-                DragMove();
-            }
-            catch
-            {
-            }
+            WindowChromeBehavior.HandleRootDragMove(this, e);
         }
 
         private void TopClose_Click(object sender, RoutedEventArgs e) => Close();

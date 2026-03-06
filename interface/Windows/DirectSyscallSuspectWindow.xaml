@@ -4,63 +4,146 @@
         Title="Direct Syscall Suspects"
         Height="760"
         Width="1360"
-        MinHeight="560"
-        MinWidth="1040"
+        MinHeight="580"
+        MinWidth="1080"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None"
         ResizeMode="CanResize"
-        Background="{DynamicResource WinPanelBrush}">
+        Background="{DynamicResource WinBgBrush}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
     <Window.Resources>
-        <Style x:Key="TitleBarGlyphButtonStyle" TargetType="Button">
-            <Setter Property="Width" Value="26"/>
-            <Setter Property="Height" Value="24"/>
-            <Setter Property="MinWidth" Value="26"/>
-            <Setter Property="Padding" Value="0"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
-            <Setter Property="BorderThickness" Value="0"/>
+        <Style x:Key="SummaryLabelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource WinMutedTextBrush}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+        </Style>
+
+        <Style x:Key="SummaryValueStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+        </Style>
+
+        <Style x:Key="FilterTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
+            <Setter Property="Width" Value="260"/>
+            <Setter Property="MinHeight" Value="26"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="8,3"/>
+        </Style>
+
+        <Style x:Key="FilterComboStyle" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
-            <Setter Property="FontFamily" Value="Segoe MDL2 Assets"/>
-            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="MinHeight" Value="26"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="IsEditable" Value="False"/>
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Root"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}">
-                            <ContentPresenter HorizontalAlignment="Center"
-                                              VerticalAlignment="Center"/>
-                        </Border>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <Border x:Name="SelectorBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"/>
+                            <ContentPresenter Margin="8,1,26,1"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Left"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                              IsHitTestVisible="False"/>
+                            <Path HorizontalAlignment="Right"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,8,0"
+                                  Data="M 0 0 L 8 0 L 4 4 Z"
+                                  Fill="{DynamicResource WinTextBrush}"
+                                  IsHitTestVisible="False"/>
+                            <ToggleButton Background="Transparent"
+                                          BorderThickness="0"
+                                          Focusable="False"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                          ClickMode="Press">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="Transparent"
+                                                BorderBrush="Transparent"
+                                                BorderThickness="0"/>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   Focusable="False"
+                                   AllowsTransparency="True"
+                                   PopupAnimation="Fade">
+                                <Border Margin="0,2,0,0"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        Background="{DynamicResource WinPanelBrush}"
+                                        BorderBrush="{DynamicResource WinBorderBrush}"
+                                        BorderThickness="1">
+                                    <ScrollViewer MaxHeight="280"
+                                                  CanContentScroll="True"
+                                                  Background="{DynamicResource WinPanelBrush}"
+                                                  Foreground="{DynamicResource WinTextBrush}"
+                                                  BorderThickness="0">
+                                        <StackPanel IsItemsHost="True"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
-                                <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
-                                <Setter TargetName="Root" Property="BorderThickness" Value="1"/>
+                                <Setter TargetName="SelectorBorder" Property="BorderBrush" Value="{DynamicResource WinAccentBrush}"/>
                             </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource WinBorderBrush}"/>
+                            <Trigger Property="IsDropDownOpen" Value="True">
+                                <Setter TargetName="SelectorBorder" Property="BorderBrush" Value="{DynamicResource WinAccentBrush}"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter Property="Opacity" Value="0.55"/>
+                                <Setter Property="Opacity" Value="0.6"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="FilterComboItemStyle" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+            <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+            <Setter Property="Padding" Value="8,3"/>
+            <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter Property="Background" Value="#FF2A2A2A"/>
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#334C8FD2"/>
+                    <Setter Property="Foreground" Value="#FFF1F5FF"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
+
     <Grid Margin="0">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0"
-                Background="{DynamicResource WinPanelBrush}"
-                BorderBrush="{DynamicResource WinBorderBrush}"
-                BorderThickness="1"
-                Padding="10,8"
+                Style="{DynamicResource SecondaryWindowTitleBarBorderStyle}"
                 MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -69,93 +152,161 @@
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0">
                     <TextBlock x:Name="HeaderBlock"
-                               FontSize="14"
-                               FontWeight="SemiBold"
+                               Style="{DynamicResource SecondaryWindowTitleTextStyle}"
                                Text="Direct Syscall Suspects"/>
                     <TextBlock x:Name="SummaryBlock"
-                               Margin="0,2,0,0"
-                               Foreground="{DynamicResource WinMutedTextBrush}"
+                               Style="{DynamicResource SecondaryWindowSubtitleTextStyle}"
                                Text="No suspect entries"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1"
                             Orientation="Horizontal"
-                            Margin="8,0,0,0"
-                            VerticalAlignment="Center">
-                    <Button Style="{StaticResource TitleBarGlyphButtonStyle}"
+                            VerticalAlignment="Top">
+                    <Button Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
                             Content="&#xE921;"
                             Click="WindowMinimize_Click"/>
-                    <Button Style="{StaticResource TitleBarGlyphButtonStyle}"
+                    <Button Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
                             Content="&#xE922;"
-                            Margin="4,0,0,0"
                             Click="WindowMaximize_Click"/>
-                    <Button Style="{StaticResource TitleBarGlyphButtonStyle}"
+                    <Button Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
+                            Tag="Close"
                             Content="&#xE8BB;"
-                            Margin="4,0,0,0"
                             Click="WindowClose_Click"/>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <Grid Grid.Row="1" Margin="0,8,0,0">
+        <Border Grid.Row="1"
+                Margin="8,8,8,0"
+                Style="{DynamicResource SecondaryWindowSurfaceBorderStyle}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="96"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="96"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="96"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource SummaryLabelStyle}" Text="Detection"/>
+                <TextBlock x:Name="DetectionSummaryBlock" Grid.Row="0" Grid.Column="1" Style="{StaticResource SummaryValueStyle}" FontWeight="SemiBold"/>
+                <TextBlock Grid.Row="0" Grid.Column="2" Style="{StaticResource SummaryLabelStyle}" Text="Time Window"/>
+                <TextBlock x:Name="WindowRangeBlock" Grid.Row="0" Grid.Column="3" Style="{StaticResource SummaryValueStyle}"/>
+                <TextBlock Grid.Row="0" Grid.Column="4" Style="{StaticResource SummaryLabelStyle}" Text="Entries"/>
+                <TextBlock x:Name="EntryCountBlock" Grid.Row="0" Grid.Column="5" Style="{StaticResource SummaryValueStyle}"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource SummaryLabelStyle}" Margin="0,4,8,0" Text="Groups"/>
+                <TextBlock x:Name="GroupCountBlock" Grid.Row="1" Grid.Column="1" Style="{StaticResource SummaryValueStyle}" Margin="0,4,0,0"/>
+                <TextBlock Grid.Row="1" Grid.Column="2" Style="{StaticResource SummaryLabelStyle}" Margin="0,4,8,0" Text="Top Actor"/>
+                <TextBlock x:Name="TopActorBlock" Grid.Row="1" Grid.Column="3" Style="{StaticResource SummaryValueStyle}" Margin="0,4,0,0"/>
+                <TextBlock Grid.Row="1" Grid.Column="4" Style="{StaticResource SummaryLabelStyle}" Margin="0,4,8,0" Text="Top Target"/>
+                <TextBlock x:Name="TopTargetBlock" Grid.Row="1" Grid.Column="5" Style="{StaticResource SummaryValueStyle}" Margin="0,4,0,0"/>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2"
+                Margin="8,8,8,0"
+                Style="{DynamicResource SecondaryWindowFilterBarStyle}">
+            <WrapPanel>
+                <TextBox x:Name="SearchBox"
+                         Style="{StaticResource FilterTextBoxStyle}"
+                         ToolTip="Search syscall, actor, target, detection, context"
+                         TextChanged="SearchFilter_Changed"/>
+                <ComboBox x:Name="SeverityFilterBox"
+                          Style="{StaticResource FilterComboStyle}"
+                          ItemContainerStyle="{StaticResource FilterComboItemStyle}"
+                          Width="150"
+                          SelectionChanged="SearchFilter_Changed"/>
+                <CheckBox x:Name="GroupBySyscallToggle"
+                          Content="Group by syscall"
+                          VerticalAlignment="Center"
+                          Margin="0,4,8,0"
+                          IsChecked="True"
+                          Checked="GroupBySyscallToggle_Changed"
+                          Unchecked="GroupBySyscallToggle_Changed"/>
+            </WrapPanel>
+        </Border>
+
+        <Grid Grid.Row="3" Margin="8,8,8,8">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="2.3*"/>
+                <ColumnDefinition Width="2.25*"/>
                 <ColumnDefinition Width="8"/>
-                <ColumnDefinition Width="1.7*"/>
+                <ColumnDefinition Width="1.75*"/>
             </Grid.ColumnDefinitions>
 
             <Border Grid.Column="0"
-                    Background="{DynamicResource WinPanelBrush}"
-                    BorderBrush="{DynamicResource WinBorderBrush}"
-                    BorderThickness="1">
+                    Style="{DynamicResource SecondaryWindowSurfaceBorderStyle}"
+                    Padding="0">
                 <DataGrid x:Name="SuspectsGrid"
-                          Margin="8"
+                          Style="{DynamicResource SecondaryDenseDataGridStyle}"
                           AutoGenerateColumns="False"
                           IsReadOnly="True"
-                          RowHeight="22"
-                          ColumnHeaderHeight="24"
-                          Background="{DynamicResource WinPanelBrush}"
-                          RowBackground="{DynamicResource WinPanelBrush}"
-                          AlternatingRowBackground="{DynamicResource WinPanelBrush}"
-                          BorderBrush="{DynamicResource WinBorderBrush}"
-                          HorizontalGridLinesBrush="{DynamicResource WinSubtleBorderBrush}"
-                          VerticalGridLinesBrush="{DynamicResource WinSubtleBorderBrush}"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          CanUserResizeRows="False"
+                          CanUserSortColumns="True"
+                          RowHeaderWidth="0"
+                          ScrollViewer.CanContentScroll="True"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.IsVirtualizingWhenGrouping="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling"
+                          EnableRowVirtualization="True"
+                          IsSynchronizedWithCurrentItem="False"
+                          SelectedIndex="-1"
                           SelectionChanged="SuspectsGrid_SelectionChanged">
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow" BasedOn="{StaticResource AppDataGridRowStyle}">
+                            <Setter Property="Background" Value="{Binding RowBackground}"/>
+                            <Setter Property="BorderBrush" Value="{Binding RowBorder}"/>
+                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="BorderThickness" Value="0"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.RowStyle>
                     <DataGrid.GroupStyle>
                         <GroupStyle>
                             <GroupStyle.ContainerStyle>
                                 <Style TargetType="{x:Type GroupItem}">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                                     <Setter Property="Template">
                                         <Setter.Value>
                                             <ControlTemplate TargetType="{x:Type GroupItem}">
-                                                <Expander IsExpanded="False">
-                                                    <Expander.Header>
-                                                        <Grid>
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="180"/>
-                                                                <ColumnDefinition Width="140"/>
-                                                                <ColumnDefinition Width="*"/>
-                                                                <ColumnDefinition Width="52"/>
-                                                            </Grid.ColumnDefinitions>
-                                                            <TextBlock Grid.Column="0"
-                                                                       FontWeight="SemiBold"
-                                                                       Text="{Binding Name}"/>
-                                                            <TextBlock Grid.Column="1"
-                                                                       Foreground="{DynamicResource WinMutedTextBrush}"
-                                                                       Text="{Binding Items[0].TimestampUtc, StringFormat=HH:mm:ss.fff}"/>
-                                                            <TextBlock Grid.Column="2"
-                                                                       Margin="8,0,6,0"
-                                                                       TextTrimming="CharacterEllipsis"
-                                                                       Foreground="{DynamicResource WinMutedTextBrush}"
-                                                                       Text="{Binding Items[0].DetectionSummary}"/>
-                                                            <TextBlock Grid.Column="3"
-                                                                       HorizontalAlignment="Right"
-                                                                       FontWeight="SemiBold"
-                                                                       Foreground="{DynamicResource WinMutedTextBrush}"
-                                                                       Text="{Binding ItemCount, StringFormat={}x{0}}"/>
-                                                        </Grid>
-                                                    </Expander.Header>
-                                                    <ItemsPresenter/>
-                                                </Expander>
+                                                <Border BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                        BorderThickness="0,0,0,1">
+                                                    <Expander IsExpanded="False"
+                                                              HorizontalAlignment="Stretch"
+                                                              Background="Transparent">
+                                                        <Expander.Header>
+                                                            <Grid Margin="6,2,6,2">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="138"/>
+                                                                    <ColumnDefinition Width="72"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Grid.Column="0"
+                                                                           FontWeight="SemiBold"
+                                                                           Text="{Binding Name}"
+                                                                           TextTrimming="CharacterEllipsis"/>
+                                                                <TextBlock Grid.Column="1"
+                                                                           Text="{Binding Items[0].TimestampUtc, StringFormat=HH:mm:ss.fff}"
+                                                                           Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                                <TextBlock Grid.Column="2"
+                                                                           HorizontalAlignment="Right"
+                                                                           FontWeight="SemiBold"
+                                                                           Foreground="{DynamicResource WinMutedTextBrush}"
+                                                                           Text="{Binding ItemCount, StringFormat={}x{0}}"/>
+                                                            </Grid>
+                                                        </Expander.Header>
+                                                        <ItemsPresenter/>
+                                                    </Expander>
+                                                </Border>
                                             </ControlTemplate>
                                         </Setter.Value>
                                     </Setter>
@@ -164,81 +315,105 @@
                         </GroupStyle>
                     </DataGrid.GroupStyle>
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Time" Width="110" Binding="{Binding TimestampUtc, StringFormat=HH:mm:ss.fff}"/>
-                        <DataGridTextColumn Header="Syscall" Width="190" Binding="{Binding SyscallLabel}"/>
-                        <DataGridTextColumn Header="Actor" Width="180" Binding="{Binding Actor}"/>
-                        <DataGridTextColumn Header="Target" Width="180" Binding="{Binding Target}"/>
-                        <DataGridTextColumn Header="Detection" Width="*" Binding="{Binding Detection}"/>
+                        <DataGridTextColumn Header="Time" Width="112" Binding="{Binding TimestampUtc, StringFormat=HH:mm:ss.fff}"/>
+                        <DataGridTextColumn Header="Syscall" Width="1.05*" Binding="{Binding SyscallLabel}"/>
+                        <DataGridTextColumn Header="Actor" Width="*" Binding="{Binding Actor}"/>
+                        <DataGridTextColumn Header="Target" Width="*" Binding="{Binding Target}"/>
+                        <DataGridTextColumn Header="Severity" Width="88" Binding="{Binding Severity}"/>
+                        <DataGridTextColumn Header="Detection" Width="1.2*" Binding="{Binding Detection}"/>
                     </DataGrid.Columns>
                 </DataGrid>
             </Border>
 
             <Border Grid.Column="2"
-                    Background="{DynamicResource WinPanelBrush}"
-                    BorderBrush="{DynamicResource WinBorderBrush}"
-                    BorderThickness="1"
-                    Padding="10,8">
+                    Style="{DynamicResource SecondaryWindowSurfaceBorderStyle}"
+                    Padding="0">
                 <ScrollViewer VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel>
-                        <TextBlock Text="Syscall Overview" FontWeight="SemiBold"/>
-                        <TextBlock x:Name="OverviewBlock"
-                                   Margin="0,4,0,10"
-                                   Foreground="{DynamicResource WinMutedTextBrush}"
-                                   TextWrapping="Wrap"/>
+                              HorizontalScrollBarVisibility="Disabled"
+                              Padding="0"
+                              CanContentScroll="False">
+                    <Border Padding="8" Background="Transparent">
+                        <StackPanel>
+                            <TextBlock Text="Details Inspector"
+                                       Style="{DynamicResource SecondaryWindowTitleTextStyle}"
+                                       FontSize="12"/>
 
-                        <TextBlock Text="Arguments / Context" FontWeight="SemiBold"/>
-                        <DataGrid x:Name="ArgumentsGrid"
-                                  Margin="0,4,0,10"
-                                  AutoGenerateColumns="False"
-                                  IsReadOnly="True"
-                                  CanUserResizeRows="False"
-                                  ColumnHeaderHeight="22"
-                                  RowHeight="22"
-                                  MinHeight="72">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="Field" Width="140" Binding="{Binding Key}"/>
-                                <DataGridTextColumn Header="Value" Width="*" Binding="{Binding Value}"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
+                            <TextBlock Text="Overview"
+                                       Style="{DynamicResource SecondaryWindowSectionHeaderStyle}"
+                                       Margin="0,8,0,4"/>
+                            <TextBlock x:Name="OverviewBlock"
+                                       TextWrapping="Wrap"
+                                       Foreground="{DynamicResource WinMutedTextBrush}"/>
 
-                        <TextBlock Text="Execution Context" FontWeight="SemiBold"/>
-                        <DataGrid x:Name="ContextGrid"
-                                  Margin="0,4,0,10"
-                                  AutoGenerateColumns="False"
-                                  IsReadOnly="True"
-                                  CanUserResizeRows="False"
-                                  ColumnHeaderHeight="22"
-                                  RowHeight="22"
-                                  MinHeight="72">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="Field" Width="140" Binding="{Binding Key}"/>
-                                <DataGridTextColumn Header="Value" Width="*" Binding="{Binding Value}"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
+                            <TextBlock Text="Arguments / Context"
+                                       Style="{DynamicResource SecondaryWindowSectionHeaderStyle}"
+                                       Margin="0,8,0,4"/>
+                            <DataGrid x:Name="ArgumentsGrid"
+                                      Style="{DynamicResource SecondaryDenseDataGridStyle}"
+                                      Margin="0,0,0,8"
+                                      AutoGenerateColumns="False"
+                                      IsReadOnly="True"
+                                      CanUserReorderColumns="False"
+                                      CanUserSortColumns="False"
+                                      MinHeight="100"
+                                      MaxHeight="220"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Field" Width="140" Binding="{Binding Key}"/>
+                                    <DataGridTextColumn Header="Value" Width="*" Binding="{Binding Value}"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
 
-                        <Button x:Name="OpenDisassemblyButton"
-                                Content="Open Disassembly Window"
-                                Width="190"
-                                Height="24"
-                                HorizontalAlignment="Left"
-                                Margin="0,0,0,10"
-                                Click="OpenDisassemblyButton_Click"/>
+                            <TextBlock Text="Execution Context"
+                                       Style="{DynamicResource SecondaryWindowSectionHeaderStyle}"
+                                       Margin="0,0,0,4"/>
+                            <DataGrid x:Name="ContextGrid"
+                                      Style="{DynamicResource SecondaryDenseDataGridStyle}"
+                                      Margin="0,0,0,8"
+                                      AutoGenerateColumns="False"
+                                      IsReadOnly="True"
+                                      CanUserReorderColumns="False"
+                                      CanUserSortColumns="False"
+                                      MinHeight="100"
+                                      MaxHeight="220"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Field" Width="140" Binding="{Binding Key}"/>
+                                    <DataGridTextColumn Header="Value" Width="*" Binding="{Binding Value}"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
 
-                        <Expander Margin="0,6,0,0"
-                                  Header="Raw Event"
-                                  IsExpanded="False">
-                            <TextBox x:Name="RawBox"
-                                     Margin="0,6,0,0"
-                                     IsReadOnly="True"
-                                     TextWrapping="Wrap"
-                                     VerticalScrollBarVisibility="Auto"
-                                     MinHeight="120"
-                                     Background="{DynamicResource WinHeaderBrush}"
-                                     Foreground="{DynamicResource WinTextBrush}"
-                                     BorderBrush="{DynamicResource WinBorderBrush}"/>
-                        </Expander>
-                    </StackPanel>
+                            <Button x:Name="OpenDisassemblyButton"
+                                    Content="Copy Disassembly"
+                                    MinWidth="148"
+                                    MinHeight="26"
+                                    HorizontalAlignment="Left"
+                                    Margin="0,0,0,8"
+                                    Click="OpenDisassemblyButton_Click"/>
+
+                            <Expander Header="Raw Event" IsExpanded="False">
+                                <Border Margin="0,6,0,0"
+                                        MinHeight="120"
+                                        Background="{DynamicResource WinHeaderBrush}"
+                                        BorderBrush="{DynamicResource WinBorderBrush}"
+                                        BorderThickness="1">
+                                    <TextBox x:Name="RawBox"
+                                             BorderThickness="0"
+                                             Padding="8"
+                                             IsReadOnly="True"
+                                             TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto"
+                                             HorizontalScrollBarVisibility="Disabled"
+                                             MinHeight="120"
+                                             AcceptsReturn="True"
+                                             FontFamily="Consolas"
+                                             FontSize="12"
+                                             Background="Transparent"
+                                             Foreground="{DynamicResource WinTextBrush}"/>
+                                </Border>
+                            </Expander>
+                        </StackPanel>
+                    </Border>
                 </ScrollViewer>
             </Border>
         </Grid>

@@ -3,15 +3,37 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Process Filter"
         Height="760"
-        Width="1360"
+        Width="1560"
         MinHeight="620"
-        MinWidth="1080"
+        MinWidth="1240"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None"
         ResizeMode="CanResize"
         Background="{DynamicResource WinBgBrush}">
 
     <Window.Resources>
+        <Style x:Key="PickerFlatButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderBrush" Value="Transparent"/>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderBrush" Value="Transparent"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.55"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="ProcessRowStyle"
                TargetType="DataGridRow">
             <Setter Property="Background" Value="{Binding RowBackground}"/>
@@ -143,6 +165,23 @@
                 </Trigger>
             </Style.Triggers>
         </Style>
+
+        <Style x:Key="PickerSlimScrollBarStyle"
+               TargetType="ScrollBar"
+               BasedOn="{StaticResource {x:Type ScrollBar}}">
+            <Setter Property="Width" Value="7"/>
+            <Setter Property="Height" Value="7"/>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Height" Value="7"/>
+                    <Setter Property="Width" Value="Auto"/>
+                </Trigger>
+                <Trigger Property="Orientation" Value="Vertical">
+                    <Setter Property="Width" Value="7"/>
+                    <Setter Property="Height" Value="Auto"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="10">
@@ -150,8 +189,9 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="146"/>
-            <RowDefinition Height="8"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition x:Name="RulesRow" Height="0"/>
+            <RowDefinition x:Name="RulesSpacerRow" Height="0"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -165,13 +205,60 @@
                        VerticalAlignment="Center"/>
             <Button DockPanel.Dock="Right"
                     Content="✕"
-                    Width="26"
-                    Height="24"
+                    Width="28"
+                    Height="22"
                     Margin="8,0,0,0"
+                    VerticalAlignment="Top"
+                    HorizontalContentAlignment="Center"
+                    VerticalContentAlignment="Center"
+                    Padding="0"
+                    FontSize="13"
+                    Style="{DynamicResource PickerFlatButtonStyle}"
                     Click="Cancel_Click"/>
         </DockPanel>
 
         <Grid Grid.Row="1" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="360"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="120"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       Text="Quick search:"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource WinMutedTextBrush}"
+                       Margin="0,0,8,0"/>
+            <TextBox Grid.Column="1"
+                     x:Name="QuickSearchBox"
+                     TextChanged="QuickSearchBox_TextChanged"/>
+
+            <TextBlock Grid.Column="3"
+                       Text="Refresh:"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource WinMutedTextBrush}"
+                       Margin="12,0,6,0"/>
+            <ComboBox Grid.Column="4"
+                      x:Name="RefreshIntervalBox"
+                      Style="{DynamicResource PickerComboStyle}"
+                      ItemContainerStyle="{DynamicResource PickerComboItemStyle}"
+                      SelectionChanged="RefreshIntervalBox_SelectionChanged">
+                <ComboBoxItem Content="1s"/>
+                <ComboBoxItem Content="2s" IsSelected="True"/>
+                <ComboBoxItem Content="5s"/>
+            </ComboBox>
+
+            <Button Grid.Column="5"
+                    Content="Refresh Now"
+                    Margin="8,0,0,0"
+                    Style="{DynamicResource PickerFlatButtonStyle}"
+                    Click="Refresh_Click"/>
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="220"/>
                 <ColumnDefinition Width="130"/>
@@ -229,7 +316,10 @@
             </ComboBox>
         </Grid>
 
-        <Grid Grid.Row="2" Margin="0,0,0,8">
+        <Grid Grid.Row="3"
+              x:Name="RuleActionsBar"
+              Margin="0,0,0,8"
+              Visibility="Collapsed">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
@@ -237,55 +327,43 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="280"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="120"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0" Content="Reset" Width="90" Click="ResetRules_Click"/>
-            <Button Grid.Column="1" Content="Add" Width="90" Margin="8,0,0,0" Click="AddRule_Click"/>
-            <Button Grid.Column="2" Content="Up" Width="64" Margin="8,0,0,0" Click="MoveRuleUp_Click"/>
-            <Button Grid.Column="3" Content="Down" Width="64" Margin="8,0,0,0" Click="MoveRuleDown_Click"/>
-
-            <TextBlock Grid.Column="5"
-                       Text="Quick search:"
-                       VerticalAlignment="Center"
-                       Foreground="{DynamicResource WinMutedTextBrush}"
-                       Margin="0,0,8,0"/>
-            <TextBox Grid.Column="6"
-                     x:Name="QuickSearchBox"
-                     TextChanged="QuickSearchBox_TextChanged"/>
-
-            <TextBlock Grid.Column="7"
-                       Text="Refresh:"
-                       VerticalAlignment="Center"
-                       Foreground="{DynamicResource WinMutedTextBrush}"
-                       Margin="12,0,6,0"/>
-            <ComboBox Grid.Column="8"
-                      x:Name="RefreshIntervalBox"
-                      Style="{DynamicResource PickerComboStyle}"
-                      ItemContainerStyle="{DynamicResource PickerComboItemStyle}"
-                      SelectionChanged="RefreshIntervalBox_SelectionChanged">
-                <ComboBoxItem Content="1s"/>
-                <ComboBoxItem Content="2s" IsSelected="True"/>
-                <ComboBoxItem Content="5s"/>
-            </ComboBox>
-
-            <Button Grid.Column="9"
-                    Content="Refresh Now"
+            <Button Grid.Column="0"
+                    Content="Reset"
+                    Width="90"
+                    Style="{DynamicResource PickerFlatButtonStyle}"
+                    Click="ResetRules_Click"/>
+            <Button Grid.Column="1"
+                    Content="Add"
+                    Width="90"
                     Margin="8,0,0,0"
-                    Click="Refresh_Click"/>
-            <Button Grid.Column="10"
+                    Style="{DynamicResource PickerFlatButtonStyle}"
+                    Click="AddRule_Click"/>
+            <Button Grid.Column="2"
+                    Content="Up"
+                    Width="64"
+                    Margin="8,0,0,0"
+                    Style="{DynamicResource PickerFlatButtonStyle}"
+                    Click="MoveRuleUp_Click"/>
+            <Button Grid.Column="3"
+                    Content="Down"
+                    Width="64"
+                    Margin="8,0,0,0"
+                    Style="{DynamicResource PickerFlatButtonStyle}"
+                    Click="MoveRuleDown_Click"/>
+
+            <Button Grid.Column="5"
                     Content="Remove"
                     Width="90"
                     Margin="8,0,0,0"
+                    Style="{DynamicResource PickerFlatButtonStyle}"
                     Click="RemoveRule_Click"/>
         </Grid>
 
-        <DataGrid Grid.Row="3"
+        <DataGrid Grid.Row="4"
                   x:Name="RulesGrid"
+                  Visibility="Collapsed"
                   AutoGenerateColumns="False"
                   IsReadOnly="True"
                   SelectionMode="Single"
@@ -297,6 +375,9 @@
                   CanUserReorderColumns="True"
                   CanUserResizeColumns="True"
                   CurrentCellChanged="RulesGrid_CurrentCellChanged">
+            <DataGrid.Resources>
+                <Style TargetType="ScrollBar" BasedOn="{StaticResource PickerSlimScrollBarStyle}"/>
+            </DataGrid.Resources>
             <DataGrid.Columns>
                 <DataGridTemplateColumn Header="" Width="34">
                     <DataGridTemplateColumn.CellTemplate>
@@ -315,10 +396,15 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <DataGrid Grid.Row="5"
+        <DataGrid Grid.Row="6"
                   x:Name="ProcessGrid"
                   AutoGenerateColumns="False"
                   IsReadOnly="True"
+                  BorderThickness="0"
+                  BorderBrush="Transparent"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                  GridLinesVisibility="None"
                   SelectionMode="Single"
                   ColumnHeaderHeight="24"
                   RowHeight="22"
@@ -326,9 +412,128 @@
                   CanUserReorderColumns="True"
                   CanUserResizeColumns="True"
                   RowStyle="{DynamicResource ProcessRowStyle}"
+                  Sorting="ProcessGrid_Sorting"
                   MouseDoubleClick="ProcessGrid_MouseDoubleClick">
+            <DataGrid.Resources>
+                <Style TargetType="ScrollBar" BasedOn="{StaticResource PickerSlimScrollBarStyle}"/>
+                <Style TargetType="ScrollViewer">
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ScrollViewer">
+                                <Grid Background="{TemplateBinding Background}"
+                                      SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}">
+                                    <ScrollContentPresenter x:Name="PART_ScrollContentPresenter"
+                                                            CanContentScroll="{TemplateBinding CanContentScroll}"/>
+
+                                    <ScrollBar x:Name="PART_VerticalScrollBar"
+                                               Style="{StaticResource PickerSlimScrollBarStyle}"
+                                               Orientation="Vertical"
+                                               HorizontalAlignment="Right"
+                                               VerticalAlignment="Stretch"
+                                               Width="7"
+                                               Margin="0,2,2,10"
+                                               Maximum="{TemplateBinding ScrollableHeight}"
+                                               ViewportSize="{TemplateBinding ViewportHeight}"
+                                               Value="{Binding VerticalOffset, RelativeSource={RelativeSource TemplatedParent}}"
+                                               Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"
+                                               Opacity="0"/>
+
+                                    <ScrollBar x:Name="PART_HorizontalScrollBar"
+                                               Style="{StaticResource PickerSlimScrollBarStyle}"
+                                               Orientation="Horizontal"
+                                               HorizontalAlignment="Stretch"
+                                               VerticalAlignment="Bottom"
+                                               Height="7"
+                                               Margin="2,0,10,2"
+                                               Maximum="{TemplateBinding ScrollableWidth}"
+                                               ViewportSize="{TemplateBinding ViewportWidth}"
+                                               Value="{Binding HorizontalOffset, RelativeSource={RelativeSource TemplatedParent}}"
+                                               Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}"
+                                               Opacity="0"/>
+                                </Grid>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="PART_VerticalScrollBar" Property="Opacity" Value="0.35"/>
+                                        <Setter TargetName="PART_HorizontalScrollBar" Property="Opacity" Value="0.35"/>
+                                    </Trigger>
+                                    <Trigger SourceName="PART_VerticalScrollBar" Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="PART_VerticalScrollBar" Property="Opacity" Value="0.95"/>
+                                    </Trigger>
+                                    <Trigger SourceName="PART_HorizontalScrollBar" Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="PART_HorizontalScrollBar" Property="Opacity" Value="0.95"/>
+                                    </Trigger>
+                                    <Trigger SourceName="PART_VerticalScrollBar" Property="IsEnabled" Value="False">
+                                        <Setter TargetName="PART_VerticalScrollBar" Property="Opacity" Value="0"/>
+                                    </Trigger>
+                                    <Trigger SourceName="PART_HorizontalScrollBar" Property="IsEnabled" Value="False">
+                                        <Setter TargetName="PART_HorizontalScrollBar" Property="Opacity" Value="0"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+                <Style TargetType="DataGridCell" BasedOn="{StaticResource AppDataGridCellStyle}">
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="BorderBrush" Value="Transparent"/>
+                </Style>
+                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource AppDataGridColumnHeaderStyle}">
+                    <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="DataGridColumnHeader">
+                                <Border x:Name="HeaderBorder"
+                                        Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        Padding="{TemplateBinding Padding}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <ContentPresenter Grid.Column="0"
+                                                          VerticalAlignment="Center"
+                                                          HorizontalAlignment="Left"
+                                                          RecognizesAccessKey="True"/>
+
+                                        <Path x:Name="SortGlyph"
+                                              Grid.Column="1"
+                                              Margin="6,0,0,0"
+                                              Width="7"
+                                              Height="5"
+                                              Stretch="Fill"
+                                              Stroke="{DynamicResource WinMutedTextBrush}"
+                                              StrokeThickness="1.0"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              StrokeLineJoin="Round"
+                                              Fill="Transparent"
+                                              Data="M 0 1.5 L 3.5 4 L 7 1.5"
+                                              Visibility="Collapsed"
+                                              VerticalAlignment="Center"/>
+                                    </Grid>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="SortDirection" Value="Ascending">
+                                        <Setter TargetName="SortGlyph" Property="Visibility" Value="Visible"/>
+                                        <Setter TargetName="SortGlyph" Property="Data" Value="M 0 3.8 L 3.5 1.2 L 7 3.8"/>
+                                        <Setter TargetName="SortGlyph" Property="Stroke" Value="{DynamicResource WinTextBrush}"/>
+                                    </Trigger>
+                                    <Trigger Property="SortDirection" Value="Descending">
+                                        <Setter TargetName="SortGlyph" Property="Visibility" Value="Visible"/>
+                                        <Setter TargetName="SortGlyph" Property="Data" Value="M 0 1.2 L 3.5 3.8 L 7 1.2"/>
+                                        <Setter TargetName="SortGlyph" Property="Stroke" Value="{DynamicResource WinTextBrush}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </DataGrid.Resources>
             <DataGrid.Columns>
-                <DataGridTemplateColumn Header="Process" Width="200">
+                <DataGridTemplateColumn Header="Process" Width="200" SortMemberPath="Name">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <DockPanel LastChildFill="True" Margin="2,0,2,0">
@@ -360,20 +565,25 @@
                 <DataGridTextColumn Header="Sandbox" Binding="{Binding SandboxStatus}" Width="88"/>
                 <DataGridTextColumn Header="Relation" Binding="{Binding Relation}" Width="70"/>
                 <DataGridTextColumn Header="Parent" Binding="{Binding ParentName}" Width="145"/>
-                <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="*"/>
+                <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="260"/>
             </DataGrid.Columns>
         </DataGrid>
 
-        <DockPanel Grid.Row="6" Margin="0,8,0,0" LastChildFill="False">
+        <DockPanel Grid.Row="7" Margin="0,8,0,0" LastChildFill="False">
             <Button Content="Open .exe..."
                     DockPanel.Dock="Left"
+                    Background="#FF2F6ED8"
+                    BorderBrush="#FF3F86FF"
+                    Foreground="#FFF4F8FF"
                     Click="OpenExe_Click"/>
             <Button Content="Cancel"
                     DockPanel.Dock="Right"
+                    Style="{DynamicResource PickerFlatButtonStyle}"
                     Click="Cancel_Click"/>
             <Button Content="Use Selected"
                     DockPanel.Dock="Right"
                     Margin="0,0,8,0"
+                    Style="{DynamicResource PickerFlatButtonStyle}"
                     Click="Select_Click"/>
         </DockPanel>
     </Grid>

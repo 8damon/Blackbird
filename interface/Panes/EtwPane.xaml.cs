@@ -14,6 +14,7 @@ namespace SleepwalkerInterface
         public event RoutedEventHandler? ReorderRequested;
         public event RoutedEventHandler? FloatRequested;
         public event RoutedEventHandler? CloseRequested;
+        public event RoutedEventHandler? InspectRequested;
 
         private readonly ObservableCollection<GroupedEventRow> _items = new();
         private readonly Dictionary<string, GroupedEventRow> _byKey = new(StringComparer.Ordinal);
@@ -43,11 +44,7 @@ namespace SleepwalkerInterface
             string source = string.IsNullOrWhiteSpace(entry.Source) ? "Sleepwalker" : entry.Source;
             string actor = ProcessIdentityResolver.Describe(entry.ActorPid);
             string target = ProcessIdentityResolver.Describe(entry.TargetPid);
-            string reason = string.IsNullOrWhiteSpace(entry.Reason) ? "<none>" : entry.Reason;
-            string corrFlags = EventDetailFormatting.DescribeCorrelationFlags(entry.CorrelationFlags);
-            string corrAccess = EventDetailFormatting.DescribeHandleAccess(entry.CorrelationAccessMask);
-            string detailText =
-                $"src={source} task={entry.Task} opcode={entry.Opcode} id={entry.EventId} eventPid={entry.EventProcessId} eventTid={entry.EventThreadId} corrFlags=0x{entry.CorrelationFlags:X8}({corrFlags}) corrAccess=0x{entry.CorrelationAccessMask:X8}({corrAccess}) corrAgeMs={entry.CorrelationAgeMs} reason={reason}";
+            string detailText = entry.Details;
             string key =
                 $"{eventName}|{severity}|{detection}|{source}";
 
@@ -70,6 +67,8 @@ namespace SleepwalkerInterface
                     Source = source,
                     Actor = actor,
                     Target = target,
+                    ActorPid = entry.ActorPid,
+                    TargetPid = entry.TargetPid,
                     Details = detailText
                 });
 
@@ -105,6 +104,8 @@ namespace SleepwalkerInterface
                             Source = source,
                             Actor = actor,
                             Target = target,
+                            ActorPid = entry.ActorPid,
+                            TargetPid = entry.TargetPid,
                             Details = detailText
                         }
                     }
@@ -126,6 +127,9 @@ namespace SleepwalkerInterface
 
         internal IReadOnlyList<GroupedEventRow> SnapshotItems()
             => _items.Select(x => x.Clone()).ToList();
+
+        internal GroupedEventRow? GetSelectedGroupClone()
+            => (EventsGrid.SelectedItem as GroupedEventRow)?.Clone();
 
         internal void LoadHistory(IEnumerable<GroupedEventRow> groups)
         {
@@ -196,110 +200,15 @@ namespace SleepwalkerInterface
 
         private void EventsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            GroupedEventRow? selected = GetRowFromSource(e.OriginalSource as DependencyObject)
-                ?? EventsGrid.SelectedItem as GroupedEventRow;
-            if (selected == null)
+            _ = sender;
+            _ = e;
+            if (EventsGrid.SelectedItem is GroupedEventRow)
             {
-                return;
+                InspectRequested?.Invoke(this, new RoutedEventArgs());
             }
-
-            Window? owner = Window.GetWindow(this);
-            IReadOnlyList<GroupedEventDetailRow> details = ResolveDetails(selected, owner);
-            GroupedEventDetailsWindow.ShowUnified(
-                owner,
-                IntelDetailsCategory.Etw,
-                $"Sleepwalker ETW: {selected.Event}",
-                details);
         }
 
-        private static GroupedEventRow? GetRowFromSource(DependencyObject? source)
-        {
-            while (source != null)
-            {
-                if (source is DataGridRow row && row.Item is GroupedEventRow item)
-                {
-                    return item;
-                }
-
-                source = VisualTreeHelper.GetParent(source);
-            }
-
-            return null;
-        }
-
-        private static IReadOnlyList<GroupedEventDetailRow> ResolveDetails(GroupedEventRow selected, Window? owner)
-        {
-            if (selected.Details.Count > 0)
-            {
-                return selected.Details;
-            }
-
-            IIntelDetailsProvider? provider = ResolveProvider(owner);
-            if (provider == null)
-            {
-                return Array.Empty<GroupedEventDetailRow>();
-            }
-
-            string sourceHint = ExtractSourceFromGroupKey(selected.GroupKey);
-            IReadOnlyList<GroupedEventDetailRow> all = provider.GetIntelDetails(IntelDetailsCategory.Etw);
-            List<GroupedEventDetailRow> exact = all
-                .Where(x =>
-                    x.Event.Equals(selected.Event, StringComparison.OrdinalIgnoreCase) &&
-                    x.Severity.Equals(selected.Severity, StringComparison.OrdinalIgnoreCase) &&
-                    x.Detection.Equals(selected.Detection, StringComparison.OrdinalIgnoreCase) &&
-                    (string.IsNullOrWhiteSpace(sourceHint) || x.Source.Equals(sourceHint, StringComparison.OrdinalIgnoreCase)))
-                .ToList();
-            if (exact.Count > 0)
-            {
-                return exact;
-            }
-
-            return all
-                .Where(x =>
-                    x.Event.Equals(selected.Event, StringComparison.OrdinalIgnoreCase) &&
-                    x.Detection.Equals(selected.Detection, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-        }
-
-        private static IIntelDetailsProvider? ResolveProvider(Window? owner)
-        {
-            Window? cursor = owner;
-            while (cursor != null)
-            {
-                if (cursor is IIntelDetailsProvider provider)
-                {
-                    return provider;
-                }
-
-                cursor = cursor.Owner;
-            }
-
-            if (Application.Current == null)
-            {
-                return null;
-            }
-
-            foreach (Window window in Application.Current.Windows)
-            {
-                if (window is IIntelDetailsProvider provider)
-                {
-                    return provider;
-                }
-            }
-
-            return null;
-        }
-
-        private static string ExtractSourceFromGroupKey(string? key)
-        {
-            if (string.IsNullOrWhiteSpace(key))
-            {
-                return string.Empty;
-            }
-
-            string[] parts = key.Split('|');
-            return parts.Length >= 4 ? parts[3].Trim() : string.Empty;
-        }
+        private void EtwBtnInspect_Click(object sender, RoutedEventArgs e) => InspectRequested?.Invoke(this, e);
 
         private void EtwBtnReorder_Click(object sender, RoutedEventArgs e) => ReorderRequested?.Invoke(this, e);
         private void EtwBtnFloat_Click(object sender, RoutedEventArgs e) => FloatRequested?.Invoke(this, e);

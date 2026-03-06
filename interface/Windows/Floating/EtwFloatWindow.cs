@@ -6,7 +6,7 @@ namespace SleepwalkerInterface
     {
         public EtwFloatWindow(EtwPane pane)
         {
-            Title = "Sleepwalker ETW (Floating)";
+            Title = "ETW (Floating)";
             Width = 980;
             Height = 680;
             Background = pane.Background;

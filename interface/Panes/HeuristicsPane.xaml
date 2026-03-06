@@ -15,6 +15,7 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <TextBlock Grid.Column="0"
@@ -32,6 +33,14 @@
                        Text="No detections yet"/>
 
             <Button Grid.Column="2"
+                    x:Name="HeurBtnInspect"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="↗"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Open heuristics inspector"
+                    Click="HeurBtnInspect_Click"/>
+            <Button Grid.Column="3"
                     x:Name="HeurBtnReorder"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="⇅"
@@ -39,7 +48,7 @@
                     Height="22"
                     ToolTip="Reorder ETW/Heuristics panes"
                     Click="HeurBtnReorder_Click"/>
-            <Button Grid.Column="3"
+            <Button Grid.Column="4"
                     x:Name="HeurBtnFloat"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="⧉"
@@ -47,7 +56,7 @@
                     Height="22"
                     ToolTip="Float / re-dock pane"
                     Click="HeurBtnFloat_Click"/>
-            <Button Grid.Column="4"
+            <Button Grid.Column="5"
                     x:Name="HeurBtnClose"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="✕"
@@ -75,28 +84,23 @@
                         <Style TargetType="DataGridRow">
                             <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>
                             <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
-                            <Setter Property="BorderBrush" Value="{DynamicResource WinSubtleBorderBrush}"/>
-                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
+                            <Setter Property="BorderThickness" Value="0"/>
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding Severity}" Value="Critical">
                                     <Setter Property="Background" Value="#2A5E1E1E"/>
-                                    <Setter Property="BorderBrush" Value="#FFCC5A5A"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding Severity}" Value="High">
                                     <Setter Property="Background" Value="#2A5E1E1E"/>
-                                    <Setter Property="BorderBrush" Value="#FFCC5A5A"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding Severity}" Value="Medium">
                                     <Setter Property="Background" Value="#2A5E3A1E"/>
-                                    <Setter Property="BorderBrush" Value="#FFD59A56"/>
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding Severity}" Value="Low">
                                     <Setter Property="Background" Value="#2A5E521E"/>
-                                    <Setter Property="BorderBrush" Value="#FFD7C55F"/>
                                 </DataTrigger>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="#3A6EA6D8"/>
-                                    <Setter Property="BorderBrush" Value="#FF6EA6D8"/>
                                     <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
                                 </Trigger>
                             </Style.Triggers>

@@ -2,12 +2,14 @@ using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -24,15 +26,21 @@ namespace SleepwalkerInterface
         private readonly List<ProcessItem> _all = new();
         private readonly ObservableCollection<ProcessItem> _view = new();
         private readonly ObservableCollection<ProcessFilterRule> _rules = new();
-        private readonly Dictionary<int, (TimeSpan cpu, DateTime ts)> _cpuBaseline = new();
-        private readonly Dictionary<string, bool> _signatureCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<int, (long cpu100ns, DateTime ts)> _cpuBaseline = new();
+        private readonly Dictionary<string, SignatureTrustState> _signatureCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, ProcessPathMetadata> _pathMetadataCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, ImageSource?> _iconCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<int, ProcessEnrichmentSnapshot> _processEnrichmentCache = new();
+        private readonly object _cacheLock = new();
         private readonly ImageSource? _defaultProcessIcon;
         private readonly DispatcherTimer _refreshTimer;
+        private CancellationTokenSource? _enrichmentCts;
+        private int _refreshGeneration;
         private bool _isReady;
         private bool _initialListPrepared;
         private bool _firstRevealComplete;
+        private string? _activeSortProperty;
+        private ListSortDirection _activeSortDirection = ListSortDirection.Ascending;
         private Brush _rowDefaultForeground = Brushes.Black;
         private Brush _rowUnsignedBackground = Brushes.Transparent;
         private Brush _rowUnsignedBorder = Brushes.Transparent;
@@ -60,6 +68,7 @@ namespace SleepwalkerInterface
 
             ProcessGrid.ItemsSource = _view;
             RulesGrid.ItemsSource = _rules;
+            UpdateRulesPanelVisibility();
 
             _refreshTimer = new DispatcherTimer(DispatcherPriority.Background)
             {
@@ -69,13 +78,20 @@ namespace SleepwalkerInterface
 
             Loaded += async (_, __) =>
             {
-                EnsureInitialListPrepared();
-                _refreshTimer.Start();
                 await RevealAfterFirstRenderAsync();
+
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    EnsureInitialListPrepared();
+                    _refreshTimer.Start();
+                }, DispatcherPriority.Background);
             };
             Closed += (_, __) =>
             {
                 _refreshTimer.Stop();
+                _enrichmentCts?.Cancel();
+                _enrichmentCts?.Dispose();
+                _enrichmentCts = null;
                 App.ThemeChanged -= OnThemeChanged;
             };
             App.ThemeChanged += OnThemeChanged;
@@ -85,16 +101,7 @@ namespace SleepwalkerInterface
 
         private void Root_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (e.ChangedButton != MouseButton.Left || e.ClickCount != 1)
-                return;
-
-            try
-            {
-                DragMove();
-            }
-            catch
-            {
-            }
+            WindowChromeBehavior.HandleRootDragMove(this, e);
         }
 
         public void PrimeForFirstShow()
@@ -158,6 +165,7 @@ namespace SleepwalkerInterface
             });
 
             FilterValueBox.Text = "";
+            UpdateRulesPanelVisibility();
             ApplyFilter();
         }
 
@@ -167,6 +175,7 @@ namespace SleepwalkerInterface
                 return;
 
             _rules.Remove(rule);
+            UpdateRulesPanelVisibility();
             ApplyFilter();
         }
 
@@ -186,6 +195,7 @@ namespace SleepwalkerInterface
         private void ResetRules_Click(object sender, RoutedEventArgs e)
         {
             _rules.Clear();
+            UpdateRulesPanelVisibility();
             if (QuickSearchBox != null)
                 QuickSearchBox.Text = "";
             if (FilterValueBox != null)
@@ -196,121 +206,58 @@ namespace SleepwalkerInterface
         private void RefreshList()
         {
             int selectedPid = (ProcessGrid.SelectedItem as ProcessItem)?.Pid ?? 0;
-            var parentByPid = BuildParentPidMap();
-            var now = DateTime.UtcNow;
             var list = new List<ProcessItem>();
-            var presentPids = new HashSet<int>();
-            var seenPids = new HashSet<int>();
-            string windowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            var snapshot = QuerySystemProcessesFast();
+            var presentPids = new HashSet<int>(snapshot.Select(s => s.Pid));
+            var now = DateTime.UtcNow;
 
-            foreach (var p in Process.GetProcesses())
+            foreach (var entry in snapshot)
             {
-                try
+                ProcessEnrichmentSnapshot? cached = null;
+                lock (_cacheLock)
                 {
-                    if (!seenPids.Add(p.Id))
-                        continue;
-
-                    presentPids.Add(p.Id);
-
-                    string path = "";
-                    string fileName = "";
-                    string appName = "";
-                    string company = "";
-                    ImageSource? icon = null;
-                    string architecture = "-";
-                    double cpuPct = 0;
-                    string integrity = "Unknown";
-                    bool isAppContainer = false;
-
-                    try
-                    {
-                        var cpuNow = p.TotalProcessorTime;
-                        if (_cpuBaseline.TryGetValue(p.Id, out var prev))
-                        {
-                            var sec = Math.Max(0.25, (now - prev.ts).TotalSeconds);
-                            cpuPct = (cpuNow - prev.cpu).TotalSeconds / sec / Math.Max(1, Environment.ProcessorCount) * 100.0;
-                            if (cpuPct < 0) cpuPct = 0;
-                        }
-                        _cpuBaseline[p.Id] = (cpuNow, now);
-                    }
-                    catch
-                    {
-                    }
-
-                    try
-                    {
-                        path = p.MainModule?.FileName ?? "";
-                    }
-                    catch
-                    {
-                    }
-
-                    architecture = TryGetArchitecture(p);
-
-                    if (!string.IsNullOrWhiteSpace(path))
-                    {
-                        var meta = GetPathMetadata(path, p.ProcessName);
-                        fileName = meta.FileName;
-                        appName = meta.AppName;
-                        company = meta.Company;
-                        icon = GetProcessIcon(path);
-                    }
-                    icon ??= _defaultProcessIcon;
-
-                    if (string.IsNullOrWhiteSpace(appName))
-                        appName = p.ProcessName;
-
-                    int parentPid = parentByPid.TryGetValue(p.Id, out var pp) ? pp : 0;
-                    bool isChild = parentPid > 0;
-
-                    bool isSystemOrWindows =
-                        p.SessionId == 0 ||
-                        p.ProcessName.Equals("System", StringComparison.OrdinalIgnoreCase) ||
-                        (!string.IsNullOrWhiteSpace(path) && path.StartsWith(windowsDir, StringComparison.OrdinalIgnoreCase));
-
-                    bool isSigned = string.IsNullOrWhiteSpace(path) ? false : GetPathMetadata(path, p.ProcessName).IsSigned;
-                    bool isUnsigned = !isSigned && !string.IsNullOrWhiteSpace(path);
-
-                    if (TryGetIntegrityInfo(p, out var integrityLevel, out var appContainer))
-                    {
-                        integrity = integrityLevel;
-                        isAppContainer = appContainer;
-                    }
-
-                    var row = new ProcessItem
-                    {
-                        Name = p.ProcessName,
-                        AppName = appName,
-                        Company = company,
-                        FileName = fileName,
-                        Icon = icon,
-                        Architecture = architecture,
-                        Pid = p.Id,
-                        ParentPid = parentPid,
-                        CpuPercentValue = cpuPct,
-                        CpuPercent = cpuPct.ToString("0.0", CultureInfo.InvariantCulture),
-                        IntegrityLevel = integrity,
-                        IsAppContainer = isAppContainer,
-                        SandboxStatus = isAppContainer ? "AppContainer" : "-",
-                        IsSigned = isSigned,
-                        IsUnsigned = isUnsigned,
-                        SignedStatus = isSigned ? "Yes" : "No",
-                        IsSystemOrWindows = isSystemOrWindows,
-                        Relation = isChild ? "Child" : "Head",
-                        Path = path
-                    };
-
-                    ApplyRowTheme(row);
-                    list.Add(row);
+                    if (_processEnrichmentCache.TryGetValue(entry.Pid, out var value))
+                        cached = value;
                 }
-                finally
+
+                bool isChild = entry.ParentPid > 0;
+                double cpuPct = TryGetCpuPercent(entry.Pid, entry.CpuTime100ns, now);
+                var row = new ProcessItem
                 {
-                    p.Dispose();
-                }
+                    Name = entry.Name,
+                    AppName = cached?.AppName ?? entry.Name,
+                    Company = cached?.Company ?? "",
+                    FileName = cached?.FileName ?? "",
+                    Icon = cached?.Icon ?? _defaultProcessIcon,
+                    Architecture = cached?.Architecture ?? "",
+                    Pid = entry.Pid,
+                    ParentPid = entry.ParentPid,
+                    CpuPercentValue = cpuPct,
+                    CpuPercent = cpuPct.ToString("0.0", CultureInfo.InvariantCulture),
+                    IntegrityLevel = cached?.IntegrityLevel ?? "",
+                    IsAppContainer = cached?.IsAppContainer ?? false,
+                    SandboxStatus = cached?.SandboxStatus ?? "",
+                    IsSigned = cached?.IsSigned ?? false,
+                    IsUnsigned = cached?.IsUnsigned ?? false,
+                    SignedStatus = cached?.SignedStatus ?? "",
+                    SignatureState = cached?.SignatureState ?? SignatureTrustState.Unknown,
+                    IsSystemOrWindows = cached?.IsSystemOrWindows ?? false,
+                    Relation = isChild ? "Child" : "Head",
+                    Path = cached?.Path ?? ""
+                };
+
+                ApplyRowTheme(row);
+                list.Add(row);
             }
 
             foreach (var stale in _cpuBaseline.Keys.Where(k => !presentPids.Contains(k)).ToList())
                 _cpuBaseline.Remove(stale);
+
+            lock (_cacheLock)
+            {
+                foreach (var stale in _processEnrichmentCache.Keys.Where(k => !presentPids.Contains(k)).ToList())
+                    _processEnrichmentCache.Remove(stale);
+            }
 
             var byPid = list.ToDictionary(x => x.Pid, x => x.Name);
             foreach (var item in list)
@@ -318,7 +265,7 @@ namespace SleepwalkerInterface
                 if (item.ParentPid > 0 && byPid.TryGetValue(item.ParentPid, out var parentName))
                     item.ParentName = $"{parentName} ({item.ParentPid})";
                 else
-                    item.ParentName = item.ParentPid > 0 ? item.ParentPid.ToString(CultureInfo.InvariantCulture) : "-";
+                    item.ParentName = item.ParentPid > 0 ? item.ParentPid.ToString(CultureInfo.InvariantCulture) : "";
             }
 
             _all.Clear();
@@ -330,6 +277,7 @@ namespace SleepwalkerInterface
                 .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase));
 
             ApplyFilter();
+            StartDeferredEnrichment(++_refreshGeneration);
 
             if (selectedPid > 0)
             {
@@ -375,9 +323,39 @@ namespace SleepwalkerInterface
             if (_rules.Count > 0)
                 filtered = filtered.Where(PassesRules);
 
+            if (!string.IsNullOrWhiteSpace(_activeSortProperty))
+            {
+                filtered = ApplyActiveSort(filtered);
+            }
+
             _view.Clear();
             foreach (var item in filtered)
                 _view.Add(item);
+        }
+
+        private IEnumerable<ProcessItem> ApplyActiveSort(IEnumerable<ProcessItem> source)
+        {
+            Func<ProcessItem, object?> selector = _activeSortProperty switch
+            {
+                nameof(ProcessItem.Name) => x => x.Name,
+                nameof(ProcessItem.AppName) => x => x.AppName,
+                nameof(ProcessItem.Company) => x => x.Company,
+                nameof(ProcessItem.FileName) => x => x.FileName,
+                nameof(ProcessItem.Architecture) => x => x.Architecture,
+                nameof(ProcessItem.Pid) => x => x.Pid,
+                nameof(ProcessItem.CpuPercentValue) => x => x.CpuPercentValue,
+                nameof(ProcessItem.IntegrityLevel) => x => x.IntegrityLevel,
+                nameof(ProcessItem.SignedStatus) => x => x.SignedStatus,
+                nameof(ProcessItem.SandboxStatus) => x => x.SandboxStatus,
+                nameof(ProcessItem.Relation) => x => x.Relation,
+                nameof(ProcessItem.ParentName) => x => x.ParentName,
+                nameof(ProcessItem.Path) => x => x.Path,
+                _ => x => x.Name
+            };
+
+            return _activeSortDirection == ListSortDirection.Ascending
+                ? source.OrderBy(selector).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                : source.OrderByDescending(selector).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase);
         }
 
         private bool PassesRules(ProcessItem item)
@@ -470,14 +448,353 @@ namespace SleepwalkerInterface
             return true;
         }
 
+        private bool HasCachedEnrichment(int pid)
+        {
+            lock (_cacheLock)
+            {
+                return _processEnrichmentCache.ContainsKey(pid);
+            }
+        }
+
+        private double TryGetCpuPercent(int pid, long cpuNow100ns, DateTime now)
+        {
+            try
+            {
+                if (_cpuBaseline.TryGetValue(pid, out var prev))
+                {
+                    double sec = Math.Max(0.25, (now - prev.ts).TotalSeconds);
+                    long delta100ns = cpuNow100ns - prev.cpu100ns;
+                    if (delta100ns < 0)
+                        delta100ns = 0;
+
+                    double cpuSeconds = delta100ns / 10_000_000.0;
+                    double cpuPct = cpuSeconds / sec / Math.Max(1, Environment.ProcessorCount) * 100.0;
+                    if (cpuPct < 0)
+                        cpuPct = 0;
+
+                    _cpuBaseline[pid] = (cpuNow100ns, now);
+                    return cpuPct;
+                }
+
+                _cpuBaseline[pid] = (cpuNow100ns, now);
+            }
+            catch
+            {
+            }
+
+            return 0;
+        }
+
+        private bool TryBuildProcessEnrichment(int pid, string fallbackName, out ProcessEnrichmentSnapshot enrichment)
+        {
+            enrichment = new ProcessEnrichmentSnapshot
+            {
+                Path = "",
+                FileName = "",
+                AppName = fallbackName,
+                Company = "",
+                Icon = _defaultProcessIcon,
+                Architecture = "",
+                IntegrityLevel = "",
+                IsAppContainer = false,
+                SandboxStatus = "",
+                IsSigned = false,
+                IsUnsigned = false,
+                SignedStatus = "",
+                SignatureState = SignatureTrustState.Unknown,
+                IsSystemOrWindows = false
+            };
+
+            string windowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+
+            try
+            {
+                using var process = Process.GetProcessById(pid);
+
+                string path = "";
+                try
+                {
+                    path = process.MainModule?.FileName ?? "";
+                }
+                catch
+                {
+                }
+
+                string architecture = TryGetArchitecture(process);
+                string integrity = "";
+                bool isAppContainer = false;
+                if (TryGetIntegrityInfo(process, out var integrityLevel, out var appContainer))
+                {
+                    integrity = integrityLevel;
+                    isAppContainer = appContainer;
+                }
+
+                bool isSystemOrWindows = process.SessionId == 0 ||
+                                         fallbackName.Equals("System", StringComparison.OrdinalIgnoreCase) ||
+                                         (!string.IsNullOrWhiteSpace(path) &&
+                                          path.StartsWith(windowsDir, StringComparison.OrdinalIgnoreCase));
+
+                string fileName = "";
+                string appName = fallbackName;
+                string company = "";
+                bool isSigned = false;
+                bool isUnsigned = false;
+                string signedStatus = "";
+                SignatureTrustState signatureState = SignatureTrustState.Unknown;
+                ImageSource? icon = _defaultProcessIcon;
+
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    var meta = GetPathMetadata(path, fallbackName);
+                    fileName = meta.FileName;
+                    appName = meta.AppName;
+                    company = meta.Company;
+                    signatureState = meta.SignatureState;
+                    isSigned = signatureState == SignatureTrustState.Trusted;
+                    isUnsigned = signatureState == SignatureTrustState.Unsigned ||
+                                 signatureState == SignatureTrustState.Invalid ||
+                                 signatureState == SignatureTrustState.Expired;
+                    signedStatus = signatureState switch
+                    {
+                        SignatureTrustState.Trusted => "Yes",
+                        SignatureTrustState.Unsigned => "Unsigned",
+                        SignatureTrustState.Invalid => "Invalid",
+                        SignatureTrustState.Expired => "Expired",
+                        _ => ""
+                    };
+                    icon = GetProcessIcon(path);
+                }
+
+                enrichment = new ProcessEnrichmentSnapshot
+                {
+                    Path = path,
+                    FileName = fileName,
+                    AppName = appName,
+                    Company = company,
+                    Icon = icon ?? _defaultProcessIcon,
+                    Architecture = architecture,
+                    IntegrityLevel = integrity,
+                    IsAppContainer = isAppContainer,
+                    SandboxStatus = isAppContainer ? "AppContainer" : "",
+                    IsSigned = isSigned,
+                    IsUnsigned = isUnsigned,
+                    SignedStatus = signedStatus,
+                    SignatureState = signatureState,
+                    IsSystemOrWindows = isSystemOrWindows
+                };
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static List<SystemProcessSnapshot> QuerySystemProcessesFast()
+        {
+            const int systemProcessInformation = 5;
+            const int statusInfoLengthMismatch = unchecked((int)0xC0000004);
+
+            int length = 1 << 20;
+            IntPtr buffer = IntPtr.Zero;
+
+            try
+            {
+                while (true)
+                {
+                    buffer = Marshal.AllocHGlobal(length);
+                    int status = NtQuerySystemInformation(systemProcessInformation, buffer, length, out int returnLength);
+                    if (status == statusInfoLengthMismatch)
+                    {
+                        Marshal.FreeHGlobal(buffer);
+                        buffer = IntPtr.Zero;
+                        length = Math.Max(length * 2, returnLength + 65536);
+                        continue;
+                    }
+
+                    if (status < 0)
+                        return new List<SystemProcessSnapshot>();
+
+                    var list = new List<SystemProcessSnapshot>(512);
+                    var seenPids = new HashSet<int>();
+                    IntPtr current = buffer;
+
+                    while (true)
+                    {
+                        var spi = Marshal.PtrToStructure<SYSTEM_PROCESS_INFORMATION>(current);
+                        long pid64 = spi.UniqueProcessId.ToInt64();
+                        long parent64 = spi.InheritedFromUniqueProcessId.ToInt64();
+
+                        if (pid64 > 0 && pid64 <= int.MaxValue)
+                        {
+                            int pid = (int)pid64;
+                            if (!seenPids.Add(pid))
+                            {
+                                if (spi.NextEntryOffset == 0)
+                                    break;
+
+                                current = IntPtr.Add(current, (int)spi.NextEntryOffset);
+                                continue;
+                            }
+
+                            string name = "";
+                            if (spi.ImageName.Buffer != IntPtr.Zero && spi.ImageName.Length > 0)
+                            {
+                                name = Marshal.PtrToStringUni(spi.ImageName.Buffer, spi.ImageName.Length / 2) ?? "";
+                            }
+
+                            if (string.IsNullOrWhiteSpace(name))
+                            {
+                                name = pid64 == 4 ? "System" : $"pid-{pid64}";
+                            }
+
+                            int parentPid = (parent64 > 0 && parent64 <= int.MaxValue) ? (int)parent64 : 0;
+                            long cpu100ns = spi.UserTime + spi.KernelTime;
+                            if (cpu100ns < 0)
+                                cpu100ns = 0;
+
+                            list.Add(new SystemProcessSnapshot(pid, parentPid, name, cpu100ns));
+                        }
+
+                        if (spi.NextEntryOffset == 0)
+                            break;
+
+                        current = IntPtr.Add(current, (int)spi.NextEntryOffset);
+                    }
+
+                    return list;
+                }
+            }
+            finally
+            {
+                if (buffer != IntPtr.Zero)
+                    Marshal.FreeHGlobal(buffer);
+            }
+        }
+
+        private void UpdateRulesPanelVisibility()
+        {
+            bool hasRules = _rules.Count > 0;
+
+            RuleActionsBar.Visibility = hasRules ? Visibility.Visible : Visibility.Collapsed;
+            RulesGrid.Visibility = hasRules ? Visibility.Visible : Visibility.Collapsed;
+            RulesRow.Height = hasRules ? new GridLength(146) : new GridLength(0);
+            RulesSpacerRow.Height = hasRules ? new GridLength(8) : new GridLength(0);
+        }
+
+        private void StartDeferredEnrichment(int generation)
+        {
+            _enrichmentCts?.Cancel();
+            _enrichmentCts?.Dispose();
+            _enrichmentCts = new CancellationTokenSource();
+            var token = _enrichmentCts.Token;
+
+            var targets = _all.Where(x => !HasCachedEnrichment(x.Pid)).ToList();
+            if (targets.Count == 0)
+                return;
+
+            _ = Task.Run(async () =>
+            {
+                int updates = 0;
+
+                foreach (var target in targets)
+                {
+                    if (token.IsCancellationRequested || generation != _refreshGeneration)
+                        break;
+
+                    if (!TryBuildProcessEnrichment(target.Pid, target.Name, out var enrichment))
+                        continue;
+
+                    lock (_cacheLock)
+                    {
+                        _processEnrichmentCache[target.Pid] = enrichment;
+                    }
+
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (token.IsCancellationRequested || generation != _refreshGeneration)
+                            return;
+
+                        ProcessItem? current = _all.FirstOrDefault(x =>
+                            x.Pid == target.Pid &&
+                            string.Equals(x.Path, target.Path, StringComparison.OrdinalIgnoreCase));
+
+                        if (current == null)
+                            return;
+
+                        current.FileName = enrichment.FileName;
+                        current.AppName = enrichment.AppName;
+                        current.Company = enrichment.Company;
+                        current.Icon = enrichment.Icon ?? _defaultProcessIcon;
+                        current.IsSigned = enrichment.IsSigned;
+                        current.IsUnsigned = enrichment.IsUnsigned;
+                        current.SignedStatus = enrichment.SignedStatus;
+                        current.SignatureState = enrichment.SignatureState;
+                        current.Architecture = enrichment.Architecture;
+                        current.IntegrityLevel = enrichment.IntegrityLevel;
+                        current.IsAppContainer = enrichment.IsAppContainer;
+                        current.SandboxStatus = enrichment.SandboxStatus;
+                        current.IsSystemOrWindows = enrichment.IsSystemOrWindows;
+                        current.Path = enrichment.Path;
+                        ApplyRowTheme(current);
+
+                        updates++;
+                        if ((updates % 8) == 0)
+                        {
+                            ResortAllForDisplay();
+                            ProcessGrid.Items.Refresh();
+                            RulesGrid.Items.Refresh();
+                        }
+                    }, DispatcherPriority.Background);
+                }
+
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    if (generation != _refreshGeneration)
+                        return;
+
+                    ResortAllForDisplay();
+                    ProcessGrid.Items.Refresh();
+                    RulesGrid.Items.Refresh();
+                }, DispatcherPriority.Background);
+            }, token);
+        }
+
+        private void ResortAllForDisplay()
+        {
+            var sorted = _all
+                .OrderBy(x => x.IsUnsigned ? 0 : 1)
+                .ThenBy(x => x.IsAppContainer ? 0 : 1)
+                .ThenBy(x => x.IsSystemOrWindows ? 1 : 0)
+                .ThenByDescending(x => x.CpuPercentValue)
+                .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            _all.Clear();
+            _all.AddRange(sorted);
+            ApplyFilter();
+        }
+
         private void ApplyRowTheme(ProcessItem item)
         {
             item.RowForeground = _rowDefaultForeground;
 
             if (item.IsUnsigned)
             {
-                item.RowBackground = _rowUnsignedBackground;
-                item.RowBorderBrush = _rowUnsignedBorder;
+                double severity = item.SignatureState switch
+                {
+                    SignatureTrustState.Unsigned => 1.00,
+                    SignatureTrustState.Invalid => 0.82,
+                    SignatureTrustState.Expired => 0.60,
+                    _ => 0.45
+                };
+
+                double cpuBoost = Math.Clamp(item.CpuPercentValue / 45.0, 0.0, 1.0);
+                double intensity = Math.Clamp(severity + (cpuBoost * 0.55), 0.20, 1.45);
+
+                item.RowBackground = BuildIntensityBrush(_rowUnsignedBackground, intensity, 0.28);
+                item.RowBorderBrush = BuildIntensityBrush(_rowUnsignedBorder, intensity, 0.20);
                 item.RowForeground = _rowUnsignedForeground;
                 return;
             }
@@ -516,6 +833,25 @@ namespace SleepwalkerInterface
             item.RowBackground = Brushes.Transparent;
             item.RowBorderBrush = Brushes.Transparent;
             item.RowForeground = _rowDefaultForeground;
+        }
+
+        private static Brush BuildIntensityBrush(Brush templateBrush, double intensity, double brightenCap)
+        {
+            if (templateBrush is not SolidColorBrush solid)
+                return templateBrush;
+
+            Color source = solid.Color;
+            double alpha = Math.Clamp((source.A / 255.0) * intensity, 0.0, 1.0);
+            double brighten = Math.Clamp((intensity - 1.0) * brightenCap, 0.0, brightenCap);
+
+            byte r = (byte)Math.Clamp(Math.Round(source.R + ((255 - source.R) * brighten)), 0, 255);
+            byte g = (byte)Math.Clamp(Math.Round(source.G + ((255 - source.G) * brighten)), 0, 255);
+            byte b = (byte)Math.Clamp(Math.Round(source.B + ((255 - source.B) * brighten)), 0, 255);
+            byte a = (byte)Math.Clamp(Math.Round(alpha * 255.0), 0, 255);
+
+            var result = new SolidColorBrush(Color.FromArgb(a, r, g, b));
+            result.Freeze();
+            return result;
         }
 
         private void OnThemeChanged(bool _)
@@ -568,40 +904,72 @@ namespace SleepwalkerInterface
             return solid;
         }
 
-        private bool IsSigned(string path)
+        private SignatureTrustState ClassifySignature(string path)
         {
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-                return false;
+                return SignatureTrustState.Unknown;
 
-            if (_signatureCache.TryGetValue(path, out var signed))
-                return signed;
+            lock (_cacheLock)
+            {
+                if (_signatureCache.TryGetValue(path, out var stateCached))
+                    return stateCached;
+            }
+
+            SignatureTrustState state;
 
             try
             {
 #pragma warning disable SYSLIB0057
-                _ = X509Certificate.CreateFromSignedFile(path);
+                using var certificate = new X509Certificate2(X509Certificate.CreateFromSignedFile(path));
 #pragma warning restore SYSLIB0057
-                _signatureCache[path] = true;
-                return true;
+
+                DateTime utcNow = DateTime.UtcNow;
+                bool timeValid = utcNow >= certificate.NotBefore.ToUniversalTime() &&
+                                 utcNow <= certificate.NotAfter.ToUniversalTime();
+
+                using var chain = new X509Chain();
+                chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+                chain.ChainPolicy.RevocationFlag = X509RevocationFlag.ExcludeRoot;
+                chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
+                chain.ChainPolicy.VerificationTime = utcNow;
+
+                bool chainValid = chain.Build(certificate) &&
+                                  chain.ChainStatus.All(x => x.Status == X509ChainStatusFlags.NoError);
+
+                if (!timeValid)
+                    state = SignatureTrustState.Expired;
+                else if (!chainValid)
+                    state = SignatureTrustState.Invalid;
+                else
+                    state = SignatureTrustState.Trusted;
             }
             catch
             {
-                _signatureCache[path] = false;
-                return false;
+                state = SignatureTrustState.Unsigned;
             }
+
+            lock (_cacheLock)
+            {
+                _signatureCache[path] = state;
+            }
+
+            return state;
         }
 
         private ProcessPathMetadata GetPathMetadata(string path, string fallbackProcessName)
         {
-            if (_pathMetadataCache.TryGetValue(path, out var cached))
-                return cached;
+            lock (_cacheLock)
+            {
+                if (_pathMetadataCache.TryGetValue(path, out var cached))
+                    return cached;
+            }
 
             var result = new ProcessPathMetadata
             {
                 FileName = System.IO.Path.GetFileName(path),
                 AppName = fallbackProcessName,
                 Company = "",
-                IsSigned = IsSigned(path)
+                SignatureState = ClassifySignature(path)
             };
 
             try
@@ -615,7 +983,10 @@ namespace SleepwalkerInterface
             {
             }
 
-            _pathMetadataCache[path] = result;
+            lock (_cacheLock)
+            {
+                _pathMetadataCache[path] = result;
+            }
             return result;
         }
 
@@ -626,9 +997,10 @@ namespace SleepwalkerInterface
                 return _defaultProcessIcon;
             }
 
-            if (_iconCache.TryGetValue(path, out ImageSource? cached))
+            lock (_cacheLock)
             {
-                return cached;
+                if (_iconCache.TryGetValue(path, out ImageSource? cached))
+                    return cached;
             }
 
             try
@@ -638,7 +1010,10 @@ namespace SleepwalkerInterface
                 IntPtr result = SHGetFileInfo(path, 0, out SHFILEINFO info, cbFileInfo, flags);
                 if (result == IntPtr.Zero || info.hIcon == IntPtr.Zero)
                 {
-                    _iconCache[path] = _defaultProcessIcon;
+                    lock (_cacheLock)
+                    {
+                        _iconCache[path] = _defaultProcessIcon;
+                    }
                     return _defaultProcessIcon;
                 }
 
@@ -649,7 +1024,10 @@ namespace SleepwalkerInterface
                         Int32Rect.Empty,
                         BitmapSizeOptions.FromWidthAndHeight(16, 16));
                     bitmap.Freeze();
-                    _iconCache[path] = bitmap;
+                    lock (_cacheLock)
+                    {
+                        _iconCache[path] = bitmap;
+                    }
                     return bitmap;
                 }
                 finally
@@ -659,7 +1037,10 @@ namespace SleepwalkerInterface
             }
             catch
             {
-                _iconCache[path] = _defaultProcessIcon;
+                lock (_cacheLock)
+                {
+                    _iconCache[path] = _defaultProcessIcon;
+                }
                 return _defaultProcessIcon;
             }
         }
@@ -723,7 +1104,7 @@ namespace SleepwalkerInterface
             {
             }
 
-            return "-";
+            return "";
         }
 
         private static string MachineToArch(ushort machine)
@@ -734,7 +1115,7 @@ namespace SleepwalkerInterface
                 IMAGE_FILE_MACHINE_AMD64 => "x64",
                 IMAGE_FILE_MACHINE_ARM64 => "arm64",
                 IMAGE_FILE_MACHINE_ARM => "arm",
-                _ => "-"
+                _ => ""
             };
         }
 
@@ -761,7 +1142,7 @@ namespace SleepwalkerInterface
             }
             finally
             {
-                CloseHandle(snap);
+                _ = Kernel32Native.CloseHandle(snap);
             }
 
             return map;
@@ -791,7 +1172,7 @@ namespace SleepwalkerInterface
             finally
             {
                 if (token != IntPtr.Zero)
-                    CloseHandle(token);
+                    _ = Kernel32Native.CloseHandle(token);
             }
         }
 
@@ -866,6 +1247,41 @@ namespace SleepwalkerInterface
             Select_Click(sender, e);
         }
 
+        private void ProcessGrid_Sorting(object sender, DataGridSortingEventArgs e)
+        {
+            e.Handled = true;
+
+            string property = e.Column.SortMemberPath;
+            if (string.IsNullOrWhiteSpace(property) && e.Column is DataGridBoundColumn bc && bc.Binding is System.Windows.Data.Binding b)
+            {
+                property = b.Path?.Path ?? "";
+            }
+
+            if (string.IsNullOrWhiteSpace(property))
+                return;
+
+            if (string.Equals(_activeSortProperty, property, StringComparison.Ordinal))
+            {
+                _activeSortDirection = _activeSortDirection == ListSortDirection.Ascending
+                    ? ListSortDirection.Descending
+                    : ListSortDirection.Ascending;
+            }
+            else
+            {
+                _activeSortProperty = property;
+                _activeSortDirection = ListSortDirection.Ascending;
+            }
+
+            foreach (var column in ProcessGrid.Columns)
+            {
+                column.SortDirection = null;
+            }
+
+            e.Column.SortDirection = _activeSortDirection;
+
+            ApplyFilter();
+        }
+
         private void OpenExe_Click(object sender, RoutedEventArgs e)
         {
             var dlg = new OpenFileDialog
@@ -894,7 +1310,7 @@ namespace SleepwalkerInterface
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, ex.Message, "Launch failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                ThemedMessageBox.Show(this, ex.Message, "Launch failed", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -950,6 +1366,32 @@ namespace SleepwalkerInterface
             public SID_AND_ATTRIBUTES Label;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct UNICODE_STRING
+        {
+            public ushort Length;
+            public ushort MaximumLength;
+            public IntPtr Buffer;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SYSTEM_PROCESS_INFORMATION
+        {
+            public uint NextEntryOffset;
+            public uint NumberOfThreads;
+            public long WorkingSetPrivateSize;
+            public uint HardFaultCount;
+            public uint NumberOfThreadsHighWatermark;
+            public ulong CycleTime;
+            public long CreateTime;
+            public long UserTime;
+            public long KernelTime;
+            public UNICODE_STRING ImageName;
+            public int BasePriority;
+            public IntPtr UniqueProcessId;
+            public IntPtr InheritedFromUniqueProcessId;
+        }
+
         private enum TOKEN_INFORMATION_CLASS
         {
             TokenUser = 1,
@@ -992,9 +1434,6 @@ namespace SleepwalkerInterface
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         private static extern bool Process32Next(IntPtr hSnapshot, ref PROCESSENTRY32 lppe);
 
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool CloseHandle(IntPtr hObject);
-
         [DllImport("advapi32.dll", SetLastError = true)]
         private static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
 
@@ -1017,6 +1456,13 @@ namespace SleepwalkerInterface
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool IsWow64Process2(IntPtr hProcess, out ushort processMachine, out ushort nativeMachine);
+
+        [DllImport("ntdll.dll")]
+        private static extern int NtQuerySystemInformation(
+            int systemInformationClass,
+            IntPtr systemInformation,
+            int systemInformationLength,
+            out int returnLength);
 
         private const uint SHGFI_ICON = 0x000000100;
         private const uint SHGFI_SMALLICON = 0x000000001;
@@ -1062,34 +1508,64 @@ namespace SleepwalkerInterface
         public string FileName { get; init; } = "";
         public string AppName { get; set; } = "";
         public string Company { get; set; } = "";
+        public SignatureTrustState SignatureState { get; init; } = SignatureTrustState.Unknown;
+    }
+
+    internal readonly record struct SystemProcessSnapshot(int Pid, int ParentPid, string Name, long CpuTime100ns);
+
+    internal sealed class ProcessEnrichmentSnapshot
+    {
+        public string Path { get; init; } = "";
+        public string FileName { get; init; } = "";
+        public string AppName { get; init; } = "";
+        public string Company { get; init; } = "";
+        public ImageSource? Icon { get; init; }
+        public string Architecture { get; init; } = "";
+        public string IntegrityLevel { get; init; } = "";
+        public bool IsAppContainer { get; init; }
+        public string SandboxStatus { get; init; } = "";
         public bool IsSigned { get; init; }
+        public bool IsUnsigned { get; init; }
+        public string SignedStatus { get; init; } = "";
+        public SignatureTrustState SignatureState { get; init; } = SignatureTrustState.Unknown;
+        public bool IsSystemOrWindows { get; init; }
     }
 
     public sealed class ProcessItem
     {
         public string Name { get; init; } = "";
-        public string AppName { get; init; } = "";
-        public string Company { get; init; } = "";
-        public string FileName { get; init; } = "";
-        public ImageSource? Icon { get; init; }
-        public string Architecture { get; init; } = "-";
+        public string AppName { get; set; } = "";
+        public string Company { get; set; } = "";
+        public string FileName { get; set; } = "";
+        public ImageSource? Icon { get; set; }
+        public string Architecture { get; set; } = "";
         public int Pid { get; init; }
         public int ParentPid { get; init; }
-        public string ParentName { get; set; } = "-";
+        public string ParentName { get; set; } = "";
         public string CpuPercent { get; init; } = "0.0";
         public double CpuPercentValue { get; init; }
-        public string IntegrityLevel { get; init; } = "Unknown";
-        public bool IsAppContainer { get; init; }
-        public string SandboxStatus { get; init; } = "-";
-        public bool IsSigned { get; init; }
-        public bool IsUnsigned { get; init; }
-        public string SignedStatus { get; init; } = "No";
-        public bool IsSystemOrWindows { get; init; }
+        public string IntegrityLevel { get; set; } = "";
+        public bool IsAppContainer { get; set; }
+        public string SandboxStatus { get; set; } = "";
+        public bool IsSigned { get; set; }
+        public bool IsUnsigned { get; set; }
+        public string SignedStatus { get; set; } = "";
+        public SignatureTrustState SignatureState { get; set; } = SignatureTrustState.Unknown;
+        public bool IsSystemOrWindows { get; set; }
         public string Relation { get; init; } = "Head";
-        public string Path { get; init; } = "";
+        public string Path { get; set; } = "";
 
         public Brush RowBackground { get; set; } = Brushes.Transparent;
         public Brush RowBorderBrush { get; set; } = Brushes.Transparent;
         public Brush RowForeground { get; set; } = Brushes.Black;
+    }
+
+    public enum SignatureTrustState
+    {
+        Unknown = 0,
+        Trusted = 1,
+        Expired = 2,
+        Invalid = 3,
+        Unsigned = 4
     }
 }

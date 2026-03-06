@@ -15,20 +15,32 @@ namespace SleepwalkerInterface
 {
     public partial class DirectSyscallSuspectWindow : Window
     {
+        private static readonly Brush RowCriticalBackground = new SolidColorBrush(Color.FromArgb(0x70, 0x5C, 0x22, 0x22));
+        private static readonly Brush RowCriticalBorder = new SolidColorBrush(Color.FromArgb(0xD0, 0xAA, 0x48, 0x48));
+        private static readonly Brush RowMediumBackground = new SolidColorBrush(Color.FromArgb(0x76, 0x72, 0x43, 0x16));
+        private static readonly Brush RowMediumBorder = new SolidColorBrush(Color.FromArgb(0xE0, 0xE0, 0x94, 0x37));
+        private static readonly Brush RowLowBackground = new SolidColorBrush(Color.FromArgb(0x58, 0x4A, 0x44, 0x1D));
+        private static readonly Brush RowLowBorder = new SolidColorBrush(Color.FromArgb(0xB5, 0xAA, 0x9A, 0x43));
+        private static readonly Brush RowUnknownBackground = new SolidColorBrush(Color.FromArgb(0x46, 0x2A, 0x2A, 0x2A));
+        private static readonly Brush RowUnknownBorder = new SolidColorBrush(Color.FromArgb(0x90, 0x45, 0x45, 0x45));
+
         private readonly ObservableCollection<DirectSyscallEntry> _entries = new();
         private readonly ObservableCollection<KeyValueRow> _argumentRows = new();
         private readonly ObservableCollection<KeyValueRow> _contextRows = new();
+        private readonly ICollectionView _entriesView;
         private DirectSyscallEntry? _selectedEntry;
+        private bool _suppressFilterEvents = true;
 
         private DirectSyscallSuspectWindow(string detection, IEnumerable<GroupedEventDetailRow> rows)
         {
+            WindowStyle = WindowStyle.None;
+            ResizeMode = ResizeMode.CanResize;
             InitializeComponent();
             WindowThemeHelper.ApplyDarkTitleBar(this);
 
             HeaderBlock.Text = $"Direct Syscall Suspects: {detection}";
-            ICollectionView entriesView = CollectionViewSource.GetDefaultView(_entries);
-            entriesView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(DirectSyscallEntry.SyscallName)));
-            SuspectsGrid.ItemsSource = entriesView;
+            _entriesView = CollectionViewSource.GetDefaultView(_entries);
+            SuspectsGrid.ItemsSource = _entriesView;
             ArgumentsGrid.ItemsSource = _argumentRows;
             ContextGrid.ItemsSource = _contextRows;
 
@@ -40,6 +52,10 @@ namespace SleepwalkerInterface
             SummaryBlock.Text = _entries.Count == 0
                 ? "No suspect entries"
                 : $"{_entries.Count} suspect entr{(_entries.Count == 1 ? "y" : "ies")} across {_entries.Select(x => x.SyscallName).Distinct(StringComparer.OrdinalIgnoreCase).Count()} syscall groups";
+            UpdateTopSummary(detection);
+            InitializeFilters();
+            RefreshGrouping();
+            ApplyEntryFilter();
 
             if (_entries.Count > 0)
             {
@@ -50,6 +66,104 @@ namespace SleepwalkerInterface
             {
                 UpdateDetails(null);
             }
+        }
+
+        private void InitializeFilters()
+        {
+            _suppressFilterEvents = true;
+            SearchBox.Text = string.Empty;
+            SeverityFilterBox.ItemsSource = new[] { "All Severities", "Critical", "High", "Medium", "Low", "Unknown" };
+            SeverityFilterBox.SelectedIndex = 0;
+            GroupBySyscallToggle.IsChecked = true;
+            _suppressFilterEvents = false;
+        }
+
+        private void RefreshGrouping()
+        {
+            _entriesView.GroupDescriptions.Clear();
+            if (GroupBySyscallToggle.IsChecked == true)
+            {
+                _entriesView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(DirectSyscallEntry.SyscallName)));
+            }
+        }
+
+        private void ApplyEntryFilter()
+        {
+            _entriesView.Filter = FilterEntry;
+            _entriesView.Refresh();
+
+            int shown = _entriesView.Cast<object>().Count();
+            int total = _entries.Count;
+            SummaryBlock.Text = total == 0
+                ? "No suspect entries"
+                : $"{shown}/{total} suspect entries shown";
+        }
+
+        private bool FilterEntry(object obj)
+        {
+            if (obj is not DirectSyscallEntry entry)
+            {
+                return false;
+            }
+
+            string selectedSeverity = SeverityFilterBox.SelectedItem as string ?? "All Severities";
+            if (!selectedSeverity.Equals("All Severities", StringComparison.OrdinalIgnoreCase) &&
+                !entry.Severity.Contains(selectedSeverity, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            string query = (SearchBox.Text ?? string.Empty).Trim();
+            if (query.Length == 0)
+            {
+                return true;
+            }
+
+            return entry.SyscallLabel.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                   entry.Actor.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                   entry.Target.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                   entry.Detection.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                   entry.Arguments.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                   entry.Context.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                   entry.Raw.Contains(query, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void UpdateTopSummary(string detection)
+        {
+            DetectionSummaryBlock.Text = string.IsNullOrWhiteSpace(detection) ? "-" : detection.Trim();
+
+            if (_entries.Count == 0)
+            {
+                WindowRangeBlock.Text = "-";
+                GroupCountBlock.Text = "0";
+                EntryCountBlock.Text = "0";
+                TopActorBlock.Text = "-";
+                TopTargetBlock.Text = "-";
+                return;
+            }
+
+            DateTime firstSeen = _entries.Min(x => x.TimestampUtc);
+            DateTime lastSeen = _entries.Max(x => x.TimestampUtc);
+            WindowRangeBlock.Text = $"{firstSeen:HH:mm:ss.fff} -> {lastSeen:HH:mm:ss.fff}";
+
+            int groupCount = _entries
+                .Select(x => x.SyscallName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count();
+            GroupCountBlock.Text = groupCount.ToString(CultureInfo.InvariantCulture);
+            EntryCountBlock.Text = _entries.Count.ToString(CultureInfo.InvariantCulture);
+
+            TopActorBlock.Text = _entries
+                .GroupBy(x => x.Actor, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(g => g.Count())
+                .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault()?.Key ?? "-";
+
+            TopTargetBlock.Text = _entries
+                .GroupBy(x => x.Target, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(g => g.Count())
+                .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault()?.Key ?? "-";
         }
 
         internal static bool IsDirectSyscallDetection(string detection)
@@ -189,6 +303,7 @@ namespace SleepwalkerInterface
             {
                 TimestampUtc = row.TimestampUtc,
                 Detection = row.Detection,
+                Severity = EventDetailFormatting.SeverityLabelFromText(row.Severity),
                 Actor = row.Actor,
                 Target = row.Target,
                 TargetObject = path,
@@ -199,8 +314,54 @@ namespace SleepwalkerInterface
                 Addresses = addresses,
                 StubHex = sampleHex,
                 Disassembly = disasm,
-                Raw = raw
+                Raw = raw,
+                RowBackground = GetRowBackground(EventDetailFormatting.SeverityLabelFromText(row.Severity)),
+                RowBorder = GetRowBorder(EventDetailFormatting.SeverityLabelFromText(row.Severity))
             };
+        }
+
+        private static Brush GetRowBackground(string severity)
+        {
+            string value = severity ?? string.Empty;
+            if (value.Contains("critical", StringComparison.OrdinalIgnoreCase) ||
+                value.Contains("high", StringComparison.OrdinalIgnoreCase))
+            {
+                return RowCriticalBackground;
+            }
+
+            if (value.Contains("medium", StringComparison.OrdinalIgnoreCase))
+            {
+                return RowMediumBackground;
+            }
+
+            if (value.Contains("low", StringComparison.OrdinalIgnoreCase))
+            {
+                return RowLowBackground;
+            }
+
+            return RowUnknownBackground;
+        }
+
+        private static Brush GetRowBorder(string severity)
+        {
+            string value = severity ?? string.Empty;
+            if (value.Contains("critical", StringComparison.OrdinalIgnoreCase) ||
+                value.Contains("high", StringComparison.OrdinalIgnoreCase))
+            {
+                return RowCriticalBorder;
+            }
+
+            if (value.Contains("medium", StringComparison.OrdinalIgnoreCase))
+            {
+                return RowMediumBorder;
+            }
+
+            if (value.Contains("low", StringComparison.OrdinalIgnoreCase))
+            {
+                return RowLowBorder;
+            }
+
+            return RowUnknownBorder;
         }
 
         private static string GuessSyscallApi(string detection, uint access, string raw, string evidence)
@@ -322,96 +483,53 @@ namespace SleepwalkerInterface
 
         private static uint TryParseHexU32(string token)
         {
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                return 0;
-            }
-
-            string normalized = token.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? token[2..] : token;
-            return uint.TryParse(normalized, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint value)
-                ? value
-                : 0;
+            return EventDetailsParsing.TryParseHexU32(token, out uint value) ? value : 0;
         }
 
         private static ulong TryParseHexU64(string token)
         {
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                return 0;
-            }
-
-            string normalized = token.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? token[2..] : token;
-            return ulong.TryParse(normalized, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ulong value)
-                ? value
-                : 0;
+            return EventDetailsParsing.TryParseHexU64(token, out ulong value) ? value : 0;
         }
 
         private static string ReadTokenValue(string text, string prefix)
         {
-            if (string.IsNullOrWhiteSpace(text) || string.IsNullOrWhiteSpace(prefix))
-            {
-                return string.Empty;
-            }
-
-            int start = text.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
-            if (start < 0)
-            {
-                return string.Empty;
-            }
-
-            start += prefix.Length;
-            int end = start;
-            while (end < text.Length && !char.IsWhiteSpace(text[end]))
-            {
-                end += 1;
-            }
-
-            return text[start..end].Trim();
+            return EventDetailsParsing.ReadTokenValue(text, prefix);
         }
 
         private static string SliceBetween(string text, string startToken, string endToken)
         {
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                return string.Empty;
-            }
-
-            int start = text.IndexOf(startToken, StringComparison.OrdinalIgnoreCase);
-            if (start < 0)
-            {
-                return string.Empty;
-            }
-
-            start += startToken.Length;
-            int end = text.IndexOf(endToken, start, StringComparison.OrdinalIgnoreCase);
-            if (end < 0)
-            {
-                end = text.Length;
-            }
-
-            return text[start..end].Trim();
+            return EventDetailsParsing.SliceBetween(text, startToken, endToken);
         }
 
         private static string ReadRestAfter(string text, string token)
         {
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                return string.Empty;
-            }
-
-            int start = text.IndexOf(token, StringComparison.OrdinalIgnoreCase);
-            if (start < 0)
-            {
-                return string.Empty;
-            }
-
-            start += token.Length;
-            return text[start..].Trim();
+            return EventDetailsParsing.ReadRestAfter(text, token);
         }
 
         private void SuspectsGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             UpdateDetails(SuspectsGrid.SelectedItem as DirectSyscallEntry);
+        }
+
+        private void SearchFilter_Changed(object sender, EventArgs e)
+        {
+            if (_suppressFilterEvents)
+            {
+                return;
+            }
+
+            ApplyEntryFilter();
+        }
+
+        private void GroupBySyscallToggle_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_suppressFilterEvents)
+            {
+                return;
+            }
+
+            RefreshGrouping();
+            ApplyEntryFilter();
         }
 
         private void UpdateDetails(DirectSyscallEntry? entry)
@@ -423,13 +541,20 @@ namespace SleepwalkerInterface
                 _argumentRows.Clear();
                 _contextRows.Clear();
                 RawBox.Text = string.Empty;
+                OpenDisassemblyButton.IsEnabled = false;
                 return;
             }
 
-            OverviewBlock.Text = $"{entry.TimestampUtc:O}\n{entry.SyscallLabel}\nflow: {entry.Actor} -> {entry.Target}\ndetection: {entry.Detection}";
+            OverviewBlock.Text =
+                $"{entry.TimestampUtc:O}\n" +
+                $"{entry.SyscallLabel}\n" +
+                $"severity: {entry.Severity}\n" +
+                $"flow: {entry.Actor} -> {entry.Target}\n" +
+                $"detection: {entry.Detection}";
             SetKeyValueRows(_argumentRows, ParseKeyValueRows(entry.Arguments));
             SetKeyValueRows(_contextRows, ParseKeyValueRows(entry.Context));
             RawBox.Text = entry.Raw;
+            OpenDisassemblyButton.IsEnabled = true;
         }
 
         private void OpenDisassemblyButton_Click(object sender, RoutedEventArgs e)
@@ -439,15 +564,29 @@ namespace SleepwalkerInterface
                 return;
             }
 
-            DisassemblyDetailWindow.ShowForEntry(
-                this,
-                _selectedEntry.TimestampUtc,
-                _selectedEntry.SyscallLabel,
-                _selectedEntry.Actor,
-                _selectedEntry.Target,
-                _selectedEntry.Addresses,
-                _selectedEntry.StubHex,
-                _selectedEntry.Disassembly);
+            string text = string.IsNullOrWhiteSpace(_selectedEntry.Disassembly)
+                ? "unavailable"
+                : _selectedEntry.Disassembly;
+
+            try
+            {
+                Clipboard.SetText(text);
+                ThemedMessageBox.Show(
+                    this,
+                    "Disassembly copied to clipboard.",
+                    "Disassembly",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                ThemedMessageBox.Show(
+                    this,
+                    $"Failed to copy disassembly.\n\n{ex.Message}",
+                    "Disassembly",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
         }
 
         internal static FlowDocument BuildDisassemblyDocument(string disassemblyText)
@@ -622,49 +761,31 @@ namespace SleepwalkerInterface
 
         private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (e.LeftButton != MouseButtonState.Pressed)
-            {
-                return;
-            }
-
-            if (e.ClickCount >= 2)
-            {
-                WindowState = WindowState == WindowState.Maximized
-                    ? WindowState.Normal
-                    : WindowState.Maximized;
-                return;
-            }
-
-            try
-            {
-                DragMove();
-            }
-            catch
-            {
-            }
+            WindowChromeBehavior.HandleTitleBarMouseLeftButtonDown(this, e);
         }
 
         private void WindowMinimize_Click(object sender, RoutedEventArgs e)
         {
-            WindowState = WindowState.Minimized;
+            WindowChromeBehavior.Minimize(this);
         }
 
         private void WindowMaximize_Click(object sender, RoutedEventArgs e)
         {
-            WindowState = WindowState == WindowState.Maximized
-                ? WindowState.Normal
-                : WindowState.Maximized;
+            WindowChromeBehavior.ToggleMaximize(this);
         }
 
         private void WindowClose_Click(object sender, RoutedEventArgs e)
         {
-            Close();
+            WindowChromeBehavior.Close(this);
         }
 
         private sealed class DirectSyscallEntry
         {
             public DateTime TimestampUtc { get; set; }
             public string Detection { get; set; } = "";
+            public string Severity { get; set; } = "";
+            public Brush RowBackground { get; set; } = RowUnknownBackground;
+            public Brush RowBorder { get; set; } = RowUnknownBorder;
             public string Actor { get; set; } = "";
             public string Target { get; set; } = "";
             public string TargetObject { get; set; } = "";
@@ -685,6 +806,9 @@ namespace SleepwalkerInterface
                 {
                     TimestampUtc = TimestampUtc,
                     Detection = Detection,
+                    Severity = Severity,
+                    RowBackground = RowBackground,
+                    RowBorder = RowBorder,
                     Actor = Actor,
                     Target = Target,
                     TargetObject = TargetObject,

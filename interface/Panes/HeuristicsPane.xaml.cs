@@ -14,6 +14,7 @@ namespace SleepwalkerInterface
         public event RoutedEventHandler? ReorderRequested;
         public event RoutedEventHandler? FloatRequested;
         public event RoutedEventHandler? CloseRequested;
+        public event RoutedEventHandler? InspectRequested;
 
         private readonly ObservableCollection<GroupedEventRow> _items = new();
         private readonly Dictionary<string, GroupedEventRow> _byKey = new(StringComparer.Ordinal);
@@ -35,7 +36,7 @@ namespace SleepwalkerInterface
             DateTime now = item.LastSeenUtc == default ? item.TimestampUtc : item.LastSeenUtc;
             string eventName = string.IsNullOrWhiteSpace(item.EventName) ? "heuristic" : item.EventName;
             string source = string.IsNullOrWhiteSpace(item.Source) ? "unknown" : item.Source;
-            string combinedEvent = $"{source}/{eventName}";
+            string combinedEvent = NormalizeEventLabel($"{source}/{eventName}");
             string severity = EventDetailFormatting.SeverityLabel(item.Severity);
             string detection = string.IsNullOrWhiteSpace(item.DetectionName) ? "heuristic" : item.DetectionName;
             string actor = ProcessIdentityResolver.Describe(item.ActorPid);
@@ -59,6 +60,8 @@ namespace SleepwalkerInterface
                     Source = source,
                     Actor = actor,
                     Target = target,
+                    ActorPid = item.ActorPid,
+                    TargetPid = item.TargetPid,
                     Details = detailsText
                 });
                 if (existing.Details.Count > 4000)
@@ -93,6 +96,8 @@ namespace SleepwalkerInterface
                             Source = source,
                             Actor = actor,
                             Target = target,
+                            ActorPid = item.ActorPid,
+                            TargetPid = item.TargetPid,
                             Details = detailsText
                         }
                     }
@@ -115,6 +120,9 @@ namespace SleepwalkerInterface
         internal IReadOnlyList<GroupedEventRow> SnapshotItems()
             => _items.Select(x => x.Clone()).ToList();
 
+        internal GroupedEventRow? GetSelectedGroupClone()
+            => (HeuristicsGrid.SelectedItem as GroupedEventRow)?.Clone();
+
         internal void LoadHistory(IEnumerable<GroupedEventRow> groups)
         {
             _items.Clear();
@@ -125,7 +133,12 @@ namespace SleepwalkerInterface
             {
                 GroupedEventRow clone = source.Clone();
                 clone.Hits = Math.Max(1, clone.Hits);
+                clone.Event = NormalizeEventLabel(clone.Event);
                 clone.Details = clone.Details.OrderBy(x => x.TimestampUtc).ToList();
+                for (int i = 0; i < clone.Details.Count; i += 1)
+                {
+                    clone.Details[i].Event = NormalizeEventLabel(clone.Details[i].Event);
+                }
                 _items.Add(clone);
                 _byKey[clone.GroupKey] = clone;
                 _totalRawCount += clone.Hits;
@@ -177,98 +190,27 @@ namespace SleepwalkerInterface
 
         private void HeuristicsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            GroupedEventRow? selected = GetRowFromSource(e.OriginalSource as DependencyObject)
-                ?? HeuristicsGrid.SelectedItem as GroupedEventRow;
-            if (selected == null)
+            _ = sender;
+            _ = e;
+            if (HeuristicsGrid.SelectedItem is GroupedEventRow)
             {
-                return;
+                InspectRequested?.Invoke(this, new RoutedEventArgs());
             }
-
-            Window? owner = Window.GetWindow(this);
-            IReadOnlyList<GroupedEventDetailRow> details = ResolveDetails(selected, owner);
-            GroupedEventDetailsWindow.ShowUnified(
-                owner,
-                IntelDetailsCategory.Heuristics,
-                $"Heuristic: {selected.Detection}",
-                details);
         }
 
-        private static GroupedEventRow? GetRowFromSource(DependencyObject? source)
+        private static string NormalizeEventLabel(string? value)
         {
-            while (source != null)
+            if (string.IsNullOrWhiteSpace(value))
             {
-                if (source is DataGridRow row && row.Item is GroupedEventRow item)
-                {
-                    return item;
-                }
-
-                source = VisualTreeHelper.GetParent(source);
+                return "-";
             }
 
-            return null;
-        }
-
-        private static IReadOnlyList<GroupedEventDetailRow> ResolveDetails(GroupedEventRow selected, Window? owner)
-        {
-            if (selected.Details.Count > 0)
-            {
-                return selected.Details;
-            }
-
-            IIntelDetailsProvider? provider = ResolveProvider(owner);
-            if (provider == null)
-            {
-                return Array.Empty<GroupedEventDetailRow>();
-            }
-
-            IReadOnlyList<GroupedEventDetailRow> all = provider.GetIntelDetails(IntelDetailsCategory.Heuristics);
-            List<GroupedEventDetailRow> exact = all
-                .Where(x =>
-                    x.Event.Equals(selected.Event, StringComparison.OrdinalIgnoreCase) &&
-                    x.Severity.Equals(selected.Severity, StringComparison.OrdinalIgnoreCase) &&
-                    x.Detection.Equals(selected.Detection, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-            if (exact.Count > 0)
-            {
-                return exact;
-            }
-
-            return all
-                .Where(x => x.Detection.Equals(selected.Detection, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-        }
-
-        private static IIntelDetailsProvider? ResolveProvider(Window? owner)
-        {
-            Window? cursor = owner;
-            while (cursor != null)
-            {
-                if (cursor is IIntelDetailsProvider provider)
-                {
-                    return provider;
-                }
-
-                cursor = cursor.Owner;
-            }
-
-            if (Application.Current == null)
-            {
-                return null;
-            }
-
-            foreach (Window window in Application.Current.Windows)
-            {
-                if (window is IIntelDetailsProvider provider)
-                {
-                    return provider;
-                }
-            }
-
-            return null;
+            return value.Replace('_', ' ').Trim();
         }
 
         private void HeurBtnReorder_Click(object sender, RoutedEventArgs e) => ReorderRequested?.Invoke(this, e);
         private void HeurBtnFloat_Click(object sender, RoutedEventArgs e) => FloatRequested?.Invoke(this, e);
         private void HeurBtnClose_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, e);
+        private void HeurBtnInspect_Click(object sender, RoutedEventArgs e) => InspectRequested?.Invoke(this, e);
     }
 }

@@ -50,7 +50,7 @@ namespace SleepwalkerInterface
 
         private void OutputCapture_LineReceived(string line)
         {
-            Dispatcher.Invoke(() =>
+            _ = Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (OutputBox.LineCount > 5000)
                     OutputBox.Clear();
@@ -59,7 +59,7 @@ namespace SleepwalkerInterface
                     OutputBox.AppendText(Environment.NewLine);
                 OutputBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {line}");
                 OutputBox.ScrollToEnd();
-            });
+            }), DispatcherPriority.Background);
         }
 
         private void Clear_Click(object sender, RoutedEventArgs e) => OutputBox.Clear();
@@ -67,16 +67,7 @@ namespace SleepwalkerInterface
 
         private void Root_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (e.ChangedButton != MouseButton.Left || e.ClickCount != 1)
-                return;
-
-            try
-            {
-                DragMove();
-            }
-            catch
-            {
-            }
+            WindowChromeBehavior.HandleRootDragMove(this, e);
         }
 
         private void Close_Click(object sender, RoutedEventArgs e) => Close();

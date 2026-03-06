@@ -1,73 +1,163 @@
-# Usage Guide
+# Usage
 
-This document is a practical, task-oriented guide for using Sleepwalker in labs/VMs.
+This is the CLI and operator quick reference for the current Sleepwalker alpha.
 
-## Output Examples
+## Core Runtime Pieces
 
-Representative operator/test outputs:
+- `sleepwlkr.sys`
+  - KMDF driver
+- `SleepwlkrController.exe`
+  - broker/controller service
+- `SleepwalkerSensorCore.dll`
+  - shared user-mode SDK used by the client tools and interface
+- `SleepwalkerClient.exe`
+  - broker-backed operator CLI
+- `SleepwalkerIoctlTest.exe`
+  - validation harness
+- `SleepwalkerInterface.exe`
+  - primary GUI
 
-```ps1
-[IOCTL][EVENT] seq=4 type=HANDLE stream=0x00000003(HANDLE|MEMORY) size=768 qpc=3404675185
-[IOCTL][HANDLE] class=UNKNOWN(0) caller=6948 target=6948 access=0x001FFFFF
-Flags  ExecProtect FromNtdll MemoryRelated ThreadObject
-Path   \Device\HarddiskVolume3\Windows\System32\ntdll.dll
-Mem    protect=0x00000020
-Origin 0x7FFDF74AEDD4 ntdll!NtCreateThreadEx+0x14
-Status open=0x00000000 basic=0x00000000 section=0x00000000
-Stack  frames=8
-       #0 0x7FFDF74AEDD4 ntdll!NtCreateThreadEx+0x14
-       #1 0x7FFDF4CD506F KERNELBASE!CreateRemoteThreadEx+0x29F
-       #2 0x7FFDF6F8B91D KERNEL32!CreateThread+0x3D
-       #3 0x7FF7AC3750A4 SleepwalkerTestSuite+0x150A4
-       #4 0x7FF7AC37BEC9 SleepwalkerTestSuite+0x1BEC9
-       #5 0x7FF7AC37E3F9 SleepwalkerTestSuite+0x1E3F9
-       #6 0x7FF7AC37E2A2 SleepwalkerTestSuite+0x1E2A2
-       #7 0x7FF7AC37E15E SleepwalkerTestSuite+0x1E15E
+## SleepwalkerClient
+
+`SleepwalkerClient.exe` is the main CLI for targeted observation and structured output.
+
+### Syntax
+
+```bat
+SleepwalkerClient.exe <target> <streams> [scope]
+SleepwalkerClient.exe path:<full-path-to-target.exe> <streams> [scope]
+SleepwalkerClient.exe launch:<full-path-to-target.exe> <streams> [scope]
+SleepwalkerClient.exe --config <policy-file>
 ```
 
-```ps1
-[INFO] suiteTiming elapsedMs=1944.390 polls=17
-[OK] SleepwalkerTestSuite complete. tests-passed=48/48 tests-failed=0 tests-skipped=13 polls=17
+### Target Forms
+
+- `<pid>`
+  - attach to an existing process
+- `path:<full-path>`
+  - wait for the first matching process path and attach
+- `launch:<full-path>`
+  - launch, attach, and resume deterministically
+
+### Stream Sets
+
+```text
+handle,memory,thread
+handle,memory,thread,etw
 ```
 
-Contents:
+- `handle,memory,thread`
+  - IOCTL telemetry
+- `handle,memory,thread,etw`
+  - IOCTL telemetry plus broker ETW uplink
 
-- See `usage/README.md` for example workflows and code snippets.
+### Scope
 
-Quick Start (IOCTL)
+```text
+local
+remote
+both
+```
 
-1. Install and start the driver.
-2. Open the control device (`\\.\Global\SleepwalkerCtl`).
-3. Subscribe to a PID and stream mask.
-4. Poll for events until the queue is empty.
-5. Unsubscribe and close.
+Examples:
 
-Quick Start (ETW)
+```bat
+SleepwalkerClient.exe 4242 handle,memory,thread
+SleepwalkerClient.exe 4242 handle,memory,thread,etw both
+SleepwalkerClient.exe path:C:\Lab\sample.exe handle,memory,thread remote
+SleepwalkerClient.exe launch:C:\Lab\sample.exe handle,memory,thread
+```
 
-1. Start a real-time session for `Sleepwalker.Kernel`.
-2. Enable the provider.
-3. Consume events via `ProcessTrace`.
-4. Stop the session and clean up.
+### Structured Logging
 
-Preferred Integration Surface
+```bat
+SleepwalkerClient.exe --log-format jsonl --log-file events.swk.jsonl --high-priority-file high_priority.swk.jsonl --high-priority-min-severity 4 <target> <streams> [scope]
+```
 
-Use the shared SDK in `user/sensor/sleepwalker_sensor_core.h` and link against `SleepwalkerSensorCore.dll`:
+### Policy File Mode
 
-- `SLEEPWALKERSCOpenControlDevice`
-- `SLEEPWALKERSCSubscribe`
-- `SLEEPWALKERSCUnsubscribe`
-- `SLEEPWALKERSCSetPids`
-- `SLEEPWALKERSCGetEvent`
-- `SLEEPWALKERSCGetStats`
-- `SLEEPWALKERSCParseStreamMaskA`
-- `SLEEPWALKERSCStopSessionByName`
-- `SLEEPWALKERSCStartEtwSession`
-- `SLEEPWALKERSCStartSleepwalkerEtwSession`
-- `SwkStartDetectionEtwSession`
-- `SLEEPWALKERSCRunEtwSession`
-- `SLEEPWALKERSCStopEtwSession`
+```bat
+SleepwalkerClient.exe --config user\sensor\sleepwalker_client.policy.example.yaml
+```
 
-Typed detection callback surface:
+## SleepwalkerIoctlTest
 
-- `SwkDetectionEvent`
-- `SwkDetectionCallback`
+`SleepwalkerIoctlTest.exe` is the end-to-end validation harness.
+
+### Run
+
+```bat
+SleepwalkerIoctlTest.exe
+```
+
+### What It Checks
+
+- broker handshake
+- driver open path
+- IOCTL subscription and event delivery
+- grouped telemetry and detection surfaces
+- ETW family coverage
+- multi-client fanout
+- deep-path enrichment and capture-backed evidence fields
+
+### Useful Runtime Knobs
+
+```bat
+set SLEEPWALKER_TEST_BROKER_PIPE=\\.\pipe\<name>
+set SLEEPWALKER_TEST_REQUIRE_KERNEL_CORRELATION=1
+set SLEEPWALKER_TEST_REQUIRE_APC=1
+```
+
+## Controller Service
+
+Install or update:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\usage\install-controller-service.ps1
+```
+
+Remove:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\usage\install-controller-service.ps1 -Uninstall
+```
+
+Check status:
+
+```bat
+sc query SleepwlkrController
+```
+
+## Interface
+
+Launch the GUI after the driver and controller are up:
+
+```bat
+SleepwalkerInterface.exe
+```
+
+Main workflow:
+
+1. `Select Target`
+2. review timeline, events, ETW, heuristics, and relations
+3. scrub the time-travel slider when needed
+4. open `Detection Chain`, `ETW Inspector`, `Handle Evidence`, or `Thread Stack`
+5. save/export the session
+
+## Session Export
+
+The interface can export session data to:
+
+- `.jsonl`
+- `.csv`
+- `.cef`
+- `.attack.csv`
+- `.swlkr` / `.sleepwlkr`
+
+## More Detail
+
+- [Getting Started.md](./Getting%20Started.md)
+- [README.md](./README.md)
+- [INSTALL.md](./INSTALL.md)
+- [API.md](./API.md)
+- [user/sensor/README.md](./user/sensor/README.md)

@@ -248,14 +248,15 @@ namespace SleepwalkerInterface
                     TelemetryEvent? telemetry = MapIoctlRecord(ioctl);
                     ProcessRelationView? relation = MapIoctlRelation(ioctl);
                     HeuristicEventView? heuristic = MapIoctlHeuristic(ioctl);
+                    ThreadLifecycleEventSample? threadLifecycle = MapIoctlThreadLifecycle(ioctl);
                     if (relation != null)
                     {
                         ProcessIdentityResolver.Prime(relation.SourcePid);
                         ProcessIdentityResolver.Prime(relation.TargetPid);
                     }
-                    if (telemetry != null || relation != null || heuristic != null)
+                    if (telemetry != null || relation != null || heuristic != null || threadLifecycle != null)
                     {
-                        _pendingUiWork.Enqueue(BackendUiWorkItem.FromIoctl(telemetry, relation, heuristic));
+                        _pendingUiWork.Enqueue(BackendUiWorkItem.FromIoctl(telemetry, relation, heuristic, threadLifecycle));
                         Interlocked.Increment(ref _pendingUiWorkCount);
                         producedUiWork = true;
                     }
@@ -353,6 +354,20 @@ namespace SleepwalkerInterface
                             HeuristicsPaneHost.TotalRawCount);
                         SetExplorerHasData("Heuristics", HeuristicsPaneHost.ItemCount > 0);
                         DiagnosticsState.Increment("Heuristics");
+                    }
+                    if (uiWork.ThreadLifecycle != null)
+                    {
+                        PerformancePaneHost.PushThreadLifecycle(uiWork.ThreadLifecycle);
+                        if (_currentSession != null)
+                        {
+                            _currentSession.ThreadLifecycleHistory.Add(CloneThreadLifecycleEvent(uiWork.ThreadLifecycle));
+                            if (_currentSession.ThreadLifecycleHistory.Count > 40_000)
+                            {
+                                _currentSession.ThreadLifecycleHistory.RemoveRange(
+                                    0,
+                                    _currentSession.ThreadLifecycleHistory.Count - 40_000);
+                            }
+                        }
                     }
                 }
                 else if (uiWork.Kind == BackendUiWorkKind.Etw && uiWork.EtwView != null)
@@ -748,19 +763,67 @@ namespace SleepwalkerInterface
             {
                 uint process = record.ProcessPid;
                 uint creator = record.CreatorPid;
+                string eventKind = DetermineThreadLifecycleKind(record.ThreadFlags, record.StartAddress, record.ImageSize);
+                string threadFlags = EventDetailFormatting.DescribeThreadFlags(record.ThreadFlags);
                 return new TelemetryEvent
                 {
                     TimestampUtc = now,
                     PID = unchecked((int)process),
                     TID = unchecked((int)record.ThreadId),
                     Group = "Kernel-IOCTL",
-                    SubType = "Thread",
-                    Summary = $"creator={creator} process={process} flags=0x{record.ThreadFlags:X8}",
-                    Details = $"seq={record.Sequence} start=0x{record.StartAddress:X} imageBase=0x{record.ImageBase:X} imageSize=0x{record.ImageSize:X}"
+                    SubType = $"Thread{eventKind}",
+                    Summary = $"{eventKind} creator={creator} process={process} flags=0x{record.ThreadFlags:X8}",
+                    Details = $"seq={record.Sequence} start=0x{record.StartAddress:X} imageBase=0x{record.ImageBase:X} imageSize=0x{record.ImageSize:X} decodedFlags={threadFlags}"
                 };
             }
 
             return null;
+        }
+
+        private static ThreadLifecycleEventSample? MapIoctlThreadLifecycle(IoctlParsedEvent record)
+        {
+            if (record.Type != SleepwalkerNative.EventTypeThread)
+            {
+                return null;
+            }
+
+            DateTime now = DateTime.UtcNow;
+            string eventKind = DetermineThreadLifecycleKind(record.ThreadFlags, record.StartAddress, record.ImageSize);
+            string decodedFlags = EventDetailFormatting.DescribeThreadFlags(record.ThreadFlags);
+
+            return new ThreadLifecycleEventSample
+            {
+                TimestampUtc = now,
+                ProcessPid = record.ProcessPid,
+                ThreadId = record.ThreadId,
+                CreatorPid = record.CreatorPid,
+                Flags = record.ThreadFlags,
+                StartAddress = record.StartAddress,
+                ImageBase = record.ImageBase,
+                ImageSize = record.ImageSize,
+                EventKind = eventKind,
+                Notes = $"flags={decodedFlags}"
+            };
+        }
+
+        private static string DetermineThreadLifecycleKind(uint threadFlags, ulong startAddress, ulong imageSize)
+        {
+            if ((threadFlags & 0x00000200u) != 0)
+            {
+                return "Exit";
+            }
+
+            if ((threadFlags & 0x00000001u) == 0 && startAddress == 0 && imageSize == 0)
+            {
+                return "Exit";
+            }
+
+            if ((threadFlags & 0x00000001u) != 0)
+            {
+                return "Start";
+            }
+
+            return "Update";
         }
 
         private ProcessRelationView? MapIoctlRelation(IoctlParsedEvent record)
@@ -882,8 +945,8 @@ namespace SleepwalkerInterface
 
             string detection = SleepwalkerNative.AnsiBufferToString(etw.DetectionName);
             string reason = SleepwalkerNative.WideBufferToString(etw.Reason);
-            uint actor = etw.PrimaryPid is > 0 and <= uint.MaxValue ? (uint)etw.PrimaryPid : etw.EventProcessId;
-            uint target = etw.SecondaryPid is > 0 and <= uint.MaxValue ? (uint)etw.SecondaryPid : 0;
+            uint actor = ResolveBrokerEtwActorPid(etw);
+            uint target = ResolveBrokerEtwTargetPid(etw);
             DateTime now = DateTime.UtcNow;
 
             return new BrokerEtwEventView
@@ -891,6 +954,7 @@ namespace SleepwalkerInterface
                 TimestampUtc = now,
                 LastSeenUtc = now,
                 Source = source,
+                Family = etw.Family,
                 EventName = eventName,
                 Task = etw.Task,
                 Opcode = etw.Opcode,
@@ -898,15 +962,101 @@ namespace SleepwalkerInterface
                 EventProcessId = etw.EventProcessId,
                 EventThreadId = etw.EventThreadId,
                 Severity = etw.Severity,
+                Flags = etw.Flags,
                 ActorPid = actor,
                 TargetPid = target,
+                ProcessPid = etw.ProcessId is > 0 and <= uint.MaxValue ? (uint)etw.ProcessId : 0,
+                ThreadId = etw.ThreadId is > 0 and <= uint.MaxValue ? (uint)etw.ThreadId : 0,
+                CallerPid = etw.CallerPid is > 0 and <= uint.MaxValue ? (uint)etw.CallerPid : 0,
+                ExplicitTargetPid = etw.TargetPid is > 0 and <= uint.MaxValue ? (uint)etw.TargetPid : 0,
+                ParentPid = etw.ParentProcessId is > 0 and <= uint.MaxValue ? (uint)etw.ParentProcessId : 0,
+                CreatorPid = etw.CreatorProcessId is > 0 and <= uint.MaxValue ? (uint)etw.CreatorProcessId : 0,
+                CreatorThreadId = etw.CreatorThreadId is > 0 and <= uint.MaxValue ? (uint)etw.CreatorThreadId : 0,
                 CorrelationFlags = etw.CorrelationFlags,
                 CorrelationAccessMask = etw.CorrelationAccessMask,
                 CorrelationAgeMs = etw.CorrelationAgeMs,
                 DetectionName = detection,
                 Reason = reason,
+                ClassName = SleepwalkerNative.AnsiBufferToString(etw.ClassName),
+                Operation = SleepwalkerNative.AnsiBufferToString(etw.Operation),
+                DesiredAccess = etw.DesiredAccess,
+                OriginAddress = etw.OriginAddress,
+                OriginProtect = etw.OriginProtect,
+                StatusOpenProcess = etw.StatusOpenProcess,
+                StatusBasicInfo = etw.StatusBasicInfo,
+                StatusSectionName = etw.StatusSectionName,
+                StackCount = etw.StackCount,
+                Stack = etw.Stack ?? Array.Empty<ulong>(),
+                DeepAllocationBase = etw.DeepAllocationBase,
+                DeepRegionSize = etw.DeepRegionSize,
+                DeepRegionProtect = etw.DeepRegionProtect,
+                DeepRegionState = etw.DeepRegionState,
+                DeepRegionType = etw.DeepRegionType,
+                DeepSampleSize = etw.DeepSampleSize,
+                DeepSample = etw.DeepSample ?? Array.Empty<byte>(),
+                OriginPath = SleepwalkerNative.WideBufferToString(etw.OriginPath),
+                StartAddress = etw.StartAddress,
+                ImageBase = etw.ImageBase,
+                ImageSize = etw.ImageSize,
+                StartRegionProtect = etw.StartRegionProtect,
+                StartRegionState = etw.StartRegionState,
+                StartRegionType = etw.StartRegionType,
+                StartRegionStatus = etw.StartRegionStatus,
+                SessionId = etw.SessionId,
+                CreateStatus = etw.CreateStatus,
+                ProcessStartKey = etw.ProcessStartKey,
+                SignatureLevel = etw.SignatureLevel,
+                SignatureType = etw.SignatureType,
+                NotifyClass = etw.NotifyClass,
+                DataType = etw.DataType,
+                DataSize = etw.DataSize,
+                ImagePath = SleepwalkerNative.WideBufferToString(etw.ImagePath),
+                CommandLine = SleepwalkerNative.WideBufferToString(etw.CommandLine),
+                KeyPath = SleepwalkerNative.WideBufferToString(etw.KeyPath),
+                ValueName = SleepwalkerNative.WideBufferToString(etw.ValueName),
                 RepeatCount = 1
             };
+        }
+
+        private static uint ResolveBrokerEtwActorPid(SleepwalkerNative.SwIpcEtwEvent etw)
+        {
+            return etw.Family switch
+            {
+                SleepwalkerNative.IpcEtwFamilyHandle or SleepwalkerNative.IpcEtwFamilyApc =>
+                    NarrowPid(etw.CallerPid) ?? NarrowPid(etw.ProcessId) ?? etw.EventProcessId,
+                SleepwalkerNative.IpcEtwFamilyThread =>
+                    NarrowPid(etw.CreatorProcessId) ?? NarrowPid(etw.ProcessId) ?? etw.EventProcessId,
+                SleepwalkerNative.IpcEtwFamilyProcess =>
+                    NarrowPid(etw.CreatorProcessId) ?? NarrowPid(etw.ParentProcessId) ?? NarrowPid(etw.ProcessId) ??
+                    etw.EventProcessId,
+                SleepwalkerNative.IpcEtwFamilyImage or
+                SleepwalkerNative.IpcEtwFamilyRegistry or
+                SleepwalkerNative.IpcEtwFamilyDetection or
+                SleepwalkerNative.IpcEtwFamilyThreatIntel =>
+                    NarrowPid(etw.ProcessId) ?? etw.EventProcessId,
+                _ => NarrowPid(etw.ProcessId) ?? NarrowPid(etw.CallerPid) ?? etw.EventProcessId
+            };
+        }
+
+        private static uint ResolveBrokerEtwTargetPid(SleepwalkerNative.SwIpcEtwEvent etw)
+        {
+            return etw.Family switch
+            {
+                SleepwalkerNative.IpcEtwFamilyHandle or
+                SleepwalkerNative.IpcEtwFamilyApc or
+                SleepwalkerNative.IpcEtwFamilyDetection or
+                SleepwalkerNative.IpcEtwFamilyThreatIntel =>
+                    NarrowPid(etw.TargetPid) ?? 0,
+                SleepwalkerNative.IpcEtwFamilyThread or
+                SleepwalkerNative.IpcEtwFamilyProcess =>
+                    NarrowPid(etw.ProcessId) ?? 0,
+                _ => NarrowPid(etw.TargetPid) ?? 0
+            };
+        }
+
+        private static uint? NarrowPid(ulong value)
+        {
+            return value is > 0 and <= uint.MaxValue ? (uint)value : null;
         }
 
         private void HandleBrokerEtwView(BrokerEtwEventView view)
@@ -915,9 +1065,9 @@ namespace SleepwalkerInterface
             if (keepEtw)
             {
                 EtwPaneHost.PushEvent(view);
-                _explorer.FirstOrDefault(x => x.Name == "Sleepwalker ETW")?.PushPreviewValue(
+                _explorer.FirstOrDefault(x => x.Name == "ETW")?.PushPreviewValue(
                     EtwPaneHost.TotalRawCount);
-                SetExplorerHasData("Sleepwalker ETW", EtwPaneHost.ItemCount > 0);
+                SetExplorerHasData("ETW", EtwPaneHost.ItemCount > 0);
             }
 
             string timelineGroup = "Sleepwalker-ETW";
@@ -1088,6 +1238,7 @@ namespace SleepwalkerInterface
             internal TelemetryEvent? Telemetry { get; }
             internal ProcessRelationView? Relation { get; }
             internal HeuristicEventView? Heuristic { get; }
+            internal ThreadLifecycleEventSample? ThreadLifecycle { get; }
             internal BrokerEtwEventView? EtwView { get; }
             internal string? StatusLine { get; }
 
@@ -1096,6 +1247,7 @@ namespace SleepwalkerInterface
                 TelemetryEvent? telemetry,
                 ProcessRelationView? relation,
                 HeuristicEventView? heuristic,
+                ThreadLifecycleEventSample? threadLifecycle,
                 BrokerEtwEventView? etwView,
                 string? statusLine)
             {
@@ -1103,18 +1255,23 @@ namespace SleepwalkerInterface
                 Telemetry = telemetry;
                 Relation = relation;
                 Heuristic = heuristic;
+                ThreadLifecycle = threadLifecycle;
                 EtwView = etwView;
                 StatusLine = statusLine;
             }
 
-            internal static BackendUiWorkItem FromIoctl(TelemetryEvent? telemetry, ProcessRelationView? relation, HeuristicEventView? heuristic)
-                => new(BackendUiWorkKind.Ioctl, telemetry, relation, heuristic, null, null);
+            internal static BackendUiWorkItem FromIoctl(
+                TelemetryEvent? telemetry,
+                ProcessRelationView? relation,
+                HeuristicEventView? heuristic,
+                ThreadLifecycleEventSample? threadLifecycle)
+                => new(BackendUiWorkKind.Ioctl, telemetry, relation, heuristic, threadLifecycle, null, null);
 
             internal static BackendUiWorkItem FromEtw(BrokerEtwEventView etwView)
-                => new(BackendUiWorkKind.Etw, null, null, null, etwView, null);
+                => new(BackendUiWorkKind.Etw, null, null, null, null, etwView, null);
 
             internal static BackendUiWorkItem FromStatus(string statusLine)
-                => new(BackendUiWorkKind.Status, null, null, null, null, statusLine);
+                => new(BackendUiWorkKind.Status, null, null, null, null, null, statusLine);
         }
 
         private void SaveIntelSessionState(int pid)
@@ -1146,7 +1303,7 @@ namespace SleepwalkerInterface
             ProcessRelationsPaneHost.LoadHistory(CompactGroupsForMemory(rel, 48));
             if (EtwPaneHost.ItemCount > 0)
             {
-                FindExplorerItem("Sleepwalker ETW")?.PushPreviewValue(EtwPaneHost.TotalRawCount);
+                FindExplorerItem("ETW")?.PushPreviewValue(EtwPaneHost.TotalRawCount);
             }
             if (HeuristicsPaneHost.ItemCount > 0)
             {
@@ -1224,7 +1381,7 @@ namespace SleepwalkerInterface
             bool shouldWarn = userInitiated || !string.Equals(_lastConnectivityIssueSignature, signature, StringComparison.Ordinal);
             if (shouldWarn)
             {
-                MessageBox.Show(
+                ThemedMessageBox.Show(
                     this,
                     $"Could not fully connect to the driver/service uplink.\n\n{detail}",
                     "Sleepwalker Connectivity",
@@ -1265,7 +1422,11 @@ namespace SleepwalkerInterface
 
         private async void DriverStop_Click(object sender, RoutedEventArgs e)
         {
-            if (MessageBox.Show(this, "Stop the kernel driver 'sleepwlkr'?", "Driver Stop", MessageBoxButton.YesNo,
+            if (ThemedMessageBox.Show(
+                    this,
+                    "Stop the kernel driver 'sleepwlkr'?",
+                    "Driver Stop",
+                    MessageBoxButton.YesNo,
                     MessageBoxImage.Warning) != MessageBoxResult.Yes)
             {
                 return;

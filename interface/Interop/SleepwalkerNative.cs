@@ -38,6 +38,36 @@ namespace SleepwalkerInterface
         private const int MaxIpcEventNameChars = 96;
         private const int MaxIpcDetectionNameChars = 128;
         private const int MaxIpcReasonChars = 256;
+        private const int MaxIpcShortTextChars = 64;
+        private const int MaxIpcImagePathChars = 260;
+        private const int MaxIpcCommandLineChars = 512;
+        private const int MaxIpcKeyPathChars = 512;
+        private const int MaxIpcValueNameChars = 256;
+        private const int MaxIpcStackFrames = 8;
+        private const int MaxIpcDeepSampleBytes = 64;
+
+        internal const uint IpcEtwFamilyUnknown = 0;
+        internal const uint IpcEtwFamilyHandle = 1;
+        internal const uint IpcEtwFamilyThread = 2;
+        internal const uint IpcEtwFamilyProcess = 3;
+        internal const uint IpcEtwFamilyImage = 4;
+        internal const uint IpcEtwFamilyRegistry = 5;
+        internal const uint IpcEtwFamilyApc = 6;
+        internal const uint IpcEtwFamilyDetection = 7;
+        internal const uint IpcEtwFamilyThreatIntel = 8;
+
+        internal const uint IpcEtwFlagHandleExecProtect = 0x00000001;
+        internal const uint IpcEtwFlagHandleFromNtdll = 0x00000002;
+        internal const uint IpcEtwFlagHandleFromExe = 0x00000004;
+        internal const uint IpcEtwFlagThreadGotStart = 0x00000008;
+        internal const uint IpcEtwFlagThreadGotRange = 0x00000010;
+        internal const uint IpcEtwFlagThreadRemoteCreator = 0x00000020;
+        internal const uint IpcEtwFlagThreadOutsideMainImage = 0x00000040;
+        internal const uint IpcEtwFlagProcessIsCreate = 0x00000080;
+        internal const uint IpcEtwFlagImageSystemMode = 0x00000100;
+        internal const uint IpcEtwFlagImageSignatureKnown = 0x00000200;
+        internal const uint IpcEtwFlagRegistryHighValue = 0x00000400;
+        internal const uint IpcEtwFlagApcDuplicateOperation = 0x00000800;
 
         [StructLayout(LayoutKind.Sequential, Pack = 8)]
         internal struct SwStatsResponse
@@ -52,6 +82,7 @@ namespace SleepwalkerInterface
         internal struct SwIpcEtwEvent
         {
             public uint Source;
+            public uint Family;
             public ushort EventId;
             public ushort Opcode;
             public ushort Task;
@@ -59,9 +90,14 @@ namespace SleepwalkerInterface
             public uint EventProcessId;
             public uint EventThreadId;
             public uint Severity;
-            public uint Reserved1;
-            public ulong PrimaryPid;
-            public ulong SecondaryPid;
+            public uint Flags;
+            public ulong ProcessId;
+            public ulong ThreadId;
+            public ulong CallerPid;
+            public ulong TargetPid;
+            public ulong ParentProcessId;
+            public ulong CreatorProcessId;
+            public ulong CreatorThreadId;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcEventNameChars)]
             public ushort[] EventName;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcDetectionNameChars)]
@@ -72,6 +108,54 @@ namespace SleepwalkerInterface
             public uint Reserved2;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcReasonChars)]
             public ushort[] Reason;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcShortTextChars)]
+            public byte[] ClassName;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcShortTextChars)]
+            public byte[] Operation;
+            public uint DesiredAccess;
+            public uint OriginProtect;
+            public ulong OriginAddress;
+            public int StatusOpenProcess;
+            public int StatusBasicInfo;
+            public int StatusSectionName;
+            public uint StackCount;
+            public uint Reserved3;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcStackFrames)]
+            public ulong[] Stack;
+            public ulong DeepAllocationBase;
+            public ulong DeepRegionSize;
+            public uint DeepRegionProtect;
+            public uint DeepRegionState;
+            public uint DeepRegionType;
+            public uint DeepSampleSize;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcDeepSampleBytes)]
+            public byte[] DeepSample;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcImagePathChars)]
+            public ushort[] OriginPath;
+            public ulong StartAddress;
+            public ulong ImageBase;
+            public ulong ImageSize;
+            public uint StartRegionProtect;
+            public uint StartRegionState;
+            public uint StartRegionType;
+            public int StartRegionStatus;
+            public uint SessionId;
+            public int CreateStatus;
+            public ulong ProcessStartKey;
+            public byte SignatureLevel;
+            public byte SignatureType;
+            public ushort Reserved4;
+            public uint NotifyClass;
+            public uint DataType;
+            public uint DataSize;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcImagePathChars)]
+            public ushort[] ImagePath;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcCommandLineChars)]
+            public ushort[] CommandLine;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcKeyPathChars)]
+            public ushort[] KeyPath;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcValueNameChars)]
+            public ushort[] ValueName;
         }
 
         [DllImport("SleepwalkerSensorCore.dll", EntryPoint = "SLEEPWALKERSCUseClientProtocol", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode, SetLastError = true)]
@@ -219,10 +303,10 @@ namespace SleepwalkerInterface
             const int payloadOffset = 24;
             if (type == EventTypeHandle)
             {
-                const int legacyHandlePayloadSize = 744;
+                const int baseHandlePayloadSize = 744;
                 const int fullFrameSlots = 32;
                 const int stackSnapshotBytes = 256;
-                if (bytesRead < payloadOffset + legacyHandlePayloadSize)
+                if (bytesRead < payloadOffset + baseHandlePayloadSize)
                 {
                     return false;
                 }
@@ -257,7 +341,7 @@ namespace SleepwalkerInterface
                 }
                 parsed.OriginPath = ReadWideFixedString(buffer, payloadOffset + 224, 260);
 
-                int extendedBase = payloadOffset + legacyHandlePayloadSize;
+                int extendedBase = payloadOffset + baseHandlePayloadSize;
                 parsed.CaptureFlags = ReadU32(buffer, extendedBase + 0);
                 parsed.FullFrameCount = ReadU32(buffer, extendedBase + 4);
                 parsed.FullFrames = new ulong[fullFrameSlots];

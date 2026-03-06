@@ -291,11 +291,11 @@ static BOOL ControllerShouldForwardEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_
         (void)ControllerEtwGetU64Property(Record, L"targetPid", &targetPid);
         if (targetPid == 0)
         {
-            targetPid = Event->SecondaryPid;
+            targetPid = Event->TargetPid;
         }
         if (processId == 0)
         {
-            processId = Event->PrimaryPid;
+            processId = (Event->ProcessId != 0) ? Event->ProcessId : Event->EventProcessId;
         }
         selfTarget = (processId != 0 && targetPid != 0 && processId == targetPid);
 
@@ -387,6 +387,14 @@ static BOOL ControllerShouldForwardEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_
         (void)ControllerEtwGetU32Property(Record, L"correlationFlags", &correlationFlags);
         (void)ControllerEtwGetU64Property(Record, L"processId", &processId);
         (void)ControllerEtwGetU64Property(Record, L"creatorPid", &creatorPid);
+        if (creatorPid == 0)
+        {
+            creatorPid = Event->CreatorProcessId;
+        }
+        if (processId == 0)
+        {
+            processId = Event->ProcessId;
+        }
 
         if ((correlationFlags & (SLEEPWALKER_INTENT_PROCESS_MEMORY | SLEEPWALKER_INTENT_THREAD_CONTEXT |
                                  SLEEPWALKER_INTENT_DUP_HANDLE)) != 0)
@@ -419,16 +427,50 @@ static BOOL ControllerShouldForwardEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_
 
 static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName, _In_opt_ PVOID Context)
 {
+    static const PCWSTR stackPropertyNames[SLEEPWALKER_IPC_MAX_ETW_STACK_FRAMES] = {
+        L"stack0", L"stack1", L"stack2", L"stack3", L"stack4", L"stack5", L"stack6", L"stack7"};
     SLEEPWALKER_IPC_ETW_EVENT event;
     ULONGLONG processId = 0;
+    ULONGLONG threadId = 0;
     ULONGLONG callerPid = 0;
     ULONGLONG targetPid = 0;
     ULONGLONG parentProcessId = 0;
     ULONGLONG creatorProcessId = 0;
+    ULONGLONG creatorThreadId = 0;
+    ULONGLONG processStartKey = 0;
+    ULONGLONG originAddress = 0;
+    ULONGLONG deepAllocationBase = 0;
+    ULONGLONG deepRegionSize = 0;
+    ULONGLONG startAddress = 0;
+    ULONGLONG imageBase = 0;
+    ULONGLONG imageSize = 0;
     ULONG severity = 0;
     ULONG correlationFlags = 0;
     ULONG correlationAccessMask = 0;
     ULONG correlationAgeMs = 0;
+    ULONG desiredAccess = 0;
+    ULONG originProtect = 0;
+    ULONG frameCount = 0;
+    ULONG deepRegionProtect = 0;
+    ULONG deepRegionState = 0;
+    ULONG deepRegionType = 0;
+    ULONG deepSampleSize = 0;
+    ULONG startRegionProtect = 0;
+    ULONG startRegionState = 0;
+    ULONG startRegionType = 0;
+    ULONG sessionId = 0;
+    ULONG notifyClass = 0;
+    ULONG dataType = 0;
+    ULONG dataSize = 0;
+    LONG statusOpenProcess = 0;
+    LONG statusBasicInfo = 0;
+    LONG statusSectionName = 0;
+    LONG startRegionStatus = 0;
+    LONG createStatus = 0;
+    BOOL boolValue = FALSE;
+    UCHAR signatureLevel = 0;
+    UCHAR signatureType = 0;
+    DWORD i;
 
     UNREFERENCED_PARAMETER(Context);
 
@@ -451,6 +493,7 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
     if (IsEqualGUID(&Record->EventHeader.ProviderId, &SLEEPWALKERSC_PROVIDER_GUID_TI))
     {
         event.Source = SleepwalkerIpcEtwSourceThreatIntel;
+        event.Family = SleepwalkerIpcEtwFamilyThreatIntel;
         (void)InterlockedIncrement(&g_EtwTiEvents);
     }
     else if (IsEqualGUID(&Record->EventHeader.ProviderId, &SLEEPWALKERSC_PROVIDER_GUID_SLEEPWALKER))
@@ -462,30 +505,29 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
         return;
     }
 
-    if (EventName != NULL && wcscmp(EventName, L"DetectionTelemetry") == 0)
-    {
-        (void)InterlockedIncrement(&g_EtwDetectionEvents);
-        (void)ControllerEtwGetAnsiProperty(Record, L"detectionName", event.DetectionName,
-                                           RTL_NUMBER_OF(event.DetectionName));
-        if (event.DetectionName[0] == '\0')
-        {
-            (void)StringCchCopyA(event.DetectionName, RTL_NUMBER_OF(event.DetectionName), "UNKNOWN");
-        }
-        (void)ControllerEtwGetU32Property(Record, L"severity", &severity);
-        event.Severity = severity;
-        (void)ControllerEtwGetU32Property(Record, L"correlationFlags", &correlationFlags);
-        (void)ControllerEtwGetU32Property(Record, L"correlationAccessMask", &correlationAccessMask);
-        (void)ControllerEtwGetU32Property(Record, L"correlationAgeMs", &correlationAgeMs);
-        event.CorrelationFlags = (UINT32)correlationFlags;
-        event.CorrelationAccessMask = (UINT32)correlationAccessMask;
-        event.CorrelationAgeMs = (UINT32)correlationAgeMs;
-        (void)ControllerEtwGetWideProperty(Record, L"reason", event.Reason, RTL_NUMBER_OF(event.Reason));
-    }
+    (void)ControllerEtwGetU32Property(Record, L"severity", &severity);
+    event.Severity = severity;
+    (void)ControllerEtwGetU32Property(Record, L"correlationFlags", &correlationFlags);
+    (void)ControllerEtwGetU32Property(Record, L"correlationAccessMask", &correlationAccessMask);
+    (void)ControllerEtwGetU32Property(Record, L"correlationAgeMs", &correlationAgeMs);
+    event.CorrelationFlags = (UINT32)correlationFlags;
+    event.CorrelationAccessMask = (UINT32)correlationAccessMask;
+    event.CorrelationAgeMs = (UINT32)correlationAgeMs;
 
     (void)ControllerEtwGetU64Property(Record, L"processId", &processId);
+    (void)ControllerEtwGetU64Property(Record, L"threadId", &threadId);
     (void)ControllerEtwGetU64Property(Record, L"callerPid", &callerPid);
     (void)ControllerEtwGetU64Property(Record, L"targetPid", &targetPid);
-    if (processId == 0)
+    (void)ControllerEtwGetU64Property(Record, L"parentProcessId", &parentProcessId);
+    (void)ControllerEtwGetU64Property(Record, L"creatorProcessId", &creatorProcessId);
+    if (creatorProcessId == 0)
+    {
+        (void)ControllerEtwGetU64Property(Record, L"creatorPid", &creatorProcessId);
+    }
+    (void)ControllerEtwGetU64Property(Record, L"creatorThreadId", &creatorThreadId);
+    (void)ControllerEtwGetU64Property(Record, L"processStartKey", &processStartKey);
+
+    if (processId == 0 && callerPid != 0)
     {
         processId = callerPid;
     }
@@ -494,8 +536,203 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
         processId = Record->EventHeader.ProcessId;
     }
 
-    event.PrimaryPid = processId;
-    event.SecondaryPid = targetPid;
+    event.ProcessId = processId;
+    event.ThreadId = threadId;
+    event.CallerPid = callerPid;
+    event.TargetPid = targetPid;
+    event.ParentProcessId = parentProcessId;
+    event.CreatorProcessId = creatorProcessId;
+    event.CreatorThreadId = creatorThreadId;
+    event.ProcessStartKey = processStartKey;
+
+    if (EventName != NULL && wcscmp(EventName, L"HandleTelemetry") == 0)
+    {
+        event.Family = SleepwalkerIpcEtwFamilyHandle;
+        (void)ControllerEtwGetAnsiProperty(Record, L"class", event.ClassName, RTL_NUMBER_OF(event.ClassName));
+        (void)ControllerEtwGetU32Property(Record, L"desiredAccess", &desiredAccess);
+        (void)ControllerEtwGetU64Property(Record, L"originAddress", &originAddress);
+        (void)ControllerEtwGetU32Property(Record, L"originProtect", &originProtect);
+        (void)ControllerEtwGetWideProperty(Record, L"originPath", event.OriginPath, RTL_NUMBER_OF(event.OriginPath));
+        (void)ControllerEtwGetI32Property(Record, L"statusOpenProcess", &statusOpenProcess);
+        (void)ControllerEtwGetI32Property(Record, L"statusBasicInfo", &statusBasicInfo);
+        (void)ControllerEtwGetI32Property(Record, L"statusSectionName", &statusSectionName);
+        (void)ControllerEtwGetU64Property(Record, L"deepAllocationBase", &deepAllocationBase);
+        (void)ControllerEtwGetU64Property(Record, L"deepRegionSize", &deepRegionSize);
+        (void)ControllerEtwGetU32Property(Record, L"deepRegionProtect", &deepRegionProtect);
+        (void)ControllerEtwGetU32Property(Record, L"deepRegionState", &deepRegionState);
+        (void)ControllerEtwGetU32Property(Record, L"deepRegionType", &deepRegionType);
+        (void)ControllerEtwGetU32Property(Record, L"deepSampleSize", &deepSampleSize);
+        (void)ControllerEtwCopyBinaryProperty(Record, L"deepSample", event.DeepSample, RTL_NUMBER_OF(event.DeepSample),
+                                              &event.DeepSampleSize);
+        if (event.DeepSampleSize == 0 && deepSampleSize != 0)
+        {
+            event.DeepSampleSize = (deepSampleSize > RTL_NUMBER_OF(event.DeepSample))
+                                       ? RTL_NUMBER_OF(event.DeepSample)
+                                       : deepSampleSize;
+        }
+        (void)ControllerEtwGetU32Property(Record, L"frameCount", &frameCount);
+        event.StackCount = (frameCount > SLEEPWALKER_IPC_MAX_ETW_STACK_FRAMES) ? SLEEPWALKER_IPC_MAX_ETW_STACK_FRAMES
+                                                                                : frameCount;
+        for (i = 0; i < RTL_NUMBER_OF(stackPropertyNames); ++i)
+        {
+            (void)ControllerEtwGetU64Property(Record, stackPropertyNames[i], &event.Stack[i]);
+        }
+        if (ControllerEtwGetBoolProperty(Record, L"execProtect", &boolValue) && boolValue)
+        {
+            event.Flags |= SLEEPWALKER_IPC_ETW_FLAG_HANDLE_EXEC_PROTECT;
+        }
+        if (ControllerEtwGetBoolProperty(Record, L"fromNtdll", &boolValue) && boolValue)
+        {
+            event.Flags |= SLEEPWALKER_IPC_ETW_FLAG_HANDLE_FROM_NTDLL;
+        }
+        if (ControllerEtwGetBoolProperty(Record, L"fromExe", &boolValue) && boolValue)
+        {
+            event.Flags |= SLEEPWALKER_IPC_ETW_FLAG_HANDLE_FROM_EXE;
+        }
+
+        event.DesiredAccess = desiredAccess;
+        event.OriginAddress = originAddress;
+        event.OriginProtect = originProtect;
+        event.StatusOpenProcess = statusOpenProcess;
+        event.StatusBasicInfo = statusBasicInfo;
+        event.StatusSectionName = statusSectionName;
+        event.DeepAllocationBase = deepAllocationBase;
+        event.DeepRegionSize = deepRegionSize;
+        event.DeepRegionProtect = deepRegionProtect;
+        event.DeepRegionState = deepRegionState;
+        event.DeepRegionType = deepRegionType;
+    }
+    else if (EventName != NULL && wcscmp(EventName, L"ThreadTelemetry") == 0)
+    {
+        event.Family = SleepwalkerIpcEtwFamilyThread;
+        (void)ControllerEtwGetU64Property(Record, L"startAddress", &startAddress);
+        (void)ControllerEtwGetU64Property(Record, L"imageBase", &imageBase);
+        (void)ControllerEtwGetU64Property(Record, L"imageSize", &imageSize);
+        (void)ControllerEtwGetU32Property(Record, L"startRegionProtect", &startRegionProtect);
+        (void)ControllerEtwGetU32Property(Record, L"startRegionState", &startRegionState);
+        (void)ControllerEtwGetU32Property(Record, L"startRegionType", &startRegionType);
+        (void)ControllerEtwGetI32Property(Record, L"startRegionStatus", &startRegionStatus);
+        (void)ControllerEtwGetU32Property(Record, L"workerFrameCount", &frameCount);
+        event.StackCount = (frameCount > SLEEPWALKER_IPC_MAX_ETW_STACK_FRAMES) ? SLEEPWALKER_IPC_MAX_ETW_STACK_FRAMES
+                                                                                : frameCount;
+        for (i = 0; i < RTL_NUMBER_OF(stackPropertyNames); ++i)
+        {
+            (void)ControllerEtwGetU64Property(Record, stackPropertyNames[i], &event.Stack[i]);
+        }
+        if (ControllerEtwGetBoolProperty(Record, L"gotStart", &boolValue) && boolValue)
+        {
+            event.Flags |= SLEEPWALKER_IPC_ETW_FLAG_THREAD_GOT_START;
+        }
+        if (ControllerEtwGetBoolProperty(Record, L"gotRange", &boolValue) && boolValue)
+        {
+            event.Flags |= SLEEPWALKER_IPC_ETW_FLAG_THREAD_GOT_RANGE;
+        }
+        if (ControllerEtwGetBoolProperty(Record, L"isRemoteCreator", &boolValue) && boolValue)
+        {
+            event.Flags |= SLEEPWALKER_IPC_ETW_FLAG_THREAD_REMOTE_CREATOR;
+        }
+        if (ControllerEtwGetBoolProperty(Record, L"outsideMainImage", &boolValue) && boolValue)
+        {
+            event.Flags |= SLEEPWALKER_IPC_ETW_FLAG_THREAD_OUTSIDE_MAIN_IMAGE;
+        }
+
+        event.StartAddress = startAddress;
+        event.ImageBase = imageBase;
+        event.ImageSize = imageSize;
+        event.StartRegionProtect = startRegionProtect;
+        event.StartRegionState = startRegionState;
+        event.StartRegionType = startRegionType;
+        event.StartRegionStatus = startRegionStatus;
+    }
+    else if (EventName != NULL && wcscmp(EventName, L"ProcessTelemetry") == 0)
+    {
+        event.Family = SleepwalkerIpcEtwFamilyProcess;
+        (void)ControllerEtwGetU32Property(Record, L"sessionId", &sessionId);
+        (void)ControllerEtwGetI32Property(Record, L"createStatus", &createStatus);
+        (void)ControllerEtwGetWideProperty(Record, L"imagePath", event.ImagePath, RTL_NUMBER_OF(event.ImagePath));
+        (void)ControllerEtwGetWideProperty(Record, L"commandLine", event.CommandLine, RTL_NUMBER_OF(event.CommandLine));
+        if (ControllerEtwGetBoolProperty(Record, L"isCreate", &boolValue) && boolValue)
+        {
+            event.Flags |= SLEEPWALKER_IPC_ETW_FLAG_PROCESS_IS_CREATE;
+        }
+
+        event.SessionId = sessionId;
+        event.CreateStatus = createStatus;
+    }
+    else if (EventName != NULL && wcscmp(EventName, L"ImageTelemetry") == 0)
+    {
+        event.Family = SleepwalkerIpcEtwFamilyImage;
+        (void)ControllerEtwGetU64Property(Record, L"imageBase", &imageBase);
+        (void)ControllerEtwGetU64Property(Record, L"imageSize", &imageSize);
+        (void)ControllerEtwGetWideProperty(Record, L"imagePath", event.ImagePath, RTL_NUMBER_OF(event.ImagePath));
+        if (ControllerEtwGetBoolProperty(Record, L"isSystemModeImage", &boolValue) && boolValue)
+        {
+            event.Flags |= SLEEPWALKER_IPC_ETW_FLAG_IMAGE_SYSTEM_MODE;
+        }
+        if (ControllerEtwGetBoolProperty(Record, L"isSignatureLevelKnown", &boolValue) && boolValue)
+        {
+            event.Flags |= SLEEPWALKER_IPC_ETW_FLAG_IMAGE_SIGNATURE_KNOWN;
+        }
+        (void)ControllerEtwGetU8Property(Record, L"signatureLevel", &signatureLevel);
+        (void)ControllerEtwGetU8Property(Record, L"signatureType", &signatureType);
+
+        event.ImageBase = imageBase;
+        event.ImageSize = imageSize;
+        event.SignatureLevel = signatureLevel;
+        event.SignatureType = signatureType;
+    }
+    else if (EventName != NULL && wcscmp(EventName, L"RegistryTelemetry") == 0)
+    {
+        event.Family = SleepwalkerIpcEtwFamilyRegistry;
+        (void)ControllerEtwGetAnsiProperty(Record, L"operation", event.Operation, RTL_NUMBER_OF(event.Operation));
+        (void)ControllerEtwGetU32Property(Record, L"sessionId", &sessionId);
+        (void)ControllerEtwGetU32Property(Record, L"notifyClass", &notifyClass);
+        (void)ControllerEtwGetU32Property(Record, L"dataType", &dataType);
+        (void)ControllerEtwGetU32Property(Record, L"dataSize", &dataSize);
+        (void)ControllerEtwGetWideProperty(Record, L"keyPath", event.KeyPath, RTL_NUMBER_OF(event.KeyPath));
+        (void)ControllerEtwGetWideProperty(Record, L"valueName", event.ValueName, RTL_NUMBER_OF(event.ValueName));
+        if (ControllerEtwGetBoolProperty(Record, L"isHighValuePath", &boolValue) && boolValue)
+        {
+            event.Flags |= SLEEPWALKER_IPC_ETW_FLAG_REGISTRY_HIGH_VALUE;
+        }
+
+        event.SessionId = sessionId;
+        event.NotifyClass = notifyClass;
+        event.DataType = dataType;
+        event.DataSize = dataSize;
+    }
+    else if (EventName != NULL && wcscmp(EventName, L"ApcTelemetry") == 0)
+    {
+        event.Family = SleepwalkerIpcEtwFamilyApc;
+        (void)ControllerEtwGetAnsiProperty(Record, L"class", event.ClassName, RTL_NUMBER_OF(event.ClassName));
+        (void)ControllerEtwGetU32Property(Record, L"desiredAccess", &desiredAccess);
+        if (ControllerEtwGetBoolProperty(Record, L"isDuplicateOperation", &boolValue) && boolValue)
+        {
+            event.Flags |= SLEEPWALKER_IPC_ETW_FLAG_APC_DUPLICATE_OPERATION;
+        }
+
+        event.DesiredAccess = desiredAccess;
+    }
+    else if (EventName != NULL && wcscmp(EventName, L"DetectionTelemetry") == 0)
+    {
+        event.Family = SleepwalkerIpcEtwFamilyDetection;
+        (void)InterlockedIncrement(&g_EtwDetectionEvents);
+        (void)ControllerEtwGetAnsiProperty(Record, L"detectionName", event.DetectionName,
+                                           RTL_NUMBER_OF(event.DetectionName));
+        if (event.DetectionName[0] == '\0')
+        {
+            (void)StringCchCopyA(event.DetectionName, RTL_NUMBER_OF(event.DetectionName), "UNKNOWN");
+        }
+        (void)ControllerEtwGetWideProperty(Record, L"reason", event.Reason, RTL_NUMBER_OF(event.Reason));
+    }
+    else
+    {
+        if (event.Source == SleepwalkerIpcEtwSourceThreatIntel)
+        {
+            event.Family = SleepwalkerIpcEtwFamilyThreatIntel;
+        }
+    }
+
     ControllerProcessHollowingEtwRecord(Record, EventName, &event);
 
     if (EventName != NULL && wcscmp(EventName, L"ProcessTelemetry") == 0)
@@ -503,18 +740,16 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
         DWORD sourcePid32 = 0;
         DWORD childPid32 = 0;
 
-        (void)ControllerEtwGetU64Property(Record, L"parentProcessId", &parentProcessId);
-        (void)ControllerEtwGetU64Property(Record, L"creatorProcessId", &creatorProcessId);
-        if (processId != 0 && processId <= 0xFFFFFFFFull)
+        if (event.ProcessId != 0 && event.ProcessId <= 0xFFFFFFFFull)
         {
-            childPid32 = (DWORD)processId;
-            if (creatorProcessId != 0 && creatorProcessId <= 0xFFFFFFFFull)
+            childPid32 = (DWORD)event.ProcessId;
+            if (event.CreatorProcessId != 0 && event.CreatorProcessId <= 0xFFFFFFFFull)
             {
-                sourcePid32 = (DWORD)creatorProcessId;
+                sourcePid32 = (DWORD)event.CreatorProcessId;
             }
-            else if (parentProcessId != 0 && parentProcessId <= 0xFFFFFFFFull)
+            else if (event.ParentProcessId != 0 && event.ParentProcessId <= 0xFFFFFFFFull)
             {
-                sourcePid32 = (DWORD)parentProcessId;
+                sourcePid32 = (DWORD)event.ParentProcessId;
             }
         }
 

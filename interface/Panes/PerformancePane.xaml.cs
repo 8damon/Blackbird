@@ -1324,6 +1324,10 @@ namespace SleepwalkerInterface
                 bool hasMemoryData = _memoryInspectorEnabled ? MemoryInspectorRows.Count > 0 : MemoryMetrics.Count > 0;
                 bool showMemoryNoData = !hasMemoryData;
                 MemoryNoDataOverlay.Visibility = showMemoryNoData ? Visibility.Visible : Visibility.Collapsed;
+                if (MemoryTreemapNoData != null && showMemoryNoData)
+                {
+                    MemoryTreemapNoData.Visibility = Visibility.Collapsed;
+                }
                 if (MemoryNoDataMessageBlock != null)
                 {
                     MemoryNoDataMessageBlock.Text = memoryMessage;
@@ -1644,7 +1648,9 @@ namespace SleepwalkerInterface
 
             if (entries.Count == 0)
             {
-                MemoryTreemapNoData.Visibility = Visibility.Visible;
+                MemoryTreemapNoData.Visibility = MemoryNoDataOverlay?.Visibility == Visibility.Visible
+                    ? Visibility.Collapsed
+                    : Visibility.Visible;
                 return;
             }
 

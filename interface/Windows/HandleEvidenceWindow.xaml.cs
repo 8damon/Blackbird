@@ -19,8 +19,7 @@ namespace SleepwalkerInterface
 
             Title = string.IsNullOrWhiteSpace(context) ? "Handle Evidence" : $"Handle Evidence - {context}";
             HeaderBlock.Text = string.IsNullOrWhiteSpace(context) ? "Handle Evidence" : context.Trim();
-            SummaryBlock.Text =
-                $"{DescribeHandleClass(evidence.HandleClass)}  caller={evidence.CallerPid}  target={evidence.TargetPid}  access=0x{evidence.DesiredAccess:X8}";
+            SummaryBlock.Text = BuildSummaryText(evidence);
 
             FieldsTreeView.ItemsSource = _fieldNodes;
             BuildTree(evidence);
@@ -41,8 +40,23 @@ namespace SleepwalkerInterface
         private void BuildTree(IoctlParsedEvent evidence)
         {
             _fieldNodes.Clear();
+            string syscallLabel = EventDetailFormatting.BuildDirectSyscallLabel(
+                evidence.DesiredAccess,
+                evidence.HandleFlags,
+                evidence.DeepSample,
+                (int)evidence.DeepSampleSize);
+            string analystSummary = EventDetailFormatting.BuildDirectSyscallSummary(
+                evidence.CallerPid.ToString(CultureInfo.InvariantCulture),
+                evidence.TargetPid.ToString(CultureInfo.InvariantCulture),
+                evidence.DesiredAccess,
+                evidence.HandleFlags,
+                evidence.DeepSample,
+                (int)evidence.DeepSampleSize,
+                evidence.OriginPath);
             _rawText =
                 $"callerPid={evidence.CallerPid} targetPid={evidence.TargetPid} class={DescribeHandleClass(evidence.HandleClass)}{Environment.NewLine}" +
+                $"syscall={syscallLabel}{Environment.NewLine}" +
+                $"summary={analystSummary}{Environment.NewLine}" +
                 $"desiredAccess=0x{evidence.DesiredAccess:X8} handleFlags=0x{evidence.HandleFlags:X8}{Environment.NewLine}" +
                 $"originAddress=0x{evidence.OriginAddress:X} originProtect=0x{evidence.OriginProtect:X8}{Environment.NewLine}" +
                 $"deepAllocationBase=0x{evidence.DeepAllocationBase:X} deepRegionSize=0x{evidence.DeepRegionSize:X}{Environment.NewLine}" +
@@ -90,9 +104,11 @@ namespace SleepwalkerInterface
             }
 
             InspectorFieldNode frame = AddSection("Frame");
+            AddPair(frame, "Summary", analystSummary);
             AddPair(frame, "Sequence", evidence.Sequence.ToString(CultureInfo.InvariantCulture));
             AddPair(frame, "Stream Mask", $"0x{evidence.StreamMask:X8}");
             AddPair(frame, "Class", DescribeHandleClass(evidence.HandleClass));
+            AddPair(frame, "Syscall", syscallLabel);
             AddPair(frame, "Caller PID", evidence.CallerPid.ToString(CultureInfo.InvariantCulture));
             AddPair(frame, "Target PID", evidence.TargetPid.ToString(CultureInfo.InvariantCulture));
             AddPair(frame, "Desired Access", $"0x{evidence.DesiredAccess:X8} ({EventDetailFormatting.DescribeHandleAccess(evidence.DesiredAccess)})");
@@ -262,6 +278,30 @@ namespace SleepwalkerInterface
             }
 
             return labels.Count == 0 ? "NONE" : string.Join("|", labels);
+        }
+
+        private static string BuildSummaryText(IoctlParsedEvent evidence)
+        {
+            string prefix = $"{DescribeHandleClass(evidence.HandleClass)}  caller={evidence.CallerPid}  target={evidence.TargetPid}";
+            if (evidence.HandleClass != 2)
+            {
+                return $"{prefix}  access=0x{evidence.DesiredAccess:X8}";
+            }
+
+            string syscallLabel = EventDetailFormatting.BuildDirectSyscallLabel(
+                evidence.DesiredAccess,
+                evidence.HandleFlags,
+                evidence.DeepSample,
+                (int)evidence.DeepSampleSize);
+            string narrative = EventDetailFormatting.BuildDirectSyscallSummary(
+                evidence.CallerPid.ToString(CultureInfo.InvariantCulture),
+                evidence.TargetPid.ToString(CultureInfo.InvariantCulture),
+                evidence.DesiredAccess,
+                evidence.HandleFlags,
+                evidence.DeepSample,
+                (int)evidence.DeepSampleSize,
+                evidence.OriginPath);
+            return $"{syscallLabel}  {narrative}";
         }
 
         private void ExpandAll_Click(object sender, RoutedEventArgs e)

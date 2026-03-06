@@ -192,7 +192,7 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource SummaryLabelStyle}" Text="Detection"/>
+                <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource SummaryLabelStyle}" Text="Summary"/>
                 <TextBlock x:Name="DetectionSummaryBlock" Grid.Row="0" Grid.Column="1" Style="{StaticResource SummaryValueStyle}" FontWeight="SemiBold"/>
                 <TextBlock Grid.Row="0" Grid.Column="2" Style="{StaticResource SummaryLabelStyle}" Text="Time Window"/>
                 <TextBlock x:Name="WindowRangeBlock" Grid.Row="0" Grid.Column="3" Style="{StaticResource SummaryValueStyle}"/>

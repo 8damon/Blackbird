@@ -130,7 +130,7 @@ namespace SleepwalkerInterface
 
         private void UpdateTopSummary(string detection)
         {
-            DetectionSummaryBlock.Text = string.IsNullOrWhiteSpace(detection) ? "-" : detection.Trim();
+            DetectionSummaryBlock.Text = BuildWindowNarrative(detection);
 
             if (_entries.Count == 0)
             {
@@ -217,6 +217,7 @@ namespace SleepwalkerInterface
             string regionProtectToken = ReadTokenValue(evidence, "regionProtect=0x");
             string regionStateToken = ReadTokenValue(evidence, "regionState=0x");
             string regionTypeToken = ReadTokenValue(evidence, "regionType=0x");
+            string handleFlagsToken = ReadTokenValue(evidence, "handleFlags=0x");
             string path = SliceBetween(evidence, "path=", " stack0=");
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -238,6 +239,7 @@ namespace SleepwalkerInterface
             uint regionProtect = TryParseHexU32(regionProtectToken);
             uint regionState = TryParseHexU32(regionStateToken);
             uint regionType = TryParseHexU32(regionTypeToken);
+            uint handleFlags = TryParseHexU32(handleFlagsToken);
             string disasmHint = ReadRestAfter(evidence, "sampleDisasmHint=");
             string disasm = EventDetailFormatting.FormatSampleDisassembly(
                 sampleBytes,
@@ -258,11 +260,17 @@ namespace SleepwalkerInterface
                 disasm = $"hint: {disasmHint}\n{disasm}";
             }
 
-            (uint syscallId, bool hasId) = ExtractSyscallId(sampleBytes);
-            string apiGuess = GuessSyscallApi(row.Detection, access, raw, evidence);
-            string syscallLabel = hasId
-                ? $"{apiGuess} (id=0x{syscallId:X})"
-                : apiGuess;
+            string apiGuess = EventDetailFormatting.ResolveDirectSyscallApi(access, handleFlags, row.Detection);
+            string syscallLabel = EventDetailFormatting.BuildDirectSyscallLabel(access, handleFlags, sampleBytes, sampleBytes.Length, row.Detection);
+            string narrative = EventDetailFormatting.BuildDirectSyscallSummary(
+                row.Actor,
+                row.Target,
+                access,
+                handleFlags,
+                sampleBytes,
+                sampleBytes.Length,
+                path,
+                row.Detection);
 
             string args = $"syscall={syscallLabel}; actor={row.Actor}; target={row.Target}; desiredAccess=0x{access:X8} ({EventDetailFormatting.DescribeHandleAccess(access)})";
             string registerCapture = BuildRegisterCapture(evidence, sampleBytes, originAddress);
@@ -309,6 +317,7 @@ namespace SleepwalkerInterface
                 TargetObject = path,
                 SyscallName = apiGuess,
                 SyscallLabel = syscallLabel,
+                Narrative = narrative,
                 Arguments = args,
                 Context = context,
                 Addresses = addresses,
@@ -364,57 +373,6 @@ namespace SleepwalkerInterface
             return RowUnknownBorder;
         }
 
-        private static string GuessSyscallApi(string detection, uint access, string raw, string evidence)
-        {
-            if (evidence.Contains("DUPLICATE_OPERATION", StringComparison.OrdinalIgnoreCase) ||
-                raw.Contains("INTENT_DUP_HANDLE", StringComparison.OrdinalIgnoreCase))
-            {
-                return "NtDuplicateObject";
-            }
-
-            if ((access & 0x00000010u) != 0 || (access & 0x00000002u) != 0 ||
-                (access & 0x001F03FFu) == 0x001F03FFu)
-            {
-                return "NtOpenThread";
-            }
-
-            if (detection.Contains("HANDLE", StringComparison.OrdinalIgnoreCase) ||
-                (access & 0x001F0FFFu) == 0x001F0FFFu ||
-                access != 0)
-            {
-                return "NtOpenProcess";
-            }
-
-            return "Direct syscall suspect";
-        }
-
-        private static (uint Id, bool HasId) ExtractSyscallId(byte[] bytes)
-        {
-            if (bytes.Length < 11)
-            {
-                return (0, false);
-            }
-
-            for (int i = 0; i <= bytes.Length - 11; i += 1)
-            {
-                if (bytes[i] == 0x4C &&
-                    bytes[i + 1] == 0x8B &&
-                    bytes[i + 2] == 0xD1 &&
-                    bytes[i + 3] == 0xB8 &&
-                    bytes[i + 8] == 0x0F &&
-                    bytes[i + 9] == 0x05)
-                {
-                    uint id = (uint)(bytes[i + 4] |
-                                     (bytes[i + 5] << 8) |
-                                     (bytes[i + 6] << 16) |
-                                     (bytes[i + 7] << 24));
-                    return (id, true);
-                }
-            }
-
-            return (0, false);
-        }
-
         private static string BuildRegisterCapture(string evidence, byte[] bytes, string originAddress)
         {
             var parts = new List<string>();
@@ -432,8 +390,7 @@ namespace SleepwalkerInterface
                 }
             }
 
-            (uint syscallId, bool hasId) = ExtractSyscallId(bytes);
-            if (hasId)
+            if (EventDetailFormatting.TryExtractSyscallId(bytes, bytes.Length, out uint syscallId))
             {
                 parts.Add($"EAX=0x{syscallId:X}");
                 parts.Add("R10=RCX");
@@ -546,6 +503,7 @@ namespace SleepwalkerInterface
             }
 
             OverviewBlock.Text =
+                $"{entry.Narrative}\n" +
                 $"{entry.TimestampUtc:O}\n" +
                 $"{entry.SyscallLabel}\n" +
                 $"severity: {entry.Severity}\n" +
@@ -779,6 +737,28 @@ namespace SleepwalkerInterface
             WindowChromeBehavior.Close(this);
         }
 
+        private string BuildWindowNarrative(string detection)
+        {
+            if (_entries.Count == 0)
+            {
+                return string.IsNullOrWhiteSpace(detection) ? "-" : detection.Trim();
+            }
+
+            string dominantSyscall = _entries
+                .GroupBy(x => x.SyscallName, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(x => x.Count())
+                .ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                .First().Key;
+
+            string dominantFlow = _entries
+                .GroupBy(x => x.ActorTargetFlow, StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(x => x.Count())
+                .ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                .First().Key;
+
+            return $"{detection.Trim()} centered on {dominantSyscall} across {dominantFlow}.";
+        }
+
         private sealed class DirectSyscallEntry
         {
             public DateTime TimestampUtc { get; set; }
@@ -791,6 +771,7 @@ namespace SleepwalkerInterface
             public string TargetObject { get; set; } = "";
             public string SyscallName { get; set; } = "";
             public string SyscallLabel { get; set; } = "";
+            public string Narrative { get; set; } = "";
             public string ActorTargetFlow => $"{Actor} -> {Target}";
             public string DetectionSummary => $"{Detection} | {ActorTargetFlow}";
             public string Arguments { get; set; } = "";
@@ -814,6 +795,7 @@ namespace SleepwalkerInterface
                     TargetObject = TargetObject,
                     SyscallName = SyscallName,
                     SyscallLabel = SyscallLabel,
+                    Narrative = Narrative,
                     Arguments = Arguments,
                     Context = Context,
                     Addresses = Addresses,

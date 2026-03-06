@@ -2,6 +2,13 @@ using System.Collections.Generic;
 
 namespace SleepwalkerInterface
 {
+    internal enum IntelDetailsCategory
+    {
+        Etw,
+        Heuristics,
+        ProcessRelations
+    }
+
     internal enum IntelScopeStatus
     {
         Unknown,

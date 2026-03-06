@@ -64,6 +64,8 @@ namespace SleepwalkerInterface
         private readonly DispatcherTimer _detachedEventLogRefreshTimer;
         private readonly DispatcherTimer _processStateRefreshTimer;
         private bool _scrollSyncPending;
+        private bool _topTimeTravelSyncing;
+        private bool _followLiveTimeline = true;
         private double _pendingScrollStartSeconds;
         private DateTime _scopeStatusCacheUtc;
         private int _scopeStatusCachePid;
@@ -74,9 +76,9 @@ namespace SleepwalkerInterface
         private static readonly Brush ProcessStateWaitingBackground = new SolidColorBrush(Color.FromRgb(0x3D, 0x34, 0x16));
         private static readonly Brush ProcessStateWaitingBorder = new SolidColorBrush(Color.FromRgb(0xDE, 0xC2, 0x62));
         private static readonly Brush ProcessStateWaitingForeground = new SolidColorBrush(Color.FromRgb(0xF8, 0xE9, 0xAF));
-        private static readonly Brush ProcessStateExitedBackground = new SolidColorBrush(Color.FromRgb(0x3D, 0x16, 0x16));
-        private static readonly Brush ProcessStateExitedBorder = new SolidColorBrush(Color.FromRgb(0xE0, 0x5E, 0x5E));
-        private static readonly Brush ProcessStateExitedForeground = new SolidColorBrush(Color.FromRgb(0xF4, 0xC0, 0xC0));
+        private static readonly Brush ProcessStateExitedBackground = new SolidColorBrush(Color.FromRgb(0x28, 0x1A, 0x1A));
+        private static readonly Brush ProcessStateExitedBorder = new SolidColorBrush(Color.FromRgb(0x73, 0x4A, 0x4A));
+        private static readonly Brush ProcessStateExitedForeground = new SolidColorBrush(Color.FromRgb(0xE1, 0xB4, 0xB4));
         private static readonly Brush ProcessStateUnknownBackground = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E));
         private static readonly Brush ProcessStateUnknownBorder = new SolidColorBrush(Color.FromRgb(0x4A, 0x4A, 0x4A));
         private static readonly Brush ProcessStateUnknownForeground = new SolidColorBrush(Color.FromRgb(0xB8, 0xB8, 0xB8));
@@ -100,7 +102,11 @@ namespace SleepwalkerInterface
             {
                 Interval = TimeSpan.FromMilliseconds(900)
             };
-            _processStateRefreshTimer.Tick += (_, __) => RefreshProcessStateBadge();
+            _processStateRefreshTimer.Tick += (_, __) =>
+            {
+                ValidateCurrentSessionState();
+                RefreshProcessStateBadge();
+            };
             Loaded += OnLoaded;
             Closed += OnClosed;
         }
@@ -154,10 +160,13 @@ namespace SleepwalkerInterface
             EtwPaneHost.ReorderRequested += (_, __) => ToggleIntelPaneOrder();
             EtwPaneHost.FloatRequested += (_, __) => ToggleEtwFloatDock();
             EtwPaneHost.CloseRequested += (_, __) => HideEtwPane();
+            EtwPaneHost.InspectRequested += (_, __) => OpenEtwInspector();
             HeuristicsPaneHost.ReorderRequested += (_, __) => ToggleIntelPaneOrder();
             HeuristicsPaneHost.FloatRequested += (_, __) => ToggleHeuristicsFloatDock();
             HeuristicsPaneHost.CloseRequested += (_, __) => HideHeuristicsPane();
+            HeuristicsPaneHost.InspectRequested += (_, __) => OpenHeuristicsInspector();
             ProcessRelationsPaneHost.CloseRequested += (_, __) => HideProcessRelationsPane();
+            ProcessRelationsPaneHost.InspectRequested += (_, __) => OpenProcessRelationsInspector();
             IpcUplinkPaneHost.CloseRequested += (_, __) => HideIpcUplinkPane();
 
             // Explorer setup
@@ -168,6 +177,7 @@ namespace SleepwalkerInterface
 
             UpdateScrollBar();
             FocusViewport();
+            UpdateTopTimeTravelBar();
 
             // Performance sampler + UI sync
             _perf = new PerformanceSampler();
@@ -246,7 +256,7 @@ namespace SleepwalkerInterface
             // Pane identity colors: events=blue, performance=green.
             _explorer.Add(new GraphExplorerItem("Events", new SolidColorBrush(Color.FromRgb(0x4C, 0x8F, 0xD2))) { IsEnabled = true });
             _explorer.Add(new GraphExplorerItem("Performance", new SolidColorBrush(Color.FromRgb(0x58, 0xB6, 0x58))) { IsEnabled = true });
-            _explorer.Add(new GraphExplorerItem("Sleepwalker ETW", new SolidColorBrush(Color.FromRgb(0xD2, 0x89, 0x34))) { IsEnabled = true });
+            _explorer.Add(new GraphExplorerItem("ETW", new SolidColorBrush(Color.FromRgb(0xD2, 0x89, 0x34))) { IsEnabled = true });
             _explorer.Add(new GraphExplorerItem("Heuristics", new SolidColorBrush(Color.FromRgb(0xD2, 0x55, 0x55))) { IsEnabled = true });
             _explorer.Add(new GraphExplorerItem("Process Relations", new SolidColorBrush(Color.FromRgb(0xD2, 0xB8, 0x55))) { IsEnabled = true });
             _explorer.Add(new GraphExplorerItem("IPC Uplink", new SolidColorBrush(Color.FromRgb(0x4A, 0xC1, 0xC6)))
@@ -294,7 +304,7 @@ namespace SleepwalkerInterface
         {
             SetExplorerHasData("Events", _allEvents.Count > 0);
             SetExplorerHasData("Performance", _hasPerformanceData || (_currentSession?.PerformanceHistory.Count ?? 0) > 0);
-            SetExplorerHasData("Sleepwalker ETW", EtwPaneHost.ItemCount > 0);
+            SetExplorerHasData("ETW", EtwPaneHost.ItemCount > 0);
             SetExplorerHasData("Heuristics", HeuristicsPaneHost.ItemCount > 0);
             SetExplorerHasData("Process Relations", ProcessRelationsPaneHost.ItemCount > 0);
             SetExplorerHasData("IPC Uplink", _hasIpcUplinkData);
@@ -305,7 +315,7 @@ namespace SleepwalkerInterface
             bool showEvents = _explorer.FirstOrDefault(x => x.Name == "Events")?.IsEnabled ?? true;
             bool showPerf = _explorer.FirstOrDefault(x => x.Name == "Performance")?.IsEnabled ?? true;
             bool showIpcUplink = _explorer.FirstOrDefault(x => x.Name == "IPC Uplink")?.IsEnabled ?? false;
-            bool showEtw = _explorer.FirstOrDefault(x => x.Name == "Sleepwalker ETW")?.IsEnabled ?? true;
+            bool showEtw = _explorer.FirstOrDefault(x => x.Name == "ETW")?.IsEnabled ?? true;
             bool showHeuristics = _explorer.FirstOrDefault(x => x.Name == "Heuristics")?.IsEnabled ?? true;
             bool showRelations = _explorer.FirstOrDefault(x => x.Name == "Process Relations")?.IsEnabled ?? true;
 
@@ -427,6 +437,7 @@ namespace SleepwalkerInterface
             PerformancePaneHost.SetProcessLiveDataAvailable(true);
             StartTargetExitWatcher(pid);
             StartBackendForPid(pid);
+            StatusBlock.Text = $"LIVE CAPTURE: {NormalizeSessionTitle(_currentSession?.Title ?? $"PID {pid}")}";
             RefreshProcessStateBadge();
         }
 
@@ -451,6 +462,7 @@ namespace SleepwalkerInterface
             catch
             {
                 StopTargetExitWatcher();
+                Dispatcher.BeginInvoke(new Action(ValidateCurrentSessionState));
             }
         }
 
@@ -502,11 +514,22 @@ namespace SleepwalkerInterface
 
         private void HandleTargetProcessExit(int pid)
         {
-            if (pid <= 0 || _currentSession == null || _currentSession.Pid != pid || _currentSession.TargetExited)
+            if (pid <= 0)
                 return;
 
-            _currentSession.TargetExited = true;
-            MarkSessionExited(_currentSession);
+            ProcessSessionTab? exitedTab = _processTabs.FirstOrDefault(x => x.Pid == pid);
+            if (exitedTab == null || exitedTab.TargetExited)
+                return;
+
+            exitedTab.TargetExited = true;
+            MarkSessionExited(exitedTab);
+
+            if (!ReferenceEquals(_currentSession, exitedTab))
+            {
+                SaveTabToBackingStore(exitedTab);
+                RefreshProcessStateBadge();
+                return;
+            }
 
             AppendEvent(new TelemetryEvent
             {
@@ -530,14 +553,32 @@ namespace SleepwalkerInterface
             _samplerPid = 0;
             PerformancePaneHost.SetProcessLiveDataAvailable(false);
 
-            StatusBlock.Text = $"TARGET {pid} EXITED - DATA CAPTURE STOPPED";
+            StatusBlock.Text = $"Target {pid} exited. Capture stopped.";
             RefreshProcessStateBadge();
-            ThemedMessageBox.Show(
+            ThemedMessageBox.ShowToast(
                 this,
-                $"Target process {pid} exited.\n\nData capture has been stopped for this tab.",
+                $"Target process {pid} exited. Data capture has been stopped for this tab.",
                 "Target Exited",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                MessageBoxImage.Warning,
+                durationMs: 5000);
+        }
+
+        private void ValidateCurrentSessionState()
+        {
+            if (_currentSession == null || _currentSession.Pid <= 0 || _currentSession.OfflineSnapshot || _currentSession.TargetExited)
+            {
+                return;
+            }
+
+            if (TryOpenTargetProcess(_currentSession.Pid, out _, out _, out bool accessDenied))
+            {
+                return;
+            }
+
+            if (!accessDenied)
+            {
+                HandleTargetProcessExit(_currentSession.Pid);
+            }
         }
 
         private static void MarkSessionExited(ProcessSessionTab tab)
@@ -589,7 +630,10 @@ namespace SleepwalkerInterface
                 }
             }
 
-            IntPtr handle = OpenProcess(ProcessQueryLimitedInformation | ProcessVmRead | ProcessSynchronize, false, unchecked((uint)pid));
+            IntPtr handle = Kernel32Native.OpenProcess(
+                ProcessQueryLimitedInformation | ProcessVmRead | ProcessSynchronize,
+                false,
+                unchecked((uint)pid));
             if (handle == IntPtr.Zero)
             {
                 int err = Marshal.GetLastWin32Error();
@@ -598,7 +642,7 @@ namespace SleepwalkerInterface
                 return false;
             }
 
-            _ = CloseHandle(handle);
+            _ = Kernel32Native.CloseHandle(handle);
             return true;
         }
 
@@ -710,6 +754,7 @@ namespace SleepwalkerInterface
             PerformancePaneHost.SetCaptureStart(_captureStartUtc);
             PerformancePaneHost.SetPid(tab.Pid);
             PerformancePaneHost.LoadHistory(tab.PerformanceHistory);
+            PerformancePaneHost.LoadThreadLifecycleHistory(tab.ThreadLifecycleHistory);
             RestoreIntelSessionState(tab.Pid);
             SyncPerformanceViewToTimeline();
             _hasPerformanceData = tab.PerformanceHistory.Count > 0;
@@ -747,7 +792,7 @@ namespace SleepwalkerInterface
                 _perf?.Stop();
                 _samplerPid = 0;
                 PerformancePaneHost.SetProcessLiveDataAvailable(false);
-                StatusBlock.Text = $"TARGET {tab.Pid} EXITED - DATA CAPTURE STOPPED";
+                StatusBlock.Text = $"Target {tab.Pid} exited. Capture stopped.";
                 RefreshProcessStateBadge();
                 return;
             }
@@ -763,11 +808,11 @@ namespace SleepwalkerInterface
                 {
                     tab.TargetExited = true;
                     MarkSessionExited(tab);
-                    StatusBlock.Text = $"TARGET {tab.Pid} EXITED - DATA CAPTURE STOPPED";
+                    StatusBlock.Text = $"Target {tab.Pid} exited. Capture stopped.";
                 }
                 else
                 {
-                    StatusBlock.Text = $"ACCESS DENIED TO PID {tab.Pid} - DATA CAPTURE STOPPED";
+                    StatusBlock.Text = $"Access denied to PID {tab.Pid}. Capture stopped.";
                 }
                 RefreshProcessStateBadge();
                 return;
@@ -904,8 +949,8 @@ namespace SleepwalkerInterface
         private void SetProcessStateVisual(string text, Brush background, Brush border, Brush foreground)
         {
             ProcessStateBlock.Text = text;
-            ProcessStateBadge.Background = Brushes.Transparent;
-            ProcessStateBadge.BorderBrush = Brushes.Transparent;
+            ProcessStateBadge.Background = background;
+            ProcessStateBadge.BorderBrush = border;
             ProcessStateBlock.Foreground = foreground;
         }
 
@@ -916,6 +961,7 @@ namespace SleepwalkerInterface
         {
             double maxStart = Math.Max(0, EventsPaneHost.Scroll.Maximum - EventsPaneHost.Scroll.ViewportSize);
             double clamped = Math.Max(0, Math.Min(maxStart, EventsPaneHost.Scroll.Value));
+            _followLiveTimeline = maxStart <= 0.001 || Math.Abs(clamped - maxStart) < 0.25;
             _pendingScrollStartSeconds = clamped;
             EventsPaneHost.Timeline.ViewStartSeconds = clamped;
 
@@ -932,6 +978,7 @@ namespace SleepwalkerInterface
                 double replayStart = Math.Max(0, Math.Min(replayMaxStart, _pendingScrollStartSeconds));
                 EventsPaneHost.Timeline.ViewStartSeconds = replayStart;
                 FocusViewport();
+                UpdateTopTimeTravelBar();
                 SyncPerformanceViewToTimeline();
             }), DispatcherPriority.Render);
         }
@@ -947,6 +994,7 @@ namespace SleepwalkerInterface
                 EventsPaneHost.Scroll.Value = 0;
                 EventsPaneHost.Timeline.ViewStartSeconds = 0;
                 _latestEventTimestampUtc = _captureStartUtc;
+                UpdateTopTimeTravelBar();
                 return;
             }
 
@@ -973,6 +1021,8 @@ namespace SleepwalkerInterface
             {
                 EventsPaneHost.Scroll.Value = maxStart;
             }
+
+            UpdateTopTimeTravelBar();
         }
 
         private void FocusViewport()
@@ -981,7 +1031,7 @@ namespace SleepwalkerInterface
             var viewEnd = viewStart + TimeSpan.FromSeconds(EventsPaneHost.Timeline.ViewDurationSeconds);
 
             double durationSeconds = Math.Max(1, (viewEnd - viewStart).TotalSeconds);
-            RangeBlock.Text = $"Range {viewStart:HH:mm:ss}Z -> {viewEnd:HH:mm:ss}Z  ({durationSeconds:0}s)";
+            RangeBlock.Text = $"Range {viewStart:HH:mm:ss} | {viewEnd:HH:mm:ss}  ({durationSeconds:0}s)";
 
             _focusedEvents.Clear();
             if (_allEvents.Count == 0)
@@ -1006,7 +1056,77 @@ namespace SleepwalkerInterface
             FindExplorerItem("Events")?.PushPreviewValue(_focusedEvents.Count);
             SetExplorerHasData("Events", _allEvents.Count > 0);
             UpdateDetachedEventLogWindow();
+            UpdateTopTimeTravelBar();
         }
+
+        private void UpdateTopTimeTravelBar()
+        {
+            if (TopTimeTravelSlider == null || TopTimeTravelRangeBlock == null || EventsPaneHost?.Scroll == null || EventsPaneHost?.Timeline == null)
+            {
+                return;
+            }
+
+            double viewport = Math.Max(1, EventsPaneHost.Scroll.ViewportSize);
+            double lastEventSeconds = _allEvents.Count > 0
+                ? Math.Max(0, (_allEvents[^1].TimestampUtc - _captureStartUtc).TotalSeconds)
+                : 0;
+            double maximum = Math.Max(viewport, Math.Max(EventsPaneHost.Scroll.Maximum, lastEventSeconds));
+            double maxStart = Math.Max(0, maximum - viewport);
+            double start = Math.Max(0, Math.Min(maxStart, EventsPaneHost.Timeline.ViewStartSeconds));
+
+            _topTimeTravelSyncing = true;
+            TopTimeTravelSlider.Minimum = 0;
+            TopTimeTravelSlider.Maximum = Math.Max(0, maxStart);
+            TopTimeTravelSlider.Value = start;
+            TopTimeTravelSlider.SmallChange = Math.Max(1, viewport / 30.0);
+            TopTimeTravelSlider.LargeChange = Math.Max(1, viewport * 0.5);
+            TopTimeTravelSlider.IsEnabled = maxStart > 0.001;
+            _topTimeTravelSyncing = false;
+
+            DateTime viewStart = _captureStartUtc + TimeSpan.FromSeconds(start);
+            DateTime viewEnd = viewStart + TimeSpan.FromSeconds(viewport);
+            TopTimeTravelRangeBlock.Text = $"{viewStart:HH:mm:ss} | {viewEnd:HH:mm:ss}";
+        }
+
+        private void TopTimeTravelSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_topTimeTravelSyncing || EventsPaneHost?.Scroll == null || EventsPaneHost?.Timeline == null)
+            {
+                return;
+            }
+
+            double viewport = Math.Max(1, EventsPaneHost.Scroll.ViewportSize);
+            double maxStart = Math.Max(0, EventsPaneHost.Scroll.Maximum - viewport);
+            double targetStart = Math.Max(0, Math.Min(maxStart, e.NewValue));
+            _followLiveTimeline = maxStart <= 0.001 || Math.Abs(targetStart - maxStart) < 0.25;
+            EventsPaneHost.Scroll.Value = targetStart;
+            EventsPaneHost.Timeline.ViewStartSeconds = targetStart;
+            FocusViewport();
+            SyncPerformanceViewToTimeline();
+        }
+
+        private void NudgeTopTimeTravel(double secondsDelta)
+        {
+            if (EventsPaneHost?.Scroll == null || EventsPaneHost?.Timeline == null)
+            {
+                return;
+            }
+
+            double viewport = Math.Max(1, EventsPaneHost.Scroll.ViewportSize);
+            double maxStart = Math.Max(0, EventsPaneHost.Scroll.Maximum - viewport);
+            double current = EventsPaneHost.Scroll.Value;
+            double target = Math.Max(0, Math.Min(maxStart, current + secondsDelta));
+            _followLiveTimeline = maxStart <= 0.001 || Math.Abs(target - maxStart) < 0.25;
+            EventsPaneHost.Scroll.Value = target;
+            EventsPaneHost.Timeline.ViewStartSeconds = target;
+            FocusViewport();
+            SyncPerformanceViewToTimeline();
+        }
+
+        private void TopTimeTravelBack10_Click(object sender, RoutedEventArgs e) => NudgeTopTimeTravel(-10);
+        private void TopTimeTravelBack1_Click(object sender, RoutedEventArgs e) => NudgeTopTimeTravel(-1);
+        private void TopTimeTravelForward1_Click(object sender, RoutedEventArgs e) => NudgeTopTimeTravel(1);
+        private void TopTimeTravelForward10_Click(object sender, RoutedEventArgs e) => NudgeTopTimeTravel(10);
 
         private void ScheduleViewportRefresh()
         {
@@ -1020,6 +1140,12 @@ namespace SleepwalkerInterface
             {
                 _viewportRefreshPending = false;
                 UpdateScrollBar();
+                if (_followLiveTimeline && EventsPaneHost?.Scroll != null)
+                {
+                    double maxStart = Math.Max(0, EventsPaneHost.Scroll.Maximum - EventsPaneHost.Scroll.ViewportSize);
+                    EventsPaneHost.Timeline.ViewStartSeconds = maxStart;
+                    EventsPaneHost.Scroll.Value = maxStart;
+                }
                 FocusViewport();
             }), System.Windows.Threading.DispatcherPriority.Background);
         }
@@ -1080,6 +1206,7 @@ namespace SleepwalkerInterface
         // -------------------------------
         private void Timeline_RangeSelected(object? sender, TimeRangeSelectedEventArgs e)
         {
+            _followLiveTimeline = false;
             var dur = (e.EndUtc - e.StartUtc).TotalSeconds;
             double newDuration = Math.Min(120, Math.Max(1, dur));
 
@@ -1169,12 +1296,8 @@ namespace SleepwalkerInterface
         // -------------------------------
         private void Timeline_EventDoubleClicked(object? sender, TelemetryEventSelectedEventArgs e)
         {
-            if (e.Selected == null)
-            {
-                return;
-            }
-
-            OpenIntelDetailsForTelemetryEvent(e.Selected);
+            _ = sender;
+            _ = e;
         }
 
         private void Timeline_SelectedEventChanged(object? sender, TelemetryEventSelectedEventArgs e)
@@ -1217,7 +1340,7 @@ namespace SleepwalkerInterface
 
         private void HideEtwPane()
         {
-            var sw = FindExplorerItem("Sleepwalker ETW");
+            var sw = FindExplorerItem("ETW");
             if (sw != null) sw.IsEnabled = false;
             ApplyDockVisibilityFromExplorer();
         }
@@ -1369,205 +1492,14 @@ namespace SleepwalkerInterface
 
         private void EventLogWindow_EtwFeedRequested(object? sender, EventLogCardOpenRequestedEventArgs e)
         {
-            OpenIntelDetailsFromEventLog(e.Group, e.SubType, e.Summary);
+            _ = sender;
+            _ = e;
         }
 
         private void EventsPaneHost_EventLogEntryOpenRequested(object? sender, EventLogEntryOpenRequestedEventArgs e)
         {
-            if (e.Event != null)
-            {
-                OpenIntelDetailsForTelemetryEvent(e.Event);
-                return;
-            }
-
-            OpenIntelDetailsFromEventLog(e.Group, e.SubType, e.Summary);
-        }
-
-        private void OpenIntelDetailsForTelemetryEvent(TelemetryEvent ev)
-        {
-            if (ev == null)
-            {
-                return;
-            }
-
-            IntelDetailsCategory category = InferIntelCategory(ev.Group, ev.SubType, ev.Summary);
-            IReadOnlyList<GroupedEventDetailRow> details = ((IIntelDetailsProvider)this).GetIntelDetails(category);
-            IReadOnlyList<GroupedEventDetailRow> filtered = FilterIntelRowsByTokens(details, ev.Group, ev.SubType, ev.Summary);
-            GroupedEventDetailRow? preferred = TryFindPreferredIntelRow(filtered, ev) ?? TryFindPreferredIntelRow(details, ev);
-
-            string scope = category switch
-            {
-                IntelDetailsCategory.Heuristics => "Heuristics",
-                IntelDetailsCategory.ProcessRelations => "Process Relations",
-                _ => "ETW Feed"
-            };
-            string subtype = (ev.SubType ?? string.Empty).Trim();
-            string title = subtype.Length > 0 ? $"{scope}: {subtype}" : scope;
-
-            GroupedEventDetailsWindow.ShowUnified(
-                this,
-                category,
-                title,
-                filtered,
-                preferred);
-        }
-
-        private void OpenIntelDetailsFromEventLog(string group, string subType, string summary)
-        {
-            IntelDetailsCategory category = InferIntelCategory(group, subType, summary);
-            IReadOnlyList<GroupedEventDetailRow> details = ((IIntelDetailsProvider)this).GetIntelDetails(category);
-            IReadOnlyList<GroupedEventDetailRow> filtered = FilterIntelRowsByTokens(details, group, subType, summary);
-
-            string scope = category switch
-            {
-                IntelDetailsCategory.Heuristics => "Heuristics",
-                IntelDetailsCategory.ProcessRelations => "Process Relations",
-                _ => "ETW Feed"
-            };
-            string trimmedSubtype = (subType ?? string.Empty).Trim();
-            string title = trimmedSubtype.Length > 0
-                ? $"{scope}: {trimmedSubtype}"
-                : scope;
-
-            GroupedEventDetailsWindow.ShowUnified(
-                this,
-                category,
-                title,
-                filtered);
-        }
-
-        private static IReadOnlyList<GroupedEventDetailRow> FilterIntelRowsByTokens(
-            IReadOnlyList<GroupedEventDetailRow> details,
-            string group,
-            string subType,
-            string summary)
-        {
-            IReadOnlyList<GroupedEventDetailRow> filtered = details;
-            string trimmedSubtype = (subType ?? string.Empty).Trim();
-            string trimmedSummary = (summary ?? string.Empty).Trim();
-            string trimmedGroup = (group ?? string.Empty).Trim();
-
-            string[] tokens = new[] { trimmedSubtype, trimmedSummary, trimmedGroup }
-                .Where(x => x.Length > 0 && x.Length <= 160)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-
-            foreach (string token in tokens)
-            {
-                List<GroupedEventDetailRow> narrowed = filtered
-                    .Where(x =>
-                        x.Event.Contains(token, StringComparison.OrdinalIgnoreCase) ||
-                        x.Detection.Contains(token, StringComparison.OrdinalIgnoreCase) ||
-                        x.Source.Contains(token, StringComparison.OrdinalIgnoreCase) ||
-                        x.Details.Contains(token, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-                if (narrowed.Count > 0)
-                {
-                    filtered = narrowed;
-                }
-            }
-
-            return filtered;
-        }
-
-        private static GroupedEventDetailRow? TryFindPreferredIntelRow(
-            IReadOnlyList<GroupedEventDetailRow> rows,
-            TelemetryEvent ev)
-        {
-            if (rows.Count == 0)
-            {
-                return null;
-            }
-
-            string subtype = (ev.SubType ?? string.Empty).Trim();
-            string summary = (ev.Summary ?? string.Empty).Trim();
-            int targetTid = ev.TID;
-            int targetPid = ev.PID;
-
-            GroupedEventDetailRow? best = null;
-            int bestScore = int.MinValue;
-            foreach (GroupedEventDetailRow row in rows)
-            {
-                int score = 0;
-                if (subtype.Length > 0 &&
-                    row.Event.Contains(subtype, StringComparison.OrdinalIgnoreCase))
-                {
-                    score += 45;
-                }
-
-                if (summary.Length > 0)
-                {
-                    if (row.Detection.Contains(summary, StringComparison.OrdinalIgnoreCase))
-                    {
-                        score += 18;
-                    }
-                    if (row.Details.Contains(summary, StringComparison.OrdinalIgnoreCase))
-                    {
-                        score += 14;
-                    }
-                }
-
-                if (targetTid > 0 &&
-                    int.TryParse(row.EventTid, out int rowTid) &&
-                    rowTid == targetTid)
-                {
-                    score += 85;
-                }
-
-                if (targetPid > 0 &&
-                    int.TryParse(row.EventPid, out int rowPid) &&
-                    rowPid == targetPid)
-                {
-                    score += 55;
-                }
-
-                double dt = Math.Abs((row.TimestampUtc - ev.TimestampUtc).TotalMilliseconds);
-                if (dt <= 800)
-                {
-                    score += 60;
-                }
-                else if (dt <= 2500)
-                {
-                    score += 35;
-                }
-                else if (dt <= 8000)
-                {
-                    score += 12;
-                }
-
-                if (score > bestScore)
-                {
-                    best = row;
-                    bestScore = score;
-                }
-            }
-
-            return best;
-        }
-
-        private static IntelDetailsCategory InferIntelCategory(string group, string subType, string summary)
-        {
-            string g = (group ?? string.Empty).Trim();
-            string s = (subType ?? string.Empty).Trim();
-            string m = (summary ?? string.Empty).Trim();
-
-            if (g.Contains("heuristic", StringComparison.OrdinalIgnoreCase) ||
-                m.Contains("/DetectionTelemetry", StringComparison.OrdinalIgnoreCase) ||
-                m.Contains("_INTENT", StringComparison.OrdinalIgnoreCase) ||
-                m.Contains("SUSPECT_", StringComparison.OrdinalIgnoreCase))
-            {
-                return IntelDetailsCategory.Heuristics;
-            }
-
-            if (g.Contains("kernel-ioctl", StringComparison.OrdinalIgnoreCase) ||
-                g.Contains("process relation", StringComparison.OrdinalIgnoreCase) ||
-                s.Equals("Handle", StringComparison.OrdinalIgnoreCase) ||
-                s.Equals("Thread", StringComparison.OrdinalIgnoreCase))
-            {
-                return IntelDetailsCategory.ProcessRelations;
-            }
-
-            return IntelDetailsCategory.Etw;
+            _ = sender;
+            _ = e;
         }
 
         private void TogglePerformanceFloatDock()
@@ -1611,9 +1543,10 @@ namespace SleepwalkerInterface
             EventsPaneHost.Timeline.ViewDurationSeconds = 120;
             EventsPaneHost.Timeline.ViewStartSeconds = 0;
             EventsPaneHost.Scroll.Value = 0;
+            _followLiveTimeline = true;
             ShowEventsPane();
             ShowPerformancePane();
-            var sw = FindExplorerItem("Sleepwalker ETW");
+            var sw = FindExplorerItem("ETW");
             if (sw != null) sw.IsEnabled = true;
             var heur = FindExplorerItem("Heuristics");
             if (heur != null) heur.IsEnabled = true;
@@ -1628,6 +1561,36 @@ namespace SleepwalkerInterface
             HideDockPreview();
             FocusViewport();
             SyncPerformanceViewToTimeline();
+        }
+
+        private void DockEventsToggle_Click(object sender, RoutedEventArgs e)
+        {
+            ToggleFloatDock();
+        }
+
+        private void DockPerfToggle_Click(object sender, RoutedEventArgs e)
+        {
+            TogglePerformanceFloatDock();
+        }
+
+        private void DockEtwToggle_Click(object sender, RoutedEventArgs e)
+        {
+            ToggleEtwFloatDock();
+        }
+
+        private void DockHeurToggle_Click(object sender, RoutedEventArgs e)
+        {
+            ToggleHeuristicsFloatDock();
+        }
+
+        private void DockSwapMain_Click(object sender, RoutedEventArgs e)
+        {
+            TogglePaneOrder();
+        }
+
+        private void DockSwapIntel_Click(object sender, RoutedEventArgs e)
+        {
+            ToggleIntelPaneOrder();
         }
 
         // -------------------------------
@@ -1650,7 +1613,16 @@ namespace SleepwalkerInterface
         private void PerformancePaneHost_ThreadDoubleClicked(object? sender, ThreadUsageRow row)
         {
             int pid = _currentSession?.Pid ?? TryGetPid();
-            var w = new ThreadStackWindow(pid, row.Tid, row.State)
+            var w = new ThreadStackWindow(
+                pid,
+                row.Tid,
+                row.State,
+                observationTimeUtcProvider: GetCurrentObservedUtc,
+                liveCaptureAvailableProvider: () =>
+                    _currentSession != null &&
+                    _currentSession.Pid == pid &&
+                    !_currentSession.TargetExited &&
+                    !_currentSession.OfflineSnapshot)
             {
                 Owner = this
             };
@@ -1700,15 +1672,18 @@ namespace SleepwalkerInterface
                 return;
 
             SwitchToSession(tab);
-            if (tab.TargetExited)
-            {
-                StatusBlock.Text = $"TARGET {tab.Pid} EXITED - DATA CAPTURE STOPPED";
-            }
-            else
-            {
-                StatusBlock.Text = $"CONNECTED TO {tab.Title}";
-            }
             RefreshProcessStateBadge();
+        }
+
+        private DateTime GetCurrentObservedUtc()
+        {
+            if (EventsPaneHost?.Timeline == null)
+            {
+                return DateTime.UtcNow;
+            }
+
+            return _captureStartUtc +
+                   TimeSpan.FromSeconds(EventsPaneHost.Timeline.ViewStartSeconds + EventsPaneHost.Timeline.ViewDurationSeconds);
         }
 
         // -------------------------------
@@ -1783,11 +1758,7 @@ namespace SleepwalkerInterface
                     Owner = this
                 };
 
-                loading.SetProgress(58, "Scanning processes...", "Building initial process list and filters.");
-                picker.PrimeForFirstShow();
-                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render);
-
-                loading.SetProgress(100, "Opening picker...", "Process picker is ready.");
+                loading.SetProgress(100, "Opening picker...", "Process picker will stream process metadata after opening.");
                 await Task.Delay(90);
                 loading.Close();
                 loading = null;
@@ -2251,7 +2222,42 @@ namespace SleepwalkerInterface
                     WaitReason = t.WaitReason,
                     Kind = t.Kind,
                     StartTimeUtc = t.StartTimeUtc
+                }).ToList(),
+                MemoryMetrics = src.MemoryMetrics.Select(m => new MemoryMetricSample
+                {
+                    Metric = m.Metric,
+                    Value = m.Value,
+                    BytesValue = m.BytesValue
+                }).ToList(),
+                MemoryPages = src.MemoryPages.Select(m => new MemoryPageSample
+                {
+                    BaseAddress = m.BaseAddress,
+                    RegionSize = m.RegionSize,
+                    State = m.State,
+                    Protect = m.Protect,
+                    Type = m.Type,
+                    StateLabel = m.StateLabel,
+                    ProtectLabel = m.ProtectLabel,
+                    TypeLabel = m.TypeLabel,
+                    Category = m.Category
                 }).ToList()
+            };
+        }
+
+        private static ThreadLifecycleEventSample CloneThreadLifecycleEvent(ThreadLifecycleEventSample src)
+        {
+            return new ThreadLifecycleEventSample
+            {
+                TimestampUtc = src.TimestampUtc,
+                ProcessPid = src.ProcessPid,
+                ThreadId = src.ThreadId,
+                CreatorPid = src.CreatorPid,
+                Flags = src.Flags,
+                StartAddress = src.StartAddress,
+                ImageBase = src.ImageBase,
+                ImageSize = src.ImageSize,
+                EventKind = src.EventKind,
+                Notes = src.Notes
             };
         }
 
@@ -2264,12 +2270,6 @@ namespace SleepwalkerInterface
 
         public string? GetLaneFocus() => _laneFocusKey;
 
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern IntPtr OpenProcess(uint desiredAccess, bool inheritHandle, uint processId);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool CloseHandle(IntPtr hObject);
     }
 
     public sealed class ProcessSessionTab : INotifyPropertyChanged
@@ -2278,6 +2278,7 @@ namespace SleepwalkerInterface
         private string _title = "";
         public List<TelemetryEvent> Events { get; } = new();
         public List<PerformanceSample> PerformanceHistory { get; } = new();
+        public List<ThreadLifecycleEventSample> ThreadLifecycleHistory { get; } = new();
         public DateTime CaptureStartUtc { get; set; } = DateTime.UtcNow;
         public double ViewDurationSeconds { get; set; } = 120;
         public double ViewStartSeconds { get; set; }

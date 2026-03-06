@@ -29,8 +29,13 @@ namespace SleepwalkerInterface
         private DateTime _viewStartUtc;
         private DateTime _viewEndUtc;
         private PerformanceSample? _lastSample;
-        private DateTime _lastVadSnapshotUtc;
-        private readonly List<MemoryMetricRow> _cachedVadRows = new();
+        private readonly List<PerformanceSample> _historySamples = new();
+        private readonly List<ThreadLifecycleEventSample> _threadLifecycleHistory = new();
+        private bool _timeTravelEnabled = true;
+        private bool _timeTravelSliderProgrammatic;
+        private int _selectedSampleIndex = -1;
+        private bool _memoryInspectorEnabled;
+        private bool _threadLifecycleEnabled;
 
         private readonly TimeSeriesBuffer _cpu = new(2000);
         private readonly TimeSeriesBuffer _diskRead = new(2000);
@@ -54,6 +59,8 @@ namespace SleepwalkerInterface
         public ObservableCollection<ModuleInfoRow> Modules { get; } = new();
         public ObservableCollection<PeInfoRow> PeInfo { get; } = new();
         public ObservableCollection<MemoryMetricRow> MemoryMetrics { get; } = new();
+        public ObservableCollection<MemoryInspectorRow> MemoryInspectorRows { get; } = new();
+        public ObservableCollection<ThreadLifecycleRow> ThreadLifecycleRows { get; } = new();
         public ObservableCollection<NetworkPeerRow> NetworkPeers { get; } = new();
 
         public PerformancePane()
@@ -63,6 +70,8 @@ namespace SleepwalkerInterface
             if (ModulesGrid != null) ModulesGrid.ItemsSource = Modules;
             if (PeInfoGrid != null) PeInfoGrid.ItemsSource = PeInfo;
             if (MemoryGrid != null) MemoryGrid.ItemsSource = MemoryMetrics;
+            if (MemoryInspectorGrid != null) MemoryInspectorGrid.ItemsSource = MemoryInspectorRows;
+            if (ThreadLifecycleGrid != null) ThreadLifecycleGrid.ItemsSource = ThreadLifecycleRows;
             if (NetworkPeersGrid != null) NetworkPeersGrid.ItemsSource = NetworkPeers;
             if (MemoryTreemapCanvas != null)
             {
@@ -81,6 +90,11 @@ namespace SleepwalkerInterface
                 }
                 if (MemoryGrid != null) MemoryGrid.Visibility = Visibility.Collapsed;
                 if (MemoryTreemapHost != null) MemoryTreemapHost.Visibility = Visibility.Visible;
+                if (MemoryInspectorGrid != null) MemoryInspectorGrid.Visibility = Visibility.Collapsed;
+                if (ThreadsGrid != null) ThreadsGrid.Visibility = Visibility.Visible;
+                if (ThreadLifecycleGrid != null) ThreadLifecycleGrid.Visibility = Visibility.Collapsed;
+                if (TimeTravelStampBlock != null) TimeTravelStampBlock.Text = "LIVE";
+                UpdateMemoryViewMode();
                 UpdateDetailsLayout();
                 UpdateLiveDataOverlays();
             };
@@ -102,14 +116,14 @@ namespace SleepwalkerInterface
                 NetChart.Visibility = Visibility.Collapsed;
                 NetworkPeersGrid.Visibility = Visibility.Visible;
                 NetworkPaneTitle.Text = "Network Peers";
-                NetworkViewSwitchButton.Content = "Switch to Traffic";
+                NetworkViewSwitchButton.Content = "Traffic";
                 return;
             }
 
             NetChart.Visibility = Visibility.Visible;
             NetworkPeersGrid.Visibility = Visibility.Collapsed;
             NetworkPaneTitle.Text = "Network Traffic";
-            NetworkViewSwitchButton.Content = "Switch to Peers";
+            NetworkViewSwitchButton.Content = "Peers";
         }
 
         private static SolidColorBrush Brush(byte r, byte g, byte b)
@@ -170,8 +184,68 @@ namespace SleepwalkerInterface
             _captureStartUtc = captureStartUtc;
         }
 
+        private DateTime GetObservedTimestampUtc()
+        {
+            if (_viewEndUtc != default)
+            {
+                return _viewEndUtc;
+            }
+
+            if (_historySamples.Count > 0)
+            {
+                return _historySamples[^1].TimestampUtc;
+            }
+
+            return DateTime.UtcNow;
+        }
+
+        private int ResolveSampleIndexForTimestamp(DateTime timestampUtc)
+        {
+            if (_historySamples.Count == 0)
+            {
+                return -1;
+            }
+
+            DateTime first = _historySamples[0].TimestampUtc;
+            DateTime last = _historySamples[^1].TimestampUtc;
+            DateTime target = timestampUtc == default ? last : timestampUtc;
+
+            if (target < first)
+            {
+                return -1;
+            }
+
+            if (!_processLiveDataAvailable && target > last)
+            {
+                return -1;
+            }
+
+            return FindSampleIndexForTimestamp(target);
+        }
+
+        private int ResolveSampleIndexForCurrentView()
+            => ResolveSampleIndexForTimestamp(GetObservedTimestampUtc());
+
+        private bool HasHistoricalDataForObservedTime()
+            => ResolveSampleIndexForCurrentView() >= 0;
+
         public void SetPid(int pid)
         {
+            if (_pid != pid)
+            {
+                _historySamples.Clear();
+                _threadLifecycleHistory.Clear();
+                _selectedSampleIndex = -1;
+                TopThreads.Clear();
+                ThreadLifecycleRows.Clear();
+                MemoryMetrics.Clear();
+                MemoryInspectorRows.Clear();
+                RebuildTimeTravelSliderBounds();
+                if (TimeTravelStampBlock != null)
+                {
+                    TimeTravelStampBlock.Text = "LIVE";
+                }
+            }
             _pid = pid;
         }
 
@@ -180,10 +254,23 @@ namespace SleepwalkerInterface
             _processLiveDataAvailable = available;
             if (!available)
             {
-                TopThreads.Clear();
-                MemoryMetrics.Clear();
-                NetworkPeers.Clear();
-                UpdateMemoryTreemap();
+                if (_historySamples.Count == 0)
+                {
+                    TopThreads.Clear();
+                    ThreadLifecycleRows.Clear();
+                    MemoryMetrics.Clear();
+                    MemoryInspectorRows.Clear();
+                    NetworkPeers.Clear();
+                    UpdateMemoryTreemap();
+                }
+                else if (_selectedSampleIndex >= 0 && _selectedSampleIndex < _historySamples.Count)
+                {
+                    ApplySampleIndex(ResolveSampleIndexForCurrentView(), updateSlider: true);
+                }
+                else
+                {
+                    ApplySampleIndex(ResolveSampleIndexForCurrentView(), updateSlider: true);
+                }
             }
 
             UpdateLiveDataOverlays();
@@ -199,13 +286,25 @@ namespace SleepwalkerInterface
             RamChart?.SetView(_viewStartUtc, _viewEndUtc);
             NetChart?.SetView(_viewStartUtc, _viewEndUtc);
 
+            if (_timeTravelEnabled && _historySamples.Count > 0)
+            {
+                int index = ResolveSampleIndexForCurrentView();
+                ApplySampleIndex(index, updateSlider: true);
+            }
+
             UpdateSubtitle();
         }
 
         public void PushSample(PerformanceSample s)
         {
             _processLiveDataAvailable = true;
-            _lastSample = s;
+            _lastSample = CloneSample(s);
+            _historySamples.Add(CloneSample(s));
+            if (_historySamples.Count > 4000)
+            {
+                _historySamples.RemoveRange(0, _historySamples.Count - 4000);
+            }
+            RebuildTimeTravelSliderBounds();
 
             // keep buffers (not strictly necessary for drawing but useful if you want export later)
             _cpu.Add(s.TimestampUtc, s.CpuPercent);
@@ -220,12 +319,12 @@ namespace SleepwalkerInterface
             RamChart?.PushSample(s);
             NetChart?.PushSample(s);
 
-            // Update threads table
-            TopThreads.Clear();
-            foreach (var t in s.TopThreads.Take(14))
-                TopThreads.Add(new ThreadUsageRow(t));
+            if (!_timeTravelEnabled)
+            {
+                ApplySampleIndex(_historySamples.Count - 1, updateSlider: true);
+            }
 
-            if ((DateTime.UtcNow - _lastDetailsRefreshUtc).TotalSeconds >= 5.0)
+            if (!_timeTravelEnabled && (DateTime.UtcNow - _lastDetailsRefreshUtc).TotalSeconds >= 5.0)
             {
                 RefreshProcessDetails();
                 _lastDetailsRefreshUtc = DateTime.UtcNow;
@@ -237,22 +336,39 @@ namespace SleepwalkerInterface
 
         public void LoadHistory(IEnumerable<PerformanceSample> samples)
         {
-            var list = samples.ToList();
+            var list = samples.Select(CloneSample).OrderBy(x => x.TimestampUtc).ToList();
+            _historySamples.Clear();
+            _historySamples.AddRange(list);
+            _selectedSampleIndex = _historySamples.Count - 1;
+
             CpuChart?.SetSamples(list);
             DiskChart?.SetSamples(list);
             RamChart?.SetSamples(list);
             NetChart?.SetSamples(list);
 
-            TopThreads.Clear();
             if (list.Count > 0)
             {
                 _lastSample = list[^1];
-                foreach (var t in _lastSample.TopThreads.Take(14))
-                    TopThreads.Add(new ThreadUsageRow(t));
             }
             else
             {
                 _lastSample = null;
+            }
+
+            RebuildTimeTravelSliderBounds();
+            if (_historySamples.Count > 0)
+            {
+                int index = _timeTravelEnabled
+                    ? ResolveSampleIndexForCurrentView()
+                    : _historySamples.Count - 1;
+                ApplySampleIndex(index, updateSlider: true);
+            }
+            else
+            {
+                TopThreads.Clear();
+                MemoryMetrics.Clear();
+                MemoryInspectorRows.Clear();
+                UpdateMemoryTreemap();
             }
 
             RefreshProcessDetails();
@@ -260,9 +376,249 @@ namespace SleepwalkerInterface
             UpdateLiveDataOverlays();
         }
 
+        public void PushThreadLifecycle(ThreadLifecycleEventSample sample)
+        {
+            _threadLifecycleHistory.Add(CloneThreadLifecycleEvent(sample));
+            if (_threadLifecycleHistory.Count > 40_000)
+            {
+                _threadLifecycleHistory.RemoveRange(0, _threadLifecycleHistory.Count - 40_000);
+            }
+
+            if (!_timeTravelEnabled)
+            {
+                RebuildThreadLifecycleRows(DateTime.UtcNow);
+            }
+
+            UpdateLiveDataOverlays();
+        }
+
+        public void LoadThreadLifecycleHistory(IEnumerable<ThreadLifecycleEventSample> history)
+        {
+            _threadLifecycleHistory.Clear();
+            _threadLifecycleHistory.AddRange(history.Select(CloneThreadLifecycleEvent).OrderBy(x => x.TimestampUtc));
+
+            DateTime cutoff = _historySamples.Count > 0 && _selectedSampleIndex >= 0 && _selectedSampleIndex < _historySamples.Count
+                ? _historySamples[_selectedSampleIndex].TimestampUtc
+                : DateTime.UtcNow;
+            RebuildThreadLifecycleRows(cutoff);
+            UpdateLiveDataOverlays();
+        }
+
+        private void RebuildTimeTravelSliderBounds()
+        {
+            if (TimeTravelSlider == null)
+            {
+                return;
+            }
+
+            _timeTravelSliderProgrammatic = true;
+            TimeTravelSlider.Minimum = 0;
+            TimeTravelSlider.Maximum = Math.Max(0, _historySamples.Count - 1);
+            TimeTravelSlider.IsEnabled = _historySamples.Count > 1 && _timeTravelEnabled;
+            if (_historySamples.Count == 0)
+            {
+                TimeTravelSlider.Value = 0;
+                _selectedSampleIndex = -1;
+            }
+            else if (_selectedSampleIndex < 0 || _selectedSampleIndex >= _historySamples.Count)
+            {
+                _selectedSampleIndex = _historySamples.Count - 1;
+                TimeTravelSlider.Value = _selectedSampleIndex;
+            }
+            _timeTravelSliderProgrammatic = false;
+        }
+
+        private int FindSampleIndexForTimestamp(DateTime timestampUtc)
+        {
+            if (_historySamples.Count == 0)
+            {
+                return -1;
+            }
+
+            DateTime target = timestampUtc == default ? _historySamples[^1].TimestampUtc : timestampUtc;
+            int lo = 0;
+            int hi = _historySamples.Count - 1;
+            while (lo < hi)
+            {
+                int mid = lo + ((hi - lo + 1) / 2);
+                if (_historySamples[mid].TimestampUtc <= target)
+                {
+                    lo = mid;
+                }
+                else
+                {
+                    hi = mid - 1;
+                }
+            }
+
+            return lo;
+        }
+
+        private void ApplySampleIndex(int index, bool updateSlider)
+        {
+            if (_historySamples.Count == 0 || index < 0 || index >= _historySamples.Count)
+            {
+                _selectedSampleIndex = -1;
+                TopThreads.Clear();
+                ThreadLifecycleRows.Clear();
+                MemoryMetrics.Clear();
+                MemoryInspectorRows.Clear();
+                NetworkPeers.Clear();
+                if (TimeTravelStampBlock != null)
+                {
+                    TimeTravelStampBlock.Text = "LIVE";
+                }
+                UpdateSubtitle();
+                UpdateMemoryTreemap();
+                UpdateLiveDataOverlays();
+                return;
+            }
+
+            _selectedSampleIndex = index;
+            PerformanceSample sample = _historySamples[index];
+            _lastSample = sample;
+
+            TopThreads.Clear();
+            foreach (ThreadUsageSample thread in sample.TopThreads.Take(14))
+            {
+                TopThreads.Add(new ThreadUsageRow(thread));
+            }
+
+            MemoryMetrics.Clear();
+            foreach (MemoryMetricSample metric in sample.MemoryMetrics)
+            {
+                MemoryMetrics.Add(new MemoryMetricRow
+                {
+                    Metric = metric.Metric,
+                    Value = metric.Value,
+                    BytesValue = metric.BytesValue
+                });
+            }
+            RebuildMemoryInspectorRows(sample.MemoryPages);
+            RebuildThreadLifecycleRows(sample.TimestampUtc);
+
+            if (TimeTravelStampBlock != null)
+            {
+                string mode = _timeTravelEnabled ? "T" : "LIVE";
+                TimeTravelStampBlock.Text = $"{mode} {sample.TimestampUtc:HH:mm:ss}";
+            }
+
+            if (updateSlider && TimeTravelSlider != null)
+            {
+                _timeTravelSliderProgrammatic = true;
+                TimeTravelSlider.Value = _selectedSampleIndex;
+                _timeTravelSliderProgrammatic = false;
+            }
+
+            UpdateMemoryViewMode();
+            UpdateMemoryTreemap();
+            UpdateSubtitle();
+            UpdateLiveDataOverlays();
+        }
+
+        private void RebuildMemoryInspectorRows(IEnumerable<MemoryPageSample> pages)
+        {
+            MemoryInspectorRows.Clear();
+            foreach (MemoryPageSample page in pages.Take(768))
+            {
+                MemoryInspectorRows.Add(new MemoryInspectorRow
+                {
+                    BaseAddress = $"0x{page.BaseAddress:X}",
+                    Size = FormatBytes((long)Math.Min(page.RegionSize, (ulong)long.MaxValue)),
+                    State = page.StateLabel,
+                    Type = page.TypeLabel,
+                    Protect = page.ProtectLabel,
+                    Category = page.Category
+                });
+            }
+        }
+
+        private void RebuildThreadLifecycleRows(DateTime cutoffUtc)
+        {
+            ThreadLifecycleRows.Clear();
+            IEnumerable<ThreadLifecycleEventSample> rows = _threadLifecycleHistory
+                .Where(x => x.TimestampUtc <= cutoffUtc)
+                .OrderByDescending(x => x.TimestampUtc)
+                .Take(256);
+            foreach (ThreadLifecycleEventSample row in rows)
+            {
+                ThreadLifecycleRows.Add(new ThreadLifecycleRow(row));
+            }
+        }
+
+        private static PerformanceSample CloneSample(PerformanceSample src)
+        {
+            return new PerformanceSample
+            {
+                TimestampUtc = src.TimestampUtc,
+                CoreCount = src.CoreCount,
+                CpuPercent = src.CpuPercent,
+                CoresUsedPercent = src.CoresUsedPercent,
+                DiskReadBytesPerSec = src.DiskReadBytesPerSec,
+                DiskWriteBytesPerSec = src.DiskWriteBytesPerSec,
+                PrivateBytes = src.PrivateBytes,
+                ReservedBytes = src.ReservedBytes,
+                NetInBytesPerSec = src.NetInBytesPerSec,
+                NetOutBytesPerSec = src.NetOutBytesPerSec,
+                NetPacketsPerSec = src.NetPacketsPerSec,
+                TopThreads = src.TopThreads.Select(t => new ThreadUsageSample
+                {
+                    Tid = t.Tid,
+                    CpuMsDelta = t.CpuMsDelta,
+                    State = t.State,
+                    WaitReason = t.WaitReason,
+                    Kind = t.Kind,
+                    StartTimeUtc = t.StartTimeUtc
+                }).ToList(),
+                MemoryMetrics = src.MemoryMetrics.Select(m => new MemoryMetricSample
+                {
+                    Metric = m.Metric,
+                    Value = m.Value,
+                    BytesValue = m.BytesValue
+                }).ToList(),
+                MemoryPages = src.MemoryPages.Select(m => new MemoryPageSample
+                {
+                    BaseAddress = m.BaseAddress,
+                    RegionSize = m.RegionSize,
+                    State = m.State,
+                    Protect = m.Protect,
+                    Type = m.Type,
+                    StateLabel = m.StateLabel,
+                    ProtectLabel = m.ProtectLabel,
+                    TypeLabel = m.TypeLabel,
+                    Category = m.Category
+                }).ToList()
+            };
+        }
+
+        private static ThreadLifecycleEventSample CloneThreadLifecycleEvent(ThreadLifecycleEventSample src)
+        {
+            return new ThreadLifecycleEventSample
+            {
+                TimestampUtc = src.TimestampUtc,
+                ProcessPid = src.ProcessPid,
+                ThreadId = src.ThreadId,
+                CreatorPid = src.CreatorPid,
+                Flags = src.Flags,
+                StartAddress = src.StartAddress,
+                ImageBase = src.ImageBase,
+                ImageSize = src.ImageSize,
+                EventKind = src.EventKind,
+                Notes = src.Notes
+            };
+        }
+
         private void UpdateSubtitle()
         {
             var scope = _pid > 0 ? $"PID {_pid}" : "System-wide";
+            if (_selectedSampleIndex < 0 || _selectedSampleIndex >= _historySamples.Count)
+            {
+                PerfSubTitle.Text = !_processLiveDataAvailable && _historySamples.Count > 0
+                    ? $"{scope} | No data at selected time"
+                    : $"{scope} | No data";
+                return;
+            }
+
             if (_lastSample == null)
             {
                 PerfSubTitle.Text = $"{scope}";
@@ -276,6 +632,41 @@ namespace SleepwalkerInterface
         private void PerfBtnReorder_Click(object sender, System.Windows.RoutedEventArgs e) => ReorderRequested?.Invoke(this, e);
         private void PerfBtnFloat_Click(object sender, System.Windows.RoutedEventArgs e) => FloatRequested?.Invoke(this, e);
         private void PerfBtnClose_Click(object sender, System.Windows.RoutedEventArgs e) => CloseRequested?.Invoke(this, e);
+
+        private void TimeTravelToggle_Checked(object sender, RoutedEventArgs e)
+        {
+            _timeTravelEnabled = true;
+            RebuildTimeTravelSliderBounds();
+            int index = ResolveSampleIndexForCurrentView();
+            ApplySampleIndex(index, updateSlider: true);
+        }
+
+        private void TimeTravelToggle_Unchecked(object sender, RoutedEventArgs e)
+        {
+            _timeTravelEnabled = false;
+            RebuildTimeTravelSliderBounds();
+            if (_historySamples.Count > 0)
+            {
+                ApplySampleIndex(_historySamples.Count - 1, updateSlider: true);
+                RebuildThreadLifecycleRows(DateTime.UtcNow);
+            }
+            else
+            {
+                UpdateSubtitle();
+                UpdateLiveDataOverlays();
+            }
+        }
+
+        private void TimeTravelSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (_timeTravelSliderProgrammatic || !_timeTravelEnabled)
+            {
+                return;
+            }
+
+            int index = (int)Math.Round(e.NewValue);
+            ApplySampleIndex(index, updateSlider: false);
+        }
 
         private void ThreadsGrid_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
@@ -391,6 +782,7 @@ namespace SleepwalkerInterface
                 DetailsSplitter.HorizontalAlignment = HorizontalAlignment.Stretch;
                 DetailsSplitter.VerticalAlignment = VerticalAlignment.Stretch;
                 DetailsSplitter.ResizeDirection = GridResizeDirection.Columns;
+                DetailsSplitter.Style = null;
 
                 Grid.SetRow(MemoryPanel, 0);
                 Grid.SetColumn(MemoryPanel, 2);
@@ -421,6 +813,7 @@ namespace SleepwalkerInterface
             DetailsSplitter.HorizontalAlignment = HorizontalAlignment.Stretch;
             DetailsSplitter.VerticalAlignment = VerticalAlignment.Stretch;
             DetailsSplitter.ResizeDirection = GridResizeDirection.Rows;
+            DetailsSplitter.Style = null;
 
             Grid.SetRow(MemoryPanel, 2);
             Grid.SetColumn(MemoryPanel, 0);
@@ -455,7 +848,8 @@ namespace SleepwalkerInterface
                 }
             }
 
-            MessageBox.Show(
+            ThemedMessageBox.Show(
+                Application.Current?.MainWindow,
                 "Could not launch PeView. Ensure peview.exe is available in PATH or in a standard tools folder.",
                 "PeView Not Found",
                 MessageBoxButton.OK,
@@ -489,13 +883,20 @@ namespace SleepwalkerInterface
 
                 RefreshModules(process);
                 RefreshPeInfo(process);
-                RefreshMemoryMetrics(process);
+                if (_historySamples.Count == 0 || _lastSample == null)
+                {
+                    RefreshMemoryMetrics(process);
+                }
                 RefreshNetworkPeers(targetPid);
                 _processLiveDataAvailable = true;
             }
             catch
             {
-                MemoryMetrics.Clear();
+                if (_historySamples.Count == 0)
+                {
+                    MemoryMetrics.Clear();
+                    MemoryInspectorRows.Clear();
+                }
                 NetworkPeers.Clear();
                 UpdateMemoryTreemap();
                 _processLiveDataAvailable = false;
@@ -697,7 +1098,6 @@ namespace SleepwalkerInterface
                 new() { Metric = "Working Set", Value = FormatBytes(process.WorkingSet64), BytesValue = process.WorkingSet64 },
                 new() { Metric = "Peak Working Set", Value = FormatBytes(process.PeakWorkingSet64), BytesValue = process.PeakWorkingSet64 },
                 new() { Metric = "Private Bytes", Value = FormatBytes(process.PrivateMemorySize64), BytesValue = process.PrivateMemorySize64 },
-                // Virtual address range can be huge/sparse and distorts treemap scaling, so do not weight it.
                 new() { Metric = "Virtual Bytes", Value = FormatBytes(process.VirtualMemorySize64), BytesValue = null },
                 new() { Metric = "Paged Memory", Value = FormatBytes(process.PagedMemorySize64), BytesValue = process.PagedMemorySize64 },
                 new() { Metric = "Nonpaged System Memory", Value = FormatBytes(process.NonpagedSystemMemorySize64), BytesValue = process.NonpagedSystemMemorySize64 },
@@ -706,24 +1106,19 @@ namespace SleepwalkerInterface
                 new() { Metric = "Thread Count", Value = process.Threads.Count.ToString(), BytesValue = null }
             };
 
-            bool refreshVad = _cachedVadRows.Count == 0 || (DateTime.UtcNow - _lastVadSnapshotUtc).TotalSeconds >= 20.0;
-            if (refreshVad)
-            {
-                var freshVad = new List<MemoryMetricRow>();
-                AppendVadMetrics(process, freshVad);
-                if (freshVad.Count > 0)
-                {
-                    _cachedVadRows.Clear();
-                    _cachedVadRows.AddRange(freshVad.Select(CloneMetric));
-                    _lastVadSnapshotUtc = DateTime.UtcNow;
-                }
-            }
-
-            rows.AddRange(_cachedVadRows.Select(CloneMetric));
-
             MemoryMetrics.Clear();
             foreach (var row in rows)
                 MemoryMetrics.Add(row);
+
+            try
+            {
+                List<MemoryPageSample> pages = CaptureLiveMemoryPages(process);
+                RebuildMemoryInspectorRows(pages);
+            }
+            catch
+            {
+                MemoryInspectorRows.Clear();
+            }
 
             UpdateMemoryTreemap();
             UpdateLiveDataOverlays();
@@ -890,16 +1285,49 @@ namespace SleepwalkerInterface
 
         private void UpdateLiveDataOverlays()
         {
+            string threadMessage = "No thread data in the selected range.";
+            string memoryMessage = "No memory data in the selected range.";
+            bool historicalDataVisible = HasHistoricalDataForObservedTime();
+
+            if (!_processLiveDataAvailable)
+            {
+                if (_historySamples.Count == 0)
+                {
+                    threadMessage = "Live capture unavailable.";
+                    memoryMessage = "Live capture unavailable.";
+                }
+                else if (!historicalDataVisible)
+                {
+                    threadMessage = "No captured thread data at the selected time.";
+                    memoryMessage = "No captured memory data at the selected time.";
+                }
+                else
+                {
+                    threadMessage = "Live capture unavailable.";
+                    memoryMessage = "Live capture unavailable.";
+                }
+            }
+
             if (ThreadsNoDataOverlay != null)
             {
-                bool showThreadsNoData = !_processLiveDataAvailable || TopThreads.Count == 0;
+                bool hasThreadData = _threadLifecycleEnabled ? ThreadLifecycleRows.Count > 0 : TopThreads.Count > 0;
+                bool showThreadsNoData = !hasThreadData;
                 ThreadsNoDataOverlay.Visibility = showThreadsNoData ? Visibility.Visible : Visibility.Collapsed;
+                if (ThreadsNoDataMessageBlock != null)
+                {
+                    ThreadsNoDataMessageBlock.Text = threadMessage;
+                }
             }
 
             if (MemoryNoDataOverlay != null)
             {
-                bool showMemoryNoData = !_processLiveDataAvailable || MemoryMetrics.Count == 0;
+                bool hasMemoryData = _memoryInspectorEnabled ? MemoryInspectorRows.Count > 0 : MemoryMetrics.Count > 0;
+                bool showMemoryNoData = !hasMemoryData;
                 MemoryNoDataOverlay.Visibility = showMemoryNoData ? Visibility.Visible : Visibility.Collapsed;
+                if (MemoryNoDataMessageBlock != null)
+                {
+                    MemoryNoDataMessageBlock.Text = memoryMessage;
+                }
             }
         }
 
@@ -924,6 +1352,97 @@ namespace SleepwalkerInterface
             return $"{bytes} B";
         }
 
+        private static List<MemoryPageSample> CaptureLiveMemoryPages(Process process)
+        {
+            const uint memCommit = 0x1000;
+            const uint processQuery = 0x0400;
+            const uint processVmRead = 0x0010;
+            const uint processQueryLimited = 0x1000;
+
+            IntPtr hProcess = Kernel32Native.OpenProcess(
+                processQuery | processVmRead | processQueryLimited,
+                false,
+                unchecked((uint)process.Id));
+            if (hProcess == IntPtr.Zero)
+            {
+                return new List<MemoryPageSample>();
+            }
+
+            var pages = new List<MemoryPageSample>(768);
+            try
+            {
+                ulong address = 0;
+                ulong maxAddress = Environment.Is64BitProcess ? 0x00007FFF_FFFFFFFFul : uint.MaxValue;
+                nuint mbiSize = (nuint)Marshal.SizeOf<MEMORY_BASIC_INFORMATION>();
+
+                while (address < maxAddress && pages.Count < 1536)
+                {
+                    nuint ret = VirtualQueryEx(hProcess, (nint)address, out MEMORY_BASIC_INFORMATION mbi, mbiSize);
+                    if (ret == 0)
+                        break;
+
+                    ulong regionSize = (ulong)mbi.RegionSize;
+                    if (regionSize == 0)
+                        break;
+
+                    if (mbi.State == memCommit)
+                    {
+                        pages.Add(new MemoryPageSample
+                        {
+                            BaseAddress = (ulong)mbi.BaseAddress,
+                            RegionSize = regionSize,
+                            State = mbi.State,
+                            Protect = mbi.Protect,
+                            Type = mbi.Type,
+                            StateLabel = EventDetailFormatting.DescribeMemoryState(mbi.State),
+                            ProtectLabel = EventDetailFormatting.DescribeMemoryProtection(mbi.Protect),
+                            TypeLabel = EventDetailFormatting.DescribeMemoryType(mbi.Type),
+                            Category = BuildMemoryCategory(mbi.Type, mbi.Protect)
+                        });
+                    }
+
+                    ulong next = (ulong)mbi.BaseAddress + regionSize;
+                    if (next <= address)
+                        break;
+
+                    address = next;
+                }
+            }
+            finally
+            {
+                _ = Kernel32Native.CloseHandle(hProcess);
+            }
+
+            return pages
+                .OrderByDescending(x => x.RegionSize)
+                .ThenBy(x => x.BaseAddress)
+                .Take(768)
+                .ToList();
+        }
+
+        private static string BuildMemoryCategory(uint type, uint protect)
+        {
+            uint baseProtect = protect & 0xFFu;
+            bool executable = baseProtect == 0x10 || baseProtect == 0x20 || baseProtect == 0x40 || baseProtect == 0x80;
+            bool writable = baseProtect == 0x04 || baseProtect == 0x08 || baseProtect == 0x40 || baseProtect == 0x80;
+
+            string typeLabel = type switch
+            {
+                0x20000 => "Private",
+                0x40000 => "Mapped",
+                0x1000000 => "Image",
+                _ => "Unknown"
+            };
+
+            if (executable && writable)
+                return $"{typeLabel} RWX";
+            if (executable)
+                return $"{typeLabel} RX";
+            if (writable)
+                return $"{typeLabel} RW";
+            return typeLabel;
+        }
+
         private static void AppendVadMetrics(Process process, List<MemoryMetricRow> rows)
         {
             const uint memCommit = 0x1000;
@@ -941,7 +1460,10 @@ namespace SleepwalkerInterface
             const uint processVmRead = 0x0010;
             const uint processQueryLimited = 0x1000;
 
-            IntPtr hProcess = OpenProcess(processQuery | processVmRead | processQueryLimited, false, process.Id);
+            IntPtr hProcess = Kernel32Native.OpenProcess(
+                processQuery | processVmRead | processQueryLimited,
+                false,
+                unchecked((uint)process.Id));
             if (hProcess == IntPtr.Zero)
                 return;
 
@@ -1010,7 +1532,7 @@ namespace SleepwalkerInterface
             }
             finally
             {
-                _ = CloseHandle(hProcess);
+                _ = Kernel32Native.CloseHandle(hProcess);
             }
 
             rows.Add(new MemoryMetricRow { Metric = "VAD Regions", Value = regionCount.ToString(), BytesValue = null });
@@ -1030,10 +1552,7 @@ namespace SleepwalkerInterface
             _memoryTreemapEnabled = true;
             if (MemoryViewToggle != null)
                 MemoryViewToggle.Content = "Table";
-            if (MemoryGrid != null)
-                MemoryGrid.Visibility = Visibility.Collapsed;
-            if (MemoryTreemapHost != null)
-                MemoryTreemapHost.Visibility = Visibility.Visible;
+            UpdateMemoryViewMode();
             UpdateMemoryTreemap();
             UpdateLiveDataOverlays();
         }
@@ -1043,11 +1562,64 @@ namespace SleepwalkerInterface
             _memoryTreemapEnabled = false;
             if (MemoryViewToggle != null)
                 MemoryViewToggle.Content = "Treemap";
-            if (MemoryTreemapHost != null)
-                MemoryTreemapHost.Visibility = Visibility.Collapsed;
-            if (MemoryGrid != null)
-                MemoryGrid.Visibility = Visibility.Visible;
+            UpdateMemoryViewMode();
             UpdateLiveDataOverlays();
+        }
+
+        private void MemoryInspectorToggle_Checked(object sender, RoutedEventArgs e)
+        {
+            _memoryInspectorEnabled = true;
+            UpdateMemoryViewMode();
+            UpdateLiveDataOverlays();
+        }
+
+        private void MemoryInspectorToggle_Unchecked(object sender, RoutedEventArgs e)
+        {
+            _memoryInspectorEnabled = false;
+            UpdateMemoryViewMode();
+            UpdateLiveDataOverlays();
+        }
+
+        private void ThreadLifecycleToggle_Checked(object sender, RoutedEventArgs e)
+        {
+            _threadLifecycleEnabled = true;
+            if (ThreadsGrid != null)
+                ThreadsGrid.Visibility = Visibility.Collapsed;
+            if (ThreadLifecycleGrid != null)
+                ThreadLifecycleGrid.Visibility = Visibility.Visible;
+            UpdateLiveDataOverlays();
+        }
+
+        private void ThreadLifecycleToggle_Unchecked(object sender, RoutedEventArgs e)
+        {
+            _threadLifecycleEnabled = false;
+            if (ThreadLifecycleGrid != null)
+                ThreadLifecycleGrid.Visibility = Visibility.Collapsed;
+            if (ThreadsGrid != null)
+                ThreadsGrid.Visibility = Visibility.Visible;
+            UpdateLiveDataOverlays();
+        }
+
+        private void UpdateMemoryViewMode()
+        {
+            if (MemoryInspectorGrid == null || MemoryGrid == null || MemoryTreemapHost == null || MemoryViewToggle == null)
+            {
+                return;
+            }
+
+            MemoryInspectorGrid.Visibility = _memoryInspectorEnabled ? Visibility.Visible : Visibility.Collapsed;
+
+            if (_memoryInspectorEnabled)
+            {
+                MemoryGrid.Visibility = Visibility.Collapsed;
+                MemoryTreemapHost.Visibility = Visibility.Collapsed;
+                MemoryViewToggle.IsEnabled = false;
+                return;
+            }
+
+            MemoryViewToggle.IsEnabled = true;
+            MemoryGrid.Visibility = _memoryTreemapEnabled ? Visibility.Collapsed : Visibility.Visible;
+            MemoryTreemapHost.Visibility = _memoryTreemapEnabled ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void UpdateMemoryTreemap()
@@ -1229,12 +1801,6 @@ namespace SleepwalkerInterface
         }
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern IntPtr OpenProcess(uint desiredAccess, bool inheritHandle, int processId);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool CloseHandle(IntPtr hObject);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
         private static extern nuint VirtualQueryEx(
             IntPtr hProcess,
             nint lpAddress,
@@ -1392,5 +1958,35 @@ namespace SleepwalkerInterface
         public string Protocol { get; set; } = "";
         public string State { get; set; } = "";
         public int ConnectionCount { get; set; }
+    }
+
+    public sealed class MemoryInspectorRow
+    {
+        public string BaseAddress { get; init; } = "";
+        public string Size { get; init; } = "";
+        public string State { get; init; } = "";
+        public string Type { get; init; } = "";
+        public string Protect { get; init; } = "";
+        public string Category { get; init; } = "";
+    }
+
+    public sealed class ThreadLifecycleRow
+    {
+        public ThreadLifecycleRow(ThreadLifecycleEventSample sample)
+        {
+            Timestamp = sample.TimestampUtc.ToString("HH:mm:ss");
+            EventKind = string.IsNullOrWhiteSpace(sample.EventKind) ? "Update" : sample.EventKind;
+            Tid = sample.ThreadId;
+            CreatorPid = sample.CreatorPid;
+            Flags = $"0x{sample.Flags:X8}";
+            StartAddress = sample.StartAddress == 0 ? string.Empty : $"0x{sample.StartAddress:X}";
+        }
+
+        public string Timestamp { get; }
+        public string EventKind { get; }
+        public uint Tid { get; }
+        public uint CreatorPid { get; }
+        public string Flags { get; }
+        public string StartAddress { get; }
     }
 }

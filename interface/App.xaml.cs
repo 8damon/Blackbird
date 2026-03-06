@@ -152,7 +152,8 @@ namespace SleepwalkerInterface
                 $"Stack:\n{ex.StackTrace}";
             try
             {
-                MessageBox.Show(
+                ThemedMessageBox.Show(
+                    Current?.MainWindow,
                     message,
                     "Sleepwalker Startup Failure",
                     MessageBoxButton.OK,
@@ -197,7 +198,8 @@ namespace SleepwalkerInterface
                     break;
                 }
                 case StartupWelcomeAction.GettingStarted:
-                    MessageBox.Show(
+                    ThemedMessageBox.Show(
+                        welcome,
                         "Getting Started is coming soon.",
                         "Getting Started",
                         MessageBoxButton.OK,
@@ -211,7 +213,7 @@ namespace SleepwalkerInterface
         {
             var dialog = new OpenFileDialog
             {
-                Filter = "Sleepwalker Session (*.swlkr;*.sleepwlkr)|*.swlkr;*.sleepwlkr|All files (*.*)|*.*",
+                Filter = "Sleepwalker Session Archive (*.swlkr;*.sleepwlkr)|*.swlkr;*.sleepwlkr|All files (*.*)|*.*",
                 CheckFileExists = true,
                 Multiselect = false
             };
@@ -241,22 +243,36 @@ namespace SleepwalkerInterface
         {
             if (Current is App app)
             {
-                app.ApplyTheme(UiThemeMode.Dark);
+                app.ApplyTheme(mode);
             }
         }
 
         private void ApplyTheme(UiThemeMode mode)
         {
-            CurrentThemeMode = UiThemeMode.Dark;
-            IsDarkTheme = true;
-
-            const string themeSource = "Themes/DarkTheme.xaml";
+            CurrentThemeMode = mode;
+            bool effectiveDark = ResolveEffectiveDarkMode(mode);
+            string themeSource = effectiveDark ? "Themes/DarkTheme.xaml" : "Themes/LightTheme.xaml";
 
             Resources.MergedDictionaries.Clear();
-            Resources.MergedDictionaries.Add(new ResourceDictionary
+            try
             {
-                Source = new Uri(themeSource, UriKind.Relative)
-            });
+                Resources.MergedDictionaries.Add(new ResourceDictionary
+                {
+                    Source = new Uri(themeSource, UriKind.Relative)
+                });
+            }
+            catch
+            {
+                // Safe fallback while a light theme dictionary is not available.
+                effectiveDark = true;
+                Resources.MergedDictionaries.Clear();
+                Resources.MergedDictionaries.Add(new ResourceDictionary
+                {
+                    Source = new Uri("Themes/DarkTheme.xaml", UriKind.Relative)
+                });
+            }
+
+            IsDarkTheme = effectiveDark;
             Resources["IsDarkTheme"] = IsDarkTheme;
 
             foreach (Window window in Windows)
@@ -266,6 +282,45 @@ namespace SleepwalkerInterface
             }
 
             ThemeChanged?.Invoke(IsDarkTheme);
+        }
+
+        private static bool ResolveEffectiveDarkMode(UiThemeMode mode)
+        {
+            switch (mode)
+            {
+            case UiThemeMode.Dark:
+                return true;
+            case UiThemeMode.Light:
+                return false;
+            case UiThemeMode.Auto:
+            default:
+                return !IsWindowsAppsLightThemeEnabled();
+            }
+        }
+
+        private static bool IsWindowsAppsLightThemeEnabled()
+        {
+            try
+            {
+                using RegistryKey? key = Registry.CurrentUser.OpenSubKey(
+                    @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+                object? raw = key?.GetValue("AppsUseLightTheme");
+                if (raw is int intValue)
+                {
+                    return intValue != 0;
+                }
+
+                if (raw is long longValue)
+                {
+                    return longValue != 0;
+                }
+            }
+            catch
+            {
+            }
+
+            // Keep existing behavior when system preference cannot be read.
+            return false;
         }
 
         private void RebindThemedControlStyles(Window window)

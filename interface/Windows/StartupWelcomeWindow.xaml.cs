@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Input;
 
@@ -20,11 +18,6 @@ namespace SleepwalkerInterface
         public StartupWelcomeWindow()
         {
             InitializeComponent();
-        }
-
-        public void SetSessionFiles(IEnumerable<string> _)
-        {
-            // Intentionally empty: session preview list removed by design.
         }
 
         private void OpenTraceFile_Click(object sender, RoutedEventArgs e)
@@ -57,18 +50,7 @@ namespace SleepwalkerInterface
 
         private void Root_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (e.LeftButton != MouseButtonState.Pressed)
-            {
-                return;
-            }
-
-            try
-            {
-                DragMove();
-            }
-            catch
-            {
-            }
+            WindowChromeBehavior.HandleRootDragMove(this, e);
         }
     }
 }

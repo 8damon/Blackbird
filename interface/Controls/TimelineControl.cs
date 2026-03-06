@@ -470,7 +470,7 @@ namespace SleepwalkerInterface
 
             if (_hasMouse && _hoveredEvent != null)
             {
-                DrawHoverEventCard(dc, _hoveredEvent, axisTop, chartLeft, chartRight, dpi, typeface);
+                DrawHoverEventCard(dc, _hoveredEvent, _mouse, axisTop, chartLeft, chartRight, dpi, typeface);
             }
 
             // Range selection overlay
@@ -506,6 +506,7 @@ namespace SleepwalkerInterface
         private static void DrawHoverEventCard(
             DrawingContext dc,
             TelemetryEvent ev,
+            Point mouse,
             double axisTop,
             double chartLeft,
             double chartRight,
@@ -533,8 +534,13 @@ namespace SleepwalkerInterface
 
             double width = Math.Min(420, Math.Max(260, Math.Max(titleFt.Width, detailFt.Width) + 18));
             double height = titleFt.Height + detailFt.Height + 12;
-            double x = Math.Min(chartRight - width - 6, chartLeft + 8);
-            double y = Math.Max(4, axisTop - height - 6);
+            double x = Math.Min(chartRight - width - 6, Math.Max(chartLeft + 6, mouse.X + 12));
+            double y = mouse.Y - height - 12;
+            if (y < 4)
+            {
+                y = Math.Min(axisTop - height - 4, mouse.Y + 12);
+            }
+            y = Math.Max(4, Math.Min(axisTop - height - 4, y));
 
             dc.DrawRectangle(UiPalette.SurfaceAltBrush, new Pen(UiPalette.BorderBrush, 1), new Rect(x, y, width, height));
             dc.DrawText(titleFt, new Point(x + 7, y + 3));

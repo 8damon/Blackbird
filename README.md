@@ -1,147 +1,151 @@
-# Sleepwalker Alpha
-
-Sleepwalker is a Windows malware-analysis and endpoint-detection platform wrapped around a powerful kernel-mode driver.
-
-<p align="center">
-  <img src="./diagram/SLEEPWALKER_DIA.png" width="980" alt="Sleepwalker platform diagram" />
-</p>
-
-## What It Does
-
-- Captures handle, thread, process, image, registry, APC, and detection telemetry.
-- Correlates low-level intent into higher-confidence detections such as injection, hollowing, remote thread abuse, APC abuse, tamper drift, and direct-syscall abuse.
-- Exposes the data through:
-  - the controller/broker for live interface sessions
-  - the shared `SleepwalkerSensorCore.dll` for user-mode consumers
-  - CLI tools for validation and operator workflows
-- Gives analysts both a live triage surface and deeper Wireshark/WPA-style inspectors for evidence-heavy telemetry.
-
-## Platform Layout
-
-- `kernel/`
-  - KMDF driver, monitor paths, ETW emission, and kernel-side correlation
-- `user/controller/`
-  - Session 0 broker/service, IPC, ETW TI/session handling, correlation runtime
-- `user/sensor/`
-  - `SleepwalkerSensorCore.dll`, `SleepwalkerClient.exe`, `SleepwalkerTestSuite.exe`
-- `interface/`
-  - the WPF analyst interface used for live capture, time travel, and deep inspection
-- `abi/`
-  - shared IOCTL and IPC contracts
-
-## Interface Overview
-
-The interface is designed for malware analysis, system analysis, and endpoint detection. The main shell is a dense triage view; the inspectors are where the high-volume evidence lives.
-
-### Main Workspace
+<h1 align="center">SLEEPWALKER Alpha</h1>
+<p align="center"><b>Kernel Telemetry & Detection Platform for Windows</b></p>
 
 <p align="center">
-  <img src="./diagram/MAIN_INTERFACE.png" width="980" alt="Main Sleepwalker interface" />
+  <img src="https://img.shields.io/badge/-00599C?logo=c&logoColor=white&style=for-the-badge" />
+  <img src="https://img.shields.io/badge/-00599C?logo=c%2B%2B&logoColor=white&style=for-the-badge" />
+  <img src="https://img.shields.io/badge/.NET-512BD4?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/KMDF-000000?style=for-the-badge" />
+  <a href="https://discord.gg/yUWyvT9JyP">
+    <img src="https://img.shields.io/discord/1240608336005828668?label=TITAN%20Softworks&logo=discord&color=5865F2&style=for-the-badge" />
+  </a>
 </p>
-
-The main window is the operator cockpit:
-
-- event timeline and event log for fast triage
-- performance and memory panels for live or historical observation
-- ETW, heuristics, and process-relations panes for correlated signal review
-- toolbar actions for target selection, backend checks, and time travel
-- session open/import/save/export for offline review and reporting
-
-### Target Selection
 
 <p align="center">
-  <img src="./diagram/PROCESS_SELECTOR.png" width="820" alt="Process selector" />
+  <img src="./diagram/MAIN_INTERFACE.png" width="980" alt="Sleepwalker main interface" />
 </p>
 
-The process selector is the entry point for live observation. Operators can attach to an existing PID or use CLI launch/attach flows when deterministic startup matters.
+## What Sleepwalker Is For
 
-### Detection Chain
+Sleepwalker is built for:
+
+- malware analysis
+- suspicious process investigation
+- endpoint telemetry review
+- evidence-heavy detection triage
+
+It captures process, thread, handle, image, registry, APC, and detection telemetry, then groups related activity into operator-facing detections and evidence views.
+
+## Why It Exists
+
+Most telemetry tools are good at collecting data and bad at helping an analyst work through it.
+
+Sleepwalker is meant to close that gap:
+
+- the **main operator panel** gives a live view of what matters now
+- the **detection chain** groups related events into something reviewable
+- the **inspectors** let you drill into the actual evidence when a detection needs validation
+
+The point is not just to log activity. The point is to help an operator move from signal to evidence quickly.
+
+## Main Operator Panel
+
+The main interface is the primary workspace for live triage and session review.
+
+It brings together:
+
+- event timeline
+- event log
+- ETW activity
+- heuristics
+- process relations
+- backend/session state
+- time-travel controls for historical review
+
+This is where an operator attaches to a target, watches activity arrive, and pivots into deeper evidence when something suspicious shows up.
+
+## Detection Chain
+
+The detection chain is the most important investigation view in the platform.
 
 <p align="center">
-  <img src="./diagram/DETECTION_CHAIN.png" width="980" alt="Detection chain window" />
+  <img src="./diagram/DETECTION_CHAIN.png" width="980" alt="Sleepwalker detection chain" />
 </p>
 
-The detection chain window groups detections by event/detection key and lets the analyst pivot into the exact underlying occurrences. It is intended as the investigation surface, not just a log list.
+It groups detections by event and detection key so the operator can review related activity as a single chain instead of a pile of disconnected records.
 
-<p align="center">
-  <img src="./diagram/DETECTION_CHAIN_DETAILS_1.png" width="760" alt="Detection chain detail example 1" />
-  <img src="./diagram/DETECTION_CHAIN_DETAILS_2.png" width="760" alt="Detection chain detail example 2" />
-</p>
+This is where Sleepwalker becomes useful instead of just noisy.
 
-### Direct-Syscall Review
+The detection chain helps answer:
 
-<p align="center">
-  <img src="./diagram/DETECTION_CHAIN_DIRECT_SYSCALL.png" width="980" alt="Direct syscall detection chain" />
-</p>
+- what happened
+- why it was flagged
+- which events belong together
+- what evidence supports the detection
 
-Direct-syscall suspects now surface the inferred syscall name and a short English summary so the operator can immediately see what happened before reading the raw evidence.
+From there, the operator can pivot into the raw underlying records and supporting inspectors.
 
-### ETW Inspector
+## Evidence Views
 
-<p align="center">
-  <img src="./diagram/ETW_INSPECTOR.png" width="980" alt="ETW inspector" />
-</p>
+When a detection needs validation, Sleepwalker exposes the underlying evidence through dedicated inspectors.
 
-The ETW inspector follows a compact expandable-tree model:
+Key views include:
 
-- grouped occurrence list on the left
-- selected occurrence details on the right
-- expandable field sections instead of long text dumps
-- capture-time disassembly and stack data when present
+- **ETW Inspector**  
+  Review grouped ETW occurrences and inspect enriched event details.
 
-### Handle Evidence
+- **Handle Evidence**  
+  Inspect suspicious handle activity, access masks, origin context, captured frames, memory region details, and related payload data.
 
-<p align="center">
-  <img src="./diagram/IOCTL_EVENT_HANDLE.png" width="820" alt="Handle evidence" />
-</p>
+- **Thread Stack**  
+  Review stack snapshots during live capture or while moving through historical samples.
 
-Handle evidence is the forensic view for suspicious handle activity. It exposes access masks, capture flags, region details, registers, captured frames, disassembly hints, and raw payload fields.
+- **Process Relations**  
+  See actor-to-target relationships such as suspicious opens, remote thread activity, and linked intent chains.
 
-### Thread Stack Observation
-
-<p align="center">
-  <img src="./diagram/THREAD_STACK.png" width="820" alt="Thread stack window" />
-</p>
-
-Thread stack inspection supports:
-
-- live refresh while the target is still being observed
-- historical playback when time-traveling over captured samples
-- explicit `No data` states after exit when the selected time no longer has stack data
-
-### Process Relations
-
-<p align="center">
-  <img src="./diagram/PROCESS_RELATIONS.png" width="900" alt="Process relations" />
-</p>
-
-Process relations condense actor-target edges into a reviewer-friendly view for things like suspicious opens, thread creation, and correlated intent chains.
-
-## How The UI Works
-
-1. The operator selects a target process.
-2. The interface talks to `SleepwalkerSensorCore.dll`, which uses broker IPC to reach the controller.
-3. The controller owns the driver handle and ETW/TI ingestion path.
-4. The interface updates the main shell with live telemetry and correlated detections.
-5. When the operator scrubs time, the main panes move from live-follow to historical mode.
-6. Deep inspectors provide the full evidence for the selected detection, ETW event, or handle record.
-7. Sessions can be opened, imported, saved, and exported for later review or SIEM ingestion.
+These views exist to support investigation, not decoration. Which is a rare design goal these days.
 
 ## Detection Coverage
 
-Representative high-value surfaces:
+Representative detections include:
 
-- direct-syscall suspect handle operations
+- direct syscall suspect handle activity
 - stack integrity anomalies on handle operations
-- remote thread creation and start-region anomalies
-- thread hijack intent and thread-context abuse
-- process hollowing mark chains
+- remote thread creation
+- remote thread start in non-image executable memory
+- remote thread activity outside the main image
+- thread hijack and thread-context abuse
 - remote APC creation suspects
+- process hollowing and injection intent chains
 - suspicious `ntdll` image path or mapping behavior
+- multiple `ntdll` image mappings
 - high-value registry activity
-- driver dispatch/object tamper drift and clear events
+- driver dispatch or object tamper drift
 
-Full contract and field-level details are in [API.md](./API.md).
+For the full contract and field-level details, see [API.md](./API.md).
+
+## Architecture
+
+Sleepwalker is split into a few main parts:
+
+- `kernel/`  
+  KMDF driver, kernel telemetry, ETW emission, and kernel-side correlation
+
+- `user/controller/`  
+  broker/controller service, IPC, ETW handling, and runtime correlation
+
+- `user/sensor/`  
+  `SleepwalkerSensorCore.dll`, `SleepwalkerClient.exe`, `SleepwalkerTestSuite.exe`
+
+- `interface/`  
+  WPF analyst interface for live capture, time travel, and evidence review
+
+- `abi/`  
+  shared IOCTL and IPC contracts
+
+## How It Works
+
+1. The operator selects or launches a target process.
+2. The interface talks to `SleepwalkerSensorCore.dll`.
+3. The sensor core reaches the controller over broker IPC.
+4. The controller owns the driver handle and ETW ingestion path.
+5. Telemetry is collected, correlated, and sent back to the interface.
+6. The main panel updates live, and the operator can pivot into detections and evidence views.
+7. Sessions can be saved, reopened, imported, or exported for later review.
+
+<p align="center">
+  <img src="./diagram/SLEEPWALKER_DIA.png" width="980" alt="Sleepwalker detection chain" />
+</p>
 
 ## Build Outputs
 
@@ -163,6 +167,15 @@ Common runtime artifacts:
 - `SleepwalkerIoctlTest.exe`
 - `SleepwalkerInterface.exe`
 
+## Quick Start
+
+See these docs for setup and usage:
+
+- [Getting Started.md](./Getting%20Started.md)
+- [INSTALL.md](./INSTALL.md)
+- [USAGE.md](./USAGE.md)
+- [API.md](./API.md)
+
 ## Documentation Map
 
 - [Getting Started.md](./Getting%20Started.md)
@@ -171,4 +184,3 @@ Common runtime artifacts:
 - [API.md](./API.md)
 - [user/sensor/README.md](./user/sensor/README.md)
 - [user/controller/core/README.md](./user/controller/core/README.md)
-

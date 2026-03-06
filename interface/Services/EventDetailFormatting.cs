@@ -29,6 +29,11 @@ namespace SleepwalkerInterface
         private const uint HandleFlagModuleChainSane = 0x00004000;
         private const uint HandleFlagUnwindMetadataValid = 0x00008000;
         private const uint HandleFlagFramesOutsideTebStack = 0x00020000;
+        private const uint HandleFlagThreadObject = 0x00000010;
+        private const uint HandleFlagDuplicateOperation = 0x00000020;
+        private const uint HandleFlagExecProtect = 0x00000001;
+        private const uint HandleFlagFromNtdll = 0x00000002;
+        private const uint HandleFlagFromExe = 0x00000004;
 
         private const uint ThreadFlagRemoteCreator = 0x00000004;
         private const uint ThreadFlagOutsideMainImage = 0x00000008;
@@ -220,6 +225,110 @@ namespace SleepwalkerInterface
             return string.Join(" | ", tokens);
         }
 
+        internal static string ResolveDirectSyscallApi(uint desiredAccess, uint handleFlags, string? detection = null)
+        {
+            string det = detection ?? string.Empty;
+            if ((handleFlags & HandleFlagDuplicateOperation) != 0 ||
+                det.Contains("DUPLICATE_OPERATION", StringComparison.OrdinalIgnoreCase) ||
+                det.Contains("DUP_HANDLE", StringComparison.OrdinalIgnoreCase))
+            {
+                return "NtDuplicateObject";
+            }
+
+            if ((handleFlags & HandleFlagThreadObject) != 0 ||
+                (desiredAccess & ThreadAllAccess) == ThreadAllAccess ||
+                (desiredAccess & (ThreadSetContext | ThreadGetContext | ThreadSuspendResume | ThreadQueryInformation | ThreadQueryLimitedInformation)) != 0)
+            {
+                return "NtOpenThread";
+            }
+
+            return "NtOpenProcess";
+        }
+
+        internal static bool TryExtractSyscallId(byte[]? sample, int sampleSize, out uint syscallId)
+        {
+            syscallId = 0;
+            if (sample == null || sampleSize <= 0)
+            {
+                return false;
+            }
+
+            int count = Math.Min(sample.Length, sampleSize);
+            if (count < 11)
+            {
+                return false;
+            }
+
+            for (int i = 0; i <= count - 11; i += 1)
+            {
+                if (sample[i] == 0x4C &&
+                    sample[i + 1] == 0x8B &&
+                    sample[i + 2] == 0xD1 &&
+                    sample[i + 3] == 0xB8 &&
+                    sample[i + 8] == 0x0F &&
+                    sample[i + 9] == 0x05)
+                {
+                    syscallId = (uint)(sample[i + 4] |
+                                       (sample[i + 5] << 8) |
+                                       (sample[i + 6] << 16) |
+                                       (sample[i + 7] << 24));
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        internal static string BuildDirectSyscallLabel(uint desiredAccess, uint handleFlags, byte[]? sample, int sampleSize, string? detection = null)
+        {
+            string api = ResolveDirectSyscallApi(desiredAccess, handleFlags, detection);
+            return TryExtractSyscallId(sample, sampleSize, out uint syscallId)
+                ? $"{api} (id=0x{syscallId:X})"
+                : api;
+        }
+
+        internal static string BuildDirectSyscallSummary(
+            string actor,
+            string target,
+            uint desiredAccess,
+            uint handleFlags,
+            byte[]? sample,
+            int sampleSize,
+            string? originPath = null,
+            string? detection = null)
+        {
+            string syscallLabel = BuildDirectSyscallLabel(desiredAccess, handleFlags, sample, sampleSize, detection);
+            string accessSummary = SummarizePrimaryHandleAccess(desiredAccess);
+            string objectKind = (handleFlags & HandleFlagThreadObject) != 0 ? "thread" : "process";
+            string originModule = ModuleNameFromPath(originPath);
+            string signalSummary = SummarizeDirectSyscallSignals(handleFlags);
+
+            var sb = new StringBuilder(192);
+            sb.Append(string.IsNullOrWhiteSpace(actor) ? "Actor" : actor.Trim())
+              .Append(" issued ")
+              .Append(syscallLabel)
+              .Append(" against ")
+              .Append(string.IsNullOrWhiteSpace(target) ? "target" : target.Trim())
+              .Append(" for ")
+              .Append(accessSummary)
+              .Append(" on a ")
+              .Append(objectKind)
+              .Append(" handle");
+
+            if (!string.Equals(originModule, "unknown", StringComparison.OrdinalIgnoreCase))
+            {
+                sb.Append(" via ").Append(originModule);
+            }
+
+            if (!string.IsNullOrWhiteSpace(signalSummary))
+            {
+                sb.Append("; ").Append(signalSummary);
+            }
+
+            sb.Append('.');
+            return sb.ToString();
+        }
+
         internal static string DescribeHandleFlags(uint flags)
         {
             return DescribeByBits(flags, new (uint Bit, string Name)[]
@@ -243,6 +352,89 @@ namespace SleepwalkerInterface
                 (0x00010000, "TEB_STACK_BOUNDS_VALID"),
                 (0x00020000, "FRAMES_OUTSIDE_TEB_STACK")
             });
+        }
+
+        private static string SummarizePrimaryHandleAccess(uint access)
+        {
+            if ((access & ProcessAllAccess) == ProcessAllAccess)
+            {
+                return "PROCESS_ALL_ACCESS";
+            }
+
+            if ((access & ThreadAllAccess) == ThreadAllAccess)
+            {
+                return "THREAD_ALL_ACCESS";
+            }
+
+            if ((access & ProcessCreateThread) != 0)
+            {
+                return "PROCESS_CREATE_THREAD";
+            }
+
+            if ((access & ThreadSetContext) != 0)
+            {
+                return "THREAD_SET_CONTEXT";
+            }
+
+            if ((access & ThreadGetContext) != 0)
+            {
+                return "THREAD_GET_CONTEXT";
+            }
+
+            if ((access & ProcessVmWrite) != 0)
+            {
+                return "PROCESS_VM_WRITE";
+            }
+
+            if ((access & ProcessVmOperation) != 0)
+            {
+                return "PROCESS_VM_OPERATION";
+            }
+
+            if ((access & ProcessDupHandle) != 0)
+            {
+                return "PROCESS_DUP_HANDLE";
+            }
+
+            if ((access & ProcessVmRead) != 0)
+            {
+                return "PROCESS_VM_READ";
+            }
+
+            if ((access & ThreadSuspendResume) != 0 || (access & ProcessSuspendResume) != 0)
+            {
+                return "SUSPEND_RESUME";
+            }
+
+            return access == 0 ? "unspecified access" : $"0x{access:X8}";
+        }
+
+        private static string SummarizeDirectSyscallSignals(uint handleFlags)
+        {
+            var signals = new List<string>();
+            if ((handleFlags & HandleFlagSyscallExportMismatch) != 0)
+            {
+                signals.Add("the observed syscall id did not match the expected ntdll export");
+            }
+
+            if ((handleFlags & HandleFlagStackSpoofSuspect) != 0)
+            {
+                signals.Add("captured frames looked stack-spoofed");
+            }
+
+            if ((handleFlags & HandleFlagExecProtect) != 0 && (handleFlags & HandleFlagFromNtdll) == 0)
+            {
+                if ((handleFlags & HandleFlagFromExe) != 0)
+                {
+                    signals.Add("execution originated from executable image code outside ntdll");
+                }
+                else
+                {
+                    signals.Add("execution originated from executable memory outside the known syscall stubs");
+                }
+            }
+
+            return signals.Count == 0 ? string.Empty : string.Join("; ", signals);
         }
 
         internal static string DescribeThreadFlags(uint flags)

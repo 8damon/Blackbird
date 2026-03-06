@@ -1,6 +1,6 @@
-# Sleepwalker
+# Sleepwalker Alpha
 
-Sleepwalker is a Windows malware-analysis and endpoint-detection platform built around a KMDF telemetry driver, a broker/controller service, a shared sensor core DLL, and a native-feeling analyst interface.
+Sleepwalker is a Windows malware-analysis and endpoint-detection platform wrapped around a powerful kernel-mode driver.
 
 <p align="center">
   <img src="./diagram/SLEEPWALKER_DIA.png" width="980" alt="Sleepwalker platform diagram" />
@@ -172,6 +172,3 @@ Common runtime artifacts:
 - [user/sensor/README.md](./user/sensor/README.md)
 - [user/controller/core/README.md](./user/controller/core/README.md)
 
-## Status
-
-This branch is currently positioned as an **alpha** build. Expect active iteration across the UI, correlation model, and export/reporting flow.

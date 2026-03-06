@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -620,6 +621,12 @@ namespace SleepwalkerInterface
             ulong pageBase = record.OriginAddress & ~0xFFFUL;
             string fullFrames = BuildFrameList(record.FullFrames, record.FullFrameCount);
             string captureFlags = DescribeCaptureFlags(record.CaptureFlags);
+            string directSyscallName = EventDetailFormatting.ResolveDirectSyscallApi(record.DesiredAccess, record.HandleFlags);
+            string directSyscallLabel = EventDetailFormatting.BuildDirectSyscallLabel(
+                record.DesiredAccess,
+                record.HandleFlags,
+                record.DeepSample,
+                (int)record.DeepSampleSize);
             bool hasContext = (record.CaptureFlags & 0x00000001u) != 0;
             bool hasDebugRegs = (record.CaptureFlags & 0x00000002u) != 0;
             bool hasFullFrames = (record.CaptureFlags & 0x00000004u) != 0;
@@ -646,7 +653,7 @@ namespace SleepwalkerInterface
                 : "stackSnapshotAddress=0x0 stackSnapshotSize=0 stackSnapshot=<none> ";
 
             return
-                $"ioctlEvidence class={record.HandleClass} access=0x{record.DesiredAccess:X8} ({accessDecoded}) flags=0x{record.HandleFlags:X8} ({flagsDecoded}) " +
+                $"ioctlEvidence class={record.HandleClass} syscallName={directSyscallName} syscallLabel={directSyscallLabel.Replace(' ', '_')} access=0x{record.DesiredAccess:X8} ({accessDecoded}) flags=0x{record.HandleFlags:X8} ({flagsDecoded}) " +
                 $"origin=0x{record.OriginAddress:X} protect=0x{record.OriginProtect:X8} module={moduleName} pageBase=0x{pageBase:X} " +
                 $"allocationBase=0x{record.DeepAllocationBase:X} regionSize=0x{record.DeepRegionSize:X} regionProtect=0x{record.DeepRegionProtect:X8} ({EventDetailFormatting.DescribeMemoryProtection(record.DeepRegionProtect)}) " +
                 $"regionState=0x{record.DeepRegionState:X8} ({EventDetailFormatting.DescribeMemoryState(record.DeepRegionState)}) regionType=0x{record.DeepRegionType:X8} ({EventDetailFormatting.DescribeMemoryType(record.DeepRegionType)}) " +
@@ -746,6 +753,11 @@ namespace SleepwalkerInterface
                     2 => "DIRECT-SYSCALL-SUSPECT",
                     _ => "UNKNOWN"
                 };
+                string syscallLabel = EventDetailFormatting.BuildDirectSyscallLabel(
+                    record.DesiredAccess,
+                    record.HandleFlags,
+                    record.DeepSample,
+                    (int)record.DeepSampleSize);
 
                 return new TelemetryEvent
                 {
@@ -754,7 +766,7 @@ namespace SleepwalkerInterface
                     TID = unchecked((int)record.ThreadId),
                     Group = "Kernel-IOCTL",
                     SubType = "Handle",
-                    Summary = $"{className} caller={caller} target={target} access=0x{record.DesiredAccess:X8}",
+                    Summary = $"{className} {syscallLabel} caller={caller} target={target} access=0x{record.DesiredAccess:X8}",
                     Details = BuildHandleEvidenceText(record)
                 };
             }
@@ -908,13 +920,22 @@ namespace SleepwalkerInterface
 
             string handleFlagsDecoded = EventDetailFormatting.DescribeHandleFlags(record.HandleFlags);
             string corrAccessDecoded = EventDetailFormatting.DescribeHandleAccess(record.DesiredAccess);
+            string syscallName = EventDetailFormatting.ResolveDirectSyscallApi(record.DesiredAccess, record.HandleFlags);
+            string syscallSummary = EventDetailFormatting.BuildDirectSyscallSummary(
+                record.CallerPid.ToString(CultureInfo.InvariantCulture),
+                record.TargetPid.ToString(CultureInfo.InvariantCulture),
+                record.DesiredAccess,
+                record.HandleFlags,
+                record.DeepSample,
+                (int)record.DeepSampleSize,
+                record.OriginPath);
 
             return new HeuristicEventView
             {
                 TimestampUtc = now,
                 LastSeenUtc = now,
                 Severity = severity,
-                DetectionName = "DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION",
+                DetectionName = $"DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION [{syscallName}]",
                 ActorPid = record.CallerPid,
                 TargetPid = record.TargetPid,
                 Source = "Kernel-IOCTL",
@@ -922,7 +943,7 @@ namespace SleepwalkerInterface
                 CorrelationFlags = 0,
                 CorrelationAccessMask = record.DesiredAccess,
                 CorrelationAgeMs = 0,
-                Reason = $"ioctlClass={record.HandleClass}; handleFlags={handleFlagsDecoded}; access={corrAccessDecoded}",
+                Reason = $"{syscallSummary}; ioctlClass={record.HandleClass}; handleFlags={handleFlagsDecoded}; access={corrAccessDecoded}",
                 Evidence = BuildHandleEvidenceText(record),
                 RepeatCount = 1
             };

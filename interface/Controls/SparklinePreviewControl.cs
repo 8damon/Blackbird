@@ -4,6 +4,7 @@ using System.Collections.Specialized;
 using System.Linq;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace SleepwalkerInterface
 {
@@ -45,7 +46,15 @@ namespace SleepwalkerInterface
         }
 
         private void OnCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-            => Dispatcher.Invoke(InvalidateVisual);
+        {
+            if (Dispatcher.CheckAccess())
+            {
+                InvalidateVisual();
+                return;
+            }
+
+            _ = Dispatcher.BeginInvoke(new Action(InvalidateVisual), DispatcherPriority.Render);
+        }
 
         protected override void OnRender(DrawingContext dc)
         {

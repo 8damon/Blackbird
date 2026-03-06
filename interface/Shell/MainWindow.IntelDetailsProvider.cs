@@ -129,7 +129,7 @@ namespace SleepwalkerInterface
             }
             catch
             {
-                return CacheScopeStatus(pid, IntelScopeStatus.Exited);
+                return CacheScopeStatus(pid, IntelScopeStatus.Unknown);
             }
         }
 

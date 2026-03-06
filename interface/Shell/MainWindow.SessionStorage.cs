@@ -33,6 +33,7 @@ namespace SleepwalkerInterface
                 persistedSnapshot != null &&
                 tab.Events.Count == 0 &&
                 tab.PerformanceHistory.Count == 0 &&
+                tab.ThreadLifecycleHistory.Count == 0 &&
                 !_etwHistoryByPid.ContainsKey(tab.Pid) &&
                 !_heuristicsHistoryByPid.ContainsKey(tab.Pid) &&
                 !_relationsHistoryByPid.ContainsKey(tab.Pid))
@@ -69,6 +70,7 @@ namespace SleepwalkerInterface
                 OfflineSnapshot = tab.OfflineSnapshot,
                 Events = tab.Events.Select(CloneTelemetryEvent).ToList(),
                 PerformanceHistory = tab.PerformanceHistory.Select(ClonePerformanceSample).ToList(),
+                ThreadLifecycleHistory = tab.ThreadLifecycleHistory.Select(CloneThreadLifecycleEvent).ToList(),
                 EtwGroups = etw,
                 HeuristicsGroups = heuristics,
                 ProcessRelationsGroups = relations
@@ -97,6 +99,7 @@ namespace SleepwalkerInterface
 
             tab.Events.Clear();
             tab.PerformanceHistory.Clear();
+            tab.ThreadLifecycleHistory.Clear();
             _etwHistoryByPid.Remove(tab.Pid);
             _heuristicsHistoryByPid.Remove(tab.Pid);
             _relationsHistoryByPid.Remove(tab.Pid);
@@ -106,6 +109,7 @@ namespace SleepwalkerInterface
         {
             bool hasInlineData = tab.Events.Count > 0 ||
                                  tab.PerformanceHistory.Count > 0 ||
+                                 tab.ThreadLifecycleHistory.Count > 0 ||
                                  _etwHistoryByPid.ContainsKey(tab.Pid) ||
                                  _heuristicsHistoryByPid.ContainsKey(tab.Pid) ||
                                  _relationsHistoryByPid.ContainsKey(tab.Pid);
@@ -139,6 +143,8 @@ namespace SleepwalkerInterface
 
             tab.PerformanceHistory.Clear();
             tab.PerformanceHistory.AddRange(snapshot.PerformanceHistory.Select(ClonePerformanceSample));
+            tab.ThreadLifecycleHistory.Clear();
+            tab.ThreadLifecycleHistory.AddRange(snapshot.ThreadLifecycleHistory.Select(CloneThreadLifecycleEvent));
 
             _etwHistoryByPid[tab.Pid] = CompactGroupsForMemory(snapshot.EtwGroups, 48);
             _heuristicsHistoryByPid[tab.Pid] = CompactGroupsForMemory(snapshot.HeuristicsGroups, 48);
@@ -306,6 +312,7 @@ namespace SleepwalkerInterface
                             OfflineSnapshot = true,
                             Events = incoming.Events.Select(CloneTelemetryEvent).ToList(),
                             PerformanceHistory = incoming.PerformanceHistory.Select(ClonePerformanceSample).ToList(),
+                            ThreadLifecycleHistory = incoming.ThreadLifecycleHistory.Select(CloneThreadLifecycleEvent).ToList(),
                             EtwGroups = incoming.EtwGroups.Select(x => x.Clone()).ToList(),
                             HeuristicsGroups = incoming.HeuristicsGroups.Select(x => x.Clone()).ToList(),
                             ProcessRelationsGroups = incoming.ProcessRelationsGroups.Select(x => x.Clone()).ToList()
@@ -315,6 +322,7 @@ namespace SleepwalkerInterface
 
                 tab.Events.Clear();
                 tab.PerformanceHistory.Clear();
+                tab.ThreadLifecycleHistory.Clear();
                 _etwHistoryByPid.Remove(tab.Pid);
                 _heuristicsHistoryByPid.Remove(tab.Pid);
                 _relationsHistoryByPid.Remove(tab.Pid);
@@ -337,7 +345,7 @@ namespace SleepwalkerInterface
         {
             var dialog = new SaveFileDialog
             {
-                Filter = "Sleepwalker Session (*.swlkr;*.sleepwlkr)|*.swlkr;*.sleepwlkr|All files (*.*)|*.*",
+                Filter = "Sleepwalker Session Archive (*.swlkr;*.sleepwlkr)|*.swlkr;*.sleepwlkr|All files (*.*)|*.*",
                 DefaultExt = ".swlkr",
                 AddExtension = true,
                 OverwritePrompt = true,
@@ -371,11 +379,17 @@ namespace SleepwalkerInterface
         {
             var dialog = new SaveFileDialog
             {
-                Filter = "Sleepwalker Session (*.swlkr;*.sleepwlkr)|*.swlkr;*.sleepwlkr|All files (*.*)|*.*",
-                DefaultExt = ".swlkr",
+                Filter =
+                    "SIEM JSON Lines (*.jsonl)|*.jsonl|" +
+                    "SIEM CSV (*.csv)|*.csv|" +
+                    "CEF (*.cef)|*.cef|" +
+                    "ATT&CK-ready CSV (*.attack.csv)|*.attack.csv|" +
+                    "Sleepwalker Session Archive (*.swlkr;*.sleepwlkr)|*.swlkr;*.sleepwlkr|" +
+                    "All files (*.*)|*.*",
+                DefaultExt = ".jsonl",
                 AddExtension = true,
                 OverwritePrompt = true,
-                FileName = $"sleepwalker-export-{DateTime.UtcNow:yyyyMMdd-HHmmss}.swlkr"
+                FileName = $"sleepwalker-export-{DateTime.UtcNow:yyyyMMdd-HHmmss}.jsonl"
             };
 
             if (dialog.ShowDialog(this) != true)
@@ -386,7 +400,22 @@ namespace SleepwalkerInterface
             try
             {
                 SessionFileArchive archive = BuildWorkspaceArchive();
-                SessionFileStorage.SaveArchive(dialog.FileName, archive);
+                if (dialog.FilterIndex == 5)
+                {
+                    SessionFileStorage.SaveArchive(dialog.FileName, archive);
+                    StatusBlock.Text = $"SESSION EXPORTED: {Path.GetFileName(dialog.FileName)}";
+                    return;
+                }
+
+                SessionExportFormat format = dialog.FilterIndex switch
+                {
+                    1 => SessionExportFormat.JsonLines,
+                    2 => SessionExportFormat.Csv,
+                    3 => SessionExportFormat.Cef,
+                    4 => SessionExportFormat.AttackCsv,
+                    _ => SessionExportFormat.JsonLines
+                };
+                SessionExportService.Export(dialog.FileName, archive, format);
                 StatusBlock.Text = $"SESSION EXPORTED: {Path.GetFileName(dialog.FileName)}";
             }
             catch (Exception ex)
@@ -428,7 +457,7 @@ namespace SleepwalkerInterface
         {
             var dialog = new OpenFileDialog
             {
-                Filter = "Sleepwalker Session (*.swlkr;*.sleepwlkr)|*.swlkr;*.sleepwlkr|All files (*.*)|*.*",
+                Filter = "Sleepwalker Session Archive (*.swlkr;*.sleepwlkr)|*.swlkr;*.sleepwlkr|All files (*.*)|*.*",
                 CheckFileExists = true,
                 Multiselect = false
             };
@@ -448,7 +477,7 @@ namespace SleepwalkerInterface
         {
             var dialog = new OpenFileDialog
             {
-                Filter = "Sleepwalker Session (*.swlkr;*.sleepwlkr)|*.swlkr;*.sleepwlkr|All files (*.*)|*.*",
+                Filter = "Sleepwalker Session Archive (*.swlkr;*.sleepwlkr)|*.swlkr;*.sleepwlkr|All files (*.*)|*.*",
                 CheckFileExists = true,
                 Multiselect = false
             };

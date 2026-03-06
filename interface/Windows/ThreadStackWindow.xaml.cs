@@ -9,12 +9,14 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace SleepwalkerInterface
 {
     public partial class ThreadStackWindow : Window
     {
         private const string MissingText = "N/A";
+        private const int MaxSnapshotHistory = 300;
 
         public ObservableCollection<StackFrameRow> UserFrames { get; } = new();
         public ObservableCollection<RegisterEntry> GeneralRegs { get; } = new();
@@ -23,8 +25,18 @@ namespace SleepwalkerInterface
         private readonly int _pid;
         private readonly int _tid;
         private readonly string _state;
+        private readonly Func<DateTime>? _observationTimeUtcProvider;
+        private readonly Func<bool>? _liveCaptureAvailableProvider;
+        private readonly DispatcherTimer _refreshTimer;
+        private readonly List<ThreadStackSnapshot> _snapshotHistory = new();
+        private bool _refreshInFlight;
 
-        public ThreadStackWindow(int pid, int tid, string state)
+        public ThreadStackWindow(
+            int pid,
+            int tid,
+            string state,
+            Func<DateTime>? observationTimeUtcProvider = null,
+            Func<bool>? liveCaptureAvailableProvider = null)
         {
             InitializeComponent();
             WindowThemeHelper.ApplyDarkTitleBar(this);
@@ -32,6 +44,13 @@ namespace SleepwalkerInterface
             _pid = pid;
             _tid = tid;
             _state = state;
+            _observationTimeUtcProvider = observationTimeUtcProvider;
+            _liveCaptureAvailableProvider = liveCaptureAvailableProvider;
+            _refreshTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+            _refreshTimer.Tick += async (_, __) => await RefreshDisplayAsync();
 
             HeaderBlock.Text = $"Thread {_tid} Stack";
             HeaderStateBlock.Text = string.IsNullOrWhiteSpace(_state) ? $"State: {MissingText}" : $"State: {_state}";
@@ -41,7 +60,12 @@ namespace SleepwalkerInterface
             GeneralRegsList.ItemsSource = GeneralRegs;
 
             SeedRegisterPlaceholders();
-            Loaded += async (_, __) => await LoadFramesAsync();
+            Loaded += async (_, __) =>
+            {
+                await RefreshDisplayAsync();
+                _refreshTimer.Start();
+            };
+            Closed += (_, __) => _refreshTimer.Stop();
         }
 
         private void SeedRegisterPlaceholders()
@@ -116,92 +140,199 @@ namespace SleepwalkerInterface
 
         private void Root_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            if (e.ChangedButton != MouseButton.Left || e.ClickCount != 1)
-                return;
+            WindowChromeBehavior.HandleRootDragMove(this, e);
+        }
 
+        private async Task RefreshDisplayAsync()
+        {
+            if (_refreshInFlight)
+            {
+                return;
+            }
+
+            _refreshInFlight = true;
             try
             {
-                DragMove();
+                DateTime observedUtc = GetObservedUtc();
+                bool liveCaptureAvailable = _liveCaptureAvailableProvider?.Invoke() ?? true;
+                bool preferLive = ShouldResolveLive(observedUtc, liveCaptureAvailable);
+
+                if (preferLive)
+                {
+                    NoteBlock.Text = "Resolving stack...";
+                    ThreadStackResolveResult result = await Task.Run(() => ThreadStackResolver.Resolve(_pid, _tid, _state));
+                    if (HasResolvedStackData(result))
+                    {
+                        ThreadStackSnapshot snapshot = CreateSnapshot(DateTime.UtcNow, result);
+                        _snapshotHistory.Add(snapshot);
+                        if (_snapshotHistory.Count > MaxSnapshotHistory)
+                        {
+                            _snapshotHistory.RemoveRange(0, _snapshotHistory.Count - MaxSnapshotHistory);
+                        }
+
+                        ApplySnapshot(snapshot, $"Live | {snapshot.CapturedAtUtc:HH:mm:ss.fff}");
+                        return;
+                    }
+                }
+
+                ThreadStackSnapshot? historical = FindHistoricalSnapshot(observedUtc);
+                if (historical != null)
+                {
+                    ApplySnapshot(historical, $"Historical | {historical.CapturedAtUtc:HH:mm:ss.fff}");
+                    return;
+                }
+
+                string noDataReason = liveCaptureAvailable
+                    ? "No captured stack for the selected time."
+                    : "Thread is no longer live and no captured stack exists for the selected time.";
+                ApplyNoDataState(noDataReason);
             }
             catch
             {
+                ApplyNoDataState("Failed to resolve stack.");
+            }
+            finally
+            {
+                _refreshInFlight = false;
             }
         }
 
-        private async Task LoadFramesAsync()
+        private DateTime GetObservedUtc()
+            => _observationTimeUtcProvider?.Invoke() ?? DateTime.UtcNow;
+
+        private bool ShouldResolveLive(DateTime observedUtc, bool liveCaptureAvailable)
         {
-            try
+            if (!liveCaptureAvailable)
             {
-                NoteBlock.Text = "Resolving stack...";
-
-                var result = await Task.Run(() => ThreadStackResolver.Resolve(_pid, _tid, _state));
-
-                PidBlock.Text = _pid.ToString();
-                TidBlock.Text = _tid.ToString();
-                TebBlock.Text = result.TebAddress == 0 ? MissingText : $"0x{result.TebAddress:X}";
-                StackBaseMetaBlock.Text = result.StackBase == 0 ? MissingText : $"0x{result.StackBase:X}";
-                StackTopMetaBlock.Text = result.StackTop == 0 ? MissingText : $"0x{result.StackTop:X}";
-                RspMetaBlock.Text = result.StackPointer == 0 ? MissingText : $"0x{result.StackPointer:X}";
-                TebFlagsMetaBlock.Text = result.TebFlags.HasValue ? $"0x{result.TebFlags.Value:X4}" : MissingText;
-                StateMetaBlock.Text = string.IsNullOrWhiteSpace(_state) ? MissingText : _state;
-                EFlagsMetaBlock.Text = MissingText;
-                EFlagsDetailBlock.Text = MissingText;
-                EFlagsEnglishBlock.Text = MissingText;
-                DrxBitsBlock.Text = MissingText;
-                ulong stackSpan = result.StackBase > result.StackTop ? result.StackBase - result.StackTop : 0UL;
-                StackSpanMetaBlock.Text = stackSpan == 0 ? MissingText : $"0x{stackSpan:X} ({stackSpan} B)";
-                ActiveSpanMetaBlock.Text = MissingText;
-
-                UserFrames.Clear();
-                foreach (var frame in result.Frames)
-                {
-                    UserFrames.Add(frame);
-                }
-
-                ComputeFrameSpans(result);
-                for (int i = 0; i < UserFrames.Count; i += 1)
-                {
-                    UserFrames[i].IsCurrent = i == 0;
-                }
-
-                ulong rip = UserFrames.Select(x => x.InstructionPointerRaw).FirstOrDefault(v => v != 0);
-                RipMetaBlock.Text = rip == 0 ? MissingText : $"0x{rip:X}";
-                SetReg("RIP", rip == 0 ? (ulong?)null : rip);
-                SetReg("RSP", result.StackPointer == 0 ? (ulong?)null : result.StackPointer);
-                SetReg("RBP", UserFrames.Select(x => x.FramePointerRaw).FirstOrDefault(v => v != 0));
-                ApplyResolvedContext(result.ContextSnapshot);
-
-                NoteBlock.Text = $"{UserFrames.Count} user frame(s)";
+                return false;
             }
-            catch (Exception ex)
+
+            if (_snapshotHistory.Count == 0)
             {
-                UserFrames.Clear();
-                UserFrames.Add(new StackFrameRow
-                {
-                    Index = 0,
-                    Address = MissingText,
-                    Module = MissingText,
-                    Symbol = ex.Message
-                });
+                return true;
+            }
 
-                PidBlock.Text = _pid.ToString();
-                TidBlock.Text = _tid.ToString();
-                TebBlock.Text = MissingText;
-                StackBaseMetaBlock.Text = MissingText;
-                StackTopMetaBlock.Text = MissingText;
-                RipMetaBlock.Text = MissingText;
-                RspMetaBlock.Text = MissingText;
-                TebFlagsMetaBlock.Text = MissingText;
-                EFlagsMetaBlock.Text = MissingText;
-                EFlagsDetailBlock.Text = MissingText;
-                EFlagsEnglishBlock.Text = MissingText;
-                DrxBitsBlock.Text = MissingText;
-                StackSpanMetaBlock.Text = MissingText;
-                ActiveSpanMetaBlock.Text = MissingText;
-                StateMetaBlock.Text = string.IsNullOrWhiteSpace(_state) ? MissingText : _state;
-                SeedRegisterPlaceholders();
+            DateTime latestCaptureUtc = _snapshotHistory[^1].CapturedAtUtc;
+            return observedUtc >= latestCaptureUtc.AddMilliseconds(-750);
+        }
 
-                NoteBlock.Text = "Failed to resolve stack.";
+        private ThreadStackSnapshot? FindHistoricalSnapshot(DateTime observedUtc)
+        {
+            return _snapshotHistory
+                .Where(x => x.CapturedAtUtc <= observedUtc)
+                .OrderByDescending(x => x.CapturedAtUtc)
+                .FirstOrDefault();
+        }
+
+        private static bool HasResolvedStackData(ThreadStackResolveResult result)
+        {
+            return result.Frames.Count > 0 ||
+                   result.StackPointer != 0 ||
+                   result.TebAddress != 0 ||
+                   result.ContextSnapshot != null;
+        }
+
+        private ThreadStackSnapshot CreateSnapshot(DateTime capturedAtUtc, ThreadStackResolveResult result)
+        {
+            return new ThreadStackSnapshot
+            {
+                CapturedAtUtc = capturedAtUtc,
+                TebAddress = result.TebAddress,
+                StackBase = result.StackBase,
+                StackTop = result.StackTop,
+                TebFlags = result.TebFlags,
+                StackPointer = result.StackPointer,
+                ContextSnapshot = CloneContextSnapshot(result.ContextSnapshot),
+                Frames = result.Frames.Select(CloneFrame).ToList()
+            };
+        }
+
+        private void ApplySnapshot(ThreadStackSnapshot snapshot, string note)
+        {
+            HideNoDataOverlay();
+            ResetHeaderMetadata();
+
+            PidBlock.Text = _pid.ToString();
+            TidBlock.Text = _tid.ToString();
+            TebBlock.Text = snapshot.TebAddress == 0 ? MissingText : $"0x{snapshot.TebAddress:X}";
+            StackBaseMetaBlock.Text = snapshot.StackBase == 0 ? MissingText : $"0x{snapshot.StackBase:X}";
+            StackTopMetaBlock.Text = snapshot.StackTop == 0 ? MissingText : $"0x{snapshot.StackTop:X}";
+            RspMetaBlock.Text = snapshot.StackPointer == 0 ? MissingText : $"0x{snapshot.StackPointer:X}";
+            TebFlagsMetaBlock.Text = snapshot.TebFlags.HasValue ? $"0x{snapshot.TebFlags.Value:X4}" : MissingText;
+            StateMetaBlock.Text = string.IsNullOrWhiteSpace(_state) ? MissingText : _state;
+
+            ulong stackSpan = snapshot.StackBase > snapshot.StackTop ? snapshot.StackBase - snapshot.StackTop : 0UL;
+            StackSpanMetaBlock.Text = stackSpan == 0 ? MissingText : $"0x{stackSpan:X} ({stackSpan} B)";
+            ActiveSpanMetaBlock.Text = MissingText;
+
+            UserFrames.Clear();
+            foreach (StackFrameRow frame in snapshot.Frames.Select(CloneFrame))
+            {
+                UserFrames.Add(frame);
+            }
+
+            ComputeFrameSpans(snapshot.StackBase, snapshot.StackTop);
+            for (int i = 0; i < UserFrames.Count; i += 1)
+            {
+                UserFrames[i].IsCurrent = i == 0;
+            }
+
+            ulong rip = UserFrames.Select(x => x.InstructionPointerRaw).FirstOrDefault(v => v != 0);
+            RipMetaBlock.Text = rip == 0 ? MissingText : $"0x{rip:X}";
+            SetReg("RIP", rip == 0 ? (ulong?)null : rip);
+            SetReg("RSP", snapshot.StackPointer == 0 ? (ulong?)null : snapshot.StackPointer);
+            SetReg("RBP", UserFrames.Select(x => x.FramePointerRaw).FirstOrDefault(v => v != 0));
+            ApplyResolvedContext(snapshot.ContextSnapshot);
+
+            NoteBlock.Text = $"{note} | {UserFrames.Count} user frame(s)";
+        }
+
+        private void ApplyNoDataState(string reason)
+        {
+            ResetHeaderMetadata();
+            PidBlock.Text = _pid.ToString();
+            TidBlock.Text = _tid.ToString();
+            StateMetaBlock.Text = string.IsNullOrWhiteSpace(_state) ? MissingText : _state;
+            SeedRegisterPlaceholders();
+            UserFrames.Clear();
+            ShowNoDataOverlay(reason);
+            NoteBlock.Text = reason;
+        }
+
+        private void ResetHeaderMetadata()
+        {
+            TebBlock.Text = MissingText;
+            StackBaseMetaBlock.Text = MissingText;
+            StackTopMetaBlock.Text = MissingText;
+            RipMetaBlock.Text = MissingText;
+            RspMetaBlock.Text = MissingText;
+            TebFlagsMetaBlock.Text = MissingText;
+            EFlagsMetaBlock.Text = MissingText;
+            EFlagsDetailBlock.Text = MissingText;
+            EFlagsEnglishBlock.Text = MissingText;
+            DrxBitsBlock.Text = MissingText;
+            StackSpanMetaBlock.Text = MissingText;
+            ActiveSpanMetaBlock.Text = MissingText;
+        }
+
+        private void ShowNoDataOverlay(string message)
+        {
+            if (StackNoDataOverlay != null)
+            {
+                StackNoDataOverlay.Visibility = Visibility.Visible;
+            }
+
+            if (StackNoDataMessageBlock != null)
+            {
+                StackNoDataMessageBlock.Text = message;
+            }
+        }
+
+        private void HideNoDataOverlay()
+        {
+            if (StackNoDataOverlay != null)
+            {
+                StackNoDataOverlay.Visibility = Visibility.Collapsed;
             }
         }
 
@@ -300,7 +431,7 @@ namespace SleepwalkerInterface
             return ((value >> bit) & 1UL) != 0 ? 1 : 0;
         }
 
-        private void ComputeFrameSpans(ThreadStackResolveResult result)
+        private void ComputeFrameSpans(ulong stackBase, ulong stackTop)
         {
             if (UserFrames.Count == 0)
             {
@@ -309,7 +440,7 @@ namespace SleepwalkerInterface
 
             var points = UserFrames
                 .Select(x => x.FramePointerRaw)
-                .Where(v => v >= result.StackTop && v <= result.StackBase)
+                .Where(v => v >= stackTop && v <= stackBase)
                 .Distinct()
                 .OrderByDescending(v => v)
                 .ToList();
@@ -345,6 +476,69 @@ namespace SleepwalkerInterface
         }
 
         private void Close_Click(object sender, RoutedEventArgs e) => Close();
+
+        private static StackFrameRow CloneFrame(StackFrameRow frame)
+        {
+            return new StackFrameRow
+            {
+                Index = frame.Index,
+                Address = frame.Address,
+                Module = frame.Module,
+                Symbol = frame.Symbol,
+                InstructionPointerRaw = frame.InstructionPointerRaw,
+                FramePointerRaw = frame.FramePointerRaw,
+                FrameSpanBytes = frame.FrameSpanBytes,
+                IsCurrent = frame.IsCurrent
+            };
+        }
+
+        private static ThreadContextSnapshot? CloneContextSnapshot(ThreadContextSnapshot? snapshot)
+        {
+            if (snapshot == null)
+            {
+                return null;
+            }
+
+            return new ThreadContextSnapshot
+            {
+                Rip = snapshot.Rip,
+                Rsp = snapshot.Rsp,
+                Rbp = snapshot.Rbp,
+                Rax = snapshot.Rax,
+                Rbx = snapshot.Rbx,
+                Rcx = snapshot.Rcx,
+                Rdx = snapshot.Rdx,
+                Rsi = snapshot.Rsi,
+                Rdi = snapshot.Rdi,
+                R8 = snapshot.R8,
+                R9 = snapshot.R9,
+                R10 = snapshot.R10,
+                R11 = snapshot.R11,
+                R12 = snapshot.R12,
+                R13 = snapshot.R13,
+                R14 = snapshot.R14,
+                R15 = snapshot.R15,
+                Dr0 = snapshot.Dr0,
+                Dr1 = snapshot.Dr1,
+                Dr2 = snapshot.Dr2,
+                Dr3 = snapshot.Dr3,
+                Dr6 = snapshot.Dr6,
+                Dr7 = snapshot.Dr7,
+                EFlags = snapshot.EFlags
+            };
+        }
+
+        private sealed class ThreadStackSnapshot
+        {
+            public DateTime CapturedAtUtc { get; init; }
+            public ulong TebAddress { get; init; }
+            public ulong StackBase { get; init; }
+            public ulong StackTop { get; init; }
+            public ushort? TebFlags { get; init; }
+            public ulong StackPointer { get; init; }
+            public ThreadContextSnapshot? ContextSnapshot { get; init; }
+            public List<StackFrameRow> Frames { get; init; } = new();
+        }
     }
 
     public sealed class RegisterEntry : INotifyPropertyChanged

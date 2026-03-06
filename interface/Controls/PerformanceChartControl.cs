@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 
@@ -72,6 +73,11 @@ namespace SleepwalkerInterface
         {
             ClipToBounds = true;
             ToolTip = _tip;
+            _tip.Placement = PlacementMode.RelativePoint;
+            _tip.PlacementTarget = this;
+            _tip.HorizontalOffset = 12;
+            _tip.VerticalOffset = 12;
+            _tip.StaysOpen = true;
         }
 
         public void SetSeries(IEnumerable<ChartSeries> series)
@@ -267,6 +273,7 @@ namespace SleepwalkerInterface
                     $"{hover.Value.ser.Name}\n" +
                     $"{hover.Value.sample.TimestampUtc:HH:mm:ss.fff}Z\n" +
                     $"{FormatValue(hover.Value.ser, hover.Value.raw)}";
+                _tip.PlacementRectangle = new Rect(_mouse.X, _mouse.Y, 0, 0);
                 _tip.IsOpen = true;
             }
             else

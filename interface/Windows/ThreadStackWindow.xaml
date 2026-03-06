@@ -24,7 +24,7 @@
                 Background="{DynamicResource WinPanelBrush}"
                 BorderBrush="{DynamicResource WinBorderBrush}"
                 BorderThickness="1"
-                Padding="10,8"
+                Padding="10,5"
                 Margin="0,0,0,6"
                 MouseLeftButtonDown="Root_MouseLeftButtonDown">
             <Grid>
@@ -43,8 +43,8 @@
                 </StackPanel>
                 <Button Grid.Column="1"
                         Content="✕"
-                        Width="26"
-                        Height="24"
+                        Width="22"
+                        Height="20"
                         Margin="8,0,0,0"
                         VerticalAlignment="Top"
                         Click="Close_Click"/>
@@ -233,6 +233,27 @@
                             <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="*" ElementStyle="{StaticResource StackGridTextStyle}"/>
                         </DataGrid.Columns>
                     </DataGrid>
+
+                    <Border x:Name="StackNoDataOverlay"
+                            Background="{DynamicResource NoDataOverlayBrush}"
+                            Visibility="Collapsed"
+                            IsHitTestVisible="False">
+                        <StackPanel HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                            <TextBlock Text="NO DATA"
+                                       FontSize="28"
+                                       FontWeight="Bold"
+                                       Opacity="0.72"
+                                       Foreground="{DynamicResource WinTextBrush}"
+                                       HorizontalAlignment="Center"/>
+                            <TextBlock x:Name="StackNoDataMessageBlock"
+                                       Margin="0,6,0,0"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                       HorizontalAlignment="Center"
+                                       Text="No captured stack for the selected time."/>
+                        </StackPanel>
+                    </Border>
                 </Grid>
             </Border>
 

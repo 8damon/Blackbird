@@ -1237,7 +1237,7 @@ static BOOL BrokerEtwEventMatchesTargetPid(_In_ const SLEEPWALKER_IPC_ETW_EVENT 
                                            _In_ SLEEPWALKER_TARGET_SCOPE Scope)
 {
     DWORD actorPid = 0;
-    DWORD secondaryPid = 0;
+    DWORD remotePid = 0;
     BOOL localMatch;
     BOOL remoteMatch;
 
@@ -1246,22 +1246,84 @@ static BOOL BrokerEtwEventMatchesTargetPid(_In_ const SLEEPWALKER_IPC_ETW_EVENT 
         return FALSE;
     }
 
-    if (Event->PrimaryPid != 0 && Event->PrimaryPid <= 0xFFFFFFFFull)
+    switch (Event->Family)
     {
-        actorPid = (DWORD)Event->PrimaryPid;
-    }
-    else if (Event->EventProcessId != 0)
-    {
-        actorPid = Event->EventProcessId;
-    }
-
-    if (Event->SecondaryPid != 0 && Event->SecondaryPid <= 0xFFFFFFFFull)
-    {
-        secondaryPid = (DWORD)Event->SecondaryPid;
+    case SleepwalkerIpcEtwFamilyHandle:
+    case SleepwalkerIpcEtwFamilyApc:
+        if (Event->CallerPid != 0 && Event->CallerPid <= 0xFFFFFFFFull)
+        {
+            actorPid = (DWORD)Event->CallerPid;
+        }
+        else if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
+        {
+            actorPid = (DWORD)Event->ProcessId;
+        }
+        if (Event->TargetPid != 0 && Event->TargetPid <= 0xFFFFFFFFull)
+        {
+            remotePid = (DWORD)Event->TargetPid;
+        }
+        break;
+    case SleepwalkerIpcEtwFamilyThread:
+        if (Event->CreatorProcessId != 0 && Event->CreatorProcessId <= 0xFFFFFFFFull)
+        {
+            actorPid = (DWORD)Event->CreatorProcessId;
+        }
+        else if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
+        {
+            actorPid = (DWORD)Event->ProcessId;
+        }
+        if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
+        {
+            remotePid = (DWORD)Event->ProcessId;
+        }
+        break;
+    case SleepwalkerIpcEtwFamilyProcess:
+        if (Event->CreatorProcessId != 0 && Event->CreatorProcessId <= 0xFFFFFFFFull)
+        {
+            actorPid = (DWORD)Event->CreatorProcessId;
+        }
+        else if (Event->ParentProcessId != 0 && Event->ParentProcessId <= 0xFFFFFFFFull)
+        {
+            actorPid = (DWORD)Event->ParentProcessId;
+        }
+        else if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
+        {
+            actorPid = (DWORD)Event->ProcessId;
+        }
+        if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
+        {
+            remotePid = (DWORD)Event->ProcessId;
+        }
+        break;
+    case SleepwalkerIpcEtwFamilyDetection:
+    case SleepwalkerIpcEtwFamilyThreatIntel:
+        if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
+        {
+            actorPid = (DWORD)Event->ProcessId;
+        }
+        if (Event->TargetPid != 0 && Event->TargetPid <= 0xFFFFFFFFull)
+        {
+            remotePid = (DWORD)Event->TargetPid;
+        }
+        break;
+    default:
+        if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
+        {
+            actorPid = (DWORD)Event->ProcessId;
+        }
+        else if (Event->EventProcessId != 0)
+        {
+            actorPid = Event->EventProcessId;
+        }
+        if (Event->TargetPid != 0 && Event->TargetPid <= 0xFFFFFFFFull)
+        {
+            remotePid = (DWORD)Event->TargetPid;
+        }
+        break;
     }
 
     localMatch = (actorPid == TargetPid);
-    remoteMatch = (secondaryPid == TargetPid && actorPid != TargetPid);
+    remoteMatch = (remotePid == TargetPid && actorPid != TargetPid);
 
     return ScopeMatches(Scope, localMatch, remoteMatch);
 }

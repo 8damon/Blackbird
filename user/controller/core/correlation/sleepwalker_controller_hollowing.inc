@@ -188,8 +188,8 @@ static VOID ControllerEmitSyntheticDetection(_In_ DWORD ActorPid, _In_ DWORD Tar
     event.EventProcessId = (ActorPid != 0) ? ActorPid : TargetPid;
     event.EventThreadId = 0;
     event.Severity = Severity;
-    event.PrimaryPid = (ActorPid != 0) ? (UINT64)ActorPid : (UINT64)TargetPid;
-    event.SecondaryPid = (UINT64)TargetPid;
+    event.ProcessId = (ActorPid != 0) ? (UINT64)ActorPid : (UINT64)TargetPid;
+    event.TargetPid = (UINT64)TargetPid;
     event.CorrelationFlags = 0;
     event.CorrelationAccessMask = 0;
     event.CorrelationAgeMs = 0;
@@ -367,11 +367,11 @@ static VOID ControllerHandleSleepwalkerHollowRecord(_In_ PEVENT_RECORD Record, _
             return;
         }
 
-        processId = (BrokerEvent != NULL) ? BrokerEvent->PrimaryPid : 0;
-        creatorPid = (BrokerEvent != NULL) ? BrokerEvent->PrimaryPid : 0;
-        if (BrokerEvent != NULL && BrokerEvent->SecondaryPid != 0)
+        processId = (BrokerEvent != NULL) ? BrokerEvent->ProcessId : 0;
+        creatorPid = (BrokerEvent != NULL) ? BrokerEvent->ProcessId : 0;
+        if (BrokerEvent != NULL && BrokerEvent->TargetPid != 0)
         {
-            processId = BrokerEvent->SecondaryPid;
+            processId = BrokerEvent->TargetPid;
         }
 
         if (strcmp(detectionName, "THREAD_HIJACK_INTENT") == 0 ||

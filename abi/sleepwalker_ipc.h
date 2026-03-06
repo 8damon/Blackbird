@@ -5,7 +5,7 @@
 
 #define SLEEPWALKER_IPC_PIPE_NAME L"\\\\.\\pipe\\SleepwlkrController"
 #define SLEEPWALKER_IPC_MAGIC 0x53574B52u
-#define SLEEPWALKER_IPC_VERSION 1u
+#define SLEEPWALKER_IPC_VERSION 2u
 
 typedef enum _SLEEPWALKER_IPC_PACKET_TYPE
 {
@@ -87,10 +87,44 @@ typedef enum _SLEEPWALKER_IPC_ETW_SOURCE
 #define SLEEPWALKER_IPC_MAX_ETW_EVENT_NAME 96
 #define SLEEPWALKER_IPC_MAX_ETW_DETECTION_NAME 128
 #define SLEEPWALKER_IPC_MAX_ETW_REASON 256
+#define SLEEPWALKER_IPC_MAX_ETW_SHORT_TEXT 64
+#define SLEEPWALKER_IPC_MAX_ETW_IMAGE_PATH 260
+#define SLEEPWALKER_IPC_MAX_ETW_COMMAND_LINE 512
+#define SLEEPWALKER_IPC_MAX_ETW_KEY_PATH 512
+#define SLEEPWALKER_IPC_MAX_ETW_VALUE_NAME 256
+#define SLEEPWALKER_IPC_MAX_ETW_STACK_FRAMES 8
+#define SLEEPWALKER_IPC_MAX_ETW_DEEP_SAMPLE 64
+
+typedef enum _SLEEPWALKER_IPC_ETW_FAMILY
+{
+    SleepwalkerIpcEtwFamilyUnknown = 0,
+    SleepwalkerIpcEtwFamilyHandle = 1,
+    SleepwalkerIpcEtwFamilyThread = 2,
+    SleepwalkerIpcEtwFamilyProcess = 3,
+    SleepwalkerIpcEtwFamilyImage = 4,
+    SleepwalkerIpcEtwFamilyRegistry = 5,
+    SleepwalkerIpcEtwFamilyApc = 6,
+    SleepwalkerIpcEtwFamilyDetection = 7,
+    SleepwalkerIpcEtwFamilyThreatIntel = 8
+} SLEEPWALKER_IPC_ETW_FAMILY;
+
+#define SLEEPWALKER_IPC_ETW_FLAG_HANDLE_EXEC_PROTECT 0x00000001u
+#define SLEEPWALKER_IPC_ETW_FLAG_HANDLE_FROM_NTDLL 0x00000002u
+#define SLEEPWALKER_IPC_ETW_FLAG_HANDLE_FROM_EXE 0x00000004u
+#define SLEEPWALKER_IPC_ETW_FLAG_THREAD_GOT_START 0x00000008u
+#define SLEEPWALKER_IPC_ETW_FLAG_THREAD_GOT_RANGE 0x00000010u
+#define SLEEPWALKER_IPC_ETW_FLAG_THREAD_REMOTE_CREATOR 0x00000020u
+#define SLEEPWALKER_IPC_ETW_FLAG_THREAD_OUTSIDE_MAIN_IMAGE 0x00000040u
+#define SLEEPWALKER_IPC_ETW_FLAG_PROCESS_IS_CREATE 0x00000080u
+#define SLEEPWALKER_IPC_ETW_FLAG_IMAGE_SYSTEM_MODE 0x00000100u
+#define SLEEPWALKER_IPC_ETW_FLAG_IMAGE_SIGNATURE_KNOWN 0x00000200u
+#define SLEEPWALKER_IPC_ETW_FLAG_REGISTRY_HIGH_VALUE 0x00000400u
+#define SLEEPWALKER_IPC_ETW_FLAG_APC_DUPLICATE_OPERATION 0x00000800u
 
 typedef struct _SLEEPWALKER_IPC_ETW_EVENT
 {
     UINT32 Source;
+    UINT32 Family;
     UINT16 EventId;
     UINT16 Opcode;
     UINT16 Task;
@@ -98,9 +132,14 @@ typedef struct _SLEEPWALKER_IPC_ETW_EVENT
     UINT32 EventProcessId;
     UINT32 EventThreadId;
     UINT32 Severity;
-    UINT32 Reserved1;
-    UINT64 PrimaryPid;
-    UINT64 SecondaryPid;
+    UINT32 Flags;
+    UINT64 ProcessId;
+    UINT64 ThreadId;
+    UINT64 CallerPid;
+    UINT64 TargetPid;
+    UINT64 ParentProcessId;
+    UINT64 CreatorProcessId;
+    UINT64 CreatorThreadId;
     WCHAR EventName[SLEEPWALKER_IPC_MAX_ETW_EVENT_NAME];
     CHAR DetectionName[SLEEPWALKER_IPC_MAX_ETW_DETECTION_NAME];
     UINT32 CorrelationFlags;
@@ -108,6 +147,45 @@ typedef struct _SLEEPWALKER_IPC_ETW_EVENT
     UINT32 CorrelationAgeMs;
     UINT32 Reserved2;
     WCHAR Reason[SLEEPWALKER_IPC_MAX_ETW_REASON];
+    CHAR ClassName[SLEEPWALKER_IPC_MAX_ETW_SHORT_TEXT];
+    CHAR Operation[SLEEPWALKER_IPC_MAX_ETW_SHORT_TEXT];
+    UINT32 DesiredAccess;
+    UINT32 OriginProtect;
+    UINT64 OriginAddress;
+    INT32 StatusOpenProcess;
+    INT32 StatusBasicInfo;
+    INT32 StatusSectionName;
+    UINT32 StackCount;
+    UINT32 Reserved3;
+    UINT64 Stack[SLEEPWALKER_IPC_MAX_ETW_STACK_FRAMES];
+    UINT64 DeepAllocationBase;
+    UINT64 DeepRegionSize;
+    UINT32 DeepRegionProtect;
+    UINT32 DeepRegionState;
+    UINT32 DeepRegionType;
+    UINT32 DeepSampleSize;
+    UINT8 DeepSample[SLEEPWALKER_IPC_MAX_ETW_DEEP_SAMPLE];
+    WCHAR OriginPath[SLEEPWALKER_IPC_MAX_ETW_IMAGE_PATH];
+    UINT64 StartAddress;
+    UINT64 ImageBase;
+    UINT64 ImageSize;
+    UINT32 StartRegionProtect;
+    UINT32 StartRegionState;
+    UINT32 StartRegionType;
+    INT32 StartRegionStatus;
+    UINT32 SessionId;
+    INT32 CreateStatus;
+    UINT64 ProcessStartKey;
+    UINT8 SignatureLevel;
+    UINT8 SignatureType;
+    UINT16 Reserved4;
+    UINT32 NotifyClass;
+    UINT32 DataType;
+    UINT32 DataSize;
+    WCHAR ImagePath[SLEEPWALKER_IPC_MAX_ETW_IMAGE_PATH];
+    WCHAR CommandLine[SLEEPWALKER_IPC_MAX_ETW_COMMAND_LINE];
+    WCHAR KeyPath[SLEEPWALKER_IPC_MAX_ETW_KEY_PATH];
+    WCHAR ValueName[SLEEPWALKER_IPC_MAX_ETW_VALUE_NAME];
 } SLEEPWALKER_IPC_ETW_EVENT, *PSLEEPWALKER_IPC_ETW_EVENT;
 
 typedef union _SLEEPWALKER_IPC_PAYLOAD

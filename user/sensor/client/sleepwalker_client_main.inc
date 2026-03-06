@@ -137,6 +137,68 @@ static void LoggerEmitEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR Eve
     LoggerEmitJson(1u, provider, "event", actorPid, target, message);
 }
 
+static void ResolveBrokerEtwActorTarget(_In_ const SLEEPWALKER_IPC_ETW_EVENT *Event, _Out_ DWORD *ActorPid,
+                                        _Out_ DWORD *TargetPid)
+{
+    ULONGLONG actorValue = 0;
+    ULONGLONG targetValue = 0;
+
+    if (ActorPid == NULL || TargetPid == NULL)
+    {
+        return;
+    }
+
+    *ActorPid = 0;
+    *TargetPid = 0;
+
+    if (Event == NULL)
+    {
+        return;
+    }
+
+    switch (Event->Family)
+    {
+    case SleepwalkerIpcEtwFamilyHandle:
+    case SleepwalkerIpcEtwFamilyApc:
+        actorValue = (Event->CallerPid != 0) ? Event->CallerPid : Event->ProcessId;
+        targetValue = Event->TargetPid;
+        break;
+    case SleepwalkerIpcEtwFamilyThread:
+        actorValue = (Event->CreatorProcessId != 0) ? Event->CreatorProcessId : Event->ProcessId;
+        targetValue = Event->ProcessId;
+        break;
+    case SleepwalkerIpcEtwFamilyProcess:
+        actorValue = (Event->CreatorProcessId != 0) ? Event->CreatorProcessId : Event->ParentProcessId;
+        targetValue = Event->ProcessId;
+        break;
+    case SleepwalkerIpcEtwFamilyImage:
+    case SleepwalkerIpcEtwFamilyRegistry:
+    case SleepwalkerIpcEtwFamilyDetection:
+    case SleepwalkerIpcEtwFamilyThreatIntel:
+        actorValue = Event->ProcessId;
+        targetValue = Event->TargetPid;
+        break;
+    default:
+        actorValue = (Event->ProcessId != 0) ? Event->ProcessId : Event->EventProcessId;
+        targetValue = Event->TargetPid;
+        break;
+    }
+
+    if (actorValue != 0 && actorValue <= 0xFFFFFFFFull)
+    {
+        *ActorPid = (DWORD)actorValue;
+    }
+    else if (Event->EventProcessId != 0)
+    {
+        *ActorPid = Event->EventProcessId;
+    }
+
+    if (targetValue != 0 && targetValue <= 0xFFFFFFFFull)
+    {
+        *TargetPid = (DWORD)targetValue;
+    }
+}
+
 static void LoggerEmitBrokerEtwEvent(_In_ const SLEEPWALKER_IPC_ETW_EVENT *Event)
 {
     char provider[32];
@@ -173,18 +235,7 @@ static void LoggerEmitBrokerEtwEvent(_In_ const SLEEPWALKER_IPC_ETW_EVENT *Event
         return;
     }
 
-    if (Event->PrimaryPid != 0 && Event->PrimaryPid <= 0xFFFFFFFFull)
-    {
-        actorPid = (DWORD)Event->PrimaryPid;
-    }
-    else
-    {
-        actorPid = Event->EventProcessId;
-    }
-    if (Event->SecondaryPid != 0 && Event->SecondaryPid <= 0xFFFFFFFFull)
-    {
-        targetPid = (DWORD)Event->SecondaryPid;
-    }
+    ResolveBrokerEtwActorTarget(Event, &actorPid, &targetPid);
 
     eventNameUtf8[0] = '\0';
     if (Event->EventName[0] != L'\0')

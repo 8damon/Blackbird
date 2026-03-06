@@ -100,6 +100,90 @@ static BOOL ControllerEtwGetU32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR
     return FALSE;
 }
 
+static BOOL ControllerEtwGetI32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ LONG *Value)
+{
+    PBYTE raw = NULL;
+    ULONG size = 0;
+
+    if (Value == NULL)
+    {
+        return FALSE;
+    }
+    *Value = 0;
+
+    if (!ControllerEtwGetPropertyRaw(Record, Name, &raw, &size))
+    {
+        return FALSE;
+    }
+    if (size >= sizeof(LONG))
+    {
+        *Value = *(LONG *)raw;
+        free(raw);
+        return TRUE;
+    }
+
+    free(raw);
+    return FALSE;
+}
+
+static BOOL ControllerEtwGetU8Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ UCHAR *Value)
+{
+    PBYTE raw = NULL;
+    ULONG size = 0;
+
+    if (Value == NULL)
+    {
+        return FALSE;
+    }
+    *Value = 0;
+
+    if (!ControllerEtwGetPropertyRaw(Record, Name, &raw, &size))
+    {
+        return FALSE;
+    }
+    if (size >= sizeof(UCHAR))
+    {
+        *Value = *raw;
+        free(raw);
+        return TRUE;
+    }
+
+    free(raw);
+    return FALSE;
+}
+
+static BOOL ControllerEtwGetBoolProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ BOOL *Value)
+{
+    PBYTE raw = NULL;
+    ULONG size = 0;
+
+    if (Value == NULL)
+    {
+        return FALSE;
+    }
+    *Value = FALSE;
+
+    if (!ControllerEtwGetPropertyRaw(Record, Name, &raw, &size))
+    {
+        return FALSE;
+    }
+    if (size >= sizeof(ULONG))
+    {
+        *Value = (*(ULONG *)raw != 0) ? TRUE : FALSE;
+        free(raw);
+        return TRUE;
+    }
+    if (size >= sizeof(UCHAR))
+    {
+        *Value = (*raw != 0) ? TRUE : FALSE;
+        free(raw);
+        return TRUE;
+    }
+
+    free(raw);
+    return FALSE;
+}
+
 static BOOL ControllerEtwGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
                                          _Out_writes_z_(OutputChars) PSTR Output, _In_ size_t OutputChars)
 {
@@ -156,6 +240,44 @@ static BOOL ControllerEtwGetWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWST
     return FALSE;
 }
 
+static BOOL ControllerEtwCopyBinaryProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_bytes_(Capacity) PBYTE Output,
+                                            _In_ ULONG Capacity, _Out_opt_ UINT32 *BytesCopied)
+{
+    PBYTE raw = NULL;
+    ULONG size = 0;
+    ULONG copy = 0;
+
+    if (Output == NULL || Capacity == 0)
+    {
+        return FALSE;
+    }
+
+    if (BytesCopied != NULL)
+    {
+        *BytesCopied = 0;
+    }
+    ZeroMemory(Output, Capacity);
+
+    if (!ControllerEtwGetPropertyRaw(Record, Name, &raw, &size))
+    {
+        return FALSE;
+    }
+
+    copy = (size < Capacity) ? size : Capacity;
+    if (copy != 0)
+    {
+        CopyMemory(Output, raw, copy);
+    }
+    free(raw);
+
+    if (BytesCopied != NULL)
+    {
+        *BytesCopied = copy;
+    }
+
+    return (copy != 0);
+}
+
 static BOOL ControllerU64ToPid(_In_ ULONGLONG Value, _Out_ DWORD *ProcessId)
 {
     if (ProcessId == NULL || Value == 0 || Value > 0xFFFFFFFFull)
@@ -178,16 +300,78 @@ static BOOL ControllerEtwEventMatchesPid(_In_ const SLEEPWALKER_IPC_ETW_EVENT *E
     {
         return TRUE;
     }
-    if (Event->PrimaryPid != 0 && Event->PrimaryPid <= 0xFFFFFFFFull && (DWORD)Event->PrimaryPid == ProcessId)
+    if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull && (DWORD)Event->ProcessId == ProcessId)
     {
         return TRUE;
     }
-    if (Event->SecondaryPid != 0 && Event->SecondaryPid <= 0xFFFFFFFFull && (DWORD)Event->SecondaryPid == ProcessId)
+    if (Event->CallerPid != 0 && Event->CallerPid <= 0xFFFFFFFFull && (DWORD)Event->CallerPid == ProcessId)
+    {
+        return TRUE;
+    }
+    if (Event->TargetPid != 0 && Event->TargetPid <= 0xFFFFFFFFull && (DWORD)Event->TargetPid == ProcessId)
+    {
+        return TRUE;
+    }
+    if (Event->ParentProcessId != 0 && Event->ParentProcessId <= 0xFFFFFFFFull &&
+        (DWORD)Event->ParentProcessId == ProcessId)
+    {
+        return TRUE;
+    }
+    if (Event->CreatorProcessId != 0 && Event->CreatorProcessId <= 0xFFFFFFFFull &&
+        (DWORD)Event->CreatorProcessId == ProcessId)
     {
         return TRUE;
     }
 
     return FALSE;
+}
+
+static BOOL ControllerEtwResolveRelation(_In_ const SLEEPWALKER_IPC_ETW_EVENT *Event, _Out_ DWORD *SourcePid,
+                                         _Out_ DWORD *TargetPid)
+{
+    ULONGLONG sourceValue = 0;
+    ULONGLONG targetValue = 0;
+
+    if (Event == NULL || SourcePid == NULL || TargetPid == NULL)
+    {
+        return FALSE;
+    }
+
+    *SourcePid = 0;
+    *TargetPid = 0;
+
+    switch (Event->Family)
+    {
+    case SleepwalkerIpcEtwFamilyHandle:
+    case SleepwalkerIpcEtwFamilyApc:
+        sourceValue = (Event->CallerPid != 0) ? Event->CallerPid : Event->ProcessId;
+        targetValue = Event->TargetPid;
+        break;
+    case SleepwalkerIpcEtwFamilyThread:
+        sourceValue = (Event->CreatorProcessId != 0) ? Event->CreatorProcessId : Event->ProcessId;
+        targetValue = Event->ProcessId;
+        break;
+    case SleepwalkerIpcEtwFamilyProcess:
+        sourceValue = (Event->CreatorProcessId != 0) ? Event->CreatorProcessId : Event->ParentProcessId;
+        targetValue = Event->ProcessId;
+        break;
+    case SleepwalkerIpcEtwFamilyDetection:
+    case SleepwalkerIpcEtwFamilyThreatIntel:
+        sourceValue = Event->ProcessId;
+        targetValue = Event->TargetPid;
+        break;
+    default:
+        return FALSE;
+    }
+
+    if (!ControllerU64ToPid(sourceValue, SourcePid) || !ControllerU64ToPid(targetValue, TargetPid))
+    {
+        *SourcePid = 0;
+        *TargetPid = 0;
+        return FALSE;
+    }
+
+    return TRUE;
 }
 
 static BOOL ControllerClientHasEtwMatchLocked(_In_ const SLEEPWALKER_CONTROLLER_CLIENT *Client,
@@ -222,7 +406,7 @@ static VOID ControllerDispatchEtwEvent(_In_ const SLEEPWALKER_IPC_ETW_EVENT *Eve
         return;
     }
 
-    if (ControllerU64ToPid(Event->PrimaryPid, &sourcePid) && ControllerU64ToPid(Event->SecondaryPid, &targetPid))
+    if (ControllerEtwResolveRelation(Event, &sourcePid, &targetPid))
     {
         ControllerExpandMonitoringGraph(sourcePid, targetPid, SLEEPWALKER_CONTROLLER_DRIVER_STREAM_MASK);
     }

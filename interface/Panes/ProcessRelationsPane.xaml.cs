@@ -12,6 +12,7 @@ namespace SleepwalkerInterface
     public partial class ProcessRelationsPane : UserControl
     {
         public event RoutedEventHandler? CloseRequested;
+        public event RoutedEventHandler? InspectRequested;
 
         private readonly ObservableCollection<GroupedEventRow> _items = new();
         private readonly Dictionary<string, GroupedEventRow> _byKey = new(StringComparer.Ordinal);
@@ -46,7 +47,8 @@ namespace SleepwalkerInterface
             string flagsText = string.Equals(item.RelationType, "ThreadCreate", StringComparison.OrdinalIgnoreCase)
                 ? EventDetailFormatting.DescribeThreadFlags(item.LastFlags)
                 : EventDetailFormatting.DescribeHandleFlags(item.LastFlags);
-            string details = $"access=0x{item.LastAccessMask:X8} ({accessText}) flags=0x{item.LastFlags:X8} ({flagsText})";
+            string details =
+                $"sourcePid={item.SourcePid} targetPid={item.TargetPid} relationType={item.RelationType} access=0x{item.LastAccessMask:X8} ({accessText}) flags=0x{item.LastFlags:X8} ({flagsText})";
             string key = $"{eventName}|{severity}|{detection}";
             int hits = Math.Max(1, item.RepeatCount);
 
@@ -65,6 +67,8 @@ namespace SleepwalkerInterface
                     Source = "Kernel-IOCTL",
                     Actor = source,
                     Target = target,
+                    ActorPid = item.SourcePid,
+                    TargetPid = item.TargetPid,
                     Details = details
                 });
                 if (existing.Details.Count > 4000)
@@ -99,6 +103,8 @@ namespace SleepwalkerInterface
                             Source = "Kernel-IOCTL",
                             Actor = source,
                             Target = target,
+                            ActorPid = item.SourcePid,
+                            TargetPid = item.TargetPid,
                             Details = details
                         }
                     }
@@ -120,6 +126,9 @@ namespace SleepwalkerInterface
 
         internal IReadOnlyList<GroupedEventRow> SnapshotItems()
             => _items.Select(x => x.Clone()).ToList();
+
+        internal GroupedEventRow? GetSelectedGroupClone()
+            => (RelationsGrid.SelectedItem as GroupedEventRow)?.Clone();
 
         internal void LoadHistory(IEnumerable<GroupedEventRow> groups)
         {
@@ -191,96 +200,15 @@ namespace SleepwalkerInterface
 
         private void RelationsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            GroupedEventRow? selected = GetRowFromSource(e.OriginalSource as DependencyObject)
-                ?? RelationsGrid.SelectedItem as GroupedEventRow;
-            if (selected == null)
+            _ = sender;
+            _ = e;
+            if (RelationsGrid.SelectedItem is GroupedEventRow)
             {
-                return;
+                InspectRequested?.Invoke(this, new RoutedEventArgs());
             }
-
-            Window? owner = Window.GetWindow(this);
-            IReadOnlyList<GroupedEventDetailRow> details = ResolveDetails(selected, owner);
-            GroupedEventDetailsWindow.ShowUnified(
-                owner,
-                IntelDetailsCategory.ProcessRelations,
-                $"Process Relation: {selected.Event}",
-                details);
-        }
-
-        private static GroupedEventRow? GetRowFromSource(DependencyObject? source)
-        {
-            while (source != null)
-            {
-                if (source is DataGridRow row && row.Item is GroupedEventRow item)
-                {
-                    return item;
-                }
-
-                source = VisualTreeHelper.GetParent(source);
-            }
-
-            return null;
-        }
-
-        private static IReadOnlyList<GroupedEventDetailRow> ResolveDetails(GroupedEventRow selected, Window? owner)
-        {
-            if (selected.Details.Count > 0)
-            {
-                return selected.Details;
-            }
-
-            IIntelDetailsProvider? provider = ResolveProvider(owner);
-            if (provider == null)
-            {
-                return Array.Empty<GroupedEventDetailRow>();
-            }
-
-            IReadOnlyList<GroupedEventDetailRow> all = provider.GetIntelDetails(IntelDetailsCategory.ProcessRelations);
-            List<GroupedEventDetailRow> exact = all
-                .Where(x =>
-                    x.Event.Equals(selected.Event, StringComparison.OrdinalIgnoreCase) &&
-                    x.Severity.Equals(selected.Severity, StringComparison.OrdinalIgnoreCase) &&
-                    x.Detection.Equals(selected.Detection, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-            if (exact.Count > 0)
-            {
-                return exact;
-            }
-
-            return all
-                .Where(x => x.Event.Equals(selected.Event, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-        }
-
-        private static IIntelDetailsProvider? ResolveProvider(Window? owner)
-        {
-            Window? cursor = owner;
-            while (cursor != null)
-            {
-                if (cursor is IIntelDetailsProvider provider)
-                {
-                    return provider;
-                }
-
-                cursor = cursor.Owner;
-            }
-
-            if (Application.Current == null)
-            {
-                return null;
-            }
-
-            foreach (Window window in Application.Current.Windows)
-            {
-                if (window is IIntelDetailsProvider provider)
-                {
-                    return provider;
-                }
-            }
-
-            return null;
         }
 
         private void RelationsBtnClose_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, e);
+        private void RelationsBtnInspect_Click(object sender, RoutedEventArgs e) => InspectRequested?.Invoke(this, e);
     }
 }

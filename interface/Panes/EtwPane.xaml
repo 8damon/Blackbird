@@ -15,6 +15,7 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <TextBlock Grid.Column="0"
@@ -22,7 +23,7 @@
                        VerticalAlignment="Center"
                        FontWeight="SemiBold"
                        FontSize="12"
-                       Text="Sleepwalker ETW Feed"/>
+                       Text="ETW Feed"/>
 
             <TextBlock x:Name="SummaryBlock"
                        Grid.Column="1"
@@ -32,6 +33,14 @@
                        Text="No ETW events yet"/>
 
             <Button Grid.Column="2"
+                    x:Name="EtwBtnInspect"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="↗"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Open ETW inspector"
+                    Click="EtwBtnInspect_Click"/>
+            <Button Grid.Column="3"
                     x:Name="EtwBtnReorder"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="⇅"
@@ -39,7 +48,7 @@
                     Height="22"
                     ToolTip="Reorder ETW/Heuristics panes"
                     Click="EtwBtnReorder_Click"/>
-            <Button Grid.Column="3"
+            <Button Grid.Column="4"
                     x:Name="EtwBtnFloat"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="⧉"
@@ -47,7 +56,7 @@
                     Height="22"
                     ToolTip="Float / re-dock pane"
                     Click="EtwBtnFloat_Click"/>
-            <Button Grid.Column="4"
+            <Button Grid.Column="5"
                     x:Name="EtwBtnClose"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="✕"

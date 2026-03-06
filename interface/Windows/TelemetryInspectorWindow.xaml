@@ -1,0 +1,257 @@
+<Window x:Class="SleepwalkerInterface.TelemetryInspectorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:SleepwalkerInterface"
+        Title="Telemetry Inspector"
+        Height="920"
+        Width="1420"
+        MinHeight="720"
+        MinWidth="1100"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="SingleBorderWindow"
+        ResizeMode="CanResize"
+        Background="{DynamicResource WinBgBrush}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
+    <Window.Resources>
+        <Style x:Key="InspectorLabelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource WinMutedTextBrush}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+
+        <Style x:Key="InspectorValueStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="TextWrapping" Value="NoWrap"/>
+        </Style>
+
+        <Style x:Key="InspectorTreeItemStyle"
+               TargetType="TreeViewItem"
+               BasedOn="{StaticResource {x:Type TreeViewItem}}">
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+        </Style>
+
+        <HierarchicalDataTemplate DataType="{x:Type local:InspectorFieldNode}" ItemsSource="{Binding Children}">
+            <Border x:Name="NodeBorder" Padding="2,1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="220"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="NameBlock"
+                               Grid.Column="0"
+                               Text="{Binding Name}"
+                               Foreground="{DynamicResource WinMutedTextBrush}"
+                               Margin="2,0,8,0"
+                               TextTrimming="CharacterEllipsis"/>
+                    <TextBlock x:Name="ValueBlock"
+                               Grid.Column="1"
+                               Text="{Binding Value}"
+                               FontFamily="Consolas"
+                               Foreground="{DynamicResource WinTextBrush}"
+                               TextWrapping="NoWrap"/>
+                </Grid>
+            </Border>
+            <HierarchicalDataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Kind}" Value="section">
+                    <Setter TargetName="NodeBorder" Property="Background" Value="#FF171717"/>
+                    <Setter TargetName="NameBlock" Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                    <Setter TargetName="NameBlock" Property="FontWeight" Value="SemiBold"/>
+                    <Setter TargetName="ValueBlock" Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="line">
+                    <Setter TargetName="NameBlock" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="ValueBlock" Property="Grid.Column" Value="0"/>
+                    <Setter TargetName="ValueBlock" Property="Grid.ColumnSpan" Value="2"/>
+                    <Setter TargetName="ValueBlock" Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="note">
+                    <Setter TargetName="NameBlock" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="ValueBlock" Property="Grid.Column" Value="0"/>
+                    <Setter TargetName="ValueBlock" Property="Grid.ColumnSpan" Value="2"/>
+                    <Setter TargetName="ValueBlock" Property="Foreground" Value="{DynamicResource WinMutedTextBrush}"/>
+                </DataTrigger>
+            </HierarchicalDataTemplate.Triggers>
+        </HierarchicalDataTemplate>
+    </Window.Resources>
+
+    <Grid Margin="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="{DynamicResource WinHeaderBrush}"
+                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="6,4">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Row="0" Grid.Column="0">
+                    <TextBlock x:Name="HeaderBlock"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               Text="Telemetry Inspector"/>
+                    <TextBlock x:Name="SummaryBlock"
+                               Margin="0,2,0,0"
+                               FontSize="11"
+                               Foreground="{DynamicResource WinMutedTextBrush}"
+                               Text="No telemetry available"/>
+                </StackPanel>
+
+                <WrapPanel Grid.Row="0"
+                           Grid.Column="1"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Top">
+                    <TextBlock Style="{StaticResource InspectorLabelStyle}" Text="Groups"/>
+                    <TextBlock x:Name="GroupCountBlock" Style="{StaticResource InspectorValueStyle}" Margin="0,0,16,0"/>
+                    <TextBlock Style="{StaticResource InspectorLabelStyle}" Text="Rows"/>
+                    <TextBlock x:Name="OccurrenceCountBlock" Style="{StaticResource InspectorValueStyle}" Margin="0,0,16,0"/>
+                    <TextBlock Style="{StaticResource InspectorLabelStyle}" Text="Window"/>
+                    <TextBlock x:Name="WindowRangeBlock" Style="{StaticResource InspectorValueStyle}"/>
+                </WrapPanel>
+
+                <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="72"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="72"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0" Style="{StaticResource InspectorLabelStyle}" Text="Selection"/>
+                    <TextBlock x:Name="SelectionBlock" Grid.Column="1" Style="{StaticResource InspectorValueStyle}" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Grid.Column="2" Style="{StaticResource InspectorLabelStyle}" Text="When"/>
+                    <TextBlock x:Name="SelectionTimeBlock" Grid.Column="3" Style="{StaticResource InspectorValueStyle}" TextAlignment="Right"/>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="0,8,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBox x:Name="SearchBox"
+                     Grid.Column="0"
+                     Width="260"
+                     Height="26"
+                     Margin="0,0,8,0"
+                     VerticalContentAlignment="Center"
+                     ToolTip="Search event, detection, actor, target, raw details"
+                     TextChanged="SearchBox_TextChanged"/>
+
+            <Button x:Name="SeverityFilterButton"
+                    Grid.Column="1"
+                    Content="Severity: All"
+                    MinWidth="110"
+                    Click="SeverityFilterButton_Click"/>
+
+            <TextBlock x:Name="DetailCountBlock"
+                       Grid.Column="3"
+                       Margin="12,0,0,0"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource WinMutedTextBrush}"
+                       Text="0 detail rows"/>
+        </Grid>
+
+        <Grid Grid.Row="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="1.2*"/>
+                <RowDefinition Height="6"/>
+                <RowDefinition Height="1.4*"/>
+            </Grid.RowDefinitions>
+
+            <DataGrid Grid.Row="0"
+                      x:Name="GroupsGrid"
+                      Style="{DynamicResource SecondaryDenseDataGridStyle}"
+                      AutoGenerateColumns="False"
+                      IsReadOnly="True"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      CanUserResizeRows="False"
+                      RowHeaderWidth="0"
+                      BorderThickness="0"
+                      SelectionChanged="GroupsGrid_SelectionChanged">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Last Seen" Width="132" Binding="{Binding LastSeenUtc, StringFormat=HH:mm:ss.fff}"/>
+                    <DataGridTextColumn Header="Event" Width="220" Binding="{Binding Event}"/>
+                    <DataGridTextColumn Header="Severity" Width="90" Binding="{Binding Severity}"/>
+                    <DataGridTextColumn Header="Hits" Width="70" Binding="{Binding Hits}"/>
+                    <DataGridTextColumn Header="Detection" Width="*" Binding="{Binding Detection}"/>
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <GridSplitter Grid.Row="1"
+                          Height="6"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"/>
+
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.05*"/>
+                    <ColumnDefinition Width="6"/>
+                    <ColumnDefinition Width="1.2*"/>
+                </Grid.ColumnDefinitions>
+
+                <DataGrid Grid.Column="0"
+                          x:Name="DetailsGrid"
+                          Style="{DynamicResource SecondaryDenseDataGridStyle}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          CanUserResizeRows="False"
+                          RowHeaderWidth="0"
+                          BorderThickness="0"
+                          SelectionChanged="DetailsGrid_SelectionChanged">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Time" Width="124" Binding="{Binding TimestampUtc, StringFormat=HH:mm:ss.fff}"/>
+                        <DataGridTextColumn Header="Actor" Width="170" Binding="{Binding Actor}"/>
+                        <DataGridTextColumn Header="Target" Width="170" Binding="{Binding Target}"/>
+                        <DataGridTextColumn Header="Source" Width="110" Binding="{Binding Source}"/>
+                        <DataGridTextColumn Header="Detection" Width="*" Binding="{Binding Detection}"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <GridSplitter Grid.Column="1"
+                              Width="6"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch"/>
+
+                <TreeView Grid.Column="2"
+                          x:Name="FieldsTreeView"
+                          Background="{DynamicResource WinPanelBrush}"
+                          BorderThickness="0"
+                          ItemContainerStyle="{StaticResource InspectorTreeItemStyle}">
+                    <TreeView.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Expand All" Click="ExpandAll_Click"/>
+                            <MenuItem Header="Collapse All" Click="CollapseAll_Click"/>
+                            <Separator/>
+                            <MenuItem Header="Copy Visible" Click="CopyVisible_Click"/>
+                            <MenuItem Header="Copy Raw" Click="CopyRaw_Click"/>
+                            <Separator/>
+                            <MenuItem Header="Open Correlated Handle Evidence" Click="OpenHandleWindowButton_Click"/>
+                        </ContextMenu>
+                    </TreeView.ContextMenu>
+                </TreeView>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

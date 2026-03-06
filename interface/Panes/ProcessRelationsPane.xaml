@@ -13,6 +13,7 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <TextBlock Grid.Column="0"
@@ -29,6 +30,14 @@
                        Text="No relations yet"/>
 
             <Button Grid.Column="2"
+                    x:Name="RelationsBtnInspect"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="↗"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Open relations inspector"
+                    Click="RelationsBtnInspect_Click"/>
+            <Button Grid.Column="3"
                     x:Name="RelationsBtnClose"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="✕"

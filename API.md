@@ -16,7 +16,7 @@ This document describes the current Sleepwalker control-plane and telemetry cont
 
 ## Revision and Scope
 
-- Document revision: `2026-03-01`
+- Document revision: `2026-03-06`
 - ABI source of truth: `abi/sleepwalker_ioctl.h`
 - Compatibility note: no explicit in-band ABI version field is currently exposed; pin integration by commit/date and validate with `SleepwalkerTestSuite`.
 
@@ -148,7 +148,7 @@ beyond the initially seeded PID list by building a relation graph per client:
   - handle events: `callerPid -> targetPid`
   - thread events: `creatorPid -> processId`
   - process telemetry: `creator/parent -> child process`
-  - ETW bridge relation when present: `PrimaryPid -> SecondaryPid`
+  - broker ETW events: resolved from the explicit IPC ETW family fields (`caller/creator/process -> target/process`)
 - Dynamic entries inherit the source subscription stream mask.
 - Guardrails:
   - max dynamic depth from explicit seed: `3`
@@ -288,6 +288,45 @@ Current event names:
   - severity
   - reason
   - correlation context
+
+### IPC ETW Uplink Surface
+
+The broker ETW IPC model (`SLEEPWALKER_IPC_ETW_EVENT`) now carries both the generic ETW envelope and
+event-family-specific fields so clients can build richer inspectors without reparsing raw ETW:
+
+- Generic envelope:
+  - source, family, task/opcode/id
+  - ETW header process/thread IDs
+  - actor/target relation PIDs
+  - detection name, reason, severity
+  - correlation flags/access/age
+- Handle/APC enrichment:
+  - class name, desired access
+  - origin address/protect/path
+  - frame list
+  - deep-path allocation/region/sample metadata
+  - APC duplicate-operation marker
+- Thread enrichment:
+  - process/thread/creator IDs
+  - start address, image base/size
+  - start-region protection/state/type/status
+  - worker stack frames
+  - got-start/got-range/remote/outside-image flags
+- Process/Image enrichment:
+  - parent/creator IDs
+  - creator thread ID
+  - process start key
+  - session ID
+  - create status / create marker
+  - image path and command line
+  - signature level/type and system-mode marker for image events
+- Registry enrichment:
+  - operation
+  - session ID
+  - notify class
+  - data type/size
+  - key path and value name
+  - high-value path marker
 
 ### Current Detection Names
 

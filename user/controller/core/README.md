@@ -14,7 +14,7 @@ This folder is organized by responsibility so monitoring, correlation, and servi
     - ETW property extraction helpers
     - ETW event-to-client matching
     - ETW dispatch fanout
-    - ETW relation-based graph expansion (`PrimaryPid -> SecondaryPid`)
+    - ETW relation-based graph expansion (explicit actor/target fields per ETW family)
 
 - `correlation/`
   - `sleepwalker_controller_hollowing.inc`

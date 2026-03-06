@@ -34,8 +34,9 @@
                                VerticalAlignment="Center"/>
                     <Button Content="✕"
                             Grid.Column="1"
-                            Width="26"
-                            Height="24"
+                            Width="22"
+                            Height="20"
+                            VerticalAlignment="Top"
                             Click="Close_Click"/>
                 </Grid>
 
@@ -47,7 +48,7 @@
 
             <TextBlock Grid.Row="3"
                        Foreground="{DynamicResource WinMutedTextBrush}"
-                       Text="Open a trace file or launch process targeting."/>
+                       Text="Open a session archive or launch process targeting."/>
 
             <UniformGrid Grid.Row="5" Columns="3">
                 <Button Margin="0,0,8,0"
@@ -61,7 +62,7 @@
                         Content="Getting Started"
                         Height="34"
                         Click="GettingStarted_Click"/>
-                <Button Content="Open Trace File"
+                <Button Content="Open Session"
                         Height="34"
                         Click="OpenTraceFile_Click"/>
             </UniformGrid>

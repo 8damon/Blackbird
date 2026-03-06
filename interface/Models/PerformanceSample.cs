@@ -27,6 +27,8 @@ namespace SleepwalkerInterface
         public double NetPacketsPerSec { get; set; }
 
         public List<ThreadUsageSample> TopThreads { get; set; } = new();
+        public List<MemoryMetricSample> MemoryMetrics { get; set; } = new();
+        public List<MemoryPageSample> MemoryPages { get; set; } = new();
     }
 
     public sealed class ThreadUsageSample
@@ -37,5 +39,39 @@ namespace SleepwalkerInterface
         public string WaitReason { get; set; } = "";
         public string Kind { get; set; } = "";
         public DateTime? StartTimeUtc { get; set; }
+    }
+
+    public sealed class MemoryMetricSample
+    {
+        public string Metric { get; set; } = "";
+        public string Value { get; set; } = "";
+        public long? BytesValue { get; set; }
+    }
+
+    public sealed class MemoryPageSample
+    {
+        public ulong BaseAddress { get; set; }
+        public ulong RegionSize { get; set; }
+        public uint State { get; set; }
+        public uint Protect { get; set; }
+        public uint Type { get; set; }
+        public string StateLabel { get; set; } = "";
+        public string ProtectLabel { get; set; } = "";
+        public string TypeLabel { get; set; } = "";
+        public string Category { get; set; } = "";
+    }
+
+    public sealed class ThreadLifecycleEventSample
+    {
+        public DateTime TimestampUtc { get; set; }
+        public uint ProcessPid { get; set; }
+        public uint ThreadId { get; set; }
+        public uint CreatorPid { get; set; }
+        public uint Flags { get; set; }
+        public ulong StartAddress { get; set; }
+        public ulong ImageBase { get; set; }
+        public ulong ImageSize { get; set; }
+        public string EventKind { get; set; } = "";
+        public string Notes { get; set; } = "";
     }
 }

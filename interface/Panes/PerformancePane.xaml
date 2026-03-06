@@ -70,12 +70,54 @@
         <!-- Body -->
         <Grid Grid.Row="1" Margin="4">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="2*" MinHeight="190"/>
                 <RowDefinition Height="2"/>
                 <RowDefinition Height="*" MinHeight="150"/>
             </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0" ClipToBounds="True" Margin="0,0,0,1">
+            <Border Grid.Row="0"
+                    Visibility="Collapsed"
+                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                    BorderThickness="1"
+                    Padding="8,5"
+                    Margin="0,0,0,2"
+                    Background="{DynamicResource WinPanelBrush}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <ToggleButton x:Name="TimeTravelToggle"
+                                  Content="Time Travel"
+                                  Padding="8,2"
+                                  VerticalAlignment="Center"
+                                  Checked="TimeTravelToggle_Checked"
+                                  Unchecked="TimeTravelToggle_Unchecked"/>
+
+                    <Slider x:Name="TimeTravelSlider"
+                            Grid.Column="1"
+                            Minimum="0"
+                            Maximum="0"
+                            Value="0"
+                            TickFrequency="1"
+                            IsSnapToTickEnabled="True"
+                            IsEnabled="False"
+                            Margin="10,0,10,0"
+                            VerticalAlignment="Center"
+                            ValueChanged="TimeTravelSlider_ValueChanged"/>
+
+                    <TextBlock x:Name="TimeTravelStampBlock"
+                               Grid.Column="2"
+                               Text="LIVE"
+                               Foreground="{DynamicResource WinMutedTextBrush}"
+                               VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+
+            <Grid Grid.Row="1" ClipToBounds="True" Margin="0,0,0,1">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
@@ -108,10 +150,12 @@
                                            VerticalAlignment="Center"/>
                                 <Button x:Name="NetworkViewSwitchButton"
                                         DockPanel.Dock="Right"
-                                        Content="Switch to Peers"
-                                        Padding="8,2"
+                                        Content="Peers"
+                                        MinWidth="58"
+                                        Padding="6,1"
                                         Margin="8,0,0,0"
                                         VerticalAlignment="Center"
+                                        ToolTip="Toggle traffic/peers view"
                                         Click="NetworkViewSwitchButton_Click"/>
                             </DockPanel>
                         </Border>
@@ -141,13 +185,13 @@
                 </Border>
             </Grid>
 
-            <GridSplitter Grid.Row="1"
+            <GridSplitter Grid.Row="2"
                           Height="2"
                           Background="{DynamicResource WinSubtleBorderBrush}"
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Stretch"/>
 
-            <Grid Grid.Row="2">
+            <Grid Grid.Row="3">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="1.25*"/>
                     <ColumnDefinition Width="2"/>
@@ -173,8 +217,16 @@
                                 BorderBrush="{DynamicResource WinBorderBrush}"
                                 BorderThickness="0,0,0,1"
                                 Padding="8,0">
-                            <DockPanel LastChildFill="False" VerticalAlignment="Center">
+                            <DockPanel LastChildFill="True" VerticalAlignment="Center">
                                 <TextBlock Text="Top Threads" FontWeight="SemiBold"/>
+                                <ToggleButton x:Name="ThreadLifecycleToggle"
+                                              DockPanel.Dock="Right"
+                                              Margin="8,0,0,0"
+                                              Padding="8,2"
+                                              VerticalAlignment="Center"
+                                              Checked="ThreadLifecycleToggle_Checked"
+                                              Unchecked="ThreadLifecycleToggle_Unchecked"
+                                              Content="Lifecycle"/>
                             </DockPanel>
                         </Border>
 
@@ -211,17 +263,45 @@
                                 </DataGrid.Columns>
                             </DataGrid>
 
+                            <DataGrid x:Name="ThreadLifecycleGrid"
+                                      AutoGenerateColumns="False"
+                                      HeadersVisibility="Column"
+                                      IsReadOnly="True"
+                                      BorderThickness="0"
+                                      Margin="0"
+                                      ColumnHeaderHeight="24"
+                                      RowHeight="22"
+                                      Visibility="Collapsed"
+                                      CanUserResizeRows="False">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Time" Binding="{Binding Timestamp}" Width="86"/>
+                                    <DataGridTextColumn Header="Event" Binding="{Binding EventKind}" Width="76"/>
+                                    <DataGridTextColumn Header="TID" Binding="{Binding Tid}" Width="72"/>
+                                    <DataGridTextColumn Header="Creator" Binding="{Binding CreatorPid}" Width="82"/>
+                                    <DataGridTextColumn Header="Flags" Binding="{Binding Flags}" Width="86"/>
+                                    <DataGridTextColumn Header="Start" Binding="{Binding StartAddress}" Width="*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+
                             <Border x:Name="ThreadsNoDataOverlay"
                                     Background="{DynamicResource NoDataOverlayBrush}"
                                     Visibility="Collapsed"
                                     IsHitTestVisible="False">
-                                <TextBlock Text="NO DATA"
-                                           FontSize="28"
-                                           FontWeight="Bold"
-                                           Opacity="0.72"
-                                           Foreground="{DynamicResource WinTextBrush}"
-                                           HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                <StackPanel HorizontalAlignment="Center"
+                                            VerticalAlignment="Center">
+                                    <TextBlock Text="NO DATA"
+                                               FontSize="28"
+                                               FontWeight="Bold"
+                                               Opacity="0.72"
+                                               Foreground="{DynamicResource WinTextBrush}"
+                                               HorizontalAlignment="Center"/>
+                                    <TextBlock x:Name="ThreadsNoDataMessageBlock"
+                                               Margin="0,6,0,0"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource WinMutedTextBrush}"
+                                               HorizontalAlignment="Center"
+                                               Text="No thread data in the selected range."/>
+                                </StackPanel>
                             </Border>
                         </Grid>
                     </Grid>
@@ -319,6 +399,13 @@
                                         <TextBlock Text="Memory"
                                                    FontWeight="SemiBold"
                                                    VerticalAlignment="Center"/>
+                                        <ToggleButton x:Name="MemoryInspectorToggle"
+                                                      Margin="8,0,0,0"
+                                                      Padding="8,2"
+                                                      VerticalAlignment="Center"
+                                                      Checked="MemoryInspectorToggle_Checked"
+                                                      Unchecked="MemoryInspectorToggle_Unchecked"
+                                                      Content="Inspector"/>
                                         <ToggleButton x:Name="MemoryViewToggle"
                                                       Margin="8,0,0,0"
                                                       Padding="8,2"
@@ -344,6 +431,24 @@
                                         </DataGrid.Columns>
                                     </DataGrid>
 
+                                    <DataGrid x:Name="MemoryInspectorGrid"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              BorderThickness="0"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="22"
+                                              Visibility="Collapsed">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Base" Binding="{Binding BaseAddress}" Width="132"/>
+                                            <DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="92"/>
+                                            <DataGridTextColumn Header="State" Binding="{Binding State}" Width="82"/>
+                                            <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="82"/>
+                                            <DataGridTextColumn Header="Protect" Binding="{Binding Protect}" Width="180"/>
+                                            <DataGridTextColumn Header="Class" Binding="{Binding Category}" Width="*"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+
                                     <Grid x:Name="MemoryTreemapHost"
                                           Visibility="Visible">
                                         <Border BorderBrush="{DynamicResource WinSubtleBorderBrush}"
@@ -366,13 +471,21 @@
                                             Background="{DynamicResource NoDataOverlayBrush}"
                                             Visibility="Collapsed"
                                             IsHitTestVisible="False">
-                                        <TextBlock Text="NO DATA"
-                                                   FontSize="28"
-                                                   FontWeight="Bold"
-                                                   Opacity="0.72"
-                                                   Foreground="{DynamicResource WinTextBrush}"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center"/>
+                                        <StackPanel HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center">
+                                            <TextBlock Text="NO DATA"
+                                                       FontSize="28"
+                                                       FontWeight="Bold"
+                                                       Opacity="0.72"
+                                                       Foreground="{DynamicResource WinTextBrush}"
+                                                       HorizontalAlignment="Center"/>
+                                            <TextBlock x:Name="MemoryNoDataMessageBlock"
+                                                       Margin="0,6,0,0"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                                       HorizontalAlignment="Center"
+                                                       Text="No memory data in the selected range."/>
+                                        </StackPanel>
                                     </Border>
                                 </Grid>
                             </Grid>

@@ -40,6 +40,9 @@ namespace SleepwalkerInterface
 
         // Thread CPU baseline for PID mode
         private readonly Dictionary<int, TimeSpan> _threadCpuBaseline = new();
+        private DateTime _lastMemorySnapshotUtc;
+        private readonly List<MemoryMetricSample> _cachedMemoryMetrics = new();
+        private readonly List<MemoryPageSample> _cachedMemoryPages = new();
 
         public PerformanceSampler()
         {
@@ -78,6 +81,9 @@ namespace SleepwalkerInterface
                 _lastProcCpu = TimeSpan.Zero;
                 _threadCpuBaseline.Clear();
                 _lastIoValid = false;
+                _cachedMemoryMetrics.Clear();
+                _cachedMemoryPages.Clear();
+                _lastMemorySnapshotUtc = DateTime.MinValue;
             }
         }
 
@@ -247,6 +253,7 @@ namespace SleepwalkerInterface
                 }
 
                 FillTopThreadsForProcess(s, p, wallDelta);
+                FillMemorySnapshot(s, p, s.TimestampUtc == default ? DateTime.UtcNow : s.TimestampUtc);
                 return true;
             }
             catch
@@ -306,6 +313,207 @@ namespace SleepwalkerInterface
             }
 
             s.TopThreads = list.OrderByDescending(x => x.CpuMsDelta).Take(20).ToList();
+        }
+
+        private void FillMemorySnapshot(PerformanceSample s, Process process, DateTime nowUtc)
+        {
+            bool refresh = _cachedMemoryMetrics.Count == 0 ||
+                           _cachedMemoryPages.Count == 0 ||
+                           (nowUtc - _lastMemorySnapshotUtc).TotalSeconds >= 3.0;
+            if (refresh)
+            {
+                var metrics = BuildMemoryMetricSnapshot(process);
+                var pages = CaptureMemoryPages(process);
+
+                _cachedMemoryMetrics.Clear();
+                _cachedMemoryMetrics.AddRange(metrics.Select(CloneMetric));
+                _cachedMemoryPages.Clear();
+                _cachedMemoryPages.AddRange(pages.Select(ClonePage));
+                _lastMemorySnapshotUtc = nowUtc;
+            }
+
+            s.MemoryMetrics = _cachedMemoryMetrics.Select(CloneMetric).ToList();
+            s.MemoryPages = _cachedMemoryPages.Select(ClonePage).ToList();
+        }
+
+        private static List<MemoryMetricSample> BuildMemoryMetricSnapshot(Process process)
+        {
+            var rows = new List<MemoryMetricSample>
+            {
+                new() { Metric = "Working Set", Value = FormatBytes(process.WorkingSet64), BytesValue = process.WorkingSet64 },
+                new() { Metric = "Peak Working Set", Value = FormatBytes(process.PeakWorkingSet64), BytesValue = process.PeakWorkingSet64 },
+                new() { Metric = "Private Bytes", Value = FormatBytes(process.PrivateMemorySize64), BytesValue = process.PrivateMemorySize64 },
+                new() { Metric = "Virtual Bytes", Value = FormatBytes(process.VirtualMemorySize64), BytesValue = null },
+                new() { Metric = "Paged Memory", Value = FormatBytes(process.PagedMemorySize64), BytesValue = process.PagedMemorySize64 },
+                new() { Metric = "Nonpaged System Memory", Value = FormatBytes(process.NonpagedSystemMemorySize64), BytesValue = process.NonpagedSystemMemorySize64 },
+                new() { Metric = "Paged System Memory", Value = FormatBytes(process.PagedSystemMemorySize64), BytesValue = process.PagedSystemMemorySize64 }
+            };
+
+            try
+            {
+                rows.Add(new MemoryMetricSample { Metric = "Handle Count", Value = process.HandleCount.ToString(), BytesValue = null });
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                rows.Add(new MemoryMetricSample { Metric = "Thread Count", Value = process.Threads.Count.ToString(), BytesValue = null });
+            }
+            catch
+            {
+            }
+
+            return rows;
+        }
+
+        private static List<MemoryPageSample> CaptureMemoryPages(Process process)
+        {
+            const uint processQuery = 0x0400;
+            const uint processVmRead = 0x0010;
+            const uint processQueryLimited = 0x1000;
+            const uint memCommit = 0x1000;
+
+            var rows = new List<MemoryPageSample>(768);
+            IntPtr handle = Kernel32Native.OpenProcess(
+                processQuery | processVmRead | processQueryLimited,
+                false,
+                unchecked((uint)process.Id));
+            if (handle == IntPtr.Zero)
+            {
+                return rows;
+            }
+
+            try
+            {
+                ulong address = 0;
+                ulong maxAddress = Environment.Is64BitProcess ? 0x00007FFF_FFFFFFFFul : uint.MaxValue;
+                nuint infoSize = (nuint)Marshal.SizeOf<MEMORY_BASIC_INFORMATION>();
+
+                while (address < maxAddress && rows.Count < 1536)
+                {
+                    nuint result = VirtualQueryEx(handle, (nint)address, out MEMORY_BASIC_INFORMATION info, infoSize);
+                    if (result == 0)
+                    {
+                        break;
+                    }
+
+                    ulong regionSize = (ulong)info.RegionSize;
+                    if (regionSize == 0)
+                    {
+                        break;
+                    }
+
+                    if (info.State == memCommit)
+                    {
+                        string stateLabel = EventDetailFormatting.DescribeMemoryState(info.State);
+                        string protectLabel = EventDetailFormatting.DescribeMemoryProtection(info.Protect);
+                        string typeLabel = EventDetailFormatting.DescribeMemoryType(info.Type);
+                        rows.Add(new MemoryPageSample
+                        {
+                            BaseAddress = (ulong)info.BaseAddress,
+                            RegionSize = regionSize,
+                            State = info.State,
+                            Protect = info.Protect,
+                            Type = info.Type,
+                            StateLabel = stateLabel,
+                            ProtectLabel = protectLabel,
+                            TypeLabel = typeLabel,
+                            Category = BuildPageCategory(info.Type, info.Protect)
+                        });
+                    }
+
+                    ulong next = (ulong)info.BaseAddress + regionSize;
+                    if (next <= address)
+                    {
+                        break;
+                    }
+
+                    address = next;
+                }
+            }
+            catch
+            {
+                return new List<MemoryPageSample>();
+            }
+            finally
+            {
+                _ = Kernel32Native.CloseHandle(handle);
+            }
+
+            return rows
+                .OrderByDescending(x => x.RegionSize)
+                .ThenBy(x => x.BaseAddress)
+                .Take(768)
+                .ToList();
+        }
+
+        private static string BuildPageCategory(uint type, uint protect)
+        {
+            uint baseProtect = protect & 0xFFu;
+            bool executable = baseProtect == 0x10 || baseProtect == 0x20 || baseProtect == 0x40 || baseProtect == 0x80;
+            bool writable = baseProtect == 0x04 || baseProtect == 0x08 || baseProtect == 0x40 || baseProtect == 0x80;
+
+            string typeLabel = type switch
+            {
+                0x20000 => "Private",
+                0x40000 => "Mapped",
+                0x1000000 => "Image",
+                _ => "Unknown"
+            };
+
+            if (executable && writable)
+            {
+                return $"{typeLabel} RWX";
+            }
+            if (executable)
+            {
+                return $"{typeLabel} RX";
+            }
+            if (writable)
+            {
+                return $"{typeLabel} RW";
+            }
+
+            return typeLabel;
+        }
+
+        private static MemoryMetricSample CloneMetric(MemoryMetricSample src)
+        {
+            return new MemoryMetricSample
+            {
+                Metric = src.Metric,
+                Value = src.Value,
+                BytesValue = src.BytesValue
+            };
+        }
+
+        private static MemoryPageSample ClonePage(MemoryPageSample src)
+        {
+            return new MemoryPageSample
+            {
+                BaseAddress = src.BaseAddress,
+                RegionSize = src.RegionSize,
+                State = src.State,
+                Protect = src.Protect,
+                Type = src.Type,
+                StateLabel = src.StateLabel,
+                ProtectLabel = src.ProtectLabel,
+                TypeLabel = src.TypeLabel,
+                Category = src.Category
+            };
+        }
+
+        private static string FormatBytes(long bytes)
+        {
+            if (bytes >= 1024L * 1024 * 1024)
+                return $"{bytes / (1024d * 1024 * 1024):0.##} GB";
+            if (bytes >= 1024L * 1024)
+                return $"{bytes / (1024d * 1024):0.##} MB";
+            if (bytes >= 1024)
+                return $"{bytes / 1024d:0.##} KB";
+            return $"{bytes} B";
         }
 
         private static string InferThreadKind(string state, string waitReason)
@@ -400,5 +608,25 @@ namespace SleepwalkerInterface
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool GetProcessIoCounters(IntPtr hProcess, out IO_COUNTERS lpIoCounters);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MEMORY_BASIC_INFORMATION
+        {
+            public nint BaseAddress;
+            public nint AllocationBase;
+            public uint AllocationProtect;
+            public ushort PartitionId;
+            public nuint RegionSize;
+            public uint State;
+            public uint Protect;
+            public uint Type;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern nuint VirtualQueryEx(
+            IntPtr hProcess,
+            nint lpAddress,
+            out MEMORY_BASIC_INFORMATION lpBuffer,
+            nuint dwLength);
     }
 }

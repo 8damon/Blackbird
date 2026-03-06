@@ -49,9 +49,19 @@ namespace SleepwalkerInterface
 
             try
             {
-                hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid);
+                hProcess = Kernel32Native.OpenProcess(
+                    PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+                    false,
+                    unchecked((uint)pid));
                 if (hProcess == IntPtr.Zero)
+                {
+                    if (pid != Environment.ProcessId)
+                    {
+                        return new ThreadStackResolveResult(new List<StackFrameRow>(), "Process handle unavailable.", 0, 0, 0, null, 0, null);
+                    }
+
                     hProcess = GetCurrentProcess();
+                }
                 else
                     closeProcess = true;
 
@@ -95,11 +105,11 @@ namespace SleepwalkerInterface
                 if (threadSuspended)
                     _ = ResumeThread(hThread);
                 if (hThread != IntPtr.Zero)
-                    _ = CloseHandle(hThread);
+                    _ = Kernel32Native.CloseHandle(hThread);
                 if (symbolsReady)
                     _ = SymCleanup(hProcess);
                 if (closeProcess && hProcess != IntPtr.Zero)
-                    _ = CloseHandle(hProcess);
+                    _ = Kernel32Native.CloseHandle(hProcess);
             }
         }
 
@@ -569,13 +579,7 @@ namespace SleepwalkerInterface
         private static extern IntPtr GetCurrentProcess();
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, int dwProcessId);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
         private static extern IntPtr OpenThread(uint dwDesiredAccess, bool bInheritHandle, uint dwThreadId);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool CloseHandle(IntPtr hObject);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern uint SuspendThread(IntPtr hThread);

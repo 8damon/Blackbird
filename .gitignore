@@ -56,3 +56,9 @@ TITAN Softwork Solutions.pfx
 # Local-only tooling/scripts
 Cockpit.ps1
 StingerInitDbgX.txt
+
+# Local .NET SDK caches / test sandboxes
+.dotnet/
+.dotnet_home/
+.dotnet-home/
+RuntimeTest/

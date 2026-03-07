@@ -20,6 +20,7 @@
 #define SLEEPWALKER_STREAM_HANDLE 0x00000001
 #define SLEEPWALKER_STREAM_MEMORY 0x00000002
 #define SLEEPWALKER_STREAM_THREAD 0x00000004
+#define SLEEPWALKER_STREAM_FILESYSTEM 0x00000008
 
 #define SLEEPWALKER_MAX_EVENT_FRAMES 8
 #define SLEEPWALKER_MAX_FULL_EVENT_FRAMES 32
@@ -27,13 +28,29 @@
 #define SLEEPWALKER_MAX_IMAGE_PATH_CHARS 1024
 #define SLEEPWALKER_MAX_DEEP_SAMPLE_BYTES 64
 #define SLEEPWALKER_MAX_STACK_SNAPSHOT_BYTES 256
+#define SLEEPWALKER_MAX_FILE_PATH_CHARS 520
 
 typedef enum _SLEEPWALKER_EVENT_TYPE
 {
     SleepwalkerEventTypeNone = 0,
     SleepwalkerEventTypeHandle = 1,
-    SleepwalkerEventTypeThread = 2
+    SleepwalkerEventTypeThread = 2,
+    SleepwalkerEventTypeFileSystem = 3
 } SLEEPWALKER_EVENT_TYPE;
+
+typedef enum _SLEEPWALKER_FILE_OPERATION
+{
+    SleepwalkerFileOperationUnknown = 0,
+    SleepwalkerFileOperationCreate = 1,
+    SleepwalkerFileOperationRead = 2,
+    SleepwalkerFileOperationWrite = 3,
+    SleepwalkerFileOperationClose = 4,
+    SleepwalkerFileOperationCleanup = 5,
+    SleepwalkerFileOperationSetInformation = 6,
+    SleepwalkerFileOperationQueryInformation = 7,
+    SleepwalkerFileOperationDirectoryControl = 8,
+    SleepwalkerFileOperationFsControl = 9
+} SLEEPWALKER_FILE_OPERATION;
 
 typedef enum _SLEEPWALKER_HANDLE_CLASS
 {
@@ -153,6 +170,28 @@ typedef struct _SLEEPWALKER_THREAD_EVENT
     UINT64 Frames[SLEEPWALKER_MAX_EVENT_FRAMES];
 } SLEEPWALKER_THREAD_EVENT, *PSLEEPWALKER_THREAD_EVENT;
 
+typedef struct _SLEEPWALKER_FILE_EVENT
+{
+    UINT64 ProcessId;
+    UINT64 ThreadId;
+    UINT64 FileObject;
+    UINT64 FileId;
+    UINT64 ByteOffset;
+    UINT64 Length;
+    UINT64 Status;
+    UINT64 Information;
+    UINT32 Operation;
+    UINT32 MajorCode;
+    UINT32 MinorCode;
+    UINT32 IrpFlags;
+    UINT32 CreateOptions;
+    UINT32 CreateDisposition;
+    UINT32 DesiredAccess;
+    UINT32 ShareAccess;
+    UINT32 Flags;
+    WCHAR Path[SLEEPWALKER_MAX_FILE_PATH_CHARS];
+} SLEEPWALKER_FILE_EVENT, *PSLEEPWALKER_FILE_EVENT;
+
 typedef struct _SLEEPWALKER_EVENT_RECORD
 {
     SLEEPWALKER_EVENT_HEADER Header;
@@ -160,6 +199,7 @@ typedef struct _SLEEPWALKER_EVENT_RECORD
     {
         SLEEPWALKER_HANDLE_EVENT Handle;
         SLEEPWALKER_THREAD_EVENT Thread;
+        SLEEPWALKER_FILE_EVENT FileSystem;
     } Data;
 } SLEEPWALKER_EVENT_RECORD, *PSLEEPWALKER_EVENT_RECORD;
 
@@ -204,5 +244,15 @@ typedef struct _SLEEPWALKER_STATS_RESPONSE
 #define SLEEPWALKER_THREAD_FLAG_CORR_THREAD_CTX 0x00000040
 #define SLEEPWALKER_THREAD_FLAG_CORR_DUP_HANDLE 0x00000080
 #define SLEEPWALKER_THREAD_FLAG_START_REGION_EXEC 0x00000100
+
+#define SLEEPWALKER_FILE_FLAG_PRE_OPERATION 0x00000001
+#define SLEEPWALKER_FILE_FLAG_POST_OPERATION 0x00000002
+#define SLEEPWALKER_FILE_FLAG_PAGING_IO 0x00000004
+#define SLEEPWALKER_FILE_FLAG_SYNCHRONOUS_IO 0x00000008
+#define SLEEPWALKER_FILE_FLAG_NON_CACHED_IO 0x00000010
+#define SLEEPWALKER_FILE_FLAG_DIRECTORY_FILE 0x00000020
+#define SLEEPWALKER_FILE_FLAG_DELETE_ON_CLOSE 0x00000040
+#define SLEEPWALKER_FILE_FLAG_REPARSE_POINT 0x00000080
+#define SLEEPWALKER_FILE_FLAG_FAST_IO 0x00000100
 
 #endif

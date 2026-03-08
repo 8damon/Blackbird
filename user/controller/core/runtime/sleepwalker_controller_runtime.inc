@@ -257,6 +257,64 @@ static BOOL ControllerAnsiContainsInsensitive(_In_opt_z_ const CHAR *Haystack, _
     return FALSE;
 }
 
+#ifndef SLEEPWALKER_SOCKET_OPCODE_SEND
+#define SLEEPWALKER_SOCKET_OPCODE_SEND 10u
+#define SLEEPWALKER_SOCKET_OPCODE_RECV 11u
+#define SLEEPWALKER_SOCKET_OPCODE_CONNECT 12u
+#define SLEEPWALKER_SOCKET_OPCODE_DISCONNECT 13u
+#define SLEEPWALKER_SOCKET_OPCODE_ACCEPT 15u
+#define SLEEPWALKER_SOCKET_OPCODE_RECONNECT 16u
+#define SLEEPWALKER_SOCKET_OPCODE_SENDUDP 42u
+#define SLEEPWALKER_SOCKET_OPCODE_RECVUDP 43u
+#define SLEEPWALKER_SOCKET_OPCODE_FAILUDP 49u
+#endif
+
+static BOOL ControllerIsInterestingSocketOpcode(_In_ UCHAR Opcode)
+{
+    switch (Opcode)
+    {
+    case SLEEPWALKER_SOCKET_OPCODE_SEND:
+    case SLEEPWALKER_SOCKET_OPCODE_RECV:
+    case SLEEPWALKER_SOCKET_OPCODE_CONNECT:
+    case SLEEPWALKER_SOCKET_OPCODE_DISCONNECT:
+    case SLEEPWALKER_SOCKET_OPCODE_ACCEPT:
+    case SLEEPWALKER_SOCKET_OPCODE_RECONNECT:
+    case SLEEPWALKER_SOCKET_OPCODE_SENDUDP:
+    case SLEEPWALKER_SOCKET_OPCODE_RECVUDP:
+    case SLEEPWALKER_SOCKET_OPCODE_FAILUDP:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+static PCSTR ControllerSocketOperationFromOpcode(_In_ UCHAR Opcode)
+{
+    switch (Opcode)
+    {
+    case SLEEPWALKER_SOCKET_OPCODE_SEND:
+        return "SEND";
+    case SLEEPWALKER_SOCKET_OPCODE_RECV:
+        return "RECV";
+    case SLEEPWALKER_SOCKET_OPCODE_CONNECT:
+        return "CONNECT";
+    case SLEEPWALKER_SOCKET_OPCODE_DISCONNECT:
+        return "DISCONNECT";
+    case SLEEPWALKER_SOCKET_OPCODE_ACCEPT:
+        return "ACCEPT";
+    case SLEEPWALKER_SOCKET_OPCODE_RECONNECT:
+        return "RECONNECT";
+    case SLEEPWALKER_SOCKET_OPCODE_SENDUDP:
+        return "SEND_UDP";
+    case SLEEPWALKER_SOCKET_OPCODE_RECVUDP:
+        return "RECV_UDP";
+    case SLEEPWALKER_SOCKET_OPCODE_FAILUDP:
+        return "FAIL_UDP";
+    default:
+        return "SOCKET";
+    }
+}
+
 static BOOL ControllerShouldForwardEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName,
                                              _In_ const SLEEPWALKER_IPC_ETW_EVENT *Event)
 {
@@ -279,6 +337,10 @@ static BOOL ControllerShouldForwardEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_
     }
     if (EventName == NULL || EventName[0] == L'\0')
     {
+        if (Event->Source == SleepwalkerIpcEtwSourceKernelNetwork)
+        {
+            return ControllerIsInterestingSocketOpcode((UCHAR)Event->Opcode);
+        }
         return FALSE;
     }
 
@@ -361,6 +423,10 @@ static BOOL ControllerShouldForwardEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_
     if (Event->Source == SleepwalkerIpcEtwSourceThreatIntel)
     {
         return (Event->Task == 1 || Event->Task == 2 || Event->Task == 7);
+    }
+    if (Event->Source == SleepwalkerIpcEtwSourceKernelNetwork)
+    {
+        return ControllerIsInterestingSocketOpcode((UCHAR)Event->Opcode);
     }
 
     if (wcscmp(EventName, L"HandleTelemetry") == 0)
@@ -500,6 +566,11 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
     {
         event.Source = SleepwalkerIpcEtwSourceSleepwalker;
     }
+    else if (IsEqualGUID(&Record->EventHeader.ProviderId, &SLEEPWALKERSC_PROVIDER_GUID_KERNEL_NETWORK))
+    {
+        event.Source = SleepwalkerIpcEtwSourceKernelNetwork;
+        event.Family = SleepwalkerIpcEtwFamilySocket;
+    }
     else
     {
         return;
@@ -515,6 +586,14 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
     event.CorrelationAgeMs = (UINT32)correlationAgeMs;
 
     (void)ControllerEtwGetU64Property(Record, L"processId", &processId);
+    if (processId == 0 && event.Source == SleepwalkerIpcEtwSourceKernelNetwork)
+    {
+        (void)ControllerEtwGetU64Property(Record, L"PID", &processId);
+        if (processId == 0)
+        {
+            (void)ControllerEtwGetU64Property(Record, L"ProcessId", &processId);
+        }
+    }
     (void)ControllerEtwGetU64Property(Record, L"threadId", &threadId);
     (void)ControllerEtwGetU64Property(Record, L"callerPid", &callerPid);
     (void)ControllerEtwGetU64Property(Record, L"targetPid", &targetPid);
@@ -545,7 +624,27 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
     event.CreatorThreadId = creatorThreadId;
     event.ProcessStartKey = processStartKey;
 
-    if (EventName != NULL && wcscmp(EventName, L"HandleTelemetry") == 0)
+    if (event.Source == SleepwalkerIpcEtwSourceKernelNetwork)
+    {
+        int converted = 0;
+        event.Family = SleepwalkerIpcEtwFamilySocket;
+        (void)StringCchCopyA(event.Operation, RTL_NUMBER_OF(event.Operation),
+                             ControllerSocketOperationFromOpcode((UCHAR)event.Opcode));
+        if (event.EventName[0] == L'\0' && event.Operation[0] != '\0')
+        {
+            converted = MultiByteToWideChar(CP_ACP, 0, event.Operation, -1, event.EventName,
+                                            (int)RTL_NUMBER_OF(event.EventName));
+            if (converted <= 0)
+            {
+                event.EventName[0] = L'\0';
+            }
+        }
+        if (event.Severity == 0)
+        {
+            event.Severity = ControllerIsInterestingSocketOpcode((UCHAR)event.Opcode) ? 2u : 1u;
+        }
+    }
+    else if (EventName != NULL && wcscmp(EventName, L"HandleTelemetry") == 0)
     {
         event.Family = SleepwalkerIpcEtwFamilyHandle;
         (void)ControllerEtwGetAnsiProperty(Record, L"class", event.ClassName, RTL_NUMBER_OF(event.ClassName));

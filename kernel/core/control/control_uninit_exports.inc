@@ -96,6 +96,29 @@ VOID SLEEPWALKERControlPublishThreadEvent(_In_ UINT64 ProcessId, _In_ UINT64 Thr
                                           SLEEPWALKER_STREAM_THREAD, &record);
 }
 
+VOID SLEEPWALKERControlPublishFileEvent(_In_ const SLEEPWALKER_FILE_EVENT *FileEvent)
+{
+    SLEEPWALKER_EVENT_RECORD record;
+
+    if (KeGetCurrentIrql() > APC_LEVEL)
+    {
+        return;
+    }
+    if (FileEvent == NULL)
+    {
+        return;
+    }
+
+    RtlZeroMemory(&record, sizeof(record));
+    record.Header.Size = sizeof(record);
+    record.Header.Type = SleepwalkerEventTypeFileSystem;
+    record.Header.StreamMask = SLEEPWALKER_STREAM_FILESYSTEM;
+    record.Header.TimestampQpc = KeQueryPerformanceCounter(NULL).QuadPart;
+    record.Data.FileSystem = *FileEvent;
+
+    SLEEPWALKERPublishRecordToSubscribers((UINT32)FileEvent->ProcessId, 0, SLEEPWALKER_STREAM_FILESYSTEM, &record);
+}
+
 BOOLEAN
 SLEEPWALKERControlSelfCheck(VOID)
 {

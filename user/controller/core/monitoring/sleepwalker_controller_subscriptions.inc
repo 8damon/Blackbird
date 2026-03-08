@@ -414,6 +414,11 @@ static BOOL ControllerRecordMatchesSubscription(_In_ const SLEEPWALKER_EVENT_REC
         primary = (DWORD)Record->Data.Thread.ProcessId;
         secondary = (DWORD)Record->Data.Thread.CreatorPid;
     }
+    else if (Record->Header.Type == SleepwalkerEventTypeFileSystem)
+    {
+        primary = (DWORD)Record->Data.FileSystem.ProcessId;
+        secondary = 0;
+    }
     else
     {
         return FALSE;
@@ -875,6 +880,12 @@ static VOID ControllerDispatchDriverRecord(_In_ const SLEEPWALKER_EVENT_RECORD *
         sourcePid = (DWORD)Record->Data.Thread.CreatorPid;
         targetPid = (DWORD)Record->Data.Thread.ProcessId;
         relationMask = SLEEPWALKER_STREAM_THREAD;
+    }
+    else if (Record->Header.Type == SleepwalkerEventTypeFileSystem)
+    {
+        sourcePid = (DWORD)Record->Data.FileSystem.ProcessId;
+        targetPid = 0;
+        relationMask = 0;
     }
 
     ControllerExpandMonitoringGraph(sourcePid, targetPid, relationMask);

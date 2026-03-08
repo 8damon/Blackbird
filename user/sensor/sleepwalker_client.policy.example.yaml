@@ -2,7 +2,7 @@
 # CLI positional args still work; CLI flags override this file.
 
 target: path:R:\.NIGHTDAY\TTK\SleepwalkerExampleDirectSyscallNtQueryVm.exe
-streams: handle,memory,thread
+streams: handle,memory,thread,filesystem
 scope: both
 
 log.format: jsonl
@@ -14,5 +14,6 @@ output.ioctl_verbose: 0
 
 filter.ioctl.handle: 1
 filter.ioctl.thread: 1
+filter.ioctl.filesystem: 1
 filter.etw.sleepwalker: 1
 filter.etw.ti: 1

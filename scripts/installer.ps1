@@ -69,6 +69,35 @@ function Invoke-Sc {
     }
 }
 
+function Ensure-MinifilterRegistry {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ServiceName,
+        [string]$InstanceName = "Sleepwalker Default",
+        [string]$Altitude = "385000.424244",
+        [uint32]$InstanceFlags = 0
+    )
+
+    $serviceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+    $instancesKey = Join-Path $serviceKey "Instances"
+    $instanceKey = Join-Path $instancesKey $InstanceName
+
+    if (-not (Test-Path -LiteralPath $serviceKey)) {
+        throw "Service key '$serviceKey' is missing after sc.exe create. Aborting to avoid partial minifilter setup."
+    }
+    if (-not (Test-Path -LiteralPath $instancesKey)) {
+        New-Item -Path $instancesKey | Out-Null
+    }
+    if (-not (Test-Path -LiteralPath $instanceKey)) {
+        New-Item -Path $instanceKey | Out-Null
+    }
+
+    New-ItemProperty -Path $serviceKey -Name "DebugFlags" -PropertyType DWord -Value 0 -Force | Out-Null
+    New-ItemProperty -Path $instancesKey -Name "DefaultInstance" -PropertyType String -Value $InstanceName -Force | Out-Null
+    New-ItemProperty -Path $instanceKey -Name "Altitude" -PropertyType String -Value $Altitude -Force | Out-Null
+    New-ItemProperty -Path $instanceKey -Name "Flags" -PropertyType DWord -Value $InstanceFlags -Force | Out-Null
+}
+
 function Get-RecentServiceEvents {
     param(
         [Parameter(Mandatory = $true)]
@@ -101,6 +130,36 @@ function Get-RecentServiceEvents {
     catch {
         return "Failed to query Service Control Manager events: $($_.Exception.Message)"
     }
+}
+
+function Get-MinifilterRegistryDump {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ServiceName
+    )
+
+    $base = "HKLM\SYSTEM\CurrentControlSet\Services\$ServiceName"
+    $commands = @(
+        @("query", $base),
+        @("query", "$base\Instances"),
+        @("query", "$base\Instances\Sleepwalker Default")
+    )
+
+    $lines = @()
+    foreach ($cmd in $commands) {
+        $target = $cmd[1]
+        $lines += "reg.exe $($cmd -join ' ')"
+        $out = & reg.exe @cmd 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $lines += ($out | ForEach-Object { "  $_" })
+        }
+        else {
+            $lines += "  (query failed: exit $LASTEXITCODE)"
+            $lines += ($out | ForEach-Object { "  $_" })
+        }
+    }
+
+    return ($lines -join [Environment]::NewLine)
 }
 
 $driverSrc = Resolve-ArtifactPath `
@@ -148,7 +207,18 @@ Copy-Item -LiteralPath $sensorCoreSrc -Destination $sensorCoreDst -Force
 
 Invoke-Sc -Arguments @("stop", $DriverName) -AllowedExitCodes @(0, 1060, 1062)
 Invoke-Sc -Arguments @("delete", $DriverName) -AllowedExitCodes @(0, 1060)
-Invoke-Sc -Arguments @("create", $DriverName, "type=", "kernel", "start=", "demand", "error=", "normal", "binPath=", $driverDst, "DisplayName=", "Sleepwalker Driver")
+Invoke-Sc -Arguments @(
+    "create", $DriverName,
+    "type=", "filesys",
+    "start=", "demand",
+    "error=", "normal",
+    "group=", "FSFilter Activity Monitor",
+    "depend=", "FltMgr",
+    "binPath=", $driverDst,
+    "DisplayName=", "Sleepwalker Driver"
+)
+Invoke-Sc -Arguments @("qc", $DriverName)
+Ensure-MinifilterRegistry -ServiceName $DriverName
 
 Invoke-Sc -Arguments @("stop", $ControllerName) -AllowedExitCodes @(0, 1060, 1062)
 Invoke-Sc -Arguments @("delete", $ControllerName) -AllowedExitCodes @(0, 1060)
@@ -159,9 +229,29 @@ try {
     Invoke-Sc -Arguments @("start", $DriverName)
 }
 catch {
+    $driverStartError = $_.Exception.Message
+    if ($driverStartError -match "exit code 1243") {
+        Write-Host "    sc start returned 1243. Attempting minifilter load via fltmc..." -ForegroundColor Yellow
+        $fltOut = & fltmc.exe load $DriverName 2>&1
+        $fltCode = $LASTEXITCODE
+        if ($fltCode -eq 0) {
+            Write-Host "    fltmc load succeeded." -ForegroundColor Green
+        }
+        else {
+            Write-Host "    fltmc load failed (exit $fltCode):" -ForegroundColor Yellow
+            $fltOut | ForEach-Object { Write-Host "    $_" }
+        }
+    }
+
     Write-Host "[!] Failed to start driver service '$DriverName'." -ForegroundColor Red
     Write-Host "    sc query output:" -ForegroundColor Yellow
     & sc.exe query $DriverName 2>&1 | ForEach-Object { Write-Host "    $_" }
+    Write-Host "    sc qc output:" -ForegroundColor Yellow
+    & sc.exe qc $DriverName 2>&1 | ForEach-Object { Write-Host "    $_" }
+    Write-Host "    fltmgr status:" -ForegroundColor Yellow
+    & sc.exe query fltmgr 2>&1 | ForEach-Object { Write-Host "    $_" }
+    Write-Host "    minifilter registry keys:" -ForegroundColor Yellow
+    (Get-MinifilterRegistryDump -ServiceName $DriverName) -split "`r?`n" | ForEach-Object { Write-Host "    $_" }
     Write-Host "    recent SCM events:" -ForegroundColor Yellow
     (Get-RecentServiceEvents -ServiceName $DriverName) -split "`r?`n" | ForEach-Object { Write-Host "    $_" }
     Write-Host "    hint: exit code 127 usually means a missing kernel export (driver built for newer OS APIs)." -ForegroundColor Yellow

@@ -101,6 +101,7 @@
       <AdditionalOptions>/d "SLEEPWALKER"</AdditionalOptions>
     </DriverSign>
     <Link>
+      <AdditionalDependencies>fltmgr.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
@@ -123,6 +124,7 @@
       <AdditionalOptions>/d "SLEEPWALKER"</AdditionalOptions>
     </DriverSign>
     <Link>
+      <AdditionalDependencies>fltmgr.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
@@ -147,6 +149,7 @@
       <AdditionalOptions>/d "SLEEPWALKER"</AdditionalOptions>
     </DriverSign>
     <Link>
+      <AdditionalDependencies>fltmgr.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
@@ -165,6 +168,9 @@
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
       <AdditionalOptions>/d "SLEEPWALKER"</AdditionalOptions>
     </DriverSign>
+    <Link>
+      <AdditionalDependencies>fltmgr.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <Inf Include="..\Sleepwalker.inf">
@@ -188,6 +194,7 @@
     <ClCompile Include="..\kernel\monitors\process_monitor.c" />
     <ClCompile Include="..\kernel\monitors\registry_monitor.c" />
     <ClCompile Include="..\kernel\monitors\thread_monitor.c" />
+    <ClCompile Include="..\kernel\monitors\filesystem_monitor.c" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\abi\sleepwalker_ioctl.h" />
@@ -204,6 +211,7 @@
     <ClInclude Include="..\kernel\monitors\process_monitor.h" />
     <ClInclude Include="..\kernel\monitors\registry_monitor.h" />
     <ClInclude Include="..\kernel\monitors\thread_monitor.h" />
+    <ClInclude Include="..\kernel\monitors\filesystem_monitor.h" />
   </ItemGroup>
   <ItemGroup>
     <FilesToPackage Include="$(TargetPath)" />

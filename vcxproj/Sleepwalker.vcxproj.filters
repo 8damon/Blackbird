@@ -90,6 +90,9 @@
     <ClCompile Include="..\kernel\telemetry\etw.c">
       <Filter>Source Files\Telemetry</Filter>
     </ClCompile>
+    <ClCompile Include="..\kernel\monitors\filesystem_monitor.c">
+      <Filter>Source Files\Monitors</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\kernel\core\control.h">
@@ -133,6 +136,9 @@
     </ClInclude>
     <ClInclude Include="..\abi\sleepwalker_ioctl.h">
       <Filter>Header Files\ABI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\kernel\monitors\filesystem_monitor.h">
+      <Filter>Header Files\Monitors</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

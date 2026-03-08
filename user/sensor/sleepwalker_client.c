@@ -116,6 +116,7 @@ typedef struct _SLEEPWALKER_CLIENT_POLICY
 
     BOOL AllowIoctlHandle;
     BOOL AllowIoctlThread;
+    BOOL AllowIoctlFilesystem;
     BOOL AllowEtwSleepwalker;
     BOOL AllowEtwTi;
 } SLEEPWALKER_CLIENT_POLICY;

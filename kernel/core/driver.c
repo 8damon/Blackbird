@@ -9,6 +9,7 @@
 #include "..\monitors\process_monitor.h"
 #include "..\monitors\registry_monitor.h"
 #include "..\monitors\thread_monitor.h"
+#include "..\monitors\filesystem_monitor.h"
 #include "..\correlation\intent_store.h"
 #include "..\correlation\hollowing_engine.h"
 
@@ -35,6 +36,7 @@ typedef enum _SLEEPWALKER_DRIVER_STATE
 #define SLEEPWALKER_INIT_ANTI_TAMPER 0x200
 #define SLEEPWALKER_INIT_CORRELATION 0x400
 #define SLEEPWALKER_INIT_HOLLOWING_ENGINE 0x800
+#define SLEEPWALKER_INIT_FILESYSTEM_MONITOR 0x1000
 
 static volatile LONG g_DriverState = SLEEPWALKERStateCold;
 static volatile LONG g_InitFlags = 0;
@@ -56,6 +58,10 @@ static VOID SLEEPWALKERDriverUninitializeByFlags(_In_ LONG InitFlags)
     if ((InitFlags & SLEEPWALKER_INIT_THREAD_MONITOR) != 0)
     {
         SLEEPWALKERThreadMonitorUninitialize();
+    }
+    if ((InitFlags & SLEEPWALKER_INIT_FILESYSTEM_MONITOR) != 0)
+    {
+        SLEEPWALKERFileSystemMonitorUninitialize();
     }
     if ((InitFlags & SLEEPWALKER_INIT_REGISTRY_MONITOR) != 0)
     {
@@ -100,7 +106,8 @@ static NTSTATUS SLEEPWALKERDriverSelfTest(VOID)
     if ((flags & SLEEPWALKER_INIT_ETW) == 0 || (flags & SLEEPWALKER_INIT_CONTROL) == 0 ||
         (flags & SLEEPWALKER_INIT_APC_MONITOR) == 0 || (flags & SLEEPWALKER_INIT_PROCESS_MONITOR) == 0 ||
         (flags & SLEEPWALKER_INIT_IMAGE_MONITOR) == 0 || (flags & SLEEPWALKER_INIT_REGISTRY_MONITOR) == 0 ||
-        (flags & SLEEPWALKER_INIT_THREAD_MONITOR) == 0 || (flags & SLEEPWALKER_INIT_HANDLE_MONITOR) == 0 ||
+        (flags & SLEEPWALKER_INIT_THREAD_MONITOR) == 0 || (flags & SLEEPWALKER_INIT_FILESYSTEM_MONITOR) == 0 ||
+        (flags & SLEEPWALKER_INIT_HANDLE_MONITOR) == 0 ||
         (flags & SLEEPWALKER_INIT_ANTI_TAMPER) == 0 || (flags & SLEEPWALKER_INIT_CORRELATION) == 0 ||
         (flags & SLEEPWALKER_INIT_HOLLOWING_ENGINE) == 0)
     {
@@ -260,6 +267,15 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
         goto ExitFailure;
     }
     InterlockedOr(&g_InitFlags, SLEEPWALKER_INIT_THREAD_MONITOR);
+
+    status = SLEEPWALKERFileSystemMonitorInitialize(DriverObject);
+    if (!NT_SUCCESS(status))
+    {
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "SLEEPWALKER: filesystem monitor init failed (0x%08X).\n",
+                   status);
+        goto ExitFailure;
+    }
+    InterlockedOr(&g_InitFlags, SLEEPWALKER_INIT_FILESYSTEM_MONITOR);
 
     status = SLEEPWALKERHandleMonitorInitialize();
     if (!NT_SUCCESS(status))

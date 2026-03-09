@@ -30,6 +30,7 @@ namespace SleepwalkerInterface
             {
                 IntelDetailsCategory.Etw => FlattenGroupedDetails(EtwPaneHost.SnapshotItems()),
                 IntelDetailsCategory.Heuristics => FlattenGroupedDetails(HeuristicsPaneHost.SnapshotItems()),
+                IntelDetailsCategory.Filesystem => FlattenGroupedDetails(FilesystemPaneHost.SnapshotItems()),
                 IntelDetailsCategory.ProcessRelations => FlattenGroupedDetails(ProcessRelationsPaneHost.SnapshotItems()),
                 _ => new List<GroupedEventDetailRow>()
             };
@@ -166,6 +167,13 @@ namespace SleepwalkerInterface
                 if (_heuristicsHistoryByPid.TryGetValue(pid, out List<GroupedEventRow>? heurRows) && heurRows.Count > 0)
                 {
                     groups = heurRows;
+                    return true;
+                }
+                break;
+            case IntelDetailsCategory.Filesystem:
+                if (_filesystemHistoryByPid.TryGetValue(pid, out List<GroupedEventRow>? fsRows) && fsRows.Count > 0)
+                {
+                    groups = fsRows;
                     return true;
                 }
                 break;

@@ -10,10 +10,23 @@ namespace SleepwalkerInterface
         internal const uint StreamHandle = 0x00000001;
         internal const uint StreamMemory = 0x00000002;
         internal const uint StreamThread = 0x00000004;
-        internal const uint StreamAll = StreamHandle | StreamMemory | StreamThread;
+        internal const uint StreamFilesystem = 0x00000008;
+        internal const uint StreamAll = StreamHandle | StreamMemory | StreamThread | StreamFilesystem;
 
         internal const uint EventTypeHandle = 1;
         internal const uint EventTypeThread = 2;
+        internal const uint EventTypeFileSystem = 3;
+
+        internal const uint FileOperationUnknown = 0;
+        internal const uint FileOperationCreate = 1;
+        internal const uint FileOperationRead = 2;
+        internal const uint FileOperationWrite = 3;
+        internal const uint FileOperationClose = 4;
+        internal const uint FileOperationCleanup = 5;
+        internal const uint FileOperationSetInformation = 6;
+        internal const uint FileOperationQueryInformation = 7;
+        internal const uint FileOperationDirectoryControl = 8;
+        internal const uint FileOperationFsControl = 9;
 
         internal const uint IpcCapDriverProxy = 0x00000001;
         internal const uint IpcCapEtwTiSession = 0x00000002;
@@ -23,6 +36,7 @@ namespace SleepwalkerInterface
         internal const uint IpcEtwSourceUnknown = 0;
         internal const uint IpcEtwSourceSleepwalker = 1;
         internal const uint IpcEtwSourceThreatIntel = 2;
+        internal const uint IpcEtwSourceKernelNetwork = 3;
 
         internal const int ErrorNoMoreItems = 259;
         internal const int ErrorNoMoreEntries = 259;
@@ -33,7 +47,7 @@ namespace SleepwalkerInterface
         internal const int ErrorNotSupported = 50;
         internal const int ErrorInvalidFunction = 1;
 
-        internal const int EventReadBufferBytes = 2048;
+        internal const int EventReadBufferBytes = 8192;
 
         private const int MaxIpcEventNameChars = 96;
         private const int MaxIpcDetectionNameChars = 128;
@@ -55,6 +69,7 @@ namespace SleepwalkerInterface
         internal const uint IpcEtwFamilyApc = 6;
         internal const uint IpcEtwFamilyDetection = 7;
         internal const uint IpcEtwFamilyThreatIntel = 8;
+        internal const uint IpcEtwFamilySocket = 9;
 
         internal const uint IpcEtwFlagHandleExecProtect = 0x00000001;
         internal const uint IpcEtwFlagHandleFromNtdll = 0x00000002;
@@ -409,6 +424,35 @@ namespace SleepwalkerInterface
                 {
                     parsed.ThreadFrames[i] = ReadU64(buffer, payloadOffset + 56 + (i * 8));
                 }
+                return true;
+            }
+
+            if (type == EventTypeFileSystem)
+            {
+                const int filePayloadSize = 1140;
+                if (bytesRead < payloadOffset + filePayloadSize)
+                {
+                    return false;
+                }
+
+                parsed.FileProcessPid = ToPid(ReadU64(buffer, payloadOffset + 0));
+                parsed.FileThreadId = ToPid(ReadU64(buffer, payloadOffset + 8));
+                parsed.FileObject = ReadU64(buffer, payloadOffset + 16);
+                parsed.FileId = ReadU64(buffer, payloadOffset + 24);
+                parsed.FileByteOffset = ReadU64(buffer, payloadOffset + 32);
+                parsed.FileLength = ReadU64(buffer, payloadOffset + 40);
+                parsed.FileStatus = ReadU64(buffer, payloadOffset + 48);
+                parsed.FileInformation = ReadU64(buffer, payloadOffset + 56);
+                parsed.FileOperation = ReadU32(buffer, payloadOffset + 64);
+                parsed.FileMajorCode = ReadU32(buffer, payloadOffset + 68);
+                parsed.FileMinorCode = ReadU32(buffer, payloadOffset + 72);
+                parsed.FileIrpFlags = ReadU32(buffer, payloadOffset + 76);
+                parsed.FileCreateOptions = ReadU32(buffer, payloadOffset + 80);
+                parsed.FileCreateDisposition = ReadU32(buffer, payloadOffset + 84);
+                parsed.FileDesiredAccess = ReadU32(buffer, payloadOffset + 88);
+                parsed.FileShareAccess = ReadU32(buffer, payloadOffset + 92);
+                parsed.FileFlags = ReadU32(buffer, payloadOffset + 96);
+                parsed.FilePath = ReadWideFixedString(buffer, payloadOffset + 100, 520);
                 return true;
             }
 

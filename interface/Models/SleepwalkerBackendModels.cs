@@ -73,6 +73,25 @@ namespace SleepwalkerInterface
         public uint ThreadFrameCount { get; set; }
         public ulong[] ThreadFrames { get; set; } = Array.Empty<ulong>();
 
+        public uint FileProcessPid { get; set; }
+        public uint FileThreadId { get; set; }
+        public ulong FileObject { get; set; }
+        public ulong FileId { get; set; }
+        public ulong FileByteOffset { get; set; }
+        public ulong FileLength { get; set; }
+        public ulong FileStatus { get; set; }
+        public ulong FileInformation { get; set; }
+        public uint FileOperation { get; set; }
+        public uint FileMajorCode { get; set; }
+        public uint FileMinorCode { get; set; }
+        public uint FileIrpFlags { get; set; }
+        public uint FileCreateOptions { get; set; }
+        public uint FileCreateDisposition { get; set; }
+        public uint FileDesiredAccess { get; set; }
+        public uint FileShareAccess { get; set; }
+        public uint FileFlags { get; set; }
+        public string FilePath { get; set; } = "";
+
         public IoctlParsedEvent Clone()
         {
             return new IoctlParsedEvent
@@ -138,7 +157,25 @@ namespace SleepwalkerInterface
                 ImageBase = ImageBase,
                 ImageSize = ImageSize,
                 ThreadFrameCount = ThreadFrameCount,
-                ThreadFrames = ThreadFrames.ToArray()
+                ThreadFrames = ThreadFrames.ToArray(),
+                FileProcessPid = FileProcessPid,
+                FileThreadId = FileThreadId,
+                FileObject = FileObject,
+                FileId = FileId,
+                FileByteOffset = FileByteOffset,
+                FileLength = FileLength,
+                FileStatus = FileStatus,
+                FileInformation = FileInformation,
+                FileOperation = FileOperation,
+                FileMajorCode = FileMajorCode,
+                FileMinorCode = FileMinorCode,
+                FileIrpFlags = FileIrpFlags,
+                FileCreateOptions = FileCreateOptions,
+                FileCreateDisposition = FileCreateDisposition,
+                FileDesiredAccess = FileDesiredAccess,
+                FileShareAccess = FileShareAccess,
+                FileFlags = FileFlags,
+                FilePath = FilePath
             };
         }
     }
@@ -542,6 +579,7 @@ namespace SleepwalkerInterface
                 6 => "Apc",
                 7 => "Detection",
                 8 => "ThreatIntel",
+                9 => "Socket",
                 _ => "Unknown"
             };
         }

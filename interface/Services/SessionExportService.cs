@@ -116,6 +116,11 @@ namespace SleepwalkerInterface
                     yield return record;
                 }
 
+                foreach (SessionExportRecord record in FlattenGroupedRows(tabTitle, tab.Pid, "filesystem", tab.FilesystemGroups))
+                {
+                    yield return record;
+                }
+
                 foreach (SessionExportRecord record in FlattenGroupedRows(tabTitle, tab.Pid, "relations", tab.ProcessRelationsGroups))
                 {
                     yield return record;

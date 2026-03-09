@@ -55,6 +55,23 @@ namespace SleepwalkerInterface
                 ResolveHandleEvidenceClone);
         }
 
+        private void OpenFilesystemInspector()
+        {
+            var snapshot = FilesystemPaneHost.SnapshotItems();
+            if (snapshot.Count == 0)
+            {
+                return;
+            }
+
+            TelemetryInspectorWindow.ShowForRows(
+                this,
+                "Filesystem",
+                "Grouped filesystem activity with path and operation filters",
+                snapshot,
+                FilesystemPaneHost.GetSelectedGroupClone(),
+                ResolveHandleEvidenceClone);
+        }
+
         private IoctlParsedEvent? ResolveHandleEvidenceClone(uint actorPid, uint targetPid)
         {
             if (actorPid == 0 || targetPid == 0)

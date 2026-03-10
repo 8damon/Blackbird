@@ -68,6 +68,8 @@ namespace SleepwalkerInterface
         private bool _topTimeTravelSyncing;
         private bool _toolbarViewMenuSyncing;
         private bool _followLiveTimeline = true;
+        private bool _eventSelectionSyncing;
+        private EventSelectionKey? _selectedEventAnchor;
         private double _pendingScrollStartSeconds;
         private DateTime _scopeStatusCacheUtc;
         private int _scopeStatusCachePid;
@@ -787,7 +789,7 @@ namespace SleepwalkerInterface
             _focusedEvents.Clear();
             EventsPaneHost.Timeline.Items.Clear();
             EventsPaneHost.Timeline.ClearAllLaneFilters();
-            EventsPaneHost.Timeline.SelectedEvent = null;
+            ClearSelectedEvent();
 
             foreach (var ev in tab.Events.OrderBy(x => x.TimestampUtc))
             {
@@ -1060,13 +1062,12 @@ namespace SleepwalkerInterface
             }
 
             double duration = Math.Max(1, EventsPaneHost.Timeline.ViewDurationSeconds);
-            double maxValue = Math.Max(duration, totalSeconds);
+            double maxStart = Math.Max(0, totalSeconds - duration);
             EventsPaneHost.Scroll.ViewportSize = duration;
-            EventsPaneHost.Scroll.Maximum = maxValue;
+            EventsPaneHost.Scroll.Maximum = maxStart;
             EventsPaneHost.Scroll.SmallChange = Math.Max(1, duration / 20.0);
             EventsPaneHost.Scroll.LargeChange = Math.Max(1, duration * 0.8);
 
-            double maxStart = Math.Max(0, maxValue - duration);
             if (EventsPaneHost.Timeline.ViewStartSeconds > maxStart)
             {
                 EventsPaneHost.Timeline.ViewStartSeconds = maxStart;
@@ -1084,6 +1085,7 @@ namespace SleepwalkerInterface
         {
             var viewStart = _captureStartUtc + TimeSpan.FromSeconds(EventsPaneHost.Timeline.ViewStartSeconds);
             var viewEnd = viewStart + TimeSpan.FromSeconds(EventsPaneHost.Timeline.ViewDurationSeconds);
+            var selectedAnchor = CaptureSelectedEventAnchor();
 
             double durationSeconds = Math.Max(1, (viewEnd - viewStart).TotalSeconds);
             RangeBlock.Text = $"Range {viewStart:HH:mm:ss} | {viewEnd:HH:mm:ss}  ({durationSeconds:0}s)";
@@ -1093,6 +1095,7 @@ namespace SleepwalkerInterface
             {
                 SetExplorerHasData("Events", false);
                 EventsPaneHost.SetHeaderStats("View 0 | Total 0 | 0.0/s");
+                ClearSelectedEvent();
                 UpdateDetachedEventLogWindow();
                 return;
             }
@@ -1109,6 +1112,7 @@ namespace SleepwalkerInterface
                 _focusedEvents.Add(ev);
             }
 
+            RestoreSelectedEventInFocusedView(selectedAnchor);
             FindExplorerItem("Events")?.PushPreviewValue(_focusedEvents.Count);
             SetExplorerHasData("Events", _allEvents.Count > 0);
             double viewSeconds = Math.Max(1.0, EventsPaneHost.Timeline.ViewDurationSeconds);
@@ -1208,17 +1212,11 @@ namespace SleepwalkerInterface
 
         private double ComputeTimelineMaxStart(double viewportSeconds)
         {
-            if (EventsPaneHost?.Scroll == null)
-            {
-                return 0;
-            }
-
             double viewport = Math.Max(1, viewportSeconds);
             double lastEventSeconds = _allEvents.Count > 0
                 ? Math.Max(0, (_allEvents[^1].TimestampUtc - _captureStartUtc).TotalSeconds)
                 : 0;
-            double maximum = Math.Max(viewport, Math.Max(EventsPaneHost.Scroll.Maximum, lastEventSeconds));
-            return Math.Max(0, maximum - viewport);
+            return Math.Max(0, lastEventSeconds - viewport);
         }
 
         private static DateTime AnchorCaptureStartUtc(double viewDurationSeconds)
@@ -1377,20 +1375,126 @@ namespace SleepwalkerInterface
             _ = e;
         }
 
+        private EventSelectionKey? CaptureSelectedEventAnchor()
+        {
+            if (_eventSelectionSyncing)
+            {
+                return _selectedEventAnchor;
+            }
+
+            if (EventsPaneHost.Grid.SelectedItem is TelemetryEvent selectedInGrid)
+            {
+                return new EventSelectionKey(selectedInGrid);
+            }
+
+            if (EventsPaneHost.Timeline.SelectedEvent is TelemetryEvent selectedInTimeline)
+            {
+                return new EventSelectionKey(selectedInTimeline);
+            }
+
+            return _selectedEventAnchor;
+        }
+
+        private void RestoreSelectedEventInFocusedView(EventSelectionKey? preferred)
+        {
+            if (preferred is not EventSelectionKey key || _focusedEvents.Count == 0)
+            {
+                if (preferred == null)
+                {
+                    ClearSelectedEvent();
+                }
+                return;
+            }
+
+            TelemetryEvent? matched = _focusedEvents.FirstOrDefault(ev => key.Matches(ev));
+            if (matched != null)
+            {
+                ApplySelectedEvent(matched, scrollIntoView: false);
+                return;
+            }
+
+            if (_selectedEventAnchor.HasValue && !_selectedEventAnchor.Value.Equals(key))
+            {
+                TelemetryEvent? fallback = _focusedEvents.FirstOrDefault(ev => _selectedEventAnchor.Value.Matches(ev));
+                if (fallback != null)
+                {
+                    ApplySelectedEvent(fallback, scrollIntoView: false);
+                }
+            }
+        }
+
+        private void ApplySelectedEvent(TelemetryEvent? selected, bool scrollIntoView)
+        {
+            if (EventsPaneHost?.Grid == null || EventsPaneHost?.Timeline == null)
+            {
+                return;
+            }
+
+            _eventSelectionSyncing = true;
+            try
+            {
+                EventsPaneHost.Timeline.SelectedEvent = selected;
+                EventsPaneHost.Grid.SelectedItem = selected;
+                if (selected != null)
+                {
+                    UpdateSelectedEventAnchor(selected);
+                    if (scrollIntoView)
+                    {
+                        EventsPaneHost.Grid.ScrollIntoView(selected);
+                    }
+                }
+            }
+            finally
+            {
+                _eventSelectionSyncing = false;
+            }
+        }
+
+        private void UpdateSelectedEventAnchor(TelemetryEvent selected)
+        {
+            _selectedEventAnchor = new EventSelectionKey(selected);
+        }
+
+        private void ClearSelectedEvent()
+        {
+            if (EventsPaneHost?.Grid == null || EventsPaneHost?.Timeline == null)
+            {
+                _selectedEventAnchor = null;
+                return;
+            }
+
+            _eventSelectionSyncing = true;
+            try
+            {
+                EventsPaneHost.Grid.SelectedItem = null;
+                EventsPaneHost.Timeline.SelectedEvent = null;
+                _selectedEventAnchor = null;
+            }
+            finally
+            {
+                _eventSelectionSyncing = false;
+            }
+        }
+
         private void Timeline_SelectedEventChanged(object? sender, TelemetryEventSelectedEventArgs e)
         {
+            if (_eventSelectionSyncing)
+                return;
+
             if (e.Selected == null)
                 return;
 
-            EventsPaneHost.Grid.SelectedItem = e.Selected;
-            EventsPaneHost.Grid.ScrollIntoView(e.Selected);
+            ApplySelectedEvent(e.Selected, scrollIntoView: true);
         }
 
         private void Grid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_eventSelectionSyncing)
+                return;
+
             if (EventsPaneHost.Grid.SelectedItem is TelemetryEvent te)
             {
-                EventsPaneHost.Timeline.SelectedEvent = te;
+                ApplySelectedEvent(te, scrollIntoView: false);
             }
         }
 
@@ -2480,6 +2584,66 @@ namespace SleepwalkerInterface
             None,
             Top,
             Bottom
+        }
+
+        private readonly struct EventSelectionKey : IEquatable<EventSelectionKey>
+        {
+            public EventSelectionKey(TelemetryEvent ev)
+            {
+                TimestampUtc = ev.TimestampUtc;
+                Pid = ev.PID;
+                Tid = ev.TID;
+                Group = ev.Group ?? string.Empty;
+                SubType = ev.SubType ?? string.Empty;
+                Summary = ev.Summary ?? string.Empty;
+                Details = ev.Details ?? string.Empty;
+            }
+
+            private DateTime TimestampUtc { get; }
+            private int Pid { get; }
+            private int Tid { get; }
+            private string Group { get; }
+            private string SubType { get; }
+            private string Summary { get; }
+            private string Details { get; }
+
+            public bool Matches(TelemetryEvent ev)
+            {
+                return ev.TimestampUtc == TimestampUtc
+                    && ev.PID == Pid
+                    && ev.TID == Tid
+                    && string.Equals(ev.Group ?? string.Empty, Group, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(ev.SubType ?? string.Empty, SubType, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(ev.Summary ?? string.Empty, Summary, StringComparison.Ordinal)
+                    && string.Equals(ev.Details ?? string.Empty, Details, StringComparison.Ordinal);
+            }
+
+            public bool Equals(EventSelectionKey other)
+            {
+                return TimestampUtc == other.TimestampUtc
+                    && Pid == other.Pid
+                    && Tid == other.Tid
+                    && string.Equals(Group, other.Group, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(SubType, other.SubType, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(Summary, other.Summary, StringComparison.Ordinal)
+                    && string.Equals(Details, other.Details, StringComparison.Ordinal);
+            }
+
+            public override bool Equals(object? obj)
+                => obj is EventSelectionKey other && Equals(other);
+
+            public override int GetHashCode()
+            {
+                HashCode hash = new();
+                hash.Add(TimestampUtc);
+                hash.Add(Pid);
+                hash.Add(Tid);
+                hash.Add(Group, StringComparer.OrdinalIgnoreCase);
+                hash.Add(SubType, StringComparer.OrdinalIgnoreCase);
+                hash.Add(Summary, StringComparer.Ordinal);
+                hash.Add(Details, StringComparer.Ordinal);
+                return hash.ToHashCode();
+            }
         }
 
         private static TelemetryEvent CloneTelemetryEvent(TelemetryEvent src)

@@ -101,6 +101,10 @@
     <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFF0F0F0"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#FF1C1C1C"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#FFD8D8D8"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlLightBrushKey}" Color="#FF1A1A1A"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlLightLightBrushKey}" Color="#FF212121"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlDarkBrushKey}" Color="#FF0E0E0E"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlDarkDarkBrushKey}" Color="#FF080808"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#FF141414"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="#FFD8D8D8"/>
 
@@ -286,6 +290,10 @@
             <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFF0F0F0"/>
             <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#FF1C1C1C"/>
             <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#FFD8D8D8"/>
+            <SolidColorBrush x:Key="{x:Static SystemColors.ControlLightBrushKey}" Color="#FF1A1A1A"/>
+            <SolidColorBrush x:Key="{x:Static SystemColors.ControlLightLightBrushKey}" Color="#FF212121"/>
+            <SolidColorBrush x:Key="{x:Static SystemColors.ControlDarkBrushKey}" Color="#FF0E0E0E"/>
+            <SolidColorBrush x:Key="{x:Static SystemColors.ControlDarkDarkBrushKey}" Color="#FF080808"/>
             <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#FF141414"/>
             <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="#FFD8D8D8"/>
         </Style.Resources>
@@ -395,15 +403,25 @@
         <Setter Property="BorderBrush" Value="Transparent"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
                 <Setter Property="Background" Value="#FF202020"/>
             </Trigger>
             <Trigger Property="IsSelected" Value="True">
                 <Setter Property="Background" Value="#334C8FD2"/>
+                <Setter Property="Foreground" Value="#FFF1F5FF"/>
                 <Setter Property="BorderBrush" Value="Transparent"/>
                 <Setter Property="BorderThickness" Value="0"/>
             </Trigger>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsSelected" Value="True"/>
+                    <Condition Property="Selector.IsSelectionActive" Value="False"/>
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="#334C8FD2"/>
+                <Setter Property="Foreground" Value="#FFF1F5FF"/>
+            </MultiTrigger>
         </Style.Triggers>
     </Style>
 
@@ -432,18 +450,20 @@
             </Setter.Value>
         </Setter>
         <Style.Triggers>
-            <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="#1E4C8FD2"/>
-            </Trigger>
-            <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                <Setter Property="BorderBrush" Value="{StaticResource WinAccentBrush}"/>
-                <Setter Property="Background" Value="#264C8FD2"/>
-            </Trigger>
             <Trigger Property="IsSelected" Value="True">
                 <Setter Property="Background" Value="#334C8FD2"/>
                 <Setter Property="Foreground" Value="#FFF1F5FF"/>
                 <Setter Property="BorderBrush" Value="{StaticResource WinSubtleBorderBrush}"/>
             </Trigger>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsSelected" Value="True"/>
+                    <Condition Property="Selector.IsSelectionActive" Value="False"/>
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="#334C8FD2"/>
+                <Setter Property="Foreground" Value="#FFF1F5FF"/>
+                <Setter Property="BorderBrush" Value="{StaticResource WinSubtleBorderBrush}"/>
+            </MultiTrigger>
         </Style.Triggers>
     </Style>
 
@@ -595,7 +615,7 @@
         </Setter>
         <Style.Triggers>
             <Trigger Property="Orientation" Value="Horizontal">
-                <Setter Property="Height" Value="11"/>
+                <Setter Property="Height" Value="8"/>
                 <Setter Property="Width" Value="Auto"/>
             </Trigger>
             <Trigger Property="Orientation" Value="Vertical">

@@ -53,8 +53,10 @@ namespace SleepwalkerInterface
         {
             var snapshot = events?.ToList() ?? new List<TelemetryEvent>();
             _rawEventCount = snapshot.Count;
+            string selectedKey = (EventCardList.SelectedItem as EventLogCardItem)?.Key ?? string.Empty;
+            int selectedIndex = EventCardList.SelectedIndex;
 
-            var grouped = new Dictionary<string, EventLogCardItem>(StringComparer.OrdinalIgnoreCase);
+            var grouped = new Dictionary<string, EventLogCardAggregate>(StringComparer.OrdinalIgnoreCase);
             foreach (var ev in snapshot)
             {
                 string group = string.IsNullOrWhiteSpace(ev.Group) ? "Other" : ev.Group;
@@ -65,8 +67,9 @@ namespace SleepwalkerInterface
 
                 if (!grouped.TryGetValue(key, out var item))
                 {
-                    grouped[key] = new EventLogCardItem
+                    grouped[key] = new EventLogCardAggregate
                     {
+                        Key = key,
                         Group = group,
                         SubType = subtype,
                         PID = ev.PID,
@@ -92,16 +95,107 @@ namespace SleepwalkerInterface
                 }
             }
 
-            _cards.Clear();
-            foreach (var item in grouped.Values.OrderByDescending(x => x.LastSeenUtc))
+            var validKeys = new HashSet<string>(grouped.Keys, StringComparer.OrdinalIgnoreCase);
+            for (int i = _cards.Count - 1; i >= 0; i -= 1)
             {
-                _cards.Add(item);
+                if (!validKeys.Contains(_cards[i].Key))
+                {
+                    _cards.RemoveAt(i);
+                }
+            }
+
+            var cardsByKey = _cards.ToDictionary(x => x.Key, x => x, StringComparer.OrdinalIgnoreCase);
+            var orderedAggregates = grouped.Values
+                .OrderByDescending(x => x.LastSeenUtc)
+                .ToList();
+            var nextOrder = new List<EventLogCardItem>(orderedAggregates.Count);
+            foreach (EventLogCardAggregate aggregate in orderedAggregates)
+            {
+                EventLogCardItem card;
+                if (!string.IsNullOrWhiteSpace(selectedKey) &&
+                    string.Equals(aggregate.Key, selectedKey, StringComparison.OrdinalIgnoreCase) &&
+                    cardsByKey.TryGetValue(selectedKey, out EventLogCardItem? selectedExisting))
+                {
+                    card = selectedExisting;
+                }
+                else if (!cardsByKey.TryGetValue(aggregate.Key, out card!))
+                {
+                    card = new EventLogCardItem();
+                }
+
+                PopulateCard(card, aggregate);
+                nextOrder.Add(card);
+            }
+
+            if (!string.IsNullOrWhiteSpace(selectedKey) && selectedIndex >= 0)
+            {
+                int selectedPos = nextOrder.FindIndex(x => string.Equals(x.Key, selectedKey, StringComparison.OrdinalIgnoreCase));
+                if (selectedPos >= 0)
+                {
+                    EventLogCardItem selectedCard = nextOrder[selectedPos];
+                    nextOrder.RemoveAt(selectedPos);
+                    int pinnedIndex = Math.Min(selectedIndex, nextOrder.Count);
+                    nextOrder.Insert(pinnedIndex, selectedCard);
+                }
+            }
+
+            for (int i = 0; i < nextOrder.Count; i += 1)
+            {
+                EventLogCardItem desired = nextOrder[i];
+                if (i >= _cards.Count)
+                {
+                    _cards.Add(desired);
+                    continue;
+                }
+
+                if (ReferenceEquals(_cards[i], desired))
+                {
+                    continue;
+                }
+
+                int currentIndex = _cards.IndexOf(desired);
+                if (currentIndex >= 0)
+                {
+                    _cards.Move(currentIndex, i);
+                }
+                else
+                {
+                    _cards.Insert(i, desired);
+                }
+            }
+
+            while (_cards.Count > nextOrder.Count)
+            {
+                _cards.RemoveAt(_cards.Count - 1);
             }
 
             RefreshFilterChoices();
             _cardView.Refresh();
+            if (!string.IsNullOrWhiteSpace(selectedKey))
+            {
+                EventLogCardItem? selected = _cards.FirstOrDefault(x => string.Equals(x.Key, selectedKey, StringComparison.OrdinalIgnoreCase));
+                if (selected != null)
+                {
+                    EventCardList.SelectedItem = selected;
+                    EventCardList.ScrollIntoView(selected);
+                }
+            }
             RefreshSummaryText();
             NoDataOverlay.Visibility = _cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private static void PopulateCard(EventLogCardItem card, EventLogCardAggregate aggregate)
+        {
+            card.Key = aggregate.Key;
+            card.Group = aggregate.Group;
+            card.SubType = aggregate.SubType;
+            card.PID = aggregate.PID;
+            card.TID = aggregate.TID;
+            card.Summary = aggregate.Summary;
+            card.Details = aggregate.Details;
+            card.FirstSeenUtc = aggregate.FirstSeenUtc;
+            card.LastSeenUtc = aggregate.LastSeenUtc;
+            card.Count = aggregate.Count;
         }
 
         private bool FilterCard(object obj)
@@ -225,6 +319,7 @@ namespace SleepwalkerInterface
 
         private sealed class EventLogCardItem
         {
+            public string Key { get; set; } = "";
             public string Group { get; set; } = "Other";
             public string SubType { get; set; } = "";
             public int PID { get; set; }
@@ -245,6 +340,20 @@ namespace SleepwalkerInterface
                     : $"{FirstSeenUtc:HH:mm:ss.fff}Z → {LastSeenUtc:HH:mm:ss.fff}Z";
             public string SearchText =>
                 $"{Group} {SubType} {PID} {TID} {Summary} {Details} {TimeLabel}";
+        }
+
+        private sealed class EventLogCardAggregate
+        {
+            public string Key { get; set; } = "";
+            public string Group { get; set; } = "Other";
+            public string SubType { get; set; } = "";
+            public int PID { get; set; }
+            public int TID { get; set; }
+            public string Summary { get; set; } = "";
+            public string Details { get; set; } = "";
+            public DateTime FirstSeenUtc { get; set; }
+            public DateTime LastSeenUtc { get; set; }
+            public int Count { get; set; }
         }
     }
 }

@@ -86,6 +86,18 @@ namespace SleepwalkerInterface
             DependencyProperty.Register(nameof(ViewStartSeconds), typeof(double), typeof(TimelineControl),
                 new FrameworkPropertyMetadata(0d, FrameworkPropertyMetadataOptions.AffectsRender));
 
+        public double VerticalOffset
+        {
+            get => (double)GetValue(VerticalOffsetProperty);
+            set => SetValue(VerticalOffsetProperty, value);
+        }
+        public static readonly DependencyProperty VerticalOffsetProperty =
+            DependencyProperty.Register(nameof(VerticalOffset), typeof(double), typeof(TimelineControl),
+                new FrameworkPropertyMetadata(0d, FrameworkPropertyMetadataOptions.AffectsRender));
+
+        public double VerticalExtent => _verticalExtent;
+        public double VerticalViewport => _verticalViewport;
+
         public TelemetryEvent? SelectedEvent
         {
             get => (TelemetryEvent?)GetValue(SelectedEventProperty);
@@ -99,6 +111,7 @@ namespace SleepwalkerInterface
         public event EventHandler<LaneInteractionEventArgs>? LaneInteraction;
         public event EventHandler<TelemetryEventSelectedEventArgs>? SelectedEventChanged;
         public event EventHandler<TelemetryEventSelectedEventArgs>? EventDoubleClicked;
+        public event EventHandler? VerticalMetricsChanged;
 
         // Layout knobs
         public double LeftGutterWidth { get; set; } = 170;
@@ -126,6 +139,9 @@ namespace SleepwalkerInterface
 
         private TelemetryEvent? _hoveredEvent;
         private bool _renderQueued;
+        private double _verticalExtent = 1;
+        private double _verticalViewport = 1;
+        private double _verticalOffsetReported = -1;
 
         public TimelineControl()
         {
@@ -331,6 +347,29 @@ namespace SleepwalkerInterface
             base.OnMouseUp(e);
         }
 
+        protected override void OnMouseWheel(MouseWheelEventArgs e)
+        {
+            double viewport = Math.Max(1, _verticalViewport);
+            double extent = Math.Max(viewport, _verticalExtent);
+            double maxOffset = Math.Max(0, extent - viewport);
+            if (maxOffset <= 0.001)
+            {
+                base.OnMouseWheel(e);
+                return;
+            }
+
+            double step = Math.Max(8, LaneHeight * 1.25);
+            double delta = e.Delta > 0 ? -step : step;
+            double next = Math.Max(0, Math.Min(maxOffset, VerticalOffset + delta));
+            if (Math.Abs(next - VerticalOffset) > 0.01)
+            {
+                VerticalOffset = next;
+                e.Handled = true;
+            }
+
+            base.OnMouseWheel(e);
+        }
+
         private TimeRangeSelectedEventArgs? SelectionToTimeRange(Point a, Point b)
         {
             double x1 = Math.Min(a.X, b.X);
@@ -386,10 +425,19 @@ namespace SleepwalkerInterface
             var viewEndUtc = viewStartUtc + TimeSpan.FromSeconds(ViewDurationSeconds);
 
             // Build lane rows from current data
-            BuildLaneRows(axisTop);
+            BuildLaneRows();
+            double contentHeight = Math.Max(1, (_laneRows.Count == 0 ? 0 : _laneRows[^1].Y + _laneRows[^1].Height) - TopPadding);
+            double viewportHeight = Math.Max(1, axisTop - TopPadding);
+            double maxVerticalOffset = Math.Max(0, contentHeight - viewportHeight);
+            double effectiveVerticalOffset = Math.Max(0, Math.Min(maxVerticalOffset, VerticalOffset));
+            if (Math.Abs(effectiveVerticalOffset - VerticalOffset) > 0.01)
+            {
+                VerticalOffset = effectiveVerticalOffset;
+            }
+            UpdateVerticalMetrics(contentHeight, viewportHeight, effectiveVerticalOffset);
 
             // Draw lane separators + labels
-            DrawLaneGutter(dc, dpi, typeface);
+            DrawLaneGutter(dc, axisTop, effectiveVerticalOffset, dpi, typeface);
 
             // Draw grid + bottom x-axis
             DrawTimeGridAndAxis(dc, viewStartUtc, viewEndUtc, pps, chartLeft, chartRight, axisTop, dpi, typeface);
@@ -406,8 +454,10 @@ namespace SleepwalkerInterface
                 if (!eventsByLane.TryGetValue(lane.Key, out var laneEvents))
                     continue;
 
-                double yTop = lane.Y + 3;
+                double yTop = lane.Y - effectiveVerticalOffset + 3;
                 double barH = Math.Max(6, lane.Height - 6);
+                if (yTop + barH < 0 || yTop > axisTop)
+                    continue;
                 foreach (var ev in laneEvents)
                 {
                     double x = chartLeft + (ev.TimestampUtc - viewStartUtc).TotalSeconds * pps;
@@ -565,12 +615,13 @@ namespace SleepwalkerInterface
             return $"PID {ev.PID}  TID {ev.TID}  {summary}";
         }
 
-        private void BuildLaneRows(double axisTop)
+        private void BuildLaneRows()
         {
             // Groups and subtypes currently observed
             var groups = Items
                 .GroupBy(e => e.Group ?? "Other", StringComparer.OrdinalIgnoreCase)
-                .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(g => GroupSortRank(g.Key))
+                .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             double y = TopPadding;
@@ -639,11 +690,17 @@ namespace SleepwalkerInterface
                         y += lane.Height;
                     }
                 }
-
-                // stop if we're going to overlap the axis
-                if (y >= axisTop - 4)
-                    break;
             }
+        }
+
+        private static int GroupSortRank(string group)
+        {
+            if (string.IsNullOrWhiteSpace(group))
+            {
+                return 50;
+            }
+
+            return group.StartsWith("Filesystem", StringComparison.OrdinalIgnoreCase) ? 200 : 100;
         }
 
         private Dictionary<string, List<TelemetryEvent>> BuildVisibleLaneEventIndex(DateTime viewStartUtc, DateTime viewEndUtc)
@@ -678,7 +735,7 @@ namespace SleepwalkerInterface
             return byLane;
         }
 
-        private void DrawLaneGutter(DrawingContext dc, double dpi, Typeface typeface)
+        private void DrawLaneGutter(DrawingContext dc, double axisTop, double verticalOffset, double dpi, Typeface typeface)
         {
             var sepPen = new Pen(UiPalette.GridBrush, 1);
             sepPen.Freeze();
@@ -690,7 +747,14 @@ namespace SleepwalkerInterface
 
             foreach (var row in _laneRows)
             {
-                dc.DrawLine(sepPen, new Point(0, row.Y), new Point(ActualWidth, row.Y));
+                double drawY = row.Y - verticalOffset;
+                row.Rect = new Rect(0, drawY, LeftGutterWidth, row.Height);
+                if (drawY + row.Height < 0 || drawY > axisTop)
+                {
+                    continue;
+                }
+
+                dc.DrawLine(sepPen, new Point(0, drawY), new Point(ActualWidth, drawY));
 
                 // Label text
                 var color = row.IsGroupHeader ? UiPalette.Text : UiPalette.MutedText;
@@ -704,15 +768,30 @@ namespace SleepwalkerInterface
                     dpi);
 
                 double x = 10 + row.Indent;
-                dc.DrawText(ft, new Point(x, row.Y + 3));
+                dc.DrawText(ft, new Point(x, drawY + 3));
 
                 // Disabled indicator
                 if (_hiddenLaneKeys.Contains(row.Key))
                 {
                     var dim = new SolidColorBrush(Color.FromArgb(70, 0xA0, 0xA0, 0xA0));
                     dim.Freeze();
-                    dc.DrawRectangle(dim, null, new Rect(0, row.Y, LeftGutterWidth, row.Height));
+                    dc.DrawRectangle(dim, null, new Rect(0, drawY, LeftGutterWidth, row.Height));
                 }
+            }
+        }
+
+        private void UpdateVerticalMetrics(double extent, double viewport, double offset)
+        {
+            double normExtent = Math.Max(1, extent);
+            double normViewport = Math.Max(1, viewport);
+            if (Math.Abs(_verticalExtent - normExtent) > 0.1 ||
+                Math.Abs(_verticalViewport - normViewport) > 0.1 ||
+                Math.Abs(_verticalOffsetReported - offset) > 0.1)
+            {
+                _verticalExtent = normExtent;
+                _verticalViewport = normViewport;
+                _verticalOffsetReported = offset;
+                VerticalMetricsChanged?.Invoke(this, EventArgs.Empty);
             }
         }
 

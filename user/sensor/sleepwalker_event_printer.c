@@ -10,7 +10,8 @@ typedef struct _MASK_NAME_ENTRY
 
 static const MASK_NAME_ENTRY g_StreamMaskNames[] = {{SLEEPWALKER_STREAM_HANDLE, "HANDLE"},
                                                     {SLEEPWALKER_STREAM_MEMORY, "MEMORY"},
-                                                    {SLEEPWALKER_STREAM_THREAD, "THREAD"}};
+                                                    {SLEEPWALKER_STREAM_THREAD, "THREAD"},
+                                                    {SLEEPWALKER_STREAM_FILESYSTEM, "FILESYSTEM"}};
 
 static const char *SLEEPWALKERHandleClassToString(UINT32 classId)
 {
@@ -39,6 +40,10 @@ static void SLEEPWALKEREventTypeToString(UINT32 type, char *output, size_t outpu
     else if (type == SleepwalkerEventTypeThread)
     {
         (void)snprintf(output, outputChars, "THREAD");
+    }
+    else if (type == SleepwalkerEventTypeFileSystem)
+    {
+        (void)snprintf(output, outputChars, "FILESYSTEM");
     }
     else
     {
@@ -255,6 +260,48 @@ static void SLEEPWALKERPrintThreadEvent(const SLEEPWALKER_EVENT_RECORD *rec)
     SLEEPWALKERPrintFrames(t->Frames, t->FrameCount);
 }
 
+static const char *SLEEPWALKERFileOperationToString(UINT32 op)
+{
+    switch (op)
+    {
+    case SleepwalkerFileOperationCreate:
+        return "CREATE";
+    case SleepwalkerFileOperationRead:
+        return "READ";
+    case SleepwalkerFileOperationWrite:
+        return "WRITE";
+    case SleepwalkerFileOperationClose:
+        return "CLOSE";
+    case SleepwalkerFileOperationCleanup:
+        return "CLEANUP";
+    case SleepwalkerFileOperationSetInformation:
+        return "SET_INFORMATION";
+    case SleepwalkerFileOperationQueryInformation:
+        return "QUERY_INFO";
+    case SleepwalkerFileOperationDirectoryControl:
+        return "DIRECTORY_CONTROL";
+    case SleepwalkerFileOperationFsControl:
+        return "FS_CONTROL";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+static void SLEEPWALKERPrintFileEvent(const SLEEPWALKER_EVENT_RECORD *rec)
+{
+    const SLEEPWALKER_FILE_EVENT *f = &rec->Data.FileSystem;
+
+    printf("[IOCTL][FILESYSTEM] op=%s(%u) process=%llu thread=%llu status=0x%08llX info=0x%llX\n",
+           SLEEPWALKERFileOperationToString(f->Operation), f->Operation, (unsigned long long)f->ProcessId,
+           (unsigned long long)f->ThreadId, (unsigned long long)f->Status, (unsigned long long)f->Information);
+    printf("Path   %ls\n", (f->Path[0] != L'\0') ? f->Path : L"<none>");
+    printf("IO     major=%u minor=%u irpFlags=0x%08X flags=0x%08X\n", f->MajorCode, f->MinorCode, f->IrpFlags,
+           f->Flags);
+    printf("Range  offset=0x%llX length=0x%llX\n", (unsigned long long)f->ByteOffset, (unsigned long long)f->Length);
+    printf("Create desired=0x%08X share=0x%08X disp=%u options=0x%08X\n", f->DesiredAccess, f->ShareAccess,
+           f->CreateDisposition, f->CreateOptions);
+}
+
 static void SLEEPWALKERPrintHeader(const SLEEPWALKER_EVENT_RECORD *rec)
 {
     char typeName[32];
@@ -283,6 +330,10 @@ void SLEEPWALKEREventPrinterPrintRecord(const SLEEPWALKER_EVENT_RECORD *rec)
     else if (rec->Header.Type == SleepwalkerEventTypeThread)
     {
         SLEEPWALKERPrintThreadEvent(rec);
+    }
+    else if (rec->Header.Type == SleepwalkerEventTypeFileSystem)
+    {
+        SLEEPWALKERPrintFileEvent(rec);
     }
     else
     {

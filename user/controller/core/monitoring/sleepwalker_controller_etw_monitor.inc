@@ -357,6 +357,7 @@ static BOOL ControllerEtwResolveRelation(_In_ const SLEEPWALKER_IPC_ETW_EVENT *E
         break;
     case SleepwalkerIpcEtwFamilyDetection:
     case SleepwalkerIpcEtwFamilyThreatIntel:
+    case SleepwalkerIpcEtwFamilySocket:
         sourceValue = Event->ProcessId;
         targetValue = Event->TargetPid;
         break;

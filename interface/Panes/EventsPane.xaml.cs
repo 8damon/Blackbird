@@ -44,6 +44,10 @@ namespace SleepwalkerInterface
         public EventsPane()
         {
             InitializeComponent();
+            EventTimeline.VerticalMetricsChanged += EventTimeline_VerticalMetricsChanged;
+            EventTimeline.SizeChanged += (_, __) => SyncTimelineVerticalScroll();
+            TimelineVerticalScroll.ValueChanged += TimelineVerticalScroll_ValueChanged;
+            Loaded += (_, __) => SyncTimelineVerticalScroll();
             UpdateNoDataOverlay();
         }
 
@@ -75,6 +79,18 @@ namespace SleepwalkerInterface
             EventLogBorder.Visibility = detached ? Visibility.Collapsed : Visibility.Visible;
             BtnLogPopout.ToolTip = detached ? "Re-attach event log" : "Detach event log";
             BtnLogPopout.Content = detached ? "⇲" : "⇱";
+        }
+
+        public void SetHeaderStats(string statsText)
+        {
+            if (HeaderStatsBlock == null)
+            {
+                return;
+            }
+
+            HeaderStatsBlock.Text = string.IsNullOrWhiteSpace(statsText)
+                ? "View 0 | Total 0 | 0.0/s"
+                : statsText.Trim();
         }
 
         private void BtnClose_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, e);
@@ -171,6 +187,56 @@ namespace SleepwalkerInterface
         private void UpdateNoDataOverlay()
         {
             EventsNoDataOverlay.Visibility = (_hasData && _connectivityHealthy) ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        private void EventTimeline_VerticalMetricsChanged(object? sender, EventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            SyncTimelineVerticalScroll();
+        }
+
+        private void TimelineVerticalScroll_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            _ = sender;
+            if (EventTimeline == null || TimelineVerticalScroll == null)
+            {
+                return;
+            }
+
+            double viewport = Math.Max(1, TimelineVerticalScroll.ViewportSize);
+            double maxStart = Math.Max(0, TimelineVerticalScroll.Maximum - viewport);
+            double clamped = Math.Max(0, Math.Min(maxStart, e.NewValue));
+            if (Math.Abs(EventTimeline.VerticalOffset - clamped) > 0.1)
+            {
+                EventTimeline.VerticalOffset = clamped;
+            }
+        }
+
+        private void SyncTimelineVerticalScroll()
+        {
+            if (EventTimeline == null || TimelineVerticalScroll == null)
+            {
+                return;
+            }
+
+            double viewport = Math.Max(1, EventTimeline.VerticalViewport);
+            double extent = Math.Max(viewport, EventTimeline.VerticalExtent);
+
+            TimelineVerticalScroll.Minimum = 0;
+            TimelineVerticalScroll.ViewportSize = viewport;
+            TimelineVerticalScroll.Maximum = extent;
+            TimelineVerticalScroll.SmallChange = Math.Max(8, EventTimeline.LaneHeight);
+            TimelineVerticalScroll.LargeChange = Math.Max(32, viewport * 0.75);
+
+            double maxStart = Math.Max(0, extent - viewport);
+            double target = Math.Max(0, Math.Min(maxStart, EventTimeline.VerticalOffset));
+            if (Math.Abs(TimelineVerticalScroll.Value - target) > 0.1)
+            {
+                TimelineVerticalScroll.Value = target;
+            }
+
+            TimelineVerticalScroll.Visibility = Visibility.Collapsed;
         }
     }
 }

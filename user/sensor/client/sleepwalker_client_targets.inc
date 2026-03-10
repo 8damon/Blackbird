@@ -596,6 +596,7 @@ static void PolicyDefaults(_Out_ SLEEPWALKER_CLIENT_POLICY *Policy)
     Policy->HighPriorityMinSeverity = 4;
     Policy->AllowIoctlHandle = TRUE;
     Policy->AllowIoctlThread = TRUE;
+    Policy->AllowIoctlFilesystem = TRUE;
     Policy->AllowEtwSleepwalker = TRUE;
     Policy->AllowEtwTi = TRUE;
 }
@@ -689,6 +690,15 @@ static BOOL PolicySetKeyValue(_Inout_ SLEEPWALKER_CLIENT_POLICY *Policy, _In_z_ 
             return FALSE;
         }
         Policy->AllowIoctlThread = b;
+        return TRUE;
+    }
+    if (_stricmp(Key, "filter.ioctl.filesystem") == 0 || _stricmp(Key, "filter.ioctl.file") == 0)
+    {
+        if (!ParseBoolText(Value, &b))
+        {
+            return FALSE;
+        }
+        Policy->AllowIoctlFilesystem = b;
         return TRUE;
     }
     if (_stricmp(Key, "filter.etw.sleepwalker") == 0)
@@ -1168,6 +1178,7 @@ static BOOL EtwRecordMatchesTargetPid(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWS
 {
     static const PCWSTR tiActorNames[] = {L"CallingProcessId", L"CallerProcessId", L"SourceProcessId", L"ProcessId"};
     static const PCWSTR tiTargetNames[] = {L"TargetProcessId", L"NewProcessId", L"DestProcessId"};
+    static const PCWSTR socketActorNames[] = {L"PID", L"ProcessId", L"processId"};
     BOOL localMatch = FALSE;
     BOOL remoteMatch = FALSE;
 
@@ -1227,6 +1238,13 @@ static BOOL EtwRecordMatchesTargetPid(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWS
     {
         localMatch = EtwAnyPropertyMatchesTargetPid(Record, tiActorNames, RTL_NUMBER_OF(tiActorNames), TargetPid);
         remoteMatch = EtwAnyPropertyMatchesTargetPid(Record, tiTargetNames, RTL_NUMBER_OF(tiTargetNames), TargetPid);
+        return ScopeMatches(Scope, localMatch, remoteMatch);
+    }
+    if (IsEqualGUID(&Record->EventHeader.ProviderId, &SLEEPWALKERSC_PROVIDER_GUID_KERNEL_NETWORK))
+    {
+        localMatch = (Record->EventHeader.ProcessId == TargetPid) ||
+                     EtwAnyPropertyMatchesTargetPid(Record, socketActorNames, RTL_NUMBER_OF(socketActorNames), TargetPid);
+        remoteMatch = FALSE;
         return ScopeMatches(Scope, localMatch, remoteMatch);
     }
 
@@ -1297,6 +1315,7 @@ static BOOL BrokerEtwEventMatchesTargetPid(_In_ const SLEEPWALKER_IPC_ETW_EVENT 
         break;
     case SleepwalkerIpcEtwFamilyDetection:
     case SleepwalkerIpcEtwFamilyThreatIntel:
+    case SleepwalkerIpcEtwFamilySocket:
         if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
         {
             actorPid = (DWORD)Event->ProcessId;

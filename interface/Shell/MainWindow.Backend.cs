@@ -17,6 +17,7 @@ namespace SleepwalkerInterface
         private int _backendGeneration;
         private readonly Dictionary<int, List<GroupedEventRow>> _etwHistoryByPid = new();
         private readonly Dictionary<int, List<GroupedEventRow>> _heuristicsHistoryByPid = new();
+        private readonly Dictionary<int, List<GroupedEventRow>> _filesystemHistoryByPid = new();
         private readonly Dictionary<int, List<GroupedEventRow>> _relationsHistoryByPid = new();
 
         private SleepwalkerPreflightReport? _lastPreflight;
@@ -37,19 +38,29 @@ namespace SleepwalkerInterface
         private const int MaxBackendUiItemsPerFlush = 220;
         private const int MaxBackendStatusLinesPerTransformBatch = 64;
         private const int MaxBackendStatusLinesPerUiFlush = 32;
+        private const int FilesystemTimelineClusterFlushCount = 600;
         private const uint CorrelationIntentMask = 0x00000007u;
         private static readonly TimeSpan BackendUiFlushBudget = TimeSpan.FromMilliseconds(5);
+        private static readonly TimeSpan FilesystemTimelineClusterWindow = TimeSpan.FromMilliseconds(3000);
+        private static readonly TimeSpan FilesystemTimelineClusterIdleFlush = TimeSpan.FromMilliseconds(1500);
         private string? _lastEtwTimelineSignature;
         private DateTime _lastEtwTimelineTimestampUtc;
         private readonly Dictionary<ulong, IoctlParsedEvent> _recentHandleEvidenceByPair = new();
         private DateTime _lastHandleEvidencePruneUtc = DateTime.MinValue;
+        private readonly Dictionary<uint, int> _filesystemClusterOperationCounts = new();
+        private readonly Dictionary<uint, (uint Pid, uint Tid, string Path)> _filesystemClusterSamplesByOperation = new();
+        private int _filesystemClusterTotal;
+        private DateTime _filesystemClusterWindowStartUtc = DateTime.MinValue;
+        private DateTime _filesystemClusterLastSeenUtc = DateTime.MinValue;
 
         private void InitializeBackendUi()
         {
             EtwPaneHost.ClearAll();
             HeuristicsPaneHost.ClearAll();
+            FilesystemPaneHost.ClearAll();
             ProcessRelationsPaneHost.ClearAll();
             IpcUplinkPaneHost.SetInactive("No IPC diagnostics yet", "Enable uplink and wait for stats sample.");
+            ResetFilesystemTimelineCluster();
             RefreshExplorerDataBadges();
             DiagnosticsState.SetValue("UI", "Initialized");
         }
@@ -67,6 +78,7 @@ namespace SleepwalkerInterface
             _hasIpcUplinkData = false;
             _lastEtwTimelineSignature = null;
             _lastEtwTimelineTimestampUtc = DateTime.MinValue;
+            ResetFilesystemTimelineCluster();
             SetIpcUplinkExplorerDetails("Enable to inspect IPC internals", "Waiting for session diagnostics...", hasData: false);
 
             int generation = ++_backendGeneration;
@@ -195,6 +207,7 @@ namespace SleepwalkerInterface
             ClearPendingBackendUiQueues();
             _lastEtwTimelineSignature = null;
             _lastEtwTimelineTimestampUtc = DateTime.MinValue;
+            ResetFilesystemTimelineCluster();
             _hasIpcUplinkData = false;
             SetIpcUplinkExplorerDetails("Session stopped", "No live IPC diagnostics", hasData: false);
             DiagnosticsState.SetValue("Session", "Stopped");
@@ -245,19 +258,34 @@ namespace SleepwalkerInterface
                 while (transformed < MaxBackendTransformItemsPerBatch && _pendingIoctlEvents.TryDequeue(out var ioctl))
                 {
                     Interlocked.Decrement(ref _pendingIoctlCount);
+                    DateTime nowUtc = DateTime.UtcNow;
+                    IReadOnlyList<TelemetryEvent> filesystemClusterEvents = AccumulateFilesystemTimelineCluster(ioctl, nowUtc);
+                    if (filesystemClusterEvents.Count > 0)
+                    {
+                        for (int i = 0; i < filesystemClusterEvents.Count; i += 1)
+                        {
+                            _pendingUiWork.Enqueue(
+                                BackendUiWorkItem.FromIoctl(filesystemClusterEvents[i], null, null, null, null));
+                            Interlocked.Increment(ref _pendingUiWorkCount);
+                        }
+                        producedUiWork = true;
+                    }
 
                     TelemetryEvent? telemetry = MapIoctlRecord(ioctl);
                     ProcessRelationView? relation = MapIoctlRelation(ioctl);
                     HeuristicEventView? heuristic = MapIoctlHeuristic(ioctl);
                     ThreadLifecycleEventSample? threadLifecycle = MapIoctlThreadLifecycle(ioctl);
+                    IoctlParsedEvent? filesystem = MapIoctlFilesystem(ioctl);
                     if (relation != null)
                     {
                         ProcessIdentityResolver.Prime(relation.SourcePid);
                         ProcessIdentityResolver.Prime(relation.TargetPid);
                     }
-                    if (telemetry != null || relation != null || heuristic != null || threadLifecycle != null)
+                    if (telemetry != null || relation != null || heuristic != null || threadLifecycle != null ||
+                        filesystem != null)
                     {
-                        _pendingUiWork.Enqueue(BackendUiWorkItem.FromIoctl(telemetry, relation, heuristic, threadLifecycle));
+                        _pendingUiWork.Enqueue(
+                            BackendUiWorkItem.FromIoctl(telemetry, relation, heuristic, threadLifecycle, filesystem));
                         Interlocked.Increment(ref _pendingUiWorkCount);
                         producedUiWork = true;
                     }
@@ -288,6 +316,19 @@ namespace SleepwalkerInterface
                     Interlocked.Increment(ref _pendingUiWorkCount);
                     producedUiWork = true;
                     statusLines += 1;
+                }
+
+                IReadOnlyList<TelemetryEvent> idleFilesystemClusters =
+                    FlushFilesystemTimelineClusterIfNeeded(DateTime.UtcNow, force: false);
+                if (idleFilesystemClusters.Count > 0)
+                {
+                    for (int i = 0; i < idleFilesystemClusters.Count; i += 1)
+                    {
+                        _pendingUiWork.Enqueue(
+                            BackendUiWorkItem.FromIoctl(idleFilesystemClusters[i], null, null, null, null));
+                        Interlocked.Increment(ref _pendingUiWorkCount);
+                    }
+                    producedUiWork = true;
                 }
 
                 if (producedUiWork)
@@ -370,6 +411,13 @@ namespace SleepwalkerInterface
                             }
                         }
                     }
+                    if (uiWork.Filesystem != null)
+                    {
+                        FilesystemPaneHost.PushFileEvent(uiWork.Filesystem);
+                        _explorer.FirstOrDefault(x => x.Name == "Filesystem")?.PushPreviewValue(
+                            FilesystemPaneHost.TotalRawCount);
+                        SetExplorerHasData("Filesystem", FilesystemPaneHost.ItemCount > 0);
+                    }
                 }
                 else if (uiWork.Kind == BackendUiWorkKind.Etw && uiWork.EtwView != null)
                 {
@@ -416,6 +464,7 @@ namespace SleepwalkerInterface
             Interlocked.Exchange(ref _pendingStatusCount, 0);
             Interlocked.Exchange(ref _pendingUiWorkCount, 0);
             Interlocked.Exchange(ref _backendUiFlushScheduled, 0);
+            ResetFilesystemTimelineCluster();
         }
 
         private void UpdateIpcUplinkExplorer(BackendIpcDiagnosticsView diag)
@@ -540,6 +589,12 @@ namespace SleepwalkerInterface
 
         private static bool ShouldKeepEtwEvent(BrokerEtwEventView view)
         {
+            if (view.Family == SleepwalkerNative.IpcEtwFamilySocket ||
+                view.Source.Equals("KernelNetwork", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
             if (!string.IsNullOrWhiteSpace(view.DetectionName))
             {
                 return true;
@@ -739,6 +794,133 @@ namespace SleepwalkerInterface
             return exportMismatch || (stackSpoof && (!stackValidated || !tebBoundsValid));
         }
 
+        private static string DescribeFileOperation(uint operation)
+        {
+            return operation switch
+            {
+                SleepwalkerNative.FileOperationCreate => "CREATE",
+                SleepwalkerNative.FileOperationRead => "READ",
+                SleepwalkerNative.FileOperationWrite => "WRITE",
+                SleepwalkerNative.FileOperationClose => "CLOSE",
+                SleepwalkerNative.FileOperationCleanup => "CLEANUP",
+                SleepwalkerNative.FileOperationSetInformation => "SET_INFORMATION",
+                SleepwalkerNative.FileOperationQueryInformation => "QUERY_INFORMATION",
+                SleepwalkerNative.FileOperationDirectoryControl => "DIRECTORY_CONTROL",
+                SleepwalkerNative.FileOperationFsControl => "FS_CONTROL",
+                _ => "UNKNOWN"
+            };
+        }
+
+        private static string BuildFileSummaryPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return "<unknown>";
+            }
+
+            const int maxChars = 84;
+            if (path.Length <= maxChars)
+            {
+                return path;
+            }
+
+            return "..." + path[^maxChars..];
+        }
+
+        private void ResetFilesystemTimelineCluster()
+        {
+            _filesystemClusterOperationCounts.Clear();
+            _filesystemClusterSamplesByOperation.Clear();
+            _filesystemClusterTotal = 0;
+            _filesystemClusterWindowStartUtc = DateTime.MinValue;
+            _filesystemClusterLastSeenUtc = DateTime.MinValue;
+        }
+
+        private IReadOnlyList<TelemetryEvent> FlushFilesystemTimelineClusterIfNeeded(DateTime nowUtc, bool force)
+        {
+            if (_filesystemClusterTotal <= 0)
+            {
+                return Array.Empty<TelemetryEvent>();
+            }
+
+            if (!force && (nowUtc - _filesystemClusterLastSeenUtc) < FilesystemTimelineClusterIdleFlush)
+            {
+                return Array.Empty<TelemetryEvent>();
+            }
+
+            double windowMs = Math.Max(1, (_filesystemClusterLastSeenUtc - _filesystemClusterWindowStartUtc).TotalMilliseconds);
+            var emitted = new List<TelemetryEvent>(_filesystemClusterOperationCounts.Count);
+            foreach (var entry in _filesystemClusterOperationCounts.OrderByDescending(x => x.Value).ThenBy(x => x.Key))
+            {
+                if (entry.Value <= 0)
+                {
+                    continue;
+                }
+
+                uint operation = entry.Key;
+                int count = entry.Value;
+                string operationName = DescribeFileOperation(operation);
+                (uint Pid, uint Tid, string Path) sample = _filesystemClusterSamplesByOperation.TryGetValue(operation, out var found)
+                    ? found
+                    : (0u, 0u, "<unknown>");
+                string samplePath = string.IsNullOrWhiteSpace(sample.Path) ? "<unknown>" : sample.Path;
+                string summaryPath = BuildFileSummaryPath(samplePath);
+                emitted.Add(new TelemetryEvent
+                {
+                    TimestampUtc = _filesystemClusterLastSeenUtc,
+                    PID = unchecked((int)sample.Pid),
+                    TID = unchecked((int)sample.Tid),
+                    Group = "Filesystem",
+                    SubType = operationName,
+                    Summary = $"{operationName} x{count} pid={sample.Pid} path={summaryPath}",
+                    Details =
+                        $"windowStart={_filesystemClusterWindowStartUtc:O} windowEnd={_filesystemClusterLastSeenUtc:O} windowMs={windowMs:0} " +
+                        $"operation={operationName} count={count} clusterTotal={_filesystemClusterTotal} samplePid={sample.Pid} sampleTid={sample.Tid} samplePath={samplePath}"
+                });
+            }
+
+            ResetFilesystemTimelineCluster();
+            return emitted;
+        }
+
+        private IReadOnlyList<TelemetryEvent> AccumulateFilesystemTimelineCluster(IoctlParsedEvent record, DateTime nowUtc)
+        {
+            if (record.Type != SleepwalkerNative.EventTypeFileSystem)
+            {
+                return Array.Empty<TelemetryEvent>();
+            }
+
+            var emitted = new List<TelemetryEvent>();
+            if (_filesystemClusterTotal > 0 && (nowUtc - _filesystemClusterWindowStartUtc) >= FilesystemTimelineClusterWindow)
+            {
+                emitted.AddRange(FlushFilesystemTimelineClusterIfNeeded(nowUtc, force: true));
+            }
+
+            if (_filesystemClusterTotal == 0)
+            {
+                _filesystemClusterWindowStartUtc = nowUtc;
+            }
+
+            _filesystemClusterTotal += 1;
+            _filesystemClusterLastSeenUtc = nowUtc;
+            _filesystemClusterOperationCounts.TryGetValue(record.FileOperation, out int count);
+            _filesystemClusterOperationCounts[record.FileOperation] = count + 1;
+            if (!_filesystemClusterSamplesByOperation.ContainsKey(record.FileOperation))
+            {
+                _filesystemClusterSamplesByOperation[record.FileOperation] =
+                    (record.FileProcessPid,
+                     record.FileThreadId,
+                     string.IsNullOrWhiteSpace(record.FilePath) ? "<unknown>" : record.FilePath);
+            }
+
+            if (_filesystemClusterTotal >= FilesystemTimelineClusterFlushCount)
+            {
+                emitted.AddRange(FlushFilesystemTimelineClusterIfNeeded(nowUtc, force: true));
+            }
+
+            return emitted.Count == 0 ? Array.Empty<TelemetryEvent>() : emitted;
+        }
+
         private TelemetryEvent? MapIoctlRecord(IoctlParsedEvent record)
         {
             DateTime now = DateTime.UtcNow;
@@ -789,7 +971,17 @@ namespace SleepwalkerInterface
                 };
             }
 
+            if (record.Type == SleepwalkerNative.EventTypeFileSystem)
+            {
+                return null;
+            }
+
             return null;
+        }
+
+        private static IoctlParsedEvent? MapIoctlFilesystem(IoctlParsedEvent record)
+        {
+            return record.Type == SleepwalkerNative.EventTypeFileSystem ? record : null;
         }
 
         private static ThreadLifecycleEventSample? MapIoctlThreadLifecycle(IoctlParsedEvent record)
@@ -955,6 +1147,7 @@ namespace SleepwalkerInterface
             {
                 SleepwalkerNative.IpcEtwSourceSleepwalker => "Sleepwalker",
                 SleepwalkerNative.IpcEtwSourceThreatIntel => "ThreatIntel",
+                SleepwalkerNative.IpcEtwSourceKernelNetwork => "KernelNetwork",
                 _ => "Unknown"
             };
 
@@ -1053,7 +1246,8 @@ namespace SleepwalkerInterface
                 SleepwalkerNative.IpcEtwFamilyImage or
                 SleepwalkerNative.IpcEtwFamilyRegistry or
                 SleepwalkerNative.IpcEtwFamilyDetection or
-                SleepwalkerNative.IpcEtwFamilyThreatIntel =>
+                SleepwalkerNative.IpcEtwFamilyThreatIntel or
+                SleepwalkerNative.IpcEtwFamilySocket =>
                     NarrowPid(etw.ProcessId) ?? etw.EventProcessId,
                 _ => NarrowPid(etw.ProcessId) ?? NarrowPid(etw.CallerPid) ?? etw.EventProcessId
             };
@@ -1071,6 +1265,8 @@ namespace SleepwalkerInterface
                 SleepwalkerNative.IpcEtwFamilyThread or
                 SleepwalkerNative.IpcEtwFamilyProcess =>
                     NarrowPid(etw.ProcessId) ?? 0,
+                SleepwalkerNative.IpcEtwFamilySocket =>
+                    NarrowPid(etw.TargetPid) ?? NarrowPid(etw.ProcessId) ?? 0,
                 _ => NarrowPid(etw.TargetPid) ?? 0
             };
         }
@@ -1091,7 +1287,6 @@ namespace SleepwalkerInterface
                 SetExplorerHasData("ETW", EtwPaneHost.ItemCount > 0);
             }
 
-            string timelineGroup = "Sleepwalker-ETW";
             string detection = view.DetectionName;
             string displayDetection = BuildFallbackDetectionLabel(
                 detection,
@@ -1104,9 +1299,20 @@ namespace SleepwalkerInterface
             string eventName = view.EventName;
             uint actor = view.ActorPid;
             uint target = view.TargetPid;
-            string summary = !string.IsNullOrWhiteSpace(displayDetection)
-                ? $"{source}/{displayDetection} sev={view.Severity}"
-                : $"{source}/{eventName} sev={view.Severity}";
+            bool isSocketEvent = view.Family == SleepwalkerNative.IpcEtwFamilySocket ||
+                                 source.Equals("KernelNetwork", StringComparison.OrdinalIgnoreCase);
+            string socketOperation = string.IsNullOrWhiteSpace(view.Operation) ? eventName : view.Operation;
+            if (string.IsNullOrWhiteSpace(socketOperation))
+            {
+                socketOperation = $"OP{view.Opcode}";
+            }
+            string timelineGroup = isSocketEvent ? "Sockets" : "Sleepwalker-ETW";
+            string timelineSubtype = isSocketEvent ? socketOperation : eventName;
+            string summary = isSocketEvent
+                ? $"{socketOperation} pid={actor} task={view.Task} opcode={view.Opcode}"
+                : (!string.IsNullOrWhiteSpace(displayDetection)
+                    ? $"{source}/{displayDetection} sev={view.Severity}"
+                    : $"{source}/{eventName} sev={view.Severity}");
             string timelineSignature = $"{timelineGroup}|{eventName}|{actor}|{view.EventThreadId}|{summary}";
             bool duplicateTimelineEvent =
                 string.Equals(_lastEtwTimelineSignature, timelineSignature, StringComparison.OrdinalIgnoreCase) &&
@@ -1122,7 +1328,7 @@ namespace SleepwalkerInterface
                     PID = timelinePid,
                     TID = unchecked((int)view.EventThreadId),
                     Group = timelineGroup,
-                    SubType = eventName,
+                    SubType = timelineSubtype,
                     Summary = summary,
                     Details = view.Details
                 });
@@ -1260,6 +1466,7 @@ namespace SleepwalkerInterface
             internal ProcessRelationView? Relation { get; }
             internal HeuristicEventView? Heuristic { get; }
             internal ThreadLifecycleEventSample? ThreadLifecycle { get; }
+            internal IoctlParsedEvent? Filesystem { get; }
             internal BrokerEtwEventView? EtwView { get; }
             internal string? StatusLine { get; }
 
@@ -1269,6 +1476,7 @@ namespace SleepwalkerInterface
                 ProcessRelationView? relation,
                 HeuristicEventView? heuristic,
                 ThreadLifecycleEventSample? threadLifecycle,
+                IoctlParsedEvent? filesystem,
                 BrokerEtwEventView? etwView,
                 string? statusLine)
             {
@@ -1277,6 +1485,7 @@ namespace SleepwalkerInterface
                 Relation = relation;
                 Heuristic = heuristic;
                 ThreadLifecycle = threadLifecycle;
+                Filesystem = filesystem;
                 EtwView = etwView;
                 StatusLine = statusLine;
             }
@@ -1285,14 +1494,15 @@ namespace SleepwalkerInterface
                 TelemetryEvent? telemetry,
                 ProcessRelationView? relation,
                 HeuristicEventView? heuristic,
-                ThreadLifecycleEventSample? threadLifecycle)
-                => new(BackendUiWorkKind.Ioctl, telemetry, relation, heuristic, threadLifecycle, null, null);
+                ThreadLifecycleEventSample? threadLifecycle,
+                IoctlParsedEvent? filesystem)
+                => new(BackendUiWorkKind.Ioctl, telemetry, relation, heuristic, threadLifecycle, filesystem, null, null);
 
             internal static BackendUiWorkItem FromEtw(BrokerEtwEventView etwView)
-                => new(BackendUiWorkKind.Etw, null, null, null, null, etwView, null);
+                => new(BackendUiWorkKind.Etw, null, null, null, null, null, etwView, null);
 
             internal static BackendUiWorkItem FromStatus(string statusLine)
-                => new(BackendUiWorkKind.Status, null, null, null, null, null, statusLine);
+                => new(BackendUiWorkKind.Status, null, null, null, null, null, null, statusLine);
         }
 
         private void SaveIntelSessionState(int pid)
@@ -1304,6 +1514,7 @@ namespace SleepwalkerInterface
 
             _etwHistoryByPid[pid] = EtwPaneHost.SnapshotItems().Select(x => x.Clone()).ToList();
             _heuristicsHistoryByPid[pid] = HeuristicsPaneHost.SnapshotItems().Select(x => x.Clone()).ToList();
+            _filesystemHistoryByPid[pid] = FilesystemPaneHost.SnapshotItems().Select(x => x.Clone()).ToList();
             _relationsHistoryByPid[pid] = ProcessRelationsPaneHost.SnapshotItems().Select(x => x.Clone()).ToList();
         }
 
@@ -1315,12 +1526,16 @@ namespace SleepwalkerInterface
             IEnumerable<GroupedEventRow> heur = _heuristicsHistoryByPid.TryGetValue(pid, out var c)
                 ? c
                 : Array.Empty<GroupedEventRow>();
-            IEnumerable<GroupedEventRow> rel = _relationsHistoryByPid.TryGetValue(pid, out var d)
+            IEnumerable<GroupedEventRow> fs = _filesystemHistoryByPid.TryGetValue(pid, out var d)
                 ? d
+                : Array.Empty<GroupedEventRow>();
+            IEnumerable<GroupedEventRow> rel = _relationsHistoryByPid.TryGetValue(pid, out var e)
+                ? e
                 : Array.Empty<GroupedEventRow>();
 
             EtwPaneHost.LoadHistory(CompactGroupsForMemory(etw, 48));
             HeuristicsPaneHost.LoadHistory(CompactGroupsForMemory(heur, 48));
+            FilesystemPaneHost.LoadHistory(CompactGroupsForMemory(fs, 48));
             ProcessRelationsPaneHost.LoadHistory(CompactGroupsForMemory(rel, 48));
             if (EtwPaneHost.ItemCount > 0)
             {
@@ -1329,6 +1544,10 @@ namespace SleepwalkerInterface
             if (HeuristicsPaneHost.ItemCount > 0)
             {
                 FindExplorerItem("Heuristics")?.PushPreviewValue(HeuristicsPaneHost.TotalRawCount);
+            }
+            if (FilesystemPaneHost.ItemCount > 0)
+            {
+                FindExplorerItem("Filesystem")?.PushPreviewValue(FilesystemPaneHost.TotalRawCount);
             }
             if (ProcessRelationsPaneHost.ItemCount > 0)
             {

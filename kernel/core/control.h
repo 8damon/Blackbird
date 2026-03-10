@@ -19,6 +19,8 @@ VOID SLEEPWALKERControlPublishThreadEvent(_In_ UINT64 ProcessId, _In_ UINT64 Thr
                                           _In_ UINT32 Flags, _In_ UINT32 FrameCount,
                                           _In_reads_opt_(FrameCount) PVOID const *Frames);
 
+VOID SLEEPWALKERControlPublishFileEvent(_In_ const SLEEPWALKER_FILE_EVENT *FileEvent);
+
 BOOLEAN
 SLEEPWALKERControlSelfCheck(VOID);
 

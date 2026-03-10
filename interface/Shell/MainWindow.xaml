@@ -177,14 +177,15 @@
                 </Border>
 
                 <Grid Grid.Row="1" Margin="6,4,6,6">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
 
                     <ToolBarTray Background="Transparent"
                                  IsLocked="True"
-                                 VerticalAlignment="Top">
+                                 VerticalAlignment="Top"
+                                 Grid.Row="0">
                         <ToolBar Background="Transparent"
                                  BorderThickness="0"
                                  Padding="0">
@@ -213,6 +214,34 @@
                             <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Driver Start" Click="DriverStart_Click"/>
                             <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Driver Stop" Click="DriverStop_Click"/>
                             <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Controller" Click="ControllerRestart_Click"/>
+                            <Separator/>
+                            <TextBlock Text="View"
+                                       Margin="2,0,8,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource WinMutedTextBrush}"/>
+                            <ComboBox x:Name="ToolbarViewMenu"
+                                      Width="184"
+                                      Height="24"
+                                      Margin="0,0,6,0"
+                                      VerticalAlignment="Center"
+                                      DropDownOpened="ToolbarViewMenu_DropDownOpened"
+                                      SelectionChanged="ToolbarViewMenu_SelectionChanged"
+                                      SelectedIndex="0">
+                                <ComboBoxItem Content="Open Window..."/>
+                                <ComboBoxItem Content="Events Pane" Tag="events"/>
+                                <ComboBoxItem Content="Performance Pane" Tag="performance"/>
+                                <ComboBoxItem Content="ETW Pane" Tag="etw"/>
+                                <ComboBoxItem Content="Heuristics Pane" Tag="heuristics"/>
+                                <ComboBoxItem Content="Filesystem Pane" Tag="filesystem"/>
+                                <ComboBoxItem Content="Process Relations Pane" Tag="process-relations"/>
+                                <ComboBoxItem Content="IPC Uplink Pane" Tag="ipc-uplink"/>
+                                <ComboBoxItem Content="Event Log Window" Tag="event-log"/>
+                                <ComboBoxItem Content="ETW Inspector" Tag="inspector-etw"/>
+                                <ComboBoxItem Content="Heuristics Inspector" Tag="inspector-heuristics"/>
+                                <ComboBoxItem Content="Filesystem Inspector" Tag="inspector-filesystem"/>
+                                <ComboBoxItem Content="Process Relations Inspector" Tag="inspector-relations"/>
+                                <ComboBoxItem Content="Diagnostics Window" Tag="diagnostics"/>
+                            </ComboBox>
                             <Separator/>
                             <TextBlock Text="Time Travel"
                                        Margin="2,0,8,0"
@@ -249,27 +278,37 @@
                         </ToolBar>
                     </ToolBarTray>
 
-                    <StackPanel Grid.Column="1" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="18,0,0,0">
+                    <StackPanel Grid.Row="1"
+                                Orientation="Horizontal"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center"
+                                Margin="2,6,0,0">
                         <TextBox x:Name="PidBox" Visibility="Collapsed"/>
 
                         <Border Background="{Binding ElementName=ProcessStateBadge, Path=Background}"
                                 BorderBrush="{Binding ElementName=ProcessStateBadge, Path=BorderBrush}"
                                 BorderThickness="0"
                                 Padding="7,2"
-                                Margin="0,0,0,4">
+                                Margin="0,0,8,0"
+                                CornerRadius="2">
                             <TextBlock Text="{Binding ElementName=ProcessStateBlock, Path=Text}"
                                        Foreground="{Binding ElementName=ProcessStateBlock, Path=Foreground}"
-                                       FontWeight="SemiBold"/>
+                                       FontWeight="SemiBold"
+                                       FontSize="11"/>
                         </Border>
 
                         <TextBlock x:Name="StatusBlock"
                                    Text="Status: Disconnected"
-                                   Margin="0,0,0,4"
+                                   Margin="0,0,8,0"
                                    VerticalAlignment="Center"
+                                   FontSize="11"
+                                   TextTrimming="CharacterEllipsis"
                                    Foreground="{DynamicResource WinMutedTextBrush}"/>
                         <TextBlock x:Name="RangeBlock"
                                    Text="Range:"
                                    VerticalAlignment="Center"
+                                   FontSize="11"
+                                   TextTrimming="CharacterEllipsis"
                                    Foreground="{DynamicResource WinMutedTextBrush}"/>
                     </StackPanel>
                 </Grid>
@@ -586,6 +625,8 @@
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="2"/>
                         <RowDefinition Height="*"/>
+                        <RowDefinition Height="2"/>
+                        <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
                     <Border Grid.Row="0"
@@ -617,6 +658,20 @@
                                   VerticalAlignment="Stretch"/>
 
                     <Border Grid.Row="4"
+                            x:Name="FilesystemDockBorder"
+                            BorderBrush="{DynamicResource WinBorderBrush}"
+                            BorderThickness="1,0,1,0"
+                            Background="{DynamicResource WinPanelBrush}">
+                        <local:FilesystemPane x:Name="FilesystemPaneHost"/>
+                    </Border>
+
+                    <GridSplitter Grid.Row="5"
+                                  Height="2"
+                                  Background="{DynamicResource WinSubtleBorderBrush}"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch"/>
+
+                    <Border Grid.Row="6"
                             x:Name="ProcessRelationsDockBorder"
                             BorderBrush="{DynamicResource WinBorderBrush}"
                             BorderThickness="1,0,1,1"

@@ -24,7 +24,7 @@ Sleepwalker is built for:
 - endpoint telemetry review
 - evidence-heavy detection triage
 
-It captures process, thread, handle, image, registry, APC, and detection telemetry, then groups related activity into operator-facing detections and evidence views.
+It captures process, file, thread, handle, image, registry, network, APC, and detection telemetry, then groups related activity into operator-facing detections and evidence views.
 
 ## Why It Exists
 
@@ -49,8 +49,11 @@ It brings together:
 - ETW activity
 - heuristics
 - process relations
+- file access
 - backend/session state
 - time-travel controls for historical review
+- resource usage
+- network monitoring
 
 This is where an operator attaches to a target, watches activity arrive, and pivots into deeper evidence when something suspicious shows up.
 
@@ -99,6 +102,9 @@ Key views include:
 - **Process Relations**  
   See actor-to-target relationships such as suspicious opens, remote thread activity, and linked intent chains.
 
+- **File Inpsector**
+  See files accessed and created by the target.
+
 These views exist to support investigation, not decoration. Which is a rare design goal these days.
 
 ## Detection Coverage
@@ -106,6 +112,7 @@ These views exist to support investigation, not decoration. Which is a rare desi
 Representative detections include:
 
 - direct syscall suspect handle activity
+- file opens, reads, creations, special attributes
 - stack integrity anomalies on handle operations
 - remote thread creation
 - remote thread start in non-image executable memory

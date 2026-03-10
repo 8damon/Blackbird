@@ -206,6 +206,7 @@ namespace SleepwalkerInterface
         private void RefreshList()
         {
             int selectedPid = (ProcessGrid.SelectedItem as ProcessItem)?.Pid ?? 0;
+            int selectedIndex = ProcessGrid.SelectedIndex;
             var list = new List<ProcessItem>();
             var snapshot = QuerySystemProcessesFast();
             var presentPids = new HashSet<int>(snapshot.Select(s => s.Pid));
@@ -276,7 +277,7 @@ namespace SleepwalkerInterface
                 .ThenByDescending(x => x.CpuPercentValue)
                 .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase));
 
-            ApplyFilter();
+            ApplyFilter(selectedPid, selectedIndex);
             StartDeferredEnrichment(++_refreshGeneration);
 
             if (selectedPid > 0)
@@ -299,10 +300,16 @@ namespace SleepwalkerInterface
             _refreshTimer.Interval = TimeSpan.FromSeconds(sec);
         }
 
-        private void ApplyFilter()
+        private void ApplyFilter(int pinnedPid = 0, int pinnedIndex = -1)
         {
             if (!_isReady || ProcessGrid == null)
                 return;
+
+            if (pinnedPid <= 0 && ProcessGrid.SelectedItem is ProcessItem selected)
+            {
+                pinnedPid = selected.Pid;
+                pinnedIndex = ProcessGrid.SelectedIndex;
+            }
 
             string q = QuickSearchBox?.Text?.Trim() ?? "";
 
@@ -328,9 +335,31 @@ namespace SleepwalkerInterface
                 filtered = ApplyActiveSort(filtered);
             }
 
+            List<ProcessItem> filteredList = filtered.ToList();
+            if (pinnedPid > 0 && pinnedIndex >= 0)
+            {
+                int selectedPos = filteredList.FindIndex(x => x.Pid == pinnedPid);
+                if (selectedPos >= 0)
+                {
+                    ProcessItem pinned = filteredList[selectedPos];
+                    filteredList.RemoveAt(selectedPos);
+                    int targetIndex = Math.Min(pinnedIndex, filteredList.Count);
+                    filteredList.Insert(targetIndex, pinned);
+                }
+            }
+
             _view.Clear();
-            foreach (var item in filtered)
+            foreach (var item in filteredList)
                 _view.Add(item);
+
+            if (pinnedPid > 0)
+            {
+                ProcessItem? selectedAfter = _view.FirstOrDefault(x => x.Pid == pinnedPid);
+                if (selectedAfter != null)
+                {
+                    ProcessGrid.SelectedItem = selectedAfter;
+                }
+            }
         }
 
         private IEnumerable<ProcessItem> ApplyActiveSort(IEnumerable<ProcessItem> source)

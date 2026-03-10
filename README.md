@@ -54,6 +54,12 @@ It brings together:
 
 This is where an operator attaches to a target, watches activity arrive, and pivots into deeper evidence when something suspicious shows up.
 
+Operator UX behavior in this panel:
+
+- timeline timestamps stay layered above event markers for readability
+- horizontal timeline scrubber tracks true latest-event position during live follow
+- timeline event selection stays synced with the event log grid and persists across live updates when the event remains in-view
+
 ## Detection Chain
 
 The detection chain is the most important investigation view in the platform.

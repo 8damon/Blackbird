@@ -148,8 +148,8 @@ namespace SleepwalkerInterface
             {
                 DiskChart.SetSeries(new[]
                 {
-                    new ChartSeries("Read B/s", Brush(0xFF9A21), SeriesScale.AutoToViewMax, p => p.DiskReadBytesPerSec, ChartValueFormat.BytesPerSecond, smoothingAlpha: 0.14),
-                    new ChartSeries("Write B/s", Brush(0xFF4545), SeriesScale.AutoToViewMax, p => p.DiskWriteBytesPerSec, ChartValueFormat.BytesPerSecond, smoothingAlpha: 0.14),
+                    new ChartSeries("Read B/s", Brush(0xFF9A21), SeriesScale.AutoToViewMax, p => p.DiskReadBytesPerSec, ChartValueFormat.BytesPerSecond),
+                    new ChartSeries("Write B/s", Brush(0xFF4545), SeriesScale.AutoToViewMax, p => p.DiskWriteBytesPerSec, ChartValueFormat.BytesPerSecond),
                 });
             }
 

@@ -8,7 +8,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="32"/>
             <RowDefinition Height="2*"/>
-            <RowDefinition Height="20"/>
+            <RowDefinition Height="0"/>
             <RowDefinition x:Name="EventLogRow" Height="*"/>
         </Grid.RowDefinitions>
 
@@ -33,6 +33,14 @@
                        VerticalAlignment="Center"
                        FontWeight="SemiBold"
                        FontSize="12"/>
+
+            <TextBlock x:Name="HeaderStatsBlock"
+                       Grid.Column="1"
+                       Margin="0,0,8,0"
+                       VerticalAlignment="Center"
+                       Foreground="{DynamicResource WinMutedTextBrush}"
+                       Text="View 0 | Total 0 | 0.0/s"
+                       TextTrimming="CharacterEllipsis"/>
 
             <Button Grid.Column="2"
                     x:Name="BtnSettings"
@@ -66,31 +74,43 @@
                     Click="BtnClose_Click"/>
         </Grid>
 
-        <Border Grid.Row="1" BorderBrush="{DynamicResource WinSubtleBorderBrush}" BorderThickness="0,0,0,1">
-            <local:TimelineControl x:Name="EventTimeline"
-                                   ViewDurationSeconds="120"
-                                   ViewStartSeconds="0"/>
-        </Border>
+        <Grid Grid.Row="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="8"/>
+            </Grid.RowDefinitions>
 
-        <Grid Grid.Row="2" Background="{DynamicResource WinPanelBrush}">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="170"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-
-            <Border Grid.Column="0"
+            <Border Grid.Row="0"
                     BorderBrush="{DynamicResource WinSubtleBorderBrush}"
-                    BorderThickness="0,0,1,0"/>
+                    BorderThickness="0,0,0,1">
+                <local:TimelineControl x:Name="EventTimeline"
+                                       AxisHeight="30"
+                                       ViewDurationSeconds="120"
+                                       ViewStartSeconds="0"/>
+            </Border>
+
+            <ScrollBar x:Name="TimelineVerticalScroll"
+                       Grid.Row="0"
+                       Orientation="Vertical"
+                       Minimum="0"
+                       SmallChange="22"
+                       LargeChange="120"
+                       Visibility="Collapsed"
+                       Width="0"/>
 
             <ScrollBar x:Name="TimelineScroll"
-                       Grid.Column="1"
+                       Grid.Row="1"
                        Orientation="Horizontal"
                        Minimum="0"
                        SmallChange="1"
                        LargeChange="5"
-                       Background="{DynamicResource WinSubtleBorderBrush}"
-                       Margin="6,1,8,1"/>
+                       Height="7"
+                       VerticalAlignment="Stretch"
+                       Margin="176,0,6,0"
+                       Background="{DynamicResource WinSubtleBorderBrush}"/>
         </Grid>
+
+        <Border Grid.Row="2" Visibility="Collapsed"/>
 
         <Border x:Name="EventLogBorder"
                 Grid.Row="3"

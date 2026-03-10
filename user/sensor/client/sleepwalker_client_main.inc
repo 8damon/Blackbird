@@ -3,6 +3,7 @@ static void LoggerEmitIoctlRecord(_In_ const SLEEPWALKER_EVENT_RECORD *Record)
     char msg[2048];
     const SLEEPWALKER_HANDLE_EVENT *h;
     const SLEEPWALKER_THREAD_EVENT *t;
+    const SLEEPWALKER_FILE_EVENT *f;
 
     if (Record == NULL)
     {
@@ -44,6 +45,24 @@ static void LoggerEmitIoctlRecord(_In_ const SLEEPWALKER_EVENT_RECORD *Record)
                        (DWORD)t->CreatorPid, (DWORD)t->ProcessId, msg);
         return;
     }
+
+    if (Record->Header.Type == SleepwalkerEventTypeFileSystem)
+    {
+        if (!g_Logger.Policy.AllowIoctlFilesystem)
+        {
+            return;
+        }
+
+        f = &Record->Data.FileSystem;
+        (void)StringCchPrintfA(
+            msg, RTL_NUMBER_OF(msg),
+            "seq=%lu op=%u process=%llu thread=%llu status=0x%llX info=0x%llX major=%u minor=%u len=%llu offset=0x%llX flags=0x%08X",
+            (unsigned long)Record->Header.Sequence, f->Operation, (unsigned long long)f->ProcessId,
+            (unsigned long long)f->ThreadId, (unsigned long long)f->Status, (unsigned long long)f->Information,
+            f->MajorCode, f->MinorCode, (unsigned long long)f->Length, (unsigned long long)f->ByteOffset, f->Flags);
+        LoggerEmitJson(1u, "ioctl", "filesystem", (DWORD)f->ProcessId, 0, msg);
+        return;
+    }
 }
 
 static void LoggerEmitEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName)
@@ -82,6 +101,14 @@ static void LoggerEmitEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR Eve
         }
         (void)StringCchCopyA(provider, RTL_NUMBER_OF(provider), "ti");
     }
+    else if (IsEqualGUID(&Record->EventHeader.ProviderId, &SLEEPWALKERSC_PROVIDER_GUID_KERNEL_NETWORK))
+    {
+        if (!g_Logger.Policy.AllowEtwSleepwalker)
+        {
+            return;
+        }
+        (void)StringCchCopyA(provider, RTL_NUMBER_OF(provider), "socket");
+    }
     else
     {
         return;
@@ -93,6 +120,10 @@ static void LoggerEmitEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR Eve
     if (processId == 0)
     {
         processId = callerPid;
+    }
+    if (processId == 0)
+    {
+        processId = Record->EventHeader.ProcessId;
     }
     if (processId > 0 && processId <= 0xFFFFFFFFull)
     {
@@ -175,6 +206,7 @@ static void ResolveBrokerEtwActorTarget(_In_ const SLEEPWALKER_IPC_ETW_EVENT *Ev
     case SleepwalkerIpcEtwFamilyRegistry:
     case SleepwalkerIpcEtwFamilyDetection:
     case SleepwalkerIpcEtwFamilyThreatIntel:
+    case SleepwalkerIpcEtwFamilySocket:
         actorValue = Event->ProcessId;
         targetValue = Event->TargetPid;
         break;
@@ -230,6 +262,14 @@ static void LoggerEmitBrokerEtwEvent(_In_ const SLEEPWALKER_IPC_ETW_EVENT *Event
         }
         (void)StringCchCopyA(provider, RTL_NUMBER_OF(provider), "ti-broker");
     }
+    else if (Event->Source == SleepwalkerIpcEtwSourceKernelNetwork)
+    {
+        if (!g_Logger.Policy.AllowEtwSleepwalker)
+        {
+            return;
+        }
+        (void)StringCchCopyA(provider, RTL_NUMBER_OF(provider), "socket-broker");
+    }
     else
     {
         return;
@@ -264,6 +304,11 @@ static void LoggerEmitBrokerEtwEvent(_In_ const SLEEPWALKER_IPC_ETW_EVENT *Event
         {
             printf("\n[ETW-BROKER][TI] event=%s task=%u actor=%lu target=%lu\n", eventNameUtf8, (unsigned)Event->Task,
                    (unsigned long)actorPid, (unsigned long)targetPid);
+        }
+        else if (Event->Source == SleepwalkerIpcEtwSourceKernelNetwork)
+        {
+            printf("\n[ETW-BROKER][SOCKET] event=%s task=%u opcode=%u actor=%lu target=%lu\n", eventNameUtf8,
+                   (unsigned)Event->Task, (unsigned)Event->Opcode, (unsigned long)actorPid, (unsigned long)targetPid);
         }
     }
 
@@ -664,6 +709,10 @@ int __cdecl main(int argc, char **argv)
         else if (record.Header.Type == SleepwalkerEventTypeThread)
         {
             PrintThreadEvent(&record.Data.Thread, record.Header.Sequence);
+        }
+        else if (record.Header.Type == SleepwalkerEventTypeFileSystem)
+        {
+            PrintFileEvent(&record.Data.FileSystem, record.Header.Sequence);
         }
     }
 

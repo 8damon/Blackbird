@@ -81,7 +81,8 @@ typedef enum _SLEEPWALKER_IPC_ETW_SOURCE
 {
     SleepwalkerIpcEtwSourceUnknown = 0,
     SleepwalkerIpcEtwSourceSleepwalker = 1,
-    SleepwalkerIpcEtwSourceThreatIntel = 2
+    SleepwalkerIpcEtwSourceThreatIntel = 2,
+    SleepwalkerIpcEtwSourceKernelNetwork = 3
 } SLEEPWALKER_IPC_ETW_SOURCE;
 
 #define SLEEPWALKER_IPC_MAX_ETW_EVENT_NAME 96
@@ -105,7 +106,8 @@ typedef enum _SLEEPWALKER_IPC_ETW_FAMILY
     SleepwalkerIpcEtwFamilyRegistry = 5,
     SleepwalkerIpcEtwFamilyApc = 6,
     SleepwalkerIpcEtwFamilyDetection = 7,
-    SleepwalkerIpcEtwFamilyThreatIntel = 8
+    SleepwalkerIpcEtwFamilyThreatIntel = 8,
+    SleepwalkerIpcEtwFamilySocket = 9
 } SLEEPWALKER_IPC_ETW_FAMILY;
 
 #define SLEEPWALKER_IPC_ETW_FLAG_HANDLE_EXEC_PROTECT 0x00000001u

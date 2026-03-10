@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="./diagram/MAIN_INTERFACE.png" width="980" alt="Sleepwalker main interface" />
+  <img src="./diagram/SW_INTERFACE_ULTRAWIDE.png" width="980" alt="Sleepwalker main interface" />
 </p>
 
 ## What Sleepwalker Is For
@@ -24,7 +24,7 @@ Sleepwalker is built for:
 - endpoint telemetry review
 - evidence-heavy detection triage
 
-It captures process, thread, handle, image, registry, APC, and detection telemetry, then groups related activity into operator-facing detections and evidence views.
+It captures process, file, thread, handle, image, registry, network, APC, and detection telemetry, then groups related activity into operator-facing detections and evidence views.
 
 ## Why It Exists
 
@@ -49,10 +49,19 @@ It brings together:
 - ETW activity
 - heuristics
 - process relations
+- file access
 - backend/session state
 - time-travel controls for historical review
+- resource usage
+- network monitoring
 
 This is where an operator attaches to a target, watches activity arrive, and pivots into deeper evidence when something suspicious shows up.
+
+Operator UX behavior in this panel:
+
+- timeline timestamps stay layered above event markers for readability
+- horizontal timeline scrubber tracks true latest-event position during live follow
+- timeline event selection stays synced with the event log grid and persists across live updates when the event remains in-view
 
 ## Detection Chain
 
@@ -93,6 +102,9 @@ Key views include:
 - **Process Relations**  
   See actor-to-target relationships such as suspicious opens, remote thread activity, and linked intent chains.
 
+- **File Inpsector**
+  See files accessed and created by the target.
+
 These views exist to support investigation, not decoration. Which is a rare design goal these days.
 
 ## Detection Coverage
@@ -100,6 +112,7 @@ These views exist to support investigation, not decoration. Which is a rare desi
 Representative detections include:
 
 - direct syscall suspect handle activity
+- file opens, reads, creations, special attributes
 - stack integrity anomalies on handle operations
 - remote thread creation
 - remote thread start in non-image executable memory

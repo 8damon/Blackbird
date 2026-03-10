@@ -478,10 +478,41 @@ namespace SleepwalkerInterface
             PerformanceSample sample = _historySamples[index];
             _lastSample = sample;
 
-            TopThreads.Clear();
-            foreach (ThreadUsageSample thread in sample.TopThreads.Take(14))
+            int selectedThreadTid = 0;
+            int selectedThreadIndex = -1;
+            if (ThreadsGrid?.SelectedItem is ThreadUsageRow selectedThread)
             {
-                TopThreads.Add(new ThreadUsageRow(thread));
+                selectedThreadTid = selectedThread.Tid;
+                selectedThreadIndex = ThreadsGrid.SelectedIndex;
+            }
+
+            var rebuiltThreads = sample.TopThreads
+                .Take(14)
+                .Select(thread => new ThreadUsageRow(thread))
+                .ToList();
+            if (selectedThreadTid > 0 && selectedThreadIndex >= 0 && selectedThreadIndex < rebuiltThreads.Count)
+            {
+                int selectedIndexInNew = rebuiltThreads.FindIndex(x => x.Tid == selectedThreadTid);
+                if (selectedIndexInNew >= 0 && selectedIndexInNew != selectedThreadIndex)
+                {
+                    ThreadUsageRow pinned = rebuiltThreads[selectedIndexInNew];
+                    rebuiltThreads.RemoveAt(selectedIndexInNew);
+                    rebuiltThreads.Insert(selectedThreadIndex, pinned);
+                }
+            }
+
+            TopThreads.Clear();
+            foreach (ThreadUsageRow thread in rebuiltThreads)
+            {
+                TopThreads.Add(thread);
+            }
+            if (selectedThreadTid > 0 && ThreadsGrid != null)
+            {
+                ThreadUsageRow? selectedAfter = TopThreads.FirstOrDefault(x => x.Tid == selectedThreadTid);
+                if (selectedAfter != null)
+                {
+                    ThreadsGrid.SelectedItem = selectedAfter;
+                }
             }
 
             MemoryMetrics.Clear();

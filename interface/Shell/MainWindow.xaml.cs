@@ -21,6 +21,7 @@ namespace SleepwalkerInterface
         private readonly ObservableCollection<TelemetryEvent> _focusedEvents = new();
         private const int MaxTimelineEvents = 50000;
         private const int TimelineTrimBatch = 512;
+        private const double DefaultTimelineViewDurationSeconds = 120;
         private bool _viewportRefreshPending;
         private DateTime _latestEventTimestampUtc;
 
@@ -65,7 +66,10 @@ namespace SleepwalkerInterface
         private readonly DispatcherTimer _processStateRefreshTimer;
         private bool _scrollSyncPending;
         private bool _topTimeTravelSyncing;
+        private bool _toolbarViewMenuSyncing;
         private bool _followLiveTimeline = true;
+        private bool _eventSelectionSyncing;
+        private EventSelectionKey? _selectedEventAnchor;
         private double _pendingScrollStartSeconds;
         private DateTime _scopeStatusCacheUtc;
         private int _scopeStatusCachePid;
@@ -116,8 +120,8 @@ namespace SleepwalkerInterface
             PidBox.Text = string.Empty;
             _samplerPid = 0;
 
-            _captureStartUtc = DateTime.UtcNow;
-            _latestEventTimestampUtc = _captureStartUtc;
+            _captureStartUtc = AnchorCaptureStartUtc(DefaultTimelineViewDurationSeconds);
+            _latestEventTimestampUtc = DateTime.UtcNow;
 
             // Bind grid to focused items
             EventsPaneHost.Grid.ItemsSource = _focusedEvents;
@@ -126,7 +130,7 @@ namespace SleepwalkerInterface
 
             // Timeline init
             EventsPaneHost.Timeline.CaptureStartUtc = _captureStartUtc;
-            EventsPaneHost.Timeline.ViewDurationSeconds = 120;
+            EventsPaneHost.Timeline.ViewDurationSeconds = DefaultTimelineViewDurationSeconds;
             EventsPaneHost.Timeline.ViewStartSeconds = 0;
 
             // Timeline interactions
@@ -165,6 +169,8 @@ namespace SleepwalkerInterface
             HeuristicsPaneHost.FloatRequested += (_, __) => ToggleHeuristicsFloatDock();
             HeuristicsPaneHost.CloseRequested += (_, __) => HideHeuristicsPane();
             HeuristicsPaneHost.InspectRequested += (_, __) => OpenHeuristicsInspector();
+            FilesystemPaneHost.CloseRequested += (_, __) => HideFilesystemPane();
+            FilesystemPaneHost.InspectRequested += (_, __) => OpenFilesystemInspector();
             ProcessRelationsPaneHost.CloseRequested += (_, __) => HideProcessRelationsPane();
             ProcessRelationsPaneHost.InspectRequested += (_, __) => OpenProcessRelationsInspector();
             IpcUplinkPaneHost.CloseRequested += (_, __) => HideIpcUplinkPane();
@@ -178,6 +184,7 @@ namespace SleepwalkerInterface
             UpdateScrollBar();
             FocusViewport();
             UpdateTopTimeTravelBar();
+            RebuildToolbarViewMenuOptions();
 
             // Performance sampler + UI sync
             _perf = new PerformanceSampler();
@@ -258,6 +265,7 @@ namespace SleepwalkerInterface
             _explorer.Add(new GraphExplorerItem("Performance", new SolidColorBrush(Color.FromRgb(0x58, 0xB6, 0x58))) { IsEnabled = true });
             _explorer.Add(new GraphExplorerItem("ETW", new SolidColorBrush(Color.FromRgb(0xD2, 0x89, 0x34))) { IsEnabled = true });
             _explorer.Add(new GraphExplorerItem("Heuristics", new SolidColorBrush(Color.FromRgb(0xD2, 0x55, 0x55))) { IsEnabled = true });
+            _explorer.Add(new GraphExplorerItem("Filesystem", new SolidColorBrush(Color.FromRgb(0x45, 0x8E, 0x7A))) { IsEnabled = true });
             _explorer.Add(new GraphExplorerItem("Process Relations", new SolidColorBrush(Color.FromRgb(0xD2, 0xB8, 0x55))) { IsEnabled = true });
             _explorer.Add(new GraphExplorerItem("IPC Uplink", new SolidColorBrush(Color.FromRgb(0x4A, 0xC1, 0xC6)))
             {
@@ -306,6 +314,7 @@ namespace SleepwalkerInterface
             SetExplorerHasData("Performance", _hasPerformanceData || (_currentSession?.PerformanceHistory.Count ?? 0) > 0);
             SetExplorerHasData("ETW", EtwPaneHost.ItemCount > 0);
             SetExplorerHasData("Heuristics", HeuristicsPaneHost.ItemCount > 0);
+            SetExplorerHasData("Filesystem", FilesystemPaneHost.ItemCount > 0);
             SetExplorerHasData("Process Relations", ProcessRelationsPaneHost.ItemCount > 0);
             SetExplorerHasData("IPC Uplink", _hasIpcUplinkData);
         }
@@ -317,6 +326,7 @@ namespace SleepwalkerInterface
             bool showIpcUplink = _explorer.FirstOrDefault(x => x.Name == "IPC Uplink")?.IsEnabled ?? false;
             bool showEtw = _explorer.FirstOrDefault(x => x.Name == "ETW")?.IsEnabled ?? true;
             bool showHeuristics = _explorer.FirstOrDefault(x => x.Name == "Heuristics")?.IsEnabled ?? true;
+            bool showFilesystem = _explorer.FirstOrDefault(x => x.Name == "Filesystem")?.IsEnabled ?? true;
             bool showRelations = _explorer.FirstOrDefault(x => x.Name == "Process Relations")?.IsEnabled ?? true;
 
             if (!showEvents && _eventsFloatWindow != null)
@@ -334,6 +344,7 @@ namespace SleepwalkerInterface
             bool showPerformanceContent = showPerf && _performancePaneVisible && !_performancePaneFloating;
             bool showEtwContent = showEtw && !_etwPaneFloating;
             bool showHeuristicsContent = showHeuristics && !_heuristicsPaneFloating;
+            bool showFilesystemContent = showFilesystem;
             bool showRelationsContent = showRelations;
 
             EventsDockBorder.Visibility = showEventsContent ? Visibility.Visible : Visibility.Collapsed;
@@ -354,6 +365,7 @@ namespace SleepwalkerInterface
 
             EtwDockBorder.Visibility = showEtwContent ? Visibility.Visible : Visibility.Collapsed;
             HeuristicsDockBorder.Visibility = showHeuristicsContent ? Visibility.Visible : Visibility.Collapsed;
+            FilesystemDockBorder.Visibility = showFilesystemContent ? Visibility.Visible : Visibility.Collapsed;
             ProcessRelationsDockBorder.Visibility = showRelationsContent ? Visibility.Visible : Visibility.Collapsed;
             IpcUplinkDockBorder.Visibility = showIpcUplink ? Visibility.Visible : Visibility.Collapsed;
             IpcUplinkColumn.Width = showIpcUplink ? new GridLength(380) : new GridLength(0);
@@ -364,14 +376,17 @@ namespace SleepwalkerInterface
                                (Grid.GetRow(HeuristicsDockBorder) == 0 && showHeuristicsContent);
             bool row2Visible = (Grid.GetRow(EtwDockBorder) == 2 && showEtwContent) ||
                                (Grid.GetRow(HeuristicsDockBorder) == 2 && showHeuristicsContent);
-            bool row4Visible = showRelationsContent;
+            bool row4Visible = showFilesystemContent;
+            bool row6Visible = showRelationsContent;
             IntelligenceDock.RowDefinitions[0].Height = row0Visible ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
             IntelligenceDock.RowDefinitions[2].Height = row2Visible ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
             IntelligenceDock.RowDefinitions[4].Height = row4Visible ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            IntelligenceDock.RowDefinitions[6].Height = row6Visible ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
             IntelligenceDock.RowDefinitions[1].Height = (row0Visible && row2Visible) ? new GridLength(2) : new GridLength(0);
             IntelligenceDock.RowDefinitions[3].Height = (row2Visible && row4Visible) ? new GridLength(2) : new GridLength(0);
+            IntelligenceDock.RowDefinitions[5].Height = (row4Visible && row6Visible) ? new GridLength(2) : new GridLength(0);
 
-            bool showIntel = row0Visible || row2Visible || row4Visible;
+            bool showIntel = row0Visible || row2Visible || row4Visible || row6Visible;
             IntelligenceColumn.Width = showIntel ? new GridLength(560) : new GridLength(0);
             IntelligenceSplitterColumn.Width = showIntel ? new GridLength(2) : new GridLength(0);
             IntelligenceSplitter.Visibility = showIntel ? Visibility.Visible : Visibility.Collapsed;
@@ -430,6 +445,29 @@ namespace SleepwalkerInterface
         {
             if (pid <= 0 || _perf == null)
                 return;
+
+            if (_currentSession != null &&
+                _currentSession.Pid == pid &&
+                _currentSession.Events.Count == 0 &&
+                _currentSession.PerformanceHistory.Count == 0 &&
+                _currentSession.ThreadLifecycleHistory.Count == 0)
+            {
+                double viewDuration = Math.Max(1, EventsPaneHost.Timeline.ViewDurationSeconds);
+                _captureStartUtc = AnchorCaptureStartUtc(viewDuration);
+                _latestEventTimestampUtc = DateTime.UtcNow;
+                _currentSession.CaptureStartUtc = _captureStartUtc;
+                _currentSession.ViewDurationSeconds = viewDuration;
+                _currentSession.ViewStartSeconds = 0;
+
+                EventsPaneHost.Timeline.CaptureStartUtc = _captureStartUtc;
+                EventsPaneHost.Timeline.ViewDurationSeconds = viewDuration;
+                EventsPaneHost.Timeline.ViewStartSeconds = 0;
+                EventsPaneHost.Scroll.Value = 0;
+                UpdateScrollBar();
+                FocusViewport();
+                PerformancePaneHost.SetCaptureStart(_captureStartUtc);
+                SyncPerformanceViewToTimeline();
+            }
 
             _perf.SetTargetPid(pid);
             _perf.Start();
@@ -545,6 +583,7 @@ namespace SleepwalkerInterface
             SaveCurrentSessionState();
             EtwPaneHost.TrimDetailPayload(48);
             HeuristicsPaneHost.TrimDetailPayload(48);
+            FilesystemPaneHost.TrimDetailPayload(48);
             ProcessRelationsPaneHost.TrimDetailPayload(48);
 
             StopTargetExitWatcher();
@@ -674,11 +713,16 @@ namespace SleepwalkerInterface
             var existing = _processTabs.FirstOrDefault(t => t.Pid == pid);
             if (existing == null)
             {
+                double initialDuration = EventsPaneHost?.Timeline != null
+                    ? Math.Clamp(EventsPaneHost.Timeline.ViewDurationSeconds, 1, 120)
+                    : DefaultTimelineViewDurationSeconds;
                 existing = new ProcessSessionTab
                 {
                     Pid = pid,
                     Title = NormalizeSessionTitle(title),
-                    CaptureStartUtc = DateTime.UtcNow
+                    CaptureStartUtc = AnchorCaptureStartUtc(initialDuration),
+                    ViewDurationSeconds = initialDuration,
+                    ViewStartSeconds = 0
                 };
                 _processTabs.Add(existing);
             }
@@ -727,14 +771,25 @@ namespace SleepwalkerInterface
         private void RestoreSessionState(ProcessSessionTab tab)
         {
             EnsureSessionMaterialized(tab);
-            _captureStartUtc = tab.CaptureStartUtc == default ? DateTime.UtcNow : tab.CaptureStartUtc;
+            double restoredDuration = Math.Clamp(tab.ViewDurationSeconds <= 0 ? DefaultTimelineViewDurationSeconds : tab.ViewDurationSeconds, 1, 120);
+            bool freshSession = !tab.OfflineSnapshot &&
+                                tab.Events.Count == 0 &&
+                                tab.PerformanceHistory.Count == 0 &&
+                                tab.ThreadLifecycleHistory.Count == 0;
+            if (freshSession)
+            {
+                tab.CaptureStartUtc = AnchorCaptureStartUtc(restoredDuration);
+                tab.ViewStartSeconds = 0;
+            }
+
+            _captureStartUtc = tab.CaptureStartUtc == default ? AnchorCaptureStartUtc(restoredDuration) : tab.CaptureStartUtc;
             _laneFocusKey = tab.LaneFocusKey;
 
             _allEvents.Clear();
             _focusedEvents.Clear();
             EventsPaneHost.Timeline.Items.Clear();
             EventsPaneHost.Timeline.ClearAllLaneFilters();
-            EventsPaneHost.Timeline.SelectedEvent = null;
+            ClearSelectedEvent();
 
             foreach (var ev in tab.Events.OrderBy(x => x.TimestampUtc))
             {
@@ -745,7 +800,7 @@ namespace SleepwalkerInterface
             _latestEventTimestampUtc = _allEvents.Count > 0 ? _allEvents[^1].TimestampUtc : _captureStartUtc;
 
             EventsPaneHost.Timeline.CaptureStartUtc = _captureStartUtc;
-            EventsPaneHost.Timeline.ViewDurationSeconds = Math.Clamp(tab.ViewDurationSeconds, 1, 120);
+            EventsPaneHost.Timeline.ViewDurationSeconds = restoredDuration;
             EventsPaneHost.Timeline.ViewStartSeconds = Math.Max(0, tab.ViewStartSeconds);
             UpdateScrollBar();
             EventsPaneHost.Scroll.Value = Math.Min(EventsPaneHost.Scroll.Maximum, EventsPaneHost.Timeline.ViewStartSeconds);
@@ -959,7 +1014,8 @@ namespace SleepwalkerInterface
         // -------------------------------
         private void Scroll_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            double maxStart = Math.Max(0, EventsPaneHost.Scroll.Maximum - EventsPaneHost.Scroll.ViewportSize);
+            double viewport = Math.Max(1, EventsPaneHost.Scroll.ViewportSize);
+            double maxStart = ComputeTimelineMaxStart(viewport);
             double clamped = Math.Max(0, Math.Min(maxStart, EventsPaneHost.Scroll.Value));
             _followLiveTimeline = maxStart <= 0.001 || Math.Abs(clamped - maxStart) < 0.25;
             _pendingScrollStartSeconds = clamped;
@@ -974,7 +1030,8 @@ namespace SleepwalkerInterface
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 _scrollSyncPending = false;
-                double replayMaxStart = Math.Max(0, EventsPaneHost.Scroll.Maximum - EventsPaneHost.Scroll.ViewportSize);
+                double replayViewport = Math.Max(1, EventsPaneHost.Scroll.ViewportSize);
+                double replayMaxStart = ComputeTimelineMaxStart(replayViewport);
                 double replayStart = Math.Max(0, Math.Min(replayMaxStart, _pendingScrollStartSeconds));
                 EventsPaneHost.Timeline.ViewStartSeconds = replayStart;
                 FocusViewport();
@@ -1005,13 +1062,12 @@ namespace SleepwalkerInterface
             }
 
             double duration = Math.Max(1, EventsPaneHost.Timeline.ViewDurationSeconds);
-            double maxValue = Math.Max(duration, totalSeconds);
+            double maxStart = Math.Max(0, totalSeconds - duration);
             EventsPaneHost.Scroll.ViewportSize = duration;
-            EventsPaneHost.Scroll.Maximum = maxValue;
+            EventsPaneHost.Scroll.Maximum = maxStart;
             EventsPaneHost.Scroll.SmallChange = Math.Max(1, duration / 20.0);
             EventsPaneHost.Scroll.LargeChange = Math.Max(1, duration * 0.8);
 
-            double maxStart = Math.Max(0, maxValue - duration);
             if (EventsPaneHost.Timeline.ViewStartSeconds > maxStart)
             {
                 EventsPaneHost.Timeline.ViewStartSeconds = maxStart;
@@ -1029,6 +1085,7 @@ namespace SleepwalkerInterface
         {
             var viewStart = _captureStartUtc + TimeSpan.FromSeconds(EventsPaneHost.Timeline.ViewStartSeconds);
             var viewEnd = viewStart + TimeSpan.FromSeconds(EventsPaneHost.Timeline.ViewDurationSeconds);
+            var selectedAnchor = CaptureSelectedEventAnchor();
 
             double durationSeconds = Math.Max(1, (viewEnd - viewStart).TotalSeconds);
             RangeBlock.Text = $"Range {viewStart:HH:mm:ss} | {viewEnd:HH:mm:ss}  ({durationSeconds:0}s)";
@@ -1037,6 +1094,8 @@ namespace SleepwalkerInterface
             if (_allEvents.Count == 0)
             {
                 SetExplorerHasData("Events", false);
+                EventsPaneHost.SetHeaderStats("View 0 | Total 0 | 0.0/s");
+                ClearSelectedEvent();
                 UpdateDetachedEventLogWindow();
                 return;
             }
@@ -1053,8 +1112,12 @@ namespace SleepwalkerInterface
                 _focusedEvents.Add(ev);
             }
 
+            RestoreSelectedEventInFocusedView(selectedAnchor);
             FindExplorerItem("Events")?.PushPreviewValue(_focusedEvents.Count);
             SetExplorerHasData("Events", _allEvents.Count > 0);
+            double viewSeconds = Math.Max(1.0, EventsPaneHost.Timeline.ViewDurationSeconds);
+            double rate = _focusedEvents.Count / viewSeconds;
+            EventsPaneHost.SetHeaderStats($"View {_focusedEvents.Count} | Total {_allEvents.Count} | {rate:0.0}/s");
             UpdateDetachedEventLogWindow();
             UpdateTopTimeTravelBar();
         }
@@ -1067,11 +1130,7 @@ namespace SleepwalkerInterface
             }
 
             double viewport = Math.Max(1, EventsPaneHost.Scroll.ViewportSize);
-            double lastEventSeconds = _allEvents.Count > 0
-                ? Math.Max(0, (_allEvents[^1].TimestampUtc - _captureStartUtc).TotalSeconds)
-                : 0;
-            double maximum = Math.Max(viewport, Math.Max(EventsPaneHost.Scroll.Maximum, lastEventSeconds));
-            double maxStart = Math.Max(0, maximum - viewport);
+            double maxStart = ComputeTimelineMaxStart(viewport);
             double start = Math.Max(0, Math.Min(maxStart, EventsPaneHost.Timeline.ViewStartSeconds));
 
             _topTimeTravelSyncing = true;
@@ -1096,7 +1155,7 @@ namespace SleepwalkerInterface
             }
 
             double viewport = Math.Max(1, EventsPaneHost.Scroll.ViewportSize);
-            double maxStart = Math.Max(0, EventsPaneHost.Scroll.Maximum - viewport);
+            double maxStart = ComputeTimelineMaxStart(viewport);
             double targetStart = Math.Max(0, Math.Min(maxStart, e.NewValue));
             _followLiveTimeline = maxStart <= 0.001 || Math.Abs(targetStart - maxStart) < 0.25;
             EventsPaneHost.Scroll.Value = targetStart;
@@ -1113,7 +1172,7 @@ namespace SleepwalkerInterface
             }
 
             double viewport = Math.Max(1, EventsPaneHost.Scroll.ViewportSize);
-            double maxStart = Math.Max(0, EventsPaneHost.Scroll.Maximum - viewport);
+            double maxStart = ComputeTimelineMaxStart(viewport);
             double current = EventsPaneHost.Scroll.Value;
             double target = Math.Max(0, Math.Min(maxStart, current + secondsDelta));
             _followLiveTimeline = maxStart <= 0.001 || Math.Abs(target - maxStart) < 0.25;
@@ -1142,12 +1201,28 @@ namespace SleepwalkerInterface
                 UpdateScrollBar();
                 if (_followLiveTimeline && EventsPaneHost?.Scroll != null)
                 {
-                    double maxStart = Math.Max(0, EventsPaneHost.Scroll.Maximum - EventsPaneHost.Scroll.ViewportSize);
+                    double viewport = Math.Max(1, EventsPaneHost.Scroll.ViewportSize);
+                    double maxStart = ComputeTimelineMaxStart(viewport);
                     EventsPaneHost.Timeline.ViewStartSeconds = maxStart;
                     EventsPaneHost.Scroll.Value = maxStart;
                 }
                 FocusViewport();
             }), System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        private double ComputeTimelineMaxStart(double viewportSeconds)
+        {
+            double viewport = Math.Max(1, viewportSeconds);
+            double lastEventSeconds = _allEvents.Count > 0
+                ? Math.Max(0, (_allEvents[^1].TimestampUtc - _captureStartUtc).TotalSeconds)
+                : 0;
+            return Math.Max(0, lastEventSeconds - viewport);
+        }
+
+        private static DateTime AnchorCaptureStartUtc(double viewDurationSeconds)
+        {
+            double seconds = Math.Max(1, viewDurationSeconds);
+            return DateTime.UtcNow - TimeSpan.FromSeconds(seconds);
         }
 
         private int LowerBoundEventIndex(DateTime timestampUtc)
@@ -1300,20 +1375,126 @@ namespace SleepwalkerInterface
             _ = e;
         }
 
+        private EventSelectionKey? CaptureSelectedEventAnchor()
+        {
+            if (_eventSelectionSyncing)
+            {
+                return _selectedEventAnchor;
+            }
+
+            if (EventsPaneHost.Grid.SelectedItem is TelemetryEvent selectedInGrid)
+            {
+                return new EventSelectionKey(selectedInGrid);
+            }
+
+            if (EventsPaneHost.Timeline.SelectedEvent is TelemetryEvent selectedInTimeline)
+            {
+                return new EventSelectionKey(selectedInTimeline);
+            }
+
+            return _selectedEventAnchor;
+        }
+
+        private void RestoreSelectedEventInFocusedView(EventSelectionKey? preferred)
+        {
+            if (preferred is not EventSelectionKey key || _focusedEvents.Count == 0)
+            {
+                if (preferred == null)
+                {
+                    ClearSelectedEvent();
+                }
+                return;
+            }
+
+            TelemetryEvent? matched = _focusedEvents.FirstOrDefault(ev => key.Matches(ev));
+            if (matched != null)
+            {
+                ApplySelectedEvent(matched, scrollIntoView: false);
+                return;
+            }
+
+            if (_selectedEventAnchor.HasValue && !_selectedEventAnchor.Value.Equals(key))
+            {
+                TelemetryEvent? fallback = _focusedEvents.FirstOrDefault(ev => _selectedEventAnchor.Value.Matches(ev));
+                if (fallback != null)
+                {
+                    ApplySelectedEvent(fallback, scrollIntoView: false);
+                }
+            }
+        }
+
+        private void ApplySelectedEvent(TelemetryEvent? selected, bool scrollIntoView)
+        {
+            if (EventsPaneHost?.Grid == null || EventsPaneHost?.Timeline == null)
+            {
+                return;
+            }
+
+            _eventSelectionSyncing = true;
+            try
+            {
+                EventsPaneHost.Timeline.SelectedEvent = selected;
+                EventsPaneHost.Grid.SelectedItem = selected;
+                if (selected != null)
+                {
+                    UpdateSelectedEventAnchor(selected);
+                    if (scrollIntoView)
+                    {
+                        EventsPaneHost.Grid.ScrollIntoView(selected);
+                    }
+                }
+            }
+            finally
+            {
+                _eventSelectionSyncing = false;
+            }
+        }
+
+        private void UpdateSelectedEventAnchor(TelemetryEvent selected)
+        {
+            _selectedEventAnchor = new EventSelectionKey(selected);
+        }
+
+        private void ClearSelectedEvent()
+        {
+            if (EventsPaneHost?.Grid == null || EventsPaneHost?.Timeline == null)
+            {
+                _selectedEventAnchor = null;
+                return;
+            }
+
+            _eventSelectionSyncing = true;
+            try
+            {
+                EventsPaneHost.Grid.SelectedItem = null;
+                EventsPaneHost.Timeline.SelectedEvent = null;
+                _selectedEventAnchor = null;
+            }
+            finally
+            {
+                _eventSelectionSyncing = false;
+            }
+        }
+
         private void Timeline_SelectedEventChanged(object? sender, TelemetryEventSelectedEventArgs e)
         {
+            if (_eventSelectionSyncing)
+                return;
+
             if (e.Selected == null)
                 return;
 
-            EventsPaneHost.Grid.SelectedItem = e.Selected;
-            EventsPaneHost.Grid.ScrollIntoView(e.Selected);
+            ApplySelectedEvent(e.Selected, scrollIntoView: true);
         }
 
         private void Grid_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_eventSelectionSyncing)
+                return;
+
             if (EventsPaneHost.Grid.SelectedItem is TelemetryEvent te)
             {
-                EventsPaneHost.Timeline.SelectedEvent = te;
+                ApplySelectedEvent(te, scrollIntoView: false);
             }
         }
 
@@ -1359,10 +1540,56 @@ namespace SleepwalkerInterface
             ApplyDockVisibilityFromExplorer();
         }
 
+        private void HideFilesystemPane()
+        {
+            var fs = FindExplorerItem("Filesystem");
+            if (fs != null) fs.IsEnabled = false;
+            ApplyDockVisibilityFromExplorer();
+        }
+
         private void HideProcessRelationsPane()
         {
             var rel = FindExplorerItem("Process Relations");
             if (rel != null) rel.IsEnabled = false;
+            ApplyDockVisibilityFromExplorer();
+        }
+
+        private void SetExplorerPaneEnabled(string name, bool enabled)
+        {
+            var item = FindExplorerItem(name);
+            if (item != null)
+            {
+                item.IsEnabled = enabled;
+            }
+        }
+
+        private void ShowEtwPane()
+        {
+            SetExplorerPaneEnabled("ETW", true);
+            ApplyDockVisibilityFromExplorer();
+        }
+
+        private void ShowHeuristicsPane()
+        {
+            SetExplorerPaneEnabled("Heuristics", true);
+            ApplyDockVisibilityFromExplorer();
+        }
+
+        private void ShowIpcUplinkPane()
+        {
+            SetExplorerPaneEnabled("IPC Uplink", true);
+            ApplyDockVisibilityFromExplorer();
+        }
+
+        private void ShowFilesystemPane()
+        {
+            SetExplorerPaneEnabled("Filesystem", true);
+            ApplyDockVisibilityFromExplorer();
+        }
+
+        private void ShowProcessRelationsPane()
+        {
+            SetExplorerPaneEnabled("Process Relations", true);
             ApplyDockVisibilityFromExplorer();
         }
 
@@ -1399,6 +1626,179 @@ namespace SleepwalkerInterface
             else
                 ShowPerformancePane();
         }
+
+        private void OpenOrActivateEventLogWindow()
+        {
+            if (_eventLogWindow == null)
+            {
+                UndockEventLog();
+                return;
+            }
+
+            if (_eventLogWindow.WindowState == WindowState.Minimized)
+            {
+                _eventLogWindow.WindowState = WindowState.Normal;
+            }
+            _eventLogWindow.Activate();
+        }
+
+        private void OpenDiagnosticsWindow()
+        {
+            var w = new DiagnosticsWindow(TryGetPid())
+            {
+                Owner = this
+            };
+            w.Show();
+        }
+
+        private void ToolbarViewMenu_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            _ = e;
+            if (_toolbarViewMenuSyncing || !IsLoaded || sender is not ComboBox combo)
+            {
+                return;
+            }
+
+            string tag = combo.SelectedItem switch
+            {
+                ComboBoxItem item when item.Tag is string itemTag => itemTag,
+                _ => string.Empty
+            };
+            if (string.IsNullOrWhiteSpace(tag))
+            {
+                return;
+            }
+
+            switch (tag)
+            {
+                case "events":
+                    SetExplorerPaneEnabled("Events", true);
+                    ShowEventsPane();
+                    break;
+                case "performance":
+                    SetExplorerPaneEnabled("Performance", true);
+                    ShowPerformancePane();
+                    break;
+                case "etw":
+                    ShowEtwPane();
+                    break;
+                case "heuristics":
+                    ShowHeuristicsPane();
+                    break;
+                case "filesystem":
+                    ShowFilesystemPane();
+                    break;
+                case "process-relations":
+                    ShowProcessRelationsPane();
+                    break;
+                case "ipc-uplink":
+                    ShowIpcUplinkPane();
+                    break;
+                case "event-log":
+                    SetExplorerPaneEnabled("Events", true);
+                    ShowEventsPane();
+                    OpenOrActivateEventLogWindow();
+                    break;
+                case "inspector-etw":
+                    ShowEtwPane();
+                    OpenEtwInspector();
+                    break;
+                case "inspector-heuristics":
+                    ShowHeuristicsPane();
+                    OpenHeuristicsInspector();
+                    break;
+                case "inspector-filesystem":
+                    ShowFilesystemPane();
+                    OpenFilesystemInspector();
+                    break;
+                case "inspector-relations":
+                    ShowProcessRelationsPane();
+                    OpenProcessRelationsInspector();
+                    break;
+                case "diagnostics":
+                    OpenDiagnosticsWindow();
+                    break;
+            }
+
+            combo.SelectedIndex = 0;
+            RebuildToolbarViewMenuOptions();
+        }
+
+        private void ToolbarViewMenu_DropDownOpened(object sender, EventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            RebuildToolbarViewMenuOptions();
+        }
+
+        private void RebuildToolbarViewMenuOptions()
+        {
+            if (ToolbarViewMenu == null)
+            {
+                return;
+            }
+
+            _toolbarViewMenuSyncing = true;
+            ToolbarViewMenu.Items.Clear();
+            ToolbarViewMenu.Items.Add(new ComboBoxItem { Content = "Open Window..." });
+
+            AddToolbarViewOptionIfClosed("Events Pane", "events", IsEventsPaneOpen());
+            AddToolbarViewOptionIfClosed("Performance Pane", "performance", IsPerformancePaneOpen());
+            AddToolbarViewOptionIfClosed("ETW Pane", "etw", IsEtwPaneOpen());
+            AddToolbarViewOptionIfClosed("Heuristics Pane", "heuristics", IsHeuristicsPaneOpen());
+            AddToolbarViewOptionIfClosed("Filesystem Pane", "filesystem", IsFilesystemPaneOpen());
+            AddToolbarViewOptionIfClosed("Process Relations Pane", "process-relations", IsRelationsPaneOpen());
+            AddToolbarViewOptionIfClosed("IPC Uplink Pane", "ipc-uplink", IsIpcUplinkPaneOpen());
+            AddToolbarViewOptionIfClosed("Event Log Window", "event-log", _eventLogWindow != null && _eventLogWindow.IsVisible);
+            AddToolbarViewOptionIfClosed("ETW Inspector", "inspector-etw", IsWindowOpenByTitle("ETW Inspector"));
+            AddToolbarViewOptionIfClosed("Heuristics Inspector", "inspector-heuristics", IsWindowOpenByTitle("Detection Chain"));
+            AddToolbarViewOptionIfClosed("Filesystem Inspector", "inspector-filesystem", IsWindowOpenByTitle("Filesystem"));
+            AddToolbarViewOptionIfClosed("Process Relations Inspector", "inspector-relations", IsWindowOpenByTitle("Process Relations"));
+            AddToolbarViewOptionIfClosed("Diagnostics Window", "diagnostics", Application.Current.Windows.OfType<Window>().Any(w => w is DiagnosticsWindow && w.IsVisible));
+
+            ToolbarViewMenu.SelectedIndex = 0;
+            _toolbarViewMenuSyncing = false;
+        }
+
+        private void AddToolbarViewOptionIfClosed(string label, string tag, bool isOpen)
+        {
+            if (ToolbarViewMenu == null || isOpen)
+            {
+                return;
+            }
+
+            ToolbarViewMenu.Items.Add(new ComboBoxItem
+            {
+                Content = label,
+                Tag = tag
+            });
+        }
+
+        private bool IsEventsPaneOpen()
+            => (FindExplorerItem("Events")?.IsEnabled ?? true) && (_eventsPaneVisible || _eventsPaneFloating || _eventsFloatWindow != null);
+
+        private bool IsPerformancePaneOpen()
+            => (FindExplorerItem("Performance")?.IsEnabled ?? true) && (_performancePaneVisible || _performancePaneFloating || _performanceFloatWindow != null);
+
+        private bool IsEtwPaneOpen()
+            => (FindExplorerItem("ETW")?.IsEnabled ?? true);
+
+        private bool IsHeuristicsPaneOpen()
+            => (FindExplorerItem("Heuristics")?.IsEnabled ?? true);
+
+        private bool IsFilesystemPaneOpen()
+            => (FindExplorerItem("Filesystem")?.IsEnabled ?? true);
+
+        private bool IsRelationsPaneOpen()
+            => (FindExplorerItem("Process Relations")?.IsEnabled ?? true);
+
+        private bool IsIpcUplinkPaneOpen()
+            => (FindExplorerItem("IPC Uplink")?.IsEnabled ?? false);
+
+        private static bool IsWindowOpenByTitle(string title)
+            => Application.Current?.Windows
+                   .OfType<Window>()
+                   .Any(w => w.IsVisible && string.Equals(w.Title, title, StringComparison.OrdinalIgnoreCase)) ?? false;
 
         private void ToggleFloatDock()
         {
@@ -1550,6 +1950,8 @@ namespace SleepwalkerInterface
             if (sw != null) sw.IsEnabled = true;
             var heur = FindExplorerItem("Heuristics");
             if (heur != null) heur.IsEnabled = true;
+            var fs = FindExplorerItem("Filesystem");
+            if (fs != null) fs.IsEnabled = true;
             var rel = FindExplorerItem("Process Relations");
             if (rel != null) rel.IsEnabled = true;
             var ipc = FindExplorerItem("IPC Uplink");
@@ -1605,9 +2007,9 @@ namespace SleepwalkerInterface
 
         private void Diagnostics_Click(object sender, RoutedEventArgs e)
         {
-            var w = new DiagnosticsWindow(TryGetPid());
-            w.Owner = this;
-            w.Show();
+            _ = sender;
+            _ = e;
+            OpenDiagnosticsWindow();
         }
 
         private void PerformancePaneHost_ThreadDoubleClicked(object? sender, ThreadUsageRow row)
@@ -2182,6 +2584,66 @@ namespace SleepwalkerInterface
             None,
             Top,
             Bottom
+        }
+
+        private readonly struct EventSelectionKey : IEquatable<EventSelectionKey>
+        {
+            public EventSelectionKey(TelemetryEvent ev)
+            {
+                TimestampUtc = ev.TimestampUtc;
+                Pid = ev.PID;
+                Tid = ev.TID;
+                Group = ev.Group ?? string.Empty;
+                SubType = ev.SubType ?? string.Empty;
+                Summary = ev.Summary ?? string.Empty;
+                Details = ev.Details ?? string.Empty;
+            }
+
+            private DateTime TimestampUtc { get; }
+            private int Pid { get; }
+            private int Tid { get; }
+            private string Group { get; }
+            private string SubType { get; }
+            private string Summary { get; }
+            private string Details { get; }
+
+            public bool Matches(TelemetryEvent ev)
+            {
+                return ev.TimestampUtc == TimestampUtc
+                    && ev.PID == Pid
+                    && ev.TID == Tid
+                    && string.Equals(ev.Group ?? string.Empty, Group, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(ev.SubType ?? string.Empty, SubType, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(ev.Summary ?? string.Empty, Summary, StringComparison.Ordinal)
+                    && string.Equals(ev.Details ?? string.Empty, Details, StringComparison.Ordinal);
+            }
+
+            public bool Equals(EventSelectionKey other)
+            {
+                return TimestampUtc == other.TimestampUtc
+                    && Pid == other.Pid
+                    && Tid == other.Tid
+                    && string.Equals(Group, other.Group, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(SubType, other.SubType, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(Summary, other.Summary, StringComparison.Ordinal)
+                    && string.Equals(Details, other.Details, StringComparison.Ordinal);
+            }
+
+            public override bool Equals(object? obj)
+                => obj is EventSelectionKey other && Equals(other);
+
+            public override int GetHashCode()
+            {
+                HashCode hash = new();
+                hash.Add(TimestampUtc);
+                hash.Add(Pid);
+                hash.Add(Tid);
+                hash.Add(Group, StringComparer.OrdinalIgnoreCase);
+                hash.Add(SubType, StringComparer.OrdinalIgnoreCase);
+                hash.Add(Summary, StringComparer.Ordinal);
+                hash.Add(Details, StringComparer.Ordinal);
+                return hash.ToHashCode();
+            }
         }
 
         private static TelemetryEvent CloneTelemetryEvent(TelemetryEvent src)

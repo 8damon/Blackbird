@@ -1,11 +1,11 @@
 ;
-; SLEEPWALKER.inf - non-PnP KMDF service install
+; SLEEPWALKER.inf - filesystem minifilter service install
 ;
 
 [Version]
 Signature   = "$WINDOWS NT$"
-Class       = System
-ClassGuid   = {4d36e97d-e325-11ce-bfc1-08002be10318}
+Class       = "ActivityMonitor"
+ClassGuid   = {b86dff51-a31e-4bac-b3cf-e8cfe75c9fc2}
 Provider    = %ManufacturerName%
 CatalogFile = SLEEPWALKER.cat
 DriverVer   = ; stamped by StampInf
@@ -35,12 +35,24 @@ sleepwlkr.sys
 
 [sleepwlkr_Service_Inst]
 DisplayName   = %SLEEPWALKER.SVCDESC%
-ServiceType   = 1 ; SERVICE_KERNEL_DRIVER
+ServiceType   = 2 ; SERVICE_FILE_SYSTEM_DRIVER
 StartType     = 3 ; SERVICE_DEMAND_START
 ErrorControl  = 1 ; SERVICE_ERROR_NORMAL
 ServiceBinary = %12%\sleepwlkr.sys
+LoadOrderGroup = "FSFilter Activity Monitor"
+Dependencies  = FltMgr
+AddReg = sleepwlkr.AddRegistry
+
+[sleepwlkr.AddRegistry]
+HKR,,"DebugFlags",0x00010001,0
+HKR,"Instances","DefaultInstance",0x00000000,%SleepwalkerInstanceName%
+HKR,"Instances\%SleepwalkerInstanceName%","Altitude",0x00000000,%SleepwalkerInstanceAltitude%
+HKR,"Instances\%SleepwalkerInstanceName%","Flags",0x00010001,%SleepwalkerInstanceFlags%
 
 [Strings]
 ManufacturerName = "TITAN Softwork Solutions"
 DiskName = "SLEEPWALKER Installation Disk"
 SLEEPWALKER.SVCDESC = "SLEEPWALKER Service"
+SleepwalkerInstanceName = "Sleepwalker Default"
+SleepwalkerInstanceAltitude = "385000.424244"
+SleepwalkerInstanceFlags = 0

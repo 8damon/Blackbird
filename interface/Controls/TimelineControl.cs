@@ -489,6 +489,9 @@ namespace SleepwalkerInterface
                 }
             }
 
+            // Repaint axis/time labels over points so timestamps always stay readable.
+            DrawTimeAxisOverlay(dc, viewStartUtc, viewEndUtc, pps, chartLeft, chartRight, axisTop, dpi, typeface);
+
             // Crosshair line + time label
             if (_hasMouse && _mouse.X >= chartLeft && _mouse.X <= chartRight && _mouse.Y <= axisTop)
             {
@@ -860,6 +863,57 @@ namespace SleepwalkerInterface
             }
 
             return 600;
+        }
+
+        private void DrawTimeAxisOverlay(
+            DrawingContext dc,
+            DateTime viewStartUtc,
+            DateTime viewEndUtc,
+            double pps,
+            double chartLeft,
+            double chartRight,
+            double axisTop,
+            double dpi,
+            Typeface typeface)
+        {
+            double seconds = (viewEndUtc - viewStartUtc).TotalSeconds;
+            double baseStep =
+                seconds <= 30 ? 1 :
+                seconds <= 120 ? 5 :
+                seconds <= 300 ? 10 :
+                30;
+
+            double minLabelSpacingPx = 70;
+            double minStepFromPixels = minLabelSpacingPx / Math.Max(1, pps);
+            double step = NiceTimeStep(Math.Max(baseStep, minStepFromPixels));
+
+            // Axis bar background and top border.
+            dc.DrawRectangle(UiPalette.SurfaceAltBrush, null, new Rect(chartLeft, axisTop, chartRight - chartLeft, AxisHeight));
+            var axisPen = new Pen(UiPalette.BorderBrush, 1);
+            axisPen.Freeze();
+            dc.DrawLine(axisPen, new Point(chartLeft, axisTop), new Point(chartRight, axisTop));
+
+            double startSec = Math.Floor(ViewStartSeconds / step) * step;
+            double endSec = ViewStartSeconds + ViewDurationSeconds;
+            for (double t = startSec; t <= endSec + 0.0001; t += step)
+            {
+                double x = chartLeft + (t - ViewStartSeconds) * pps;
+                if (x < chartLeft || x > chartRight) continue;
+
+                var tickUtc = CaptureStartUtc + TimeSpan.FromSeconds(t);
+                string label = tickUtc.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+
+                var ft = new FormattedText(
+                    label,
+                    CultureInfo.InvariantCulture,
+                    FlowDirection.LeftToRight,
+                    typeface,
+                    10,
+                    UiPalette.MutedTextBrush,
+                    dpi);
+
+                dc.DrawText(ft, new Point(x + 4, axisTop + 4));
+            }
         }
 
         private static string ToLaneKey(TelemetryEvent e)

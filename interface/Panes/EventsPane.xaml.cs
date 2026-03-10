@@ -236,7 +236,7 @@ namespace SleepwalkerInterface
                 TimelineVerticalScroll.Value = target;
             }
 
-            TimelineVerticalScroll.Visibility = maxStart > 0.5 ? Visibility.Visible : Visibility.Collapsed;
+            TimelineVerticalScroll.Visibility = Visibility.Collapsed;
         }
     }
 }

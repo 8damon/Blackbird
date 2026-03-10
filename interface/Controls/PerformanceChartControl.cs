@@ -32,6 +32,7 @@ namespace SleepwalkerInterface
         public Brush Stroke { get; }
         public SeriesScale Scale { get; }
         public ChartValueFormat ValueFormat { get; }
+        public double SmoothingAlpha { get; }
         public Func<PerformanceSample, double> Selector { get; }
 
         public ChartSeries(
@@ -39,12 +40,14 @@ namespace SleepwalkerInterface
             Brush stroke,
             SeriesScale scale,
             Func<PerformanceSample, double> selector,
-            ChartValueFormat valueFormat = ChartValueFormat.Auto)
+            ChartValueFormat valueFormat = ChartValueFormat.Auto,
+            double smoothingAlpha = 0)
         {
             Name = name;
             Stroke = stroke;
             Scale = scale;
             ValueFormat = valueFormat;
+            SmoothingAlpha = Math.Clamp(smoothingAlpha, 0d, 1d);
             Selector = selector;
         }
     }
@@ -65,6 +68,7 @@ namespace SleepwalkerInterface
         private DateTime _viewEndUtc;
         private readonly List<PerformanceSample> _samples = new();
         private ChartSeries[] _series = Array.Empty<ChartSeries>();
+        private double _smoothedAutoScaleMax = 1.0;
         private bool _hasMouse;
         private Point _mouse;
         private readonly ToolTip _tip = new();
@@ -159,15 +163,38 @@ namespace SleepwalkerInterface
             DrawText(dc, Title, 12, FontWeights.SemiBold, UiPalette.TextBrush, new Point(8, 5));
             DrawLegend(dc, new Rect(padL, 3, Math.Max(1, w - padL - padR), 18));
 
-            // Filter samples within view
-            var viewSamples = _samples.Where(s => s.TimestampUtc >= _viewStartUtc && s.TimestampUtc <= _viewEndUtc).ToList();
+            DateTime renderStartUtc = _viewStartUtc;
+            DateTime renderEndUtc = _viewEndUtc;
+            if (renderEndUtc <= renderStartUtc)
+            {
+                renderEndUtc = renderStartUtc + TimeSpan.FromSeconds(1);
+            }
+            AdjustRightAnchoredLiveWindow(ref renderStartUtc, ref renderEndUtc);
+
+            // Filter samples within effective view
+            var viewSamples = _samples.Where(s => s.TimestampUtc >= renderStartUtc && s.TimestampUtc <= renderEndUtc).ToList();
             if (viewSamples.Count < 2 || _series.Length == 0)
             {
-                DrawAxes(dc, plot, 100.0, ChartValueFormat.Percent);
+                DrawAxes(dc, plot, renderStartUtc, renderEndUtc, 100.0, ChartValueFormat.Percent);
                 DrawText(dc, "NO DATA", 18, FontWeights.Bold, UiPalette.MutedTextBrush,
                     new Point(plot.Left + (plot.Width * 0.5) - 40, plot.Top + (plot.Height * 0.5) - 10));
                 _tip.IsOpen = false;
                 return;
+            }
+
+            var seriesValues = new Dictionary<ChartSeries, List<(PerformanceSample sample, double value)>>(_series.Length);
+            foreach (var ser in _series)
+            {
+                bool hasSmoothed = false;
+                double smoothed = 0;
+                var values = new List<(PerformanceSample sample, double value)>(viewSamples.Count);
+                foreach (var sample in viewSamples)
+                {
+                    double raw = ser.Selector(sample);
+                    double value = ApplySmoothing(raw, ser.SmoothingAlpha, ref hasSmoothed, ref smoothed);
+                    values.Add((sample, value));
+                }
+                seriesValues[ser] = values;
             }
 
             bool hasAutoScale = _series.Any(s => s.Scale == SeriesScale.AutoToViewMax);
@@ -180,22 +207,41 @@ namespace SleepwalkerInterface
                     if (autoScaleFormat == ChartValueFormat.Raw || autoScaleFormat == ChartValueFormat.Auto)
                         autoScaleFormat = ser.ValueFormat;
 
-                    foreach (var s in viewSamples)
+                    foreach (var point in seriesValues[ser])
                     {
-                        var v = ser.Selector(s);
-                        if (v > autoScaleMax) autoScaleMax = v;
+                        if (point.value > autoScaleMax) autoScaleMax = point.value;
                     }
                 }
             }
 
-            double yAxisMax = hasAutoScale ? Math.Max(1.0, autoScaleMax) : 100.0;
-            DrawAxes(dc, plot, yAxisMax, hasAutoScale ? autoScaleFormat : ChartValueFormat.Percent);
+            double yAxisMax;
+            if (hasAutoScale)
+            {
+                double target = Math.Max(1.0, autoScaleMax);
+                if (target >= _smoothedAutoScaleMax)
+                {
+                    // rise quickly to new peaks
+                    _smoothedAutoScaleMax = (_smoothedAutoScaleMax * 0.35) + (target * 0.65);
+                }
+                else
+                {
+                    // decay slowly to avoid axis jitter
+                    _smoothedAutoScaleMax = (_smoothedAutoScaleMax * 0.90) + (target * 0.10);
+                }
+                yAxisMax = Math.Max(1.0, _smoothedAutoScaleMax);
+            }
+            else
+            {
+                _smoothedAutoScaleMax = 1.0;
+                yAxisMax = 100.0;
+            }
+            DrawAxes(dc, plot, renderStartUtc, renderEndUtc, yAxisMax, hasAutoScale ? autoScaleFormat : ChartValueFormat.Percent);
 
             (ChartSeries ser, PerformanceSample sample, Point point, double raw)? hover = null;
             double hoverDist = double.MaxValue;
 
             // Draw series (clipped to plot bounds)
-            double viewSeconds = (_viewEndUtc - _viewStartUtc).TotalSeconds;
+            double viewSeconds = (renderEndUtc - renderStartUtc).TotalSeconds;
             if (viewSeconds <= 0)
                 viewSeconds = 1;
 
@@ -209,9 +255,10 @@ namespace SleepwalkerInterface
                 using (var g = geo.Open())
                 {
                     bool started = false;
-                    if (viewSamples[0].TimestampUtc > _viewStartUtc)
+                    if (viewSamples[0].TimestampUtc > renderStartUtc)
                     {
-                        double raw0 = ser.Selector(viewSamples[0]);
+                        var first = seriesValues[ser][0];
+                        double raw0 = first.value;
                         double scaled0 = ser.Scale == SeriesScale.Percent
                             ? Clamp(raw0, 0, 100)
                             : Clamp(raw0 / yAxisMax * 100.0, 0, 100);
@@ -220,14 +267,14 @@ namespace SleepwalkerInterface
                         started = true;
                     }
 
-                    foreach (var s in viewSamples)
+                    foreach (var point in seriesValues[ser])
                     {
-                        double raw = ser.Selector(s);
+                        double raw = point.value;
                         double scaledPercent = ser.Scale == SeriesScale.Percent
                             ? Clamp(raw, 0, 100)
                             : Clamp(raw / yAxisMax * 100.0, 0, 100);
 
-                        double xNorm = (s.TimestampUtc - _viewStartUtc).TotalSeconds / viewSeconds; // 0..1
+                        double xNorm = (point.sample.TimestampUtc - renderStartUtc).TotalSeconds / viewSeconds; // 0..1
                         double x = plot.Left + xNorm * plot.Width;
                         double y = plot.Bottom - (scaledPercent / 100.0) * plot.Height;
 
@@ -237,7 +284,7 @@ namespace SleepwalkerInterface
                             if (dist < hoverDist)
                             {
                                 hoverDist = dist;
-                                hover = (ser, s, new Point(x, y), raw);
+                                hover = (ser, point.sample, new Point(x, y), raw);
                             }
                         }
 
@@ -282,7 +329,13 @@ namespace SleepwalkerInterface
             }
         }
 
-        private void DrawAxes(DrawingContext dc, Rect plot, double axisMaxValue, ChartValueFormat valueFormat)
+        private void DrawAxes(
+            DrawingContext dc,
+            Rect plot,
+            DateTime viewStartUtc,
+            DateTime viewEndUtc,
+            double axisMaxValue,
+            ChartValueFormat valueFormat)
         {
             var axisPen = new Pen(UiPalette.GridStrongBrush, 1);
             axisPen.Freeze();
@@ -304,7 +357,7 @@ namespace SleepwalkerInterface
             }
 
             // X ticks
-            var total = (_viewEndUtc - _viewStartUtc).TotalSeconds;
+            var total = (viewEndUtc - viewStartUtc).TotalSeconds;
             if (total <= 0) total = 1;
 
             int ticks = plot.Width < 280 ? 3 : 5;
@@ -314,7 +367,7 @@ namespace SleepwalkerInterface
                 double x = plot.Left + xNorm * plot.Width;
                 dc.DrawLine(new Pen(UiPalette.GridBrush, 1), new Point(x, plot.Top), new Point(x, plot.Bottom));
 
-                var t = _viewStartUtc.AddSeconds(total * xNorm);
+                var t = viewStartUtc.AddSeconds(total * xNorm);
                 double tx = Math.Max(plot.Left, Math.Min(plot.Right - 42, x - 22));
                 string text = plot.Width < 280
                     ? t.ToString("HH:mm", CultureInfo.InvariantCulture)
@@ -384,6 +437,59 @@ namespace SleepwalkerInterface
             if (value >= 1024d)
                 return (value / 1024d).ToString("0.##", CultureInfo.InvariantCulture) + " KB";
             return value.ToString("0.##", CultureInfo.InvariantCulture) + " B";
+        }
+
+        private void AdjustRightAnchoredLiveWindow(ref DateTime viewStartUtc, ref DateTime viewEndUtc)
+        {
+            if (_samples.Count == 0 || viewEndUtc <= viewStartUtc)
+            {
+                return;
+            }
+
+            DateTime latestSampleUtc = _samples[^1].TimestampUtc;
+            if (latestSampleUtc == default || viewEndUtc <= latestSampleUtc)
+            {
+                return;
+            }
+
+            // Only right-anchor in live/near-live windows. Historical windows keep absolute timestamps unchanged.
+            if (viewEndUtc < DateTime.UtcNow - TimeSpan.FromSeconds(3))
+            {
+                return;
+            }
+
+            TimeSpan span = viewEndUtc - viewStartUtc;
+            TimeSpan slack = viewEndUtc - latestSampleUtc;
+            if (slack <= TimeSpan.Zero)
+            {
+                return;
+            }
+
+            if (slack > span)
+            {
+                slack = span;
+            }
+
+            viewStartUtc -= slack;
+            viewEndUtc -= slack;
+        }
+
+        private static double ApplySmoothing(double value, double smoothingAlpha, ref bool hasSmoothed, ref double smoothed)
+        {
+            if (smoothingAlpha <= 0)
+            {
+                return value;
+            }
+
+            if (!hasSmoothed)
+            {
+                smoothed = value;
+                hasSmoothed = true;
+                return smoothed;
+            }
+
+            smoothed += (value - smoothed) * smoothingAlpha;
+            return smoothed;
         }
 
         private static double Clamp(double v, double min, double max)

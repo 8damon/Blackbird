@@ -218,13 +218,15 @@ BOOL SLEEPWALKERSCStartSleepwalkerEtwSession(_In_z_ PCWSTR SessionName, _In_ BOO
                                              _Outptr_ SLEEPWALKERSC_ETW_SESSION **Session,
                                              _Out_opt_ BOOL *ThreatIntelEnabled)
 {
-    SLEEPWALKERSC_ETW_PROVIDER_CONFIG providers[2];
-    SLEEPWALKERSC_ETW_PROVIDER_CONFIG sleepwalkerOnlyProvider;
+    SLEEPWALKERSC_ETW_PROVIDER_CONFIG providers[3];
+    SLEEPWALKERSC_ETW_PROVIDER_CONFIG providerAttempt[3];
     SLEEPWALKERSC_ETW_SESSION_CONFIG config;
     BOOL started = FALSE;
     BOOL startedWithTi = FALSE;
     DWORD err = ERROR_SUCCESS;
+    DWORD lastErr = ERROR_SUCCESS;
     DWORD tiErr = ERROR_SUCCESS;
+    ULONG providerCount = 0;
 
     if (ThreatIntelEnabled != NULL)
     {
@@ -248,21 +250,33 @@ BOOL SLEEPWALKERSCStartSleepwalkerEtwSession(_In_z_ PCWSTR SessionName, _In_ BOO
     providers[0].Level = TRACE_LEVEL_INFORMATION;
     providers[0].MatchAnyKeyword = 0;
     providers[0].MatchAllKeyword = 0;
-    providers[1].ProviderId = SLEEPWALKERSC_PROVIDER_GUID_TI;
+    providers[1].ProviderId = SLEEPWALKERSC_PROVIDER_GUID_KERNEL_NETWORK;
     providers[1].Level = TRACE_LEVEL_INFORMATION;
     providers[1].MatchAnyKeyword = ~0ULL;
     providers[1].MatchAllKeyword = 0;
+    providers[2].ProviderId = SLEEPWALKERSC_PROVIDER_GUID_TI;
+    providers[2].Level = TRACE_LEVEL_INFORMATION;
+    providers[2].MatchAnyKeyword = ~0ULL;
+    providers[2].MatchAllKeyword = 0;
 
     ZeroMemory(&config, sizeof(config));
     config.SessionName = SessionName;
-    config.Providers = EnableThreatIntelProvider ? providers : &providers[0];
-    config.ProviderCount = EnableThreatIntelProvider ? 2 : 1;
     config.Callback = Callback;
     config.CallbackContext = CallbackContext;
 
     (void)SLEEPWALKERSCStopSessionByName(SessionName);
     Sleep(80);
 
+    providerAttempt[0] = providers[0];
+    providerAttempt[1] = providers[1];
+    providerCount = 2;
+    if (EnableThreatIntelProvider)
+    {
+        providerAttempt[2] = providers[2];
+        providerCount = 3;
+    }
+    config.Providers = providerAttempt;
+    config.ProviderCount = providerCount;
     if (SLEEPWALKERSCStartEtwSession(&config, Session))
     {
         started = TRUE;
@@ -270,16 +284,51 @@ BOOL SLEEPWALKERSCStartSleepwalkerEtwSession(_In_z_ PCWSTR SessionName, _In_ BOO
     }
     else
     {
-        err = GetLastError();
+        lastErr = GetLastError();
     }
     tiErr = (DWORD)InterlockedCompareExchange(&g_SleepwalkerLastTiEnableError, 0, 0);
 
     if (!started && EnableThreatIntelProvider &&
-        (tiErr != ERROR_SUCCESS || err == ERROR_ACCESS_DENIED || err == ERROR_PRIVILEGE_NOT_HELD ||
-         err == ERROR_NOT_FOUND || err == ERROR_INVALID_PARAMETER))
+        (tiErr != ERROR_SUCCESS || lastErr == ERROR_ACCESS_DENIED || lastErr == ERROR_PRIVILEGE_NOT_HELD ||
+         lastErr == ERROR_NOT_FOUND || lastErr == ERROR_INVALID_PARAMETER))
     {
-        sleepwalkerOnlyProvider = providers[0];
-        config.Providers = &sleepwalkerOnlyProvider;
+        providerAttempt[0] = providers[0];
+        providerAttempt[1] = providers[1];
+        config.Providers = providerAttempt;
+        config.ProviderCount = 2;
+        if (SLEEPWALKERSCStartEtwSession(&config, Session))
+        {
+            started = TRUE;
+            startedWithTi = FALSE;
+        }
+        else
+        {
+            lastErr = GetLastError();
+        }
+    }
+
+    if (!started && EnableThreatIntelProvider)
+    {
+        providerAttempt[0] = providers[0];
+        providerAttempt[1] = providers[2];
+        config.Providers = providerAttempt;
+        config.ProviderCount = 2;
+        if (SLEEPWALKERSCStartEtwSession(&config, Session))
+        {
+            started = TRUE;
+            startedWithTi = TRUE;
+            tiErr = ERROR_SUCCESS;
+        }
+        else
+        {
+            lastErr = GetLastError();
+        }
+    }
+
+    if (!started)
+    {
+        providerAttempt[0] = providers[0];
+        config.Providers = providerAttempt;
         config.ProviderCount = 1;
         if (SLEEPWALKERSCStartEtwSession(&config, Session))
         {
@@ -288,14 +337,11 @@ BOOL SLEEPWALKERSCStartSleepwalkerEtwSession(_In_z_ PCWSTR SessionName, _In_ BOO
         }
         else
         {
-            err = GetLastError();
-        }
-        if (tiErr == ERROR_SUCCESS)
-        {
-            tiErr = err;
+            lastErr = GetLastError();
         }
     }
 
+    err = lastErr;
     if (!started)
     {
         if (tiErr != ERROR_SUCCESS)

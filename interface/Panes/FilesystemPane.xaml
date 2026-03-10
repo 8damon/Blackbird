@@ -1,0 +1,249 @@
+<UserControl x:Class="SleepwalkerInterface.FilesystemPane"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource WinPanelBrush}">
+    <UserControl.Resources>
+        <Style x:Key="FilesystemOperationFilterComboItemStyle" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+            <Setter Property="Background" Value="#FF121212"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="FilesystemOperationFilterStyle" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Background" Value="#FF121212"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid SnapsToDevicePixels="True">
+                            <Border x:Name="OuterBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="24"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <ContentPresenter Margin="6,0,4,0"
+                                                      VerticalAlignment="Center"
+                                                      HorizontalAlignment="Left"
+                                                      Content="{TemplateBinding SelectionBoxItem}"
+                                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                      ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"/>
+
+                                    <ToggleButton x:Name="DropDownToggle"
+                                                  Grid.Column="1"
+                                                  Focusable="False"
+                                                  ClickMode="Press"
+                                                  BorderBrush="{DynamicResource WinBorderBrush}"
+                                                  BorderThickness="1,0,0,0"
+                                                  Background="#FF0E0E0E"
+                                                  IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                        <Path Width="8"
+                                              Height="5"
+                                              Stretch="Fill"
+                                              Fill="{DynamicResource WinTextBrush}"
+                                              Data="M 0 0 L 4 5 L 8 0 Z"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                                    </ToggleButton>
+                                </Grid>
+                            </Border>
+
+                            <Popup x:Name="PART_Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="None">
+                                <Border x:Name="DropDownBorder"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                        Background="#FF121212"
+                                        BorderBrush="{DynamicResource WinBorderBrush}"
+                                        BorderThickness="1">
+                                    <ScrollViewer Margin="0"
+                                                  SnapsToDevicePixels="True">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="OuterBorder" Property="BorderBrush" Value="{DynamicResource InputHoverBorderBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Background="{DynamicResource WinHeaderBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="180"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       Margin="10,0,8,0"
+                       VerticalAlignment="Center"
+                       FontWeight="SemiBold"
+                       FontSize="12"
+                       Text="Filesystem"/>
+
+            <TextBlock x:Name="SummaryBlock"
+                       Grid.Column="1"
+                       Margin="0,0,8,0"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{DynamicResource WinMutedTextBrush}"
+                       Text="No filesystem events yet"/>
+
+            <ComboBox x:Name="OperationFilter"
+                      Grid.Column="2"
+                      Width="150"
+                      Height="24"
+                      Margin="4,4,6,4"
+                      VerticalAlignment="Center"
+                      IsEditable="False"
+                      VerticalContentAlignment="Center"
+                      Background="{DynamicResource WinPanelBrush}"
+                      Foreground="{DynamicResource WinTextBrush}"
+                      BorderBrush="{DynamicResource WinBorderBrush}"
+                      Style="{StaticResource FilesystemOperationFilterStyle}"
+                      ItemContainerStyle="{StaticResource FilesystemOperationFilterComboItemStyle}"
+                      SelectionChanged="OperationFilter_SelectionChanged">
+                <ComboBox.Resources>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#FF121212"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#FFD8D8D8"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#334C8FD2"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFF1F5FF"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#FF1C1C1C"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#FFD8D8D8"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#FF141414"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="#FFD8D8D8"/>
+                </ComboBox.Resources>
+            </ComboBox>
+
+            <TextBox x:Name="SearchBox"
+                     Grid.Column="3"
+                     Height="24"
+                     Margin="0,4,4,4"
+                     VerticalContentAlignment="Center"
+                     VerticalAlignment="Center"
+                     ToolTip="Filter by path, pid/tid, operation, flags, or status"
+                     TextChanged="SearchBox_TextChanged"/>
+
+            <Button Grid.Column="4"
+                    x:Name="FilesystemBtnInspect"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="↗"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Open filesystem inspector"
+                    Click="FilesystemBtnInspect_Click"/>
+
+            <Button Grid.Column="5"
+                    x:Name="FilesystemBtnClose"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="✕"
+                    Width="22"
+                    Height="22"
+                    Margin="4,4,6,4"
+                    ToolTip="Hide pane"
+                    Click="FilesystemBtnClose_Click"/>
+        </Grid>
+
+        <Border Grid.Row="1"
+                Margin="4"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="1">
+            <Grid>
+                <DataGrid x:Name="FilesystemGrid"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          BorderThickness="0"
+                          CanUserResizeRows="False"
+                          ColumnHeaderHeight="24"
+                          RowHeight="22"
+                          MouseDoubleClick="FilesystemGrid_MouseDoubleClick">
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow" BasedOn="{StaticResource AppDataGridRowStyle}">
+                            <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Severity}" Value="Critical">
+                                    <Setter Property="Background" Value="#295E1E1E"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Severity}" Value="High">
+                                    <Setter Property="Background" Value="#255A1D1D"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Severity}" Value="Medium">
+                                    <Setter Property="Background" Value="#1F5C3A1A"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Severity}" Value="Low">
+                                    <Setter Property="Background" Value="#1C4C4217"/>
+                                </DataTrigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#1E4C8FD2"/>
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="#334C8FD2"/>
+                                    <Setter Property="Foreground" Value="#FFF1F5FF"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.RowStyle>
+                    <DataGrid.CellStyle>
+                        <Style TargetType="DataGridCell" BasedOn="{StaticResource AppDataGridCellStyle}">
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="Background" Value="Transparent"/>
+                        </Style>
+                    </DataGrid.CellStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Operation" Width="170" Binding="{Binding Event}"/>
+                        <DataGridTextColumn Header="Severity" Width="92" Binding="{Binding Severity}"/>
+                        <DataGridTextColumn Header="Hits" Width="72" Binding="{Binding Hits}"/>
+                        <DataGridTextColumn Header="Path" Width="*" Binding="{Binding Detection}"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <Border x:Name="NoDataOverlay"
+                        Background="{DynamicResource NoDataOverlayBrush}"
+                        IsHitTestVisible="False"
+                        Visibility="Collapsed">
+                    <TextBlock Text="NO DATA"
+                               FontSize="40"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource WinTextBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Opacity="0.72"/>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

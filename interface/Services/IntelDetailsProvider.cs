@@ -6,6 +6,7 @@ namespace SleepwalkerInterface
     {
         Etw,
         Heuristics,
+        Filesystem,
         ProcessRelations
     }
 

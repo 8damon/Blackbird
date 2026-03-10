@@ -549,8 +549,8 @@ SLEEPWALKERSCOpenControlDevice(VOID)
             SLEEPWALKER_IPC_PACKET ringResponse;
 
             SLEEPWALKERSCInitIpcRequest(&ringRequest, SleepwalkerIpcCommandOpenSharedRing);
-            ringRequest.Payload.OpenSharedRingRequest.DesiredIoctlCapacity = 0;
-            ringRequest.Payload.OpenSharedRingRequest.DesiredEtwCapacity = 0;
+            ringRequest.Payload.OpenSharedRingRequest.DesiredIoctlCapacity = 16384u;
+            ringRequest.Payload.OpenSharedRingRequest.DesiredEtwCapacity = 4096u;
             if (SLEEPWALKERSCIpcTransact(h, &ringRequest, &ringResponse))
             {
                 if (SLEEPWALKERSCRegisterSharedChannel(h, &ringResponse.Payload.OpenSharedRingResponse))
@@ -1014,6 +1014,10 @@ SLEEPWALKERSCParseStreamMaskA(_In_z_ const char *Text)
         else if (_stricmp(tok, "thread") == 0)
         {
             mask |= SLEEPWALKER_STREAM_THREAD;
+        }
+        else if (_stricmp(tok, "filesystem") == 0 || _stricmp(tok, "file") == 0 || _stricmp(tok, "fs") == 0)
+        {
+            mask |= SLEEPWALKER_STREAM_FILESYSTEM;
         }
     }
 

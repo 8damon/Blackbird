@@ -31,6 +31,7 @@ namespace SleepwalkerInterface
         public List<ThreadLifecycleEventSample> ThreadLifecycleHistory { get; set; } = new();
         public List<GroupedEventRow> EtwGroups { get; set; } = new();
         public List<GroupedEventRow> HeuristicsGroups { get; set; } = new();
+        public List<GroupedEventRow> FilesystemGroups { get; set; } = new();
         public List<GroupedEventRow> ProcessRelationsGroups { get; set; } = new();
     }
 
@@ -155,6 +156,7 @@ namespace SleepwalkerInterface
                 tab.ThreadLifecycleHistory ??= new List<ThreadLifecycleEventSample>();
                 tab.EtwGroups ??= new List<GroupedEventRow>();
                 tab.HeuristicsGroups ??= new List<GroupedEventRow>();
+                tab.FilesystemGroups ??= new List<GroupedEventRow>();
                 tab.ProcessRelationsGroups ??= new List<GroupedEventRow>();
             }
         }
@@ -184,6 +186,7 @@ namespace SleepwalkerInterface
                 }
                 if (tab.EtwGroups.Count > MaxGroupedRowsPerCategory ||
                     tab.HeuristicsGroups.Count > MaxGroupedRowsPerCategory ||
+                    tab.FilesystemGroups.Count > MaxGroupedRowsPerCategory ||
                     tab.ProcessRelationsGroups.Count > MaxGroupedRowsPerCategory)
                 {
                     throw new InvalidDataException($"PID {tab.Pid} has too many grouped intel rows.");

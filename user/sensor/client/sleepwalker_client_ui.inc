@@ -6,20 +6,21 @@ static void PrintUsage(void)
     printf("                             [--ioctl-verbose 0|1] <target> <streams> [scope]\n");
     printf("target: PID | pid:<PID> | pid=<PID> | name:process.exe | name=process.exe | process.exe | path:<full-path> "
            "| path=<full-path> | launch:<full-path>\n");
-    printf("streams: handle,memory,thread[,etw]\n");
+    printf("streams: handle,memory,thread,filesystem[,etw]\n");
     printf("scope: local (default) | remote | both\n");
     printf("transport is service-broker IPC (SleepwlkrController) only.\n");
     printf("config file supports key:value or key=value (YAML-like flat keys)\n");
     printf("keys: target, streams, scope, log.format, log.file, log.high_priority_file,\n");
     printf("      log.high_priority_min_severity, output.ioctl_verbose,\n");
-    printf("      filter.ioctl.handle, filter.ioctl.thread, filter.etw.sleepwalker, filter.etw.ti\n");
+    printf("      filter.ioctl.handle, filter.ioctl.thread, filter.ioctl.filesystem,\n");
+    printf("      filter.etw.sleepwalker, filter.etw.ti\n");
     printf("example: sleepwalker_client.exe shutdown\n");
-    printf("example: sleepwalker_client.exe notepad.exe handle,thread\n");
-    printf("example: sleepwalker_client.exe --log-format jsonl --log-file events.swk.jsonl notepad.exe handle,memory,thread\n");
-    printf("example: sleepwalker_client.exe notepad.exe handle,memory,thread,etw\n");
-    printf("example: sleepwalker_client.exe path:C:\\Windows\\System32\\notepad.exe handle,memory,thread\n");
-    printf("example: sleepwalker_client.exe launch:C:\\Windows\\System32\\notepad.exe handle,memory,thread\n");
-    printf("example: sleepwalker_client.exe 4242 handle,memory,thread both\n");
+    printf("example: sleepwalker_client.exe notepad.exe handle,thread,filesystem\n");
+    printf("example: sleepwalker_client.exe --log-format jsonl --log-file events.swk.jsonl notepad.exe handle,memory,thread,filesystem\n");
+    printf("example: sleepwalker_client.exe notepad.exe handle,memory,thread,filesystem,etw\n");
+    printf("example: sleepwalker_client.exe path:C:\\Windows\\System32\\notepad.exe handle,memory,thread,filesystem\n");
+    printf("example: sleepwalker_client.exe launch:C:\\Windows\\System32\\notepad.exe handle,memory,thread,filesystem\n");
+    printf("example: sleepwalker_client.exe 4242 handle,memory,thread,filesystem both\n");
 }
 
 static const char *HandleClassToString(DWORD classId)
@@ -259,6 +260,82 @@ static void PrintThreadFlags(_In_ DWORD flags)
     printf("\n");
 }
 
+static const char *FileOperationToString(_In_ UINT32 operation)
+{
+    switch (operation)
+    {
+    case SleepwalkerFileOperationCreate:
+        return "CREATE";
+    case SleepwalkerFileOperationRead:
+        return "READ";
+    case SleepwalkerFileOperationWrite:
+        return "WRITE";
+    case SleepwalkerFileOperationClose:
+        return "CLOSE";
+    case SleepwalkerFileOperationCleanup:
+        return "CLEANUP";
+    case SleepwalkerFileOperationSetInformation:
+        return "SET_INFORMATION";
+    case SleepwalkerFileOperationQueryInformation:
+        return "QUERY_INFORMATION";
+    case SleepwalkerFileOperationDirectoryControl:
+        return "DIRECTORY_CONTROL";
+    case SleepwalkerFileOperationFsControl:
+        return "FS_CONTROL";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+static void PrintFileFlags(_In_ DWORD flags)
+{
+    printf("fileFlags=");
+    if (flags == 0)
+    {
+        printf("<none>");
+    }
+    else
+    {
+        if ((flags & SLEEPWALKER_FILE_FLAG_PRE_OPERATION) != 0)
+        {
+            printf("PreOp ");
+        }
+        if ((flags & SLEEPWALKER_FILE_FLAG_POST_OPERATION) != 0)
+        {
+            printf("PostOp ");
+        }
+        if ((flags & SLEEPWALKER_FILE_FLAG_PAGING_IO) != 0)
+        {
+            printf("PagingIo ");
+        }
+        if ((flags & SLEEPWALKER_FILE_FLAG_SYNCHRONOUS_IO) != 0)
+        {
+            printf("SyncIo ");
+        }
+        if ((flags & SLEEPWALKER_FILE_FLAG_NON_CACHED_IO) != 0)
+        {
+            printf("NonCached ");
+        }
+        if ((flags & SLEEPWALKER_FILE_FLAG_DIRECTORY_FILE) != 0)
+        {
+            printf("Directory ");
+        }
+        if ((flags & SLEEPWALKER_FILE_FLAG_DELETE_ON_CLOSE) != 0)
+        {
+            printf("DeleteOnClose ");
+        }
+        if ((flags & SLEEPWALKER_FILE_FLAG_REPARSE_POINT) != 0)
+        {
+            printf("ReparsePoint ");
+        }
+        if ((flags & SLEEPWALKER_FILE_FLAG_FAST_IO) != 0)
+        {
+            printf("FastIo ");
+        }
+    }
+    printf("\n");
+}
+
 static void PrintResolvedFrames(_In_ DWORD ProcessId, _In_reads_(FrameCount) const UINT64 *Frames,
                                 _In_ DWORD FrameCount)
 {
@@ -300,6 +377,14 @@ static BOOL IoctlRecordMatchesTargetPid(_In_ const SLEEPWALKER_EVENT_RECORD *Rec
         DWORD creator = (DWORD)Record->Data.Thread.CreatorPid;
         localMatch = (creator == TargetPid);
         remoteMatch = (process == TargetPid);
+        return ScopeMatches(Scope, localMatch, remoteMatch);
+    }
+
+    if (Record->Header.Type == SleepwalkerEventTypeFileSystem)
+    {
+        DWORD process = (DWORD)Record->Data.FileSystem.ProcessId;
+        localMatch = (process == TargetPid);
+        remoteMatch = FALSE;
         return ScopeMatches(Scope, localMatch, remoteMatch);
     }
 
@@ -377,6 +462,29 @@ static void PrintThreadEvent(_In_ const SLEEPWALKER_THREAD_EVENT *t, _In_ DWORD 
             (unsigned long long)t->ImageSize);
     PrintThreadFlags(t->Flags);
     PrintResolvedFrames((DWORD)t->ProcessId, t->Frames, t->FrameCount);
+    printf("\n");
+}
+
+static void PrintFileEvent(_In_ const SLEEPWALKER_FILE_EVENT *f, _In_ DWORD sequence)
+{
+    const char *operation;
+
+    if (f == NULL)
+    {
+        return;
+    }
+
+    operation = FileOperationToString(f->Operation);
+    printf("[SLEEPWALKER][FILESYSTEM] seq=%lu\n", sequence);
+    printf("op=%s pid=%016llX tid=%016llX major=%u minor=%u\n", operation, (unsigned long long)f->ProcessId,
+           (unsigned long long)f->ThreadId, f->MajorCode, f->MinorCode);
+    printf("status=0x%08X info=0x%llX len=0x%llX offset=0x%llX\n", (unsigned int)f->Status,
+           (unsigned long long)f->Information, (unsigned long long)f->Length, (unsigned long long)f->ByteOffset);
+    printf("irpFlags=0x%08X createOptions=0x%08X createDisposition=0x%08X access=0x%08X share=0x%08X\n", f->IrpFlags,
+           f->CreateOptions, f->CreateDisposition, f->DesiredAccess, f->ShareAccess);
+    printf("fileObject=0x%016llX fileId=0x%016llX\n", (unsigned long long)f->FileObject, (unsigned long long)f->FileId);
+    wprintf(L"path=%ls\n", f->Path[0] ? f->Path : L"<unknown>");
+    PrintFileFlags(f->Flags);
     printf("\n");
 }
 

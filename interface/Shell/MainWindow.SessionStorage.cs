@@ -36,6 +36,7 @@ namespace SleepwalkerInterface
                 tab.ThreadLifecycleHistory.Count == 0 &&
                 !_etwHistoryByPid.ContainsKey(tab.Pid) &&
                 !_heuristicsHistoryByPid.ContainsKey(tab.Pid) &&
+                !_filesystemHistoryByPid.ContainsKey(tab.Pid) &&
                 !_relationsHistoryByPid.ContainsKey(tab.Pid))
             {
                 persistedSnapshot.Title = NormalizeSessionTitle(tab.Title);
@@ -53,6 +54,9 @@ namespace SleepwalkerInterface
                 : new List<GroupedEventRow>();
             List<GroupedEventRow> heuristics = _heuristicsHistoryByPid.TryGetValue(tab.Pid, out var heurRows)
                 ? heurRows.Select(x => x.Clone()).ToList()
+                : new List<GroupedEventRow>();
+            List<GroupedEventRow> filesystem = _filesystemHistoryByPid.TryGetValue(tab.Pid, out var fsRows)
+                ? fsRows.Select(x => x.Clone()).ToList()
                 : new List<GroupedEventRow>();
             List<GroupedEventRow> relations = _relationsHistoryByPid.TryGetValue(tab.Pid, out var relRows)
                 ? relRows.Select(x => x.Clone()).ToList()
@@ -73,6 +77,7 @@ namespace SleepwalkerInterface
                 ThreadLifecycleHistory = tab.ThreadLifecycleHistory.Select(CloneThreadLifecycleEvent).ToList(),
                 EtwGroups = etw,
                 HeuristicsGroups = heuristics,
+                FilesystemGroups = filesystem,
                 ProcessRelationsGroups = relations
             };
         }
@@ -102,6 +107,7 @@ namespace SleepwalkerInterface
             tab.ThreadLifecycleHistory.Clear();
             _etwHistoryByPid.Remove(tab.Pid);
             _heuristicsHistoryByPid.Remove(tab.Pid);
+            _filesystemHistoryByPid.Remove(tab.Pid);
             _relationsHistoryByPid.Remove(tab.Pid);
         }
 
@@ -112,6 +118,7 @@ namespace SleepwalkerInterface
                                  tab.ThreadLifecycleHistory.Count > 0 ||
                                  _etwHistoryByPid.ContainsKey(tab.Pid) ||
                                  _heuristicsHistoryByPid.ContainsKey(tab.Pid) ||
+                                 _filesystemHistoryByPid.ContainsKey(tab.Pid) ||
                                  _relationsHistoryByPid.ContainsKey(tab.Pid);
             if (hasInlineData)
             {
@@ -148,6 +155,7 @@ namespace SleepwalkerInterface
 
             _etwHistoryByPid[tab.Pid] = CompactGroupsForMemory(snapshot.EtwGroups, 48);
             _heuristicsHistoryByPid[tab.Pid] = CompactGroupsForMemory(snapshot.HeuristicsGroups, 48);
+            _filesystemHistoryByPid[tab.Pid] = CompactGroupsForMemory(snapshot.FilesystemGroups, 48);
             _relationsHistoryByPid[tab.Pid] = CompactGroupsForMemory(snapshot.ProcessRelationsGroups, 48);
         }
 
@@ -194,6 +202,7 @@ namespace SleepwalkerInterface
             {
                 IntelDetailsCategory.Etw => snapshot.EtwGroups,
                 IntelDetailsCategory.Heuristics => snapshot.HeuristicsGroups,
+                IntelDetailsCategory.Filesystem => snapshot.FilesystemGroups,
                 IntelDetailsCategory.ProcessRelations => snapshot.ProcessRelationsGroups,
                 _ => Enumerable.Empty<GroupedEventRow>()
             };
@@ -269,6 +278,7 @@ namespace SleepwalkerInterface
 
                 _etwHistoryByPid.Clear();
                 _heuristicsHistoryByPid.Clear();
+                _filesystemHistoryByPid.Clear();
                 _relationsHistoryByPid.Clear();
                 _currentSession = null;
             }
@@ -315,6 +325,7 @@ namespace SleepwalkerInterface
                             ThreadLifecycleHistory = incoming.ThreadLifecycleHistory.Select(CloneThreadLifecycleEvent).ToList(),
                             EtwGroups = incoming.EtwGroups.Select(x => x.Clone()).ToList(),
                             HeuristicsGroups = incoming.HeuristicsGroups.Select(x => x.Clone()).ToList(),
+                            FilesystemGroups = incoming.FilesystemGroups.Select(x => x.Clone()).ToList(),
                             ProcessRelationsGroups = incoming.ProcessRelationsGroups.Select(x => x.Clone()).ToList()
                         }
                     }
@@ -325,6 +336,7 @@ namespace SleepwalkerInterface
                 tab.ThreadLifecycleHistory.Clear();
                 _etwHistoryByPid.Remove(tab.Pid);
                 _heuristicsHistoryByPid.Remove(tab.Pid);
+                _filesystemHistoryByPid.Remove(tab.Pid);
                 _relationsHistoryByPid.Remove(tab.Pid);
             }
 

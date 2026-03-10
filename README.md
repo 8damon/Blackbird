@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="./diagram/MAIN_INTERFACE.png" width="980" alt="Sleepwalker main interface" />
+  <img src="./diagram/SW_INTERFACE_ULTRAWIDE.png" width="980" alt="Sleepwalker main interface" />
 </p>
 
 ## What Sleepwalker Is For

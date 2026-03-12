@@ -1,5 +1,5 @@
 <h1 align="center">BLACKBIRD Beta v1.2</h1>
-<p align="center"><b>Kernel Telemetry & Detection Platform for Windows</b></p>
+<p align="center"><b>DFIR Kernel Telemetry & Detection Platform for Windows</b></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/-00599C?logo=c&logoColor=white&style=for-the-badge" />
@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="./diagram/BK_INTERFACE_ULTRAWIDE.png" width="980" alt="Blackbird main interface" />
+  <img src="./diagram/MAIN_INTERFACE.png.png" width="980" alt="Blackbird main interface" />
 </p>
 
 ## What Blackbird Is For

@@ -1,9 +1,13 @@
 param(
-    [string]$DriverName = "sleepwlkr",
-    [string]$ControllerName = "SleepwlkrController",
-    [string]$DriverSys = "..\sleepwlkr.sys",
-    [string]$ControllerExe = "..\SleepwlkrController.exe",
-    [string]$SensorCoreDll = "..\SleepwalkerSensorCore.dll"
+    [string]$DriverName = "blackbird",
+    [string]$ControllerName = "BlackbirdController",
+    [string]$DriverSys = "..\blackbird.sys",
+    [string]$ControllerExe = "..\BlackbirdController.exe",
+    [string]$SensorCoreDll = "..\BlackbirdSensorCore.dll",
+    [string]$InstanceName = "Blackbird Default",
+    [string]$InstanceAltitude = "385000.424244",
+    [uint32]$InstanceFlags = 0,
+    [string[]]$LegacyDriverNames = @("sleepwlkr", "sleepwalker")
 )
 
 $ErrorActionPreference = "Stop"
@@ -73,7 +77,7 @@ function Ensure-MinifilterRegistry {
     param(
         [Parameter(Mandatory = $true)]
         [string]$ServiceName,
-        [string]$InstanceName = "Sleepwalker Default",
+        [string]$InstanceName = "Blackbird Default",
         [string]$Altitude = "385000.424244",
         [uint32]$InstanceFlags = 0
     )
@@ -96,6 +100,110 @@ function Ensure-MinifilterRegistry {
     New-ItemProperty -Path $instancesKey -Name "DefaultInstance" -PropertyType String -Value $InstanceName -Force | Out-Null
     New-ItemProperty -Path $instanceKey -Name "Altitude" -PropertyType String -Value $Altitude -Force | Out-Null
     New-ItemProperty -Path $instanceKey -Name "Flags" -PropertyType DWord -Value $InstanceFlags -Force | Out-Null
+}
+
+function Get-ServicesUsingMinifilterAltitude {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Altitude,
+        [string]$ExcludeServiceName = ""
+    )
+
+    $servicesRoot = "HKLM:\SYSTEM\CurrentControlSet\Services"
+    $matches = New-Object System.Collections.Generic.List[string]
+
+    foreach ($serviceKey in (Get-ChildItem -Path $servicesRoot -ErrorAction SilentlyContinue)) {
+        $serviceName = $serviceKey.PSChildName
+        if ([string]::IsNullOrWhiteSpace($serviceName)) {
+            continue
+        }
+        if (-not [string]::IsNullOrWhiteSpace($ExcludeServiceName) -and
+            $serviceName.Equals($ExcludeServiceName, [System.StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
+
+        $instancesPath = Join-Path $serviceKey.PSPath "Instances"
+        if (-not (Test-Path -LiteralPath $instancesPath)) {
+            continue
+        }
+
+        $instanceKeys = Get-ChildItem -Path $instancesPath -ErrorAction SilentlyContinue
+        foreach ($instanceKey in $instanceKeys) {
+            $props = Get-ItemProperty -LiteralPath $instanceKey.PSPath -ErrorAction SilentlyContinue
+            if ($null -eq $props) {
+                continue
+            }
+            if (-not ($props.PSObject.Properties.Name -contains "Altitude")) {
+                continue
+            }
+            if ([string]$props.Altitude -eq $Altitude) {
+                [void]$matches.Add($serviceName)
+                break
+            }
+        }
+    }
+
+    return $matches.ToArray() | Sort-Object -Unique
+}
+
+function Remove-MinifilterServiceArtifacts {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ServiceName
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ServiceName)) {
+        return
+    }
+
+    Invoke-Sc -Arguments @("stop", $ServiceName) -AllowedExitCodes @(0, 5, 1060, 1062)
+    $fltOut = & fltmc.exe unload $ServiceName 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        # ignore unload failures; service delete + registry cleanup is enough for stale entries
+        $null = $fltOut
+    }
+    Invoke-Sc -Arguments @("delete", $ServiceName) -AllowedExitCodes @(0, 1060, 1072)
+
+    $serviceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+    if (Test-Path -LiteralPath $serviceKey) {
+        Remove-Item -LiteralPath $serviceKey -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Remove-ProjectAltitudeConflicts {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Altitude,
+        [Parameter(Mandatory = $true)]
+        [string]$CurrentServiceName,
+        [Parameter(Mandatory = $true)]
+        [string[]]$ProjectServiceNames
+    )
+
+    $conflicts = @(Get-ServicesUsingMinifilterAltitude -Altitude $Altitude -ExcludeServiceName $CurrentServiceName)
+    if ($conflicts.Count -eq 0) {
+        return @()
+    }
+
+    $projectLookup = @{}
+    foreach ($name in $ProjectServiceNames) {
+        if (-not [string]::IsNullOrWhiteSpace($name)) {
+            $projectLookup[$name.ToLowerInvariant()] = $true
+        }
+    }
+
+    $unknown = New-Object System.Collections.Generic.List[string]
+    foreach ($svc in $conflicts) {
+        if ($projectLookup.ContainsKey($svc.ToLowerInvariant())) {
+            Write-Host "    Removing stale project minifilter service '$svc' with conflicting altitude $Altitude..." -ForegroundColor Yellow
+            Remove-MinifilterServiceArtifacts -ServiceName $svc
+        }
+        else {
+            [void]$unknown.Add($svc)
+        }
+    }
+
+    return $unknown.ToArray() | Sort-Object -Unique
 }
 
 function Get-RecentServiceEvents {
@@ -135,14 +243,15 @@ function Get-RecentServiceEvents {
 function Get-MinifilterRegistryDump {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$ServiceName
+        [string]$ServiceName,
+        [string]$InstanceName = "Blackbird Default"
     )
 
     $base = "HKLM\SYSTEM\CurrentControlSet\Services\$ServiceName"
     $commands = @(
         @("query", $base),
         @("query", "$base\Instances"),
-        @("query", "$base\Instances\Sleepwalker Default")
+        @("query", "$base\Instances\$InstanceName")
     )
 
     $lines = @()
@@ -165,45 +274,62 @@ function Get-MinifilterRegistryDump {
 $driverSrc = Resolve-ArtifactPath `
     -PreferredPath $DriverSys `
     -FallbackPaths @(
-        "vcxproj\x64\Debug\sleepwlkr.sys",
-        "vcxproj\x64\Release\sleepwlkr.sys",
-        "x64\Debug\sleepwlkr.sys",
-        "x64\Release\sleepwlkr.sys",
-        "sleepwlkr.sys"
+        "vcxproj\x64\Debug\blackbird.sys",
+        "vcxproj\x64\Release\blackbird.sys",
+        "x64\Debug\blackbird.sys",
+        "x64\Release\blackbird.sys",
+        "blackbird.sys"
     ) `
     -Label "Driver .sys"
 
 $controllerSrc = Resolve-ArtifactPath `
     -PreferredPath $ControllerExe `
     -FallbackPaths @(
-        "vcxproj\x64\Debug\SleepwlkrController.exe",
-        "vcxproj\x64\Release\SleepwlkrController.exe",
-        "x64\Debug\SleepwlkrController.exe",
-        "x64\Release\SleepwlkrController.exe",
-        "SleepwlkrController.exe"
+        "vcxproj\x64\Debug\BlackbirdController.exe",
+        "vcxproj\x64\Release\BlackbirdController.exe",
+        "x64\Debug\BlackbirdController.exe",
+        "x64\Release\BlackbirdController.exe",
+        "BlackbirdController.exe"
     ) `
     -Label "Controller .exe"
 
 $sensorCoreSrc = Resolve-ArtifactPath `
     -PreferredPath $SensorCoreDll `
     -FallbackPaths @(
-        "vcxproj\x64\Debug\SleepwalkerSensorCore.dll",
-        "vcxproj\x64\Release\SleepwalkerSensorCore.dll",
-        "x64\Debug\SleepwalkerSensorCore.dll",
-        "x64\Release\SleepwalkerSensorCore.dll",
-        "SleepwalkerSensorCore.dll"
+        "vcxproj\x64\Debug\BlackbirdSensorCore.dll",
+        "vcxproj\x64\Release\BlackbirdSensorCore.dll",
+        "x64\Debug\BlackbirdSensorCore.dll",
+        "x64\Release\BlackbirdSensorCore.dll",
+        "BlackbirdSensorCore.dll"
     ) `
     -Label "SensorCore .dll"
 
-$driverDst = Join-Path $env:windir "System32\drivers\sleepwlkr.sys"
-$controllerDir = Join-Path $env:ProgramFiles "Sleepwalker"
-$controllerDst = Join-Path $controllerDir "SleepwlkrController.exe"
-$sensorCoreDst = Join-Path $controllerDir "SleepwalkerSensorCore.dll"
+$driverDst = Join-Path $env:windir "System32\drivers\blackbird.sys"
+$controllerDir = Join-Path $env:ProgramFiles "Blackbird"
+$controllerDst = Join-Path $controllerDir "BlackbirdController.exe"
+$sensorCoreDst = Join-Path $controllerDir "BlackbirdSensorCore.dll"
 
 New-Item -ItemType Directory -Path $controllerDir -Force | Out-Null
 Copy-Item -LiteralPath $driverSrc -Destination $driverDst -Force
 Copy-Item -LiteralPath $controllerSrc -Destination $controllerDst -Force
 Copy-Item -LiteralPath $sensorCoreSrc -Destination $sensorCoreDst -Force
+
+foreach ($legacyName in $LegacyDriverNames) {
+    if ([string]::IsNullOrWhiteSpace($legacyName) -or
+        $legacyName.Equals($DriverName, [System.StringComparison]::OrdinalIgnoreCase)) {
+        continue
+    }
+    Remove-MinifilterServiceArtifacts -ServiceName $legacyName
+}
+
+$unknownPreCreateConflicts = Remove-ProjectAltitudeConflicts `
+    -Altitude $InstanceAltitude `
+    -CurrentServiceName $DriverName `
+    -ProjectServiceNames (@($LegacyDriverNames) + @($DriverName))
+if ($unknownPreCreateConflicts.Count -gt 0) {
+    $list = $unknownPreCreateConflicts -join ", "
+    throw "Altitude $InstanceAltitude is already used by non-project minifilter service(s): $list. Change -InstanceAltitude or remove the conflicting filter(s)."
+}
 
 Invoke-Sc -Arguments @("stop", $DriverName) -AllowedExitCodes @(0, 1060, 1062)
 Invoke-Sc -Arguments @("delete", $DriverName) -AllowedExitCodes @(0, 1060)
@@ -215,16 +341,17 @@ Invoke-Sc -Arguments @(
     "group=", "FSFilter Activity Monitor",
     "depend=", "FltMgr",
     "binPath=", $driverDst,
-    "DisplayName=", "Sleepwalker Driver"
+    "DisplayName=", "Blackbird Driver"
 )
 Invoke-Sc -Arguments @("qc", $DriverName)
-Ensure-MinifilterRegistry -ServiceName $DriverName
+Ensure-MinifilterRegistry -ServiceName $DriverName -InstanceName $InstanceName -Altitude $InstanceAltitude -InstanceFlags $InstanceFlags
 
 Invoke-Sc -Arguments @("stop", $ControllerName) -AllowedExitCodes @(0, 1060, 1062)
 Invoke-Sc -Arguments @("delete", $ControllerName) -AllowedExitCodes @(0, 1060)
-Invoke-Sc -Arguments @("create", $ControllerName, "type=", "own", "start=", "auto", "obj=", "LocalSystem", "binPath=", "`"$controllerDst`"", "DisplayName=", "Sleepwalker Controller Service")
+Invoke-Sc -Arguments @("create", $ControllerName, "type=", "own", "start=", "auto", "obj=", "LocalSystem", "binPath=", "`"$controllerDst`"", "DisplayName=", "Blackbird Controller Service")
 Invoke-Sc -Arguments @("failure", $ControllerName, "reset=", "60", "actions=", "restart/5000/restart/5000/restart/5000")
 
+$driverRecovered = $false
 try {
     Invoke-Sc -Arguments @("start", $DriverName)
 }
@@ -243,19 +370,56 @@ catch {
         }
     }
 
-    Write-Host "[!] Failed to start driver service '$DriverName'." -ForegroundColor Red
-    Write-Host "    sc query output:" -ForegroundColor Yellow
-    & sc.exe query $DriverName 2>&1 | ForEach-Object { Write-Host "    $_" }
-    Write-Host "    sc qc output:" -ForegroundColor Yellow
-    & sc.exe qc $DriverName 2>&1 | ForEach-Object { Write-Host "    $_" }
-    Write-Host "    fltmgr status:" -ForegroundColor Yellow
-    & sc.exe query fltmgr 2>&1 | ForEach-Object { Write-Host "    $_" }
-    Write-Host "    minifilter registry keys:" -ForegroundColor Yellow
-    (Get-MinifilterRegistryDump -ServiceName $DriverName) -split "`r?`n" | ForEach-Object { Write-Host "    $_" }
-    Write-Host "    recent SCM events:" -ForegroundColor Yellow
-    (Get-RecentServiceEvents -ServiceName $DriverName) -split "`r?`n" | ForEach-Object { Write-Host "    $_" }
-    Write-Host "    hint: exit code 127 usually means a missing kernel export (driver built for newer OS APIs)." -ForegroundColor Yellow
-    throw
+    if ($driverStartError -match "already exists at this altitude|2149515281") {
+        Write-Host "    Detected minifilter altitude collision. Attempting conflict cleanup + retry..." -ForegroundColor Yellow
+        $unknownRetryConflicts = Remove-ProjectAltitudeConflicts `
+            -Altitude $InstanceAltitude `
+            -CurrentServiceName $DriverName `
+            -ProjectServiceNames (@($LegacyDriverNames) + @($DriverName))
+
+        if ($unknownRetryConflicts.Count -eq 0) {
+            try {
+                Ensure-MinifilterRegistry -ServiceName $DriverName -InstanceName $InstanceName -Altitude $InstanceAltitude -InstanceFlags $InstanceFlags
+                Invoke-Sc -Arguments @("start", $DriverName)
+                Write-Host "    Driver start succeeded after altitude conflict remediation." -ForegroundColor Green
+                $driverRecovered = $true
+            }
+            catch {
+                $driverStartError = $_.Exception.Message
+            }
+        }
+        else {
+            $unknownList = $unknownRetryConflicts -join ", "
+            Write-Host "    unresolved altitude conflicts (non-project services): $unknownList" -ForegroundColor Yellow
+        }
+    }
+
+    if ($driverRecovered) {
+        # continue installation flow
+    }
+    else {
+        Write-Host "[!] Failed to start driver service '$DriverName'." -ForegroundColor Red
+        Write-Host "    sc query output:" -ForegroundColor Yellow
+        & sc.exe query $DriverName 2>&1 | ForEach-Object { Write-Host "    $_" }
+        Write-Host "    sc qc output:" -ForegroundColor Yellow
+        & sc.exe qc $DriverName 2>&1 | ForEach-Object { Write-Host "    $_" }
+        Write-Host "    fltmgr status:" -ForegroundColor Yellow
+        & sc.exe query fltmgr 2>&1 | ForEach-Object { Write-Host "    $_" }
+        Write-Host "    minifilter registry keys:" -ForegroundColor Yellow
+        (Get-MinifilterRegistryDump -ServiceName $DriverName -InstanceName $InstanceName) -split "`r?`n" | ForEach-Object { Write-Host "    $_" }
+        Write-Host "    recent SCM events:" -ForegroundColor Yellow
+        (Get-RecentServiceEvents -ServiceName $DriverName) -split "`r?`n" | ForEach-Object { Write-Host "    $_" }
+        Write-Host "    conflicting altitude services:" -ForegroundColor Yellow
+        $altitudeConflicts = Get-ServicesUsingMinifilterAltitude -Altitude $InstanceAltitude -ExcludeServiceName ""
+        if ($altitudeConflicts.Count -eq 0) {
+            Write-Host "    (none detected in Services\\*\\Instances)"
+        }
+        else {
+            $altitudeConflicts | ForEach-Object { Write-Host "    $_" }
+        }
+        Write-Host "    hint: exit code 127 usually means a missing kernel export (driver built for newer OS APIs)." -ForegroundColor Yellow
+        throw
+    }
 }
 
 Invoke-Sc -Arguments @("start", $ControllerName)

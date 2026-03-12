@@ -1,24 +1,24 @@
 #include <ntddk.h>
 #include "intent_store.h"
 
-#define SLEEPWALKER_CORRELATION_RING_SIZE 256
+#define BLACKBIRD_CORRELATION_RING_SIZE 256
 
-typedef struct _SLEEPWALKER_INTENT_ENTRY
+typedef struct _BLACKBIRD_INTENT_ENTRY
 {
     UINT64 CallerPid;
     UINT64 TargetPid;
     UINT32 AccessMask;
     UINT32 IntentFlags;
     INT64 TimestampQpc;
-} SLEEPWALKER_INTENT_ENTRY, *PSLEEPWALKER_INTENT_ENTRY;
+} BLACKBIRD_INTENT_ENTRY, *PBLACKBIRD_INTENT_ENTRY;
 
-static SLEEPWALKER_INTENT_ENTRY g_IntentRing[SLEEPWALKER_CORRELATION_RING_SIZE];
+static BLACKBIRD_INTENT_ENTRY g_IntentRing[BLACKBIRD_CORRELATION_RING_SIZE];
 static volatile LONG g_IntentWriteIndex = -1;
 static KSPIN_LOCK g_IntentLock;
 static volatile LONG g_CorrelationInitialized = 0;
 static ULONGLONG g_QpcFrequency = 1;
 
-static UINT32 SLEEPWALKERCorrelationQpcDeltaToMs(_In_ INT64 DeltaQpc)
+static UINT32 BLACKBIRDCorrelationQpcDeltaToMs(_In_ INT64 DeltaQpc)
 {
     ULONGLONG deltaValue;
 
@@ -31,7 +31,7 @@ static UINT32 SLEEPWALKERCorrelationQpcDeltaToMs(_In_ INT64 DeltaQpc)
     return (UINT32)((deltaValue * 1000ULL) / g_QpcFrequency);
 }
 
-static ULONGLONG SLEEPWALKERCorrelationMsToQpc(_In_ UINT32 Ms)
+static ULONGLONG BLACKBIRDCorrelationMsToQpc(_In_ UINT32 Ms)
 {
     ULONGLONG ticks;
 
@@ -49,7 +49,7 @@ static ULONGLONG SLEEPWALKERCorrelationMsToQpc(_In_ UINT32 Ms)
 }
 
 NTSTATUS
-SLEEPWALKERCorrelationInitialize(VOID)
+BLACKBIRDCorrelationInitialize(VOID)
 {
     LARGE_INTEGER freq;
 
@@ -66,7 +66,7 @@ SLEEPWALKERCorrelationInitialize(VOID)
     return STATUS_SUCCESS;
 }
 
-VOID SLEEPWALKERCorrelationUninitialize(VOID)
+VOID BLACKBIRDCorrelationUninitialize(VOID)
 {
     if (InterlockedExchange(&g_CorrelationInitialized, 0) == 0)
     {
@@ -77,7 +77,7 @@ VOID SLEEPWALKERCorrelationUninitialize(VOID)
     InterlockedExchange(&g_IntentWriteIndex, -1);
 }
 
-VOID SLEEPWALKERCorrelationRecordHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ ACCESS_MASK AccessMask,
+VOID BLACKBIRDCorrelationRecordHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ ACCESS_MASK AccessMask,
                                               _In_ UINT32 IntentFlags)
 {
     LONG idx;
@@ -90,10 +90,10 @@ VOID SLEEPWALKERCorrelationRecordHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE
     }
 
     idx = InterlockedIncrement(&g_IntentWriteIndex);
-    idx = idx % SLEEPWALKER_CORRELATION_RING_SIZE;
+    idx = idx % BLACKBIRD_CORRELATION_RING_SIZE;
     if (idx < 0)
     {
-        idx += SLEEPWALKER_CORRELATION_RING_SIZE;
+        idx += BLACKBIRD_CORRELATION_RING_SIZE;
     }
 
     nowQpc = KeQueryPerformanceCounter(NULL).QuadPart;
@@ -110,7 +110,7 @@ VOID SLEEPWALKERCorrelationRecordHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE
 }
 
 BOOLEAN
-SLEEPWALKERCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ UINT32 WindowMs,
+BLACKBIRDCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ UINT32 WindowMs,
                                         _Out_opt_ UINT32 *IntentFlags, _Out_opt_ UINT32 *AccessMask,
                                         _Out_opt_ UINT32 *AgeMs)
 {
@@ -143,9 +143,9 @@ SLEEPWALKERCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE Targe
         return FALSE;
     }
 
-    windowQpc = SLEEPWALKERCorrelationMsToQpc(WindowMs);
+    windowQpc = BLACKBIRDCorrelationMsToQpc(WindowMs);
     KeAcquireSpinLock(&g_IntentLock, &oldIrql);
-    for (i = 0; i < SLEEPWALKER_CORRELATION_RING_SIZE; ++i)
+    for (i = 0; i < BLACKBIRD_CORRELATION_RING_SIZE; ++i)
     {
         INT64 deltaQpc;
 
@@ -194,13 +194,13 @@ SLEEPWALKERCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE Targe
     }
     if (AgeMs != NULL)
     {
-        *AgeMs = SLEEPWALKERCorrelationQpcDeltaToMs(newestDeltaQpc);
+        *AgeMs = BLACKBIRDCorrelationQpcDeltaToMs(newestDeltaQpc);
     }
     return TRUE;
 }
 
 BOOLEAN
-SLEEPWALKERCorrelationQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UINT32 WindowMs,
+BLACKBIRDCorrelationQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UINT32 WindowMs,
                                                  _In_ BOOLEAN PreferExternalCaller, _Out_opt_ HANDLE *CallerPid,
                                                  _Out_opt_ UINT32 *IntentFlags, _Out_opt_ UINT32 *AccessMask,
                                                  _Out_opt_ UINT32 *AgeMs)
@@ -243,9 +243,9 @@ SLEEPWALKERCorrelationQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UIN
         return FALSE;
     }
 
-    windowQpc = SLEEPWALKERCorrelationMsToQpc(WindowMs);
+    windowQpc = BLACKBIRDCorrelationMsToQpc(WindowMs);
     KeAcquireSpinLock(&g_IntentLock, &oldIrql);
-    for (i = 0; i < SLEEPWALKER_CORRELATION_RING_SIZE; ++i)
+    for (i = 0; i < BLACKBIRD_CORRELATION_RING_SIZE; ++i)
     {
         INT64 deltaQpc;
         BOOLEAN isExternal;
@@ -301,7 +301,7 @@ SLEEPWALKERCorrelationQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UIN
 
     if (selectedCaller != 0)
     {
-        for (i = 0; i < SLEEPWALKER_CORRELATION_RING_SIZE; ++i)
+        for (i = 0; i < BLACKBIRD_CORRELATION_RING_SIZE; ++i)
         {
             INT64 deltaQpc;
 
@@ -355,13 +355,13 @@ SLEEPWALKERCorrelationQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UIN
     }
     if (AgeMs != NULL)
     {
-        *AgeMs = SLEEPWALKERCorrelationQpcDeltaToMs(newestDeltaQpc);
+        *AgeMs = BLACKBIRDCorrelationQpcDeltaToMs(newestDeltaQpc);
     }
     return TRUE;
 }
 
 BOOLEAN
-SLEEPWALKERCorrelationSelfCheck(VOID)
+BLACKBIRDCorrelationSelfCheck(VOID)
 {
     return (InterlockedCompareExchange(&g_CorrelationInitialized, 0, 0) != 0);
 }

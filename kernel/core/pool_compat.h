@@ -1,19 +1,19 @@
-#ifndef SLEEPWALKER_POOL_COMPAT_H
-#define SLEEPWALKER_POOL_COMPAT_H
+#ifndef BLACKBIRD_POOL_COMPAT_H
+#define BLACKBIRD_POOL_COMPAT_H
 
-typedef PVOID(NTAPI *SLEEPWALKER_EX_ALLOCATE_POOL2_FN)(_In_ POOL_FLAGS Flags, _In_ SIZE_T NumberOfBytes, _In_ ULONG Tag);
+typedef PVOID(NTAPI *BLACKBIRD_EX_ALLOCATE_POOL2_FN)(_In_ POOL_FLAGS Flags, _In_ SIZE_T NumberOfBytes, _In_ ULONG Tag);
 
-static __forceinline PVOID SLEEPWALKERAllocatePoolCompat(_In_ POOL_FLAGS Flags, _In_ SIZE_T NumberOfBytes, _In_ ULONG Tag)
+static __forceinline PVOID BLACKBIRDAllocatePoolCompat(_In_ POOL_FLAGS Flags, _In_ SIZE_T NumberOfBytes, _In_ ULONG Tag)
 {
     static volatile LONG resolved = 0;
-    static SLEEPWALKER_EX_ALLOCATE_POOL2_FN allocatePool2 = NULL;
+    static BLACKBIRD_EX_ALLOCATE_POOL2_FN allocatePool2 = NULL;
 
     if (InterlockedCompareExchange(&resolved, 0, 0) == 0)
     {
         UNICODE_STRING name;
 
         RtlInitUnicodeString(&name, L"ExAllocatePool2");
-        allocatePool2 = (SLEEPWALKER_EX_ALLOCATE_POOL2_FN)MmGetSystemRoutineAddress(&name);
+        allocatePool2 = (BLACKBIRD_EX_ALLOCATE_POOL2_FN)MmGetSystemRoutineAddress(&name);
         InterlockedExchange(&resolved, 1);
     }
 

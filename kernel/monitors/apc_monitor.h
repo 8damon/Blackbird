@@ -1,17 +1,17 @@
-#ifndef SLEEPWALKER_APC_MONITOR_H
-#define SLEEPWALKER_APC_MONITOR_H
+#ifndef BLACKBIRD_APC_MONITOR_H
+#define BLACKBIRD_APC_MONITOR_H
 
 #include <ntdef.h>
 
 NTSTATUS
-SLEEPWALKERApcMonitorInitialize(VOID);
+BLACKBIRDApcMonitorInitialize(VOID);
 
-VOID SLEEPWALKERApcMonitorUninitialize(VOID);
+VOID BLACKBIRDApcMonitorUninitialize(VOID);
 
-VOID SLEEPWALKERApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
+VOID BLACKBIRDApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
                                                    _In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsDuplicateOperation);
 
 BOOLEAN
-SLEEPWALKERApcMonitorSelfCheck(VOID);
+BLACKBIRDApcMonitorSelfCheck(VOID);
 
 #endif

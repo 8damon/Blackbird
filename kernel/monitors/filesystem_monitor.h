@@ -1,14 +1,14 @@
-#ifndef SLEEPWALKER_FILESYSTEM_MONITOR_H
-#define SLEEPWALKER_FILESYSTEM_MONITOR_H
+#ifndef BLACKBIRD_FILESYSTEM_MONITOR_H
+#define BLACKBIRD_FILESYSTEM_MONITOR_H
 
 #include <ntddk.h>
 
 NTSTATUS
-SLEEPWALKERFileSystemMonitorInitialize(_In_ PDRIVER_OBJECT DriverObject);
+BLACKBIRDFileSystemMonitorInitialize(_In_ PDRIVER_OBJECT DriverObject);
 
-VOID SLEEPWALKERFileSystemMonitorUninitialize(VOID);
+VOID BLACKBIRDFileSystemMonitorUninitialize(VOID);
 
 BOOLEAN
-SLEEPWALKERFileSystemMonitorSelfCheck(VOID);
+BLACKBIRDFileSystemMonitorSelfCheck(VOID);
 
 #endif

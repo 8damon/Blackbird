@@ -3,7 +3,7 @@
 #include "..\core\unicode_utils.h"
 #include "registry_monitor.h"
 
-#define SLEEPWALKER_REG_MON_ALTITUDE L"385000.424244"
+#define BLACKBIRD_REG_MON_ALTITUDE L"385000.424244"
 
 static LARGE_INTEGER g_RegistryCookie = {0};
 static volatile LONG g_RegistryMonitorRegistered = 0;
@@ -11,24 +11,24 @@ static volatile LONG g_RegistryFailureCounter = 0;
 
 NTKERNELAPI ULONG PsGetProcessSessionIdEx(_In_ PEPROCESS Process);
 
-static BOOLEAN SLEEPWALKERIsHighValueRegistryPath(_In_ PCUNICODE_STRING Path)
+static BOOLEAN BLACKBIRDIsHighValueRegistryPath(_In_ PCUNICODE_STRING Path)
 {
     if (Path == NULL || Path->Buffer == NULL)
     {
         return FALSE;
     }
 
-    if (SLEEPWALKERUnicodeContainsInsensitive(Path, L"\\currentversion\\run", 19) ||
-        SLEEPWALKERUnicodeContainsInsensitive(Path, L"\\currentversion\\runonce", 23) ||
-        SLEEPWALKERUnicodeContainsInsensitive(Path, L"\\image file execution options", 29) ||
-        SLEEPWALKERUnicodeContainsInsensitive(Path, L"\\system\\currentcontrolset\\services\\", 35))
+    if (BLACKBIRDUnicodeContainsInsensitive(Path, L"\\currentversion\\run", 19) ||
+        BLACKBIRDUnicodeContainsInsensitive(Path, L"\\currentversion\\runonce", 23) ||
+        BLACKBIRDUnicodeContainsInsensitive(Path, L"\\image file execution options", 29) ||
+        BLACKBIRDUnicodeContainsInsensitive(Path, L"\\system\\currentcontrolset\\services\\", 35))
     {
         return TRUE;
     }
     return FALSE;
 }
 
-static NTSTATUS SLEEPWALKERRegistryCallback(_In_opt_ PVOID CallbackContext, _In_opt_ PVOID Argument1,
+static NTSTATUS BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_opt_ PVOID Argument1,
                                             _In_opt_ PVOID Argument2)
 {
     REG_NOTIFY_CLASS notifyClass;
@@ -68,14 +68,14 @@ static NTSTATUS SLEEPWALKERRegistryCallback(_In_opt_ PVOID CallbackContext, _In_
         {
             dataType = info->Type;
             dataSize = info->DataSize;
-            SLEEPWALKERSafeCopyUnicode(info->ValueName, valueName, RTL_NUMBER_OF(valueName));
+            BLACKBIRDSafeCopyUnicode(info->ValueName, valueName, RTL_NUMBER_OF(valueName));
 
             nameStatus = CmCallbackGetKeyObjectIDEx(&g_RegistryCookie, info->Object, NULL, &keyNameUs, 0);
             if (NT_SUCCESS(nameStatus) && keyNameUs != NULL)
             {
                 keyPathUs = *keyNameUs;
-                SLEEPWALKERSafeCopyUnicode(&keyPathUs, keyPath, RTL_NUMBER_OF(keyPath));
-                highValuePath = SLEEPWALKERIsHighValueRegistryPath(&keyPathUs);
+                BLACKBIRDSafeCopyUnicode(&keyPathUs, keyPath, RTL_NUMBER_OF(keyPath));
+                highValuePath = BLACKBIRDIsHighValueRegistryPath(&keyPathUs);
                 CmCallbackReleaseKeyObjectIDEx(keyNameUs);
             }
         }
@@ -87,8 +87,8 @@ static NTSTATUS SLEEPWALKERRegistryCallback(_In_opt_ PVOID CallbackContext, _In_
         if (info != NULL && info->CompleteName != NULL)
         {
             keyPathUs = *info->CompleteName;
-            SLEEPWALKERSafeCopyUnicode(&keyPathUs, keyPath, RTL_NUMBER_OF(keyPath));
-            highValuePath = SLEEPWALKERIsHighValueRegistryPath(&keyPathUs);
+            BLACKBIRDSafeCopyUnicode(&keyPathUs, keyPath, RTL_NUMBER_OF(keyPath));
+            highValuePath = BLACKBIRDIsHighValueRegistryPath(&keyPathUs);
         }
     }
     else if (notifyClass == RegNtPreOpenKeyEx)
@@ -98,8 +98,8 @@ static NTSTATUS SLEEPWALKERRegistryCallback(_In_opt_ PVOID CallbackContext, _In_
         if (info != NULL && info->CompleteName != NULL)
         {
             keyPathUs = *info->CompleteName;
-            SLEEPWALKERSafeCopyUnicode(&keyPathUs, keyPath, RTL_NUMBER_OF(keyPath));
-            highValuePath = SLEEPWALKERIsHighValueRegistryPath(&keyPathUs);
+            BLACKBIRDSafeCopyUnicode(&keyPathUs, keyPath, RTL_NUMBER_OF(keyPath));
+            highValuePath = BLACKBIRDIsHighValueRegistryPath(&keyPathUs);
         }
     }
     else if (notifyClass == RegNtPreDeleteValueKey)
@@ -110,12 +110,12 @@ static NTSTATUS SLEEPWALKERRegistryCallback(_In_opt_ PVOID CallbackContext, _In_
         {
             PUNICODE_STRING keyNameUs = NULL;
             NTSTATUS nameStatus = CmCallbackGetKeyObjectIDEx(&g_RegistryCookie, info->Object, NULL, &keyNameUs, 0);
-            SLEEPWALKERSafeCopyUnicode(info->ValueName, valueName, RTL_NUMBER_OF(valueName));
+            BLACKBIRDSafeCopyUnicode(info->ValueName, valueName, RTL_NUMBER_OF(valueName));
             if (NT_SUCCESS(nameStatus) && keyNameUs != NULL)
             {
                 keyPathUs = *keyNameUs;
-                SLEEPWALKERSafeCopyUnicode(&keyPathUs, keyPath, RTL_NUMBER_OF(keyPath));
-                highValuePath = SLEEPWALKERIsHighValueRegistryPath(&keyPathUs);
+                BLACKBIRDSafeCopyUnicode(&keyPathUs, keyPath, RTL_NUMBER_OF(keyPath));
+                highValuePath = BLACKBIRDIsHighValueRegistryPath(&keyPathUs);
                 CmCallbackReleaseKeyObjectIDEx(keyNameUs);
             }
         }
@@ -125,19 +125,19 @@ static NTSTATUS SLEEPWALKERRegistryCallback(_In_opt_ PVOID CallbackContext, _In_
         return STATUS_SUCCESS;
     }
 
-    SLEEPWALKEREtwLogRegistryEvent(operation, pid, sessionId, (ULONG)notifyClass, dataType, dataSize, highValuePath,
+    BLACKBIRDEtwLogRegistryEvent(operation, pid, sessionId, (ULONG)notifyClass, dataType, dataSize, highValuePath,
                                    (keyPath[0] != L'\0') ? keyPath : NULL, (valueName[0] != L'\0') ? valueName : NULL);
 
     if (highValuePath)
     {
-        SLEEPWALKEREtwLogDetectionEvent("HIGH_VALUE_REGISTRY_ACTIVITY", 2, pid, NULL, 0, 0, 0, keyPath);
+        BLACKBIRDEtwLogDetectionEvent("HIGH_VALUE_REGISTRY_ACTIVITY", 2, pid, NULL, 0, 0, 0, keyPath);
     }
 
     return STATUS_SUCCESS;
 }
 
 NTSTATUS
-SLEEPWALKERRegistryMonitorInitialize(_In_ PDRIVER_OBJECT DriverObject)
+BLACKBIRDRegistryMonitorInitialize(_In_ PDRIVER_OBJECT DriverObject)
 {
     NTSTATUS status;
     UNICODE_STRING altitude;
@@ -152,26 +152,26 @@ SLEEPWALKERRegistryMonitorInitialize(_In_ PDRIVER_OBJECT DriverObject)
         return STATUS_SUCCESS;
     }
 
-    RtlInitUnicodeString(&altitude, SLEEPWALKER_REG_MON_ALTITUDE);
-    status = CmRegisterCallbackEx(SLEEPWALKERRegistryCallback, &altitude, DriverObject, NULL, &g_RegistryCookie, NULL);
+    RtlInitUnicodeString(&altitude, BLACKBIRD_REG_MON_ALTITUDE);
+    status = CmRegisterCallbackEx(BLACKBIRDRegistryCallback, &altitude, DriverObject, NULL, &g_RegistryCookie, NULL);
     if (!NT_SUCCESS(status))
     {
         failures = InterlockedIncrement(&g_RegistryFailureCounter);
         if (failures == 1 || ((failures & 0xFF) == 0))
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                       "SLEEPWALKER: registry monitor callback registration failed status=0x%08X total=%lu.\n", status,
+                       "BLACKBIRD: registry monitor callback registration failed status=0x%08X total=%lu.\n", status,
                        (ULONG)failures);
         }
         return status;
     }
 
     InterlockedExchange(&g_RegistryMonitorRegistered, 1);
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "SLEEPWALKER: registry monitor initialized.\n");
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: registry monitor initialized.\n");
     return STATUS_SUCCESS;
 }
 
-VOID SLEEPWALKERRegistryMonitorUninitialize(VOID)
+VOID BLACKBIRDRegistryMonitorUninitialize(VOID)
 {
     NTSTATUS status;
 
@@ -189,18 +189,18 @@ VOID SLEEPWALKERRegistryMonitorUninitialize(VOID)
     {
         DbgPrintEx(
             DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-            "SLEEPWALKER: registry monitor callback removal failed; monitor remains registered (status=0x%08X).\n",
+            "BLACKBIRD: registry monitor callback removal failed; monitor remains registered (status=0x%08X).\n",
             status);
         return;
     }
 
     InterlockedExchange(&g_RegistryMonitorRegistered, 0);
     RtlZeroMemory(&g_RegistryCookie, sizeof(g_RegistryCookie));
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "SLEEPWALKER: registry monitor uninitialized.\n");
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: registry monitor uninitialized.\n");
 }
 
 BOOLEAN
-SLEEPWALKERRegistryMonitorSelfCheck(VOID)
+BLACKBIRDRegistryMonitorSelfCheck(VOID)
 {
     if (InterlockedCompareExchange(&g_RegistryMonitorRegistered, 0, 0) == 0)
     {

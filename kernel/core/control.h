@@ -1,33 +1,33 @@
-#ifndef SLEEPWALKER_CONTROL_H
-#define SLEEPWALKER_CONTROL_H
+#ifndef BLACKBIRD_CONTROL_H
+#define BLACKBIRD_CONTROL_H
 
 #include <ntddk.h>
 #include <wdf.h>
-#include "..\..\abi\sleepwalker_ioctl.h"
+#include "..\..\abi\blackbird_ioctl.h"
 
 NTSTATUS
-SLEEPWALKERControlInitialize(_In_ WDFDRIVER Driver);
+BLACKBIRDControlInitialize(_In_ WDFDRIVER Driver);
 
-VOID SLEEPWALKERControlUninitialize(VOID);
+VOID BLACKBIRDControlUninitialize(VOID);
 
-VOID SLEEPWALKERControlBeginShutdown(VOID);
+VOID BLACKBIRDControlBeginShutdown(VOID);
 
-VOID SLEEPWALKERControlPublishHandleEvent(_In_ const SLEEPWALKER_HANDLE_EVENT *HandleEvent);
+VOID BLACKBIRDControlPublishHandleEvent(_In_ const BLACKBIRD_HANDLE_EVENT *HandleEvent);
 
-VOID SLEEPWALKERControlPublishThreadEvent(_In_ UINT64 ProcessId, _In_ UINT64 ThreadId, _In_ UINT64 CreatorPid,
+VOID BLACKBIRDControlPublishThreadEvent(_In_ UINT64 ProcessId, _In_ UINT64 ThreadId, _In_ UINT64 CreatorPid,
                                           _In_ UINT64 StartAddress, _In_ UINT64 ImageBase, _In_ UINT64 ImageSize,
                                           _In_ UINT32 Flags, _In_ UINT32 FrameCount,
                                           _In_reads_opt_(FrameCount) PVOID const *Frames);
 
-VOID SLEEPWALKERControlPublishFileEvent(_In_ const SLEEPWALKER_FILE_EVENT *FileEvent);
+VOID BLACKBIRDControlPublishFileEvent(_In_ const BLACKBIRD_FILE_EVENT *FileEvent);
 
 BOOLEAN
-SLEEPWALKERControlSelfCheck(VOID);
+BLACKBIRDControlSelfCheck(VOID);
 
 BOOLEAN
-SLEEPWALKERControlHasClientsFast(VOID);
+BLACKBIRDControlHasClientsFast(VOID);
 
 BOOLEAN
-SLEEPWALKERControlHasPidInterest(_In_ UINT32 PrimaryProcessId, _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask);
+BLACKBIRDControlHasPidInterest(_In_ UINT32 PrimaryProcessId, _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask);
 
 #endif

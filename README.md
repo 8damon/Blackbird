@@ -1,4 +1,4 @@
-<h1 align="center">SLEEPWALKER Alpha</h1>
+<h1 align="center">BLACKBIRD Beta v1.2</h1>
 <p align="center"><b>Kernel Telemetry & Detection Platform for Windows</b></p>
 
 <p align="center">
@@ -12,12 +12,12 @@
 </p>
 
 <p align="center">
-  <img src="./diagram/SW_INTERFACE_ULTRAWIDE.png" width="980" alt="Sleepwalker main interface" />
+  <img src="./diagram/BK_INTERFACE_ULTRAWIDE.png" width="980" alt="Blackbird main interface" />
 </p>
 
-## What Sleepwalker Is For
+## What Blackbird Is For
 
-Sleepwalker is built for:
+Blackbird is built for:
 
 - malware analysis
 - suspicious process investigation
@@ -30,7 +30,7 @@ It captures process, file, thread, handle, image, registry, network, APC, and de
 
 Most telemetry tools are good at collecting data and bad at helping an analyst work through it.
 
-Sleepwalker is meant to close that gap:
+Blackbird is meant to close that gap:
 
 - the **main operator panel** gives a live view of what matters now
 - the **detection chain** groups related events into something reviewable
@@ -68,12 +68,12 @@ Operator UX behavior in this panel:
 The detection chain is the most important investigation view in the platform.
 
 <p align="center">
-  <img src="./diagram/DETECTION_CHAIN.png" width="980" alt="Sleepwalker detection chain" />
+  <img src="./diagram/DETECTION_CHAIN.png" width="980" alt="Blackbird detection chain" />
 </p>
 
 It groups detections by event and detection key so the operator can review related activity as a single chain instead of a pile of disconnected records.
 
-This is where Sleepwalker becomes useful instead of just noisy.
+This is where Blackbird becomes useful instead of just noisy.
 
 The detection chain helps answer:
 
@@ -86,7 +86,7 @@ From there, the operator can pivot into the raw underlying records and supportin
 
 ## Evidence Views
 
-When a detection needs validation, Sleepwalker exposes the underlying evidence through dedicated inspectors.
+When a detection needs validation, Blackbird exposes the underlying evidence through dedicated inspectors.
 
 Key views include:
 
@@ -129,7 +129,7 @@ For the full contract and field-level details, see [API.md](./API.md).
 
 ## Architecture
 
-Sleepwalker is split into a few main parts:
+Blackbird is split into a few main parts:
 
 - `kernel/`  
   KMDF driver, kernel telemetry, ETW emission, and kernel-side correlation
@@ -138,7 +138,7 @@ Sleepwalker is split into a few main parts:
   broker/controller service, IPC, ETW handling, and runtime correlation
 
 - `user/sensor/`  
-  `SleepwalkerSensorCore.dll`, `SleepwalkerClient.exe`, `SleepwalkerTestSuite.exe`
+  `BlackbirdSensorCore.dll`, `BlackbirdClient.exe`, `BlackbirdTestSuite.exe`
 
 - `interface/`  
   WPF analyst interface for live capture, time travel, and evidence review
@@ -149,7 +149,7 @@ Sleepwalker is split into a few main parts:
 ## How It Works
 
 1. The operator selects or launches a target process.
-2. The interface talks to `SleepwalkerSensorCore.dll`.
+2. The interface talks to `BlackbirdSensorCore.dll`.
 3. The sensor core reaches the controller over broker IPC.
 4. The controller owns the driver handle and ETW ingestion path.
 5. Telemetry is collected, correlated, and sent back to the interface.
@@ -157,28 +157,28 @@ Sleepwalker is split into a few main parts:
 7. Sessions can be saved, reopened, imported, or exported for later review.
 
 <p align="center">
-  <img src="./diagram/SLEEPWALKER_DIA.png" width="980" alt="Sleepwalker detection chain" />
+  <img src="./diagram/Blackbird_DIA.png" width="980" alt="Blackbird platform diagram" />
 </p>
 
 ## Build Outputs
 
 Common projects:
 
-- `vcxproj/Sleepwalker.vcxproj`
-- `vcxproj/SleepwalkerController.vcxproj`
-- `vcxproj/SleepwalkerSensorCore.vcxproj`
-- `vcxproj/SleepwalkerClient.vcxproj`
-- `vcxproj/SleepwalkerIoctlTest.vcxproj`
-- `interface/SleepwalkerInterface.csproj`
+- `vcxproj/Blackbird.vcxproj`
+- `vcxproj/BlackbirdController.vcxproj`
+- `vcxproj/BlackbirdSensorCore.vcxproj`
+- `vcxproj/BlackbirdClient.vcxproj`
+- `vcxproj/BlackbirdIoctlTest.vcxproj`
+- `interface/BlackbirdInterface.csproj`
 
 Common runtime artifacts:
 
-- `sleepwlkr.sys`
-- `SleepwlkrController.exe`
-- `SleepwalkerSensorCore.dll`
-- `SleepwalkerClient.exe`
-- `SleepwalkerIoctlTest.exe`
-- `SleepwalkerInterface.exe`
+- `blackbird.sys`
+- `BlackbirdController.exe`
+- `BlackbirdSensorCore.dll`
+- `BlackbirdClient.exe`
+- `BlackbirdTestSuite.exe`
+- `BlackbirdInterface.exe`
 
 ## Quick Start
 

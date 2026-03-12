@@ -1,4 +1,4 @@
-# Sleepwalker Install and Operator Workflow
+# Blackbird Install and Operator Workflow
 
 ## Deployment/Validation Visuals
 
@@ -26,14 +26,14 @@
 
 Open the solution file (`*.slnx`) in Visual Studio and build:
 
-- Project: `vcxproj/Sleepwalker.vcxproj`
+- Project: `vcxproj/Blackbird.vcxproj`
 - Platform: `x64`
 - Configuration: `Debug` or `Release`
 
 Expected artifacts (default):
 
-- `x64\Debug\sleepwlkr.sys`
-- `x64\Debug\Sleepwalker.inf`
+- `x64\Debug\blackbird.sys`
+- `x64\Debug\Blackbird.inf`
 
 ## 2) Install the Driver Package
 
@@ -41,38 +41,31 @@ From elevated terminal:
 
 ```bat
 cd /d "<REPO_ROOT>"
-pnputil /add-driver "Sleepwalker.inf" /install
+pnputil /add-driver "Blackbird.inf" /install
 ```
 
 Validate package presence:
 
 ```bat
-pnputil /enum-drivers | findstr /i sleepwalker
+pnputil /enum-drivers | findstr /i blackbird
 ```
 
 ## 3) Start/Stop Service
 
 ```bat
-sc query sleepwlkr
-sc start sleepwlkr
-sc stop sleepwlkr
+sc query blackbird
+sc start blackbird
+sc stop blackbird
 ```
 
 ## 4) Build User-Mode Tools
 
 Build one or more:
 
-- `vcxproj/SleepwalkerController.vcxproj`
-- `vcxproj/SleepwalkerClient.vcxproj`
-- `vcxproj/SleepwalkerIoctlTest.vcxproj`
-- `vcxproj/SleepwalkerSensorCore.vcxproj`
-
-Alternative direct compile path:
-
-```bat
-cd /d "<REPO_ROOT>\\user\\sensor"
-build_client.cmd
-```
+- `vcxproj/BlackbirdController.vcxproj`
+- `vcxproj/BlackbirdClient.vcxproj`
+- `vcxproj/BlackbirdIoctlTest.vcxproj`
+- `vcxproj/BlackbirdSensorCore.vcxproj`
 
 ## 5) Install/Run Controller Service (Recommended)
 
@@ -86,7 +79,7 @@ powershell -ExecutionPolicy Bypass -File .\usage\install-controller-service.ps1
 Validate:
 
 ```bat
-sc query SleepwlkrController
+sc query BlackbirdController
 ```
 
 Uninstall:
@@ -99,28 +92,28 @@ powershell -ExecutionPolicy Bypass -File .\usage\install-controller-service.ps1 
 
 ```bat
 cd /d "<REPO_ROOT>"
-.\x64\Debug\SleepwalkerIoctlTest.exe
+.\x64\Debug\BlackbirdTestSuite.exe
 ```
 
 ## 7) Run Targeted Operator Client
 
 ```bat
 cd /d "<REPO_ROOT>"
-.\x64\Debug\SleepwalkerClient.exe 4242 handle,memory,thread
+.\x64\Debug\BlackbirdClient.exe 4242 handle,memory,thread
 ```
 
 Use `--direct` to bypass broker and speak to the driver directly:
 
 ```bat
-.\x64\Debug\SleepwalkerClient.exe --direct 4242 handle,memory,thread
+.\x64\Debug\BlackbirdClient.exe --direct 4242 handle,memory,thread
 ```
 
 ## 8) Run ETW Capture (Optional)
 
-Use either `SleepwalkerClient.exe` live ETW output mode or a custom consumer via `SleepwalkerSensorCore` (`SLEEPWALKERSCStartSleepwalkerEtwSession` / `SwkStartDetectionEtwSession`).
+Use either `BlackbirdClient.exe` live ETW output mode or a custom consumer via `BlackbirdSensorCore` (`BLACKBIRDSCStartBlackbirdEtwSession` / `SwkStartDetectionEtwSession`).
 
 ## Notes
 
-- Control plane endpoint: `\\.\SleepwalkerCtl`
+- Control plane endpoint: `\\.\BlackbirdCtl`
 - ACL policy: `SYSTEM` and `Administrators`
 - Driver project is kernel-only; user tooling is isolated under dedicated user-mode projects

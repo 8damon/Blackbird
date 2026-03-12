@@ -1,33 +1,33 @@
 # Usage
 
-This is the CLI and operator quick reference for the current Sleepwalker alpha.
+This is the CLI and operator quick reference for Blackbird beta v1.2.
 
 ## Core Runtime Pieces
 
-- `sleepwlkr.sys`
+- `blackbird.sys`
   - KMDF driver
-- `SleepwlkrController.exe`
+- `BlackbirdController.exe`
   - broker/controller service
-- `SleepwalkerSensorCore.dll`
+- `BlackbirdSensorCore.dll`
   - shared user-mode SDK used by the client tools and interface
-- `SleepwalkerClient.exe`
+- `BlackbirdClient.exe`
   - broker-backed operator CLI
-- `SleepwalkerIoctlTest.exe`
+- `BlackbirdTestSuite.exe`
   - validation harness
-- `SleepwalkerInterface.exe`
+- `BlackbirdInterface.exe`
   - primary GUI
 
-## SleepwalkerClient
+## BlackbirdClient
 
-`SleepwalkerClient.exe` is the main CLI for targeted observation and structured output.
+`BlackbirdClient.exe` is the main CLI for targeted observation and structured output.
 
 ### Syntax
 
 ```bat
-SleepwalkerClient.exe <target> <streams> [scope]
-SleepwalkerClient.exe path:<full-path-to-target.exe> <streams> [scope]
-SleepwalkerClient.exe launch:<full-path-to-target.exe> <streams> [scope]
-SleepwalkerClient.exe --config <policy-file>
+BlackbirdClient.exe <target> <streams> [scope]
+BlackbirdClient.exe path:<full-path-to-target.exe> <streams> [scope]
+BlackbirdClient.exe launch:<full-path-to-target.exe> <streams> [scope]
+BlackbirdClient.exe --config <policy-file>
 ```
 
 ### Target Forms
@@ -62,32 +62,32 @@ both
 Examples:
 
 ```bat
-SleepwalkerClient.exe 4242 handle,memory,thread
-SleepwalkerClient.exe 4242 handle,memory,thread,etw both
-SleepwalkerClient.exe path:C:\Lab\sample.exe handle,memory,thread remote
-SleepwalkerClient.exe launch:C:\Lab\sample.exe handle,memory,thread
+BlackbirdClient.exe 4242 handle,memory,thread
+BlackbirdClient.exe 4242 handle,memory,thread,etw both
+BlackbirdClient.exe path:C:\Lab\sample.exe handle,memory,thread remote
+BlackbirdClient.exe launch:C:\Lab\sample.exe handle,memory,thread
 ```
 
 ### Structured Logging
 
 ```bat
-SleepwalkerClient.exe --log-format jsonl --log-file events.swk.jsonl --high-priority-file high_priority.swk.jsonl --high-priority-min-severity 4 <target> <streams> [scope]
+BlackbirdClient.exe --log-format jsonl --log-file events.swk.jsonl --high-priority-file high_priority.swk.jsonl --high-priority-min-severity 4 <target> <streams> [scope]
 ```
 
 ### Policy File Mode
 
 ```bat
-SleepwalkerClient.exe --config user\sensor\sleepwalker_client.policy.example.yaml
+BlackbirdClient.exe --config user\sensor\blackbird_client.policy.example.yaml
 ```
 
-## SleepwalkerIoctlTest
+## BlackbirdTestSuite
 
-`SleepwalkerIoctlTest.exe` is the end-to-end validation harness.
+`BlackbirdTestSuite.exe` is the end-to-end validation harness.
 
 ### Run
 
 ```bat
-SleepwalkerIoctlTest.exe
+BlackbirdTestSuite.exe
 ```
 
 ### What It Checks
@@ -103,9 +103,9 @@ SleepwalkerIoctlTest.exe
 ### Useful Runtime Knobs
 
 ```bat
-set SLEEPWALKER_TEST_BROKER_PIPE=\\.\pipe\<name>
-set SLEEPWALKER_TEST_REQUIRE_KERNEL_CORRELATION=1
-set SLEEPWALKER_TEST_REQUIRE_APC=1
+set BLACKBIRD_TEST_BROKER_PIPE=\\.\pipe\<name>
+set BLACKBIRD_TEST_REQUIRE_KERNEL_CORRELATION=1
+set BLACKBIRD_TEST_REQUIRE_APC=1
 ```
 
 ## Controller Service
@@ -125,7 +125,7 @@ powershell -ExecutionPolicy Bypass -File .\usage\install-controller-service.ps1 
 Check status:
 
 ```bat
-sc query SleepwlkrController
+sc query BlackbirdController
 ```
 
 ## Interface
@@ -133,7 +133,7 @@ sc query SleepwlkrController
 Launch the GUI after the driver and controller are up:
 
 ```bat
-SleepwalkerInterface.exe
+BlackbirdInterface.exe
 ```
 
 Main workflow:
@@ -152,7 +152,7 @@ The interface can export session data to:
 - `.csv`
 - `.cef`
 - `.attack.csv`
-- `.swlkr` / `.sleepwlkr`
+- `.swlkr` / `.blackbird`
 
 ## More Detail
 

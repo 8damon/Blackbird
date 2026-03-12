@@ -2,12 +2,12 @@
 
 Document revision: `2026-02-28`
 
-## Shared Library: SleepwalkerSensorCore
+## Shared Library: BlackbirdSensorCore
 
-`SleepwalkerSensorCore.dll` is the common user-mode integration layer used by:
+`BlackbirdSensorCore.dll` is the common user-mode integration layer used by:
 
-- `SleepwalkerClient.exe`
-- `SleepwalkerTestSuite.exe`
+- `BlackbirdClient.exe`
+- `BlackbirdTestSuite.exe`
 
 What it provides:
 
@@ -18,41 +18,41 @@ What it provides:
 
 Exports:
 
-- `SLEEPWALKERSCOpenControlDevice`
-- `SLEEPWALKERSCUseServiceProtocol`
-- `SLEEPWALKERSCUseClientProtocol`
-- `SLEEPWALKERSCGetProtocolMode`
-- `SLEEPWALKERSCSubscribe`
-- `SLEEPWALKERSCUnsubscribe`
-- `SLEEPWALKERSCSetPids`
-- `SLEEPWALKERSCGetEvent`
-- `SLEEPWALKERSCGetStats`
-- `SLEEPWALKERSCQueryProcessImagePath`
-- `SLEEPWALKERSCSetShutdownMode`
-- `SLEEPWALKERSCParseStreamMaskA`
-- `SLEEPWALKERSCGetBrokerThreatIntelEnableError`
-- `SLEEPWALKERSCStopSessionByName`
-- `SLEEPWALKERSCStartEtwSession`
-- `SLEEPWALKERSCStartSleepwalkerEtwSession`
+- `BLACKBIRDSCOpenControlDevice`
+- `BLACKBIRDSCUseServiceProtocol`
+- `BLACKBIRDSCUseClientProtocol`
+- `BLACKBIRDSCGetProtocolMode`
+- `BLACKBIRDSCSubscribe`
+- `BLACKBIRDSCUnsubscribe`
+- `BLACKBIRDSCSetPids`
+- `BLACKBIRDSCGetEvent`
+- `BLACKBIRDSCGetStats`
+- `BLACKBIRDSCQueryProcessImagePath`
+- `BLACKBIRDSCSetShutdownMode`
+- `BLACKBIRDSCParseStreamMaskA`
+- `BLACKBIRDSCGetBrokerThreatIntelEnableError`
+- `BLACKBIRDSCStopSessionByName`
+- `BLACKBIRDSCStartEtwSession`
+- `BLACKBIRDSCStartBlackbirdEtwSession`
 - `SwkStartDetectionEtwSession`
-- `SLEEPWALKERSCRunEtwSession`
-- `SLEEPWALKERSCStopEtwSession`
+- `BLACKBIRDSCRunEtwSession`
+- `BLACKBIRDSCStopEtwSession`
 
 Typed detection callback surface:
 
 - `SwkDetectionEvent`
 - `SwkDetectionCallback`
 
-Build project `vcxproj/SleepwalkerSensorCore.vcxproj`.
+Build project `vcxproj/BlackbirdSensorCore.vcxproj`.
 
-## SleepwalkerClient (IOCTL Consumer)
+## BlackbirdClient (IOCTL Consumer)
 
-`SleepwalkerClient.exe` is broker-only: it uses `SleepwlkrController` over named-pipe IPC and does not open the driver directly.
+`BlackbirdClient.exe` is broker-only: it uses `BlackbirdController` over named-pipe IPC and does not open the driver directly.
 
-Build project `vcxproj/SleepwalkerClient.vcxproj` (depends on `SleepwalkerSensorCore`), then run elevated:
+Build project `vcxproj/BlackbirdClient.vcxproj` (depends on `BlackbirdSensorCore`), then run elevated:
 
 ```bat
-SleepwalkerClient.exe 4242 handle,memory,thread
+BlackbirdClient.exe 4242 handle,memory,thread
 ```
 
 `<streams>` accepts `handle,memory,thread` with optional `,etw`:
@@ -63,48 +63,48 @@ SleepwalkerClient.exe 4242 handle,memory,thread
 Optional scope argument:
 
 ```bat
-SleepwalkerClient.exe 4242 handle,memory,thread local
-SleepwalkerClient.exe 4242 handle,memory,thread remote
-SleepwalkerClient.exe 4242 handle,memory,thread both
+BlackbirdClient.exe 4242 handle,memory,thread local
+BlackbirdClient.exe 4242 handle,memory,thread remote
+BlackbirdClient.exe 4242 handle,memory,thread both
 ```
 
 Path-launch watch mode is also supported:
 
 ```bat
-SleepwalkerClient.exe path:<full-path-to-target.exe> handle,memory,thread
+BlackbirdClient.exe path:<full-path-to-target.exe> handle,memory,thread
 ```
 
 Deterministic launch/attach mode (start suspended, attach, then resume):
 
 ```bat
-SleepwalkerClient.exe launch:<full-path-to-target.exe> handle,memory,thread
+BlackbirdClient.exe launch:<full-path-to-target.exe> handle,memory,thread
 ```
 
-When a `path:` target is not currently running, the client listens for Sleepwalker `ProcessTelemetry` / `ImageTelemetry`, resolves the first matching PID, and subscribes automatically.
+When a `path:` target is not currently running, the client listens for Blackbird `ProcessTelemetry` / `ImageTelemetry`, resolves the first matching PID, and subscribes automatically.
 
-`SleepwalkerClient` runs in strict target mode: it programs `IOCTL_SLEEPWALKER_SET_PIDS` with the resolved target PID and filters printed IOCTL/ETW output by scope (`local`, `remote`, `both`).
+`BlackbirdClient` runs in strict target mode: it programs `IOCTL_BLACKBIRD_SET_PIDS` with the resolved target PID and filters printed IOCTL/ETW output by scope (`local`, `remote`, `both`).
 
 Policy/config mode (flat YAML-like keys, `key: value` or `key=value`) is supported:
 
 ```bat
-SleepwalkerClient.exe --config user\sensor\sleepwalker_client.policy.example.yaml
+BlackbirdClient.exe --config user\sensor\blackbird_client.policy.example.yaml
 ```
 
 Structured logging for SIEM/ELK ingestion:
 
 ```bat
-SleepwalkerClient.exe --log-format jsonl --log-file events.swk.jsonl --high-priority-file high_priority.swk.jsonl --high-priority-min-severity 4 <target> <streams> [scope]
+BlackbirdClient.exe --log-format jsonl --log-file events.swk.jsonl --high-priority-file high_priority.swk.jsonl --high-priority-min-severity 4 <target> <streams> [scope]
 ```
 
 Example policy file:
 
-- `user/sensor/sleepwalker_client.policy.example.yaml`
+- `user/sensor/blackbird_client.policy.example.yaml`
 
-## SleepwalkerTestSuite (IOCTL + ETW Validation)
+## BlackbirdTestSuite (IOCTL + ETW Validation)
 
-`SleepwalkerTestSuite.exe` (from `user/sensor/sleepwalker_ioctl_test.c`) is the current end-to-end validation harness.
+`BlackbirdTestSuite.exe` (from `user/sensor/blackbird_ioctl_test.c`) is the current end-to-end validation harness.
 
-Build project `vcxproj/SleepwalkerIoctlTest.vcxproj` (depends on `SleepwalkerSensorCore`).
+Build project `vcxproj/BlackbirdIoctlTest.vcxproj` (depends on `BlackbirdSensorCore` and emits `BlackbirdTestSuite.exe`).
 
 What it validates:
 
@@ -124,19 +124,19 @@ What it validates:
 
 Runtime knobs:
 
-- `SLEEPWALKER_TEST_BROKER_PIPE=\\\\.\\pipe\\<name>`
+- `BLACKBIRD_TEST_BROKER_PIPE=\\\\.\\pipe\\<name>`
   - Overrides broker pipe name for the client protocol handshake.
-- `SLEEPWALKER_TEST_REQUIRE_KERNEL_CORRELATION=1`
+- `BLACKBIRD_TEST_REQUIRE_KERNEL_CORRELATION=1`
   - Enforces kernel correlation-dependent checks (IOCTL thread correlation flags + related ETW detections).
   - Default is off; those checks are reported as `[SKIP]` to align with user-mode correlation architecture.
-- `SLEEPWALKER_TEST_REQUIRE_APC=1`
+- `BLACKBIRD_TEST_REQUIRE_APC=1`
   - Enforces APC ETW coverage.
   - Default is off; APC coverage is optional and reported as `[SKIP]` if absent.
 
 Pass/fail summary is emitted as:
 
-- `[OK] SleepwalkerTestSuite complete. tests-passed=X/Y tests-failed=0 tests-skipped=S polls=Z`
-- `[FAIL] SleepwalkerTestSuite complete. tests-passed=X/Y tests-failed=F tests-skipped=S polls=Z`
+- `[OK] BlackbirdTestSuite complete. tests-passed=X/Y tests-failed=0 tests-skipped=S polls=Z`
+- `[FAIL] BlackbirdTestSuite complete. tests-passed=X/Y tests-failed=F tests-skipped=S polls=Z`
 
 Per-check timing and cycle deltas are emitted as:
 
@@ -147,11 +147,11 @@ Per-check timing and cycle deltas are emitted as:
 Result artifact:
 
 - Timestamped UTC reports are written to:
-- `test-results/SleepwalkerTestSuite-YYYYMMDD-HHMMSSZ.txt`
-- `test-results/SleepwalkerTestSuite-YYYYMMDD-HHMMSSZ.html`
+- `test-results/BlackbirdTestSuite-YYYYMMDD-HHMMSSZ.txt`
+- `test-results/BlackbirdTestSuite-YYYYMMDD-HHMMSSZ.html`
 - ETW-TI checks are explicitly logged as `[SKIP]` when the TI provider is unavailable.
 - The report includes environment metadata: OS version/build, kernel image version, code-integrity flags, and kernel-debugger state.
-- The suite requires an active `SleepwalkerCtl` device; without the loaded driver it will fail at control-device open.
+- The suite requires an active `BlackbirdCtl` device; without the loaded driver it will fail at control-device open.
 
 ## Security Model
 

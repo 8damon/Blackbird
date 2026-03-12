@@ -1,14 +1,14 @@
-#ifndef SLEEPWALKER_REGISTRY_MONITOR_H
-#define SLEEPWALKER_REGISTRY_MONITOR_H
+#ifndef BLACKBIRD_REGISTRY_MONITOR_H
+#define BLACKBIRD_REGISTRY_MONITOR_H
 
 #include <ntddk.h>
 
 NTSTATUS
-SLEEPWALKERRegistryMonitorInitialize(_In_ PDRIVER_OBJECT DriverObject);
+BLACKBIRDRegistryMonitorInitialize(_In_ PDRIVER_OBJECT DriverObject);
 
-VOID SLEEPWALKERRegistryMonitorUninitialize(VOID);
+VOID BLACKBIRDRegistryMonitorUninitialize(VOID);
 
 BOOLEAN
-SLEEPWALKERRegistryMonitorSelfCheck(VOID);
+BLACKBIRDRegistryMonitorSelfCheck(VOID);
 
 #endif

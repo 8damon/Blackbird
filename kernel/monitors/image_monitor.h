@@ -1,14 +1,14 @@
-#ifndef SLEEPWALKER_IMAGE_MONITOR_H
-#define SLEEPWALKER_IMAGE_MONITOR_H
+#ifndef BLACKBIRD_IMAGE_MONITOR_H
+#define BLACKBIRD_IMAGE_MONITOR_H
 
 #include <ntdef.h>
 
 NTSTATUS
-SLEEPWALKERImageMonitorInitialize(VOID);
+BLACKBIRDImageMonitorInitialize(VOID);
 
-VOID SLEEPWALKERImageMonitorUninitialize(VOID);
+VOID BLACKBIRDImageMonitorUninitialize(VOID);
 
 BOOLEAN
-SLEEPWALKERImageMonitorSelfCheck(VOID);
+BLACKBIRDImageMonitorSelfCheck(VOID);
 
 #endif

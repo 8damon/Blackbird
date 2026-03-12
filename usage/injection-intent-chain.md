@@ -1,6 +1,6 @@
 # Example: Detecting Process Hollowing / Manual Map Intent Chain
 
-This example shows how to use Sleepwalker's handle-intent correlation and detection telemetry to flag common injection workflows such as process hollowing or manual mapping.
+This example shows how to use Blackbird's handle-intent correlation and detection telemetry to flag common injection workflows such as process hollowing or manual mapping.
 
 Signal sources:
 
@@ -15,7 +15,7 @@ Why it works:
 - Direct-syscall handle operations originating from executable user regions outside ntdll are flagged.
 - Suspicious ntdll load paths and multiple ntdll mappings can indicate manual mapping or abnormal loader behavior.
 
-Minimal flow (ETW consumer using `SleepwalkerSensorCore`):
+Minimal flow (ETW consumer using `BlackbirdSensorCore`):
 
 ```c
 #define _CRT_SECURE_NO_WARNINGS
@@ -25,10 +25,10 @@ Minimal flow (ETW consumer using `SleepwalkerSensorCore`):
 #include <tdh.h>
 #include <strsafe.h>
 #include <stdio.h>
-#include "..\\user\\sensor\\sleepwalker_sensor_core.h"
+#include "..\\user\\sensor\\blackbird_sensor_core.h"
 
 // {D6C73F8A-6AD8-4F4B-A363-3D2FA31CD0E2}
-static const GUID SLEEPWALKER_PROVIDER_GUID =
+static const GUID BLACKBIRD_PROVIDER_GUID =
 { 0xd6c73f8a, 0x6ad8, 0x4f4b, { 0xa3, 0x63, 0x3d, 0x2f, 0xa3, 0x1c, 0xd0, 0xe2 } };
 
 static BOOL
@@ -122,7 +122,7 @@ OnEvent(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName, _In_opt_ PVOID C
         return;
     }
 
-    if (!IsEqualGUID(&Record->EventHeader.ProviderId, &SLEEPWALKER_PROVIDER_GUID)) {
+    if (!IsEqualGUID(&Record->EventHeader.ProviderId, &BLACKBIRD_PROVIDER_GUID)) {
         return;
     }
 
@@ -147,32 +147,32 @@ OnEvent(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName, _In_opt_ PVOID C
 
 int __cdecl wmain(void)
 {
-    SLEEPWALKERSC_ETW_PROVIDER_CONFIG provider;
-    SLEEPWALKERSC_ETW_SESSION_CONFIG config;
-    SLEEPWALKERSC_ETW_SESSION* session = NULL;
+    BLACKBIRDSC_ETW_PROVIDER_CONFIG provider;
+    BLACKBIRDSC_ETW_SESSION_CONFIG config;
+    BLACKBIRDSC_ETW_SESSION* session = NULL;
 
     ZeroMemory(&provider, sizeof(provider));
-    provider.ProviderId = SLEEPWALKER_PROVIDER_GUID;
+    provider.ProviderId = BLACKBIRD_PROVIDER_GUID;
     provider.Level = TRACE_LEVEL_INFORMATION;
     provider.MatchAnyKeyword = 0;
     provider.MatchAllKeyword = 0;
 
     ZeroMemory(&config, sizeof(config));
-    config.SessionName = L"SleepwalkerIntentChainExample";
+    config.SessionName = L"BlackbirdIntentChainExample";
     config.Providers = &provider;
     config.ProviderCount = 1;
     config.Callback = OnEvent;
     config.CallbackContext = NULL;
 
-    if (!SLEEPWALKERSCStartEtwSession(&config, &session)) {
+    if (!BLACKBIRDSCStartEtwSession(&config, &session)) {
         wprintf(L"failed to start ETW session: %lu\n", GetLastError());
         return 1;
     }
 
     wprintf(L"ETW session running, press Ctrl+C to stop\n");
-    (void)SLEEPWALKERSCRunEtwSession(session);
+    (void)BLACKBIRDSCRunEtwSession(session);
 
-    SLEEPWALKERSCStopEtwSession(session);
+    BLACKBIRDSCStopEtwSession(session);
     return 0;
 }
 ```
@@ -185,5 +185,5 @@ Operator notes:
 
 To validate in lab:
 
-1. Run `SleepwalkerTestSuite.exe` and confirm detection telemetry is observed.
+1. Run `BlackbirdTestSuite.exe` and confirm detection telemetry is observed.
 2. If you have a hollowing or manual-map lab sample, run it against a target and watch for the detection names above.

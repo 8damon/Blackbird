@@ -1,9 +1,9 @@
-#ifndef SLEEPWALKER_UNICODE_UTILS_H
-#define SLEEPWALKER_UNICODE_UTILS_H
+#ifndef BLACKBIRD_UNICODE_UTILS_H
+#define BLACKBIRD_UNICODE_UTILS_H
 
 #include <ntddk.h>
 
-static __forceinline BOOLEAN SLEEPWALKERUnicodeContainsInsensitive(_In_ PCUNICODE_STRING Haystack,
+static __forceinline BOOLEAN BLACKBIRDUnicodeContainsInsensitive(_In_ PCUNICODE_STRING Haystack,
                                                                    _In_reads_(NeedleChars) PCWSTR Needle,
                                                                    _In_ USHORT NeedleChars)
 {
@@ -42,7 +42,7 @@ static __forceinline BOOLEAN SLEEPWALKERUnicodeContainsInsensitive(_In_ PCUNICOD
     return FALSE;
 }
 
-static __forceinline VOID SLEEPWALKERSafeCopyUnicode(_In_opt_ PCUNICODE_STRING Source,
+static __forceinline VOID BLACKBIRDSafeCopyUnicode(_In_opt_ PCUNICODE_STRING Source,
                                                      _Out_writes_z_(DestChars) PWSTR Dest, _In_ SIZE_T DestChars)
 {
     SIZE_T copyChars;

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public sealed class PerformanceSample
     {

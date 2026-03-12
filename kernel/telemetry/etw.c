@@ -6,22 +6,22 @@
 #define TRACE_LEVEL_INFORMATION 4
 #endif
 
-#ifndef SLEEPWALKER_MAX_DEEP_SAMPLE_BYTES
-#define SLEEPWALKER_MAX_DEEP_SAMPLE_BYTES 64
+#ifndef BLACKBIRD_MAX_DEEP_SAMPLE_BYTES
+#define BLACKBIRD_MAX_DEEP_SAMPLE_BYTES 64
 #endif
 
-TRACELOGGING_DEFINE_PROVIDER(g_SleepwalkerEtwProvider, "Sleepwalker.Kernel",
+TRACELOGGING_DEFINE_PROVIDER(g_BlackbirdEtwProvider, "Blackbird.Kernel",
                              (0xd6c73f8a, 0x6ad8, 0x4f4b, 0xa3, 0x63, 0x3d, 0x2f, 0xa3, 0x1c, 0xd0, 0xe2));
 
 static volatile LONG g_EtwState = 0; // 0=stopped, 1=starting, 2=started
 
-static BOOLEAN SLEEPWALKEREtwIsStarted(VOID)
+static BOOLEAN BLACKBIRDEtwIsStarted(VOID)
 {
     return (InterlockedCompareExchange(&g_EtwState, 0, 0) == 2);
 }
 
 NTSTATUS
-SLEEPWALKEREtwInitialize(VOID)
+BLACKBIRDEtwInitialize(VOID)
 {
     NTSTATUS status;
     LONG prior;
@@ -36,7 +36,7 @@ SLEEPWALKEREtwInitialize(VOID)
         return STATUS_DEVICE_BUSY;
     }
 
-    status = TraceLoggingRegister(g_SleepwalkerEtwProvider);
+    status = TraceLoggingRegister(g_BlackbirdEtwProvider);
     if (!NT_SUCCESS(status))
     {
         InterlockedExchange(&g_EtwState, 0);
@@ -47,22 +47,22 @@ SLEEPWALKEREtwInitialize(VOID)
     return STATUS_SUCCESS;
 }
 
-VOID SLEEPWALKEREtwUninitialize(VOID)
+VOID BLACKBIRDEtwUninitialize(VOID)
 {
     LONG prior = InterlockedExchange(&g_EtwState, 0);
     if (prior == 2)
     {
-        TraceLoggingUnregister(g_SleepwalkerEtwProvider);
+        TraceLoggingUnregister(g_BlackbirdEtwProvider);
     }
 }
 
 BOOLEAN
-SLEEPWALKEREtwSelfCheck(VOID)
+BLACKBIRDEtwSelfCheck(VOID)
 {
-    return SLEEPWALKEREtwIsStarted();
+    return BLACKBIRDEtwIsStarted();
 }
 
-VOID SLEEPWALKEREtwLogHandleEvent(_In_z_ PCSTR EventClass, _In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
+VOID BLACKBIRDEtwLogHandleEvent(_In_z_ PCSTR EventClass, _In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
                                   _In_ ACCESS_MASK DesiredAccess, _In_ PVOID OriginAddress, _In_ ULONG OriginProtect,
                                   _In_ BOOLEAN ExecProtect, _In_ BOOLEAN FromNtdll, _In_ BOOLEAN FromExe,
                                   _In_opt_z_ PCWSTR OriginPath, _In_ ULONG FrameCount,
@@ -74,13 +74,13 @@ VOID SLEEPWALKEREtwLogHandleEvent(_In_z_ PCSTR EventClass, _In_ HANDLE CallerPid
                                   _In_reads_bytes_opt_(DeepSampleSize) const UCHAR *DeepSample)
 {
     PVOID safeFrames[8] = {0};
-    UCHAR safeDeepSample[SLEEPWALKER_MAX_DEEP_SAMPLE_BYTES] = {0};
+    UCHAR safeDeepSample[BLACKBIRD_MAX_DEEP_SAMPLE_BYTES] = {0};
     ULONG safeFrameCount = 0;
     ULONG safeDeepSampleSize = 0;
     ULONG i;
     PCWSTR path;
 
-    if (!SLEEPWALKEREtwIsStarted())
+    if (!BLACKBIRDEtwIsStarted())
     {
         return;
     }
@@ -101,7 +101,7 @@ VOID SLEEPWALKEREtwLogHandleEvent(_In_z_ PCSTR EventClass, _In_ HANDLE CallerPid
     }
     path = (OriginPath != NULL) ? OriginPath : L"";
 
-    TraceLoggingWrite(g_SleepwalkerEtwProvider, "HandleTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+    TraceLoggingWrite(g_BlackbirdEtwProvider, "HandleTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
                       TraceLoggingString((EventClass != NULL) ? EventClass : "UNKNOWN", "class"),
                       TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerPid, "callerPid"),
                       TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)TargetPid, "targetPid"),
@@ -127,7 +127,7 @@ VOID SLEEPWALKEREtwLogHandleEvent(_In_z_ PCSTR EventClass, _In_ HANDLE CallerPid
                       TraceLoggingBinary(safeDeepSample, safeDeepSampleSize, "deepSample"));
 }
 
-VOID SLEEPWALKEREtwLogThreadEvent(_In_ HANDLE ProcessId, _In_ HANDLE ThreadId, _In_ HANDLE CreatorPid,
+VOID BLACKBIRDEtwLogThreadEvent(_In_ HANDLE ProcessId, _In_ HANDLE ThreadId, _In_ HANDLE CreatorPid,
                                   _In_ PVOID StartAddress, _In_ PVOID ImageBase, _In_ SIZE_T ImageSize,
                                   _In_ BOOLEAN GotStart, _In_ BOOLEAN GotRange, _In_ BOOLEAN IsRemoteCreator,
                                   _In_ BOOLEAN OutsideMainImage, _In_ UINT32 CorrelationFlags,
@@ -141,7 +141,7 @@ VOID SLEEPWALKEREtwLogThreadEvent(_In_ HANDLE ProcessId, _In_ HANDLE ThreadId, _
     ULONG safeFrameCount = 0;
     ULONG i;
 
-    if (!SLEEPWALKEREtwIsStarted())
+    if (!BLACKBIRDEtwIsStarted())
     {
         return;
     }
@@ -155,7 +155,7 @@ VOID SLEEPWALKEREtwLogThreadEvent(_In_ HANDLE ProcessId, _In_ HANDLE ThreadId, _
         }
     }
 
-    TraceLoggingWrite(g_SleepwalkerEtwProvider, "ThreadTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+    TraceLoggingWrite(g_BlackbirdEtwProvider, "ThreadTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
                       TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
                       TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ThreadId, "threadId"),
                       TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CreatorPid, "creatorPid"),
@@ -177,17 +177,17 @@ VOID SLEEPWALKEREtwLogThreadEvent(_In_ HANDLE ProcessId, _In_ HANDLE ThreadId, _
                       TraceLoggingPointer(safeFrames[6], "stack6"), TraceLoggingPointer(safeFrames[7], "stack7"));
 }
 
-VOID SLEEPWALKEREtwLogApcEvent(_In_z_ PCSTR EventClass, _In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
+VOID BLACKBIRDEtwLogApcEvent(_In_z_ PCSTR EventClass, _In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
                                _In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsDuplicateOperation,
                                _In_ UINT32 CorrelationFlags, _In_ UINT32 CorrelationAccessMask,
                                _In_ UINT32 CorrelationAgeMs)
 {
-    if (!SLEEPWALKEREtwIsStarted())
+    if (!BLACKBIRDEtwIsStarted())
     {
         return;
     }
 
-    TraceLoggingWrite(g_SleepwalkerEtwProvider, "ApcTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+    TraceLoggingWrite(g_BlackbirdEtwProvider, "ApcTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
                       TraceLoggingString((EventClass != NULL) ? EventClass : "UNKNOWN", "class"),
                       TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerPid, "callerPid"),
                       TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)TargetPid, "targetPid"),
@@ -198,7 +198,7 @@ VOID SLEEPWALKEREtwLogApcEvent(_In_z_ PCSTR EventClass, _In_ HANDLE CallerPid, _
                       TraceLoggingUInt32(CorrelationAgeMs, "correlationAgeMs"));
 }
 
-VOID SLEEPWALKEREtwLogProcessEvent(_In_ HANDLE ProcessId, _In_ HANDLE ParentProcessId, _In_ HANDLE CreatorProcessId,
+VOID BLACKBIRDEtwLogProcessEvent(_In_ HANDLE ProcessId, _In_ HANDLE ParentProcessId, _In_ HANDLE CreatorProcessId,
                                    _In_ HANDLE CreatorThreadId, _In_ ULONGLONG ProcessStartKey, _In_ ULONG SessionId,
                                    _In_ BOOLEAN IsCreate, _In_ NTSTATUS CreateStatus, _In_opt_z_ PCWSTR ImagePath,
                                    _In_opt_z_ PCWSTR CommandLine)
@@ -206,7 +206,7 @@ VOID SLEEPWALKEREtwLogProcessEvent(_In_ HANDLE ProcessId, _In_ HANDLE ParentProc
     PCWSTR safeImagePath;
     PCWSTR safeCommandLine;
 
-    if (!SLEEPWALKEREtwIsStarted())
+    if (!BLACKBIRDEtwIsStarted())
     {
         return;
     }
@@ -214,7 +214,7 @@ VOID SLEEPWALKEREtwLogProcessEvent(_In_ HANDLE ProcessId, _In_ HANDLE ParentProc
     safeImagePath = (ImagePath != NULL) ? ImagePath : L"";
     safeCommandLine = (CommandLine != NULL) ? CommandLine : L"";
 
-    TraceLoggingWrite(g_SleepwalkerEtwProvider, "ProcessTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+    TraceLoggingWrite(g_BlackbirdEtwProvider, "ProcessTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
                       TraceLoggingBool(IsCreate, "isCreate"), TraceLoggingHexInt32((LONG)CreateStatus, "createStatus"),
                       TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
                       TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ParentProcessId, "parentProcessId"),
@@ -225,20 +225,20 @@ VOID SLEEPWALKEREtwLogProcessEvent(_In_ HANDLE ProcessId, _In_ HANDLE ParentProc
                       TraceLoggingWideString(safeCommandLine, "commandLine"));
 }
 
-VOID SLEEPWALKEREtwLogImageLoadEvent(_In_ HANDLE ProcessId, _In_ PVOID ImageBase, _In_ SIZE_T ImageSize,
+VOID BLACKBIRDEtwLogImageLoadEvent(_In_ HANDLE ProcessId, _In_ PVOID ImageBase, _In_ SIZE_T ImageSize,
                                      _In_ BOOLEAN IsSystemModeImage, _In_ BOOLEAN IsSignatureLevelKnown,
                                      _In_ UCHAR SignatureLevel, _In_ UCHAR SignatureType, _In_opt_z_ PCWSTR ImagePath)
 {
     PCWSTR safePath;
 
-    if (!SLEEPWALKEREtwIsStarted())
+    if (!BLACKBIRDEtwIsStarted())
     {
         return;
     }
 
     safePath = (ImagePath != NULL) ? ImagePath : L"";
 
-    TraceLoggingWrite(g_SleepwalkerEtwProvider, "ImageTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+    TraceLoggingWrite(g_BlackbirdEtwProvider, "ImageTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
                       TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
                       TraceLoggingPointer(ImageBase, "imageBase"),
                       TraceLoggingUInt64((ULONGLONG)ImageSize, "imageSize"),
@@ -248,7 +248,7 @@ VOID SLEEPWALKEREtwLogImageLoadEvent(_In_ HANDLE ProcessId, _In_ PVOID ImageBase
                       TraceLoggingUInt8(SignatureType, "signatureType"), TraceLoggingWideString(safePath, "imagePath"));
 }
 
-VOID SLEEPWALKEREtwLogRegistryEvent(_In_z_ PCSTR Operation, _In_ HANDLE ProcessId, _In_ ULONG SessionId,
+VOID BLACKBIRDEtwLogRegistryEvent(_In_z_ PCSTR Operation, _In_ HANDLE ProcessId, _In_ ULONG SessionId,
                                     _In_ ULONG NotifyClass, _In_ ULONG DataType, _In_ ULONG DataSize,
                                     _In_ BOOLEAN IsHighValuePath, _In_opt_z_ PCWSTR KeyPath,
                                     _In_opt_z_ PCWSTR ValueName)
@@ -257,7 +257,7 @@ VOID SLEEPWALKEREtwLogRegistryEvent(_In_z_ PCSTR Operation, _In_ HANDLE ProcessI
     PCWSTR safeKeyPath;
     PCWSTR safeValueName;
 
-    if (!SLEEPWALKEREtwIsStarted())
+    if (!BLACKBIRDEtwIsStarted())
     {
         return;
     }
@@ -267,7 +267,7 @@ VOID SLEEPWALKEREtwLogRegistryEvent(_In_z_ PCSTR Operation, _In_ HANDLE ProcessI
     safeValueName = (ValueName != NULL) ? ValueName : L"";
 
     TraceLoggingWrite(
-        g_SleepwalkerEtwProvider, "RegistryTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+        g_BlackbirdEtwProvider, "RegistryTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
         TraceLoggingString(safeOperation, "operation"),
         TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"), TraceLoggingUInt32(SessionId, "sessionId"),
         TraceLoggingUInt32(NotifyClass, "notifyClass"), TraceLoggingUInt32(DataType, "dataType"),
@@ -275,7 +275,7 @@ VOID SLEEPWALKEREtwLogRegistryEvent(_In_z_ PCSTR Operation, _In_ HANDLE ProcessI
         TraceLoggingWideString(safeKeyPath, "keyPath"), TraceLoggingWideString(safeValueName, "valueName"));
 }
 
-VOID SLEEPWALKEREtwLogDetectionEvent(_In_z_ PCSTR DetectionName, _In_ ULONG Severity, _In_ HANDLE ProcessId,
+VOID BLACKBIRDEtwLogDetectionEvent(_In_z_ PCSTR DetectionName, _In_ ULONG Severity, _In_ HANDLE ProcessId,
                                      _In_ HANDLE TargetPid, _In_ UINT32 CorrelationFlags,
                                      _In_ UINT32 CorrelationAccessMask, _In_ UINT32 CorrelationAgeMs,
                                      _In_opt_z_ PCWSTR Reason)
@@ -283,7 +283,7 @@ VOID SLEEPWALKEREtwLogDetectionEvent(_In_z_ PCSTR DetectionName, _In_ ULONG Seve
     PCSTR safeName;
     PCWSTR safeReason;
 
-    if (!SLEEPWALKEREtwIsStarted())
+    if (!BLACKBIRDEtwIsStarted())
     {
         return;
     }
@@ -291,7 +291,7 @@ VOID SLEEPWALKEREtwLogDetectionEvent(_In_z_ PCSTR DetectionName, _In_ ULONG Seve
     safeName = (DetectionName != NULL) ? DetectionName : "UNKNOWN";
     safeReason = (Reason != NULL) ? Reason : L"";
 
-    TraceLoggingWrite(g_SleepwalkerEtwProvider, "DetectionTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+    TraceLoggingWrite(g_BlackbirdEtwProvider, "DetectionTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
                       TraceLoggingString(safeName, "detectionName"), TraceLoggingUInt32(Severity, "severity"),
                       TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)ProcessId, "processId"),
                       TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)TargetPid, "targetPid"),

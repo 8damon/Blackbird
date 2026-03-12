@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     internal static class WindowThemeHelper
     {

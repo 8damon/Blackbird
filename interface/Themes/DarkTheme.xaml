@@ -8,8 +8,8 @@
     <Color x:Key="WinSubtleBorderColor">#FF242424</Color>
     <Color x:Key="WinTextColor">#FFD8D8D8</Color>
     <Color x:Key="WinMutedTextColor">#FF9E9E9E</Color>
-    <Color x:Key="WinAccentColor">#FF7A7A7A</Color>
-    <Color x:Key="InputHoverBorderColor">#FF404040</Color>
+    <Color x:Key="WinAccentColor">#FF8E2020</Color>
+    <Color x:Key="InputHoverBorderColor">#FF5E2A2A</Color>
     <Color x:Key="CommandBarBackgroundColor">#FF171717</Color>
     <Color x:Key="CommandBarPanelColor">#FF111111</Color>
     <Color x:Key="CommandBarButtonColor">#FF101010</Color>
@@ -18,14 +18,17 @@
     <Color x:Key="StatusBarNeutralColor">#FF101010</Color>
     <Color x:Key="StatusBarFailedColor">#FF2D1F10</Color>
 
-    <Color x:Key="EventsHeaderColor">#FF0F355B</Color>
-    <Color x:Key="EventsHeaderButtonColor">#FF1C4E82</Color>
-    <Color x:Key="PerformanceHeaderColor">#FF2A5A2A</Color>
-    <Color x:Key="PerformanceHeaderAccentColor">#FF4D8D4D</Color>
-    <Color x:Key="EtwHeaderColor">#FF5A4218</Color>
-    <Color x:Key="EtwFeedHeaderColor">#FF7A5721</Color>
-    <Color x:Key="EtwTiHeaderColor">#FF4A306F</Color>
-    <Color x:Key="HeuristicsHeaderColor">#FF5F1E1E</Color>
+    <Color x:Key="EventsHeaderColor">#FF1A3550</Color>
+    <Color x:Key="EventsHeaderButtonColor">#FF255684</Color>
+    <Color x:Key="PerformanceHeaderColor">#FF1B3921</Color>
+    <Color x:Key="PerformanceHeaderAccentColor">#FF3F8F4C</Color>
+    <Color x:Key="EtwHeaderColor">#FF4A3217</Color>
+    <Color x:Key="EtwFeedHeaderColor">#FF5C3C1D</Color>
+    <Color x:Key="EtwTiHeaderColor">#FF4E3318</Color>
+    <Color x:Key="HeuristicsHeaderColor">#FF4A2525</Color>
+    <Color x:Key="FilesystemHeaderColor">#FF1E3C35</Color>
+    <Color x:Key="ProcessRelationsHeaderColor">#FF474020</Color>
+    <Color x:Key="IpcUplinkHeaderColor">#FF1F3E43</Color>
     <Color x:Key="MessageBoxBgColor">#FF080808</Color>
     <Color x:Key="MessageBoxTextColor">#FFE6E6E6</Color>
     <Color x:Key="MessageBoxMutedTextColor">#FFB0B0B0</Color>
@@ -71,6 +74,9 @@
     <SolidColorBrush x:Key="EtwFeedHeaderBrush" Color="{StaticResource EtwFeedHeaderColor}"/>
     <SolidColorBrush x:Key="EtwTiHeaderBrush" Color="{StaticResource EtwTiHeaderColor}"/>
     <SolidColorBrush x:Key="HeuristicsHeaderBrush" Color="{StaticResource HeuristicsHeaderColor}"/>
+    <SolidColorBrush x:Key="FilesystemHeaderBrush" Color="{StaticResource FilesystemHeaderColor}"/>
+    <SolidColorBrush x:Key="ProcessRelationsHeaderBrush" Color="{StaticResource ProcessRelationsHeaderColor}"/>
+    <SolidColorBrush x:Key="IpcUplinkHeaderBrush" Color="{StaticResource IpcUplinkHeaderColor}"/>
     <SolidColorBrush x:Key="MessageBoxBgBrush" Color="{StaticResource MessageBoxBgColor}"/>
     <SolidColorBrush x:Key="MessageBoxTextBrush" Color="{StaticResource MessageBoxTextColor}"/>
     <SolidColorBrush x:Key="MessageBoxMutedTextBrush" Color="{StaticResource MessageBoxMutedTextColor}"/>
@@ -97,7 +103,7 @@
 
     <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#FF121212"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#FFD8D8D8"/>
-    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#333A3A3A"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#334A1515"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFF0F0F0"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#FF1C1C1C"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#FFD8D8D8"/>
@@ -286,7 +292,7 @@
         <Style.Resources>
             <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#FF121212"/>
             <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#FFD8D8D8"/>
-            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#333A3A3A"/>
+            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#334A1515"/>
             <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFF0F0F0"/>
             <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#FF1C1C1C"/>
             <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#FFD8D8D8"/>

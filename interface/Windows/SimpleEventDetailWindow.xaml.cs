@@ -4,7 +4,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Input;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public partial class SimpleEventDetailWindow : Window
     {

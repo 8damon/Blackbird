@@ -1,14 +1,14 @@
-#ifndef SLEEPWALKER_HANDLE_MONITOR_H
-#define SLEEPWALKER_HANDLE_MONITOR_H
+#ifndef BLACKBIRD_HANDLE_MONITOR_H
+#define BLACKBIRD_HANDLE_MONITOR_H
 
 #include <ntdef.h>
 
 NTSTATUS
-SLEEPWALKERHandleMonitorInitialize(VOID);
+BLACKBIRDHandleMonitorInitialize(VOID);
 
-VOID SLEEPWALKERHandleMonitorUninitialize(VOID);
+VOID BLACKBIRDHandleMonitorUninitialize(VOID);
 
 BOOLEAN
-SLEEPWALKERHandleMonitorSelfCheck(VOID);
+BLACKBIRDHandleMonitorSelfCheck(VOID);
 
 #endif

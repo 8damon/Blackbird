@@ -7,14 +7,14 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public partial class ProcessRelationsPane : UserControl
     {
         public event RoutedEventHandler? CloseRequested;
         public event RoutedEventHandler? InspectRequested;
 
-        private readonly ObservableCollection<GroupedEventRow> _items = new();
+        private readonly BulkObservableCollection<GroupedEventRow> _items = new();
         private readonly Dictionary<string, GroupedEventRow> _byKey = new(StringComparer.Ordinal);
 
         internal int ItemCount => _items.Count;
@@ -29,6 +29,22 @@ namespace SleepwalkerInterface
         }
 
         internal void PushRelation(ProcessRelationView item)
+        {
+            PushRelations(new[] { item });
+        }
+
+        internal void PushRelations(IEnumerable<ProcessRelationView> items)
+        {
+            foreach (ProcessRelationView item in items)
+            {
+                PushRelationCore(item);
+            }
+
+            UpdateSummary();
+            UpdateNoDataOverlay();
+        }
+
+        private void PushRelationCore(ProcessRelationView item)
         {
             DateTime now = item.LastSeenUtc == default ? item.FirstSeenUtc : item.LastSeenUtc;
             if (now == default)
@@ -75,12 +91,6 @@ namespace SleepwalkerInterface
                 {
                     existing.Details.RemoveAt(0);
                 }
-
-                int idx = _items.IndexOf(existing);
-                if (idx >= 0)
-                {
-                    _items[idx] = existing;
-                }
             }
             else
             {
@@ -119,9 +129,6 @@ namespace SleepwalkerInterface
                 _items.RemoveAt(0);
                 _byKey.Remove(evictKey);
             }
-
-            UpdateSummary();
-            UpdateNoDataOverlay();
         }
 
         internal IReadOnlyList<GroupedEventRow> SnapshotItems()
@@ -136,6 +143,7 @@ namespace SleepwalkerInterface
             _byKey.Clear();
             TotalRawCount = 0;
 
+            var clones = new List<GroupedEventRow>();
             foreach (GroupedEventRow source in groups)
             {
                 GroupedEventRow clone = source.Clone();
@@ -149,11 +157,12 @@ namespace SleepwalkerInterface
                         return x;
                     })
                     .ToList();
-                _items.Add(clone);
+                clones.Add(clone);
                 _byKey[clone.GroupKey] = clone;
                 TotalRawCount += clone.Hits;
             }
 
+            _items.ReplaceAll(clones);
             UpdateSummary();
             UpdateNoDataOverlay();
         }
@@ -183,7 +192,6 @@ namespace SleepwalkerInterface
                     .Take(keep)
                     .OrderBy(x => x.TimestampUtc)
                     .ToList();
-                _items[i] = row;
                 _byKey[row.GroupKey] = row;
             }
         }

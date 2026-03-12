@@ -3,18 +3,18 @@
 #include "hollowing_engine.h"
 #include "..\telemetry\etw.h"
 
-#define SLEEPWALKER_HOLLOW_RING_SIZE 256
-#define SLEEPWALKER_HOLLOW_WINDOW_MS 30000u
-#define SLEEPWALKER_HOLLOW_EMIT_COOLDOWN_MS 3000u
+#define BLACKBIRD_HOLLOW_RING_SIZE 256
+#define BLACKBIRD_HOLLOW_WINDOW_MS 30000u
+#define BLACKBIRD_HOLLOW_EMIT_COOLDOWN_MS 3000u
 
-#define SLEEPWALKER_HOLLOW_MARK_REMOTE_THREAD 0x00000001u
-#define SLEEPWALKER_HOLLOW_MARK_OUTSIDE_IMAGE 0x00000002u
-#define SLEEPWALKER_HOLLOW_MARK_NON_IMAGE_EXEC 0x00000004u
-#define SLEEPWALKER_HOLLOW_MARK_MEMORY_INTENT 0x00000008u
-#define SLEEPWALKER_HOLLOW_MARK_THREAD_CONTEXT_INTENT 0x00000010u
-#define SLEEPWALKER_HOLLOW_MARK_DUP_HANDLE_INTENT 0x00000020u
+#define BLACKBIRD_HOLLOW_MARK_REMOTE_THREAD 0x00000001u
+#define BLACKBIRD_HOLLOW_MARK_OUTSIDE_IMAGE 0x00000002u
+#define BLACKBIRD_HOLLOW_MARK_NON_IMAGE_EXEC 0x00000004u
+#define BLACKBIRD_HOLLOW_MARK_MEMORY_INTENT 0x00000008u
+#define BLACKBIRD_HOLLOW_MARK_THREAD_CONTEXT_INTENT 0x00000010u
+#define BLACKBIRD_HOLLOW_MARK_DUP_HANDLE_INTENT 0x00000020u
 
-typedef struct _SLEEPWALKER_HOLLOW_ENTRY
+typedef struct _BLACKBIRD_HOLLOW_ENTRY
 {
     BOOLEAN Active;
     UINT64 ActorPid;
@@ -27,14 +27,14 @@ typedef struct _SLEEPWALKER_HOLLOW_ENTRY
     INT64 LastSeenQpc;
     INT64 LastMediumEmitQpc;
     INT64 LastStrongEmitQpc;
-} SLEEPWALKER_HOLLOW_ENTRY, *PSLEEPWALKER_HOLLOW_ENTRY;
+} BLACKBIRD_HOLLOW_ENTRY, *PBLACKBIRD_HOLLOW_ENTRY;
 
-static SLEEPWALKER_HOLLOW_ENTRY g_HollowRing[SLEEPWALKER_HOLLOW_RING_SIZE];
+static BLACKBIRD_HOLLOW_ENTRY g_HollowRing[BLACKBIRD_HOLLOW_RING_SIZE];
 static KSPIN_LOCK g_HollowLock;
 static volatile LONG g_HollowInitialized = 0;
 static ULONGLONG g_HollowQpcFrequency = 1;
 
-typedef struct _SLEEPWALKER_HOLLOW_EMIT
+typedef struct _BLACKBIRD_HOLLOW_EMIT
 {
     BOOLEAN Emit;
     PCSTR DetectionName;
@@ -45,9 +45,9 @@ typedef struct _SLEEPWALKER_HOLLOW_EMIT
     UINT32 CorrelationAccessMask;
     UINT32 CorrelationAgeMs;
     PCWSTR Reason;
-} SLEEPWALKER_HOLLOW_EMIT, *PSLEEPWALKER_HOLLOW_EMIT;
+} BLACKBIRD_HOLLOW_EMIT, *PBLACKBIRD_HOLLOW_EMIT;
 
-static ULONGLONG SLEEPWALKERHollowMsToQpc(_In_ UINT32 Ms)
+static ULONGLONG BLACKBIRDHollowMsToQpc(_In_ UINT32 Ms)
 {
     ULONGLONG ticks;
 
@@ -65,12 +65,12 @@ static ULONGLONG SLEEPWALKERHollowMsToQpc(_In_ UINT32 Ms)
     return ticks;
 }
 
-static PSLEEPWALKER_HOLLOW_ENTRY SLEEPWALKERHollowGetEntryLocked(_In_ HANDLE ActorPid, _In_ HANDLE TargetPid,
+static PBLACKBIRD_HOLLOW_ENTRY BLACKBIRDHollowGetEntryLocked(_In_ HANDLE ActorPid, _In_ HANDLE TargetPid,
                                                                  _In_ INT64 NowQpc)
 {
     UINT64 actor;
     UINT64 target;
-    ULONGLONG staleQpc = SLEEPWALKERHollowMsToQpc(SLEEPWALKER_HOLLOW_WINDOW_MS * 2u);
+    ULONGLONG staleQpc = BLACKBIRDHollowMsToQpc(BLACKBIRD_HOLLOW_WINDOW_MS * 2u);
     INT64 oldestQpc = MAXLONGLONG;
     LONG candidate = -1;
     UINT32 i;
@@ -86,7 +86,7 @@ static PSLEEPWALKER_HOLLOW_ENTRY SLEEPWALKERHollowGetEntryLocked(_In_ HANDLE Act
         actor = target;
     }
 
-    for (i = 0; i < SLEEPWALKER_HOLLOW_RING_SIZE; ++i)
+    for (i = 0; i < BLACKBIRD_HOLLOW_RING_SIZE; ++i)
     {
         ULONGLONG ageQpc;
 
@@ -115,7 +115,7 @@ static PSLEEPWALKER_HOLLOW_ENTRY SLEEPWALKERHollowGetEntryLocked(_In_ HANDLE Act
         }
     }
 
-    if (candidate < 0 || candidate >= SLEEPWALKER_HOLLOW_RING_SIZE)
+    if (candidate < 0 || candidate >= BLACKBIRD_HOLLOW_RING_SIZE)
     {
         return NULL;
     }
@@ -130,8 +130,8 @@ static PSLEEPWALKER_HOLLOW_ENTRY SLEEPWALKERHollowGetEntryLocked(_In_ HANDLE Act
     return &g_HollowRing[candidate];
 }
 
-static VOID SLEEPWALKERHollowEvaluateMarkDetectionsLocked(_Inout_ PSLEEPWALKER_HOLLOW_ENTRY Entry, _In_ INT64 NowQpc,
-                                                          _Out_ PSLEEPWALKER_HOLLOW_EMIT Emit)
+static VOID BLACKBIRDHollowEvaluateMarkDetectionsLocked(_Inout_ PBLACKBIRD_HOLLOW_ENTRY Entry, _In_ INT64 NowQpc,
+                                                          _Out_ PBLACKBIRD_HOLLOW_EMIT Emit)
 {
     ULONGLONG ageQpc;
     ULONGLONG windowQpc;
@@ -157,8 +157,8 @@ static VOID SLEEPWALKERHollowEvaluateMarkDetectionsLocked(_Inout_ PSLEEPWALKER_H
         return;
     }
 
-    windowQpc = SLEEPWALKERHollowMsToQpc(SLEEPWALKER_HOLLOW_WINDOW_MS);
-    cooldownQpc = SLEEPWALKERHollowMsToQpc(SLEEPWALKER_HOLLOW_EMIT_COOLDOWN_MS);
+    windowQpc = BLACKBIRDHollowMsToQpc(BLACKBIRD_HOLLOW_WINDOW_MS);
+    cooldownQpc = BLACKBIRDHollowMsToQpc(BLACKBIRD_HOLLOW_EMIT_COOLDOWN_MS);
     ageQpc = (NowQpc > Entry->FirstSeenQpc) ? (ULONGLONG)(NowQpc - Entry->FirstSeenQpc) : 0;
     if (ageQpc > windowQpc)
     {
@@ -170,12 +170,12 @@ static VOID SLEEPWALKERHollowEvaluateMarkDetectionsLocked(_Inout_ PSLEEPWALKER_H
         return;
     }
 
-    hasRemote = ((Entry->Marks & SLEEPWALKER_HOLLOW_MARK_REMOTE_THREAD) != 0);
-    hasOutside = ((Entry->Marks & SLEEPWALKER_HOLLOW_MARK_OUTSIDE_IMAGE) != 0);
-    hasNonImageExec = ((Entry->Marks & SLEEPWALKER_HOLLOW_MARK_NON_IMAGE_EXEC) != 0);
-    hasMemoryIntent = ((Entry->Marks & SLEEPWALKER_HOLLOW_MARK_MEMORY_INTENT) != 0);
-    hasThreadCtxIntent = ((Entry->Marks & SLEEPWALKER_HOLLOW_MARK_THREAD_CONTEXT_INTENT) != 0);
-    hasDupIntent = ((Entry->Marks & SLEEPWALKER_HOLLOW_MARK_DUP_HANDLE_INTENT) != 0);
+    hasRemote = ((Entry->Marks & BLACKBIRD_HOLLOW_MARK_REMOTE_THREAD) != 0);
+    hasOutside = ((Entry->Marks & BLACKBIRD_HOLLOW_MARK_OUTSIDE_IMAGE) != 0);
+    hasNonImageExec = ((Entry->Marks & BLACKBIRD_HOLLOW_MARK_NON_IMAGE_EXEC) != 0);
+    hasMemoryIntent = ((Entry->Marks & BLACKBIRD_HOLLOW_MARK_MEMORY_INTENT) != 0);
+    hasThreadCtxIntent = ((Entry->Marks & BLACKBIRD_HOLLOW_MARK_THREAD_CONTEXT_INTENT) != 0);
+    hasDupIntent = ((Entry->Marks & BLACKBIRD_HOLLOW_MARK_DUP_HANDLE_INTENT) != 0);
     suspiciousStart = (hasOutside || hasNonImageExec);
 
     medium = hasRemote && suspiciousStart && hasMemoryIntent && (hasThreadCtxIntent || hasDupIntent);
@@ -221,12 +221,12 @@ static VOID SLEEPWALKERHollowEvaluateMarkDetectionsLocked(_Inout_ PSLEEPWALKER_H
     }
 }
 
-static VOID SLEEPWALKERHollowApplyMarks(_In_ HANDLE ActorPid, _In_ HANDLE TargetPid, _In_ UINT32 Marks,
+static VOID BLACKBIRDHollowApplyMarks(_In_ HANDLE ActorPid, _In_ HANDLE TargetPid, _In_ UINT32 Marks,
                                         _In_ UINT32 CorrelationFlags, _In_ UINT32 CorrelationAccessMask,
                                         _In_ UINT32 CorrelationAgeMs)
 {
-    PSLEEPWALKER_HOLLOW_ENTRY entry;
-    SLEEPWALKER_HOLLOW_EMIT emit;
+    PBLACKBIRD_HOLLOW_ENTRY entry;
+    BLACKBIRD_HOLLOW_EMIT emit;
     KIRQL oldIrql;
     INT64 nowQpc;
 
@@ -243,7 +243,7 @@ static VOID SLEEPWALKERHollowApplyMarks(_In_ HANDLE ActorPid, _In_ HANDLE Target
     nowQpc = KeQueryPerformanceCounter(NULL).QuadPart;
 
     KeAcquireSpinLock(&g_HollowLock, &oldIrql);
-    entry = SLEEPWALKERHollowGetEntryLocked(ActorPid, TargetPid, nowQpc);
+    entry = BLACKBIRDHollowGetEntryLocked(ActorPid, TargetPid, nowQpc);
     if (entry != NULL)
     {
         entry->Marks |= Marks;
@@ -258,20 +258,20 @@ static VOID SLEEPWALKERHollowApplyMarks(_In_ HANDLE ActorPid, _In_ HANDLE Target
         {
             entry->FirstSeenQpc = nowQpc;
         }
-        SLEEPWALKERHollowEvaluateMarkDetectionsLocked(entry, nowQpc, &emit);
+        BLACKBIRDHollowEvaluateMarkDetectionsLocked(entry, nowQpc, &emit);
     }
     KeReleaseSpinLock(&g_HollowLock, oldIrql);
 
     if (emit.Emit)
     {
-        SLEEPWALKEREtwLogDetectionEvent(emit.DetectionName, emit.Severity, emit.ActorPid, emit.TargetPid,
+        BLACKBIRDEtwLogDetectionEvent(emit.DetectionName, emit.Severity, emit.ActorPid, emit.TargetPid,
                                         emit.CorrelationFlags, emit.CorrelationAccessMask, emit.CorrelationAgeMs,
                                         emit.Reason);
     }
 }
 
 NTSTATUS
-SLEEPWALKERHollowingEngineInitialize(VOID)
+BLACKBIRDHollowingEngineInitialize(VOID)
 {
     LARGE_INTEGER freq;
 
@@ -288,7 +288,7 @@ SLEEPWALKERHollowingEngineInitialize(VOID)
     return STATUS_SUCCESS;
 }
 
-VOID SLEEPWALKERHollowingEngineUninitialize(VOID)
+VOID BLACKBIRDHollowingEngineUninitialize(VOID)
 {
     if (InterlockedExchange(&g_HollowInitialized, 0) == 0)
     {
@@ -299,13 +299,13 @@ VOID SLEEPWALKERHollowingEngineUninitialize(VOID)
 }
 
 BOOLEAN
-SLEEPWALKERHollowingEngineSelfCheck(VOID)
+BLACKBIRDHollowingEngineSelfCheck(VOID)
 {
     return (InterlockedCompareExchange(&g_HollowInitialized, 0, 0) != 0);
 }
 
 BOOLEAN
-SLEEPWALKERHollowingResolveThreadCorrelation(_In_ HANDLE ProcessId, _In_opt_ HANDLE PreferredCreatorPid,
+BLACKBIRDHollowingResolveThreadCorrelation(_In_ HANDLE ProcessId, _In_opt_ HANDLE PreferredCreatorPid,
                                              _In_ UINT32 WindowMs, _Out_opt_ HANDLE *ResolvedActorPid,
                                              _Out_opt_ UINT32 *CorrelationFlags,
                                              _Out_opt_ UINT32 *CorrelationAccessMask,
@@ -325,11 +325,11 @@ SLEEPWALKERHollowingResolveThreadCorrelation(_In_ HANDLE ProcessId, _In_opt_ HAN
 
     actor = (PreferredCreatorPid != NULL) ? PreferredCreatorPid : ProcessId;
 
-    if (SLEEPWALKERCorrelationQueryRecentIntent(actor, ProcessId, WindowMs, &flags, &accessMask, &ageMs))
+    if (BLACKBIRDCorrelationQueryRecentIntent(actor, ProcessId, WindowMs, &flags, &accessMask, &ageMs))
     {
         found = TRUE;
     }
-    else if (SLEEPWALKERCorrelationQueryRecentIntentForTarget(ProcessId, WindowMs, TRUE, &correlatedCaller, &flags,
+    else if (BLACKBIRDCorrelationQueryRecentIntentForTarget(ProcessId, WindowMs, TRUE, &correlatedCaller, &flags,
                                                               &accessMask, &ageMs))
     {
         found = TRUE;
@@ -366,7 +366,7 @@ SLEEPWALKERHollowingResolveThreadCorrelation(_In_ HANDLE ProcessId, _In_opt_ HAN
     return found;
 }
 
-VOID SLEEPWALKERHollowingObserveThread(_In_ HANDLE ProcessId, _In_opt_ HANDLE ActorPid, _In_ BOOLEAN OutsideMainImage,
+VOID BLACKBIRDHollowingObserveThread(_In_ HANDLE ProcessId, _In_opt_ HANDLE ActorPid, _In_ BOOLEAN OutsideMainImage,
                                        _In_ BOOLEAN GotStart, _In_ BOOLEAN StartRegionExecutable,
                                        _In_ BOOLEAN StartRegionNonImage, _In_ UINT32 CorrelationFlags,
                                        _In_ UINT32 CorrelationAccessMask, _In_ UINT32 CorrelationAgeMs)
@@ -387,66 +387,66 @@ VOID SLEEPWALKERHollowingObserveThread(_In_ HANDLE ProcessId, _In_opt_ HANDLE Ac
     actor = (ActorPid != NULL) ? ActorPid : ProcessId;
     isRemoteCreator = (actor != ProcessId);
     remoteNonImageExec = isRemoteCreator && GotStart && StartRegionExecutable && StartRegionNonImage;
-    hasThreadContextIntent = ((CorrelationFlags & SLEEPWALKER_INTENT_THREAD_CONTEXT) != 0);
-    hasMemoryIntent = ((CorrelationFlags & SLEEPWALKER_INTENT_PROCESS_MEMORY) != 0);
-    hasDuplicateIntent = ((CorrelationFlags & SLEEPWALKER_INTENT_DUP_HANDLE) != 0);
+    hasThreadContextIntent = ((CorrelationFlags & BLACKBIRD_INTENT_THREAD_CONTEXT) != 0);
+    hasMemoryIntent = ((CorrelationFlags & BLACKBIRD_INTENT_PROCESS_MEMORY) != 0);
+    hasDuplicateIntent = ((CorrelationFlags & BLACKBIRD_INTENT_DUP_HANDLE) != 0);
 
     if (isRemoteCreator && hasMemoryIntent && (hasThreadContextIntent || hasDuplicateIntent))
     {
-        SLEEPWALKEREtwLogDetectionEvent("REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT", 5, actor, ProcessId,
+        BLACKBIRDEtwLogDetectionEvent("REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT", 5, actor, ProcessId,
                                         CorrelationFlags, CorrelationAccessMask, CorrelationAgeMs,
                                         L"remote thread correlated with memory+thread-context/dup handle intent");
     }
     if (remoteNonImageExec && hasMemoryIntent)
     {
-        SLEEPWALKEREtwLogDetectionEvent("REMOTE_THREAD_START_IN_NON_IMAGE_EXECUTABLE_REGION", 6, actor, ProcessId,
+        BLACKBIRDEtwLogDetectionEvent("REMOTE_THREAD_START_IN_NON_IMAGE_EXECUTABLE_REGION", 6, actor, ProcessId,
                                         CorrelationFlags, CorrelationAccessMask, CorrelationAgeMs,
                                         L"remote thread start resolved to executable non-image memory with memory intent");
     }
     if (isRemoteCreator && hasThreadContextIntent && hasMemoryIntent && (OutsideMainImage || remoteNonImageExec))
     {
-        SLEEPWALKEREtwLogDetectionEvent("THREAD_HIJACK_INTENT", 6, actor, ProcessId, CorrelationFlags,
+        BLACKBIRDEtwLogDetectionEvent("THREAD_HIJACK_INTENT", 6, actor, ProcessId, CorrelationFlags,
                                         CorrelationAccessMask, CorrelationAgeMs,
                                         L"thread-context + memory intent combined with suspicious remote execution");
     }
     if (isRemoteCreator && (OutsideMainImage || remoteNonImageExec) && hasMemoryIntent &&
         (hasThreadContextIntent || hasDuplicateIntent))
     {
-        SLEEPWALKEREtwLogDetectionEvent("POSSIBLE_PROCESS_HOLLOWING_OR_INJECTION_INTENT_CHAIN", 7, actor, ProcessId,
+        BLACKBIRDEtwLogDetectionEvent("POSSIBLE_PROCESS_HOLLOWING_OR_INJECTION_INTENT_CHAIN", 7, actor, ProcessId,
                                         CorrelationFlags, CorrelationAccessMask, CorrelationAgeMs,
                                         L"memory + thread intent chain with suspicious remote start indicates hollowing/injection");
     }
     if (isRemoteCreator && remoteNonImageExec && hasMemoryIntent && hasThreadContextIntent)
     {
-        SLEEPWALKEREtwLogDetectionEvent("POSSIBLE_MANUAL_MAP_OR_HOLLOWING_EXECUTION", 6, actor, ProcessId,
+        BLACKBIRDEtwLogDetectionEvent("POSSIBLE_MANUAL_MAP_OR_HOLLOWING_EXECUTION", 6, actor, ProcessId,
                                         CorrelationFlags, CorrelationAccessMask, CorrelationAgeMs,
                                         L"remote non-image execution with memory+thread context intent");
     }
 
     if (isRemoteCreator)
     {
-        marks |= SLEEPWALKER_HOLLOW_MARK_REMOTE_THREAD;
+        marks |= BLACKBIRD_HOLLOW_MARK_REMOTE_THREAD;
     }
     if (OutsideMainImage)
     {
-        marks |= SLEEPWALKER_HOLLOW_MARK_OUTSIDE_IMAGE;
+        marks |= BLACKBIRD_HOLLOW_MARK_OUTSIDE_IMAGE;
     }
     if (remoteNonImageExec)
     {
-        marks |= SLEEPWALKER_HOLLOW_MARK_NON_IMAGE_EXEC;
+        marks |= BLACKBIRD_HOLLOW_MARK_NON_IMAGE_EXEC;
     }
     if (hasMemoryIntent)
     {
-        marks |= SLEEPWALKER_HOLLOW_MARK_MEMORY_INTENT;
+        marks |= BLACKBIRD_HOLLOW_MARK_MEMORY_INTENT;
     }
     if (hasThreadContextIntent)
     {
-        marks |= SLEEPWALKER_HOLLOW_MARK_THREAD_CONTEXT_INTENT;
+        marks |= BLACKBIRD_HOLLOW_MARK_THREAD_CONTEXT_INTENT;
     }
     if (hasDuplicateIntent)
     {
-        marks |= SLEEPWALKER_HOLLOW_MARK_DUP_HANDLE_INTENT;
+        marks |= BLACKBIRD_HOLLOW_MARK_DUP_HANDLE_INTENT;
     }
 
-    SLEEPWALKERHollowApplyMarks(actor, ProcessId, marks, CorrelationFlags, CorrelationAccessMask, CorrelationAgeMs);
+    BLACKBIRDHollowApplyMarks(actor, ProcessId, marks, CorrelationFlags, CorrelationAccessMask, CorrelationAgeMs);
 }

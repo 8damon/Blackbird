@@ -19,31 +19,31 @@
 #define THREAD_ALL_ACCESS (STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFFF)
 #endif
 
-#define SLEEPWALKER_APC_COOLDOWN_MS 7000
-#define SLEEPWALKER_APC_RING_SIZE 64
-#define SLEEPWALKER_APC_INTENT_WINDOW_MS 12000
+#define BLACKBIRD_APC_COOLDOWN_MS 7000
+#define BLACKBIRD_APC_RING_SIZE 64
+#define BLACKBIRD_APC_INTENT_WINDOW_MS 12000
 
-typedef struct _SLEEPWALKER_APC_RING_ENTRY
+typedef struct _BLACKBIRD_APC_RING_ENTRY
 {
     UINT64 CallerPid;
     UINT64 TargetPid;
     UINT32 Kind;
     INT64 TimestampQpc;
-} SLEEPWALKER_APC_RING_ENTRY;
+} BLACKBIRD_APC_RING_ENTRY;
 
-typedef enum _SLEEPWALKER_APC_EVENT_KIND
+typedef enum _BLACKBIRD_APC_EVENT_KIND
 {
-    SLEEPWALKERApcKindRemoteApc = 1,
-    SLEEPWALKERApcKindThreadHijack = 2
-} SLEEPWALKER_APC_EVENT_KIND;
+    BLACKBIRDApcKindRemoteApc = 1,
+    BLACKBIRDApcKindThreadHijack = 2
+} BLACKBIRD_APC_EVENT_KIND;
 
-static SLEEPWALKER_APC_RING_ENTRY g_ApcRing[SLEEPWALKER_APC_RING_SIZE];
+static BLACKBIRD_APC_RING_ENTRY g_ApcRing[BLACKBIRD_APC_RING_SIZE];
 static volatile LONG g_ApcRingWriteIndex = -1;
 static KSPIN_LOCK g_ApcRingLock;
 static volatile LONG g_ApcMonitorInitialized = 0;
 static ULONGLONG g_ApcQpcFrequency = 1;
 
-static ULONGLONG SLEEPWALKERApcMsToQpc(_In_ UINT32 Ms)
+static ULONGLONG BLACKBIRDApcMsToQpc(_In_ UINT32 Ms)
 {
     ULONGLONG ticks;
 
@@ -60,8 +60,8 @@ static ULONGLONG SLEEPWALKERApcMsToQpc(_In_ UINT32 Ms)
     return ticks;
 }
 
-static BOOLEAN SLEEPWALKERApcShouldEmit(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
-                                        _In_ SLEEPWALKER_APC_EVENT_KIND Kind)
+static BOOLEAN BLACKBIRDApcShouldEmit(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
+                                        _In_ BLACKBIRD_APC_EVENT_KIND Kind)
 {
     UINT64 caller = (UINT64)(ULONG_PTR)CallerPid;
     UINT64 target = (UINT64)(ULONG_PTR)TargetPid;
@@ -72,10 +72,10 @@ static BOOLEAN SLEEPWALKERApcShouldEmit(_In_ HANDLE CallerPid, _In_ HANDLE Targe
     LONG writeIndex;
     ULONGLONG cooldownQpc;
 
-    cooldownQpc = SLEEPWALKERApcMsToQpc(SLEEPWALKER_APC_COOLDOWN_MS);
+    cooldownQpc = BLACKBIRDApcMsToQpc(BLACKBIRD_APC_COOLDOWN_MS);
     KeAcquireSpinLock(&g_ApcRingLock, &oldIrql);
 
-    for (i = 0; i < SLEEPWALKER_APC_RING_SIZE; ++i)
+    for (i = 0; i < BLACKBIRD_APC_RING_SIZE; ++i)
     {
         INT64 deltaQpc;
 
@@ -104,10 +104,10 @@ static BOOLEAN SLEEPWALKERApcShouldEmit(_In_ HANDLE CallerPid, _In_ HANDLE Targe
     if (allow)
     {
         writeIndex = InterlockedIncrement(&g_ApcRingWriteIndex);
-        writeIndex %= SLEEPWALKER_APC_RING_SIZE;
+        writeIndex %= BLACKBIRD_APC_RING_SIZE;
         if (writeIndex < 0)
         {
-            writeIndex += SLEEPWALKER_APC_RING_SIZE;
+            writeIndex += BLACKBIRD_APC_RING_SIZE;
         }
 
         g_ApcRing[writeIndex].CallerPid = caller;
@@ -121,7 +121,7 @@ static BOOLEAN SLEEPWALKERApcShouldEmit(_In_ HANDLE CallerPid, _In_ HANDLE Targe
 }
 
 NTSTATUS
-SLEEPWALKERApcMonitorInitialize(VOID)
+BLACKBIRDApcMonitorInitialize(VOID)
 {
     LARGE_INTEGER freq;
 
@@ -138,7 +138,7 @@ SLEEPWALKERApcMonitorInitialize(VOID)
     return STATUS_SUCCESS;
 }
 
-VOID SLEEPWALKERApcMonitorUninitialize(VOID)
+VOID BLACKBIRDApcMonitorUninitialize(VOID)
 {
     if (InterlockedExchange(&g_ApcMonitorInitialized, 0) == 0)
     {
@@ -149,7 +149,7 @@ VOID SLEEPWALKERApcMonitorUninitialize(VOID)
     InterlockedExchange(&g_ApcRingWriteIndex, -1);
 }
 
-VOID SLEEPWALKERApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
+VOID BLACKBIRDApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
                                                    _In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsDuplicateOperation)
 {
     BOOLEAN hasSetContext;
@@ -176,33 +176,33 @@ VOID SLEEPWALKERApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ H
     {
         return;
     }
-    hasRecentIntent = SLEEPWALKERCorrelationQueryRecentIntent(CallerPid, TargetPid, SLEEPWALKER_APC_INTENT_WINDOW_MS,
+    hasRecentIntent = BLACKBIRDCorrelationQueryRecentIntent(CallerPid, TargetPid, BLACKBIRD_APC_INTENT_WINDOW_MS,
                                                               &intentFlags, &intentAccessMask, &intentAgeMs);
-    hasMemoryIntent = hasRecentIntent && ((intentFlags & SLEEPWALKER_INTENT_PROCESS_MEMORY) != 0);
+    hasMemoryIntent = hasRecentIntent && ((intentFlags & BLACKBIRD_INTENT_PROCESS_MEMORY) != 0);
 
     if (hasSetContext && hasSuspendResume && hasMemoryIntent &&
-        SLEEPWALKERApcShouldEmit(CallerPid, TargetPid, SLEEPWALKERApcKindRemoteApc))
+        BLACKBIRDApcShouldEmit(CallerPid, TargetPid, BLACKBIRDApcKindRemoteApc))
     {
-        SLEEPWALKEREtwLogApcEvent("REMOTE_APC_INTENT", CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation,
+        BLACKBIRDEtwLogApcEvent("REMOTE_APC_INTENT", CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation,
                                   intentFlags, intentAccessMask, intentAgeMs);
-        SLEEPWALKEREtwLogDetectionEvent("REMOTE_APC_CREATION_SUSPECT", 5, CallerPid, TargetPid, intentFlags,
+        BLACKBIRDEtwLogDetectionEvent("REMOTE_APC_CREATION_SUSPECT", 5, CallerPid, TargetPid, intentFlags,
                                         intentAccessMask, intentAgeMs,
                                         L"set-context plus suspend/resume with recent process-memory intent");
     }
 
     if (hasSetContext && hasSuspendResume && hasMemoryIntent &&
-        SLEEPWALKERApcShouldEmit(CallerPid, TargetPid, SLEEPWALKERApcKindThreadHijack))
+        BLACKBIRDApcShouldEmit(CallerPid, TargetPid, BLACKBIRDApcKindThreadHijack))
     {
-        SLEEPWALKEREtwLogApcEvent("THREAD_CONTEXT_INTENT", CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation,
+        BLACKBIRDEtwLogApcEvent("THREAD_CONTEXT_INTENT", CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation,
                                   intentFlags, intentAccessMask, intentAgeMs);
-        SLEEPWALKEREtwLogDetectionEvent("THREAD_HIJACK_INTENT", 6, CallerPid, TargetPid, intentFlags,
+        BLACKBIRDEtwLogDetectionEvent("THREAD_HIJACK_INTENT", 6, CallerPid, TargetPid, intentFlags,
                                         intentAccessMask, intentAgeMs,
                                         L"high-confidence hijack intent chain (thread context + memory intent)");
     }
 }
 
 BOOLEAN
-SLEEPWALKERApcMonitorSelfCheck(VOID)
+BLACKBIRDApcMonitorSelfCheck(VOID)
 {
     return (InterlockedCompareExchange(&g_ApcMonitorInitialized, 0, 0) != 0);
 }

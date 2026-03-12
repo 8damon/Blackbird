@@ -5,7 +5,7 @@ using System.IO.Compression;
 using System.Threading;
 using System.Text.Json;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     internal sealed class SessionFileArchive
     {
@@ -23,6 +23,7 @@ namespace SleepwalkerInterface
         public double ViewDurationSeconds { get; set; } = 120;
         public double ViewStartSeconds { get; set; }
         public string? LaneFocusKey { get; set; }
+        public bool UseUsermodeHooks { get; set; }
         public bool TargetExited { get; set; }
         public bool OfflineSnapshot { get; set; } = true;
 
@@ -33,6 +34,7 @@ namespace SleepwalkerInterface
         public List<GroupedEventRow> HeuristicsGroups { get; set; } = new();
         public List<GroupedEventRow> FilesystemGroups { get; set; } = new();
         public List<GroupedEventRow> ProcessRelationsGroups { get; set; } = new();
+        public List<ApiCallGraphRowSnapshot> ApiGraphRows { get; set; } = new();
     }
 
     internal static class SessionFileStorage
@@ -158,6 +160,7 @@ namespace SleepwalkerInterface
                 tab.HeuristicsGroups ??= new List<GroupedEventRow>();
                 tab.FilesystemGroups ??= new List<GroupedEventRow>();
                 tab.ProcessRelationsGroups ??= new List<GroupedEventRow>();
+                tab.ApiGraphRows ??= new List<ApiCallGraphRowSnapshot>();
             }
         }
 
@@ -187,7 +190,8 @@ namespace SleepwalkerInterface
                 if (tab.EtwGroups.Count > MaxGroupedRowsPerCategory ||
                     tab.HeuristicsGroups.Count > MaxGroupedRowsPerCategory ||
                     tab.FilesystemGroups.Count > MaxGroupedRowsPerCategory ||
-                    tab.ProcessRelationsGroups.Count > MaxGroupedRowsPerCategory)
+                    tab.ProcessRelationsGroups.Count > MaxGroupedRowsPerCategory ||
+                    tab.ApiGraphRows.Count > MaxGroupedRowsPerCategory)
                 {
                     throw new InvalidDataException($"PID {tab.Pid} has too many grouped intel rows.");
                 }

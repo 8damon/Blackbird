@@ -7,34 +7,34 @@ static PFLT_FILTER g_FileSystemFilter = NULL;
 static volatile LONG g_FileSystemMonitorRegistered = 0;
 static volatile LONG g_FileSystemMonitorFailureCounter = 0;
 
-static UINT32 SLEEPWALKERMapMajorToFileOperation(_In_ UCHAR MajorFunction)
+static UINT32 BLACKBIRDMapMajorToFileOperation(_In_ UCHAR MajorFunction)
 {
     switch (MajorFunction)
     {
     case IRP_MJ_CREATE:
-        return SleepwalkerFileOperationCreate;
+        return BlackbirdFileOperationCreate;
     case IRP_MJ_READ:
-        return SleepwalkerFileOperationRead;
+        return BlackbirdFileOperationRead;
     case IRP_MJ_WRITE:
-        return SleepwalkerFileOperationWrite;
+        return BlackbirdFileOperationWrite;
     case IRP_MJ_CLOSE:
-        return SleepwalkerFileOperationClose;
+        return BlackbirdFileOperationClose;
     case IRP_MJ_CLEANUP:
-        return SleepwalkerFileOperationCleanup;
+        return BlackbirdFileOperationCleanup;
     case IRP_MJ_SET_INFORMATION:
-        return SleepwalkerFileOperationSetInformation;
+        return BlackbirdFileOperationSetInformation;
     case IRP_MJ_QUERY_INFORMATION:
-        return SleepwalkerFileOperationQueryInformation;
+        return BlackbirdFileOperationQueryInformation;
     case IRP_MJ_DIRECTORY_CONTROL:
-        return SleepwalkerFileOperationDirectoryControl;
+        return BlackbirdFileOperationDirectoryControl;
     case IRP_MJ_FILE_SYSTEM_CONTROL:
-        return SleepwalkerFileOperationFsControl;
+        return BlackbirdFileOperationFsControl;
     default:
-        return SleepwalkerFileOperationUnknown;
+        return BlackbirdFileOperationUnknown;
     }
 }
 
-static VOID SLEEPWALKERCaptureFilePath(_In_ PFLT_CALLBACK_DATA Data, _In_ PCFLT_RELATED_OBJECTS FltObjects,
+static VOID BLACKBIRDCaptureFilePath(_In_ PFLT_CALLBACK_DATA Data, _In_ PCFLT_RELATED_OBJECTS FltObjects,
                                        _Out_writes_z_(PathChars) PWSTR Path, _In_ size_t PathChars)
 {
     NTSTATUS status;
@@ -72,8 +72,8 @@ static VOID SLEEPWALKERCaptureFilePath(_In_ PFLT_CALLBACK_DATA Data, _In_ PCFLT_
     }
 }
 
-static VOID SLEEPWALKERFillCommonFileEventFields(_In_ PFLT_CALLBACK_DATA Data, _In_ PCFLT_RELATED_OBJECTS FltObjects,
-                                                 _Out_ SLEEPWALKER_FILE_EVENT *Event)
+static VOID BLACKBIRDFillCommonFileEventFields(_In_ PFLT_CALLBACK_DATA Data, _In_ PCFLT_RELATED_OBJECTS FltObjects,
+                                                 _Out_ BLACKBIRD_FILE_EVENT *Event)
 {
     const FLT_IO_PARAMETER_BLOCK *iopb;
     UINT32 flags = 0;
@@ -82,7 +82,7 @@ static VOID SLEEPWALKERFillCommonFileEventFields(_In_ PFLT_CALLBACK_DATA Data, _
     iopb = Data->Iopb;
     Event->ProcessId = (UINT64)(ULONG_PTR)PsGetCurrentProcessId();
     Event->ThreadId = (UINT64)(ULONG_PTR)PsGetCurrentThreadId();
-    Event->Operation = SLEEPWALKERMapMajorToFileOperation(iopb->MajorFunction);
+    Event->Operation = BLACKBIRDMapMajorToFileOperation(iopb->MajorFunction);
     Event->MajorCode = iopb->MajorFunction;
     Event->MinorCode = iopb->MinorFunction;
     Event->IrpFlags = iopb->IrpFlags;
@@ -90,19 +90,19 @@ static VOID SLEEPWALKERFillCommonFileEventFields(_In_ PFLT_CALLBACK_DATA Data, _
     Event->Information = (UINT64)Data->IoStatus.Information;
     Event->FileObject = (UINT64)(ULONG_PTR)FltObjects->FileObject;
     Event->FileId = (FltObjects->FileObject != NULL) ? (UINT64)(ULONG_PTR)FltObjects->FileObject->FsContext : 0;
-    Event->Flags = SLEEPWALKER_FILE_FLAG_PRE_OPERATION;
+    Event->Flags = BLACKBIRD_FILE_FLAG_PRE_OPERATION;
 
     if ((iopb->IrpFlags & IRP_PAGING_IO) != 0)
     {
-        flags |= SLEEPWALKER_FILE_FLAG_PAGING_IO;
+        flags |= BLACKBIRD_FILE_FLAG_PAGING_IO;
     }
     if ((iopb->IrpFlags & IRP_SYNCHRONOUS_PAGING_IO) != 0)
     {
-        flags |= SLEEPWALKER_FILE_FLAG_SYNCHRONOUS_IO;
+        flags |= BLACKBIRD_FILE_FLAG_SYNCHRONOUS_IO;
     }
     if ((iopb->IrpFlags & IRP_NOCACHE) != 0)
     {
-        flags |= SLEEPWALKER_FILE_FLAG_NON_CACHED_IO;
+        flags |= BLACKBIRD_FILE_FLAG_NON_CACHED_IO;
     }
 
     if (iopb->MajorFunction == IRP_MJ_CREATE)
@@ -118,15 +118,15 @@ static VOID SLEEPWALKERFillCommonFileEventFields(_In_ PFLT_CALLBACK_DATA Data, _
 
         if ((Event->CreateOptions & FILE_DIRECTORY_FILE) != 0)
         {
-            flags |= SLEEPWALKER_FILE_FLAG_DIRECTORY_FILE;
+            flags |= BLACKBIRD_FILE_FLAG_DIRECTORY_FILE;
         }
         if ((Event->CreateOptions & FILE_DELETE_ON_CLOSE) != 0)
         {
-            flags |= SLEEPWALKER_FILE_FLAG_DELETE_ON_CLOSE;
+            flags |= BLACKBIRD_FILE_FLAG_DELETE_ON_CLOSE;
         }
         if ((Event->CreateOptions & FILE_OPEN_REPARSE_POINT) != 0)
         {
-            flags |= SLEEPWALKER_FILE_FLAG_REPARSE_POINT;
+            flags |= BLACKBIRD_FILE_FLAG_REPARSE_POINT;
         }
     }
     else if (iopb->MajorFunction == IRP_MJ_READ)
@@ -163,11 +163,11 @@ static VOID SLEEPWALKERFillCommonFileEventFields(_In_ PFLT_CALLBACK_DATA Data, _
 }
 
 _Function_class_(FLT_PRE_OPERATION_CALLBACK)
-static FLT_PREOP_CALLBACK_STATUS SLEEPWALKERFsPreOperation(_Inout_ PFLT_CALLBACK_DATA Data,
+static FLT_PREOP_CALLBACK_STATUS BLACKBIRDFsPreOperation(_Inout_ PFLT_CALLBACK_DATA Data,
                                                            _In_ PCFLT_RELATED_OBJECTS FltObjects,
                                                            _Outptr_result_maybenull_ PVOID *CompletionContext)
 {
-    SLEEPWALKER_FILE_EVENT event;
+    BLACKBIRD_FILE_EVENT event;
     UINT32 processPid32;
 
     UNREFERENCED_PARAMETER(CompletionContext);
@@ -177,34 +177,34 @@ static FLT_PREOP_CALLBACK_STATUS SLEEPWALKERFsPreOperation(_Inout_ PFLT_CALLBACK
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
-    if (!SLEEPWALKERControlHasClientsFast())
+    if (!BLACKBIRDControlHasClientsFast())
     {
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
     processPid32 = (UINT32)(ULONG_PTR)PsGetCurrentProcessId();
-    if (!SLEEPWALKERControlHasPidInterest(processPid32, 0, SLEEPWALKER_STREAM_FILESYSTEM))
+    if (!BLACKBIRDControlHasPidInterest(processPid32, 0, BLACKBIRD_STREAM_FILESYSTEM))
     {
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
     RtlZeroMemory(&event, sizeof(event));
-    SLEEPWALKERFillCommonFileEventFields(Data, FltObjects, &event);
-    SLEEPWALKERCaptureFilePath(Data, FltObjects, event.Path, RTL_NUMBER_OF(event.Path));
-    SLEEPWALKERControlPublishFileEvent(&event);
+    BLACKBIRDFillCommonFileEventFields(Data, FltObjects, &event);
+    BLACKBIRDCaptureFilePath(Data, FltObjects, event.Path, RTL_NUMBER_OF(event.Path));
+    BLACKBIRDControlPublishFileEvent(&event);
 
     return FLT_PREOP_SUCCESS_NO_CALLBACK;
 }
 
 _Function_class_(PFLT_FILTER_UNLOAD_CALLBACK)
-static NTSTATUS SLEEPWALKERFsFilterUnload(_In_ FLT_FILTER_UNLOAD_FLAGS Flags)
+static NTSTATUS BLACKBIRDFsFilterUnload(_In_ FLT_FILTER_UNLOAD_FLAGS Flags)
 {
     UNREFERENCED_PARAMETER(Flags);
     return STATUS_SUCCESS;
 }
 
 _Function_class_(PFLT_INSTANCE_SETUP_CALLBACK)
-static NTSTATUS SLEEPWALKERFsInstanceSetup(_In_ PCFLT_RELATED_OBJECTS FltObjects,
+static NTSTATUS BLACKBIRDFsInstanceSetup(_In_ PCFLT_RELATED_OBJECTS FltObjects,
                                            _In_ FLT_INSTANCE_SETUP_FLAGS Flags,
                                            _In_ DEVICE_TYPE VolumeDeviceType,
                                            _In_ FLT_FILESYSTEM_TYPE VolumeFilesystemType)
@@ -216,26 +216,26 @@ static NTSTATUS SLEEPWALKERFsInstanceSetup(_In_ PCFLT_RELATED_OBJECTS FltObjects
     return STATUS_SUCCESS;
 }
 
-static const FLT_OPERATION_REGISTRATION g_SleepwalkerFsCallbacks[] = {
-    {IRP_MJ_CREATE, 0, SLEEPWALKERFsPreOperation, NULL},
-    {IRP_MJ_READ, 0, SLEEPWALKERFsPreOperation, NULL},
-    {IRP_MJ_WRITE, 0, SLEEPWALKERFsPreOperation, NULL},
-    {IRP_MJ_CLOSE, 0, SLEEPWALKERFsPreOperation, NULL},
-    {IRP_MJ_CLEANUP, 0, SLEEPWALKERFsPreOperation, NULL},
-    {IRP_MJ_SET_INFORMATION, 0, SLEEPWALKERFsPreOperation, NULL},
-    {IRP_MJ_QUERY_INFORMATION, 0, SLEEPWALKERFsPreOperation, NULL},
-    {IRP_MJ_DIRECTORY_CONTROL, 0, SLEEPWALKERFsPreOperation, NULL},
-    {IRP_MJ_FILE_SYSTEM_CONTROL, 0, SLEEPWALKERFsPreOperation, NULL},
+static const FLT_OPERATION_REGISTRATION g_BlackbirdFsCallbacks[] = {
+    {IRP_MJ_CREATE, 0, BLACKBIRDFsPreOperation, NULL},
+    {IRP_MJ_READ, 0, BLACKBIRDFsPreOperation, NULL},
+    {IRP_MJ_WRITE, 0, BLACKBIRDFsPreOperation, NULL},
+    {IRP_MJ_CLOSE, 0, BLACKBIRDFsPreOperation, NULL},
+    {IRP_MJ_CLEANUP, 0, BLACKBIRDFsPreOperation, NULL},
+    {IRP_MJ_SET_INFORMATION, 0, BLACKBIRDFsPreOperation, NULL},
+    {IRP_MJ_QUERY_INFORMATION, 0, BLACKBIRDFsPreOperation, NULL},
+    {IRP_MJ_DIRECTORY_CONTROL, 0, BLACKBIRDFsPreOperation, NULL},
+    {IRP_MJ_FILE_SYSTEM_CONTROL, 0, BLACKBIRDFsPreOperation, NULL},
     {IRP_MJ_OPERATION_END}};
 
-static const FLT_REGISTRATION g_SleepwalkerFsRegistration = {
+static const FLT_REGISTRATION g_BlackbirdFsRegistration = {
     sizeof(FLT_REGISTRATION),
     FLT_REGISTRATION_VERSION,
     0,
     NULL,
-    g_SleepwalkerFsCallbacks,
-    SLEEPWALKERFsFilterUnload,
-    SLEEPWALKERFsInstanceSetup,
+    g_BlackbirdFsCallbacks,
+    BLACKBIRDFsFilterUnload,
+    BLACKBIRDFsInstanceSetup,
     NULL,
     NULL,
     NULL,
@@ -245,7 +245,7 @@ static const FLT_REGISTRATION g_SleepwalkerFsRegistration = {
     NULL};
 
 NTSTATUS
-SLEEPWALKERFileSystemMonitorInitialize(_In_ PDRIVER_OBJECT DriverObject)
+BLACKBIRDFileSystemMonitorInitialize(_In_ PDRIVER_OBJECT DriverObject)
 {
     NTSTATUS status;
     LONG failures;
@@ -263,14 +263,14 @@ SLEEPWALKERFileSystemMonitorInitialize(_In_ PDRIVER_OBJECT DriverObject)
         return STATUS_SUCCESS;
     }
 
-    status = FltRegisterFilter(DriverObject, &g_SleepwalkerFsRegistration, &g_FileSystemFilter);
+    status = FltRegisterFilter(DriverObject, &g_BlackbirdFsRegistration, &g_FileSystemFilter);
     if (!NT_SUCCESS(status))
     {
         failures = InterlockedIncrement(&g_FileSystemMonitorFailureCounter);
         if (failures == 1 || ((failures & 0xFF) == 0))
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                       "SLEEPWALKER: filesystem monitor filter registration failed status=0x%08X total=%lu.\n",
+                       "BLACKBIRD: filesystem monitor filter registration failed status=0x%08X total=%lu.\n",
                        status, (ULONG)failures);
         }
         g_FileSystemFilter = NULL;
@@ -284,7 +284,7 @@ SLEEPWALKERFileSystemMonitorInitialize(_In_ PDRIVER_OBJECT DriverObject)
         if (failures == 1 || ((failures & 0xFF) == 0))
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                       "SLEEPWALKER: filesystem monitor start filtering failed status=0x%08X total=%lu.\n", status,
+                       "BLACKBIRD: filesystem monitor start filtering failed status=0x%08X total=%lu.\n", status,
                        (ULONG)failures);
         }
         FltUnregisterFilter(g_FileSystemFilter);
@@ -293,11 +293,11 @@ SLEEPWALKERFileSystemMonitorInitialize(_In_ PDRIVER_OBJECT DriverObject)
     }
 
     InterlockedExchange(&g_FileSystemMonitorRegistered, 1);
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "SLEEPWALKER: filesystem monitor initialized.\n");
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: filesystem monitor initialized.\n");
     return STATUS_SUCCESS;
 }
 
-VOID SLEEPWALKERFileSystemMonitorUninitialize(VOID)
+VOID BLACKBIRDFileSystemMonitorUninitialize(VOID)
 {
     PFLT_FILTER filter;
 
@@ -318,11 +318,11 @@ VOID SLEEPWALKERFileSystemMonitorUninitialize(VOID)
         FltUnregisterFilter(filter);
     }
 
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "SLEEPWALKER: filesystem monitor uninitialized.\n");
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: filesystem monitor uninitialized.\n");
 }
 
 BOOLEAN
-SLEEPWALKERFileSystemMonitorSelfCheck(VOID)
+BLACKBIRDFileSystemMonitorSelfCheck(VOID)
 {
     if (InterlockedCompareExchange(&g_FileSystemMonitorRegistered, 0, 0) == 0)
     {

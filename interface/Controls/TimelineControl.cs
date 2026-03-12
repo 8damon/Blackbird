@@ -1,7 +1,6 @@
 using System;
 using System.Windows.Controls;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Globalization;
 using System.Linq;
@@ -9,7 +8,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public sealed class TimeRangeSelectedEventArgs : EventArgs
     {
@@ -57,7 +56,7 @@ namespace SleepwalkerInterface
 
     public sealed class TimelineControl : FrameworkElement
     {
-        public ObservableCollection<TelemetryEvent> Items { get; } = new();
+        public BulkObservableCollection<TelemetryEvent> Items { get; } = new();
 
         public DateTime CaptureStartUtc
         {
@@ -139,6 +138,7 @@ namespace SleepwalkerInterface
 
         private TelemetryEvent? _hoveredEvent;
         private bool _renderQueued;
+        private bool _suppressItemNotifications;
         private double _verticalExtent = 1;
         private double _verticalViewport = 1;
         private double _verticalOffsetReported = -1;
@@ -154,7 +154,30 @@ namespace SleepwalkerInterface
             Items.CollectionChanged += Items_CollectionChanged;
         }
 
-        private void Items_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) => RequestRender();
+        private void Items_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (_suppressItemNotifications)
+            {
+                return;
+            }
+
+            RequestRender();
+        }
+
+        public void ReplaceItems(IEnumerable<TelemetryEvent> items)
+        {
+            _suppressItemNotifications = true;
+            try
+            {
+                Items.ReplaceAll(items);
+            }
+            finally
+            {
+                _suppressItemNotifications = false;
+            }
+
+            RequestRender();
+        }
 
         private void RequestRender()
         {

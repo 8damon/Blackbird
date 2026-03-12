@@ -3,38 +3,38 @@
 #include "..\core\unicode_utils.h"
 #include "image_monitor.h"
 
-#define SLEEPWALKER_NTDLL_TRACK_SLOTS 512
+#define BLACKBIRD_NTDLL_TRACK_SLOTS 512
 
 static volatile LONG g_ImageMonitorRegistered = 0;
 static volatile LONG g_ImageMonitorFailureCounter = 0;
 static KSPIN_LOCK g_NtdllTrackLock;
-typedef NTSTATUS(NTAPI *PSLEEPWALKER_PS_SET_LOAD_IMAGE_NOTIFY_ROUTINE_EX)(_In_ PLOAD_IMAGE_NOTIFY_ROUTINE NotifyRoutine,
+typedef NTSTATUS(NTAPI *PBLACKBIRD_PS_SET_LOAD_IMAGE_NOTIFY_ROUTINE_EX)(_In_ PLOAD_IMAGE_NOTIFY_ROUTINE NotifyRoutine,
                                                                           _In_ ULONG Flags);
-static PSLEEPWALKER_PS_SET_LOAD_IMAGE_NOTIFY_ROUTINE_EX g_SetLoadImageNotifyRoutineEx = NULL;
+static PBLACKBIRD_PS_SET_LOAD_IMAGE_NOTIFY_ROUTINE_EX g_SetLoadImageNotifyRoutineEx = NULL;
 
-typedef struct _SLEEPWALKER_NTDLL_TRACK_ENTRY
+typedef struct _BLACKBIRD_NTDLL_TRACK_ENTRY
 {
     UINT64 ProcessId;
     ULONG LoadCount;
-} SLEEPWALKER_NTDLL_TRACK_ENTRY, *PSLEEPWALKER_NTDLL_TRACK_ENTRY;
+} BLACKBIRD_NTDLL_TRACK_ENTRY, *PBLACKBIRD_NTDLL_TRACK_ENTRY;
 
-static SLEEPWALKER_NTDLL_TRACK_ENTRY g_NtdllTrack[SLEEPWALKER_NTDLL_TRACK_SLOTS];
+static BLACKBIRD_NTDLL_TRACK_ENTRY g_NtdllTrack[BLACKBIRD_NTDLL_TRACK_SLOTS];
 
-static PSLEEPWALKER_PS_SET_LOAD_IMAGE_NOTIFY_ROUTINE_EX SLEEPWALKERResolvePsSetLoadImageNotifyRoutineEx(VOID)
+static PBLACKBIRD_PS_SET_LOAD_IMAGE_NOTIFY_ROUTINE_EX BLACKBIRDResolvePsSetLoadImageNotifyRoutineEx(VOID)
 {
     UNICODE_STRING routineName;
 
     RtlInitUnicodeString(&routineName, L"PsSetLoadImageNotifyRoutineEx");
-    return (PSLEEPWALKER_PS_SET_LOAD_IMAGE_NOTIFY_ROUTINE_EX)MmGetSystemRoutineAddress(&routineName);
+    return (PBLACKBIRD_PS_SET_LOAD_IMAGE_NOTIFY_ROUTINE_EX)MmGetSystemRoutineAddress(&routineName);
 }
 
-static ULONG SLEEPWALKERTrackNtdllLoad(_In_ HANDLE ProcessId)
+static ULONG BLACKBIRDTrackNtdllLoad(_In_ HANDLE ProcessId)
 {
     ULONG index;
     ULONG count;
     KIRQL oldIrql;
 
-    index = ((ULONG)((ULONG_PTR)ProcessId >> 2)) % SLEEPWALKER_NTDLL_TRACK_SLOTS;
+    index = ((ULONG)((ULONG_PTR)ProcessId >> 2)) % BLACKBIRD_NTDLL_TRACK_SLOTS;
 
     KeAcquireSpinLock(&g_NtdllTrackLock, &oldIrql);
     if (g_NtdllTrack[index].ProcessId != (UINT64)(ULONG_PTR)ProcessId)
@@ -49,7 +49,7 @@ static ULONG SLEEPWALKERTrackNtdllLoad(_In_ HANDLE ProcessId)
     return count;
 }
 
-static VOID SLEEPWALKERImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImageName, _In_ HANDLE ProcessId,
+static VOID BLACKBIRDImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImageName, _In_ HANDLE ProcessId,
                                               _In_ PIMAGE_INFO ImageInfo)
 {
     WCHAR path[512];
@@ -67,7 +67,7 @@ static VOID SLEEPWALKERImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImage
     }
 
     path[0] = L'\0';
-    SLEEPWALKERSafeCopyUnicode(FullImageName, path, RTL_NUMBER_OF(path));
+    BLACKBIRDSafeCopyUnicode(FullImageName, path, RTL_NUMBER_OF(path));
 
 #if (NTDDI_VERSION >= NTDDI_WIN8)
     isSignatureKnown = TRUE;
@@ -75,7 +75,7 @@ static VOID SLEEPWALKERImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImage
     signatureType = (UCHAR)ImageInfo->ImageSignatureType;
 #endif
 
-    SLEEPWALKEREtwLogImageLoadEvent(ProcessId, ImageInfo->ImageBase, ImageInfo->ImageSize,
+    BLACKBIRDEtwLogImageLoadEvent(ProcessId, ImageInfo->ImageBase, ImageInfo->ImageSize,
                                     ImageInfo->SystemModeImage ? TRUE : FALSE, isSignatureKnown, signatureLevel,
                                     signatureType, (path[0] != L'\0') ? path : NULL);
 
@@ -85,31 +85,31 @@ static VOID SLEEPWALKERImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImage
     }
 
     RtlInitUnicodeString(&imagePathUs, path);
-    isNtdllPath = SLEEPWALKERUnicodeContainsInsensitive(&imagePathUs, L"ntdll.dll", 9);
+    isNtdllPath = BLACKBIRDUnicodeContainsInsensitive(&imagePathUs, L"ntdll.dll", 9);
     if (!isNtdllPath)
     {
         return;
     }
 
-    isKnownGoodNtdllPath = SLEEPWALKERUnicodeContainsInsensitive(&imagePathUs, L"\\system32\\ntdll.dll", 20) ||
-                           SLEEPWALKERUnicodeContainsInsensitive(&imagePathUs, L"\\knowndlls\\ntdll.dll", 20);
+    isKnownGoodNtdllPath = BLACKBIRDUnicodeContainsInsensitive(&imagePathUs, L"\\system32\\ntdll.dll", 20) ||
+                           BLACKBIRDUnicodeContainsInsensitive(&imagePathUs, L"\\knowndlls\\ntdll.dll", 20);
 
-    ntdllLoadCount = SLEEPWALKERTrackNtdllLoad(ProcessId);
+    ntdllLoadCount = BLACKBIRDTrackNtdllLoad(ProcessId);
 
     if (!isKnownGoodNtdllPath)
     {
-        SLEEPWALKEREtwLogDetectionEvent("SUSPICIOUS_NTDLL_IMAGE_PATH", 4, ProcessId, ProcessId, 0, 0, 0, path);
+        BLACKBIRDEtwLogDetectionEvent("SUSPICIOUS_NTDLL_IMAGE_PATH", 4, ProcessId, ProcessId, 0, 0, 0, path);
     }
 
     if (ntdllLoadCount > 1)
     {
-        SLEEPWALKEREtwLogDetectionEvent("MULTIPLE_NTDLL_IMAGE_MAPPINGS", 3, ProcessId, ProcessId, 0, 0, 0,
+        BLACKBIRDEtwLogDetectionEvent("MULTIPLE_NTDLL_IMAGE_MAPPINGS", 3, ProcessId, ProcessId, 0, 0, 0,
                                         L"multiple ntdll image-load events observed for process");
     }
 }
 
 NTSTATUS
-SLEEPWALKERImageMonitorInitialize(VOID)
+BLACKBIRDImageMonitorInitialize(VOID)
 {
     NTSTATUS status;
     LONG failures;
@@ -126,20 +126,20 @@ SLEEPWALKERImageMonitorInitialize(VOID)
     KeInitializeSpinLock(&g_NtdllTrackLock);
     RtlZeroMemory(g_NtdllTrack, sizeof(g_NtdllTrack));
 
-    g_SetLoadImageNotifyRoutineEx = SLEEPWALKERResolvePsSetLoadImageNotifyRoutineEx();
+    g_SetLoadImageNotifyRoutineEx = BLACKBIRDResolvePsSetLoadImageNotifyRoutineEx();
     if (g_SetLoadImageNotifyRoutineEx == NULL)
     {
         return STATUS_PROCEDURE_NOT_FOUND;
     }
 
-    status = g_SetLoadImageNotifyRoutineEx(SLEEPWALKERImageLoadNotifyRoutine, 0);
+    status = g_SetLoadImageNotifyRoutineEx(BLACKBIRDImageLoadNotifyRoutine, 0);
     if (!NT_SUCCESS(status))
     {
         failures = InterlockedIncrement(&g_ImageMonitorFailureCounter);
         if (failures == 1 || ((failures & 0xFF) == 0))
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                       "SLEEPWALKER: image monitor callback registration failed status=0x%08X total=%lu.\n", status,
+                       "BLACKBIRD: image monitor callback registration failed status=0x%08X total=%lu.\n", status,
                        (ULONG)failures);
         }
         g_SetLoadImageNotifyRoutineEx = NULL;
@@ -147,11 +147,11 @@ SLEEPWALKERImageMonitorInitialize(VOID)
     }
 
     InterlockedExchange(&g_ImageMonitorRegistered, 1);
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "SLEEPWALKER: image monitor initialized.\n");
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: image monitor initialized.\n");
     return STATUS_SUCCESS;
 }
 
-VOID SLEEPWALKERImageMonitorUninitialize(VOID)
+VOID BLACKBIRDImageMonitorUninitialize(VOID)
 {
     NTSTATUS status;
 
@@ -164,11 +164,11 @@ VOID SLEEPWALKERImageMonitorUninitialize(VOID)
         return;
     }
 
-    status = PsRemoveLoadImageNotifyRoutine(SLEEPWALKERImageLoadNotifyRoutine);
+    status = PsRemoveLoadImageNotifyRoutine(BLACKBIRDImageLoadNotifyRoutine);
     if (!NT_SUCCESS(status))
     {
         DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                   "SLEEPWALKER: image monitor callback removal failed; monitor remains registered (status=0x%08X).\n",
+                   "BLACKBIRD: image monitor callback removal failed; monitor remains registered (status=0x%08X).\n",
                    status);
         return;
     }
@@ -176,11 +176,11 @@ VOID SLEEPWALKERImageMonitorUninitialize(VOID)
     InterlockedExchange(&g_ImageMonitorRegistered, 0);
     g_SetLoadImageNotifyRoutineEx = NULL;
     RtlZeroMemory(g_NtdllTrack, sizeof(g_NtdllTrack));
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "SLEEPWALKER: image monitor uninitialized.\n");
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: image monitor uninitialized.\n");
 }
 
 BOOLEAN
-SLEEPWALKERImageMonitorSelfCheck(VOID)
+BLACKBIRDImageMonitorSelfCheck(VOID)
 {
     return (InterlockedCompareExchange(&g_ImageMonitorRegistered, 0, 0) != 0);
 }

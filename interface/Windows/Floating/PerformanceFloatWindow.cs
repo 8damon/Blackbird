@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public sealed class PerformanceFloatWindow : Window
     {

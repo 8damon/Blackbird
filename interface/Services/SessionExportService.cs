@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     internal enum SessionExportFormat
     {
@@ -250,7 +250,7 @@ namespace SleepwalkerInterface
                     $"externalId={EscapeCefExtension(record.Pid.ToString(CultureInfo.InvariantCulture))}";
 
                 writer.WriteLine(
-                    $"CEF:0|Sleepwalker|Platform|1.0|{EscapeCefHeader(signature)}|{EscapeCefHeader(name)}|{severity}|{extension}");
+                    $"CEF:0|Blackbird|Platform|1.0|{EscapeCefHeader(signature)}|{EscapeCefHeader(name)}|{severity}|{extension}");
             }
         }
 

@@ -2,7 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Input;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     internal static class WindowChromeBehavior
     {

@@ -14,86 +14,86 @@
 #include "..\correlation\hollowing_engine.h"
 
 DRIVER_INITIALIZE DriverEntry;
-EVT_WDF_DRIVER_UNLOAD SLEEPWALKEREvtDriverUnload;
+EVT_WDF_DRIVER_UNLOAD BLACKBIRDEvtDriverUnload;
 
-typedef enum _SLEEPWALKER_DRIVER_STATE
+typedef enum _BLACKBIRD_DRIVER_STATE
 {
-    SLEEPWALKERStateCold = 0,
-    SLEEPWALKERStateInitializing,
-    SLEEPWALKERStateInitialized,
-    SLEEPWALKERStateUnloading,
-    SLEEPWALKERStateUnloaded
-} SLEEPWALKER_DRIVER_STATE;
+    BLACKBIRDStateCold = 0,
+    BLACKBIRDStateInitializing,
+    BLACKBIRDStateInitialized,
+    BLACKBIRDStateUnloading,
+    BLACKBIRDStateUnloaded
+} BLACKBIRD_DRIVER_STATE;
 
-#define SLEEPWALKER_INIT_THREAD_MONITOR 0x1
-#define SLEEPWALKER_INIT_HANDLE_MONITOR 0x2
-#define SLEEPWALKER_INIT_ETW 0x4
-#define SLEEPWALKER_INIT_CONTROL 0x8
-#define SLEEPWALKER_INIT_PROCESS_MONITOR 0x20
-#define SLEEPWALKER_INIT_IMAGE_MONITOR 0x40
-#define SLEEPWALKER_INIT_REGISTRY_MONITOR 0x80
-#define SLEEPWALKER_INIT_APC_MONITOR 0x100
-#define SLEEPWALKER_INIT_ANTI_TAMPER 0x200
-#define SLEEPWALKER_INIT_CORRELATION 0x400
-#define SLEEPWALKER_INIT_HOLLOWING_ENGINE 0x800
-#define SLEEPWALKER_INIT_FILESYSTEM_MONITOR 0x1000
+#define BLACKBIRD_INIT_THREAD_MONITOR 0x1
+#define BLACKBIRD_INIT_HANDLE_MONITOR 0x2
+#define BLACKBIRD_INIT_ETW 0x4
+#define BLACKBIRD_INIT_CONTROL 0x8
+#define BLACKBIRD_INIT_PROCESS_MONITOR 0x20
+#define BLACKBIRD_INIT_IMAGE_MONITOR 0x40
+#define BLACKBIRD_INIT_REGISTRY_MONITOR 0x80
+#define BLACKBIRD_INIT_APC_MONITOR 0x100
+#define BLACKBIRD_INIT_ANTI_TAMPER 0x200
+#define BLACKBIRD_INIT_CORRELATION 0x400
+#define BLACKBIRD_INIT_HOLLOWING_ENGINE 0x800
+#define BLACKBIRD_INIT_FILESYSTEM_MONITOR 0x1000
 
-static volatile LONG g_DriverState = SLEEPWALKERStateCold;
+static volatile LONG g_DriverState = BLACKBIRDStateCold;
 static volatile LONG g_InitFlags = 0;
 
-static VOID SLEEPWALKERDriverUninitializeByFlags(_In_ LONG InitFlags)
+static VOID BLACKBIRDDriverUninitializeByFlags(_In_ LONG InitFlags)
 {
-    if ((InitFlags & SLEEPWALKER_INIT_ANTI_TAMPER) != 0)
+    if ((InitFlags & BLACKBIRD_INIT_ANTI_TAMPER) != 0)
     {
-        SLEEPWALKERAntiTamperUninitialize();
+        BLACKBIRDAntiTamperUninitialize();
     }
-    if ((InitFlags & SLEEPWALKER_INIT_HANDLE_MONITOR) != 0)
+    if ((InitFlags & BLACKBIRD_INIT_HANDLE_MONITOR) != 0)
     {
-        SLEEPWALKERHandleMonitorUninitialize();
+        BLACKBIRDHandleMonitorUninitialize();
     }
-    if ((InitFlags & SLEEPWALKER_INIT_APC_MONITOR) != 0)
+    if ((InitFlags & BLACKBIRD_INIT_APC_MONITOR) != 0)
     {
-        SLEEPWALKERApcMonitorUninitialize();
+        BLACKBIRDApcMonitorUninitialize();
     }
-    if ((InitFlags & SLEEPWALKER_INIT_THREAD_MONITOR) != 0)
+    if ((InitFlags & BLACKBIRD_INIT_THREAD_MONITOR) != 0)
     {
-        SLEEPWALKERThreadMonitorUninitialize();
+        BLACKBIRDThreadMonitorUninitialize();
     }
-    if ((InitFlags & SLEEPWALKER_INIT_FILESYSTEM_MONITOR) != 0)
+    if ((InitFlags & BLACKBIRD_INIT_FILESYSTEM_MONITOR) != 0)
     {
-        SLEEPWALKERFileSystemMonitorUninitialize();
+        BLACKBIRDFileSystemMonitorUninitialize();
     }
-    if ((InitFlags & SLEEPWALKER_INIT_REGISTRY_MONITOR) != 0)
+    if ((InitFlags & BLACKBIRD_INIT_REGISTRY_MONITOR) != 0)
     {
-        SLEEPWALKERRegistryMonitorUninitialize();
+        BLACKBIRDRegistryMonitorUninitialize();
     }
-    if ((InitFlags & SLEEPWALKER_INIT_IMAGE_MONITOR) != 0)
+    if ((InitFlags & BLACKBIRD_INIT_IMAGE_MONITOR) != 0)
     {
-        SLEEPWALKERImageMonitorUninitialize();
+        BLACKBIRDImageMonitorUninitialize();
     }
-    if ((InitFlags & SLEEPWALKER_INIT_PROCESS_MONITOR) != 0)
+    if ((InitFlags & BLACKBIRD_INIT_PROCESS_MONITOR) != 0)
     {
-        SLEEPWALKERProcessMonitorUninitialize();
+        BLACKBIRDProcessMonitorUninitialize();
     }
-    if ((InitFlags & SLEEPWALKER_INIT_CORRELATION) != 0)
+    if ((InitFlags & BLACKBIRD_INIT_CORRELATION) != 0)
     {
-        SLEEPWALKERCorrelationUninitialize();
+        BLACKBIRDCorrelationUninitialize();
     }
-    if ((InitFlags & SLEEPWALKER_INIT_HOLLOWING_ENGINE) != 0)
+    if ((InitFlags & BLACKBIRD_INIT_HOLLOWING_ENGINE) != 0)
     {
-        SLEEPWALKERHollowingEngineUninitialize();
+        BLACKBIRDHollowingEngineUninitialize();
     }
-    if ((InitFlags & SLEEPWALKER_INIT_CONTROL) != 0)
+    if ((InitFlags & BLACKBIRD_INIT_CONTROL) != 0)
     {
-        SLEEPWALKERControlUninitialize();
+        BLACKBIRDControlUninitialize();
     }
-    if ((InitFlags & SLEEPWALKER_INIT_ETW) != 0)
+    if ((InitFlags & BLACKBIRD_INIT_ETW) != 0)
     {
-        SLEEPWALKEREtwUninitialize();
+        BLACKBIRDEtwUninitialize();
     }
 }
 
-static NTSTATUS SLEEPWALKERDriverSelfTest(VOID)
+static NTSTATUS BLACKBIRDDriverSelfTest(VOID)
 {
     LONG flags;
 
@@ -103,18 +103,18 @@ static NTSTATUS SLEEPWALKERDriverSelfTest(VOID)
     }
 
     flags = InterlockedCompareExchange(&g_InitFlags, 0, 0);
-    if ((flags & SLEEPWALKER_INIT_ETW) == 0 || (flags & SLEEPWALKER_INIT_CONTROL) == 0 ||
-        (flags & SLEEPWALKER_INIT_APC_MONITOR) == 0 || (flags & SLEEPWALKER_INIT_PROCESS_MONITOR) == 0 ||
-        (flags & SLEEPWALKER_INIT_IMAGE_MONITOR) == 0 || (flags & SLEEPWALKER_INIT_REGISTRY_MONITOR) == 0 ||
-        (flags & SLEEPWALKER_INIT_THREAD_MONITOR) == 0 || (flags & SLEEPWALKER_INIT_FILESYSTEM_MONITOR) == 0 ||
-        (flags & SLEEPWALKER_INIT_HANDLE_MONITOR) == 0 ||
-        (flags & SLEEPWALKER_INIT_ANTI_TAMPER) == 0 || (flags & SLEEPWALKER_INIT_CORRELATION) == 0 ||
-        (flags & SLEEPWALKER_INIT_HOLLOWING_ENGINE) == 0)
+    if ((flags & BLACKBIRD_INIT_ETW) == 0 || (flags & BLACKBIRD_INIT_CONTROL) == 0 ||
+        (flags & BLACKBIRD_INIT_APC_MONITOR) == 0 || (flags & BLACKBIRD_INIT_PROCESS_MONITOR) == 0 ||
+        (flags & BLACKBIRD_INIT_IMAGE_MONITOR) == 0 || (flags & BLACKBIRD_INIT_REGISTRY_MONITOR) == 0 ||
+        (flags & BLACKBIRD_INIT_THREAD_MONITOR) == 0 || (flags & BLACKBIRD_INIT_FILESYSTEM_MONITOR) == 0 ||
+        (flags & BLACKBIRD_INIT_HANDLE_MONITOR) == 0 ||
+        (flags & BLACKBIRD_INIT_ANTI_TAMPER) == 0 || (flags & BLACKBIRD_INIT_CORRELATION) == 0 ||
+        (flags & BLACKBIRD_INIT_HOLLOWING_ENGINE) == 0)
     {
         return STATUS_DEVICE_CONFIGURATION_ERROR;
     }
 
-    if (InterlockedCompareExchange(&g_DriverState, 0, 0) != SLEEPWALKERStateInitializing)
+    if (InterlockedCompareExchange(&g_DriverState, 0, 0) != BLACKBIRDStateInitializing)
     {
         return STATUS_INVALID_DEVICE_STATE;
     }
@@ -126,7 +126,7 @@ static NTSTATUS SLEEPWALKERDriverSelfTest(VOID)
 #pragma alloc_text(INIT, DriverEntry)
 #endif
 
-_Use_decl_annotations_ VOID SLEEPWALKEREvtDriverUnload(WDFDRIVER Driver)
+_Use_decl_annotations_ VOID BLACKBIRDEvtDriverUnload(WDFDRIVER Driver)
 {
     LONG prevState;
     LONG initFlags;
@@ -135,24 +135,24 @@ _Use_decl_annotations_ VOID SLEEPWALKEREvtDriverUnload(WDFDRIVER Driver)
 
     if (KeGetCurrentIrql() != PASSIVE_LEVEL)
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "SLEEPWALKER: unload called at invalid IRQL=%lu.\n",
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: unload called at invalid IRQL=%lu.\n",
                    KeGetCurrentIrql());
         return;
     }
 
-    prevState = InterlockedExchange(&g_DriverState, SLEEPWALKERStateUnloading);
-    if (prevState == SLEEPWALKERStateUnloading || prevState == SLEEPWALKERStateUnloaded)
+    prevState = InterlockedExchange(&g_DriverState, BLACKBIRDStateUnloading);
+    if (prevState == BLACKBIRDStateUnloading || prevState == BLACKBIRDStateUnloaded)
     {
         return;
     }
 
-    SLEEPWALKERControlBeginShutdown();
+    BLACKBIRDControlBeginShutdown();
     initFlags = InterlockedExchange(&g_InitFlags, 0);
-    SLEEPWALKERDriverUninitializeByFlags(initFlags);
+    BLACKBIRDDriverUninitializeByFlags(initFlags);
 
-    InterlockedExchange(&g_DriverState, SLEEPWALKERStateUnloaded);
+    InterlockedExchange(&g_DriverState, BLACKBIRDStateUnloaded);
 
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "SLEEPWALKER: EvtDriverUnload invoked.\n");
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: EvtDriverUnload invoked.\n");
 }
 
 _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
@@ -163,15 +163,15 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
     WDF_DRIVER_CONFIG config;
     WDF_OBJECT_ATTRIBUTES attributes;
 
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "SLEEPWALKER: DriverEntry invoked.\n");
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: DriverEntry invoked.\n");
 
     if (KeGetCurrentIrql() != PASSIVE_LEVEL)
     {
         return STATUS_INVALID_DEVICE_STATE;
     }
 
-    expectedState = InterlockedCompareExchange(&g_DriverState, SLEEPWALKERStateInitializing, SLEEPWALKERStateCold);
-    if (expectedState != SLEEPWALKERStateCold)
+    expectedState = InterlockedCompareExchange(&g_DriverState, BLACKBIRDStateInitializing, BLACKBIRDStateCold);
+    if (expectedState != BLACKBIRDStateCold)
     {
         return STATUS_ALREADY_REGISTERED;
     }
@@ -181,132 +181,132 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
     WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
     WDF_DRIVER_CONFIG_INIT(&config, WDF_NO_EVENT_CALLBACK);
     config.DriverInitFlags |= WdfDriverInitNonPnpDriver;
-    config.EvtDriverUnload = SLEEPWALKEREvtDriverUnload;
+    config.EvtDriverUnload = BLACKBIRDEvtDriverUnload;
 
     status = WdfDriverCreate(DriverObject, RegistryPath, &attributes, &config, WDF_NO_HANDLE);
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "SLEEPWALKER: WdfDriverCreate failed (0x%08X).\n", status);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: WdfDriverCreate failed (0x%08X).\n", status);
         goto ExitFailure;
     }
 
-    status = SLEEPWALKEREtwInitialize();
+    status = BLACKBIRDEtwInitialize();
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "SLEEPWALKER: ETW init failed (0x%08X).\n", status);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: ETW init failed (0x%08X).\n", status);
         goto ExitFailure;
     }
-    InterlockedOr(&g_InitFlags, SLEEPWALKER_INIT_ETW);
+    InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_ETW);
 
-    status = SLEEPWALKERControlInitialize(WdfGetDriver());
+    status = BLACKBIRDControlInitialize(WdfGetDriver());
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "SLEEPWALKER: control plane init failed (0x%08X).\n",
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: control plane init failed (0x%08X).\n",
                    status);
         goto ExitFailure;
     }
-    InterlockedOr(&g_InitFlags, SLEEPWALKER_INIT_CONTROL);
+    InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_CONTROL);
 
-    status = SLEEPWALKERCorrelationInitialize();
+    status = BLACKBIRDCorrelationInitialize();
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "SLEEPWALKER: correlation init failed (0x%08X).\n", status);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: correlation init failed (0x%08X).\n", status);
         goto ExitFailure;
     }
-    InterlockedOr(&g_InitFlags, SLEEPWALKER_INIT_CORRELATION);
+    InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_CORRELATION);
 
-    status = SLEEPWALKERHollowingEngineInitialize();
+    status = BLACKBIRDHollowingEngineInitialize();
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "SLEEPWALKER: hollowing engine init failed (0x%08X).\n",
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: hollowing engine init failed (0x%08X).\n",
                    status);
         goto ExitFailure;
     }
-    InterlockedOr(&g_InitFlags, SLEEPWALKER_INIT_HOLLOWING_ENGINE);
+    InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_HOLLOWING_ENGINE);
 
-    status = SLEEPWALKERApcMonitorInitialize();
+    status = BLACKBIRDApcMonitorInitialize();
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "SLEEPWALKER: apc monitor init failed (0x%08X).\n", status);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: apc monitor init failed (0x%08X).\n", status);
         goto ExitFailure;
     }
-    InterlockedOr(&g_InitFlags, SLEEPWALKER_INIT_APC_MONITOR);
+    InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_APC_MONITOR);
 
-    status = SLEEPWALKERProcessMonitorInitialize();
+    status = BLACKBIRDProcessMonitorInitialize();
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "SLEEPWALKER: process monitor init failed (0x%08X).\n",
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: process monitor init failed (0x%08X).\n",
                    status);
         goto ExitFailure;
     }
-    InterlockedOr(&g_InitFlags, SLEEPWALKER_INIT_PROCESS_MONITOR);
+    InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_PROCESS_MONITOR);
 
-    status = SLEEPWALKERImageMonitorInitialize();
+    status = BLACKBIRDImageMonitorInitialize();
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "SLEEPWALKER: image monitor init failed (0x%08X).\n",
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: image monitor init failed (0x%08X).\n",
                    status);
         goto ExitFailure;
     }
-    InterlockedOr(&g_InitFlags, SLEEPWALKER_INIT_IMAGE_MONITOR);
+    InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_IMAGE_MONITOR);
 
-    status = SLEEPWALKERRegistryMonitorInitialize(DriverObject);
+    status = BLACKBIRDRegistryMonitorInitialize(DriverObject);
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "SLEEPWALKER: registry monitor init failed (0x%08X).\n",
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: registry monitor init failed (0x%08X).\n",
                    status);
         goto ExitFailure;
     }
-    InterlockedOr(&g_InitFlags, SLEEPWALKER_INIT_REGISTRY_MONITOR);
+    InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_REGISTRY_MONITOR);
 
-    status = SLEEPWALKERThreadMonitorInitialize();
+    status = BLACKBIRDThreadMonitorInitialize();
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "SLEEPWALKER: thread monitor init failed (0x%08X).\n",
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: thread monitor init failed (0x%08X).\n",
                    status);
         goto ExitFailure;
     }
-    InterlockedOr(&g_InitFlags, SLEEPWALKER_INIT_THREAD_MONITOR);
+    InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_THREAD_MONITOR);
 
-    status = SLEEPWALKERFileSystemMonitorInitialize(DriverObject);
+    status = BLACKBIRDFileSystemMonitorInitialize(DriverObject);
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "SLEEPWALKER: filesystem monitor init failed (0x%08X).\n",
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: filesystem monitor init failed (0x%08X).\n",
                    status);
         goto ExitFailure;
     }
-    InterlockedOr(&g_InitFlags, SLEEPWALKER_INIT_FILESYSTEM_MONITOR);
+    InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_FILESYSTEM_MONITOR);
 
-    status = SLEEPWALKERHandleMonitorInitialize();
+    status = BLACKBIRDHandleMonitorInitialize();
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "SLEEPWALKER: handle monitor init failed (0x%08X).\n",
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: handle monitor init failed (0x%08X).\n",
                    status);
         goto ExitFailure;
     }
-    InterlockedOr(&g_InitFlags, SLEEPWALKER_INIT_HANDLE_MONITOR);
+    InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_HANDLE_MONITOR);
 
-    status = SLEEPWALKERAntiTamperInitialize(DriverObject);
+    status = BLACKBIRDAntiTamperInitialize(DriverObject);
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "SLEEPWALKER: anti tamper init failed (0x%08X).\n", status);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: anti tamper init failed (0x%08X).\n", status);
         goto ExitFailure;
     }
-    InterlockedOr(&g_InitFlags, SLEEPWALKER_INIT_ANTI_TAMPER);
+    InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_ANTI_TAMPER);
 
-    status = SLEEPWALKERDriverSelfTest();
+    status = BLACKBIRDDriverSelfTest();
     if (!NT_SUCCESS(status))
     {
         goto ExitFailure;
     }
 
-    InterlockedExchange(&g_DriverState, SLEEPWALKERStateInitialized);
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "SLEEPWALKER: Driver initialized.\n");
+    InterlockedExchange(&g_DriverState, BLACKBIRDStateInitialized);
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: Driver initialized.\n");
     return STATUS_SUCCESS;
 
 ExitFailure:
     initFlags = InterlockedExchange(&g_InitFlags, 0);
-    SLEEPWALKERDriverUninitializeByFlags(initFlags);
-    InterlockedExchange(&g_DriverState, SLEEPWALKERStateCold);
+    BLACKBIRDDriverUninitializeByFlags(initFlags);
+    InterlockedExchange(&g_DriverState, BLACKBIRDStateCold);
     return status;
 }

@@ -9,7 +9,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public sealed class EventLogCardOpenRequestedEventArgs : EventArgs
     {

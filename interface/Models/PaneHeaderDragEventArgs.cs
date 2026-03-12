@@ -1,7 +1,7 @@
 using System;
 using System.Windows;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public sealed class PaneHeaderDragEventArgs : EventArgs
     {

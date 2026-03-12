@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <strsafe.h>
 
-typedef NTSTATUS (NTAPI* SLEEPWALKER_NT_QUERY_VIRTUAL_MEMORY_FN)(
+typedef NTSTATUS (NTAPI* BLACKBIRD_NT_QUERY_VIRTUAL_MEMORY_FN)(
     _In_ HANDLE ProcessHandle,
     _In_opt_ PVOID BaseAddress,
     _In_ ULONG MemoryInformationClass,
@@ -16,20 +16,20 @@ typedef NTSTATUS (NTAPI* SLEEPWALKER_NT_QUERY_VIRTUAL_MEMORY_FN)(
     _Out_opt_ PSIZE_T ReturnLength
 );
 
-typedef NTSTATUS (NTAPI* SLEEPWALKER_NT_OPEN_PROCESS_FN)(
+typedef NTSTATUS (NTAPI* BLACKBIRD_NT_OPEN_PROCESS_FN)(
     _Out_ PHANDLE ProcessHandle,
     _In_ ACCESS_MASK DesiredAccess,
     _In_ POBJECT_ATTRIBUTES ObjectAttributes,
     _In_ PVOID ClientId
 );
 
-typedef struct _SLEEPWALKER_CLIENT_ID {
+typedef struct _BLACKBIRD_CLIENT_ID {
     HANDLE UniqueProcess;
     HANDLE UniqueThread;
-} SLEEPWALKER_CLIENT_ID;
+} BLACKBIRD_CLIENT_ID;
 
-#define SLEEPWALKER_MEMORY_BASIC_INFORMATION_CLASS 0ul
-#define SLEEPWALKER_STATUS_SUCCESS ((NTSTATUS)0)
+#define BLACKBIRD_MEMORY_BASIC_INFORMATION_CLASS 0ul
+#define BLACKBIRD_STATUS_SUCCESS ((NTSTATUS)0)
 
 #if !defined(_M_X64)
 int __cdecl
@@ -222,20 +222,20 @@ main(
     DWORD preAttachDelayMs = 2500;
     DWORD targetPid = 0;
     HMODULE ntdll;
-    SLEEPWALKER_NT_QUERY_VIRTUAL_MEMORY_FN ntQueryVirtualMemory;
-    SLEEPWALKER_NT_OPEN_PROCESS_FN ntOpenProcess;
+    BLACKBIRD_NT_QUERY_VIRTUAL_MEMORY_FN ntQueryVirtualMemory;
+    BLACKBIRD_NT_OPEN_PROCESS_FN ntOpenProcess;
     DWORD ssnQueryVm = 0;
     DWORD ssnOpenProcess = 0;
     DWORD oldProtectQueryVm = 0;
     DWORD oldProtectOpenProcess = 0;
     MEMORY_BASIC_INFORMATION mbi;
     SIZE_T outLen = 0;
-    NTSTATUS statusWinApi = SLEEPWALKER_STATUS_SUCCESS;
-    NTSTATUS statusDirect = SLEEPWALKER_STATUS_SUCCESS;
-    NTSTATUS statusOpenLegit = SLEEPWALKER_STATUS_SUCCESS;
-    NTSTATUS statusOpenDirect = SLEEPWALKER_STATUS_SUCCESS;
-    SLEEPWALKER_NT_QUERY_VIRTUAL_MEMORY_FN directQueryVmCall;
-    SLEEPWALKER_NT_OPEN_PROCESS_FN directOpenProcessCall;
+    NTSTATUS statusWinApi = BLACKBIRD_STATUS_SUCCESS;
+    NTSTATUS statusDirect = BLACKBIRD_STATUS_SUCCESS;
+    NTSTATUS statusOpenLegit = BLACKBIRD_STATUS_SUCCESS;
+    NTSTATUS statusOpenDirect = BLACKBIRD_STATUS_SUCCESS;
+    BLACKBIRD_NT_QUERY_VIRTUAL_MEMORY_FN directQueryVmCall;
+    BLACKBIRD_NT_OPEN_PROCESS_FN directOpenProcessCall;
 
     ZeroMemory(&childPi, sizeof(childPi));
 
@@ -262,12 +262,12 @@ main(
         return 1;
     }
 
-    ntQueryVirtualMemory = (SLEEPWALKER_NT_QUERY_VIRTUAL_MEMORY_FN)GetProcAddress(ntdll, "NtQueryVirtualMemory");
+    ntQueryVirtualMemory = (BLACKBIRD_NT_QUERY_VIRTUAL_MEMORY_FN)GetProcAddress(ntdll, "NtQueryVirtualMemory");
     if (ntQueryVirtualMemory == NULL) {
         printf("GetProcAddress(NtQueryVirtualMemory) failed err=%lu\n", GetLastError());
         return 1;
     }
-    ntOpenProcess = (SLEEPWALKER_NT_OPEN_PROCESS_FN)GetProcAddress(ntdll, "NtOpenProcess");
+    ntOpenProcess = (BLACKBIRD_NT_OPEN_PROCESS_FN)GetProcAddress(ntdll, "NtOpenProcess");
     if (ntOpenProcess == NULL) {
         printf("GetProcAddress(NtOpenProcess) failed err=%lu\n", GetLastError());
         return 1;
@@ -301,20 +301,20 @@ main(
         return 1;
     }
 
-    directQueryVmCall = (SLEEPWALKER_NT_QUERY_VIRTUAL_MEMORY_FN)(void*)g_SyscallStubQueryVm;
-    directOpenProcessCall = (SLEEPWALKER_NT_OPEN_PROCESS_FN)(void*)g_SyscallStubOpenProcess;
+    directQueryVmCall = (BLACKBIRD_NT_QUERY_VIRTUAL_MEMORY_FN)(void*)g_SyscallStubQueryVm;
+    directOpenProcessCall = (BLACKBIRD_NT_OPEN_PROCESS_FN)(void*)g_SyscallStubOpenProcess;
 
     {
         HANDLE opened = NULL;
         OBJECT_ATTRIBUTES oa;
-        SLEEPWALKER_CLIENT_ID cid;
+        BLACKBIRD_CLIENT_ID cid;
 
         ZeroMemory(&mbi, sizeof(mbi));
         outLen = 0;
         statusWinApi = ntQueryVirtualMemory(
             GetCurrentProcess(),
             (PVOID)(ULONG_PTR)&main,
-            SLEEPWALKER_MEMORY_BASIC_INFORMATION_CLASS,
+            BLACKBIRD_MEMORY_BASIC_INFORMATION_CLASS,
             &mbi,
             sizeof(mbi),
             &outLen
@@ -325,7 +325,7 @@ main(
         statusDirect = directQueryVmCall(
             GetCurrentProcess(),
             (PVOID)(ULONG_PTR)&main,
-            SLEEPWALKER_MEMORY_BASIC_INFORMATION_CLASS,
+            BLACKBIRD_MEMORY_BASIC_INFORMATION_CLASS,
             &mbi,
             sizeof(mbi),
             &outLen

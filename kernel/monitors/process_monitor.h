@@ -1,14 +1,14 @@
-#ifndef SLEEPWALKER_PROCESS_MONITOR_H
-#define SLEEPWALKER_PROCESS_MONITOR_H
+#ifndef BLACKBIRD_PROCESS_MONITOR_H
+#define BLACKBIRD_PROCESS_MONITOR_H
 
 #include <ntdef.h>
 
 NTSTATUS
-SLEEPWALKERProcessMonitorInitialize(VOID);
+BLACKBIRDProcessMonitorInitialize(VOID);
 
-VOID SLEEPWALKERProcessMonitorUninitialize(VOID);
+VOID BLACKBIRDProcessMonitorUninitialize(VOID);
 
 BOOLEAN
-SLEEPWALKERProcessMonitorSelfCheck(VOID);
+BLACKBIRDProcessMonitorSelfCheck(VOID);
 
 #endif

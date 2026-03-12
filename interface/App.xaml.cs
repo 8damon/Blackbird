@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Diagnostics;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public enum UiThemeMode
     {
@@ -19,6 +19,7 @@ namespace SleepwalkerInterface
 
     public partial class App : Application
     {
+        private const string GettingStartedUrl = "https://github.com/8damon/Blackbird-Platform/blob/stable/Getting%20Started.md";
         internal static bool IsDarkTheme { get; private set; } = true;
         internal static UiThemeMode CurrentThemeMode { get; private set; } = UiThemeMode.Dark;
         internal static event Action<bool>? ThemeChanged;
@@ -155,7 +156,7 @@ namespace SleepwalkerInterface
                 ThemedMessageBox.Show(
                     Current?.MainWindow,
                     message,
-                    "Sleepwalker Startup Failure",
+                    "Blackbird Startup Failure",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
@@ -177,6 +178,11 @@ namespace SleepwalkerInterface
                 {
                     WindowStartupLocation = WindowStartupLocation.CenterScreen
                 };
+                // Keep first-launch UX discoverable even with borderless custom chrome.
+                welcome.ShowInTaskbar = true;
+                welcome.Topmost = true;
+                welcome.Activate();
+                welcome.Topmost = false;
 
                 bool? result = welcome.ShowDialog();
                 if (result != true)
@@ -198,14 +204,30 @@ namespace SleepwalkerInterface
                     break;
                 }
                 case StartupWelcomeAction.GettingStarted:
-                    ThemedMessageBox.Show(
-                        welcome,
-                        "Getting Started is coming soon.",
-                        "Getting Started",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
+                    OpenGettingStartedLink(welcome);
                     break;
                 }
+            }
+        }
+
+        private static void OpenGettingStartedLink(Window owner)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = GettingStartedUrl,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                ThemedMessageBox.Show(
+                    owner,
+                    $"Failed to open Getting Started.\n\n{ex.Message}\n\nURL: {GettingStartedUrl}",
+                    "Getting Started",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
             }
         }
 
@@ -213,7 +235,7 @@ namespace SleepwalkerInterface
         {
             var dialog = new OpenFileDialog
             {
-                Filter = "Sleepwalker Session Archive (*.swlkr;*.sleepwlkr)|*.swlkr;*.sleepwlkr|All files (*.*)|*.*",
+                Filter = "Blackbird Session Archive (*.swlkr;*.blackbird)|*.swlkr;*.blackbird|All files (*.*)|*.*",
                 CheckFileExists = true,
                 Multiselect = false
             };

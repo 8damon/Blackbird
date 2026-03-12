@@ -2,7 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     internal sealed class InspectorKeyValueRow
     {

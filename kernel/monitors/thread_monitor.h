@@ -1,14 +1,14 @@
-#ifndef SLEEPWALKER_THREAD_H
-#define SLEEPWALKER_THREAD_H
+#ifndef BLACKBIRD_THREAD_H
+#define BLACKBIRD_THREAD_H
 
 #include <ntdef.h>
 
 NTSTATUS
-SLEEPWALKERThreadMonitorInitialize(VOID);
+BLACKBIRDThreadMonitorInitialize(VOID);
 
-VOID SLEEPWALKERThreadMonitorUninitialize(VOID);
+VOID BLACKBIRDThreadMonitorUninitialize(VOID);
 
 BOOLEAN
-SLEEPWALKERThreadMonitorSelfCheck(VOID);
+BLACKBIRDThreadMonitorSelfCheck(VOID);
 
 #endif

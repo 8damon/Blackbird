@@ -1,0 +1,9 @@
+.kdfiles -m \??\C:\drivers\blackbird.sys C:\$ARSENAL\Kernel\Tartan\x64\Debug\blackbird.sys
+
+ed nt!Kd_IHVDRIVER_Mask 0xFFFFFFFF
+
+sxe ld:blackbird.sys
+bu blackbird!DriverEntry
+bp blackbird!BLACKBIRDEvtIoDeviceControl
+
+.echo "BLACKBIRD READY"

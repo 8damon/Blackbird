@@ -4,26 +4,34 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public partial class MainWindow
     {
-        private SleepwalkerBackendSession? _backendSession;
+        private BlackbirdBackendSession? _backendSession;
         private int _backendGeneration;
         private readonly Dictionary<int, List<GroupedEventRow>> _etwHistoryByPid = new();
         private readonly Dictionary<int, List<GroupedEventRow>> _heuristicsHistoryByPid = new();
         private readonly Dictionary<int, List<GroupedEventRow>> _filesystemHistoryByPid = new();
         private readonly Dictionary<int, List<GroupedEventRow>> _relationsHistoryByPid = new();
+        private readonly Dictionary<int, List<ApiCallGraphRowSnapshot>> _apiGraphHistoryByPid = new();
+        private readonly Dictionary<string, ApiCallGraphRowSnapshot> _apiGraphRowsByKey = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _apiGraphReasonByKey = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _apiGraphActionByKey = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _apiGraphDecodedByKey = new(StringComparer.Ordinal);
+        private readonly Dictionary<ulong, ApiMemoryPageSignal> _apiMemorySignalsByPage = new();
+        private bool _apiGraphSnapshotDirty;
 
-        private SleepwalkerPreflightReport? _lastPreflight;
+        private BlackbirdPreflightReport? _lastPreflight;
         private string? _lastConnectivityIssueSignature;
         private readonly ConcurrentQueue<IoctlParsedEvent> _pendingIoctlEvents = new();
-        private readonly ConcurrentQueue<SleepwalkerNative.SwIpcEtwEvent> _pendingEtwEvents = new();
+        private readonly ConcurrentQueue<BlackbirdNative.BkIpcEtwEvent> _pendingEtwEvents = new();
         private readonly ConcurrentQueue<string> _pendingStatusLines = new();
         private readonly ConcurrentQueue<BackendUiWorkItem> _pendingUiWork = new();
         private readonly AutoResetEvent _backendTransformSignal = new(false);
@@ -59,20 +67,46 @@ namespace SleepwalkerInterface
             HeuristicsPaneHost.ClearAll();
             FilesystemPaneHost.ClearAll();
             ProcessRelationsPaneHost.ClearAll();
+            _apiGraphRowsByKey.Clear();
+            _apiGraphReasonByKey.Clear();
+            _apiGraphActionByKey.Clear();
+            _apiGraphDecodedByKey.Clear();
+            _apiMemorySignalsByPage.Clear();
+            PublishApiGraphSnapshot();
             IpcUplinkPaneHost.SetInactive("No IPC diagnostics yet", "Enable uplink and wait for stats sample.");
             ResetFilesystemTimelineCluster();
             RefreshExplorerDataBadges();
             DiagnosticsState.SetValue("UI", "Initialized");
+            DiagnosticsState.SetValue("Hook Integrity", "Unknown");
+            DiagnosticsState.SetValue("AMSI Integrity", "Unknown");
+            DiagnosticsState.SetValue("ETW Integrity", "Unknown");
         }
 
-        private void StartBackendForPid(int pid)
+        private void StartBackendForPid(int pid, bool useUsermodeHooks)
         {
+            BlackbirdBackendSession? preparedSession = null;
+
             StopBackendSession();
             ClearPendingBackendUiQueues();
 
             if (pid <= 0)
             {
+                DisposePreparedLaunchBackendSession();
                 return;
+            }
+
+            if (_preparedLaunchBackendSession != null)
+            {
+                if (_preparedLaunchBackendPid == pid && useUsermodeHooks)
+                {
+                    preparedSession = _preparedLaunchBackendSession;
+                    _preparedLaunchBackendSession = null;
+                    _preparedLaunchBackendPid = 0;
+                }
+                else
+                {
+                    DisposePreparedLaunchBackendSession();
+                }
             }
 
             _hasIpcUplinkData = false;
@@ -84,7 +118,7 @@ namespace SleepwalkerInterface
             int generation = ++_backendGeneration;
             try
             {
-                var session = SleepwalkerBackendSession.Start(pid, SleepwalkerNative.StreamAll);
+                var session = preparedSession ?? BlackbirdBackendSession.Start(pid, BlackbirdNative.StreamAll, useUsermodeHooks);
                 _backendSession = session;
 
                 session.IoctlEvent += record =>
@@ -158,6 +192,17 @@ namespace SleepwalkerInterface
             }
             catch (Exception ex)
             {
+                if (preparedSession != null)
+                {
+                    try
+                    {
+                        preparedSession.Dispose();
+                    }
+                    catch
+                    {
+                    }
+                }
+
                 string displayError = FormatSessionStartError(ex);
                 _backendSession = null;
                 StatusBlock.Text = $"Status: Session start failed ({displayError})";
@@ -173,19 +218,19 @@ namespace SleepwalkerInterface
         {
             if (ex is EntryPointNotFoundException)
             {
-                return "IPC runtime DLL is outdated (missing export). Rebuild/deploy SleepwalkerSensorCore.dll and controller.";
+                return "IPC runtime DLL is outdated (missing export). Rebuild/deploy BlackbirdSensorCore.dll and controller.";
             }
 
             if (ex is System.ComponentModel.Win32Exception wx &&
-                (wx.NativeErrorCode == 127 || wx.NativeErrorCode == SleepwalkerNative.ErrorInvalidFunction))
+                (wx.NativeErrorCode == 127 || wx.NativeErrorCode == BlackbirdNative.ErrorInvalidFunction))
             {
-                return "IPC runtime DLL/controller mismatch (missing function). Rebuild/deploy latest SleepwalkerSensorCore.dll and controller.";
+                return "IPC runtime DLL/controller mismatch (missing function). Rebuild/deploy latest BlackbirdSensorCore.dll and controller.";
             }
 
             return ex.Message;
         }
 
-        private void StopBackendSession()
+        private void StopBackendSession(bool preserveApiGraphSnapshot = false)
         {
             if (_backendSession == null)
             {
@@ -209,8 +254,36 @@ namespace SleepwalkerInterface
             _lastEtwTimelineTimestampUtc = DateTime.MinValue;
             ResetFilesystemTimelineCluster();
             _hasIpcUplinkData = false;
+            if (!preserveApiGraphSnapshot)
+            {
+                _apiGraphRowsByKey.Clear();
+                _apiGraphReasonByKey.Clear();
+                _apiGraphActionByKey.Clear();
+                _apiGraphDecodedByKey.Clear();
+                _apiMemorySignalsByPage.Clear();
+                PublishApiGraphSnapshot();
+            }
             SetIpcUplinkExplorerDetails("Session stopped", "No live IPC diagnostics", hasData: false);
             DiagnosticsState.SetValue("Session", "Stopped");
+            DiagnosticsState.SetValue("Hook Integrity", "Unknown");
+            DiagnosticsState.SetValue("AMSI Integrity", "Unknown");
+            DiagnosticsState.SetValue("ETW Integrity", "Unknown");
+        }
+
+        private void ScheduleApiGraphSnapshot()
+        {
+            _apiGraphSnapshotDirty = true;
+        }
+
+        private void ApiGraphRefreshTimer_Tick(object? sender, EventArgs e)
+        {
+            if (!_apiGraphSnapshotDirty)
+            {
+                return;
+            }
+
+            _apiGraphSnapshotDirty = false;
+            PublishApiGraphSnapshot();
         }
 
         private void StartBackendTransformLoop(int generation)
@@ -362,7 +435,13 @@ namespace SleepwalkerInterface
 
             var stopwatch = Stopwatch.StartNew();
             int processed = 0;
-            int statusLines = 0;
+            var telemetryBatch = new List<TelemetryEvent>(96);
+            var relationBatch = new List<ProcessRelationView>(32);
+            var heuristicBatch = new List<HeuristicEventView>(32);
+            var threadLifecycleBatch = new List<ThreadLifecycleEventSample>(32);
+            var filesystemBatch = new List<IoctlParsedEvent>(32);
+            var etwBatch = new List<BrokerEtwEventView>(96);
+            var statusBatch = new List<string>(32);
             while (processed < MaxBackendUiItemsPerFlush &&
                    stopwatch.Elapsed < BackendUiFlushBudget &&
                    _pendingUiWork.TryDequeue(out var uiWork))
@@ -370,62 +449,104 @@ namespace SleepwalkerInterface
                 Interlocked.Decrement(ref _pendingUiWorkCount);
                 if (uiWork.Kind == BackendUiWorkKind.Status)
                 {
-                    if (statusLines < MaxBackendStatusLinesPerUiFlush && !string.IsNullOrWhiteSpace(uiWork.StatusLine))
+                    if (statusBatch.Count < MaxBackendStatusLinesPerUiFlush && !string.IsNullOrWhiteSpace(uiWork.StatusLine))
                     {
-                        OutputCapture.AppendLine(uiWork.StatusLine);
-                        statusLines += 1;
+                        statusBatch.Add(uiWork.StatusLine);
                     }
                 }
                 else if (uiWork.Kind == BackendUiWorkKind.Ioctl)
                 {
                     if (uiWork.Telemetry != null)
                     {
-                        AppendEvent(uiWork.Telemetry);
+                        telemetryBatch.Add(uiWork.Telemetry);
                     }
                     if (uiWork.Relation != null)
                     {
-                        ProcessRelationsPaneHost.PushRelation(uiWork.Relation);
-                        _explorer.FirstOrDefault(x => x.Name == "Process Relations")?.PushPreviewValue(
-                            ProcessRelationsPaneHost.TotalRawCount);
-                        SetExplorerHasData("Process Relations", ProcessRelationsPaneHost.ItemCount > 0);
+                        relationBatch.Add(uiWork.Relation);
                     }
                     if (uiWork.Heuristic != null)
                     {
-                        HeuristicsPaneHost.PushHeuristic(uiWork.Heuristic);
-                        _explorer.FirstOrDefault(x => x.Name == "Heuristics")?.PushPreviewValue(
-                            HeuristicsPaneHost.TotalRawCount);
-                        SetExplorerHasData("Heuristics", HeuristicsPaneHost.ItemCount > 0);
-                        DiagnosticsState.Increment("Heuristics");
+                        heuristicBatch.Add(uiWork.Heuristic);
                     }
                     if (uiWork.ThreadLifecycle != null)
                     {
-                        PerformancePaneHost.PushThreadLifecycle(uiWork.ThreadLifecycle);
-                        if (_currentSession != null)
-                        {
-                            _currentSession.ThreadLifecycleHistory.Add(CloneThreadLifecycleEvent(uiWork.ThreadLifecycle));
-                            if (_currentSession.ThreadLifecycleHistory.Count > 40_000)
-                            {
-                                _currentSession.ThreadLifecycleHistory.RemoveRange(
-                                    0,
-                                    _currentSession.ThreadLifecycleHistory.Count - 40_000);
-                            }
-                        }
+                        threadLifecycleBatch.Add(uiWork.ThreadLifecycle);
                     }
                     if (uiWork.Filesystem != null)
                     {
-                        FilesystemPaneHost.PushFileEvent(uiWork.Filesystem);
-                        _explorer.FirstOrDefault(x => x.Name == "Filesystem")?.PushPreviewValue(
-                            FilesystemPaneHost.TotalRawCount);
-                        SetExplorerHasData("Filesystem", FilesystemPaneHost.ItemCount > 0);
+                        filesystemBatch.Add(uiWork.Filesystem);
                     }
                 }
                 else if (uiWork.Kind == BackendUiWorkKind.Etw && uiWork.EtwView != null)
                 {
-                    HandleBrokerEtwView(uiWork.EtwView);
+                    etwBatch.Add(uiWork.EtwView);
                 }
 
                 processed += 1;
             }
+
+            for (int i = 0; i < statusBatch.Count; i += 1)
+            {
+                OutputCapture.AppendLine(statusBatch[i]);
+            }
+
+            if (telemetryBatch.Count > 0)
+            {
+                AppendEvents(telemetryBatch);
+            }
+
+            if (relationBatch.Count > 0)
+            {
+                ProcessRelationsPaneHost.PushRelations(relationBatch);
+                _explorer.FirstOrDefault(x => x.Name == "Process Relations")?.PushPreviewValue(
+                    ProcessRelationsPaneHost.TotalRawCount);
+                SetExplorerHasData("Process Relations", ProcessRelationsPaneHost.ItemCount > 0);
+            }
+
+            if (heuristicBatch.Count > 0)
+            {
+                HeuristicsPaneHost.PushHeuristics(heuristicBatch);
+                _explorer.FirstOrDefault(x => x.Name == "Heuristics")?.PushPreviewValue(
+                    HeuristicsPaneHost.TotalRawCount);
+                SetExplorerHasData("Heuristics", HeuristicsPaneHost.ItemCount > 0);
+                DiagnosticsState.Increment("Heuristics", heuristicBatch.Count);
+            }
+
+            if (threadLifecycleBatch.Count > 0)
+            {
+                PerformancePaneHost.PushThreadLifecycles(threadLifecycleBatch);
+                if (_currentSession != null)
+                {
+                    for (int i = 0; i < threadLifecycleBatch.Count; i += 1)
+                    {
+                        _currentSession.ThreadLifecycleHistory.Add(CloneThreadLifecycleEvent(threadLifecycleBatch[i]));
+                    }
+
+                    if (_currentSession.ThreadLifecycleHistory.Count > 40_000)
+                    {
+                        _currentSession.ThreadLifecycleHistory.RemoveRange(
+                            0,
+                            _currentSession.ThreadLifecycleHistory.Count - 40_000);
+                    }
+                }
+            }
+
+            if (filesystemBatch.Count > 0)
+            {
+                FilesystemPaneHost.PushFileEvents(filesystemBatch);
+                _explorer.FirstOrDefault(x => x.Name == "Filesystem")?.PushPreviewValue(
+                    FilesystemPaneHost.TotalRawCount);
+                SetExplorerHasData("Filesystem", FilesystemPaneHost.ItemCount > 0);
+            }
+
+            if (etwBatch.Count > 0)
+            {
+                HandleBrokerEtwViews(etwBatch);
+            }
+
+            DiagnosticsState.SetValue(
+                "UI Flush",
+                $"items={processed} ms={stopwatch.Elapsed.TotalMilliseconds:0.0} pending={Interlocked.Read(ref _pendingUiWorkCount)}");
 
             if (HasPendingBackendUiData())
             {
@@ -540,7 +661,7 @@ namespace SleepwalkerInterface
 
         private void RememberHandleEvidence(IoctlParsedEvent record)
         {
-            if (record.Type != SleepwalkerNative.EventTypeHandle || record.CallerPid == 0 || record.TargetPid == 0)
+            if (record.Type != BlackbirdNative.EventTypeHandle || record.CallerPid == 0 || record.TargetPid == 0)
             {
                 return;
             }
@@ -589,7 +710,12 @@ namespace SleepwalkerInterface
 
         private static bool ShouldKeepEtwEvent(BrokerEtwEventView view)
         {
-            if (view.Family == SleepwalkerNative.IpcEtwFamilySocket ||
+            if (view.Family == BlackbirdNative.IpcEtwFamilyUserHook)
+            {
+                return true;
+            }
+
+            if (view.Family == BlackbirdNative.IpcEtwFamilySocket ||
                 view.Source.Equals("KernelNetwork", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
@@ -627,9 +753,18 @@ namespace SleepwalkerInterface
             }
 
             string det = view.DetectionName;
+            if (IsHookTamperDetection(det))
+            {
+                return true;
+            }
             if (IsDirectSyscallDetection(det))
             {
                 return view.Severity >= 4;
+            }
+            if (det.Contains("AMSI_PATCH_TAMPERED", StringComparison.OrdinalIgnoreCase) ||
+                det.Contains("ETW_PATCH_TAMPERED", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
             }
 
             if (det.Contains("HOLLOW", StringComparison.OrdinalIgnoreCase) ||
@@ -661,6 +796,19 @@ namespace SleepwalkerInterface
                    detection.Contains("DIRECT-SYSCALL", StringComparison.OrdinalIgnoreCase) ||
                    detection.Contains("SUSPECT_HANDLE_OPERATION", StringComparison.OrdinalIgnoreCase) ||
                    detection.Contains("ANOMALY_ON_HANDLE_OP", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsHookTamperDetection(string detection)
+        {
+            if (string.IsNullOrWhiteSpace(detection))
+            {
+                return false;
+            }
+
+            return detection.Contains("USERMODE_HOOK_TAMPERED", StringComparison.OrdinalIgnoreCase) ||
+                   detection.Contains("AMSI_PATCH_TAMPERED", StringComparison.OrdinalIgnoreCase) ||
+                   detection.Contains("ETW_PATCH_TAMPERED", StringComparison.OrdinalIgnoreCase) ||
+                   detection.Contains("HOOK_TAMPER", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string BuildHandleEvidenceText(IoctlParsedEvent record)
@@ -798,15 +946,15 @@ namespace SleepwalkerInterface
         {
             return operation switch
             {
-                SleepwalkerNative.FileOperationCreate => "CREATE",
-                SleepwalkerNative.FileOperationRead => "READ",
-                SleepwalkerNative.FileOperationWrite => "WRITE",
-                SleepwalkerNative.FileOperationClose => "CLOSE",
-                SleepwalkerNative.FileOperationCleanup => "CLEANUP",
-                SleepwalkerNative.FileOperationSetInformation => "SET_INFORMATION",
-                SleepwalkerNative.FileOperationQueryInformation => "QUERY_INFORMATION",
-                SleepwalkerNative.FileOperationDirectoryControl => "DIRECTORY_CONTROL",
-                SleepwalkerNative.FileOperationFsControl => "FS_CONTROL",
+                BlackbirdNative.FileOperationCreate => "CREATE",
+                BlackbirdNative.FileOperationRead => "READ",
+                BlackbirdNative.FileOperationWrite => "WRITE",
+                BlackbirdNative.FileOperationClose => "CLOSE",
+                BlackbirdNative.FileOperationCleanup => "CLEANUP",
+                BlackbirdNative.FileOperationSetInformation => "SET_INFORMATION",
+                BlackbirdNative.FileOperationQueryInformation => "QUERY_INFORMATION",
+                BlackbirdNative.FileOperationDirectoryControl => "DIRECTORY_CONTROL",
+                BlackbirdNative.FileOperationFsControl => "FS_CONTROL",
                 _ => "UNKNOWN"
             };
         }
@@ -885,7 +1033,7 @@ namespace SleepwalkerInterface
 
         private IReadOnlyList<TelemetryEvent> AccumulateFilesystemTimelineCluster(IoctlParsedEvent record, DateTime nowUtc)
         {
-            if (record.Type != SleepwalkerNative.EventTypeFileSystem)
+            if (record.Type != BlackbirdNative.EventTypeFileSystem)
             {
                 return Array.Empty<TelemetryEvent>();
             }
@@ -924,7 +1072,7 @@ namespace SleepwalkerInterface
         private TelemetryEvent? MapIoctlRecord(IoctlParsedEvent record)
         {
             DateTime now = DateTime.UtcNow;
-            if (record.Type == SleepwalkerNative.EventTypeHandle)
+            if (record.Type == BlackbirdNative.EventTypeHandle)
             {
                 RememberHandleEvidence(record);
                 uint caller = record.CallerPid;
@@ -953,7 +1101,7 @@ namespace SleepwalkerInterface
                 };
             }
 
-            if (record.Type == SleepwalkerNative.EventTypeThread)
+            if (record.Type == BlackbirdNative.EventTypeThread)
             {
                 uint process = record.ProcessPid;
                 uint creator = record.CreatorPid;
@@ -971,7 +1119,7 @@ namespace SleepwalkerInterface
                 };
             }
 
-            if (record.Type == SleepwalkerNative.EventTypeFileSystem)
+            if (record.Type == BlackbirdNative.EventTypeFileSystem)
             {
                 return null;
             }
@@ -981,12 +1129,12 @@ namespace SleepwalkerInterface
 
         private static IoctlParsedEvent? MapIoctlFilesystem(IoctlParsedEvent record)
         {
-            return record.Type == SleepwalkerNative.EventTypeFileSystem ? record : null;
+            return record.Type == BlackbirdNative.EventTypeFileSystem ? record : null;
         }
 
         private static ThreadLifecycleEventSample? MapIoctlThreadLifecycle(IoctlParsedEvent record)
         {
-            if (record.Type != SleepwalkerNative.EventTypeThread)
+            if (record.Type != BlackbirdNative.EventTypeThread)
             {
                 return null;
             }
@@ -1033,7 +1181,7 @@ namespace SleepwalkerInterface
         private ProcessRelationView? MapIoctlRelation(IoctlParsedEvent record)
         {
             DateTime now = DateTime.UtcNow;
-            if (record.Type == SleepwalkerNative.EventTypeHandle)
+            if (record.Type == BlackbirdNative.EventTypeHandle)
             {
                 uint source = record.CallerPid;
                 uint target = record.TargetPid;
@@ -1055,7 +1203,7 @@ namespace SleepwalkerInterface
                 };
             }
 
-            if (record.Type == SleepwalkerNative.EventTypeThread)
+            if (record.Type == BlackbirdNative.EventTypeThread)
             {
                 uint source = record.CreatorPid;
                 uint target = record.ProcessPid;
@@ -1082,7 +1230,7 @@ namespace SleepwalkerInterface
 
         private HeuristicEventView? MapIoctlHeuristic(IoctlParsedEvent record)
         {
-            if (record.Type != SleepwalkerNative.EventTypeHandle || record.CallerPid == 0 || record.TargetPid == 0)
+            if (record.Type != BlackbirdNative.EventTypeHandle || record.CallerPid == 0 || record.TargetPid == 0)
             {
                 return null;
             }
@@ -1141,24 +1289,24 @@ namespace SleepwalkerInterface
             };
         }
 
-        private static BrokerEtwEventView MapBrokerEtwEvent(SleepwalkerNative.SwIpcEtwEvent etw)
+        private static BrokerEtwEventView MapBrokerEtwEvent(BlackbirdNative.BkIpcEtwEvent etw)
         {
             string source = etw.Source switch
             {
-                SleepwalkerNative.IpcEtwSourceSleepwalker => "Sleepwalker",
-                SleepwalkerNative.IpcEtwSourceThreatIntel => "ThreatIntel",
-                SleepwalkerNative.IpcEtwSourceKernelNetwork => "KernelNetwork",
+                BlackbirdNative.IpcEtwSourceBlackbird => "Blackbird",
+                BlackbirdNative.IpcEtwSourceThreatIntel => "ThreatIntel",
+                BlackbirdNative.IpcEtwSourceKernelNetwork => "KernelNetwork",
                 _ => "Unknown"
             };
 
-            string eventName = SleepwalkerNative.WideBufferToString(etw.EventName);
+            string eventName = BlackbirdNative.WideBufferToString(etw.EventName);
             if (string.IsNullOrWhiteSpace(eventName))
             {
                 eventName = "unknown";
             }
 
-            string detection = SleepwalkerNative.AnsiBufferToString(etw.DetectionName);
-            string reason = SleepwalkerNative.WideBufferToString(etw.Reason);
+            string detection = BlackbirdNative.AnsiBufferToString(etw.DetectionName);
+            string reason = BlackbirdNative.WideBufferToString(etw.Reason);
             uint actor = ResolveBrokerEtwActorPid(etw);
             uint target = ResolveBrokerEtwTargetPid(etw);
             DateTime now = DateTime.UtcNow;
@@ -1191,8 +1339,8 @@ namespace SleepwalkerInterface
                 CorrelationAgeMs = etw.CorrelationAgeMs,
                 DetectionName = detection,
                 Reason = reason,
-                ClassName = SleepwalkerNative.AnsiBufferToString(etw.ClassName),
-                Operation = SleepwalkerNative.AnsiBufferToString(etw.Operation),
+                ClassName = BlackbirdNative.AnsiBufferToString(etw.ClassName),
+                Operation = BlackbirdNative.AnsiBufferToString(etw.Operation),
                 DesiredAccess = etw.DesiredAccess,
                 OriginAddress = etw.OriginAddress,
                 OriginProtect = etw.OriginProtect,
@@ -1208,7 +1356,7 @@ namespace SleepwalkerInterface
                 DeepRegionType = etw.DeepRegionType,
                 DeepSampleSize = etw.DeepSampleSize,
                 DeepSample = etw.DeepSample ?? Array.Empty<byte>(),
-                OriginPath = SleepwalkerNative.WideBufferToString(etw.OriginPath),
+                OriginPath = BlackbirdNative.WideBufferToString(etw.OriginPath),
                 StartAddress = etw.StartAddress,
                 ImageBase = etw.ImageBase,
                 ImageSize = etw.ImageSize,
@@ -1224,48 +1372,51 @@ namespace SleepwalkerInterface
                 NotifyClass = etw.NotifyClass,
                 DataType = etw.DataType,
                 DataSize = etw.DataSize,
-                ImagePath = SleepwalkerNative.WideBufferToString(etw.ImagePath),
-                CommandLine = SleepwalkerNative.WideBufferToString(etw.CommandLine),
-                KeyPath = SleepwalkerNative.WideBufferToString(etw.KeyPath),
-                ValueName = SleepwalkerNative.WideBufferToString(etw.ValueName),
+                ImagePath = BlackbirdNative.WideBufferToString(etw.ImagePath),
+                CommandLine = BlackbirdNative.WideBufferToString(etw.CommandLine),
+                KeyPath = BlackbirdNative.WideBufferToString(etw.KeyPath),
+                ValueName = BlackbirdNative.WideBufferToString(etw.ValueName),
                 RepeatCount = 1
             };
         }
 
-        private static uint ResolveBrokerEtwActorPid(SleepwalkerNative.SwIpcEtwEvent etw)
+        private static uint ResolveBrokerEtwActorPid(BlackbirdNative.BkIpcEtwEvent etw)
         {
             return etw.Family switch
             {
-                SleepwalkerNative.IpcEtwFamilyHandle or SleepwalkerNative.IpcEtwFamilyApc =>
+                BlackbirdNative.IpcEtwFamilyHandle or BlackbirdNative.IpcEtwFamilyApc =>
                     NarrowPid(etw.CallerPid) ?? NarrowPid(etw.ProcessId) ?? etw.EventProcessId,
-                SleepwalkerNative.IpcEtwFamilyThread =>
+                BlackbirdNative.IpcEtwFamilyThread =>
                     NarrowPid(etw.CreatorProcessId) ?? NarrowPid(etw.ProcessId) ?? etw.EventProcessId,
-                SleepwalkerNative.IpcEtwFamilyProcess =>
+                BlackbirdNative.IpcEtwFamilyProcess =>
                     NarrowPid(etw.CreatorProcessId) ?? NarrowPid(etw.ParentProcessId) ?? NarrowPid(etw.ProcessId) ??
                     etw.EventProcessId,
-                SleepwalkerNative.IpcEtwFamilyImage or
-                SleepwalkerNative.IpcEtwFamilyRegistry or
-                SleepwalkerNative.IpcEtwFamilyDetection or
-                SleepwalkerNative.IpcEtwFamilyThreatIntel or
-                SleepwalkerNative.IpcEtwFamilySocket =>
+                BlackbirdNative.IpcEtwFamilyImage or
+                BlackbirdNative.IpcEtwFamilyRegistry or
+                BlackbirdNative.IpcEtwFamilyDetection or
+                BlackbirdNative.IpcEtwFamilyThreatIntel or
+                BlackbirdNative.IpcEtwFamilyUserHook or
+                BlackbirdNative.IpcEtwFamilySocket =>
                     NarrowPid(etw.ProcessId) ?? etw.EventProcessId,
                 _ => NarrowPid(etw.ProcessId) ?? NarrowPid(etw.CallerPid) ?? etw.EventProcessId
             };
         }
 
-        private static uint ResolveBrokerEtwTargetPid(SleepwalkerNative.SwIpcEtwEvent etw)
+        private static uint ResolveBrokerEtwTargetPid(BlackbirdNative.BkIpcEtwEvent etw)
         {
             return etw.Family switch
             {
-                SleepwalkerNative.IpcEtwFamilyHandle or
-                SleepwalkerNative.IpcEtwFamilyApc or
-                SleepwalkerNative.IpcEtwFamilyDetection or
-                SleepwalkerNative.IpcEtwFamilyThreatIntel =>
+                BlackbirdNative.IpcEtwFamilyHandle or
+                BlackbirdNative.IpcEtwFamilyApc or
+                BlackbirdNative.IpcEtwFamilyDetection or
+                BlackbirdNative.IpcEtwFamilyThreatIntel =>
                     NarrowPid(etw.TargetPid) ?? 0,
-                SleepwalkerNative.IpcEtwFamilyThread or
-                SleepwalkerNative.IpcEtwFamilyProcess =>
+                BlackbirdNative.IpcEtwFamilyThread or
+                BlackbirdNative.IpcEtwFamilyProcess =>
                     NarrowPid(etw.ProcessId) ?? 0,
-                SleepwalkerNative.IpcEtwFamilySocket =>
+                BlackbirdNative.IpcEtwFamilyUserHook =>
+                    NarrowPid(etw.TargetPid) ?? NarrowPid(etw.ProcessId) ?? 0,
+                BlackbirdNative.IpcEtwFamilySocket =>
                     NarrowPid(etw.TargetPid) ?? NarrowPid(etw.ProcessId) ?? 0,
                 _ => NarrowPid(etw.TargetPid) ?? 0
             };
@@ -1278,110 +1429,192 @@ namespace SleepwalkerInterface
 
         private void HandleBrokerEtwView(BrokerEtwEventView view)
         {
-            bool keepEtw = ShouldKeepEtwEvent(view);
-            if (keepEtw)
+            HandleBrokerEtwViews(new[] { view });
+        }
+
+        private void HandleBrokerEtwViews(IReadOnlyList<BrokerEtwEventView> views)
+        {
+            if (views.Count == 0)
             {
-                EtwPaneHost.PushEvent(view);
+                return;
+            }
+
+            var etwRows = new List<BrokerEtwEventView>(views.Count);
+            var heuristics = new List<HeuristicEventView>();
+            var timelineEvents = new List<TelemetryEvent>(views.Count);
+
+            for (int i = 0; i < views.Count; i += 1)
+            {
+                BrokerEtwEventView view = views[i];
+                bool isApiHookCall = view.Family == BlackbirdNative.IpcEtwFamilyUserHook &&
+                                     (string.Equals(view.DetectionName, "USERMODE_HOOK_API_CALL", StringComparison.OrdinalIgnoreCase) ||
+                                      string.Equals(view.DetectionName, "USERMODE_MEMORY_ACTIVITY", StringComparison.OrdinalIgnoreCase));
+                if (isApiHookCall)
+                {
+                    TelemetryEvent? apiTimelineEvent = HandleApiHookEvent(view);
+                    if (apiTimelineEvent != null)
+                    {
+                        timelineEvents.Add(apiTimelineEvent);
+                    }
+                }
+
+                bool keepEtw = ShouldKeepEtwEvent(view);
+                if (keepEtw)
+                {
+                    etwRows.Add(view);
+                }
+
+                string detection = view.DetectionName;
+                if (IsHookTamperDetection(detection))
+                {
+                    DiagnosticsState.SetValue("Hook Integrity", "TAMPERED");
+                }
+                else if (detection.Equals("USERMODE_HOOK_INTEGRITY_OK", StringComparison.OrdinalIgnoreCase))
+                {
+                    DiagnosticsState.SetValue("Hook Integrity", "OK");
+                }
+                if (detection.Equals("AMSI_PATCH_TAMPERED", StringComparison.OrdinalIgnoreCase))
+                {
+                    DiagnosticsState.SetValue("AMSI Integrity", "TAMPERED");
+                }
+                else if (detection.Equals("AMSI_PATCH_OK", StringComparison.OrdinalIgnoreCase))
+                {
+                    DiagnosticsState.SetValue("AMSI Integrity", "OK");
+                }
+                if (detection.Equals("ETW_PATCH_TAMPERED", StringComparison.OrdinalIgnoreCase))
+                {
+                    DiagnosticsState.SetValue("ETW Integrity", "TAMPERED");
+                }
+                else if (detection.Equals("ETW_PATCH_OK", StringComparison.OrdinalIgnoreCase))
+                {
+                    DiagnosticsState.SetValue("ETW Integrity", "OK");
+                }
+
+                string eventName = view.EventName ?? string.Empty;
+                string displayDetection = BuildFallbackDetectionLabel(
+                    detection,
+                    eventName,
+                    view.Task,
+                    view.Opcode,
+                    view.EventId,
+                    view.CorrelationFlags);
+                string source = view.Source;
+                uint actor = view.ActorPid;
+                bool isSocketEvent = view.Family == BlackbirdNative.IpcEtwFamilySocket ||
+                                     source.Equals("KernelNetwork", StringComparison.OrdinalIgnoreCase);
+                string socketOperation = string.IsNullOrWhiteSpace(view.Operation) ? eventName : view.Operation;
+                if (string.IsNullOrWhiteSpace(socketOperation))
+                {
+                    socketOperation = $"OP{view.Opcode}";
+                }
+                string timelineGroup = isSocketEvent ? "Sockets" : "Blackbird-ETW";
+                string timelineSubtype = isSocketEvent ? socketOperation : eventName;
+                string summary = isSocketEvent
+                    ? $"{socketOperation} pid={actor} task={view.Task} opcode={view.Opcode}"
+                    : (!string.IsNullOrWhiteSpace(displayDetection)
+                        ? $"{source}/{displayDetection} sev={view.Severity}"
+                        : $"{source}/{eventName} sev={view.Severity}");
+                string timelineSignature = $"{timelineGroup}|{eventName}|{actor}|{view.EventThreadId}|{summary}";
+                bool duplicateTimelineEvent =
+                    string.Equals(_lastEtwTimelineSignature, timelineSignature, StringComparison.OrdinalIgnoreCase) &&
+                    (view.TimestampUtc - _lastEtwTimelineTimestampUtc).TotalMilliseconds <= 900;
+                if (keepEtw && !duplicateTimelineEvent)
+                {
+                    int timelinePid = view.EventProcessId == 0
+                        ? unchecked((int)actor)
+                        : unchecked((int)view.EventProcessId);
+                    timelineEvents.Add(new TelemetryEvent
+                    {
+                        TimestampUtc = view.TimestampUtc,
+                        PID = timelinePid,
+                        TID = unchecked((int)view.EventThreadId),
+                        Group = timelineGroup,
+                        SubType = timelineSubtype,
+                        Summary = summary,
+                        Details = view.Details
+                    });
+                    _lastEtwTimelineSignature = timelineSignature;
+                    _lastEtwTimelineTimestampUtc = view.TimestampUtc;
+                }
+
+                HeuristicEventView? heuristic = CreatePromotedHeuristic(view);
+                if (heuristic != null)
+                {
+                    heuristics.Add(heuristic);
+                }
+            }
+
+            if (etwRows.Count > 0)
+            {
+                EtwPaneHost.PushEvents(etwRows);
                 _explorer.FirstOrDefault(x => x.Name == "ETW")?.PushPreviewValue(
                     EtwPaneHost.TotalRawCount);
                 SetExplorerHasData("ETW", EtwPaneHost.ItemCount > 0);
             }
 
-            string detection = view.DetectionName;
-            string displayDetection = BuildFallbackDetectionLabel(
-                detection,
-                view.EventName,
-                view.Task,
-                view.Opcode,
-                view.EventId,
-                view.CorrelationFlags);
-            string source = view.Source;
-            string eventName = view.EventName;
-            uint actor = view.ActorPid;
-            uint target = view.TargetPid;
-            bool isSocketEvent = view.Family == SleepwalkerNative.IpcEtwFamilySocket ||
-                                 source.Equals("KernelNetwork", StringComparison.OrdinalIgnoreCase);
-            string socketOperation = string.IsNullOrWhiteSpace(view.Operation) ? eventName : view.Operation;
-            if (string.IsNullOrWhiteSpace(socketOperation))
+            if (timelineEvents.Count > 0)
             {
-                socketOperation = $"OP{view.Opcode}";
-            }
-            string timelineGroup = isSocketEvent ? "Sockets" : "Sleepwalker-ETW";
-            string timelineSubtype = isSocketEvent ? socketOperation : eventName;
-            string summary = isSocketEvent
-                ? $"{socketOperation} pid={actor} task={view.Task} opcode={view.Opcode}"
-                : (!string.IsNullOrWhiteSpace(displayDetection)
-                    ? $"{source}/{displayDetection} sev={view.Severity}"
-                    : $"{source}/{eventName} sev={view.Severity}");
-            string timelineSignature = $"{timelineGroup}|{eventName}|{actor}|{view.EventThreadId}|{summary}";
-            bool duplicateTimelineEvent =
-                string.Equals(_lastEtwTimelineSignature, timelineSignature, StringComparison.OrdinalIgnoreCase) &&
-                (view.TimestampUtc - _lastEtwTimelineTimestampUtc).TotalMilliseconds <= 900;
-            if (keepEtw && !duplicateTimelineEvent)
-            {
-                int timelinePid = view.EventProcessId == 0
-                    ? unchecked((int)actor)
-                    : unchecked((int)view.EventProcessId);
-                AppendEvent(new TelemetryEvent
-                {
-                    TimestampUtc = view.TimestampUtc,
-                    PID = timelinePid,
-                    TID = unchecked((int)view.EventThreadId),
-                    Group = timelineGroup,
-                    SubType = timelineSubtype,
-                    Summary = summary,
-                    Details = view.Details
-                });
-                _lastEtwTimelineSignature = timelineSignature;
-                _lastEtwTimelineTimestampUtc = view.TimestampUtc;
+                AppendEvents(timelineEvents);
             }
 
-            if (!string.IsNullOrWhiteSpace(detection) && ShouldPromoteHeuristic(view))
+            if (heuristics.Count > 0)
             {
-                string reasonText = string.IsNullOrWhiteSpace(view.Reason) ? "<none>" : view.Reason;
-                uint sanitizedCorrFlags = view.CorrelationFlags & CorrelationIntentMask;
-                string corrFlagsDecoded = EventDetailFormatting.DescribeCorrelationFlags(sanitizedCorrFlags);
-                string corrAccessDecoded = EventDetailFormatting.DescribeHandleAccess(view.CorrelationAccessMask);
-                string heuristicEvidence = "<none>";
-                bool hasEvidence = TryGetHandleEvidence(actor, target, out IoctlParsedEvent evidence);
-                if (hasEvidence)
-                {
-                    heuristicEvidence = BuildHandleEvidenceText(evidence);
-                }
-                if (IsDirectSyscallDetection(detection) &&
-                    hasEvidence &&
-                    !ShouldKeepDirectSyscallHeuristicFromEvidence(evidence))
-                {
-                    return;
-                }
-
-                string rawCorrFlagsSuffix = view.CorrelationFlags == sanitizedCorrFlags
-                    ? string.Empty
-                    : $"; rawCorrFlags=0x{view.CorrelationFlags:X8}";
-
-                var heuristic = new HeuristicEventView
-                {
-                    TimestampUtc = view.TimestampUtc,
-                    LastSeenUtc = view.TimestampUtc,
-                    Severity = view.Severity,
-                    DetectionName = detection,
-                    ActorPid = actor,
-                    TargetPid = target,
-                    Source = source,
-                    EventName = eventName,
-                    CorrelationFlags = sanitizedCorrFlags,
-                    CorrelationAccessMask = view.CorrelationAccessMask,
-                    CorrelationAgeMs = view.CorrelationAgeMs,
-                    Reason = $"reason={reasonText}; corrFlags={corrFlagsDecoded}; corrAccess={corrAccessDecoded}; corrAgeMs={view.CorrelationAgeMs}{rawCorrFlagsSuffix}",
-                    Evidence = heuristicEvidence,
-                    RepeatCount = 1
-                };
-                HeuristicsPaneHost.PushHeuristic(heuristic);
+                HeuristicsPaneHost.PushHeuristics(heuristics);
                 _explorer.FirstOrDefault(x => x.Name == "Heuristics")?.PushPreviewValue(
                     HeuristicsPaneHost.TotalRawCount);
                 SetExplorerHasData("Heuristics", HeuristicsPaneHost.ItemCount > 0);
-                DiagnosticsState.Increment("Heuristics");
+                DiagnosticsState.Increment("Heuristics", heuristics.Count);
             }
+        }
+
+        private HeuristicEventView? CreatePromotedHeuristic(BrokerEtwEventView view)
+        {
+            string detection = view.DetectionName;
+            if (string.IsNullOrWhiteSpace(detection) || !ShouldPromoteHeuristic(view))
+            {
+                return null;
+            }
+
+            uint actor = view.ActorPid;
+            uint target = view.TargetPid;
+            string reasonText = string.IsNullOrWhiteSpace(view.Reason) ? "<none>" : view.Reason;
+            uint sanitizedCorrFlags = view.CorrelationFlags & CorrelationIntentMask;
+            string corrFlagsDecoded = EventDetailFormatting.DescribeCorrelationFlags(sanitizedCorrFlags);
+            string corrAccessDecoded = EventDetailFormatting.DescribeHandleAccess(view.CorrelationAccessMask);
+            string heuristicEvidence = "<none>";
+            bool hasEvidence = TryGetHandleEvidence(actor, target, out IoctlParsedEvent evidence);
+            if (hasEvidence)
+            {
+                heuristicEvidence = BuildHandleEvidenceText(evidence);
+            }
+            if (IsDirectSyscallDetection(detection) &&
+                hasEvidence &&
+                !ShouldKeepDirectSyscallHeuristicFromEvidence(evidence))
+            {
+                return null;
+            }
+
+            string rawCorrFlagsSuffix = view.CorrelationFlags == sanitizedCorrFlags
+                ? string.Empty
+                : $"; rawCorrFlags=0x{view.CorrelationFlags:X8}";
+
+            return new HeuristicEventView
+            {
+                TimestampUtc = view.TimestampUtc,
+                LastSeenUtc = view.TimestampUtc,
+                Severity = view.Severity,
+                DetectionName = detection,
+                ActorPid = actor,
+                TargetPid = target,
+                Source = view.Source,
+                EventName = view.EventName ?? string.Empty,
+                CorrelationFlags = sanitizedCorrFlags,
+                CorrelationAccessMask = view.CorrelationAccessMask,
+                CorrelationAgeMs = view.CorrelationAgeMs,
+                Reason = $"reason={reasonText}; corrFlags={corrFlagsDecoded}; corrAccess={corrAccessDecoded}; corrAgeMs={view.CorrelationAgeMs}{rawCorrFlagsSuffix}",
+                Evidence = heuristicEvidence,
+                RepeatCount = 1
+            };
         }
 
         private static string BuildFallbackDetectionLabel(
@@ -1452,6 +1685,580 @@ namespace SleepwalkerInterface
             return "UNCLASSIFIED_EVENT";
         }
 
+        private TelemetryEvent? HandleApiHookEvent(BrokerEtwEventView view)
+        {
+            string apiName = !string.IsNullOrWhiteSpace(view.EventName)
+                ? view.EventName
+                : (!string.IsNullOrWhiteSpace(view.Operation) ? view.Operation : "unknown");
+            uint sourcePid = view.ActorPid != 0 ? view.ActorPid : view.ProcessPid;
+            if (sourcePid == 0)
+            {
+                sourcePid = view.EventProcessId;
+            }
+            uint targetPid = view.TargetPid != 0 ? view.TargetPid : sourcePid;
+            uint threadId = view.ThreadId != 0 ? view.ThreadId : view.EventThreadId;
+            if (sourcePid == 0)
+            {
+                return null;
+            }
+
+            string key = BuildApiGraphKey(sourcePid, targetPid, threadId, apiName);
+            if (_apiGraphRowsByKey.TryGetValue(key, out ApiCallGraphRowSnapshot? existing))
+            {
+                existing.Hits = Math.Max(1, existing.Hits + 1);
+                existing.LastSeenUtc = view.TimestampUtc;
+            }
+            else
+            {
+                _apiGraphRowsByKey[key] = new ApiCallGraphRowSnapshot
+                {
+                    ApiName = apiName,
+                    SourcePid = sourcePid,
+                    TargetPid = targetPid,
+                    ThreadId = threadId,
+                    Hits = 1,
+                    LastSeenUtc = view.TimestampUtc
+                };
+            }
+
+            string rawReason = view.Reason ?? string.Empty;
+            _apiGraphReasonByKey[key] = rawReason;
+            (string decodedAction, string decodedDetail) = BuildApiDecodedAction(view, rawReason);
+            _apiGraphActionByKey[key] = decodedAction;
+            _apiGraphDecodedByKey[key] = decodedDetail;
+
+            ScheduleApiGraphSnapshot();
+            if (string.IsNullOrWhiteSpace(view.Details))
+            {
+                return null;
+            }
+
+            return new TelemetryEvent
+            {
+                TimestampUtc = view.TimestampUtc,
+                PID = unchecked((int)sourcePid),
+                TID = unchecked((int)threadId),
+                Group = "API Hooks",
+                SubType = apiName,
+                Summary = $"{apiName} [{sourcePid}->{targetPid}]",
+                Details = view.Details
+            };
+        }
+
+        private void PublishApiGraphSnapshot()
+        {
+            string? selectedKey = (ApiViewDataGrid?.SelectedItem as ApiCallGraphMainRowView)?.GraphKey;
+            bool apiViewVisible = _mainViewMode == MainInterfaceViewMode.Api &&
+                                  ApiViewBorder != null &&
+                                  ApiViewBorder.Visibility == Visibility.Visible;
+            var snapshot = _apiGraphRowsByKey.Values
+                .Select(x => new ApiCallGraphRowSnapshot
+                {
+                    ApiName = x.ApiName,
+                    SourcePid = x.SourcePid,
+                    TargetPid = x.TargetPid,
+                    ThreadId = x.ThreadId,
+                    Hits = x.Hits,
+                    LastSeenUtc = x.LastSeenUtc
+                })
+                .OrderByDescending(x => x.Hits)
+                .ThenByDescending(x => x.LastSeenUtc)
+                .Take(400)
+                .ToList();
+
+            int maxHits = Math.Max(1, snapshot.Count == 0 ? 1 : snapshot.Max(x => Math.Max(1, x.Hits)));
+            var rows = new List<ApiCallGraphMainRowView>(snapshot.Count);
+            foreach (ApiCallGraphRowSnapshot row in snapshot)
+            {
+                uint target = row.TargetPid != 0 ? row.TargetPid : row.SourcePid;
+                string key = BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName);
+                int flameWidth = Math.Clamp((int)Math.Round((row.Hits / (double)maxHits) * 24.0), 1, 24);
+                double heatPercent = Math.Clamp((row.Hits / (double)maxHits) * 100.0, 0.0, 100.0);
+                string rawReason = _apiGraphReasonByKey.TryGetValue(key, out string? reason) ? reason : string.Empty;
+                string decodedAction = _apiGraphActionByKey.TryGetValue(key, out string? action)
+                    ? action
+                    : BuildGenericApiActionLabel(row.ApiName, ParseReasonFields(rawReason));
+                string decodedDetail = _apiGraphDecodedByKey.TryGetValue(key, out string? detail)
+                    ? detail
+                    : rawReason;
+                rows.Add(new ApiCallGraphMainRowView
+                {
+                    GraphKey = key,
+                    ApiName = string.IsNullOrWhiteSpace(row.ApiName) ? "unknown" : row.ApiName,
+                    PathLabel = $"{row.SourcePid} -> {target}",
+                    ThreadLabel = row.ThreadId == 0 ? "-" : row.ThreadId.ToString(CultureInfo.InvariantCulture),
+                    Hits = Math.Max(1, row.Hits),
+                    FlameBar = new string('|', flameWidth),
+                    HeatPercent = heatPercent,
+                    HeatLabel = $"{Math.Round(heatPercent, MidpointRounding.AwayFromZero):F0}%",
+                    LastSeen = row.LastSeenUtc == default ? "-" : row.LastSeenUtc.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture),
+                    DecodedAction = SummarizeApiReason(decodedAction),
+                    DetailFull = decodedDetail
+                });
+            }
+
+            _apiViewRows.ReplaceAll(rows);
+
+            if (ApiViewSummaryBlock != null)
+            {
+                ApiViewSummaryBlock.Text = snapshot.Count == 0
+                    ? "No API hook data yet"
+                    : $"Patterns: {_apiViewRows.Count} / Calls: {_apiViewRows.Sum(x => x.Hits)}";
+            }
+            if (ApiViewSubSummaryBlock != null)
+            {
+                ApiViewSubSummaryBlock.Text = snapshot.Count == 0
+                    ? "live call graph + memory telemetry"
+                    : $"last update: {snapshot.Max(x => x.LastSeenUtc):HH:mm:ss.fff}Z";
+            }
+            if (apiViewVisible && ApiViewDotGraphTextBox != null)
+            {
+                string dotGraph = BuildApiDotGraph(snapshot);
+                ApiViewDotGraphTextBox.Text = string.IsNullOrWhiteSpace(dotGraph) ? "digraph ApiCalls {\n}" : dotGraph;
+            }
+            DiagnosticsState.SetValue("API Graph", $"patterns={snapshot.Count} visible={apiViewVisible}");
+
+            if (ApiViewDataGrid != null)
+            {
+                ApiCallGraphMainRowView? selected = null;
+                if (!string.IsNullOrWhiteSpace(selectedKey))
+                {
+                    selected = _apiViewRows.FirstOrDefault(x => string.Equals(x.GraphKey, selectedKey, StringComparison.Ordinal));
+                }
+
+                if (selected == null && _apiViewRows.Count > 0)
+                {
+                    selected = _apiViewRows[0];
+                }
+
+                ApiViewDataGrid.SelectedItem = selected;
+                UpdateApiViewSelection(selected);
+            }
+        }
+
+        private static string BuildApiDotGraph(IReadOnlyList<ApiCallGraphRowSnapshot> rows)
+        {
+            var sb = new StringBuilder(1024);
+            sb.AppendLine("digraph ApiCalls {");
+            sb.AppendLine("  rankdir=LR;");
+            sb.AppendLine("  node [shape=box, style=rounded];");
+            int maxHits = Math.Max(1, rows.Count == 0 ? 1 : rows.Max(x => Math.Max(1, x.Hits)));
+            foreach (ApiCallGraphRowSnapshot row in rows.Take(180))
+            {
+                uint source = row.SourcePid;
+                uint target = row.TargetPid != 0 ? row.TargetPid : row.SourcePid;
+                string api = string.IsNullOrWhiteSpace(row.ApiName) ? "unknown" : row.ApiName.Replace("\"", "'");
+                double heat = Math.Clamp(row.Hits / (double)maxHits, 0.0, 1.0);
+                int red = Math.Clamp((int)Math.Round(96 + (150 * heat)), 0, 255);
+                int green = Math.Clamp((int)Math.Round(188 - (125 * heat)), 0, 255);
+                int blue = Math.Clamp((int)Math.Round(238 - (175 * heat)), 0, 255);
+                double penWidth = 1.0 + (4.0 * heat);
+                sb.Append("  \"PID ");
+                sb.Append(source);
+                sb.Append("\" -> \"PID ");
+                sb.Append(target);
+                sb.Append("\" [label=\"");
+                sb.Append(api);
+                sb.Append(" x");
+                sb.Append(row.Hits);
+                sb.Append("\" color=\"#");
+                sb.Append(red.ToString("X2", CultureInfo.InvariantCulture));
+                sb.Append(green.ToString("X2", CultureInfo.InvariantCulture));
+                sb.Append(blue.ToString("X2", CultureInfo.InvariantCulture));
+                sb.Append("\" penwidth=\"");
+                sb.Append(penWidth.ToString("F2", CultureInfo.InvariantCulture));
+                sb.AppendLine("\"];");
+            }
+            sb.AppendLine("}");
+            return sb.ToString();
+        }
+
+        private static string SummarizeApiReason(string? reason)
+        {
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                return string.Empty;
+            }
+
+            string compact = reason.Replace('\r', ' ').Replace('\n', ' ').Trim();
+            if (compact.Length <= 260)
+            {
+                return compact;
+            }
+
+            return compact[..260] + "...";
+        }
+
+        private static string BuildApiGraphKey(uint sourcePid, uint targetPid, uint threadId, string apiName)
+            => $"{sourcePid}|{targetPid}|{threadId}|{apiName}";
+
+        private (string Action, string Detail) BuildApiDecodedAction(BrokerEtwEventView view, string rawReason)
+        {
+            string apiName = !string.IsNullOrWhiteSpace(view.Operation) ? view.Operation : view.EventName;
+            if (string.IsNullOrWhiteSpace(apiName))
+            {
+                apiName = "unknown";
+            }
+
+            Dictionary<string, string> fields = ParseReasonFields(rawReason);
+            string action = BuildGenericApiActionLabel(apiName, fields);
+            string detail;
+
+            if (TryBuildMemoryAction(apiName, view, fields, out string memoryAction, out string memoryDetail))
+            {
+                action = memoryAction;
+                detail = memoryDetail;
+            }
+            else
+            {
+                var sb = new StringBuilder(512);
+                sb.AppendLine(action);
+                if (!string.IsNullOrWhiteSpace(rawReason))
+                {
+                    sb.Append("Raw: ").AppendLine(rawReason);
+                }
+                if (!string.IsNullOrWhiteSpace(view.Details))
+                {
+                    sb.Append("Event: ").Append(view.Details);
+                }
+                detail = sb.ToString().Trim();
+            }
+
+            return (action, detail);
+        }
+
+        private bool TryBuildMemoryAction(
+            string apiName,
+            BrokerEtwEventView view,
+            IReadOnlyDictionary<string, string> fields,
+            out string action,
+            out string detail)
+        {
+            action = string.Empty;
+            detail = string.Empty;
+            DateTime now = view.TimestampUtc == default ? DateTime.UtcNow : view.TimestampUtc;
+
+            if (apiName.Equals("NtAllocateVirtualMemory", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong baseAddress = FirstU64(fields, "base", "c0", "a1");
+                ulong regionSize = FirstU64(fields, "size", "c1", "a3");
+                ulong allocationType = FirstU64(fields, "allocType", "c2", "a4");
+                uint protect = (uint)FirstU64(fields, "protect", "c3", "a5");
+                ulong page = baseAddress & ~0xFFFUL;
+                if (page != 0)
+                {
+                    ApiMemoryPageSignal state = GetOrCreateApiMemoryPageSignal(page);
+                    if (protect != 0)
+                    {
+                        state.Protect = protect;
+                        state.LastProtectChangeUtc = now;
+                    }
+                }
+
+                string protectLabel = DescribeMemoryProtect(protect);
+                action = $"Allocates 0x{regionSize:X} bytes at 0x{baseAddress:X} ({protectLabel})";
+                detail = $"Action: memory.alloc\n" +
+                         $"API: {apiName}\n" +
+                         $"Base: 0x{baseAddress:X}\n" +
+                         $"Size: 0x{regionSize:X}\n" +
+                         $"AllocType: 0x{allocationType:X} ({DescribeMemoryAllocationType((uint)allocationType)})\n" +
+                         $"Protect: 0x{protect:X} ({protectLabel})\n" +
+                         $"Raw: {view.Reason}";
+                return true;
+            }
+
+            if (apiName.Equals("NtProtectVirtualMemory", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong baseAddress = FirstU64(fields, "base", "c0", "a1");
+                ulong regionSize = FirstU64(fields, "size", "c1", "a2");
+                uint newProtect = (uint)FirstU64(fields, "newProtect", "c2", "a3");
+                ulong page = baseAddress & ~0xFFFUL;
+                ApiMemoryPageSignal state = GetOrCreateApiMemoryPageSignal(page);
+
+                bool protectChanged = state.Protect != 0 && newProtect != 0 && state.Protect != newProtect;
+                bool rapidFlip = false;
+                if (protectChanged)
+                {
+                    state.ProtectFlipCount += 1;
+                    rapidFlip = state.LastProtectChangeUtc != default &&
+                                (now - state.LastProtectChangeUtc).TotalMilliseconds <= 900;
+                }
+
+                if (newProtect != 0)
+                {
+                    state.Protect = newProtect;
+                }
+                state.LastProtectChangeUtc = now;
+
+                string protectLabel = DescribeMemoryProtect(newProtect);
+                action = $"Changes protection to {protectLabel} at 0x{baseAddress:X}";
+                detail = $"Action: memory.protect\n" +
+                         $"API: {apiName}\n" +
+                         $"Base: 0x{baseAddress:X}\n" +
+                         $"Size: 0x{regionSize:X}\n" +
+                         $"NewProtect: 0x{newProtect:X} ({protectLabel})\n" +
+                         $"ProtectFlips: {state.ProtectFlipCount}\n" +
+                         $"RapidFlip: {(rapidFlip ? "yes" : "no")}\n" +
+                         $"Raw: {view.Reason}";
+                return true;
+            }
+
+            if (apiName.Equals("NtWriteVirtualMemory", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong baseAddress = FirstU64(fields, "base", "c0", "a1");
+                ulong size = FirstU64(fields, "size", "c1", "a3");
+                ulong page = baseAddress & ~0xFFFUL;
+                ApiMemoryPageSignal state = GetOrCreateApiMemoryPageSignal(page);
+                int sampleLen = (int)Math.Min(view.DeepSampleSize, (uint)(view.DeepSample?.Length ?? 0));
+                double entropy = ComputeSampleEntropyBits(view.DeepSample, sampleLen);
+                if (entropy < 0 && TryReadDouble(fields, out double parsedEntropy, "entropy"))
+                {
+                    entropy = parsedEntropy;
+                }
+
+                bool entropyChanged = !double.IsNaN(state.LastEntropyBits) && entropy >= 0 &&
+                                      Math.Abs(state.LastEntropyBits - entropy) >= 0.55;
+                bool rapidEntropyFlip = false;
+                if (entropyChanged)
+                {
+                    state.EntropyFlipCount += 1;
+                    rapidEntropyFlip = state.LastEntropyChangeUtc != default &&
+                                       (now - state.LastEntropyChangeUtc).TotalMilliseconds <= 900;
+                }
+
+                if (entropy >= 0)
+                {
+                    state.LastEntropyBits = entropy;
+                    state.LastEntropyChangeUtc = now;
+                }
+
+                string entropyText = entropy >= 0
+                    ? entropy.ToString("F2", CultureInfo.InvariantCulture)
+                    : "n/a";
+                action = $"Writes 0x{size:X} bytes at 0x{baseAddress:X} (entropy {entropyText})";
+                detail = $"Action: memory.write\n" +
+                         $"API: {apiName}\n" +
+                         $"Base: 0x{baseAddress:X}\n" +
+                         $"Size: 0x{size:X}\n" +
+                         $"Entropy(bits/byte): {entropyText}\n" +
+                         $"EntropyFlips: {state.EntropyFlipCount}\n" +
+                         $"ProtectFlips: {state.ProtectFlipCount}\n" +
+                         $"RapidEntropyFlip: {(rapidEntropyFlip ? "yes" : "no")}\n" +
+                         $"SampleBytes: {sampleLen}\n" +
+                         $"Raw: {view.Reason}";
+                return true;
+            }
+
+            return false;
+        }
+
+        private ApiMemoryPageSignal GetOrCreateApiMemoryPageSignal(ulong page)
+        {
+            if (!_apiMemorySignalsByPage.TryGetValue(page, out ApiMemoryPageSignal? state))
+            {
+                state = new ApiMemoryPageSignal();
+                _apiMemorySignalsByPage[page] = state;
+            }
+
+            return state;
+        }
+
+        private static Dictionary<string, string> ParseReasonFields(string rawReason)
+        {
+            var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (string.IsNullOrWhiteSpace(rawReason))
+            {
+                return fields;
+            }
+
+            foreach (string token in rawReason.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                int sep = token.IndexOf('=');
+                if (sep <= 0 || sep >= token.Length - 1)
+                {
+                    continue;
+                }
+
+                string key = token[..sep].Trim();
+                string value = token[(sep + 1)..].Trim().TrimEnd(',', ';');
+                if (key.Length == 0)
+                {
+                    continue;
+                }
+
+                fields[key] = value;
+            }
+
+            return fields;
+        }
+
+        private static string BuildGenericApiActionLabel(string apiName, IReadOnlyDictionary<string, string> fields)
+        {
+            if (apiName.Equals("NtCreateThreadEx", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong startAddress = FirstU64(fields, "a3", "c3");
+                ulong targetHandle = FirstU64(fields, "a2", "c0");
+                return $"Creates thread (start 0x{startAddress:X}) via target handle 0x{targetHandle:X}";
+            }
+
+            if (apiName.Equals("NtWriteVirtualMemory", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong address = FirstU64(fields, "a1", "c0");
+                ulong size = FirstU64(fields, "a3", "c1");
+                return $"Writes 0x{size:X} bytes into virtual memory at 0x{address:X}";
+            }
+
+            if (apiName.Equals("NtReadVirtualMemory", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong address = FirstU64(fields, "a1", "c0");
+                ulong size = FirstU64(fields, "a3", "c1");
+                return $"Reads 0x{size:X} bytes from virtual memory at 0x{address:X}";
+            }
+
+            if (apiName.Equals("WSASend", StringComparison.OrdinalIgnoreCase) ||
+                apiName.Equals("send", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Sends network payload";
+            }
+
+            if (apiName.Equals("WSARecv", StringComparison.OrdinalIgnoreCase) ||
+                apiName.Equals("recv", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Receives network payload";
+            }
+
+            if (fields.TryGetValue("kind", out string? kind) && !string.IsNullOrWhiteSpace(kind))
+            {
+                return $"{kind} call: {apiName}";
+            }
+
+            return apiName;
+        }
+
+        private static ulong FirstU64(IReadOnlyDictionary<string, string> fields, params string[] keys)
+        {
+            foreach (string key in keys)
+            {
+                if (fields.TryGetValue(key, out string? value) && TryReadU64(value, out ulong parsed))
+                {
+                    return parsed;
+                }
+            }
+
+            return 0;
+        }
+
+        private static bool TryReadU64(string? text, out ulong value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+
+            string compact = text.Trim();
+            if (compact.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                return ulong.TryParse(compact[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
+            }
+
+            return ulong.TryParse(compact, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        private static bool TryReadDouble(IReadOnlyDictionary<string, string> fields, out double value, params string[] keys)
+        {
+            foreach (string key in keys)
+            {
+                if (fields.TryGetValue(key, out string? text) &&
+                    double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+                {
+                    return true;
+                }
+            }
+
+            value = 0;
+            return false;
+        }
+
+        private static string DescribeMemoryProtect(uint protect)
+        {
+            return protect switch
+            {
+                0x01 => "PAGE_NOACCESS",
+                0x02 => "PAGE_READONLY",
+                0x04 => "PAGE_READWRITE",
+                0x08 => "PAGE_WRITECOPY",
+                0x10 => "PAGE_EXECUTE",
+                0x20 => "PAGE_EXECUTE_READ",
+                0x40 => "PAGE_EXECUTE_READWRITE",
+                0x80 => "PAGE_EXECUTE_WRITECOPY",
+                _ => $"0x{protect:X}"
+            };
+        }
+
+        private static string DescribeMemoryAllocationType(uint allocType)
+        {
+            var labels = new List<string>(4);
+            if ((allocType & 0x1000) != 0)
+            {
+                labels.Add("MEM_COMMIT");
+            }
+            if ((allocType & 0x2000) != 0)
+            {
+                labels.Add("MEM_RESERVE");
+            }
+            if ((allocType & 0x1000000) != 0)
+            {
+                labels.Add("MEM_LARGE_PAGES");
+            }
+            if ((allocType & 0x20000) != 0)
+            {
+                labels.Add("MEM_PHYSICAL");
+            }
+
+            return labels.Count == 0 ? "<none>" : string.Join(" | ", labels);
+        }
+
+        private static double ComputeSampleEntropyBits(byte[]? data, int length)
+        {
+            if (data == null || data.Length == 0 || length <= 1)
+            {
+                return -1;
+            }
+
+            int sampleLength = Math.Min(length, data.Length);
+            Span<int> counts = stackalloc int[256];
+            for (int i = 0; i < sampleLength; i += 1)
+            {
+                counts[data[i]] += 1;
+            }
+
+            double entropy = 0;
+            for (int i = 0; i < counts.Length; i += 1)
+            {
+                int count = counts[i];
+                if (count == 0)
+                {
+                    continue;
+                }
+
+                double p = count / (double)sampleLength;
+                entropy -= p * Math.Log(p, 2.0);
+            }
+
+            return entropy;
+        }
+
+        private sealed class ApiMemoryPageSignal
+        {
+            public uint Protect { get; set; }
+            public int ProtectFlipCount { get; set; }
+            public double LastEntropyBits { get; set; } = double.NaN;
+            public int EntropyFlipCount { get; set; }
+            public DateTime LastProtectChangeUtc { get; set; }
+            public DateTime LastEntropyChangeUtc { get; set; }
+        }
+
         private enum BackendUiWorkKind
         {
             Ioctl,
@@ -1516,6 +2323,17 @@ namespace SleepwalkerInterface
             _heuristicsHistoryByPid[pid] = HeuristicsPaneHost.SnapshotItems().Select(x => x.Clone()).ToList();
             _filesystemHistoryByPid[pid] = FilesystemPaneHost.SnapshotItems().Select(x => x.Clone()).ToList();
             _relationsHistoryByPid[pid] = ProcessRelationsPaneHost.SnapshotItems().Select(x => x.Clone()).ToList();
+            _apiGraphHistoryByPid[pid] = _apiGraphRowsByKey.Values
+                .Select(x => new ApiCallGraphRowSnapshot
+                {
+                    ApiName = x.ApiName,
+                    SourcePid = x.SourcePid,
+                    TargetPid = x.TargetPid,
+                    ThreadId = x.ThreadId,
+                    Hits = x.Hits,
+                    LastSeenUtc = x.LastSeenUtc
+                })
+                .ToList();
         }
 
         private void RestoreIntelSessionState(int pid)
@@ -1532,11 +2350,33 @@ namespace SleepwalkerInterface
             IEnumerable<GroupedEventRow> rel = _relationsHistoryByPid.TryGetValue(pid, out var e)
                 ? e
                 : Array.Empty<GroupedEventRow>();
+            IEnumerable<ApiCallGraphRowSnapshot> apiGraph = _apiGraphHistoryByPid.TryGetValue(pid, out var f)
+                ? f
+                : Array.Empty<ApiCallGraphRowSnapshot>();
 
             EtwPaneHost.LoadHistory(CompactGroupsForMemory(etw, 48));
             HeuristicsPaneHost.LoadHistory(CompactGroupsForMemory(heur, 48));
             FilesystemPaneHost.LoadHistory(CompactGroupsForMemory(fs, 48));
             ProcessRelationsPaneHost.LoadHistory(CompactGroupsForMemory(rel, 48));
+            _apiGraphRowsByKey.Clear();
+            _apiGraphReasonByKey.Clear();
+            _apiGraphActionByKey.Clear();
+            _apiGraphDecodedByKey.Clear();
+            _apiMemorySignalsByPage.Clear();
+            foreach (ApiCallGraphRowSnapshot row in apiGraph)
+            {
+                string key = $"{row.SourcePid}|{row.TargetPid}|{row.ThreadId}|{row.ApiName}";
+                _apiGraphRowsByKey[key] = new ApiCallGraphRowSnapshot
+                {
+                    ApiName = row.ApiName,
+                    SourcePid = row.SourcePid,
+                    TargetPid = row.TargetPid,
+                    ThreadId = row.ThreadId,
+                    Hits = row.Hits,
+                    LastSeenUtc = row.LastSeenUtc
+                };
+            }
+            PublishApiGraphSnapshot();
             if (EtwPaneHost.ItemCount > 0)
             {
                 FindExplorerItem("ETW")?.PushPreviewValue(EtwPaneHost.TotalRawCount);
@@ -1558,7 +2398,7 @@ namespace SleepwalkerInterface
 
         private async Task RunPreflightAsync(int pid, bool userInitiated = false)
         {
-            SleepwalkerPreflightReport report = await Task.Run(() => SleepwalkerPreflight.Run(pid));
+            BlackbirdPreflightReport report = await Task.Run(() => BlackbirdPreflight.Run(pid));
             _lastPreflight = report;
             OutputCapture.AppendLine($"Preflight: {report.Summary}");
             DiagnosticsState.SetValue("Driver Service", report.DriverState);
@@ -1569,7 +2409,7 @@ namespace SleepwalkerInterface
             ApplyConnectivityStatus(report, userInitiated);
         }
 
-        private void ApplyConnectivityStatus(SleepwalkerPreflightReport report, bool userInitiated)
+        private void ApplyConnectivityStatus(BlackbirdPreflightReport report, bool userInitiated)
         {
             var issues = new List<string>();
 
@@ -1624,7 +2464,7 @@ namespace SleepwalkerInterface
                 ThemedMessageBox.Show(
                     this,
                     $"Could not fully connect to the driver/service uplink.\n\n{detail}",
-                    "Sleepwalker Connectivity",
+                    "Blackbird Connectivity",
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
             }
@@ -1645,11 +2485,11 @@ namespace SleepwalkerInterface
         private async void DriverStart_Click(object sender, RoutedEventArgs e)
         {
             string message = "";
-            bool ok = await Task.Run(() => SleepwalkerServiceControl.TryStart("sleepwlkr", TimeSpan.FromSeconds(8), out message));
+            bool ok = await Task.Run(() => BlackbirdServiceControl.TryStart("blackbird", TimeSpan.FromSeconds(8), out message));
             OutputCapture.AppendLine(message);
             if (!ok)
             {
-                StatusBlock.Text = "Status: Failed to start sleepwlkr";
+                StatusBlock.Text = "Status: Failed to start blackbird";
                 return;
             }
 
@@ -1664,7 +2504,7 @@ namespace SleepwalkerInterface
         {
             if (ThemedMessageBox.Show(
                     this,
-                    "Stop the kernel driver 'sleepwlkr'?",
+                    "Stop the kernel driver 'blackbird'?",
                     "Driver Stop",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning) != MessageBoxResult.Yes)
@@ -1674,9 +2514,9 @@ namespace SleepwalkerInterface
 
             StopBackendSession();
             string message = "";
-            bool ok = await Task.Run(() => SleepwalkerServiceControl.TryStop("sleepwlkr", TimeSpan.FromSeconds(8), out message));
+            bool ok = await Task.Run(() => BlackbirdServiceControl.TryStop("blackbird", TimeSpan.FromSeconds(8), out message));
             OutputCapture.AppendLine(message);
-            StatusBlock.Text = ok ? "Status: Driver stopped" : "Status: Failed to stop sleepwlkr";
+            StatusBlock.Text = ok ? "Status: Driver stopped" : "Status: Failed to stop blackbird";
             await RunPreflightAsync(TryGetPid(), userInitiated: true);
         }
 
@@ -1684,7 +2524,7 @@ namespace SleepwalkerInterface
         {
             StopBackendSession();
             string message = "";
-            bool ok = await Task.Run(() => SleepwalkerServiceControl.TryRestart("SleepwlkrController", TimeSpan.FromSeconds(10), out message));
+            bool ok = await Task.Run(() => BlackbirdServiceControl.TryRestart("BlackbirdController", TimeSpan.FromSeconds(10), out message));
             OutputCapture.AppendLine(message);
             if (!ok)
             {
@@ -1693,7 +2533,7 @@ namespace SleepwalkerInterface
             }
 
             await RunPreflightAsync(TryGetPid(), userInitiated: true);
-            StartBackendForPid(TryGetPid());
+            StartBackendForPid(TryGetPid(), _currentSession?.UseUsermodeHooks ?? false);
             if (_lastConnectivityIssueSignature == null)
             {
                 StatusBlock.Text = "Status: Controller restarted";

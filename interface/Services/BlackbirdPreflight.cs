@@ -1,9 +1,9 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
-    internal sealed class SleepwalkerPreflightReport
+    internal sealed class BlackbirdPreflightReport
     {
         public DateTime CheckedUtc { get; set; }
         public string DriverState { get; set; } = "Unknown";
@@ -31,50 +31,50 @@ namespace SleepwalkerInterface
         }
     }
 
-    internal static class SleepwalkerPreflight
+    internal static class BlackbirdPreflight
     {
-        public static SleepwalkerPreflightReport Run(int targetPid)
+        public static BlackbirdPreflightReport Run(int targetPid)
         {
-            var report = new SleepwalkerPreflightReport
+            var report = new BlackbirdPreflightReport
             {
                 CheckedUtc = DateTime.UtcNow,
-                DriverState = SleepwalkerServiceControl.QueryState("sleepwlkr"),
-                ControllerState = SleepwalkerServiceControl.QueryState("SleepwlkrController")
+                DriverState = BlackbirdServiceControl.QueryState("blackbird"),
+                ControllerState = BlackbirdServiceControl.QueryState("BlackbirdController")
             };
 
             IntPtr h = IntPtr.Zero;
             try
             {
-                if (!SleepwalkerNative.UseClientProtocol(null, 1500))
+                if (!BlackbirdNative.UseClientProtocol(null, 1500))
                 {
-                    throw SleepwalkerNative.LastError("UseClientProtocol failed");
+                    throw BlackbirdNative.LastError("UseClientProtocol failed");
                 }
 
-                h = SleepwalkerNative.OpenControlDevice();
+                h = BlackbirdNative.OpenControlDevice();
                 if (h == IntPtr.Zero || h == new IntPtr(-1))
                 {
-                    throw SleepwalkerNative.LastError("OpenControlDevice failed");
+                    throw BlackbirdNative.LastError("OpenControlDevice failed");
                 }
 
                 report.BrokerConnectOk = true;
                 DiagnosticsState.SetValue("BrokerHandle", "Open");
 
-                if (SleepwalkerNative.GetBrokerInfo(out uint caps, out bool tiEnabled))
+                if (BlackbirdNative.GetBrokerInfo(out uint caps, out bool tiEnabled))
                 {
                     report.BrokerCapabilities = caps;
                     report.ThreatIntelEnabled = tiEnabled;
-                    report.EtwUplinkCapable = (caps & SleepwalkerNative.IpcCapEtwTiUplink) != 0;
+                    report.EtwUplinkCapable = (caps & BlackbirdNative.IpcCapEtwTiUplink) != 0;
                 }
 
-                report.ThreatIntelEnableError = SleepwalkerNative.GetBrokerThreatIntelEnableError();
+                report.ThreatIntelEnableError = BlackbirdNative.GetBrokerThreatIntelEnableError();
 
                 if (targetPid > 0)
                 {
                     var pids = new[] { (uint)targetPid };
-                    _ = SleepwalkerNative.SetPids(h, pids, 1, SleepwalkerNative.StreamAll);
+                    _ = BlackbirdNative.SetPids(h, pids, 1, BlackbirdNative.StreamAll);
                 }
 
-                if (SleepwalkerNative.GetStats(h, out var stats, out _))
+                if (BlackbirdNative.GetStats(h, out var stats, out _))
                 {
                     report.DriverProxyOk = true;
                     DiagnosticsState.SetValue("DriverProxy", "OK");
@@ -89,7 +89,7 @@ namespace SleepwalkerInterface
 
                 if (report.EtwUplinkCapable)
                 {
-                    bool ok = SleepwalkerNative.GetEtwEvent(h, out _, 0);
+                    bool ok = BlackbirdNative.GetEtwEvent(h, out _, 0);
                     if (ok)
                     {
                         report.EtwUplinkQueryOk = true;
@@ -97,7 +97,7 @@ namespace SleepwalkerInterface
                     else
                     {
                         int err = Marshal.GetLastWin32Error();
-                        report.EtwUplinkQueryOk = err == SleepwalkerNative.ErrorNoMoreItems;
+                        report.EtwUplinkQueryOk = err == BlackbirdNative.ErrorNoMoreItems;
                     }
                 }
                 else
@@ -113,7 +113,7 @@ namespace SleepwalkerInterface
             {
                 if (h != IntPtr.Zero && h != new IntPtr(-1))
                 {
-                    _ = SleepwalkerNative.CloseControlDevice(h);
+                    _ = BlackbirdNative.CloseControlDevice(h);
                 }
             }
 

@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json.Serialization;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     internal sealed class IoctlParsedEvent
     {
@@ -580,6 +582,7 @@ namespace SleepwalkerInterface
                 7 => "Detection",
                 8 => "ThreatIntel",
                 9 => "Socket",
+                10 => "UserHook",
                 _ => "Unknown"
             };
         }
@@ -708,27 +711,97 @@ namespace SleepwalkerInterface
         public int PendingStatusUiQueue { get; set; }
     }
 
-    internal sealed class GroupedEventDetailRow
+    internal sealed class GroupedEventDetailRow : INotifyPropertyChanged
     {
+        private DateTime _timestampUtc;
+        private string _event = "";
+        private string _severity = "";
+        private string _detection = "";
+        private string _source = "";
+        private string _actor = "";
+        private string _target = "";
+        private uint _actorPid;
+        private uint _targetPid;
         private string _details = "";
         private Dictionary<string, string>? _detailFields;
 
-        public DateTime TimestampUtc { get; set; }
-        public string Event { get; set; } = "";
-        public string Severity { get; set; } = "";
-        public string Detection { get; set; } = "";
-        public string Source { get; set; } = "";
-        public string Actor { get; set; } = "";
-        public string Target { get; set; } = "";
-        public uint ActorPid { get; set; }
-        public uint TargetPid { get; set; }
+        public DateTime TimestampUtc
+        {
+            get => _timestampUtc;
+            set => SetField(ref _timestampUtc, value);
+        }
+
+        public string Event
+        {
+            get => _event;
+            set => SetField(ref _event, value ?? string.Empty);
+        }
+
+        public string Severity
+        {
+            get => _severity;
+            set => SetField(ref _severity, value ?? string.Empty);
+        }
+
+        public string Detection
+        {
+            get => _detection;
+            set => SetField(ref _detection, value ?? string.Empty);
+        }
+
+        public string Source
+        {
+            get => _source;
+            set => SetField(ref _source, value ?? string.Empty);
+        }
+
+        public string Actor
+        {
+            get => _actor;
+            set => SetField(ref _actor, value ?? string.Empty);
+        }
+
+        public string Target
+        {
+            get => _target;
+            set => SetField(ref _target, value ?? string.Empty);
+        }
+
+        public uint ActorPid
+        {
+            get => _actorPid;
+            set => SetField(ref _actorPid, value);
+        }
+
+        public uint TargetPid
+        {
+            get => _targetPid;
+            set => SetField(ref _targetPid, value);
+        }
+
         public string Details
         {
             get => _details;
             set
             {
+                if (string.Equals(_details, value, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
                 _details = value ?? string.Empty;
                 _detailFields = null;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(EventPid));
+                OnPropertyChanged(nameof(EventTid));
+                OnPropertyChanged(nameof(Task));
+                OnPropertyChanged(nameof(Opcode));
+                OnPropertyChanged(nameof(EventId));
+                OnPropertyChanged(nameof(Flags));
+                OnPropertyChanged(nameof(Access));
+                OnPropertyChanged(nameof(AgeMs));
+                OnPropertyChanged(nameof(Reason));
+                OnPropertyChanged(nameof(FilterText));
             }
         }
 
@@ -894,16 +967,70 @@ namespace SleepwalkerInterface
 
             return parsed;
         }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+        {
+            if (EqualityComparer<T>.Default.Equals(field, value))
+            {
+                return false;
+            }
+
+            field = value;
+            OnPropertyChanged(propertyName);
+            return true;
+        }
+
+        private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 
-    internal sealed class GroupedEventRow
+    internal sealed class GroupedEventRow : INotifyPropertyChanged
     {
-        public DateTime LastSeenUtc { get; set; }
-        public string Event { get; set; } = "";
-        public string Severity { get; set; } = "";
-        public string Detection { get; set; } = "";
-        public int Hits { get; set; }
-        public string GroupKey { get; set; } = "";
+        private DateTime _lastSeenUtc;
+        private string _event = "";
+        private string _severity = "";
+        private string _detection = "";
+        private int _hits;
+        private string _groupKey = "";
+
+        public DateTime LastSeenUtc
+        {
+            get => _lastSeenUtc;
+            set => SetField(ref _lastSeenUtc, value);
+        }
+
+        public string Event
+        {
+            get => _event;
+            set => SetField(ref _event, value ?? string.Empty);
+        }
+
+        public string Severity
+        {
+            get => _severity;
+            set => SetField(ref _severity, value ?? string.Empty);
+        }
+
+        public string Detection
+        {
+            get => _detection;
+            set => SetField(ref _detection, value ?? string.Empty);
+        }
+
+        public int Hits
+        {
+            get => _hits;
+            set => SetField(ref _hits, value);
+        }
+
+        public string GroupKey
+        {
+            get => _groupKey;
+            set => SetField(ref _groupKey, value ?? string.Empty);
+        }
+
         public List<GroupedEventDetailRow> Details { get; set; } = new();
 
         public GroupedEventRow Clone()
@@ -919,5 +1046,29 @@ namespace SleepwalkerInterface
                 Details = Details.Select(x => x.Clone()).ToList()
             };
         }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+        {
+            if (EqualityComparer<T>.Default.Equals(field, value))
+            {
+                return false;
+            }
+
+            field = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            return true;
+        }
+    }
+
+    internal sealed class ApiCallGraphRowSnapshot
+    {
+        public string ApiName { get; set; } = "";
+        public uint SourcePid { get; set; }
+        public uint TargetPid { get; set; }
+        public uint ThreadId { get; set; }
+        public int Hits { get; set; }
+        public DateTime LastSeenUtc { get; set; }
     }
 }

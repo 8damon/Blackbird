@@ -1,6 +1,6 @@
 using System;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public sealed class TelemetryEvent
     {

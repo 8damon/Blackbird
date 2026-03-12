@@ -3,7 +3,7 @@ using System.Globalization;
 using System.Linq;
 using System.Windows;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public partial class LoadingWindow : Window
     {

@@ -7,7 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public partial class HeuristicsPane : UserControl
     {
@@ -16,7 +16,7 @@ namespace SleepwalkerInterface
         public event RoutedEventHandler? CloseRequested;
         public event RoutedEventHandler? InspectRequested;
 
-        private readonly ObservableCollection<GroupedEventRow> _items = new();
+        private readonly BulkObservableCollection<GroupedEventRow> _items = new();
         private readonly Dictionary<string, GroupedEventRow> _byKey = new(StringComparer.Ordinal);
         private int _totalRawCount;
 
@@ -32,6 +32,22 @@ namespace SleepwalkerInterface
         }
 
         internal void PushHeuristic(HeuristicEventView item)
+        {
+            PushHeuristics(new[] { item });
+        }
+
+        internal void PushHeuristics(IEnumerable<HeuristicEventView> items)
+        {
+            foreach (HeuristicEventView item in items)
+            {
+                PushHeuristicCore(item);
+            }
+
+            UpdateSummary();
+            UpdateNoDataOverlay();
+        }
+
+        private void PushHeuristicCore(HeuristicEventView item)
         {
             DateTime now = item.LastSeenUtc == default ? item.TimestampUtc : item.LastSeenUtc;
             string eventName = string.IsNullOrWhiteSpace(item.EventName) ? "heuristic" : item.EventName;
@@ -67,12 +83,6 @@ namespace SleepwalkerInterface
                 if (existing.Details.Count > 4000)
                 {
                     existing.Details.RemoveAt(0);
-                }
-
-                int idx = _items.IndexOf(existing);
-                if (idx >= 0)
-                {
-                    _items[idx] = existing;
                 }
             }
             else
@@ -112,9 +122,6 @@ namespace SleepwalkerInterface
                 _items.RemoveAt(0);
                 _byKey.Remove(evictKey);
             }
-
-            UpdateSummary();
-            UpdateNoDataOverlay();
         }
 
         internal IReadOnlyList<GroupedEventRow> SnapshotItems()
@@ -129,6 +136,7 @@ namespace SleepwalkerInterface
             _byKey.Clear();
             _totalRawCount = 0;
 
+            var clones = new List<GroupedEventRow>();
             foreach (GroupedEventRow source in groups)
             {
                 GroupedEventRow clone = source.Clone();
@@ -139,11 +147,12 @@ namespace SleepwalkerInterface
                 {
                     clone.Details[i].Event = NormalizeEventLabel(clone.Details[i].Event);
                 }
-                _items.Add(clone);
+                clones.Add(clone);
                 _byKey[clone.GroupKey] = clone;
                 _totalRawCount += clone.Hits;
             }
 
+            _items.ReplaceAll(clones);
             UpdateSummary();
             UpdateNoDataOverlay();
         }
@@ -173,7 +182,6 @@ namespace SleepwalkerInterface
                     .Take(keep)
                     .OrderBy(x => x.TimestampUtc)
                     .ToList();
-                _items[i] = row;
                 _byKey[row.GroupKey] = row;
             }
         }

@@ -5,7 +5,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public sealed class EventLogEntryOpenRequestedEventArgs : EventArgs
     {

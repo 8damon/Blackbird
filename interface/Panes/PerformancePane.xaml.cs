@@ -13,7 +13,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public partial class PerformancePane : UserControl
     {
@@ -378,7 +378,23 @@ namespace SleepwalkerInterface
 
         public void PushThreadLifecycle(ThreadLifecycleEventSample sample)
         {
-            _threadLifecycleHistory.Add(CloneThreadLifecycleEvent(sample));
+            PushThreadLifecycles(new[] { sample });
+        }
+
+        public void PushThreadLifecycles(IEnumerable<ThreadLifecycleEventSample> samples)
+        {
+            bool appended = false;
+            foreach (ThreadLifecycleEventSample sample in samples)
+            {
+                _threadLifecycleHistory.Add(CloneThreadLifecycleEvent(sample));
+                appended = true;
+            }
+
+            if (!appended)
+            {
+                return;
+            }
+
             if (_threadLifecycleHistory.Count > 40_000)
             {
                 _threadLifecycleHistory.RemoveRange(0, _threadLifecycleHistory.Count - 40_000);

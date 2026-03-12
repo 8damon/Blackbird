@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Threading;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     [SupportedOSPlatform("windows")]
     public sealed class PerformanceSampler

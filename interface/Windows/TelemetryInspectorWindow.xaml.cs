@@ -8,7 +8,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Data;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public partial class TelemetryInspectorWindow : Window
     {

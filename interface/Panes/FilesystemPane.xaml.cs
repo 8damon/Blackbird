@@ -6,16 +6,17 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public partial class FilesystemPane : UserControl
     {
         public event RoutedEventHandler? CloseRequested;
         public event RoutedEventHandler? InspectRequested;
 
-        private readonly ObservableCollection<GroupedEventRow> _items = new();
+        private readonly BulkObservableCollection<GroupedEventRow> _items = new();
         private readonly List<GroupedEventRow> _allItems = new();
         private readonly Dictionary<string, GroupedEventRow> _byKey = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, GroupedEventRow> _visibleByKey = new(StringComparer.Ordinal);
         private int _totalRawCount;
         private string _operationFilter = "ALL";
         private string _searchFilter = string.Empty;
@@ -48,6 +49,22 @@ namespace SleepwalkerInterface
         }
 
         internal void PushFileEvent(IoctlParsedEvent record)
+        {
+            PushFileEvents(new[] { record });
+        }
+
+        internal void PushFileEvents(IEnumerable<IoctlParsedEvent> records)
+        {
+            foreach (IoctlParsedEvent record in records)
+            {
+                PushFileEventCore(record);
+            }
+
+            UpdateSummary();
+            UpdateNoDataOverlay();
+        }
+
+        private void PushFileEventCore(IoctlParsedEvent record)
         {
             DateTime now = DateTime.UtcNow;
             string operation = DescribeOperation(record.FileOperation);
@@ -88,6 +105,8 @@ namespace SleepwalkerInterface
                 {
                     existing.Details.RemoveAt(0);
                 }
+
+                SyncVisibleRow(existing);
             }
             else
             {
@@ -118,18 +137,20 @@ namespace SleepwalkerInterface
                 };
                 _allItems.Add(row);
                 _byKey[key] = row;
+                SyncVisibleRow(row);
             }
 
             while (_allItems.Count > 2000)
             {
-                string evictKey = _allItems[0].GroupKey;
+                GroupedEventRow evicted = _allItems[0];
+                string evictKey = evicted.GroupKey;
                 _allItems.RemoveAt(0);
                 _byKey.Remove(evictKey);
+                if (_visibleByKey.Remove(evictKey))
+                {
+                    _items.Remove(evicted);
+                }
             }
-
-            ApplyFilters();
-            UpdateSummary();
-            UpdateNoDataOverlay();
         }
 
         internal IReadOnlyList<GroupedEventRow> SnapshotItems()
@@ -143,6 +164,7 @@ namespace SleepwalkerInterface
             _items.Clear();
             _allItems.Clear();
             _byKey.Clear();
+            _visibleByKey.Clear();
             _totalRawCount = 0;
 
             foreach (GroupedEventRow source in groups)
@@ -165,6 +187,7 @@ namespace SleepwalkerInterface
             _items.Clear();
             _allItems.Clear();
             _byKey.Clear();
+            _visibleByKey.Clear();
             _totalRawCount = 0;
             UpdateSummary();
             UpdateNoDataOverlay();
@@ -186,7 +209,6 @@ namespace SleepwalkerInterface
                     .Take(keep)
                     .OrderBy(x => x.TimestampUtc)
                     .ToList();
-                _allItems[i] = row;
                 _byKey[row.GroupKey] = row;
             }
             ApplyFilters();
@@ -194,7 +216,8 @@ namespace SleepwalkerInterface
 
         private void ApplyFilters()
         {
-            _items.Clear();
+            var visibleItems = new List<GroupedEventRow>();
+            _visibleByKey.Clear();
             foreach (GroupedEventRow row in _allItems)
             {
                 if (!MatchesFilters(row))
@@ -202,8 +225,35 @@ namespace SleepwalkerInterface
                     continue;
                 }
 
-                _items.Add(row);
+                visibleItems.Add(row);
+                _visibleByKey[row.GroupKey] = row;
             }
+
+            _items.ReplaceAll(visibleItems);
+        }
+
+        private void SyncVisibleRow(GroupedEventRow row)
+        {
+            bool matches = MatchesFilters(row);
+            bool isVisible = _visibleByKey.ContainsKey(row.GroupKey);
+
+            if (matches)
+            {
+                if (!isVisible)
+                {
+                    _items.Add(row);
+                    _visibleByKey[row.GroupKey] = row;
+                }
+                return;
+            }
+
+            if (!isVisible)
+            {
+                return;
+            }
+
+            _visibleByKey.Remove(row.GroupKey);
+            _items.Remove(row);
         }
 
         private bool MatchesFilters(GroupedEventRow row)
@@ -261,15 +311,15 @@ namespace SleepwalkerInterface
         {
             return operation switch
             {
-                SleepwalkerNative.FileOperationCreate => "CREATE",
-                SleepwalkerNative.FileOperationRead => "READ",
-                SleepwalkerNative.FileOperationWrite => "WRITE",
-                SleepwalkerNative.FileOperationClose => "CLOSE",
-                SleepwalkerNative.FileOperationCleanup => "CLEANUP",
-                SleepwalkerNative.FileOperationSetInformation => "SET_INFORMATION",
-                SleepwalkerNative.FileOperationQueryInformation => "QUERY_INFORMATION",
-                SleepwalkerNative.FileOperationDirectoryControl => "DIRECTORY_CONTROL",
-                SleepwalkerNative.FileOperationFsControl => "FS_CONTROL",
+                BlackbirdNative.FileOperationCreate => "CREATE",
+                BlackbirdNative.FileOperationRead => "READ",
+                BlackbirdNative.FileOperationWrite => "WRITE",
+                BlackbirdNative.FileOperationClose => "CLOSE",
+                BlackbirdNative.FileOperationCleanup => "CLEANUP",
+                BlackbirdNative.FileOperationSetInformation => "SET_INFORMATION",
+                BlackbirdNative.FileOperationQueryInformation => "QUERY_INFORMATION",
+                BlackbirdNative.FileOperationDirectoryControl => "DIRECTORY_CONTROL",
+                BlackbirdNative.FileOperationFsControl => "FS_CONTROL",
                 _ => "UNKNOWN"
             };
         }
@@ -277,9 +327,9 @@ namespace SleepwalkerInterface
         private static string DetermineSeverityLabel(IoctlParsedEvent record)
         {
             bool isWriteLike =
-                record.FileOperation == SleepwalkerNative.FileOperationWrite ||
-                record.FileOperation == SleepwalkerNative.FileOperationSetInformation ||
-                record.FileOperation == SleepwalkerNative.FileOperationFsControl;
+                record.FileOperation == BlackbirdNative.FileOperationWrite ||
+                record.FileOperation == BlackbirdNative.FileOperationSetInformation ||
+                record.FileOperation == BlackbirdNative.FileOperationFsControl;
 
             if (record.FileStatus != 0 && record.FileStatus != 0x00000000UL)
             {

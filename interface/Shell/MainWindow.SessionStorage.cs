@@ -5,12 +5,12 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public partial class MainWindow
     {
         private readonly string _sessionCacheDirectory =
-            Path.Combine(Path.GetTempPath(), "SleepwalkerInterface", "session-cache");
+            Path.Combine(Path.GetTempPath(), "BlackbirdInterface", "session-cache");
 
         private string? _sessionFilePath;
 
@@ -27,27 +27,23 @@ namespace SleepwalkerInterface
 
         private SessionFileTab BuildTabSnapshot(ProcessSessionTab tab)
         {
-            EnsureSessionMaterialized(tab);
-
-            if (TryLoadTabSnapshot(tab, out SessionFileTab? persistedSnapshot) &&
-                persistedSnapshot != null &&
-                tab.Events.Count == 0 &&
-                tab.PerformanceHistory.Count == 0 &&
-                tab.ThreadLifecycleHistory.Count == 0 &&
-                !_etwHistoryByPid.ContainsKey(tab.Pid) &&
-                !_heuristicsHistoryByPid.ContainsKey(tab.Pid) &&
-                !_filesystemHistoryByPid.ContainsKey(tab.Pid) &&
-                !_relationsHistoryByPid.ContainsKey(tab.Pid))
+            bool hasInlineData = HasInlineSessionData(tab);
+            if (!hasInlineData &&
+                TryLoadTabSnapshot(tab, out SessionFileTab? persistedSnapshot) &&
+                persistedSnapshot != null)
             {
                 persistedSnapshot.Title = NormalizeSessionTitle(tab.Title);
                 persistedSnapshot.CaptureStartUtc = tab.CaptureStartUtc;
                 persistedSnapshot.ViewDurationSeconds = tab.ViewDurationSeconds;
                 persistedSnapshot.ViewStartSeconds = tab.ViewStartSeconds;
                 persistedSnapshot.LaneFocusKey = tab.LaneFocusKey;
+                persistedSnapshot.UseUsermodeHooks = tab.UseUsermodeHooks;
                 persistedSnapshot.TargetExited = tab.TargetExited;
                 persistedSnapshot.OfflineSnapshot = tab.OfflineSnapshot;
                 return persistedSnapshot;
             }
+
+            EnsureSessionMaterialized(tab);
 
             List<GroupedEventRow> etw = _etwHistoryByPid.TryGetValue(tab.Pid, out var etwRows)
                 ? etwRows.Select(x => x.Clone()).ToList()
@@ -61,6 +57,17 @@ namespace SleepwalkerInterface
             List<GroupedEventRow> relations = _relationsHistoryByPid.TryGetValue(tab.Pid, out var relRows)
                 ? relRows.Select(x => x.Clone()).ToList()
                 : new List<GroupedEventRow>();
+            List<ApiCallGraphRowSnapshot> apiGraph = _apiGraphHistoryByPid.TryGetValue(tab.Pid, out var apiRows)
+                ? apiRows.Select(x => new ApiCallGraphRowSnapshot
+                {
+                    ApiName = x.ApiName,
+                    SourcePid = x.SourcePid,
+                    TargetPid = x.TargetPid,
+                    ThreadId = x.ThreadId,
+                    Hits = x.Hits,
+                    LastSeenUtc = x.LastSeenUtc
+                }).ToList()
+                : new List<ApiCallGraphRowSnapshot>();
 
             return new SessionFileTab
             {
@@ -70,15 +77,17 @@ namespace SleepwalkerInterface
                 ViewDurationSeconds = tab.ViewDurationSeconds,
                 ViewStartSeconds = tab.ViewStartSeconds,
                 LaneFocusKey = tab.LaneFocusKey,
+                UseUsermodeHooks = tab.UseUsermodeHooks,
                 TargetExited = tab.TargetExited,
                 OfflineSnapshot = tab.OfflineSnapshot,
-                Events = tab.Events.Select(CloneTelemetryEvent).ToList(),
+                Events = EnumerateSessionEvents(tab).Select(CloneTelemetryEvent).ToList(),
                 PerformanceHistory = tab.PerformanceHistory.Select(ClonePerformanceSample).ToList(),
                 ThreadLifecycleHistory = tab.ThreadLifecycleHistory.Select(CloneThreadLifecycleEvent).ToList(),
                 EtwGroups = etw,
                 HeuristicsGroups = heuristics,
                 FilesystemGroups = filesystem,
-                ProcessRelationsGroups = relations
+                ProcessRelationsGroups = relations,
+                ApiGraphRows = apiGraph
             };
         }
 
@@ -109,6 +118,7 @@ namespace SleepwalkerInterface
             _heuristicsHistoryByPid.Remove(tab.Pid);
             _filesystemHistoryByPid.Remove(tab.Pid);
             _relationsHistoryByPid.Remove(tab.Pid);
+            _apiGraphHistoryByPid.Remove(tab.Pid);
         }
 
         private void EnsureSessionMaterialized(ProcessSessionTab tab)
@@ -119,7 +129,8 @@ namespace SleepwalkerInterface
                                  _etwHistoryByPid.ContainsKey(tab.Pid) ||
                                  _heuristicsHistoryByPid.ContainsKey(tab.Pid) ||
                                  _filesystemHistoryByPid.ContainsKey(tab.Pid) ||
-                                 _relationsHistoryByPid.ContainsKey(tab.Pid);
+                                 _relationsHistoryByPid.ContainsKey(tab.Pid) ||
+                                 _apiGraphHistoryByPid.ContainsKey(tab.Pid);
             if (hasInlineData)
             {
                 return;
@@ -142,11 +153,12 @@ namespace SleepwalkerInterface
             tab.ViewDurationSeconds = snapshot.ViewDurationSeconds;
             tab.ViewStartSeconds = snapshot.ViewStartSeconds;
             tab.LaneFocusKey = snapshot.LaneFocusKey;
+            tab.UseUsermodeHooks = snapshot.UseUsermodeHooks;
             tab.TargetExited = snapshot.TargetExited;
             tab.OfflineSnapshot = snapshot.OfflineSnapshot;
 
             tab.Events.Clear();
-            tab.Events.AddRange(snapshot.Events.Select(CloneTelemetryEvent));
+            tab.Events.AddRange(snapshot.Events);
 
             tab.PerformanceHistory.Clear();
             tab.PerformanceHistory.AddRange(snapshot.PerformanceHistory.Select(ClonePerformanceSample));
@@ -157,6 +169,17 @@ namespace SleepwalkerInterface
             _heuristicsHistoryByPid[tab.Pid] = CompactGroupsForMemory(snapshot.HeuristicsGroups, 48);
             _filesystemHistoryByPid[tab.Pid] = CompactGroupsForMemory(snapshot.FilesystemGroups, 48);
             _relationsHistoryByPid[tab.Pid] = CompactGroupsForMemory(snapshot.ProcessRelationsGroups, 48);
+            _apiGraphHistoryByPid[tab.Pid] = snapshot.ApiGraphRows
+                .Select(x => new ApiCallGraphRowSnapshot
+                {
+                    ApiName = x.ApiName,
+                    SourcePid = x.SourcePid,
+                    TargetPid = x.TargetPid,
+                    ThreadId = x.ThreadId,
+                    Hits = x.Hits,
+                    LastSeenUtc = x.LastSeenUtc
+                })
+                .ToList();
         }
 
         private bool TryLoadTabSnapshot(ProcessSessionTab tab, out SessionFileTab? snapshot)
@@ -171,6 +194,29 @@ namespace SleepwalkerInterface
             snapshot = archive.Tabs.FirstOrDefault(x => x.Pid == tab.Pid) ??
                        archive.Tabs.FirstOrDefault();
             return snapshot != null;
+        }
+
+        private bool HasInlineSessionData(ProcessSessionTab tab)
+        {
+            return (ReferenceEquals(tab, _currentSession) && _allEvents.Count > 0) ||
+                   tab.Events.Count > 0 ||
+                   tab.PerformanceHistory.Count > 0 ||
+                   tab.ThreadLifecycleHistory.Count > 0 ||
+                   _etwHistoryByPid.ContainsKey(tab.Pid) ||
+                   _heuristicsHistoryByPid.ContainsKey(tab.Pid) ||
+                   _filesystemHistoryByPid.ContainsKey(tab.Pid) ||
+                   _relationsHistoryByPid.ContainsKey(tab.Pid) ||
+                   _apiGraphHistoryByPid.ContainsKey(tab.Pid);
+        }
+
+        private IEnumerable<TelemetryEvent> EnumerateSessionEvents(ProcessSessionTab tab)
+        {
+            if (ReferenceEquals(tab, _currentSession))
+            {
+                return _allEvents;
+            }
+
+            return tab.Events;
         }
 
         private bool TryGetIntelDetailsFromBackingStore(
@@ -280,6 +326,7 @@ namespace SleepwalkerInterface
                 _heuristicsHistoryByPid.Clear();
                 _filesystemHistoryByPid.Clear();
                 _relationsHistoryByPid.Clear();
+                _apiGraphHistoryByPid.Clear();
                 _currentSession = null;
             }
 
@@ -298,6 +345,7 @@ namespace SleepwalkerInterface
                 tab.ViewDurationSeconds = incoming.ViewDurationSeconds;
                 tab.ViewStartSeconds = incoming.ViewStartSeconds;
                 tab.LaneFocusKey = incoming.LaneFocusKey;
+                tab.UseUsermodeHooks = incoming.UseUsermodeHooks;
                 tab.TargetExited = incoming.TargetExited;
                 tab.OfflineSnapshot = true;
 
@@ -318,15 +366,17 @@ namespace SleepwalkerInterface
                             ViewDurationSeconds = incoming.ViewDurationSeconds,
                             ViewStartSeconds = incoming.ViewStartSeconds,
                             LaneFocusKey = incoming.LaneFocusKey,
+                            UseUsermodeHooks = incoming.UseUsermodeHooks,
                             TargetExited = incoming.TargetExited,
                             OfflineSnapshot = true,
-                            Events = incoming.Events.Select(CloneTelemetryEvent).ToList(),
-                            PerformanceHistory = incoming.PerformanceHistory.Select(ClonePerformanceSample).ToList(),
-                            ThreadLifecycleHistory = incoming.ThreadLifecycleHistory.Select(CloneThreadLifecycleEvent).ToList(),
-                            EtwGroups = incoming.EtwGroups.Select(x => x.Clone()).ToList(),
-                            HeuristicsGroups = incoming.HeuristicsGroups.Select(x => x.Clone()).ToList(),
-                            FilesystemGroups = incoming.FilesystemGroups.Select(x => x.Clone()).ToList(),
-                            ProcessRelationsGroups = incoming.ProcessRelationsGroups.Select(x => x.Clone()).ToList()
+                            Events = incoming.Events,
+                            PerformanceHistory = incoming.PerformanceHistory,
+                            ThreadLifecycleHistory = incoming.ThreadLifecycleHistory,
+                            EtwGroups = incoming.EtwGroups,
+                            HeuristicsGroups = incoming.HeuristicsGroups,
+                            FilesystemGroups = incoming.FilesystemGroups,
+                            ProcessRelationsGroups = incoming.ProcessRelationsGroups,
+                            ApiGraphRows = incoming.ApiGraphRows
                         }
                     }
                 });
@@ -338,6 +388,7 @@ namespace SleepwalkerInterface
                 _heuristicsHistoryByPid.Remove(tab.Pid);
                 _filesystemHistoryByPid.Remove(tab.Pid);
                 _relationsHistoryByPid.Remove(tab.Pid);
+                _apiGraphHistoryByPid.Remove(tab.Pid);
             }
 
             ProcessSessionTab? toSelect = _processTabs.FirstOrDefault(x => x.Pid == archive.ActivePid) ??
@@ -357,11 +408,11 @@ namespace SleepwalkerInterface
         {
             var dialog = new SaveFileDialog
             {
-                Filter = "Sleepwalker Session Archive (*.swlkr;*.sleepwlkr)|*.swlkr;*.sleepwlkr|All files (*.*)|*.*",
+                Filter = "Blackbird Session Archive (*.swlkr;*.blackbird)|*.swlkr;*.blackbird|All files (*.*)|*.*",
                 DefaultExt = ".swlkr",
                 AddExtension = true,
                 OverwritePrompt = true,
-                FileName = $"sleepwalker-{DateTime.UtcNow:yyyyMMdd-HHmmss}.swlkr"
+                FileName = $"blackbird-{DateTime.UtcNow:yyyyMMdd-HHmmss}.swlkr"
             };
 
             if (!string.IsNullOrWhiteSpace(_sessionFilePath))
@@ -396,12 +447,12 @@ namespace SleepwalkerInterface
                     "SIEM CSV (*.csv)|*.csv|" +
                     "CEF (*.cef)|*.cef|" +
                     "ATT&CK-ready CSV (*.attack.csv)|*.attack.csv|" +
-                    "Sleepwalker Session Archive (*.swlkr;*.sleepwlkr)|*.swlkr;*.sleepwlkr|" +
+                    "Blackbird Session Archive (*.swlkr;*.blackbird)|*.swlkr;*.blackbird|" +
                     "All files (*.*)|*.*",
                 DefaultExt = ".jsonl",
                 AddExtension = true,
                 OverwritePrompt = true,
-                FileName = $"sleepwalker-export-{DateTime.UtcNow:yyyyMMdd-HHmmss}.jsonl"
+                FileName = $"blackbird-export-{DateTime.UtcNow:yyyyMMdd-HHmmss}.jsonl"
             };
 
             if (dialog.ShowDialog(this) != true)
@@ -469,7 +520,7 @@ namespace SleepwalkerInterface
         {
             var dialog = new OpenFileDialog
             {
-                Filter = "Sleepwalker Session Archive (*.swlkr;*.sleepwlkr)|*.swlkr;*.sleepwlkr|All files (*.*)|*.*",
+                Filter = "Blackbird Session Archive (*.swlkr;*.blackbird)|*.swlkr;*.blackbird|All files (*.*)|*.*",
                 CheckFileExists = true,
                 Multiselect = false
             };
@@ -489,7 +540,7 @@ namespace SleepwalkerInterface
         {
             var dialog = new OpenFileDialog
             {
-                Filter = "Sleepwalker Session Archive (*.swlkr;*.sleepwlkr)|*.swlkr;*.sleepwlkr|All files (*.*)|*.*",
+                Filter = "Blackbird Session Archive (*.swlkr;*.blackbird)|*.swlkr;*.blackbird|All files (*.*)|*.*",
                 CheckFileExists = true,
                 Multiselect = false
             };

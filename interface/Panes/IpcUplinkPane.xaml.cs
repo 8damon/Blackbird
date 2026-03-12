@@ -7,7 +7,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public partial class IpcUplinkPane : UserControl
     {

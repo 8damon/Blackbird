@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public partial class DiagnosticsWindow : Window
     {

@@ -7,7 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public partial class EtwPane : UserControl
     {
@@ -16,7 +16,7 @@ namespace SleepwalkerInterface
         public event RoutedEventHandler? CloseRequested;
         public event RoutedEventHandler? InspectRequested;
 
-        private readonly ObservableCollection<GroupedEventRow> _items = new();
+        private readonly BulkObservableCollection<GroupedEventRow> _items = new();
         private readonly Dictionary<string, GroupedEventRow> _byKey = new(StringComparer.Ordinal);
         private int _totalRawCount;
         private bool _hasThreatIntelEvents;
@@ -35,13 +35,29 @@ namespace SleepwalkerInterface
 
         internal void PushEvent(BrokerEtwEventView entry)
         {
+            PushEvents(new[] { entry });
+        }
+
+        internal void PushEvents(IEnumerable<BrokerEtwEventView> entries)
+        {
+            foreach (BrokerEtwEventView entry in entries)
+            {
+                PushEventCore(entry);
+            }
+
+            UpdateSummary();
+            UpdateNoDataOverlay();
+        }
+
+        private void PushEventCore(BrokerEtwEventView entry)
+        {
             DateTime now = entry.LastSeenUtc == default ? entry.TimestampUtc : entry.LastSeenUtc;
             string eventName = entry.Source.Equals("ThreatIntel", StringComparison.OrdinalIgnoreCase)
                 ? $"TI/{entry.EventName}"
                 : entry.EventName;
             string severity = EventDetailFormatting.SeverityLabel(entry.Severity);
             string detection = BuildDetectionLabel(entry);
-            string source = string.IsNullOrWhiteSpace(entry.Source) ? "Sleepwalker" : entry.Source;
+            string source = string.IsNullOrWhiteSpace(entry.Source) ? "Blackbird" : entry.Source;
             string actor = ProcessIdentityResolver.Describe(entry.ActorPid);
             string target = ProcessIdentityResolver.Describe(entry.TargetPid);
             string detailText = entry.Details;
@@ -75,12 +91,6 @@ namespace SleepwalkerInterface
                 if (existing.Details.Count > 4000)
                 {
                     existing.Details.RemoveAt(0);
-                }
-
-                int idx = _items.IndexOf(existing);
-                if (idx >= 0)
-                {
-                    _items[idx] = existing;
                 }
             }
             else
@@ -121,8 +131,6 @@ namespace SleepwalkerInterface
                 _byKey.Remove(evictKey);
             }
 
-            UpdateSummary();
-            UpdateNoDataOverlay();
         }
 
         internal IReadOnlyList<GroupedEventRow> SnapshotItems()
@@ -138,12 +146,13 @@ namespace SleepwalkerInterface
             _totalRawCount = 0;
             _hasThreatIntelEvents = false;
 
+            var clones = new List<GroupedEventRow>();
             foreach (GroupedEventRow source in groups)
             {
                 GroupedEventRow clone = source.Clone();
                 clone.Hits = Math.Max(1, clone.Hits);
                 clone.Details = clone.Details.OrderBy(x => x.TimestampUtc).ToList();
-                _items.Add(clone);
+                clones.Add(clone);
                 _byKey[clone.GroupKey] = clone;
                 _totalRawCount += clone.Hits;
                 if (clone.Details.Any(x => x.Source.Equals("ThreatIntel", StringComparison.OrdinalIgnoreCase)))
@@ -152,6 +161,7 @@ namespace SleepwalkerInterface
                 }
             }
 
+            _items.ReplaceAll(clones);
             UpdateSummary();
             UpdateNoDataOverlay();
         }
@@ -182,7 +192,6 @@ namespace SleepwalkerInterface
                     .Take(keep)
                     .OrderBy(x => x.TimestampUtc)
                     .ToList();
-                _items[i] = row;
                 _byKey[row.GroupKey] = row;
             }
         }

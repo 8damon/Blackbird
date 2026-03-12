@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     internal static class EventDetailsParsing
     {

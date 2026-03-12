@@ -4,12 +4,15 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
-    internal sealed class SleepwalkerBackendSession : IDisposable
+    internal sealed class BlackbirdBackendSession : IDisposable
     {
         private readonly int _targetPid;
         private readonly uint _streamMask;
+        private readonly bool _useUsermodeHooks;
+        private readonly IntPtr _seedIoctlHandle;
+        private readonly IntPtr _seedEtwHandle;
         private readonly CancellationTokenSource _cts = new();
 
         private Task? _ioctlTask;
@@ -31,27 +34,56 @@ namespace SleepwalkerInterface
         private long _lastStatsEtwEvents;
 
         public event Action<IoctlParsedEvent>? IoctlEvent;
-        public event Action<SleepwalkerNative.SwIpcEtwEvent>? EtwEvent;
+        public event Action<BlackbirdNative.BkIpcEtwEvent>? EtwEvent;
         public event Action<BackendStatsView>? Stats;
         public event Action<BackendIpcDiagnosticsView>? IpcDiagnostics;
         public event Action<string>? Status;
 
         public int TargetPid => _targetPid;
 
-        private SleepwalkerBackendSession(int targetPid, uint streamMask)
+        private BlackbirdBackendSession(int targetPid, uint streamMask, bool useUsermodeHooks,
+            IntPtr seedIoctlHandle = default, IntPtr seedEtwHandle = default)
         {
             _targetPid = targetPid;
             _streamMask = streamMask;
+            _useUsermodeHooks = useUsermodeHooks;
+            _seedIoctlHandle = seedIoctlHandle;
+            _seedEtwHandle = seedEtwHandle;
         }
 
-        public static SleepwalkerBackendSession Start(int targetPid, uint streamMask)
+        public static BlackbirdBackendSession Start(int targetPid, uint streamMask, bool useUsermodeHooks)
         {
             if (targetPid <= 0)
             {
                 throw new ArgumentOutOfRangeException(nameof(targetPid));
             }
 
-            var session = new SleepwalkerBackendSession(targetPid, streamMask);
+            var session = new BlackbirdBackendSession(targetPid, streamMask, useUsermodeHooks);
+            session.StartInternal();
+            return session;
+        }
+
+        public static BlackbirdBackendSession StartFromHandles(
+            int targetPid,
+            uint streamMask,
+            bool useUsermodeHooks,
+            IntPtr ioctlHandle,
+            IntPtr etwHandle)
+        {
+            if (targetPid <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(targetPid));
+            }
+            if (ioctlHandle == IntPtr.Zero || ioctlHandle == new IntPtr(-1))
+            {
+                throw new ArgumentException("Invalid ioctl handle.", nameof(ioctlHandle));
+            }
+            if (etwHandle == IntPtr.Zero || etwHandle == new IntPtr(-1))
+            {
+                throw new ArgumentException("Invalid etw handle.", nameof(etwHandle));
+            }
+
+            var session = new BlackbirdBackendSession(targetPid, streamMask, useUsermodeHooks, ioctlHandle, etwHandle);
             session.StartInternal();
             return session;
         }
@@ -60,47 +92,61 @@ namespace SleepwalkerInterface
         {
             try
             {
-                if (!SleepwalkerNative.UseClientProtocol(null, 1500))
+                if (!BlackbirdNative.UseClientProtocol(null, 1500))
                 {
-                    throw SleepwalkerNative.LastError("UseClientProtocol failed");
+                    throw BlackbirdNative.LastError("UseClientProtocol failed");
                 }
 
-                _ioctlHandle = SleepwalkerNative.OpenControlDevice();
-                if (_ioctlHandle == IntPtr.Zero || _ioctlHandle == new IntPtr(-1))
+                if (_seedIoctlHandle != IntPtr.Zero && _seedIoctlHandle != new IntPtr(-1))
                 {
-                    throw SleepwalkerNative.LastError("OpenControlDevice(ioctl) failed");
+                    _ioctlHandle = _seedIoctlHandle;
+                }
+                else
+                {
+                    _ioctlHandle = BlackbirdNative.OpenControlDevice();
+                    if (_ioctlHandle == IntPtr.Zero || _ioctlHandle == new IntPtr(-1))
+                    {
+                        throw BlackbirdNative.LastError("OpenControlDevice(ioctl) failed");
+                    }
                 }
 
-                _etwHandle = SleepwalkerNative.OpenControlDevice();
-                if (_etwHandle == IntPtr.Zero || _etwHandle == new IntPtr(-1))
+                if (_seedEtwHandle != IntPtr.Zero && _seedEtwHandle != new IntPtr(-1))
                 {
-                    throw SleepwalkerNative.LastError("OpenControlDevice(etw) failed");
+                    _etwHandle = _seedEtwHandle;
+                }
+                else
+                {
+                    _etwHandle = BlackbirdNative.OpenControlDevice();
+                    if (_etwHandle == IntPtr.Zero || _etwHandle == new IntPtr(-1))
+                    {
+                        throw BlackbirdNative.LastError("OpenControlDevice(etw) failed");
+                    }
                 }
 
                 var pids = new[] { (uint)_targetPid };
-                if (!SleepwalkerNative.SetPids(_ioctlHandle, pids, 1, _streamMask))
+                if (!BlackbirdNative.SetPids(_ioctlHandle, pids, 1, _streamMask))
                 {
-                    throw SleepwalkerNative.LastError("SetPids(ioctl) failed");
+                    throw BlackbirdNative.LastError("SetPids(ioctl) failed");
                 }
 
-                if (!SleepwalkerNative.SetPids(_etwHandle, pids, 1, _streamMask))
+                if (!BlackbirdNative.SetPids(_etwHandle, pids, 1, _streamMask))
                 {
-                    throw SleepwalkerNative.LastError("SetPids(etw) failed");
+                    throw BlackbirdNative.LastError("SetPids(etw) failed");
                 }
 
-                if (SleepwalkerNative.GetBrokerInfo(out uint capabilities, out _))
+                if (BlackbirdNative.GetBrokerInfo(out uint capabilities, out _))
                 {
                     _brokerCapabilities = capabilities;
                 }
-                _sharedRingError = SleepwalkerNative.GetLastSharedRingError();
+                _sharedRingError = BlackbirdNative.GetLastSharedRingError();
 
                 bool hasIoctlRing = false;
                 bool hasEtwRing = false;
-                if (SleepwalkerNative.HasSharedChannel(_ioctlHandle, out bool ioctlIoctlReady, out _))
+                if (BlackbirdNative.HasSharedChannel(_ioctlHandle, out bool ioctlIoctlReady, out _))
                 {
                     hasIoctlRing = ioctlIoctlReady;
                 }
-                if (SleepwalkerNative.HasSharedChannel(_etwHandle, out _, out bool etwEtwReady))
+                if (BlackbirdNative.HasSharedChannel(_etwHandle, out _, out bool etwEtwReady))
                 {
                     hasEtwRing = etwEtwReady;
                 }
@@ -108,21 +154,25 @@ namespace SleepwalkerInterface
                 _sharedRingEnabled = hasIoctlRing && hasEtwRing;
                 if (_sharedRingEnabled)
                 {
-                    _brokerCapabilities |= SleepwalkerNative.IpcCapSharedRing;
+                    _brokerCapabilities |= BlackbirdNative.IpcCapSharedRing;
                     _sharedRingError = 0;
                 }
                 else
                 {
-                    _brokerCapabilities &= ~SleepwalkerNative.IpcCapSharedRing;
+                    _brokerCapabilities &= ~BlackbirdNative.IpcCapSharedRing;
                 }
 
                 if (!_sharedRingEnabled)
                 {
-                    int err = _sharedRingError == 0 ? SleepwalkerNative.ErrorNotSupported : unchecked((int)_sharedRingError);
+                    int err = _sharedRingError == 0 ? BlackbirdNative.ErrorNotSupported : unchecked((int)_sharedRingError);
                     throw new Win32Exception(err, $"Shared-ring IPC required but unavailable (err={_sharedRingError})");
                 }
 
                 Status?.Invoke($"Session started for PID {_targetPid}");
+                if (_useUsermodeHooks)
+                {
+                    Status?.Invoke("Usermode hooks enabled: waiting for hook publisher events.");
+                }
                 DiagnosticsState.SetValue("Session", $"pid={_targetPid} stream=0x{_streamMask:X8}");
                 DiagnosticsState.SetValue("IPC Mode", "SharedRing+Event");
                 DiagnosticsState.SetValue("IPC Shared Ring",
@@ -141,15 +191,15 @@ namespace SleepwalkerInterface
 
         private void IoctlPump(CancellationToken ct)
         {
-            IntPtr buffer = Marshal.AllocHGlobal(SleepwalkerNative.EventReadBufferBytes);
-            byte[] managed = new byte[SleepwalkerNative.EventReadBufferBytes];
+            IntPtr buffer = Marshal.AllocHGlobal(BlackbirdNative.EventReadBufferBytes);
+            byte[] managed = new byte[BlackbirdNative.EventReadBufferBytes];
             int idleBackoffMs = _sharedRingEnabled ? 2 : 12;
             int idleBackoffMaxMs = _sharedRingEnabled ? 24 : 80;
             try
             {
                 while (!ct.IsCancellationRequested)
                 {
-                    bool ok = SleepwalkerNative.GetEventRaw(_ioctlHandle, buffer, out uint bytes);
+                    bool ok = BlackbirdNative.GetEventRaw(_ioctlHandle, buffer, out uint bytes);
                     if (ok)
                     {
                         int len = (int)Math.Min(bytes, (uint)managed.Length);
@@ -161,7 +211,7 @@ namespace SleepwalkerInterface
                         }
 
                         Marshal.Copy(buffer, managed, 0, len);
-                        if (SleepwalkerNative.TryParseIoctlEvent(managed, len, out var parsed))
+                        if (BlackbirdNative.TryParseIoctlEvent(managed, len, out var parsed))
                         {
                             Interlocked.Increment(ref _ioctlEvents);
                             DiagnosticsState.Increment("IOCTL Events");
@@ -173,7 +223,7 @@ namespace SleepwalkerInterface
                     }
 
                     int err = Marshal.GetLastWin32Error();
-                    if (err == SleepwalkerNative.ErrorNoMoreEntries)
+                    if (err == BlackbirdNative.ErrorNoMoreEntries)
                     {
                         Interlocked.Increment(ref _ioctlEmptyPolls);
                         ct.WaitHandle.WaitOne(idleBackoffMs);
@@ -181,8 +231,8 @@ namespace SleepwalkerInterface
                         continue;
                     }
 
-                    if (err == SleepwalkerNative.ErrorOperationAborted || err == SleepwalkerNative.ErrorNotReady ||
-                        err == SleepwalkerNative.ErrorDeviceNotConnected || err == SleepwalkerNative.ErrorBrokenPipe)
+                    if (err == BlackbirdNative.ErrorOperationAborted || err == BlackbirdNative.ErrorNotReady ||
+                        err == BlackbirdNative.ErrorDeviceNotConnected || err == BlackbirdNative.ErrorBrokenPipe)
                     {
                         Status?.Invoke($"IOCTL pump stopped (err={err})");
                         DiagnosticsState.SetValue("IOCTL Pump", $"Stopped err={err}");
@@ -206,12 +256,12 @@ namespace SleepwalkerInterface
         {
             while (!ct.IsCancellationRequested)
             {
-                bool ok = SleepwalkerNative.GetEtwEvent(_etwHandle, out var etw, 500);
+                bool ok = BlackbirdNative.GetEtwEvent(_etwHandle, out var etw, 500);
                 if (ok)
                 {
                     Interlocked.Increment(ref _etwEvents);
                     DiagnosticsState.Increment("ETW Events");
-                    if (etw.Source == SleepwalkerNative.IpcEtwSourceThreatIntel)
+                    if (etw.Source == BlackbirdNative.IpcEtwSourceThreatIntel)
                     {
                         DiagnosticsState.Increment("ETW ThreatIntel Events");
                     }
@@ -220,21 +270,21 @@ namespace SleepwalkerInterface
                 }
 
                 int err = Marshal.GetLastWin32Error();
-                if (err == SleepwalkerNative.ErrorNoMoreItems)
+                if (err == BlackbirdNative.ErrorNoMoreItems)
                 {
                     Interlocked.Increment(ref _etwEmptyPolls);
                     continue;
                 }
 
-                if (err == SleepwalkerNative.ErrorOperationAborted || err == SleepwalkerNative.ErrorNotReady ||
-                    err == SleepwalkerNative.ErrorDeviceNotConnected || err == SleepwalkerNative.ErrorBrokenPipe)
+                if (err == BlackbirdNative.ErrorOperationAborted || err == BlackbirdNative.ErrorNotReady ||
+                    err == BlackbirdNative.ErrorDeviceNotConnected || err == BlackbirdNative.ErrorBrokenPipe)
                 {
                     Status?.Invoke($"ETW pump stopped (err={err})");
                     DiagnosticsState.SetValue("ETW Pump", $"Stopped err={err}");
                     return;
                 }
 
-                if (err == SleepwalkerNative.ErrorNotSupported || err == SleepwalkerNative.ErrorInvalidFunction)
+                if (err == BlackbirdNative.ErrorNotSupported || err == BlackbirdNative.ErrorInvalidFunction)
                 {
                     Status?.Invoke("ETW uplink unsupported by active controller build");
                     DiagnosticsState.SetValue("ETW Pump", "Unsupported");
@@ -252,7 +302,7 @@ namespace SleepwalkerInterface
         {
             while (!ct.IsCancellationRequested)
             {
-                if (SleepwalkerNative.GetStats(_ioctlHandle, out var stats, out _))
+                if (BlackbirdNative.GetStats(_ioctlHandle, out var stats, out _))
                 {
                     DateTime now = DateTime.UtcNow;
                     double elapsed = (now - _lastStatsSnapshotUtc).TotalSeconds;
@@ -280,7 +330,7 @@ namespace SleepwalkerInterface
                         BrokerCapabilities = _brokerCapabilities,
                         SharedRingEnabled = _sharedRingEnabled,
                         SharedRingError = _sharedRingError,
-                        IoctlReadBufferBytes = SleepwalkerNative.EventReadBufferBytes,
+                        IoctlReadBufferBytes = BlackbirdNative.EventReadBufferBytes,
                         SubscriptionCount = stats.SubscriptionCount,
                         DriverQueueDepth = stats.QueueDepth,
                         DriverDroppedEvents = stats.DroppedEvents,
@@ -345,13 +395,13 @@ namespace SleepwalkerInterface
         {
             if (_ioctlHandle != IntPtr.Zero && _ioctlHandle != new IntPtr(-1))
             {
-                _ = SleepwalkerNative.CloseControlDevice(_ioctlHandle);
+                _ = BlackbirdNative.CloseControlDevice(_ioctlHandle);
                 _ioctlHandle = IntPtr.Zero;
             }
 
             if (_etwHandle != IntPtr.Zero && _etwHandle != new IntPtr(-1))
             {
-                _ = SleepwalkerNative.CloseControlDevice(_etwHandle);
+                _ = BlackbirdNative.CloseControlDevice(_etwHandle);
                 _etwHandle = IntPtr.Zero;
             }
         }

@@ -3,9 +3,9 @@ using System.Diagnostics;
 using System.Text;
 using System.Threading;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
-    internal static class SleepwalkerServiceControl
+    internal static class BlackbirdServiceControl
     {
         public static string Start(string serviceName, TimeSpan timeout)
         {

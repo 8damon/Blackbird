@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public partial class MainWindow
     {

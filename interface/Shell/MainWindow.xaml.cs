@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
@@ -13,12 +14,13 @@ using System.Windows.Media;
 using System.Windows.Input;
 using System.Windows.Threading;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public partial class MainWindow : Window, IIntelDetailsProvider
     {
-        private readonly List<TelemetryEvent> _allEvents = new();
-        private readonly ObservableCollection<TelemetryEvent> _focusedEvents = new();
+        private readonly TelemetryEventStore _allEvents = new();
+        private readonly BulkObservableCollection<TelemetryEvent> _focusedEvents = new();
+        private readonly BoundedStringPool _telemetryTextPool = new(4096);
         private const int MaxTimelineEvents = 50000;
         private const int TimelineTrimBatch = 512;
         private const double DefaultTimelineViewDurationSeconds = 120;
@@ -59,11 +61,22 @@ namespace SleepwalkerInterface
         private bool _draggingEventsPaneHeader;
         private bool _draggingPerformancePaneHeader;
         private bool _openingProcessPicker;
+        private bool _connectInProgress;
+        private bool _pendingLaunchOptions;
+        private bool _pendingUseUsermodeHooks;
+        private bool _pendingAutoOpenApiGraph;
+        private bool _pendingHookPreconfigured;
+        private bool _isMainWindowShuttingDown;
+        private BlackbirdBackendSession? _preparedLaunchBackendSession;
+        private int _preparedLaunchBackendPid;
+        private MainInterfaceViewMode _mainViewMode = MainInterfaceViewMode.Telemetry;
+        private readonly BulkObservableCollection<ApiCallGraphMainRowView> _apiViewRows = new();
         private Process? _targetExitWatchProcess;
         private int _targetExitWatchPid;
         private Vector _floatingPaneDragOffset;
         private readonly DispatcherTimer _detachedEventLogRefreshTimer;
         private readonly DispatcherTimer _processStateRefreshTimer;
+        private readonly DispatcherTimer _apiGraphRefreshTimer;
         private bool _scrollSyncPending;
         private bool _topTimeTravelSyncing;
         private bool _toolbarViewMenuSyncing;
@@ -86,10 +99,17 @@ namespace SleepwalkerInterface
         private static readonly Brush ProcessStateUnknownBackground = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E));
         private static readonly Brush ProcessStateUnknownBorder = new SolidColorBrush(Color.FromRgb(0x4A, 0x4A, 0x4A));
         private static readonly Brush ProcessStateUnknownForeground = new SolidColorBrush(Color.FromRgb(0xB8, 0xB8, 0xB8));
+        private const string WindowTitleBase = "BLACKBIRD";
 
         private const uint ProcessSynchronize = 0x00100000;
         private const uint ProcessVmRead = 0x0010;
         private const uint ProcessQueryLimitedInformation = 0x1000;
+
+        private enum MainInterfaceViewMode
+        {
+            Telemetry = 0,
+            Api = 1
+        }
 
         public MainWindow()
         {
@@ -111,6 +131,11 @@ namespace SleepwalkerInterface
                 ValidateCurrentSessionState();
                 RefreshProcessStateBadge();
             };
+            _apiGraphRefreshTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(180)
+            };
+            _apiGraphRefreshTimer.Tick += ApiGraphRefreshTimer_Tick;
             Loaded += OnLoaded;
             Closed += OnClosed;
         }
@@ -179,6 +204,10 @@ namespace SleepwalkerInterface
             SetupExplorer();
             SetupProcessTabs();
             InitializeBackendUi();
+            ApiViewDataGrid.ItemsSource = _apiViewRows;
+            ApiViewDataGrid.SelectedIndex = -1;
+            UpdateApiViewSelection(null);
+            SetMainInterfaceViewMode(MainInterfaceViewMode.Telemetry);
             ApplyUplinkStatusVisual(healthy: null);
 
             UpdateScrollBar();
@@ -199,6 +228,7 @@ namespace SleepwalkerInterface
             ApplyPaneOrder();
             ApplyIntelPaneOrder();
             _processStateRefreshTimer.Start();
+            _apiGraphRefreshTimer.Start();
             RefreshProcessStateBadge();
         }
 
@@ -210,8 +240,10 @@ namespace SleepwalkerInterface
 
         private void OnClosed(object? sender, EventArgs e)
         {
+            _isMainWindowShuttingDown = true;
             _detachedEventLogRefreshTimer.Stop();
             _processStateRefreshTimer.Stop();
+            _apiGraphRefreshTimer.Stop();
 
             if (_perf != null)
             {
@@ -222,7 +254,12 @@ namespace SleepwalkerInterface
 
             if (_eventsFloatWindow != null)
             {
+                _eventsFloatWindow.Closing -= EventsFloatWindow_Closing;
                 _eventsFloatWindow.Closed -= EventsFloatWindow_Closed;
+                if (_eventsFloatWindow.Content == EventsPaneHost)
+                {
+                    _eventsFloatWindow.Content = null;
+                }
                 _eventsFloatWindow.Close();
                 _eventsFloatWindow = null;
             }
@@ -234,24 +271,40 @@ namespace SleepwalkerInterface
             }
             if (_performanceFloatWindow != null)
             {
+                _performanceFloatWindow.Closing -= PerformanceFloatWindow_Closing;
                 _performanceFloatWindow.Closed -= PerformanceFloatWindow_Closed;
+                if (_performanceFloatWindow.Content == PerformancePaneHost)
+                {
+                    _performanceFloatWindow.Content = null;
+                }
                 _performanceFloatWindow.Close();
                 _performanceFloatWindow = null;
             }
             if (_etwFloatWindow != null)
             {
+                _etwFloatWindow.Closing -= EtwFloatWindow_Closing;
                 _etwFloatWindow.Closed -= EtwFloatWindow_Closed;
+                if (_etwFloatWindow.Content == EtwPaneHost)
+                {
+                    _etwFloatWindow.Content = null;
+                }
                 _etwFloatWindow.Close();
                 _etwFloatWindow = null;
             }
             if (_heuristicsFloatWindow != null)
             {
+                _heuristicsFloatWindow.Closing -= HeuristicsFloatWindow_Closing;
                 _heuristicsFloatWindow.Closed -= HeuristicsFloatWindow_Closed;
+                if (_heuristicsFloatWindow.Content == HeuristicsPaneHost)
+                {
+                    _heuristicsFloatWindow.Content = null;
+                }
                 _heuristicsFloatWindow.Close();
                 _heuristicsFloatWindow = null;
             }
             SaveIntelSessionState(_currentSession?.Pid ?? 0);
             StopTargetExitWatcher();
+            DisposePreparedLaunchBackendSession();
             StopBackendSession();
             HideDockPreview();
         }
@@ -387,6 +440,10 @@ namespace SleepwalkerInterface
             IntelligenceDock.RowDefinitions[5].Height = (row4Visible && row6Visible) ? new GridLength(2) : new GridLength(0);
 
             bool showIntel = row0Visible || row2Visible || row4Visible || row6Visible;
+            if (_mainViewMode == MainInterfaceViewMode.Api)
+            {
+                showIntel = false;
+            }
             IntelligenceColumn.Width = showIntel ? new GridLength(560) : new GridLength(0);
             IntelligenceSplitterColumn.Width = showIntel ? new GridLength(2) : new GridLength(0);
             IntelligenceSplitter.Visibility = showIntel ? Visibility.Visible : Visibility.Collapsed;
@@ -441,7 +498,7 @@ namespace SleepwalkerInterface
             SyncPerformanceViewToTimeline();
         }
 
-        private void StartLiveCaptureForPid(int pid)
+        private void StartLiveCaptureForPid(int pid, bool useUsermodeHooks)
         {
             if (pid <= 0 || _perf == null)
                 return;
@@ -474,7 +531,16 @@ namespace SleepwalkerInterface
             _samplerPid = pid;
             PerformancePaneHost.SetProcessLiveDataAvailable(true);
             StartTargetExitWatcher(pid);
-            StartBackendForPid(pid);
+            StartBackendForPid(pid, useUsermodeHooks);
+            bool autoOpenApiGraph = _currentSession?.AutoOpenApiGraphOnNextStart == true;
+            if (_currentSession != null)
+            {
+                _currentSession.AutoOpenApiGraphOnNextStart = false;
+            }
+            if (useUsermodeHooks && autoOpenApiGraph)
+            {
+                SetMainInterfaceViewMode(MainInterfaceViewMode.Api);
+            }
             StatusBlock.Text = $"LIVE CAPTURE: {NormalizeSessionTitle(_currentSession?.Title ?? $"PID {pid}")}";
             RefreshProcessStateBadge();
         }
@@ -587,7 +653,7 @@ namespace SleepwalkerInterface
             ProcessRelationsPaneHost.TrimDetailPayload(48);
 
             StopTargetExitWatcher();
-            StopBackendSession();
+            StopBackendSession(preserveApiGraphSnapshot: true);
             _perf?.Stop();
             _samplerPid = 0;
             PerformancePaneHost.SetProcessLiveDataAvailable(false);
@@ -786,6 +852,7 @@ namespace SleepwalkerInterface
             _laneFocusKey = tab.LaneFocusKey;
 
             _allEvents.Clear();
+            _telemetryTextPool.Clear();
             _focusedEvents.Clear();
             EventsPaneHost.Timeline.Items.Clear();
             EventsPaneHost.Timeline.ClearAllLaneFilters();
@@ -793,9 +860,7 @@ namespace SleepwalkerInterface
 
             foreach (var ev in tab.Events.OrderBy(x => x.TimestampUtc))
             {
-                var clone = CloneTelemetryEvent(ev);
-                _allEvents.Add(clone);
-                EventsPaneHost.Timeline.Items.Add(clone);
+                _allEvents.Add(NormalizeTelemetryEventForStore(ev));
             }
             _latestEventTimestampUtc = _allEvents.Count > 0 ? _allEvents[^1].TimestampUtc : _captureStartUtc;
 
@@ -831,7 +896,7 @@ namespace SleepwalkerInterface
             if (tab.OfflineSnapshot)
             {
                 StopTargetExitWatcher();
-                StopBackendSession();
+                StopBackendSession(preserveApiGraphSnapshot: true);
                 _perf?.Stop();
                 _samplerPid = 0;
                 PerformancePaneHost.SetProcessLiveDataAvailable(false);
@@ -843,7 +908,7 @@ namespace SleepwalkerInterface
             if (tab.TargetExited)
             {
                 StopTargetExitWatcher();
-                StopBackendSession();
+                StopBackendSession(preserveApiGraphSnapshot: true);
                 _perf?.Stop();
                 _samplerPid = 0;
                 PerformancePaneHost.SetProcessLiveDataAvailable(false);
@@ -855,7 +920,7 @@ namespace SleepwalkerInterface
             if (!TryOpenTargetProcess(tab.Pid, out _, out var failure, out var accessDenied))
             {
                 StopTargetExitWatcher();
-                StopBackendSession();
+                StopBackendSession(preserveApiGraphSnapshot: true);
                 _perf?.Stop();
                 _samplerPid = 0;
                 PerformancePaneHost.SetProcessLiveDataAvailable(false);
@@ -873,7 +938,7 @@ namespace SleepwalkerInterface
                 return;
             }
 
-            StartLiveCaptureForPid(tab.Pid);
+            StartLiveCaptureForPid(tab.Pid, tab.UseUsermodeHooks);
         }
 
         private void SyncPerformanceViewToTimeline()
@@ -889,34 +954,33 @@ namespace SleepwalkerInterface
         // -------------------------------
         private void AppendEvent(TelemetryEvent ev)
         {
-            _allEvents.Add(ev);
-            EventsPaneHost.Timeline.Items.Add(ev);
-            _currentSession?.Events.Add(CloneTelemetryEvent(ev));
-            if (ev.TimestampUtc > _latestEventTimestampUtc)
+            AppendEvents(new[] { ev });
+        }
+
+        private void AppendEvents(IReadOnlyList<TelemetryEvent> events)
+        {
+            if (events.Count == 0)
             {
-                _latestEventTimestampUtc = ev.TimestampUtc;
+                return;
             }
+
+            for (int i = 0; i < events.Count; i += 1)
+            {
+                TelemetryEvent ev = NormalizeTelemetryEventForStore(events[i]);
+                _allEvents.Add(ev);
+                if (ev.TimestampUtc > _latestEventTimestampUtc)
+                {
+                    _latestEventTimestampUtc = ev.TimestampUtc;
+                }
+            }
+
             SetExplorerHasData("Events", _allEvents.Count > 0);
             EventsPaneHost.SetHasData(true);
 
             if (_allEvents.Count > MaxTimelineEvents + TimelineTrimBatch)
             {
                 int removeCount = _allEvents.Count - MaxTimelineEvents;
-                _allEvents.RemoveRange(0, removeCount);
-            }
-
-            if (EventsPaneHost.Timeline.Items.Count > MaxTimelineEvents + TimelineTrimBatch)
-            {
-                int removeCount = EventsPaneHost.Timeline.Items.Count - MaxTimelineEvents;
-                for (int i = 0; i < removeCount; i += 1)
-                {
-                    EventsPaneHost.Timeline.Items.RemoveAt(0);
-                }
-            }
-
-            if (_currentSession != null && _currentSession.Events.Count > MaxTimelineEvents)
-            {
-                _currentSession.Events.RemoveRange(0, _currentSession.Events.Count - MaxTimelineEvents);
+                _allEvents.RemoveFirst(removeCount);
             }
 
             ScheduleViewportRefresh();
@@ -933,32 +997,56 @@ namespace SleepwalkerInterface
 
         private void ApplyUplinkStatusVisual(bool? healthy)
         {
-            if (UplinkStatusBlock == null || BottomStatusBar == null)
+            if (StatusBlock == null)
                 return;
 
             if (healthy == true)
             {
-                UplinkStatusBlock.Text = "UPLINK CONNECTED";
-                UplinkStatusBlock.SetResourceReference(TextBlock.ForegroundProperty, "StatusConnectedBrush");
-                BottomStatusBar.SetResourceReference(Border.BackgroundProperty, "StatusBarNeutralBrush");
+                StatusBlock.SetResourceReference(TextBlock.ForegroundProperty, "WinMutedTextBrush");
                 return;
             }
 
             if (healthy == false)
             {
-                UplinkStatusBlock.Text = "UPLINK FAILED";
-                UplinkStatusBlock.SetResourceReference(TextBlock.ForegroundProperty, "StatusFailedBrush");
-                BottomStatusBar.SetResourceReference(Border.BackgroundProperty, "StatusBarFailedBrush");
+                StatusBlock.SetResourceReference(TextBlock.ForegroundProperty, "StatusFailedBrush");
                 return;
             }
 
-            UplinkStatusBlock.Text = "UPLINK CHECKING...";
-            UplinkStatusBlock.SetResourceReference(TextBlock.ForegroundProperty, "WinMutedTextBrush");
-            BottomStatusBar.SetResourceReference(Border.BackgroundProperty, "StatusBarNeutralBrush");
+            StatusBlock.SetResourceReference(TextBlock.ForegroundProperty, "WinMutedTextBrush");
+        }
+
+        private void UpdateWindowTitle()
+        {
+            string sessionLabel;
+            if (_currentSession == null || _currentSession.Pid <= 0)
+            {
+                sessionLabel = "IDLE";
+            }
+            else if (_currentSession.OfflineSnapshot)
+            {
+                sessionLabel = $"OFFLINE SESSION: {NormalizeSessionTitle(_currentSession.Title)}";
+            }
+            else if (_currentSession.TargetExited)
+            {
+                sessionLabel = $"CAPTURE STOPPED: PID {_currentSession.Pid}";
+            }
+            else
+            {
+                string captureTitle = NormalizeSessionTitle(_currentSession.Title ?? $"PID {_currentSession.Pid}");
+                sessionLabel = $"LIVE CAPTURE: {captureTitle}";
+            }
+
+            string newTitle = $"{WindowTitleBase} | {sessionLabel}";
+            if (!string.Equals(Title, newTitle, StringComparison.Ordinal))
+            {
+                Title = newTitle;
+            }
         }
 
         private void RefreshProcessStateBadge()
         {
+            UpdateWindowTitle();
+
             if (ProcessStateBadge == null || ProcessStateBlock == null)
             {
                 return;
@@ -1090,9 +1178,10 @@ namespace SleepwalkerInterface
             double durationSeconds = Math.Max(1, (viewEnd - viewStart).TotalSeconds);
             RangeBlock.Text = $"Range {viewStart:HH:mm:ss} | {viewEnd:HH:mm:ss}  ({durationSeconds:0}s)";
 
-            _focusedEvents.Clear();
+            EventsPaneHost.Timeline.ReplaceItems(Array.Empty<TelemetryEvent>());
             if (_allEvents.Count == 0)
             {
+                _focusedEvents.ReplaceAll(Array.Empty<TelemetryEvent>());
                 SetExplorerHasData("Events", false);
                 EventsPaneHost.SetHeaderStats("View 0 | Total 0 | 0.0/s");
                 ClearSelectedEvent();
@@ -1102,6 +1191,7 @@ namespace SleepwalkerInterface
 
             int start = LowerBoundEventIndex(viewStart);
             int endExclusive = UpperBoundEventIndex(viewEnd);
+            var visibleEvents = new List<TelemetryEvent>(Math.Max(16, endExclusive - start));
             for (int i = start; i < endExclusive; i += 1)
             {
                 var ev = _allEvents[i];
@@ -1109,8 +1199,11 @@ namespace SleepwalkerInterface
                 {
                     continue;
                 }
-                _focusedEvents.Add(ev);
+                visibleEvents.Add(ev);
             }
+
+            _focusedEvents.ReplaceAll(visibleEvents);
+            EventsPaneHost.Timeline.ReplaceItems(_focusedEvents);
 
             RestoreSelectedEventInFocusedView(selectedAnchor);
             FindExplorerItem("Events")?.PushPreviewValue(_focusedEvents.Count);
@@ -1207,6 +1300,10 @@ namespace SleepwalkerInterface
                     EventsPaneHost.Scroll.Value = maxStart;
                 }
                 FocusViewport();
+                double viewStartSeconds = EventsPaneHost?.Timeline?.ViewStartSeconds ?? 0;
+                DiagnosticsState.SetValue(
+                    "UI Viewport",
+                    $"view={_focusedEvents.Count} total={_allEvents.Count} start={viewStartSeconds:0.0}s");
             }), System.Windows.Threading.DispatcherPriority.Background);
         }
 
@@ -1223,6 +1320,36 @@ namespace SleepwalkerInterface
         {
             double seconds = Math.Max(1, viewDurationSeconds);
             return DateTime.UtcNow - TimeSpan.FromSeconds(seconds);
+        }
+
+        private TelemetryEvent NormalizeTelemetryEventForStore(TelemetryEvent source)
+        {
+            string group = _telemetryTextPool.Intern(source.Group, 48);
+            string subType = _telemetryTextPool.Intern(source.SubType, 96);
+            string processName = _telemetryTextPool.Intern(source.ProcessName, 96);
+            string summary = _telemetryTextPool.Intern(source.Summary, 160);
+            string details = _telemetryTextPool.Intern(source.Details, 80);
+
+            if (ReferenceEquals(group, source.Group) &&
+                ReferenceEquals(subType, source.SubType) &&
+                ReferenceEquals(processName, source.ProcessName) &&
+                ReferenceEquals(summary, source.Summary) &&
+                ReferenceEquals(details, source.Details))
+            {
+                return source;
+            }
+
+            return new TelemetryEvent
+            {
+                TimestampUtc = source.TimestampUtc,
+                PID = source.PID,
+                TID = source.TID,
+                Group = group,
+                SubType = subType,
+                ProcessName = processName,
+                Summary = summary,
+                Details = details
+            };
         }
 
         private int LowerBoundEventIndex(DateTime timestampUtc)
@@ -1642,6 +1769,43 @@ namespace SleepwalkerInterface
             _eventLogWindow.Activate();
         }
 
+        private void SetMainInterfaceViewMode(MainInterfaceViewMode mode)
+        {
+            _mainViewMode = mode;
+            if (DockGrid != null)
+            {
+                DockGrid.Visibility = mode == MainInterfaceViewMode.Telemetry ? Visibility.Visible : Visibility.Collapsed;
+            }
+            if (ApiViewBorder != null)
+            {
+                ApiViewBorder.Visibility = mode == MainInterfaceViewMode.Api ? Visibility.Visible : Visibility.Collapsed;
+            }
+            ApplyDockVisibilityFromExplorer();
+            if (SwitchViewMenuItem != null)
+            {
+                SwitchViewMenuItem.Header = mode == MainInterfaceViewMode.Api ? "Switch View (Telemetry)" : "Switch View (API)";
+            }
+
+            if (IsLoaded)
+            {
+                RebuildToolbarViewMenuOptions();
+            }
+        }
+
+        private void ToggleMainInterfaceViewMode()
+        {
+            SetMainInterfaceViewMode(_mainViewMode == MainInterfaceViewMode.Telemetry
+                ? MainInterfaceViewMode.Api
+                : MainInterfaceViewMode.Telemetry);
+        }
+
+        private void SwitchView_Click(object sender, RoutedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            ToggleMainInterfaceViewMode();
+        }
+
         private void OpenDiagnosticsWindow()
         {
             var w = new DiagnosticsWindow(TryGetPid())
@@ -1699,6 +1863,9 @@ namespace SleepwalkerInterface
                     ShowEventsPane();
                     OpenOrActivateEventLogWindow();
                     break;
+                case "switch-view":
+                    ToggleMainInterfaceViewMode();
+                    break;
                 case "inspector-etw":
                     ShowEtwPane();
                     OpenEtwInspector();
@@ -1750,6 +1917,10 @@ namespace SleepwalkerInterface
             AddToolbarViewOptionIfClosed("Process Relations Pane", "process-relations", IsRelationsPaneOpen());
             AddToolbarViewOptionIfClosed("IPC Uplink Pane", "ipc-uplink", IsIpcUplinkPaneOpen());
             AddToolbarViewOptionIfClosed("Event Log Window", "event-log", _eventLogWindow != null && _eventLogWindow.IsVisible);
+            AddToolbarViewOptionIfClosed(
+                _mainViewMode == MainInterfaceViewMode.Api ? "Switch View: Telemetry" : "Switch View: API",
+                "switch-view",
+                isOpen: false);
             AddToolbarViewOptionIfClosed("ETW Inspector", "inspector-etw", IsWindowOpenByTitle("ETW Inspector"));
             AddToolbarViewOptionIfClosed("Heuristics Inspector", "inspector-heuristics", IsWindowOpenByTitle("Detection Chain"));
             AddToolbarViewOptionIfClosed("Filesystem Inspector", "inspector-filesystem", IsWindowOpenByTitle("Filesystem"));
@@ -2031,9 +2202,9 @@ namespace SleepwalkerInterface
             w.Show();
         }
 
-        private async void FindProcess_Click(object sender, RoutedEventArgs e) => await OpenProcessPickerAndConnectAsync();
+        private async void FindProcess_Click(object sender, RoutedEventArgs e) => await OpenProcessPickerAndConnectAsync(showLaunchOptions: true);
 
-        private async void NewProcessTab_Click(object sender, RoutedEventArgs e) => await OpenProcessPickerAndConnectAsync();
+        private async void NewProcessTab_Click(object sender, RoutedEventArgs e) => await OpenProcessPickerAndConnectAsync(showLaunchOptions: true);
 
         private void CloseProcessTab_Click(object sender, RoutedEventArgs e)
         {
@@ -2088,14 +2259,216 @@ namespace SleepwalkerInterface
                    TimeSpan.FromSeconds(EventsPaneHost.Timeline.ViewStartSeconds + EventsPaneHost.Timeline.ViewDurationSeconds);
         }
 
+        private static string ResolveHookDllPathFromInterfaceDirectory()
+        {
+            string baseDirectory = AppContext.BaseDirectory;
+            if (string.IsNullOrWhiteSpace(baseDirectory))
+            {
+                baseDirectory = Environment.CurrentDirectory;
+            }
+
+            return Path.Combine(baseDirectory, "sr71.dll");
+        }
+
+        private bool TrySendUserHookRequest(
+            uint mode,
+            uint processId,
+            uint flags,
+            string? imagePath,
+            out BlackbirdNative.BkSetUserHookTargetResponse response,
+            out string error)
+        {
+            IntPtr device = IntPtr.Zero;
+            response = default;
+            error = string.Empty;
+
+            try
+            {
+                if (!BlackbirdNative.UseClientProtocol(null, 1500))
+                {
+                    error = BlackbirdNative.LastError("UseClientProtocol failed").Message;
+                    return false;
+                }
+
+                device = BlackbirdNative.OpenControlDevice();
+                if (device == IntPtr.Zero || device == new IntPtr(-1))
+                {
+                    error = BlackbirdNative.LastError("OpenControlDevice failed").Message;
+                    return false;
+                }
+
+                string hookPath = ResolveHookDllPathFromInterfaceDirectory();
+                if (!BlackbirdNative.SetUserHookTarget(
+                        device,
+                        mode,
+                        processId,
+                        flags,
+                        imagePath,
+                        hookPath,
+                        out response))
+                {
+                    error = BlackbirdNative.LastError("SetUserHookTarget failed").Message;
+                    return false;
+                }
+
+                return true;
+            }
+            finally
+            {
+                if (device != IntPtr.Zero && device != new IntPtr(-1))
+                {
+                    _ = BlackbirdNative.CloseControlDevice(device);
+                }
+            }
+        }
+
+        private bool TryAttachUsermodeHooks(int pid, out string error)
+        {
+            error = string.Empty;
+            if (pid <= 0)
+            {
+                error = "Invalid PID for hook attach.";
+                return false;
+            }
+
+            if (!TrySendUserHookRequest(
+                    BlackbirdNative.IpcUserHookTargetAttach,
+                    unchecked((uint)pid),
+                    0,
+                    null,
+                    out _,
+                    out error))
+            {
+                return false;
+            }
+
+            OutputCapture.AppendLine($"Hook attached via controller: PID {pid}");
+            return true;
+        }
+
+        private bool TryLaunchWithUsermodeHooksAndPrepareSession(
+            string imagePath,
+            bool useEarlyBirdApc,
+            out int pid,
+            out BlackbirdBackendSession? preparedSession,
+            out string error)
+        {
+            pid = 0;
+            preparedSession = null;
+            error = string.Empty;
+            IntPtr etwHandle = IntPtr.Zero;
+            IntPtr ioctlHandle = IntPtr.Zero;
+
+            if (string.IsNullOrWhiteSpace(imagePath))
+            {
+                error = "Launch path is empty.";
+                return false;
+            }
+
+            uint flags = useEarlyBirdApc
+                ? BlackbirdNative.IpcUserHookFlagLaunchEarlybirdApc
+                : 0u;
+
+            if (!BlackbirdNative.UseClientProtocol(null, 1500))
+            {
+                error = BlackbirdNative.LastError("UseClientProtocol failed").Message;
+                return false;
+            }
+
+            etwHandle = BlackbirdNative.OpenControlDevice();
+            if (etwHandle == IntPtr.Zero || etwHandle == new IntPtr(-1))
+            {
+                error = BlackbirdNative.LastError("OpenControlDevice(etw) failed").Message;
+                return false;
+            }
+
+            try
+            {
+                string hookPath = ResolveHookDllPathFromInterfaceDirectory();
+                if (!BlackbirdNative.SetUserHookTarget(
+                        etwHandle,
+                        BlackbirdNative.IpcUserHookTargetLaunch,
+                        0,
+                        flags,
+                        imagePath,
+                        hookPath,
+                        out BlackbirdNative.BkSetUserHookTargetResponse response))
+                {
+                    error = BlackbirdNative.LastError("SetUserHookTarget(launch) failed").Message;
+                    return false;
+                }
+
+                if (response.ProcessId == 0)
+                {
+                    error = "Controller launch returned no PID.";
+                    return false;
+                }
+
+                ioctlHandle = BlackbirdNative.OpenControlDevice();
+                if (ioctlHandle == IntPtr.Zero || ioctlHandle == new IntPtr(-1))
+                {
+                    error = BlackbirdNative.LastError("OpenControlDevice(ioctl) failed").Message;
+                    return false;
+                }
+
+                pid = unchecked((int)response.ProcessId);
+                preparedSession = BlackbirdBackendSession.StartFromHandles(
+                    pid,
+                    BlackbirdNative.StreamAll,
+                    useUsermodeHooks: true,
+                    ioctlHandle,
+                    etwHandle);
+                ioctlHandle = IntPtr.Zero;
+                etwHandle = IntPtr.Zero;
+
+                string modeLabel = useEarlyBirdApc ? "earlybird-apc" : "remote-thread";
+                OutputCapture.AppendLine($"Hook launch via controller ({modeLabel}): {imagePath} -> PID {pid} (pre-armed session)");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                if (preparedSession != null)
+                {
+                    preparedSession.Dispose();
+                    preparedSession = null;
+                }
+                if (string.IsNullOrWhiteSpace(error))
+                {
+                    error = ex.Message;
+                }
+                return false;
+            }
+            finally
+            {
+                if (ioctlHandle != IntPtr.Zero && ioctlHandle != new IntPtr(-1))
+                {
+                    _ = BlackbirdNative.CloseControlDevice(ioctlHandle);
+                }
+                if (etwHandle != IntPtr.Zero && etwHandle != new IntPtr(-1))
+                {
+                    _ = BlackbirdNative.CloseControlDevice(etwHandle);
+                }
+            }
+        }
+
         // -------------------------------
         // Stub buttons
         // -------------------------------
-        private void Connect_Click(object sender, RoutedEventArgs e)
+        private async void Connect_Click(object sender, RoutedEventArgs e)
         {
+            if (_connectInProgress)
+            {
+                return;
+            }
+
+            _connectInProgress = true;
+            try
+            {
             int pid = TryGetPid();
             if (pid <= 0)
             {
+                DisposePreparedLaunchBackendSession();
+                ClearPendingLaunchOptions();
                 StatusBlock.Text = "ENTER A VALID PID";
                 RefreshProcessStateBadge();
                 return;
@@ -2103,6 +2476,8 @@ namespace SleepwalkerInterface
 
             if (!TryOpenTargetProcess(pid, out var processName, out var failure, out var accessDenied))
             {
+                DisposePreparedLaunchBackendSession();
+                ClearPendingLaunchOptions();
                 StatusBlock.Text = failure;
                 if (accessDenied)
                 {
@@ -2120,6 +2495,62 @@ namespace SleepwalkerInterface
 
             StatusBlock.Text = $"CONNECTED TO {processName} ({pid})";
             var tab = AddOrSelectProcessTab(pid, $"{processName} ({pid})", select: true);
+            bool hookPreconfigured = _pendingHookPreconfigured;
+            if (_pendingLaunchOptions)
+            {
+                tab.UseUsermodeHooks = _pendingUseUsermodeHooks;
+                tab.AutoOpenApiGraphOnNextStart = _pendingAutoOpenApiGraph;
+            }
+            ClearPendingLaunchOptions();
+
+            if (tab.UseUsermodeHooks && !hookPreconfigured)
+            {
+                LoadingWindow? hookLoading = null;
+                try
+                {
+                    hookLoading = new LoadingWindow
+                    {
+                        Owner = this
+                    };
+                    hookLoading.SetProgress(38, "Attaching usermode hooks...", $"Injecting sr71.dll into PID {pid}.");
+                    hookLoading.Show();
+                    await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Render);
+
+                    var hookResult = await Task.Run(() =>
+                    {
+                        bool ok = TryAttachUsermodeHooks(pid, out string err);
+                        return (ok, err);
+                    });
+
+                    if (!hookResult.ok)
+                    {
+                        DisposePreparedLaunchBackendSession();
+                        StatusBlock.Text = $"HOOK ATTACH FAILED FOR PID {pid}";
+                        ThemedMessageBox.Show(
+                            this,
+                            $"Failed to attach usermode hooks for PID {pid}.\n\n{hookResult.err}",
+                            "Hook Attach Failed",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Error);
+                        RefreshProcessStateBadge();
+                        return;
+                    }
+                }
+                finally
+                {
+                    if (hookLoading != null && hookLoading.IsVisible)
+                    {
+                        hookLoading.Close();
+                    }
+                }
+
+                if (!IsLoaded)
+                {
+                    DisposePreparedLaunchBackendSession();
+                    return;
+                }
+            }
+
             tab.TargetExited = false;
             tab.OfflineSnapshot = false;
             if (!ReferenceEquals(_currentSession, tab))
@@ -2128,20 +2559,27 @@ namespace SleepwalkerInterface
             }
             else
             {
-                StartLiveCaptureForPid(pid);
+                StartLiveCaptureForPid(pid, tab.UseUsermodeHooks);
             }
 
             _ = RunPreflightAsync(pid);
             RefreshProcessStateBadge();
+            }
+            finally
+            {
+                _connectInProgress = false;
+            }
         }
 
-        private async void Launch_Click(object sender, RoutedEventArgs e) => await OpenProcessPickerAndConnectAsync();
+        private async void Launch_Click(object sender, RoutedEventArgs e) => await OpenProcessPickerAndConnectAsync(showLaunchOptions: true);
 
-        private async Task OpenProcessPickerAndConnectAsync()
+        private async Task OpenProcessPickerAndConnectAsync(bool showLaunchOptions)
         {
             if (_openingProcessPicker)
                 return;
 
+            DisposePreparedLaunchBackendSession();
+            ClearPendingLaunchOptions();
             _openingProcessPicker = true;
             LoadingWindow? loading = null;
 
@@ -2157,7 +2595,8 @@ namespace SleepwalkerInterface
 
                 var picker = new ProcessPickerWindow
                 {
-                    Owner = this
+                    Owner = this,
+                    ShowLaunchOptions = showLaunchOptions
                 };
 
                 loading.SetProgress(100, "Opening picker...", "Process picker will stream process metadata after opening.");
@@ -2166,10 +2605,101 @@ namespace SleepwalkerInterface
                 loading = null;
 
                 bool? result = picker.ShowDialog();
-                if (result != true || picker.SelectedPid <= 0)
+                if (result != true)
                     return;
 
-                PidBox.Text = picker.SelectedPid.ToString();
+                int selectedPid = picker.SelectedPid;
+                bool hookPreconfigured = false;
+                if (showLaunchOptions && picker.LaunchSelectedImage)
+                {
+                    string launchImagePath = picker.LaunchImagePath?.Trim() ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(launchImagePath))
+                    {
+                        ThemedMessageBox.Show(this, "Launch path is empty.", "Launch failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return;
+                    }
+
+                    if (picker.UseUsermodeHooks)
+                    {
+                        LoadingWindow? launchLoading = null;
+                        bool launchOk;
+                        int launchedPid = 0;
+                        BlackbirdBackendSession? preparedSession = null;
+                        string launchError = string.Empty;
+                        try
+                        {
+                            launchLoading = new LoadingWindow
+                            {
+                                Owner = this
+                            };
+                            launchLoading.SetProgress(42, "Launching target with hooks...", "Submitting launch + sr71 staging request.");
+                            launchLoading.Show();
+                            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Render);
+
+                            launchOk = await Task.Run(() =>
+                                TryLaunchWithUsermodeHooksAndPrepareSession(
+                                    launchImagePath,
+                                    picker.UseEarlyBirdApcLaunch,
+                                    out launchedPid,
+                                    out preparedSession,
+                                    out launchError));
+                        }
+                        finally
+                        {
+                            if (launchLoading != null && launchLoading.IsVisible)
+                            {
+                                launchLoading.Close();
+                            }
+                        }
+
+                        if (!launchOk)
+                        {
+                            if (preparedSession != null)
+                            {
+                                try
+                                {
+                                    preparedSession.Dispose();
+                                }
+                                catch
+                                {
+                                }
+                            }
+
+                            ThemedMessageBox.Show(this, launchError, "Hook launch failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                            return;
+                        }
+
+                        selectedPid = launchedPid;
+                        _preparedLaunchBackendSession = preparedSession;
+                        _preparedLaunchBackendPid = selectedPid;
+                        hookPreconfigured = true;
+                    }
+                    else
+                    {
+                        Process? started = Process.Start(new ProcessStartInfo(launchImagePath)
+                        {
+                            UseShellExecute = true
+                        });
+                        if (started == null)
+                        {
+                            ThemedMessageBox.Show(this, "Process launch returned no handle.", "Launch failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                            return;
+                        }
+
+                        selectedPid = started.Id;
+                    }
+                }
+
+                if (selectedPid <= 0)
+                {
+                    return;
+                }
+
+                _pendingLaunchOptions = showLaunchOptions;
+                _pendingUseUsermodeHooks = showLaunchOptions && picker.UseUsermodeHooks;
+                _pendingAutoOpenApiGraph = showLaunchOptions && picker.AutoOpenApiGraphWindow;
+                _pendingHookPreconfigured = hookPreconfigured;
+                PidBox.Text = selectedPid.ToString();
                 Connect_Click(this, new RoutedEventArgs());
             }
             finally
@@ -2196,7 +2726,32 @@ namespace SleepwalkerInterface
 
         internal async Task BeginStartupLaunchFlowAsync()
         {
-            await OpenProcessPickerAndConnectAsync();
+            await OpenProcessPickerAndConnectAsync(showLaunchOptions: true);
+        }
+
+        private void DisposePreparedLaunchBackendSession()
+        {
+            if (_preparedLaunchBackendSession != null)
+            {
+                try
+                {
+                    _preparedLaunchBackendSession.Dispose();
+                }
+                catch
+                {
+                }
+            }
+
+            _preparedLaunchBackendSession = null;
+            _preparedLaunchBackendPid = 0;
+        }
+
+        private void ClearPendingLaunchOptions()
+        {
+            _pendingLaunchOptions = false;
+            _pendingUseUsermodeHooks = false;
+            _pendingAutoOpenApiGraph = false;
+            _pendingHookPreconfigured = false;
         }
 
         internal bool TryOpenSessionFromStartupPath(string path, out string error)
@@ -2242,6 +2797,7 @@ namespace SleepwalkerInterface
                     Owner = this,
                     ShowInTaskbar = false
                 };
+                _eventsFloatWindow.Closing += EventsFloatWindow_Closing;
                 _eventsFloatWindow.Closed += EventsFloatWindow_Closed;
                 _eventsFloatWindow.Show();
             }), System.Windows.Threading.DispatcherPriority.Background);
@@ -2251,6 +2807,7 @@ namespace SleepwalkerInterface
         {
             if (_eventsFloatWindow != null)
             {
+                _eventsFloatWindow.Closing -= EventsFloatWindow_Closing;
                 _eventsFloatWindow.Closed -= EventsFloatWindow_Closed;
                 if (_eventsFloatWindow.Content == EventsPaneHost)
                     _eventsFloatWindow.Content = null;
@@ -2288,6 +2845,7 @@ namespace SleepwalkerInterface
                     Owner = this,
                     ShowInTaskbar = false
                 };
+                _performanceFloatWindow.Closing += PerformanceFloatWindow_Closing;
                 _performanceFloatWindow.Closed += PerformanceFloatWindow_Closed;
                 _performanceFloatWindow.Show();
             }), System.Windows.Threading.DispatcherPriority.Background);
@@ -2297,6 +2855,7 @@ namespace SleepwalkerInterface
         {
             if (_performanceFloatWindow != null)
             {
+                _performanceFloatWindow.Closing -= PerformanceFloatWindow_Closing;
                 _performanceFloatWindow.Closed -= PerformanceFloatWindow_Closed;
                 if (_performanceFloatWindow.Content == PerformancePaneHost)
                     _performanceFloatWindow.Content = null;
@@ -2333,6 +2892,7 @@ namespace SleepwalkerInterface
                     Owner = this,
                     ShowInTaskbar = false
                 };
+                _etwFloatWindow.Closing += EtwFloatWindow_Closing;
                 _etwFloatWindow.Closed += EtwFloatWindow_Closed;
                 _etwFloatWindow.Show();
             }), System.Windows.Threading.DispatcherPriority.Background);
@@ -2342,6 +2902,7 @@ namespace SleepwalkerInterface
         {
             if (_etwFloatWindow != null)
             {
+                _etwFloatWindow.Closing -= EtwFloatWindow_Closing;
                 _etwFloatWindow.Closed -= EtwFloatWindow_Closed;
                 if (_etwFloatWindow.Content == EtwPaneHost)
                     _etwFloatWindow.Content = null;
@@ -2375,6 +2936,7 @@ namespace SleepwalkerInterface
                     Owner = this,
                     ShowInTaskbar = false
                 };
+                _heuristicsFloatWindow.Closing += HeuristicsFloatWindow_Closing;
                 _heuristicsFloatWindow.Closed += HeuristicsFloatWindow_Closed;
                 _heuristicsFloatWindow.Show();
             }), System.Windows.Threading.DispatcherPriority.Background);
@@ -2384,6 +2946,7 @@ namespace SleepwalkerInterface
         {
             if (_heuristicsFloatWindow != null)
             {
+                _heuristicsFloatWindow.Closing -= HeuristicsFloatWindow_Closing;
                 _heuristicsFloatWindow.Closed -= HeuristicsFloatWindow_Closed;
                 if (_heuristicsFloatWindow.Content == HeuristicsPaneHost)
                     _heuristicsFloatWindow.Content = null;
@@ -2404,11 +2967,43 @@ namespace SleepwalkerInterface
                 RedockEventsPane();
         }
 
+        private void EventsFloatWindow_Closing(object? sender, CancelEventArgs e)
+        {
+            bool explorerEnabled = FindExplorerItem("Events")?.IsEnabled ?? true;
+            if (_isMainWindowShuttingDown ||
+                !explorerEnabled ||
+                !_eventsPaneVisible ||
+                sender is not EventsFloatWindow window ||
+                !ReferenceEquals(window.Content, EventsPaneHost))
+            {
+                return;
+            }
+
+            e.Cancel = true;
+            RedockEventsPane();
+        }
+
         private void PerformanceFloatWindow_Closed(object? sender, EventArgs e)
         {
             _performanceFloatWindow = null;
             if (PerformanceDockBorder.Child == null)
                 RedockPerformancePane();
+        }
+
+        private void PerformanceFloatWindow_Closing(object? sender, CancelEventArgs e)
+        {
+            bool explorerEnabled = FindExplorerItem("Performance")?.IsEnabled ?? true;
+            if (_isMainWindowShuttingDown ||
+                !explorerEnabled ||
+                !_performancePaneVisible ||
+                sender is not PerformanceFloatWindow window ||
+                !ReferenceEquals(window.Content, PerformancePaneHost))
+            {
+                return;
+            }
+
+            e.Cancel = true;
+            RedockPerformancePane();
         }
 
         private void EtwFloatWindow_Closed(object? sender, EventArgs e)
@@ -2418,11 +3013,68 @@ namespace SleepwalkerInterface
                 RedockEtwPane();
         }
 
+        private void EtwFloatWindow_Closing(object? sender, CancelEventArgs e)
+        {
+            bool explorerEnabled = FindExplorerItem("ETW")?.IsEnabled ?? true;
+            if (_isMainWindowShuttingDown ||
+                !explorerEnabled ||
+                sender is not EtwFloatWindow window ||
+                !ReferenceEquals(window.Content, EtwPaneHost))
+            {
+                return;
+            }
+
+            e.Cancel = true;
+            RedockEtwPane();
+        }
+
         private void HeuristicsFloatWindow_Closed(object? sender, EventArgs e)
         {
             _heuristicsFloatWindow = null;
             if (HeuristicsDockBorder.Child == null)
                 RedockHeuristicsPane();
+        }
+
+        private void HeuristicsFloatWindow_Closing(object? sender, CancelEventArgs e)
+        {
+            bool explorerEnabled = FindExplorerItem("Heuristics")?.IsEnabled ?? true;
+            if (_isMainWindowShuttingDown ||
+                !explorerEnabled ||
+                sender is not HeuristicsFloatWindow window ||
+                !ReferenceEquals(window.Content, HeuristicsPaneHost))
+            {
+                return;
+            }
+
+            e.Cancel = true;
+            RedockHeuristicsPane();
+        }
+
+        private void ApiViewDataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            UpdateApiViewSelection(ApiViewDataGrid?.SelectedItem as ApiCallGraphMainRowView);
+        }
+
+        private void UpdateApiViewSelection(ApiCallGraphMainRowView? selected)
+        {
+            if (ApiViewSelectedTitleBlock == null || ApiViewSelectedMetaBlock == null || ApiViewSelectedDetailsTextBox == null)
+            {
+                return;
+            }
+
+            if (selected == null)
+            {
+                ApiViewSelectedTitleBlock.Text = "No selection";
+                ApiViewSelectedMetaBlock.Text = "Select a row to inspect decoded details";
+                ApiViewSelectedDetailsTextBox.Text = string.Empty;
+                return;
+            }
+
+            ApiViewSelectedTitleBlock.Text = selected.ApiName;
+            ApiViewSelectedMetaBlock.Text = $"{selected.PathLabel} | TID {selected.ThreadLabel} | hits {selected.Hits} | heat {selected.HeatLabel}";
+            ApiViewSelectedDetailsTextBox.Text = selected.DetailFull;
         }
 
         private void TogglePaneOrder()
@@ -2723,6 +3375,21 @@ namespace SleepwalkerInterface
             };
         }
 
+        private sealed class ApiCallGraphMainRowView
+        {
+            public string GraphKey { get; set; } = string.Empty;
+            public string ApiName { get; set; } = string.Empty;
+            public string PathLabel { get; set; } = string.Empty;
+            public string ThreadLabel { get; set; } = string.Empty;
+            public string LastSeen { get; set; } = string.Empty;
+            public int Hits { get; set; }
+            public string FlameBar { get; set; } = string.Empty;
+            public double HeatPercent { get; set; }
+            public string HeatLabel { get; set; } = string.Empty;
+            public string DecodedAction { get; set; } = string.Empty;
+            public string DetailFull { get; set; } = string.Empty;
+        }
+
         // Lane focus API used by LaneSettingsWindow
         public void SetLaneFocus(string? laneKey)
         {
@@ -2745,6 +3412,8 @@ namespace SleepwalkerInterface
         public double ViewDurationSeconds { get; set; } = 120;
         public double ViewStartSeconds { get; set; }
         public string? LaneFocusKey { get; set; }
+        public bool UseUsermodeHooks { get; set; }
+        public bool AutoOpenApiGraphOnNextStart { get; set; }
         public bool TargetExited { get; set; }
         public bool OfflineSnapshot { get; set; }
         public string? BackingStorePath { get; set; }

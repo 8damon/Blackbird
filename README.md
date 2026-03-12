@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="./diagram/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
+  <img src="./media/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
 </p>
 
 ## What Blackbird Is For
@@ -68,7 +68,7 @@ Operator UX behavior in this panel:
 The detection chain is the most important investigation view in the platform.
 
 <p align="center">
-  <img src="./diagram/DETECTION_CHAIN.png" width="980" alt="Blackbird detection chain" />
+  <img src="./media/DETECTION_CHAIN.png" width="980" alt="Blackbird detection chain" />
 </p>
 
 It groups detections by event and detection key so the operator can review related activity as a single chain instead of a pile of disconnected records.
@@ -157,7 +157,7 @@ Blackbird is split into a few main parts:
 7. Sessions can be saved, reopened, imported, or exported for later review.
 
 <p align="center">
-  <img src="./diagram/Blackbird_DIA.png" width="980" alt="Blackbird platform diagram" />
+  <img src="./media/BLACKBIRD_DIAGRAM.png" width="980" alt="Blackbird platform diagram" />
 </p>
 
 ## Build Outputs

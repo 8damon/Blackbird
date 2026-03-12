@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     internal static class Kernel32Native
     {

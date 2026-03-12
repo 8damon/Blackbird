@@ -1,4 +1,4 @@
-<Window x:Class="SleepwalkerInterface.ThreadStackWindow"
+<Window x:Class="BlackbirdInterface.ThreadStackWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Thread Stack"

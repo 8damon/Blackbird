@@ -1,11 +1,11 @@
-# Sleepwalker API Guide
+# Blackbird API Guide
 
-This document describes the current Sleepwalker control-plane and telemetry contract for engineers, detection content authors, and integrators.
+This document describes the current Blackbird control-plane and telemetry contract for engineers, detection content authors, and integrators.
 
 ## Telemetry Contract Visual
 
 <p align="center">
-  <img src="./diagram/Sleepwalker_KM_Telemetry_Arch.png" width="900" />
+  <img src="./diagram/Blackbird_DIA.png" width="900" />
 </p>
 
 ## IOCTL Record Example
@@ -17,14 +17,14 @@ This document describes the current Sleepwalker control-plane and telemetry cont
 ## Revision and Scope
 
 - Document revision: `2026-03-06`
-- ABI source of truth: `abi/sleepwalker_ioctl.h`
-- Compatibility note: no explicit in-band ABI version field is currently exposed; pin integration by commit/date and validate with `SleepwalkerTestSuite`.
+- ABI source of truth: `abi/blackbird_ioctl.h`
+- Compatibility note: no explicit in-band ABI version field is currently exposed; pin integration by commit/date and validate with `BlackbirdTestSuite`.
 
 ## At a Glance
 
 - Control device:
-  - NT: `\Device\SleepwalkerCtl`
-  - DOS: `\\.\Global\SleepwalkerCtl` (preferred), `\\.\SleepwalkerCtl` (legacy)
+  - NT: `\Device\BlackbirdCtl`
+  - DOS: `\\.\Global\BlackbirdCtl` (preferred), `\\.\BlackbirdCtl` (legacy)
 - IOCTL operations:
   - subscribe
   - unsubscribe
@@ -37,85 +37,85 @@ This document describes the current Sleepwalker control-plane and telemetry cont
   - handle
   - thread
 - Shared user-mode SDK:
-  - `SleepwalkerSensorCore.dll` / `user/sensor/sleepwalker_sensor_core.h`
-  - exported `SLEEPWALKERSC*` APIs for IOCTL and ETW session management
+  - `BlackbirdSensorCore.dll` / `user/sensor/blackbird_sensor_core.h`
+  - exported `BLACKBIRDSC*` APIs for IOCTL and ETW session management
   - typed `Swk*` detection callback surface for ETW detection events
 - ETW provider:
-  - name: `Sleepwalker.Kernel`
+  - name: `Blackbird.Kernel`
   - GUID: `{D6C73F8A-6AD8-4F4B-A363-3D2FA31CD0E2}`
 
-## Shared User-Mode SDK (`SleepwalkerSensorCore`)
+## Shared User-Mode SDK (`BlackbirdSensorCore`)
 
 The preferred integration surface for user-mode consumers is:
 
-- header: `user/sensor/sleepwalker_sensor_core.h`
-- binary: `SleepwalkerSensorCore.dll`
+- header: `user/sensor/blackbird_sensor_core.h`
+- binary: `BlackbirdSensorCore.dll`
 
 Current exports:
 
 - Protocol selection helpers:
-  - `SLEEPWALKERSCUseServiceProtocol`
-  - `SLEEPWALKERSCUseClientProtocol`
-  - `SLEEPWALKERSCGetProtocolMode`
-  - `SLEEPWALKERSCGetBrokerThreatIntelEnableError`
+  - `BLACKBIRDSCUseServiceProtocol`
+  - `BLACKBIRDSCUseClientProtocol`
+  - `BLACKBIRDSCGetProtocolMode`
+  - `BLACKBIRDSCGetBrokerThreatIntelEnableError`
 - IOCTL control-plane wrappers:
-  - `SLEEPWALKERSCOpenControlDevice`
-  - `SLEEPWALKERSCSubscribe`
-  - `SLEEPWALKERSCUnsubscribe`
-  - `SLEEPWALKERSCSetPids`
-  - `SLEEPWALKERSCGetEvent`
-  - `SLEEPWALKERSCGetStats`
-  - `SLEEPWALKERSCQueryProcessImagePath`
-  - `SLEEPWALKERSCSetShutdownMode`
-  - `SLEEPWALKERSCParseStreamMaskA`
+  - `BLACKBIRDSCOpenControlDevice`
+  - `BLACKBIRDSCSubscribe`
+  - `BLACKBIRDSCUnsubscribe`
+  - `BLACKBIRDSCSetPids`
+  - `BLACKBIRDSCGetEvent`
+  - `BLACKBIRDSCGetStats`
+  - `BLACKBIRDSCQueryProcessImagePath`
+  - `BLACKBIRDSCSetShutdownMode`
+  - `BLACKBIRDSCParseStreamMaskA`
 - ETW session wrappers:
-  - `SLEEPWALKERSCStopSessionByName`
-  - `SLEEPWALKERSCStartEtwSession`
-  - `SLEEPWALKERSCStartSleepwalkerEtwSession`
+  - `BLACKBIRDSCStopSessionByName`
+  - `BLACKBIRDSCStartEtwSession`
+  - `BLACKBIRDSCStartBlackbirdEtwSession`
   - `SwkStartDetectionEtwSession`
-  - `SLEEPWALKERSCRunEtwSession`
-  - `SLEEPWALKERSCStopEtwSession`
+  - `BLACKBIRDSCRunEtwSession`
+  - `BLACKBIRDSCStopEtwSession`
 - Typed detection callback types:
   - `SwkDetectionEvent`
   - `SwkDetectionCallback`
 
 Consumers currently using these exports:
 
-- `SleepwalkerClient`
-- `SleepwalkerTestSuite`
-- `SleepwlkrController`
+- `BlackbirdClient`
+- `BlackbirdTestSuite`
+- `BlackbirdController`
 
 ## IOCTL Interface
 
 ### Request/Response Matrix
 
-- `IOCTL_SLEEPWALKER_SUBSCRIBE`
-  - In: `SLEEPWALKER_SUBSCRIBE_REQUEST`
+- `IOCTL_BLACKBIRD_SUBSCRIBE`
+  - In: `BLACKBIRD_SUBSCRIBE_REQUEST`
   - Out: none
-- `IOCTL_SLEEPWALKER_UNSUBSCRIBE`
-  - In: `SLEEPWALKER_UNSUBSCRIBE_REQUEST`
+- `IOCTL_BLACKBIRD_UNSUBSCRIBE`
+  - In: `BLACKBIRD_UNSUBSCRIBE_REQUEST`
   - Out: none
-- `IOCTL_SLEEPWALKER_GET_EVENT`
+- `IOCTL_BLACKBIRD_GET_EVENT`
   - In: none
-  - Out: `SLEEPWALKER_EVENT_RECORD`
-- `IOCTL_SLEEPWALKER_GET_STATS`
+  - Out: `BLACKBIRD_EVENT_RECORD`
+- `IOCTL_BLACKBIRD_GET_STATS`
   - In: none
-  - Out: `SLEEPWALKER_STATS_RESPONSE`
-- `IOCTL_SLEEPWALKER_SET_PIDS`
-  - In: `SLEEPWALKER_SET_PIDS_REQUEST`
+  - Out: `BLACKBIRD_STATS_RESPONSE`
+- `IOCTL_BLACKBIRD_SET_PIDS`
+  - In: `BLACKBIRD_SET_PIDS_REQUEST`
   - Out: none
-- `IOCTL_SLEEPWALKER_QUERY_PROCESS_IMAGE`
-  - In: `SLEEPWALKER_QUERY_PROCESS_IMAGE_REQUEST`
-  - Out: `SLEEPWALKER_QUERY_PROCESS_IMAGE_RESPONSE`
-- `IOCTL_SLEEPWALKER_SET_SHUTDOWN_MODE`
+- `IOCTL_BLACKBIRD_QUERY_PROCESS_IMAGE`
+  - In: `BLACKBIRD_QUERY_PROCESS_IMAGE_REQUEST`
+  - Out: `BLACKBIRD_QUERY_PROCESS_IMAGE_RESPONSE`
+- `IOCTL_BLACKBIRD_SET_SHUTDOWN_MODE`
   - In: none
   - Out: none
 
 ### Stream Flags
 
-- `SLEEPWALKER_STREAM_HANDLE`
-- `SLEEPWALKER_STREAM_MEMORY`
-- `SLEEPWALKER_STREAM_THREAD`
+- `BLACKBIRD_STREAM_HANDLE`
+- `BLACKBIRD_STREAM_MEMORY`
+- `BLACKBIRD_STREAM_THREAD`
 
 `StreamMask` is bitwise-composable.
 
@@ -141,7 +141,7 @@ Consumers currently using these exports:
 
 ### Service-Broker Dynamic Expansion
 
-When using `SleepwlkrController` broker mode (`SLEEPWALKERSCUseClientProtocol`), the controller can expand monitoring
+When using `BlackbirdController` broker mode (`BLACKBIRDSCUseClientProtocol`), the controller can expand monitoring
 beyond the initially seeded PID list by building a relation graph per client:
 
 - Relation edges considered for expansion:
@@ -160,30 +160,30 @@ beyond the initially seeded PID list by building a relation graph per client:
 
 ## Event Record Structure
 
-`SLEEPWALKER_EVENT_RECORD` contains:
+`BLACKBIRD_EVENT_RECORD` contains:
 
-- `SLEEPWALKER_EVENT_HEADER`
+- `BLACKBIRD_EVENT_HEADER`
   - `Size`
   - `Type`
   - `StreamMask`
   - `Sequence` (per-client monotonic)
   - `TimestampQpc`
 - Union payload:
-  - `SLEEPWALKER_HANDLE_EVENT`
-  - `SLEEPWALKER_THREAD_EVENT`
+  - `BLACKBIRD_HANDLE_EVENT`
+  - `BLACKBIRD_THREAD_EVENT`
 
 Event type values:
 
-- `SleepwalkerEventTypeHandle`
-- `SleepwalkerEventTypeThread`
+- `BlackbirdEventTypeHandle`
+- `BlackbirdEventTypeThread`
 
 ## Handle Event Contract
 
-`SLEEPWALKER_HANDLE_EVENT` fields:
+`BLACKBIRD_HANDLE_EVENT` fields:
 
 - `CallerPid`, `TargetPid`
 - `DesiredAccess`
-- `ClassId` (`SLEEPWALKER_HANDLE_CLASS`)
+- `ClassId` (`BLACKBIRD_HANDLE_CLASS`)
 - `OriginAddress`, `OriginProtect`, `OriginPath`
 - `StatusOpenProcess`, `StatusBasicInfo`, `StatusSectionName`
 - Deep-path capture metadata:
@@ -193,52 +193,52 @@ Event type values:
   - `DeepRegionState`
   - `DeepRegionType`
   - `DeepSampleSize`
-  - `DeepSample[SLEEPWALKER_MAX_DEEP_SAMPLE_BYTES]`
-- `FrameCount`, `Frames[SLEEPWALKER_MAX_EVENT_FRAMES]`
+  - `DeepSample[BLACKBIRD_MAX_DEEP_SAMPLE_BYTES]`
+- `FrameCount`, `Frames[BLACKBIRD_MAX_EVENT_FRAMES]`
 
 ### Handle Classes
 
-- `SleepwalkerHandleClassUnknown`
-- `SleepwalkerHandleClassLegitimateSyscall`
-- `SleepwalkerHandleClassDirectSyscallSuspect`
+- `BlackbirdHandleClassUnknown`
+- `BlackbirdHandleClassLegitimateSyscall`
+- `BlackbirdHandleClassDirectSyscallSuspect`
 
 ### Handle Flags
 
-- `SLEEPWALKER_HANDLE_FLAG_EXEC_PROTECT`
-- `SLEEPWALKER_HANDLE_FLAG_FROM_NTDLL`
-- `SLEEPWALKER_HANDLE_FLAG_FROM_EXE`
-- `SLEEPWALKER_HANDLE_FLAG_MEMORY_RELATED`
-- `SLEEPWALKER_HANDLE_FLAG_THREAD_OBJECT`
-- `SLEEPWALKER_HANDLE_FLAG_DUPLICATE_OPERATION`
-- `SLEEPWALKER_HANDLE_FLAG_DEEP_PATH_CANDIDATE`
-- `SLEEPWALKER_HANDLE_FLAG_DEEP_PATH_CAPTURED`
-- `SLEEPWALKER_HANDLE_FLAG_DEEP_PATH_CACHE_HIT`
+- `BLACKBIRD_HANDLE_FLAG_EXEC_PROTECT`
+- `BLACKBIRD_HANDLE_FLAG_FROM_NTDLL`
+- `BLACKBIRD_HANDLE_FLAG_FROM_EXE`
+- `BLACKBIRD_HANDLE_FLAG_MEMORY_RELATED`
+- `BLACKBIRD_HANDLE_FLAG_THREAD_OBJECT`
+- `BLACKBIRD_HANDLE_FLAG_DUPLICATE_OPERATION`
+- `BLACKBIRD_HANDLE_FLAG_DEEP_PATH_CANDIDATE`
+- `BLACKBIRD_HANDLE_FLAG_DEEP_PATH_CAPTURED`
+- `BLACKBIRD_HANDLE_FLAG_DEEP_PATH_CACHE_HIT`
 
 ## Thread Event Contract
 
-`SLEEPWALKER_THREAD_EVENT` fields:
+`BLACKBIRD_THREAD_EVENT` fields:
 
 - `ProcessId`, `ThreadId`, `CreatorPid`
 - `StartAddress`
 - `ImageBase`, `ImageSize`
 - `Flags`
-- `FrameCount`, `Frames[SLEEPWALKER_MAX_EVENT_FRAMES]`
+- `FrameCount`, `Frames[BLACKBIRD_MAX_EVENT_FRAMES]`
 
 ### Thread Flags
 
-- `SLEEPWALKER_THREAD_FLAG_GOT_START`
-- `SLEEPWALKER_THREAD_FLAG_GOT_RANGE`
-- `SLEEPWALKER_THREAD_FLAG_REMOTE_CREATOR`
-- `SLEEPWALKER_THREAD_FLAG_OUTSIDE_MAIN_IMG`
-- `SLEEPWALKER_THREAD_FLAG_CORRELATED_INTENT`
-- `SLEEPWALKER_THREAD_FLAG_CORR_MEMORY`
-- `SLEEPWALKER_THREAD_FLAG_CORR_THREAD_CTX`
-- `SLEEPWALKER_THREAD_FLAG_CORR_DUP_HANDLE`
-- `SLEEPWALKER_THREAD_FLAG_START_REGION_EXEC`
+- `BLACKBIRD_THREAD_FLAG_GOT_START`
+- `BLACKBIRD_THREAD_FLAG_GOT_RANGE`
+- `BLACKBIRD_THREAD_FLAG_REMOTE_CREATOR`
+- `BLACKBIRD_THREAD_FLAG_OUTSIDE_MAIN_IMG`
+- `BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT`
+- `BLACKBIRD_THREAD_FLAG_CORR_MEMORY`
+- `BLACKBIRD_THREAD_FLAG_CORR_THREAD_CTX`
+- `BLACKBIRD_THREAD_FLAG_CORR_DUP_HANDLE`
+- `BLACKBIRD_THREAD_FLAG_START_REGION_EXEC`
 
 ## Stats Contract
 
-`SLEEPWALKER_STATS_RESPONSE`:
+`BLACKBIRD_STATS_RESPONSE`:
 
 - `SubscriptionCount`
 - `QueueDepth`
@@ -249,7 +249,7 @@ Event type values:
 
 Provider:
 
-- Name: `Sleepwalker.Kernel`
+- Name: `Blackbird.Kernel`
 - GUID: `{D6C73F8A-6AD8-4F4B-A363-3D2FA31CD0E2}`
 
 Current event names:
@@ -291,7 +291,7 @@ Current event names:
 
 ### IPC ETW Uplink Surface
 
-The broker ETW IPC model (`SLEEPWALKER_IPC_ETW_EVENT`) now carries both the generic ETW envelope and
+The broker ETW IPC model (`BLACKBIRD_IPC_ETW_EVENT`) now carries both the generic ETW envelope and
 event-family-specific fields so clients can build richer inspectors without reparsing raw ETW:
 
 - Generic envelope:
@@ -354,31 +354,31 @@ event-family-specific fields so clients can build richer inspectors without repa
 
 ## Quick Integration Flow (IOCTL)
 
-1. `CreateFile("\\\\.\\Global\\SleepwalkerCtl", ...)`
+1. `CreateFile("\\\\.\\Global\\BlackbirdCtl", ...)`
 2. Subscribe one or more PIDs with chosen stream mask
-3. Poll `IOCTL_SLEEPWALKER_GET_EVENT` in a loop
+3. Poll `IOCTL_BLACKBIRD_GET_EVENT` in a loop
 4. Handle `NO_MORE_ENTRIES` as empty queue
-5. Query `IOCTL_SLEEPWALKER_GET_STATS` for health and drops
+5. Query `IOCTL_BLACKBIRD_GET_STATS` for health and drops
 6. Unsubscribe and close handle
 
-Using `SleepwalkerSensorCore` helpers, the same flow is:
+Using `BlackbirdSensorCore` helpers, the same flow is:
 
-1. `SLEEPWALKERSCOpenControlDevice`
-2. `SLEEPWALKERSCSubscribe`
-3. loop on `SLEEPWALKERSCGetEvent`
-4. `SLEEPWALKERSCGetStats` for queue/drop health
-5. `SLEEPWALKERSCUnsubscribe` and close handle
+1. `BLACKBIRDSCOpenControlDevice`
+2. `BLACKBIRDSCSubscribe`
+3. loop on `BLACKBIRDSCGetEvent`
+4. `BLACKBIRDSCGetStats` for queue/drop health
+5. `BLACKBIRDSCUnsubscribe` and close handle
 
 ## Minimal Pseudocode
 
 ```c
-HANDLE h = CreateFileW(L"\\\\.\\Global\\SleepwalkerCtl", ...);
-SLEEPWALKER_SUBSCRIBE_REQUEST sub = { .ProcessId = pid, .StreamMask = SLEEPWALKER_STREAM_HANDLE | SLEEPWALKER_STREAM_THREAD };
-DeviceIoControl(h, IOCTL_SLEEPWALKER_SUBSCRIBE, &sub, sizeof(sub), NULL, 0, &bytes, NULL);
+HANDLE h = CreateFileW(L"\\\\.\\Global\\BlackbirdCtl", ...);
+BLACKBIRD_SUBSCRIBE_REQUEST sub = { .ProcessId = pid, .StreamMask = BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_THREAD };
+DeviceIoControl(h, IOCTL_BLACKBIRD_SUBSCRIBE, &sub, sizeof(sub), NULL, 0, &bytes, NULL);
 
 for (;;) {
-    SLEEPWALKER_EVENT_RECORD rec = {0};
-    if (!DeviceIoControl(h, IOCTL_SLEEPWALKER_GET_EVENT, NULL, 0, &rec, sizeof(rec), &bytes, NULL)) {
+    BLACKBIRD_EVENT_RECORD rec = {0};
+    if (!DeviceIoControl(h, IOCTL_BLACKBIRD_GET_EVENT, NULL, 0, &rec, sizeof(rec), &bytes, NULL)) {
         if (GetLastError() == ERROR_NO_MORE_ITEMS) {
             Sleep(25);
             continue;
@@ -387,10 +387,10 @@ for (;;) {
     }
 
     switch (rec.Header.Type) {
-    case SleepwalkerEventTypeHandle:
+    case BlackbirdEventTypeHandle:
         /* consume handle payload */
         break;
-    case SleepwalkerEventTypeThread:
+    case BlackbirdEventTypeThread:
         /* consume thread payload */
         break;
     }
@@ -417,8 +417,8 @@ Common NTSTATUS results mapped to Win32 errors on IOCTL calls:
   - final context-only process image fallback when symbol ownership is unknown
 - Kernel addresses may remain unresolved depending on symbol policy/hardening.
 - High event rates can produce queue drops; monitor `DroppedEvents` and ETW counters.
-- Use `SleepwalkerTestSuite` to verify environment health and coverage after driver changes.
-- `SleepwalkerTestSuite` strictness knobs:
-  - `SLEEPWALKER_TEST_REQUIRE_KERNEL_CORRELATION=1` to require kernel correlation-dependent checks.
-  - `SLEEPWALKER_TEST_REQUIRE_APC=1` to require APC ETW coverage.
+- Use `BlackbirdTestSuite` to verify environment health and coverage after driver changes.
+- `BlackbirdTestSuite` strictness knobs:
+  - `BLACKBIRD_TEST_REQUIRE_KERNEL_CORRELATION=1` to require kernel correlation-dependent checks.
+  - `BLACKBIRD_TEST_REQUIRE_APC=1` to require APC ETW coverage.
 - Test output includes per-check elapsed timing (`ms`) and cycle deltas (`rdtsc` when available), plus suite total elapsed time.

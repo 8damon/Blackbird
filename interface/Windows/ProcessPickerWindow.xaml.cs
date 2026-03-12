@@ -19,7 +19,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public partial class ProcessPickerWindow : Window
     {
@@ -55,8 +55,23 @@ namespace SleepwalkerInterface
         private Brush _rowSystemBackground = Brushes.Transparent;
         private Brush _rowSystemBorder = Brushes.Transparent;
         private Brush _rowSystemForeground = Brushes.Black;
+        private bool _showLaunchOptions;
 
         public int SelectedPid { get; private set; }
+        public bool UseUsermodeHooks { get; private set; }
+        public bool AutoOpenApiGraphWindow { get; private set; } = true;
+        public bool UseEarlyBirdApcLaunch { get; private set; }
+        public bool LaunchSelectedImage { get; private set; }
+        public string LaunchImagePath { get; private set; } = string.Empty;
+        public bool ShowLaunchOptions
+        {
+            get => _showLaunchOptions;
+            set
+            {
+                _showLaunchOptions = value;
+                UpdateLaunchOptionsUi();
+            }
+        }
 
         public ProcessPickerWindow()
         {
@@ -97,6 +112,32 @@ namespace SleepwalkerInterface
             App.ThemeChanged += OnThemeChanged;
 
             _isReady = true;
+            UpdateLaunchOptionsUi();
+        }
+
+        private void UpdateLaunchOptionsUi()
+        {
+            if (LaunchOptionsPanel == null)
+            {
+                return;
+            }
+
+            LaunchOptionsPanel.Visibility = ShowLaunchOptions ? Visibility.Visible : Visibility.Collapsed;
+            bool hooksEnabled = ShowLaunchOptions && (UseUsermodeHooksCheckBox?.IsChecked == true);
+            if (EarlyBirdApcCheckBox != null)
+            {
+                // EarlyBird APC is optional and only relevant when hooks are enabled.
+                EarlyBirdApcCheckBox.IsEnabled = hooksEnabled;
+                if (!hooksEnabled)
+                {
+                    EarlyBirdApcCheckBox.IsChecked = false;
+                }
+            }
+        }
+
+        private void UseUsermodeHooksCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            UpdateLaunchOptionsUi();
         }
 
         private void Root_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -1266,7 +1307,12 @@ namespace SleepwalkerInterface
             if (ProcessGrid.SelectedItem is not ProcessItem item)
                 return;
 
+            LaunchSelectedImage = false;
+            LaunchImagePath = string.Empty;
             SelectedPid = item.Pid;
+            UseUsermodeHooks = UseUsermodeHooksCheckBox?.IsChecked == true;
+            AutoOpenApiGraphWindow = AutoOpenApiGraphCheckBox?.IsChecked != false;
+            UseEarlyBirdApcLaunch = UseUsermodeHooks && (EarlyBirdApcCheckBox?.IsChecked == true);
             DialogResult = true;
             Close();
         }
@@ -1323,17 +1369,33 @@ namespace SleepwalkerInterface
             if (dlg.ShowDialog(this) != true)
                 return;
 
+            if (ShowLaunchOptions)
+            {
+                LaunchSelectedImage = true;
+                LaunchImagePath = dlg.FileName;
+                SelectedPid = 0;
+                UseUsermodeHooks = UseUsermodeHooksCheckBox?.IsChecked == true;
+                AutoOpenApiGraphWindow = AutoOpenApiGraphCheckBox?.IsChecked != false;
+                UseEarlyBirdApcLaunch = UseUsermodeHooks && (EarlyBirdApcCheckBox?.IsChecked == true);
+                DialogResult = true;
+                Close();
+                return;
+            }
+
             try
             {
-                var started = Process.Start(new ProcessStartInfo(dlg.FileName)
-                {
-                    UseShellExecute = true
-                });
-
+                var started = Process.Start(new ProcessStartInfo(dlg.FileName) { UseShellExecute = true });
                 if (started == null)
+                {
                     return;
+                }
 
+                LaunchSelectedImage = false;
+                LaunchImagePath = string.Empty;
                 SelectedPid = started.Id;
+                UseUsermodeHooks = false;
+                AutoOpenApiGraphWindow = false;
+                UseEarlyBirdApcLaunch = false;
                 DialogResult = true;
                 Close();
             }

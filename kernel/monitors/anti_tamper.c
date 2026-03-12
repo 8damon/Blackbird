@@ -12,32 +12,32 @@
 #include "..\core\control.h"
 #include "..\telemetry\etw.h"
 
-#define SLEEPWALKER_TAMPER_CHECK_PERIOD_MS 5000
+#define BLACKBIRD_TAMPER_CHECK_PERIOD_MS 5000
 
-#define SLEEPWALKER_TAMPER_MAJOR_FN_CHANGED 0x00000001
-#define SLEEPWALKER_TAMPER_UNLOAD_CHANGED 0x00000002
-#define SLEEPWALKER_TAMPER_FASTIO_CHANGED 0x00000004
-#define SLEEPWALKER_TAMPER_OBJECT_TYPE_INVALID 0x00000008
-#define SLEEPWALKER_TAMPER_OBJECT_SIZE_INVALID 0x00000010
-#define SLEEPWALKER_TAMPER_EXTENSION_MISSING 0x00000020
-#define SLEEPWALKER_TAMPER_CONTROL_INTEGRITY 0x00000040
-#define SLEEPWALKER_TAMPER_ETW_INTEGRITY 0x00000080
-#define SLEEPWALKER_TAMPER_IOCTL_DISPATCH_INVALID 0x00000100
-#define SLEEPWALKER_TAMPER_MAJOR_PTR_INVALID 0x00000200
-#define SLEEPWALKER_TAMPER_DRIVER_IMAGE_INVALID 0x00000400
-#define SLEEPWALKER_TAMPER_CHECK_IRQL_INVALID 0x00000800
-#define SLEEPWALKER_TAMPER_MONITOR_INTEGRITY 0x00001000
+#define BLACKBIRD_TAMPER_MAJOR_FN_CHANGED 0x00000001
+#define BLACKBIRD_TAMPER_UNLOAD_CHANGED 0x00000002
+#define BLACKBIRD_TAMPER_FASTIO_CHANGED 0x00000004
+#define BLACKBIRD_TAMPER_OBJECT_TYPE_INVALID 0x00000008
+#define BLACKBIRD_TAMPER_OBJECT_SIZE_INVALID 0x00000010
+#define BLACKBIRD_TAMPER_EXTENSION_MISSING 0x00000020
+#define BLACKBIRD_TAMPER_CONTROL_INTEGRITY 0x00000040
+#define BLACKBIRD_TAMPER_ETW_INTEGRITY 0x00000080
+#define BLACKBIRD_TAMPER_IOCTL_DISPATCH_INVALID 0x00000100
+#define BLACKBIRD_TAMPER_MAJOR_PTR_INVALID 0x00000200
+#define BLACKBIRD_TAMPER_DRIVER_IMAGE_INVALID 0x00000400
+#define BLACKBIRD_TAMPER_CHECK_IRQL_INVALID 0x00000800
+#define BLACKBIRD_TAMPER_MONITOR_INTEGRITY 0x00001000
 
-typedef struct _SLEEPWALKER_DISPATCH_SNAPSHOT
+typedef struct _BLACKBIRD_DISPATCH_SNAPSHOT
 {
     PDRIVER_DISPATCH MajorFunction[IRP_MJ_MAXIMUM_FUNCTION + 1];
     PDRIVER_UNLOAD DriverUnload;
     PFAST_IO_DISPATCH FastIoDispatch;
     CSHORT Type;
     CSHORT Size;
-} SLEEPWALKER_DISPATCH_SNAPSHOT;
+} BLACKBIRD_DISPATCH_SNAPSHOT;
 
-static SLEEPWALKER_DISPATCH_SNAPSHOT g_Snapshot;
+static BLACKBIRD_DISPATCH_SNAPSHOT g_Snapshot;
 static PDRIVER_OBJECT g_DriverObject = NULL;
 static KTIMER g_Timer;
 static KDPC g_TimerDpc;
@@ -48,7 +48,7 @@ static volatile LONG g_Initialized = 0;
 static volatile LONG g_LastTamperMask = 0;
 static KEVENT g_WorkDrainEvent;
 
-static BOOLEAN SLEEPWALKERIsKernelPointer(_In_opt_ PVOID Address)
+static BOOLEAN BLACKBIRDIsKernelPointer(_In_opt_ PVOID Address)
 {
     if (Address == NULL)
     {
@@ -58,7 +58,7 @@ static BOOLEAN SLEEPWALKERIsKernelPointer(_In_opt_ PVOID Address)
     return ((ULONG_PTR)Address >= (ULONG_PTR)MmSystemRangeStart);
 }
 
-static VOID SLEEPWALKERAntiTamperWorkRoutine(_In_ PVOID Context)
+static VOID BLACKBIRDAntiTamperWorkRoutine(_In_ PVOID Context)
 {
     PDRIVER_OBJECT driverObject;
     ULONG tamperMask = 0;
@@ -78,66 +78,66 @@ static VOID SLEEPWALKERAntiTamperWorkRoutine(_In_ PVOID Context)
 
     if (irql != PASSIVE_LEVEL)
     {
-        tamperMask |= SLEEPWALKER_TAMPER_CHECK_IRQL_INVALID;
+        tamperMask |= BLACKBIRD_TAMPER_CHECK_IRQL_INVALID;
     }
 
     for (i = 0; i <= IRP_MJ_MAXIMUM_FUNCTION; ++i)
     {
         if (driverObject->MajorFunction[i] != g_Snapshot.MajorFunction[i])
         {
-            tamperMask |= SLEEPWALKER_TAMPER_MAJOR_FN_CHANGED;
+            tamperMask |= BLACKBIRD_TAMPER_MAJOR_FN_CHANGED;
         }
-        if (!SLEEPWALKERIsKernelPointer((PVOID)driverObject->MajorFunction[i]))
+        if (!BLACKBIRDIsKernelPointer((PVOID)driverObject->MajorFunction[i]))
         {
-            tamperMask |= SLEEPWALKER_TAMPER_MAJOR_PTR_INVALID;
+            tamperMask |= BLACKBIRD_TAMPER_MAJOR_PTR_INVALID;
         }
     }
 
-    if (!SLEEPWALKERIsKernelPointer((PVOID)driverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]))
+    if (!BLACKBIRDIsKernelPointer((PVOID)driverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]))
     {
-        tamperMask |= SLEEPWALKER_TAMPER_IOCTL_DISPATCH_INVALID;
+        tamperMask |= BLACKBIRD_TAMPER_IOCTL_DISPATCH_INVALID;
     }
 
     if (driverObject->DriverUnload != g_Snapshot.DriverUnload)
     {
-        tamperMask |= SLEEPWALKER_TAMPER_UNLOAD_CHANGED;
+        tamperMask |= BLACKBIRD_TAMPER_UNLOAD_CHANGED;
     }
     if (driverObject->FastIoDispatch != g_Snapshot.FastIoDispatch)
     {
-        tamperMask |= SLEEPWALKER_TAMPER_FASTIO_CHANGED;
+        tamperMask |= BLACKBIRD_TAMPER_FASTIO_CHANGED;
     }
     if (driverObject->Type != g_Snapshot.Type)
     {
-        tamperMask |= SLEEPWALKER_TAMPER_OBJECT_TYPE_INVALID;
+        tamperMask |= BLACKBIRD_TAMPER_OBJECT_TYPE_INVALID;
     }
     if (driverObject->Size != g_Snapshot.Size)
     {
-        tamperMask |= SLEEPWALKER_TAMPER_OBJECT_SIZE_INVALID;
+        tamperMask |= BLACKBIRD_TAMPER_OBJECT_SIZE_INVALID;
     }
     if (driverObject->DriverExtension == NULL)
     {
-        tamperMask |= SLEEPWALKER_TAMPER_EXTENSION_MISSING;
+        tamperMask |= BLACKBIRD_TAMPER_EXTENSION_MISSING;
     }
-    if (!SLEEPWALKERIsKernelPointer(driverObject->DriverStart) || driverObject->DriverSize == 0 ||
-        driverObject->DriverSection == NULL || !SLEEPWALKERIsKernelPointer((PVOID)driverObject->DriverInit))
+    if (!BLACKBIRDIsKernelPointer(driverObject->DriverStart) || driverObject->DriverSize == 0 ||
+        driverObject->DriverSection == NULL || !BLACKBIRDIsKernelPointer((PVOID)driverObject->DriverInit))
     {
-        tamperMask |= SLEEPWALKER_TAMPER_DRIVER_IMAGE_INVALID;
+        tamperMask |= BLACKBIRD_TAMPER_DRIVER_IMAGE_INVALID;
     }
-    if (!SLEEPWALKERControlSelfCheck())
+    if (!BLACKBIRDControlSelfCheck())
     {
-        tamperMask |= SLEEPWALKER_TAMPER_CONTROL_INTEGRITY;
+        tamperMask |= BLACKBIRD_TAMPER_CONTROL_INTEGRITY;
     }
-    if (!SLEEPWALKEREtwSelfCheck())
+    if (!BLACKBIRDEtwSelfCheck())
     {
-        tamperMask |= SLEEPWALKER_TAMPER_ETW_INTEGRITY;
+        tamperMask |= BLACKBIRD_TAMPER_ETW_INTEGRITY;
     }
-    if (!SLEEPWALKERHandleMonitorSelfCheck() || !SLEEPWALKERThreadMonitorSelfCheck() ||
-        !SLEEPWALKERProcessMonitorSelfCheck() || !SLEEPWALKERImageMonitorSelfCheck() ||
-        !SLEEPWALKERRegistryMonitorSelfCheck() || !SLEEPWALKERApcMonitorSelfCheck() ||
-        !SLEEPWALKERFileSystemMonitorSelfCheck() ||
-        !SLEEPWALKERCorrelationSelfCheck() || !SLEEPWALKERHollowingEngineSelfCheck())
+    if (!BLACKBIRDHandleMonitorSelfCheck() || !BLACKBIRDThreadMonitorSelfCheck() ||
+        !BLACKBIRDProcessMonitorSelfCheck() || !BLACKBIRDImageMonitorSelfCheck() ||
+        !BLACKBIRDRegistryMonitorSelfCheck() || !BLACKBIRDApcMonitorSelfCheck() ||
+        !BLACKBIRDFileSystemMonitorSelfCheck() ||
+        !BLACKBIRDCorrelationSelfCheck() || !BLACKBIRDHollowingEngineSelfCheck())
     {
-        tamperMask |= SLEEPWALKER_TAMPER_MONITOR_INTEGRITY;
+        tamperMask |= BLACKBIRD_TAMPER_MONITOR_INTEGRITY;
     }
 
     prevMask = InterlockedExchange(&g_LastTamperMask, (LONG)tamperMask);
@@ -145,12 +145,12 @@ static VOID SLEEPWALKERAntiTamperWorkRoutine(_In_ PVOID Context)
     {
         if (tamperMask != 0)
         {
-            SLEEPWALKEREtwLogDetectionEvent("DRIVER_DISPATCH_OR_OBJECT_TAMPER", 5, PsGetCurrentProcessId(), NULL,
+            BLACKBIRDEtwLogDetectionEvent("DRIVER_DISPATCH_OR_OBJECT_TAMPER", 5, PsGetCurrentProcessId(), NULL,
                                             tamperMask, 0, 0, L"driver dispatch/object integrity drift detected");
         }
         else if (prevMask != 0)
         {
-            SLEEPWALKEREtwLogDetectionEvent("DRIVER_DISPATCH_OR_OBJECT_TAMPER_CLEARED", 2, PsGetCurrentProcessId(),
+            BLACKBIRDEtwLogDetectionEvent("DRIVER_DISPATCH_OR_OBJECT_TAMPER_CLEARED", 2, PsGetCurrentProcessId(),
                                             NULL, 0, 0, 0,
                                             L"driver dispatch/object integrity returned to expected state");
         }
@@ -160,7 +160,7 @@ static VOID SLEEPWALKERAntiTamperWorkRoutine(_In_ PVOID Context)
     KeSetEvent(&g_WorkDrainEvent, IO_NO_INCREMENT, FALSE);
 }
 
-static VOID SLEEPWALKERAntiTamperTimerDpc(_In_ PKDPC Dpc, _In_opt_ PVOID DeferredContext,
+static VOID BLACKBIRDAntiTamperTimerDpc(_In_ PKDPC Dpc, _In_opt_ PVOID DeferredContext,
                                           _In_opt_ PVOID SystemArgument1, _In_opt_ PVOID SystemArgument2)
 {
     UNREFERENCED_PARAMETER(Dpc);
@@ -181,7 +181,7 @@ static VOID SLEEPWALKERAntiTamperTimerDpc(_In_ PKDPC Dpc, _In_opt_ PVOID Deferre
 }
 
 NTSTATUS
-SLEEPWALKERAntiTamperInitialize(_In_ PDRIVER_OBJECT DriverObject)
+BLACKBIRDAntiTamperInitialize(_In_ PDRIVER_OBJECT DriverObject)
 {
     LARGE_INTEGER dueTime;
     UINT32 i;
@@ -214,16 +214,16 @@ SLEEPWALKERAntiTamperInitialize(_In_ PDRIVER_OBJECT DriverObject)
     InterlockedExchange(&g_LastTamperMask, 0);
 
     KeInitializeEvent(&g_WorkDrainEvent, NotificationEvent, TRUE);
-    ExInitializeWorkItem(&g_WorkItem, SLEEPWALKERAntiTamperWorkRoutine, NULL);
+    ExInitializeWorkItem(&g_WorkItem, BLACKBIRDAntiTamperWorkRoutine, NULL);
     KeInitializeTimer(&g_Timer);
-    KeInitializeDpc(&g_TimerDpc, SLEEPWALKERAntiTamperTimerDpc, NULL);
+    KeInitializeDpc(&g_TimerDpc, BLACKBIRDAntiTamperTimerDpc, NULL);
 
-    dueTime.QuadPart = -(LONGLONG)SLEEPWALKER_TAMPER_CHECK_PERIOD_MS * 10000LL;
-    KeSetTimerEx(&g_Timer, dueTime, SLEEPWALKER_TAMPER_CHECK_PERIOD_MS, &g_TimerDpc);
+    dueTime.QuadPart = -(LONGLONG)BLACKBIRD_TAMPER_CHECK_PERIOD_MS * 10000LL;
+    KeSetTimerEx(&g_Timer, dueTime, BLACKBIRD_TAMPER_CHECK_PERIOD_MS, &g_TimerDpc);
     return STATUS_SUCCESS;
 }
 
-VOID SLEEPWALKERAntiTamperUninitialize(VOID)
+VOID BLACKBIRDAntiTamperUninitialize(VOID)
 {
     if (KeGetCurrentIrql() != PASSIVE_LEVEL)
     {
@@ -246,4 +246,9 @@ VOID SLEEPWALKERAntiTamperUninitialize(VOID)
     g_DriverObject = NULL;
     InterlockedExchange(&g_LastTamperMask, 0);
     InterlockedExchange(&g_WorkQueued, 0);
+}
+
+ULONG BLACKBIRDAntiTamperGetLastMask(VOID)
+{
+    return (ULONG)InterlockedCompareExchange(&g_LastTamperMask, 0, 0);
 }

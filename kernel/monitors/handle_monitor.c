@@ -88,7 +88,7 @@ typedef struct _MEMORY_BASIC_INFORMATION
 } MEMORY_BASIC_INFORMATION, *PMEMORY_BASIC_INFORMATION;
 #endif
 
-typedef struct _SLEEPWALKER_THREAD_BASIC_INFORMATION
+typedef struct _BLACKBIRD_THREAD_BASIC_INFORMATION
 {
     NTSTATUS ExitStatus;
     PVOID TebBaseAddress;
@@ -96,9 +96,9 @@ typedef struct _SLEEPWALKER_THREAD_BASIC_INFORMATION
     KAFFINITY AffinityMask;
     KPRIORITY Priority;
     KPRIORITY BasePriority;
-} SLEEPWALKER_THREAD_BASIC_INFORMATION, *PSLEEPWALKER_THREAD_BASIC_INFORMATION;
+} BLACKBIRD_THREAD_BASIC_INFORMATION, *PBLACKBIRD_THREAD_BASIC_INFORMATION;
 
-typedef struct _SLEEPWALKER_NT_TIB
+typedef struct _BLACKBIRD_NT_TIB
 {
     PVOID ExceptionList;
     PVOID StackBase;
@@ -107,16 +107,16 @@ typedef struct _SLEEPWALKER_NT_TIB
     PVOID FiberData;
     PVOID ArbitraryUserPointer;
     PVOID Self;
-} SLEEPWALKER_NT_TIB, *PSLEEPWALKER_NT_TIB;
+} BLACKBIRD_NT_TIB, *PBLACKBIRD_NT_TIB;
 
-typedef enum _SLEEPWALKER_MEMORY_INFORMATION_CLASS
+typedef enum _BLACKBIRD_MEMORY_INFORMATION_CLASS
 {
-    SLEEPWALKERMemoryBasicInformation = 0,
-    SLEEPWALKERMemorySectionName = 2
-} SLEEPWALKER_MEMORY_INFORMATION_CLASS;
+    BLACKBIRDMemoryBasicInformation = 0,
+    BLACKBIRDMemorySectionName = 2
+} BLACKBIRD_MEMORY_INFORMATION_CLASS;
 
 NTSYSAPI NTSTATUS NTAPI ZwQueryVirtualMemory(_In_ HANDLE ProcessHandle, _In_opt_ PVOID BaseAddress,
-                                             _In_ SLEEPWALKER_MEMORY_INFORMATION_CLASS MemoryInformationClass,
+                                             _In_ BLACKBIRD_MEMORY_INFORMATION_CLASS MemoryInformationClass,
                                              _Out_writes_bytes_(MemoryInformationLength) PVOID MemoryInformation,
                                              _In_ SIZE_T MemoryInformationLength, _Out_opt_ PSIZE_T ReturnLength);
 NTSYSAPI NTSTATUS NTAPI ZwOpenThread(_Out_ PHANDLE ThreadHandle, _In_ ACCESS_MASK DesiredAccess,
@@ -137,10 +137,10 @@ NTKERNELAPI NTSTATUS MmCopyVirtualMemory(_In_ PEPROCESS FromProcess, _In_ const 
                                          _In_ SIZE_T BufferSize, _In_ KPROCESSOR_MODE PreviousMode,
                                          _Out_ PSIZE_T NumberOfBytesCopied);
 
-#define SLEEPWALKER_HANDLE_MAX_OUTSTANDING_WORK 2048
-#define SLEEPWALKER_DEEP_CAPTURE_MAX_BYTES 64
-#define SLEEPWALKER_DEEP_CACHE_RING_SIZE 64
-#define SLEEPWALKER_DEEP_CACHE_TTL_MS 3000
+#define BLACKBIRD_HANDLE_MAX_OUTSTANDING_WORK 2048
+#define BLACKBIRD_DEEP_CAPTURE_MAX_BYTES 64
+#define BLACKBIRD_DEEP_CACHE_RING_SIZE 64
+#define BLACKBIRD_DEEP_CACHE_TTL_MS 3000
 
 static PVOID g_ProcessObRegistrationHandle = NULL;
 static OB_OPERATION_REGISTRATION g_OperationRegistration[2];
@@ -160,7 +160,7 @@ static KSPIN_LOCK g_DeepCacheLock;
 static volatile LONG g_DeepCacheWriteIndex = -1;
 static ULONGLONG g_DeepCacheQpcFrequency = 1;
 
-typedef struct _SLEEPWALKER_DEEP_CACHE_ENTRY
+typedef struct _BLACKBIRD_DEEP_CACHE_ENTRY
 {
     UINT64 CallerPid;
     UINT64 AllocationBase;
@@ -168,28 +168,28 @@ typedef struct _SLEEPWALKER_DEEP_CACHE_ENTRY
     ULONG RegionProtect;
     ULONG RegionState;
     ULONG RegionType;
-    UCHAR Sample[SLEEPWALKER_DEEP_CAPTURE_MAX_BYTES];
+    UCHAR Sample[BLACKBIRD_DEEP_CAPTURE_MAX_BYTES];
     UINT32 SampleSize;
     INT64 TimestampQpc;
-} SLEEPWALKER_DEEP_CACHE_ENTRY, *PSLEEPWALKER_DEEP_CACHE_ENTRY;
+} BLACKBIRD_DEEP_CACHE_ENTRY, *PBLACKBIRD_DEEP_CACHE_ENTRY;
 
-static SLEEPWALKER_DEEP_CACHE_ENTRY g_DeepCache[SLEEPWALKER_DEEP_CACHE_RING_SIZE];
+static BLACKBIRD_DEEP_CACHE_ENTRY g_DeepCache[BLACKBIRD_DEEP_CACHE_RING_SIZE];
 
 /*
  * Hot-path debug tracing is disabled by default to prevent KD console flooding.
- * Define SLEEPWALKER_VERBOSE_HOTPATH_DEBUG=1 for local deep diagnostics.
+ * Define BLACKBIRD_VERBOSE_HOTPATH_DEBUG=1 for local deep diagnostics.
  */
-#if !defined(SLEEPWALKER_VERBOSE_HOTPATH_DEBUG)
-#define SLEEPWALKER_VERBOSE_HOTPATH_DEBUG 0
+#if !defined(BLACKBIRD_VERBOSE_HOTPATH_DEBUG)
+#define BLACKBIRD_VERBOSE_HOTPATH_DEBUG 0
 #endif
 
-#if defined(DBG) && DBG && SLEEPWALKER_VERBOSE_HOTPATH_DEBUG
-#define SLEEPWALKER_DBG_PRINT(_level, ...) DbgPrintEx(DPFLTR_IHVDRIVER_ID, (_level), __VA_ARGS__)
+#if defined(DBG) && DBG && BLACKBIRD_VERBOSE_HOTPATH_DEBUG
+#define BLACKBIRD_DBG_PRINT(_level, ...) DbgPrintEx(DPFLTR_IHVDRIVER_ID, (_level), __VA_ARGS__)
 #else
-#define SLEEPWALKER_DBG_PRINT(_level, ...) ((void)0)
+#define BLACKBIRD_DBG_PRINT(_level, ...) ((void)0)
 #endif
 
-typedef struct _SLEEPWALKER_HANDLE_WORK
+typedef struct _BLACKBIRD_HANDLE_WORK
 {
     WORK_QUEUE_ITEM WorkItem;
     HANDLE CallerPid;
@@ -202,7 +202,7 @@ typedef struct _SLEEPWALKER_HANDLE_WORK
     ULONG FrameCount;
     PVOID Frames[8];
     ULONG FullFrameCount;
-    PVOID FullFrames[SLEEPWALKER_MAX_FULL_EVENT_FRAMES];
+    PVOID FullFrames[BLACKBIRD_MAX_FULL_EVENT_FRAMES];
     UINT64 RegRax;
     UINT64 RegRbx;
     UINT64 RegRcx;
@@ -227,16 +227,16 @@ typedef struct _SLEEPWALKER_HANDLE_WORK
     UINT64 RegDr3;
     UINT64 RegDr6;
     UINT64 RegDr7;
-} SLEEPWALKER_HANDLE_WORK, *PSLEEPWALKER_HANDLE_WORK;
+} BLACKBIRD_HANDLE_WORK, *PBLACKBIRD_HANDLE_WORK;
 
-typedef enum _SLEEPWALKER_HANDLE_CLASSIFICATION
+typedef enum _BLACKBIRD_HANDLE_CLASSIFICATION
 {
-    SLEEPWALKERHandleUnknown = 0,
-    SLEEPWALKERHandleLegitimateSyscall,
-    SLEEPWALKERHandleDirectSyscallSuspect
-} SLEEPWALKER_HANDLE_CLASSIFICATION;
+    BLACKBIRDHandleUnknown = 0,
+    BLACKBIRDHandleLegitimateSyscall,
+    BLACKBIRDHandleDirectSyscallSuspect
+} BLACKBIRD_HANDLE_CLASSIFICATION;
 
-typedef struct _SLEEPWALKER_HANDLE_TELEMETRY
+typedef struct _BLACKBIRD_HANDLE_TELEMETRY
 {
     PVOID OriginAddress;
     PVOID AllocationBase;
@@ -251,7 +251,7 @@ typedef struct _SLEEPWALKER_HANDLE_TELEMETRY
     NTSTATUS BasicInfoStatus;
     NTSTATUS SectionNameStatus;
     ULONG DeepSampleSize;
-    UCHAR DeepSample[SLEEPWALKER_DEEP_CAPTURE_MAX_BYTES];
+    UCHAR DeepSample[BLACKBIRD_DEEP_CAPTURE_MAX_BYTES];
     BOOLEAN DeepPathCandidate;
     BOOLEAN DeepPathCaptured;
     BOOLEAN DeepPathCacheHit;
@@ -269,7 +269,7 @@ typedef struct _SLEEPWALKER_HANDLE_TELEMETRY
     BOOLEAN FramesOutsideTebStack;
     UINT32 CaptureFlags;
     ULONG FullFrameCount;
-    PVOID FullFrames[SLEEPWALKER_MAX_FULL_EVENT_FRAMES];
+    PVOID FullFrames[BLACKBIRD_MAX_FULL_EVENT_FRAMES];
     UINT64 RegRax;
     UINT64 RegRbx;
     UINT64 RegRcx;
@@ -296,10 +296,10 @@ typedef struct _SLEEPWALKER_HANDLE_TELEMETRY
     UINT64 RegDr7;
     UINT64 StackSnapshotAddress;
     ULONG StackSnapshotSize;
-    UCHAR StackSnapshot[SLEEPWALKER_MAX_STACK_SNAPSHOT_BYTES];
-} SLEEPWALKER_HANDLE_TELEMETRY, *PSLEEPWALKER_HANDLE_TELEMETRY;
+    UCHAR StackSnapshot[BLACKBIRD_MAX_STACK_SNAPSHOT_BYTES];
+} BLACKBIRD_HANDLE_TELEMETRY, *PBLACKBIRD_HANDLE_TELEMETRY;
 
-static VOID SLEEPWALKERCaptureRegisterSnapshot(_Out_ PSLEEPWALKER_HANDLE_WORK Work)
+static VOID BLACKBIRDCaptureRegisterSnapshot(_Out_ PBLACKBIRD_HANDLE_WORK Work)
 {
 #if defined(_M_AMD64)
     CONTEXT context;
@@ -331,7 +331,7 @@ static VOID SLEEPWALKERCaptureRegisterSnapshot(_Out_ PSLEEPWALKER_HANDLE_WORK Wo
     Work->RegR15 = context.R15;
     Work->RegRip = context.Rip;
     Work->RegEFlags = context.EFlags;
-    Work->CaptureFlags |= SLEEPWALKER_HANDLE_CAPTURE_CONTEXT_VALID;
+    Work->CaptureFlags |= BLACKBIRD_HANDLE_CAPTURE_CONTEXT_VALID;
 
     __try
     {
@@ -341,7 +341,7 @@ static VOID SLEEPWALKERCaptureRegisterSnapshot(_Out_ PSLEEPWALKER_HANDLE_WORK Wo
         Work->RegDr3 = __readdr(3);
         Work->RegDr6 = __readdr(6);
         Work->RegDr7 = __readdr(7);
-        Work->CaptureFlags |= SLEEPWALKER_HANDLE_CAPTURE_DEBUG_REGS_VALID;
+        Work->CaptureFlags |= BLACKBIRD_HANDLE_CAPTURE_DEBUG_REGS_VALID;
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
@@ -351,8 +351,8 @@ static VOID SLEEPWALKERCaptureRegisterSnapshot(_Out_ PSLEEPWALKER_HANDLE_WORK Wo
 #endif
 }
 
-static VOID SLEEPWALKERApplyWorkCaptureToTelemetry(_In_opt_ const SLEEPWALKER_HANDLE_WORK *Work,
-                                                   _Inout_ PSLEEPWALKER_HANDLE_TELEMETRY Telemetry)
+static VOID BLACKBIRDApplyWorkCaptureToTelemetry(_In_opt_ const BLACKBIRD_HANDLE_WORK *Work,
+                                                   _Inout_ PBLACKBIRD_HANDLE_TELEMETRY Telemetry)
 {
     ULONG safeFullCount;
 
@@ -370,7 +370,7 @@ static VOID SLEEPWALKERApplyWorkCaptureToTelemetry(_In_opt_ const SLEEPWALKER_HA
     if (safeFullCount != 0)
     {
         RtlCopyMemory(Telemetry->FullFrames, Work->FullFrames, safeFullCount * sizeof(PVOID));
-        Telemetry->CaptureFlags |= SLEEPWALKER_HANDLE_CAPTURE_FULL_FRAMES_VALID;
+        Telemetry->CaptureFlags |= BLACKBIRD_HANDLE_CAPTURE_FULL_FRAMES_VALID;
     }
 
     Telemetry->RegRax = Work->RegRax;
@@ -399,8 +399,8 @@ static VOID SLEEPWALKERApplyWorkCaptureToTelemetry(_In_opt_ const SLEEPWALKER_HA
     Telemetry->RegDr7 = Work->RegDr7;
 }
 
-static VOID SLEEPWALKERCaptureStackSnapshot(_In_ PEPROCESS SourceProcess, _In_ UINT64 StackPointer,
-                                            _Inout_ PSLEEPWALKER_HANDLE_TELEMETRY Telemetry)
+static VOID BLACKBIRDCaptureStackSnapshot(_In_ PEPROCESS SourceProcess, _In_ UINT64 StackPointer,
+                                            _Inout_ PBLACKBIRD_HANDLE_TELEMETRY Telemetry)
 {
     NTSTATUS status;
     SIZE_T bytesRead = 0;
@@ -426,21 +426,21 @@ static VOID SLEEPWALKERCaptureStackSnapshot(_In_ PEPROCESS SourceProcess, _In_ U
 
     Telemetry->StackSnapshotAddress = StackPointer;
     Telemetry->StackSnapshotSize = (ULONG)bytesRead;
-    Telemetry->CaptureFlags |= SLEEPWALKER_HANDLE_CAPTURE_STACK_SNAPSHOT_VALID;
+    Telemetry->CaptureFlags |= BLACKBIRD_HANDLE_CAPTURE_STACK_SNAPSHOT_VALID;
 }
 
-static BOOLEAN SLEEPWALKERHandleTryAcquireWorkSlot(VOID)
+static BOOLEAN BLACKBIRDHandleTryAcquireWorkSlot(VOID)
 {
     LONG current;
 
     for (;;)
     {
         current = InterlockedCompareExchange(&g_HandleOutstandingWork, 0, 0);
-        if (current >= SLEEPWALKER_HANDLE_MAX_OUTSTANDING_WORK)
+        if (current >= BLACKBIRD_HANDLE_MAX_OUTSTANDING_WORK)
         {
             InterlockedIncrement(&g_HandleDroppedWork);
-            SLEEPWALKER_DBG_PRINT(DPFLTR_WARNING_LEVEL, "SLEEPWALKER[DBG]: handle monitor work queue full (max=%lu).\n",
-                                  SLEEPWALKER_HANDLE_MAX_OUTSTANDING_WORK);
+            BLACKBIRD_DBG_PRINT(DPFLTR_WARNING_LEVEL, "BLACKBIRD[DBG]: handle monitor work queue full (max=%lu).\n",
+                                  BLACKBIRD_HANDLE_MAX_OUTSTANDING_WORK);
             return FALSE;
         }
 
@@ -455,7 +455,7 @@ static BOOLEAN SLEEPWALKERHandleTryAcquireWorkSlot(VOID)
     }
 }
 
-static VOID SLEEPWALKERHandleReleaseWorkSlot(VOID)
+static VOID BLACKBIRDHandleReleaseWorkSlot(VOID)
 {
     if (InterlockedDecrement(&g_HandleOutstandingWork) == 0)
     {
@@ -463,7 +463,7 @@ static VOID SLEEPWALKERHandleReleaseWorkSlot(VOID)
     }
 }
 
-static ULONGLONG SLEEPWALKERDeepCacheMsToQpc(_In_ UINT32 Ms)
+static ULONGLONG BLACKBIRDDeepCacheMsToQpc(_In_ UINT32 Ms)
 {
     ULONGLONG ticks;
 
@@ -476,9 +476,9 @@ static ULONGLONG SLEEPWALKERDeepCacheMsToQpc(_In_ UINT32 Ms)
     return (ticks == 0) ? 1 : ticks;
 }
 
-static BOOLEAN SLEEPWALKERDeepCacheLookup(_In_ HANDLE CallerPid, _In_ PVOID AllocationBase, _In_ SIZE_T RegionSize,
+static BOOLEAN BLACKBIRDDeepCacheLookup(_In_ HANDLE CallerPid, _In_ PVOID AllocationBase, _In_ SIZE_T RegionSize,
                                           _In_ ULONG RegionProtect, _In_ ULONG RegionState, _In_ ULONG RegionType,
-                                          _Out_writes_bytes_(SLEEPWALKER_DEEP_CAPTURE_MAX_BYTES) UCHAR *Sample,
+                                          _Out_writes_bytes_(BLACKBIRD_DEEP_CAPTURE_MAX_BYTES) UCHAR *Sample,
                                           _Out_ UINT32 *SampleSize)
 {
     KIRQL oldIrql;
@@ -492,11 +492,11 @@ static BOOLEAN SLEEPWALKERDeepCacheLookup(_In_ HANDLE CallerPid, _In_ PVOID Allo
     }
 
     nowQpc = KeQueryPerformanceCounter(NULL).QuadPart;
-    maxAgeQpc = SLEEPWALKERDeepCacheMsToQpc(SLEEPWALKER_DEEP_CACHE_TTL_MS);
+    maxAgeQpc = BLACKBIRDDeepCacheMsToQpc(BLACKBIRD_DEEP_CACHE_TTL_MS);
     KeAcquireSpinLock(&g_DeepCacheLock, &oldIrql);
     for (i = 0; i < RTL_NUMBER_OF(g_DeepCache); ++i)
     {
-        const SLEEPWALKER_DEEP_CACHE_ENTRY *e = &g_DeepCache[i];
+        const BLACKBIRD_DEEP_CACHE_ENTRY *e = &g_DeepCache[i];
         INT64 ageQpc;
         UINT32 safeSize;
 
@@ -518,7 +518,7 @@ static BOOLEAN SLEEPWALKERDeepCacheLookup(_In_ HANDLE CallerPid, _In_ PVOID Allo
         }
 
         safeSize =
-            (e->SampleSize > SLEEPWALKER_DEEP_CAPTURE_MAX_BYTES) ? SLEEPWALKER_DEEP_CAPTURE_MAX_BYTES : e->SampleSize;
+            (e->SampleSize > BLACKBIRD_DEEP_CAPTURE_MAX_BYTES) ? BLACKBIRD_DEEP_CAPTURE_MAX_BYTES : e->SampleSize;
         *SampleSize = safeSize;
         if (safeSize != 0)
         {
@@ -531,7 +531,7 @@ static BOOLEAN SLEEPWALKERDeepCacheLookup(_In_ HANDLE CallerPid, _In_ PVOID Allo
     return FALSE;
 }
 
-static VOID SLEEPWALKERDeepCacheStore(_In_ HANDLE CallerPid, _In_ PVOID AllocationBase, _In_ SIZE_T RegionSize,
+static VOID BLACKBIRDDeepCacheStore(_In_ HANDLE CallerPid, _In_ PVOID AllocationBase, _In_ SIZE_T RegionSize,
                                       _In_ ULONG RegionProtect, _In_ ULONG RegionState, _In_ ULONG RegionType,
                                       _In_reads_bytes_(SampleSize) const UCHAR *Sample, _In_ UINT32 SampleSize)
 {
@@ -545,7 +545,7 @@ static VOID SLEEPWALKERDeepCacheStore(_In_ HANDLE CallerPid, _In_ PVOID Allocati
         return;
     }
 
-    safeSize = (SampleSize > SLEEPWALKER_DEEP_CAPTURE_MAX_BYTES) ? SLEEPWALKER_DEEP_CAPTURE_MAX_BYTES : SampleSize;
+    safeSize = (SampleSize > BLACKBIRD_DEEP_CAPTURE_MAX_BYTES) ? BLACKBIRD_DEEP_CAPTURE_MAX_BYTES : SampleSize;
 
     idx = InterlockedIncrement(&g_DeepCacheWriteIndex);
     if (idx < 0)
@@ -567,7 +567,7 @@ static VOID SLEEPWALKERDeepCacheStore(_In_ HANDLE CallerPid, _In_ PVOID Allocati
     KeReleaseSpinLock(&g_DeepCacheLock, oldIrql);
 }
 
-static BOOLEAN SLEEPWALKERReadProcessBytes(_In_ PEPROCESS SourceProcess, _In_ const VOID *Address,
+static BOOLEAN BLACKBIRDReadProcessBytes(_In_ PEPROCESS SourceProcess, _In_ const VOID *Address,
                                            _Out_writes_bytes_(Size) VOID *Buffer, _In_ SIZE_T Size)
 {
     NTSTATUS status;
@@ -584,7 +584,7 @@ static BOOLEAN SLEEPWALKERReadProcessBytes(_In_ PEPROCESS SourceProcess, _In_ co
     return NT_SUCCESS(status) && bytesRead == Size;
 }
 
-static CHAR SLEEPWALKERAsciiUpper(_In_ CHAR Value)
+static CHAR BLACKBIRDAsciiUpper(_In_ CHAR Value)
 {
     if (Value >= 'a' && Value <= 'z')
     {
@@ -593,7 +593,7 @@ static CHAR SLEEPWALKERAsciiUpper(_In_ CHAR Value)
     return Value;
 }
 
-static BOOLEAN SLEEPWALKERAsciiEqualsInsensitive(_In_z_ const CHAR *Left, _In_z_ const CHAR *Right)
+static BOOLEAN BLACKBIRDAsciiEqualsInsensitive(_In_z_ const CHAR *Left, _In_z_ const CHAR *Right)
 {
     SIZE_T i;
 
@@ -604,8 +604,8 @@ static BOOLEAN SLEEPWALKERAsciiEqualsInsensitive(_In_z_ const CHAR *Left, _In_z_
 
     for (i = 0;; ++i)
     {
-        CHAR a = SLEEPWALKERAsciiUpper(Left[i]);
-        CHAR b = SLEEPWALKERAsciiUpper(Right[i]);
+        CHAR a = BLACKBIRDAsciiUpper(Left[i]);
+        CHAR b = BLACKBIRDAsciiUpper(Right[i]);
         if (a != b)
         {
             return FALSE;
@@ -617,7 +617,7 @@ static BOOLEAN SLEEPWALKERAsciiEqualsInsensitive(_In_z_ const CHAR *Left, _In_z_
     }
 }
 
-static BOOLEAN SLEEPWALKERExtractSyscallNumberNearAddress(_In_ PEPROCESS SourceProcess, _In_ const VOID *Address,
+static BOOLEAN BLACKBIRDExtractSyscallNumberNearAddress(_In_ PEPROCESS SourceProcess, _In_ const VOID *Address,
                                                           _Out_ ULONG *SyscallNumber)
 {
     UCHAR bytes[64];
@@ -642,7 +642,7 @@ static BOOLEAN SLEEPWALKERExtractSyscallNumberNearAddress(_In_ PEPROCESS SourceP
 
     base -= 32;
     readLen = sizeof(bytes);
-    if (!SLEEPWALKERReadProcessBytes(SourceProcess, (const VOID *)base, bytes, readLen))
+    if (!BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)base, bytes, readLen))
     {
         return FALSE;
     }
@@ -691,7 +691,7 @@ static BOOLEAN SLEEPWALKERExtractSyscallNumberNearAddress(_In_ PEPROCESS SourceP
     return TRUE;
 }
 
-static BOOLEAN SLEEPWALKERValidateReturnAddress(_In_ PEPROCESS SourceProcess, _In_ PVOID ReturnAddress)
+static BOOLEAN BLACKBIRDValidateReturnAddress(_In_ PEPROCESS SourceProcess, _In_ PVOID ReturnAddress)
 {
     UCHAR tail[8];
     ULONG_PTR addrValue;
@@ -707,7 +707,7 @@ static BOOLEAN SLEEPWALKERValidateReturnAddress(_In_ PEPROCESS SourceProcess, _I
         return FALSE;
     }
 
-    if (!SLEEPWALKERReadProcessBytes(SourceProcess, (const VOID *)(addrValue - sizeof(tail)), tail, sizeof(tail)))
+    if (!BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)(addrValue - sizeof(tail)), tail, sizeof(tail)))
     {
         return FALSE;
     }
@@ -724,7 +724,7 @@ static BOOLEAN SLEEPWALKERValidateReturnAddress(_In_ PEPROCESS SourceProcess, _I
     return FALSE;
 }
 
-static BOOLEAN SLEEPWALKERValidateStackFrames(_In_ HANDLE ProcessHandle, _In_ ULONG FrameCount,
+static BOOLEAN BLACKBIRDValidateStackFrames(_In_ HANDLE ProcessHandle, _In_ ULONG FrameCount,
                                               _In_reads_(FrameCount) PVOID *Frames, _Out_ BOOLEAN *SpoofSuspect)
 {
     ULONG i;
@@ -757,13 +757,13 @@ static BOOLEAN SLEEPWALKERValidateStackFrames(_In_ HANDLE ProcessHandle, _In_ UL
         }
 
         RtlZeroMemory(&mbi, sizeof(mbi));
-        status = ZwQueryVirtualMemory(ProcessHandle, frame, SLEEPWALKERMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
+        status = ZwQueryVirtualMemory(ProcessHandle, frame, BLACKBIRDMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
         if (!NT_SUCCESS(status))
         {
             return FALSE;
         }
 
-        execProtect = SLEEPWALKERIsExecutableProtection(mbi.Protect);
+        execProtect = BLACKBIRDIsExecutableProtection(mbi.Protect);
         if (mbi.State != MEM_COMMIT || !execProtect)
         {
             return FALSE;
@@ -780,7 +780,7 @@ static BOOLEAN SLEEPWALKERValidateStackFrames(_In_ HANDLE ProcessHandle, _In_ UL
     return TRUE;
 }
 
-static PCSTR SLEEPWALKERGetExpectedSyscallExport(_In_ BOOLEAN IsThreadObject, _In_ BOOLEAN IsDuplicateOperation)
+static PCSTR BLACKBIRDGetExpectedSyscallExport(_In_ BOOLEAN IsThreadObject, _In_ BOOLEAN IsDuplicateOperation)
 {
     if (IsDuplicateOperation)
     {
@@ -793,32 +793,32 @@ static PCSTR SLEEPWALKERGetExpectedSyscallExport(_In_ BOOLEAN IsThreadObject, _I
     return "NtOpenProcess";
 }
 
-static BOOLEAN SLEEPWALKERIsNtdllPath(_In_ const UNICODE_STRING *Path)
+static BOOLEAN BLACKBIRDIsNtdllPath(_In_ const UNICODE_STRING *Path)
 {
     if (Path == NULL || Path->Buffer == NULL || Path->Length == 0)
     {
         return FALSE;
     }
 
-    return SLEEPWALKERUnicodeContainsInsensitive(Path, L"ntdll.dll", 9);
+    return BLACKBIRDUnicodeContainsInsensitive(Path, L"ntdll.dll", 9);
 }
 
-static BOOLEAN SLEEPWALKERIsSyscallStubModulePath(_In_ const UNICODE_STRING *Path)
+static BOOLEAN BLACKBIRDIsSyscallStubModulePath(_In_ const UNICODE_STRING *Path)
 {
     if (Path == NULL || Path->Buffer == NULL || Path->Length == 0)
     {
         return FALSE;
     }
 
-    if (SLEEPWALKERIsNtdllPath(Path))
+    if (BLACKBIRDIsNtdllPath(Path))
     {
         return TRUE;
     }
 
-    return SLEEPWALKERUnicodeContainsInsensitive(Path, L"win32u.dll", 10);
+    return BLACKBIRDUnicodeContainsInsensitive(Path, L"win32u.dll", 10);
 }
 
-static BOOLEAN SLEEPWALKERGetNtdllBaseFromFrames(_In_ HANDLE ProcessHandle, _In_ ULONG FrameCount,
+static BOOLEAN BLACKBIRDGetNtdllBaseFromFrames(_In_ HANDLE ProcessHandle, _In_ ULONG FrameCount,
                                                  _In_reads_(FrameCount) PVOID *Frames, _Out_ PVOID *NtdllBase)
 {
     ULONG i;
@@ -849,14 +849,14 @@ static BOOLEAN SLEEPWALKERGetNtdllBaseFromFrames(_In_ HANDLE ProcessHandle, _In_
         }
 
         RtlZeroMemory(&mbi, sizeof(mbi));
-        status = ZwQueryVirtualMemory(ProcessHandle, Frames[i], SLEEPWALKERMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
+        status = ZwQueryVirtualMemory(ProcessHandle, Frames[i], BLACKBIRDMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
         if (!NT_SUCCESS(status) || mbi.AllocationBase == NULL)
         {
             continue;
         }
 
         RtlZeroMemory(sectionNameRaw, sizeof(sectionNameRaw));
-        status = ZwQueryVirtualMemory(ProcessHandle, Frames[i], SLEEPWALKERMemorySectionName, sectionNameRaw,
+        status = ZwQueryVirtualMemory(ProcessHandle, Frames[i], BLACKBIRDMemorySectionName, sectionNameRaw,
                                       sizeof(sectionNameRaw), NULL);
         if (!NT_SUCCESS(status))
         {
@@ -865,9 +865,9 @@ static BOOLEAN SLEEPWALKERGetNtdllBaseFromFrames(_In_ HANDLE ProcessHandle, _In_
 
         sectionName = (PUNICODE_STRING)sectionNameRaw;
         RtlZeroMemory(sectionPath, sizeof(sectionPath));
-        SLEEPWALKERSafeCopyUnicode(sectionName, sectionPath, RTL_NUMBER_OF(sectionPath));
+        BLACKBIRDSafeCopyUnicode(sectionName, sectionPath, RTL_NUMBER_OF(sectionPath));
         RtlInitUnicodeString(&sectionUs, sectionPath);
-        if (!SLEEPWALKERIsNtdllPath(&sectionUs))
+        if (!BLACKBIRDIsNtdllPath(&sectionUs))
         {
             continue;
         }
@@ -879,7 +879,7 @@ static BOOLEAN SLEEPWALKERGetNtdllBaseFromFrames(_In_ HANDLE ProcessHandle, _In_
     return FALSE;
 }
 
-static BOOLEAN SLEEPWALKERResolveExportSyscallNumber(_In_ PEPROCESS SourceProcess, _In_ PVOID ModuleBase,
+static BOOLEAN BLACKBIRDResolveExportSyscallNumber(_In_ PEPROCESS SourceProcess, _In_ PVOID ModuleBase,
                                                      _In_z_ PCSTR ExportName, _Out_ ULONG *SyscallNumber)
 {
     IMAGE_DOS_HEADER dos;
@@ -899,7 +899,7 @@ static BOOLEAN SLEEPWALKERResolveExportSyscallNumber(_In_ PEPROCESS SourceProces
         return FALSE;
     }
 
-    if (!SLEEPWALKERReadProcessBytes(SourceProcess, ModuleBase, &dos, sizeof(dos)))
+    if (!BLACKBIRDReadProcessBytes(SourceProcess, ModuleBase, &dos, sizeof(dos)))
     {
         goto Exit;
     }
@@ -912,7 +912,7 @@ static BOOLEAN SLEEPWALKERResolveExportSyscallNumber(_In_ PEPROCESS SourceProces
         goto Exit;
     }
 
-    if (!SLEEPWALKERReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + (ULONG_PTR)dos.e_lfanew), &nt,
+    if (!BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + (ULONG_PTR)dos.e_lfanew), &nt,
                                      sizeof(nt)))
     {
         goto Exit;
@@ -931,7 +931,7 @@ static BOOLEAN SLEEPWALKERResolveExportSyscallNumber(_In_ PEPROCESS SourceProces
         goto Exit;
     }
 
-    if (!SLEEPWALKERReadProcessBytes(SourceProcess,
+    if (!BLACKBIRDReadProcessBytes(SourceProcess,
                                      (const VOID *)((ULONG_PTR)ModuleBase +
                                                     nt.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT]
                                                         .VirtualAddress),
@@ -951,20 +951,20 @@ static BOOLEAN SLEEPWALKERResolveExportSyscallNumber(_In_ PEPROCESS SourceProces
     ordinalsSize = exports.NumberOfNames * sizeof(USHORT);
     funcsSize = exports.NumberOfFunctions * sizeof(ULONG);
 
-    nameRvas = (ULONG *)SLEEPWALKERAllocatePoolCompat(POOL_FLAG_PAGED, namesSize, 'ndtT');
-    ordinals = (USHORT *)SLEEPWALKERAllocatePoolCompat(POOL_FLAG_PAGED, ordinalsSize, 'odtT');
-    funcRvas = (ULONG *)SLEEPWALKERAllocatePoolCompat(POOL_FLAG_PAGED, funcsSize, 'fdtT');
+    nameRvas = (ULONG *)BLACKBIRDAllocatePoolCompat(POOL_FLAG_PAGED, namesSize, 'ndtT');
+    ordinals = (USHORT *)BLACKBIRDAllocatePoolCompat(POOL_FLAG_PAGED, ordinalsSize, 'odtT');
+    funcRvas = (ULONG *)BLACKBIRDAllocatePoolCompat(POOL_FLAG_PAGED, funcsSize, 'fdtT');
     if (nameRvas == NULL || ordinals == NULL || funcRvas == NULL)
     {
         goto Exit;
     }
 
-    if (!SLEEPWALKERReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + exports.AddressOfNames),
+    if (!BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + exports.AddressOfNames),
                                      nameRvas, namesSize) ||
-        !SLEEPWALKERReadProcessBytes(SourceProcess,
+        !BLACKBIRDReadProcessBytes(SourceProcess,
                                      (const VOID *)((ULONG_PTR)ModuleBase + exports.AddressOfNameOrdinals), ordinals,
                                      ordinalsSize) ||
-        !SLEEPWALKERReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + exports.AddressOfFunctions),
+        !BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + exports.AddressOfFunctions),
                                      funcRvas, funcsSize))
     {
         goto Exit;
@@ -984,7 +984,7 @@ static BOOLEAN SLEEPWALKERResolveExportSyscallNumber(_In_ PEPROCESS SourceProces
         }
 
         RtlZeroMemory(nameBuffer, sizeof(nameBuffer));
-        if (!SLEEPWALKERReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + nameRvas[i]), nameBuffer,
+        if (!BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + nameRvas[i]), nameBuffer,
                                          sizeof(nameBuffer) - 1))
         {
             continue;
@@ -1001,7 +1001,7 @@ static BOOLEAN SLEEPWALKERResolveExportSyscallNumber(_In_ PEPROCESS SourceProces
         {
             continue;
         }
-        if (!SLEEPWALKERAsciiEqualsInsensitive(nameBuffer, ExportName))
+        if (!BLACKBIRDAsciiEqualsInsensitive(nameBuffer, ExportName))
         {
             continue;
         }
@@ -1018,7 +1018,7 @@ static BOOLEAN SLEEPWALKERResolveExportSyscallNumber(_In_ PEPROCESS SourceProces
             break;
         }
         funcAddress = (PVOID)((ULONG_PTR)ModuleBase + funcRva);
-        success = SLEEPWALKERExtractSyscallNumberNearAddress(SourceProcess, funcAddress, SyscallNumber);
+        success = BLACKBIRDExtractSyscallNumberNearAddress(SourceProcess, funcAddress, SyscallNumber);
         break;
     }
 
@@ -1039,7 +1039,7 @@ Exit:
     return success;
 }
 
-static BOOLEAN SLEEPWALKERQueryFrameModuleInfo(_In_ HANDLE ProcessHandle, _In_ PVOID Frame, _Out_ PVOID *AllocationBase,
+static BOOLEAN BLACKBIRDQueryFrameModuleInfo(_In_ HANDLE ProcessHandle, _In_ PVOID Frame, _Out_ PVOID *AllocationBase,
                                                _Out_ BOOLEAN *Executable, _Out_ BOOLEAN *ImageBacked,
                                                _Out_ BOOLEAN *IsSyscallStubModule)
 {
@@ -1062,14 +1062,14 @@ static BOOLEAN SLEEPWALKERQueryFrameModuleInfo(_In_ HANDLE ProcessHandle, _In_ P
     *IsSyscallStubModule = FALSE;
 
     RtlZeroMemory(&mbi, sizeof(mbi));
-    status = ZwQueryVirtualMemory(ProcessHandle, Frame, SLEEPWALKERMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
+    status = ZwQueryVirtualMemory(ProcessHandle, Frame, BLACKBIRDMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
     if (!NT_SUCCESS(status))
     {
         return FALSE;
     }
 
     *AllocationBase = mbi.AllocationBase;
-    *Executable = (mbi.State == MEM_COMMIT) && SLEEPWALKERIsExecutableProtection(mbi.Protect);
+    *Executable = (mbi.State == MEM_COMMIT) && BLACKBIRDIsExecutableProtection(mbi.Protect);
     *ImageBacked = (mbi.Type == MEM_IMAGE);
     if (mbi.AllocationBase == NULL)
     {
@@ -1077,7 +1077,7 @@ static BOOLEAN SLEEPWALKERQueryFrameModuleInfo(_In_ HANDLE ProcessHandle, _In_ P
     }
 
     RtlZeroMemory(sectionNameRaw, sizeof(sectionNameRaw));
-    status = ZwQueryVirtualMemory(ProcessHandle, Frame, SLEEPWALKERMemorySectionName, sectionNameRaw, sizeof(sectionNameRaw),
+    status = ZwQueryVirtualMemory(ProcessHandle, Frame, BLACKBIRDMemorySectionName, sectionNameRaw, sizeof(sectionNameRaw),
                                   NULL);
     if (!NT_SUCCESS(status))
     {
@@ -1086,13 +1086,13 @@ static BOOLEAN SLEEPWALKERQueryFrameModuleInfo(_In_ HANDLE ProcessHandle, _In_ P
 
     sectionName = (PUNICODE_STRING)sectionNameRaw;
     RtlZeroMemory(sectionPath, sizeof(sectionPath));
-    SLEEPWALKERSafeCopyUnicode(sectionName, sectionPath, RTL_NUMBER_OF(sectionPath));
+    BLACKBIRDSafeCopyUnicode(sectionName, sectionPath, RTL_NUMBER_OF(sectionPath));
     RtlInitUnicodeString(&sectionUs, sectionPath);
-    *IsSyscallStubModule = SLEEPWALKERIsSyscallStubModulePath(&sectionUs);
+    *IsSyscallStubModule = BLACKBIRDIsSyscallStubModulePath(&sectionUs);
     return TRUE;
 }
 
-static BOOLEAN SLEEPWALKERValidateModuleChainSanity(_In_ HANDLE ProcessHandle, _In_ ULONG FrameCount,
+static BOOLEAN BLACKBIRDValidateModuleChainSanity(_In_ HANDLE ProcessHandle, _In_ ULONG FrameCount,
                                                     _In_reads_(FrameCount) PVOID *Frames)
 {
     ULONG i;
@@ -1115,7 +1115,7 @@ static BOOLEAN SLEEPWALKERValidateModuleChainSanity(_In_ HANDLE ProcessHandle, _
         BOOLEAN image;
         BOOLEAN isSyscallStubModule;
 
-        if (!SLEEPWALKERQueryFrameModuleInfo(ProcessHandle, Frames[i], &frameBase, &exec, &image, &isSyscallStubModule))
+        if (!BLACKBIRDQueryFrameModuleInfo(ProcessHandle, Frames[i], &frameBase, &exec, &image, &isSyscallStubModule))
         {
             return FALSE;
         }
@@ -1149,7 +1149,7 @@ static BOOLEAN SLEEPWALKERValidateModuleChainSanity(_In_ HANDLE ProcessHandle, _
     return (sawSyscallStubModule && sawHeadSyscallStubModule && sawNonSyscallStubModule);
 }
 
-static BOOLEAN SLEEPWALKERModuleContainsUnwindForRva(_In_ PEPROCESS SourceProcess, _In_ PVOID ModuleBase,
+static BOOLEAN BLACKBIRDModuleContainsUnwindForRva(_In_ PEPROCESS SourceProcess, _In_ PVOID ModuleBase,
                                                      _In_ ULONG Rva)
 {
     IMAGE_DOS_HEADER dos;
@@ -1168,13 +1168,13 @@ static BOOLEAN SLEEPWALKERModuleContainsUnwindForRva(_In_ PEPROCESS SourceProces
         return FALSE;
     }
 
-    if (!SLEEPWALKERReadProcessBytes(SourceProcess, ModuleBase, &dos, sizeof(dos)) || dos.e_magic != IMAGE_DOS_SIGNATURE ||
+    if (!BLACKBIRDReadProcessBytes(SourceProcess, ModuleBase, &dos, sizeof(dos)) || dos.e_magic != IMAGE_DOS_SIGNATURE ||
         dos.e_lfanew <= 0 || dos.e_lfanew > 0x2000)
     {
         return FALSE;
     }
 
-    if (!SLEEPWALKERReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + (ULONG_PTR)dos.e_lfanew), &nt,
+    if (!BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + (ULONG_PTR)dos.e_lfanew), &nt,
                                      sizeof(nt)) ||
         nt.Signature != IMAGE_NT_SIGNATURE || nt.OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC ||
         nt.OptionalHeader.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_EXCEPTION)
@@ -1196,13 +1196,13 @@ static BOOLEAN SLEEPWALKERModuleContainsUnwindForRva(_In_ PEPROCESS SourceProces
     }
 
     tableBytes = (SIZE_T)count * sizeof(IMAGE_RUNTIME_FUNCTION_ENTRY);
-    table = (IMAGE_RUNTIME_FUNCTION_ENTRY *)SLEEPWALKERAllocatePoolCompat(POOL_FLAG_PAGED, tableBytes, 'udtT');
+    table = (IMAGE_RUNTIME_FUNCTION_ENTRY *)BLACKBIRDAllocatePoolCompat(POOL_FLAG_PAGED, tableBytes, 'udtT');
     if (table == NULL)
     {
         return FALSE;
     }
 
-    if (!SLEEPWALKERReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + exceptionRva), table, tableBytes))
+    if (!BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + exceptionRva), table, tableBytes))
     {
         ExFreePoolWithTag(table, 'udtT');
         return FALSE;
@@ -1234,7 +1234,7 @@ static BOOLEAN SLEEPWALKERModuleContainsUnwindForRva(_In_ PEPROCESS SourceProces
     return found;
 }
 
-static BOOLEAN SLEEPWALKERValidateUnwindMetadata(_In_ HANDLE ProcessHandle, _In_ PEPROCESS SourceProcess,
+static BOOLEAN BLACKBIRDValidateUnwindMetadata(_In_ HANDLE ProcessHandle, _In_ PEPROCESS SourceProcess,
                                                  _In_ ULONG FrameCount, _In_reads_(FrameCount) PVOID *Frames)
 {
     ULONG i;
@@ -1260,7 +1260,7 @@ static BOOLEAN SLEEPWALKERValidateUnwindMetadata(_In_ HANDLE ProcessHandle, _In_
         }
 
         RtlZeroMemory(&mbi, sizeof(mbi));
-        status = ZwQueryVirtualMemory(ProcessHandle, Frames[i], SLEEPWALKERMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
+        status = ZwQueryVirtualMemory(ProcessHandle, Frames[i], BLACKBIRDMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
         if (!NT_SUCCESS(status) || mbi.AllocationBase == NULL || mbi.Type != MEM_IMAGE)
         {
             return FALSE;
@@ -1273,7 +1273,7 @@ static BOOLEAN SLEEPWALKERValidateUnwindMetadata(_In_ HANDLE ProcessHandle, _In_
             return FALSE;
         }
         rva = (ULONG)(addr - base);
-        if (!SLEEPWALKERModuleContainsUnwindForRva(SourceProcess, mbi.AllocationBase, rva))
+        if (!BLACKBIRDModuleContainsUnwindForRva(SourceProcess, mbi.AllocationBase, rva))
         {
             return FALSE;
         }
@@ -1282,15 +1282,15 @@ static BOOLEAN SLEEPWALKERValidateUnwindMetadata(_In_ HANDLE ProcessHandle, _In_
     return TRUE;
 }
 
-static BOOLEAN SLEEPWALKERQueryTebStackBounds(_In_ HANDLE CallerProcessId, _In_ HANDLE CallerThreadId,
+static BOOLEAN BLACKBIRDQueryTebStackBounds(_In_ HANDLE CallerProcessId, _In_ HANDLE CallerThreadId,
                                               _In_ PEPROCESS SourceProcess, _Out_ ULONG_PTR *StackLimit,
                                               _Out_ ULONG_PTR *StackBase)
 {
     OBJECT_ATTRIBUTES oa;
     CLIENT_ID cid;
     HANDLE threadHandle = NULL;
-    SLEEPWALKER_THREAD_BASIC_INFORMATION tbi;
-    SLEEPWALKER_NT_TIB tib;
+    BLACKBIRD_THREAD_BASIC_INFORMATION tbi;
+    BLACKBIRD_NT_TIB tib;
     NTSTATUS status;
     ULONG_PTR limit;
     ULONG_PTR base;
@@ -1329,7 +1329,7 @@ static BOOLEAN SLEEPWALKERQueryTebStackBounds(_In_ HANDLE CallerProcessId, _In_ 
     }
 
     RtlZeroMemory(&tib, sizeof(tib));
-    if (!SLEEPWALKERReadProcessBytes(SourceProcess, tbi.TebBaseAddress, &tib, sizeof(tib)))
+    if (!BLACKBIRDReadProcessBytes(SourceProcess, tbi.TebBaseAddress, &tib, sizeof(tib)))
     {
         return FALSE;
     }
@@ -1350,7 +1350,7 @@ static BOOLEAN SLEEPWALKERQueryTebStackBounds(_In_ HANDLE CallerProcessId, _In_ 
     return TRUE;
 }
 
-static BOOLEAN SLEEPWALKERFramesOutsideStackBounds(_In_ ULONG FrameCount, _In_reads_(FrameCount) PVOID *Frames,
+static BOOLEAN BLACKBIRDFramesOutsideStackBounds(_In_ ULONG FrameCount, _In_reads_(FrameCount) PVOID *Frames,
                                                    _In_ ULONG_PTR StackLimit, _In_ ULONG_PTR StackBase)
 {
     ULONG i;
@@ -1372,20 +1372,20 @@ static BOOLEAN SLEEPWALKERFramesOutsideStackBounds(_In_ ULONG FrameCount, _In_re
     return TRUE;
 }
 
-static PCSTR SLEEPWALKERHandleClassToString(_In_ SLEEPWALKER_HANDLE_CLASSIFICATION Class)
+static PCSTR BLACKBIRDHandleClassToString(_In_ BLACKBIRD_HANDLE_CLASSIFICATION Class)
 {
-    if (Class == SLEEPWALKERHandleLegitimateSyscall)
+    if (Class == BLACKBIRDHandleLegitimateSyscall)
     {
         return "LEGITIMATE-SYSCALL";
     }
-    if (Class == SLEEPWALKERHandleDirectSyscallSuspect)
+    if (Class == BLACKBIRDHandleDirectSyscallSuspect)
     {
         return "DIRECT-SYSCALL-SUSPECT";
     }
     return "UNKNOWN-ORIGIN";
 }
 
-static BOOLEAN SLEEPWALKERHandleAccessIsHighRisk(_In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsThreadObject)
+static BOOLEAN BLACKBIRDHandleAccessIsHighRisk(_In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsThreadObject)
 {
     if (IsThreadObject)
     {
@@ -1400,8 +1400,8 @@ static BOOLEAN SLEEPWALKERHandleAccessIsHighRisk(_In_ ACCESS_MASK DesiredAccess,
            ((DesiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS);
 }
 
-static UINT32 SLEEPWALKERCountHandleAnomalySignals(_In_ BOOLEAN ExecProtect, _In_ BOOLEAN FromSyscallModule,
-                                                   _In_ const SLEEPWALKER_HANDLE_TELEMETRY *Telemetry)
+static UINT32 BLACKBIRDCountHandleAnomalySignals(_In_ BOOLEAN ExecProtect, _In_ BOOLEAN FromSyscallModule,
+                                                   _In_ const BLACKBIRD_HANDLE_TELEMETRY *Telemetry)
 {
     UINT32 signals = 0;
 
@@ -1446,11 +1446,11 @@ static UINT32 SLEEPWALKERCountHandleAnomalySignals(_In_ BOOLEAN ExecProtect, _In
     return signals;
 }
 
-static VOID SLEEPWALKERLogHandleTelemetry(_In_ SLEEPWALKER_HANDLE_CLASSIFICATION Class, _In_ HANDLE CallerPid,
+static VOID BLACKBIRDLogHandleTelemetry(_In_ BLACKBIRD_HANDLE_CLASSIFICATION Class, _In_ HANDLE CallerPid,
                                           _In_ HANDLE TargetPid, _In_ ACCESS_MASK DesiredAccess,
                                           _In_ BOOLEAN IsThreadObject, _In_ BOOLEAN IsDuplicateOperation,
                                           _In_ BOOLEAN ExecProtect, _In_ BOOLEAN FromNtdll, _In_ BOOLEAN FromExe,
-                                          _In_ PSLEEPWALKER_HANDLE_TELEMETRY Telemetry)
+                                          _In_ PBLACKBIRD_HANDLE_TELEMETRY Telemetry)
 {
     UINT32 flags = 0;
     BOOLEAN memoryRelated;
@@ -1460,14 +1460,14 @@ static VOID SLEEPWALKERLogHandleTelemetry(_In_ SLEEPWALKER_HANDLE_CLASSIFICATION
     UINT32 anomalySignals;
     UINT32 classId;
     UNICODE_STRING originPathUs;
-    SLEEPWALKER_HANDLE_EVENT handleEvent;
+    BLACKBIRD_HANDLE_EVENT handleEvent;
     UINT32 i;
     UINT32 safeFrameCount;
     UINT32 safeFullFrameCount;
     UINT32 safeStackBytes;
 
-    SLEEPWALKEREtwLogHandleEvent(
-        SLEEPWALKERHandleClassToString(Class), CallerPid, TargetPid, DesiredAccess, Telemetry->OriginAddress,
+    BLACKBIRDEtwLogHandleEvent(
+        BLACKBIRDHandleClassToString(Class), CallerPid, TargetPid, DesiredAccess, Telemetry->OriginAddress,
         Telemetry->OriginProtect, ExecProtect, FromNtdll, FromExe,
         (Telemetry->OriginPath[0] != L'\0') ? Telemetry->OriginPath : NULL, Telemetry->FrameCount, Telemetry->Frames,
         Telemetry->OpenProcessStatus, Telemetry->BasicInfoStatus, Telemetry->SectionNameStatus,
@@ -1476,99 +1476,99 @@ static VOID SLEEPWALKERLogHandleTelemetry(_In_ SLEEPWALKER_HANDLE_CLASSIFICATION
 
     if (ExecProtect)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_EXEC_PROTECT;
+        flags |= BLACKBIRD_HANDLE_FLAG_EXEC_PROTECT;
     }
     if (FromNtdll)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_FROM_NTDLL;
+        flags |= BLACKBIRD_HANDLE_FLAG_FROM_NTDLL;
     }
     if (FromExe)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_FROM_EXE;
+        flags |= BLACKBIRD_HANDLE_FLAG_FROM_EXE;
     }
 
     memoryRelated = ((DesiredAccess & PROCESS_VM_OPERATION) != 0) || ((DesiredAccess & PROCESS_VM_READ) != 0) ||
                     ((DesiredAccess & PROCESS_VM_WRITE) != 0) || ((DesiredAccess & PROCESS_CREATE_THREAD) != 0) ||
                     ((DesiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS);
-    highRiskAccess = SLEEPWALKERHandleAccessIsHighRisk(DesiredAccess, IsThreadObject);
+    highRiskAccess = BLACKBIRDHandleAccessIsHighRisk(DesiredAccess, IsThreadObject);
     RtlInitUnicodeString(&originPathUs, Telemetry->OriginPath);
-    fromSyscallModule = SLEEPWALKERIsSyscallStubModulePath(&originPathUs);
-    anomalySignals = SLEEPWALKERCountHandleAnomalySignals(ExecProtect, fromSyscallModule, Telemetry);
+    fromSyscallModule = BLACKBIRDIsSyscallStubModulePath(&originPathUs);
+    anomalySignals = BLACKBIRDCountHandleAnomalySignals(ExecProtect, fromSyscallModule, Telemetry);
     if (memoryRelated)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_MEMORY_RELATED;
+        flags |= BLACKBIRD_HANDLE_FLAG_MEMORY_RELATED;
     }
     if (IsThreadObject)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_THREAD_OBJECT;
+        flags |= BLACKBIRD_HANDLE_FLAG_THREAD_OBJECT;
     }
     if (IsDuplicateOperation)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_DUPLICATE_OPERATION;
+        flags |= BLACKBIRD_HANDLE_FLAG_DUPLICATE_OPERATION;
     }
     if (Telemetry->DeepPathCandidate)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_DEEP_PATH_CANDIDATE;
+        flags |= BLACKBIRD_HANDLE_FLAG_DEEP_PATH_CANDIDATE;
     }
     if (Telemetry->DeepPathCaptured)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_DEEP_PATH_CAPTURED;
+        flags |= BLACKBIRD_HANDLE_FLAG_DEEP_PATH_CAPTURED;
     }
     if (Telemetry->DeepPathCacheHit)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_DEEP_PATH_CACHE_HIT;
+        flags |= BLACKBIRD_HANDLE_FLAG_DEEP_PATH_CACHE_HIT;
     }
     if (Telemetry->ReturnAddressValid)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_RETURN_ADDRESS_VALID;
+        flags |= BLACKBIRD_HANDLE_FLAG_RETURN_ADDRESS_VALID;
     }
     if (Telemetry->StackValidated)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_STACK_VALIDATED;
+        flags |= BLACKBIRD_HANDLE_FLAG_STACK_VALIDATED;
     }
     if (Telemetry->StackSpoofSuspect)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_STACK_SPOOF_SUSPECT;
+        flags |= BLACKBIRD_HANDLE_FLAG_STACK_SPOOF_SUSPECT;
     }
     if (Telemetry->SyscallExportChecked && Telemetry->SyscallExportMatch)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_SYSCALL_EXPORT_MATCH;
+        flags |= BLACKBIRD_HANDLE_FLAG_SYSCALL_EXPORT_MATCH;
     }
     if (Telemetry->SyscallExportChecked && !Telemetry->SyscallExportMatch)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_SYSCALL_EXPORT_MISMATCH;
+        flags |= BLACKBIRD_HANDLE_FLAG_SYSCALL_EXPORT_MISMATCH;
     }
     if (Telemetry->ModuleChainChecked && Telemetry->ModuleChainSane)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_MODULE_CHAIN_SANE;
+        flags |= BLACKBIRD_HANDLE_FLAG_MODULE_CHAIN_SANE;
     }
     if (Telemetry->UnwindMetadataChecked && Telemetry->UnwindMetadataValid)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_UNWIND_METADATA_VALID;
+        flags |= BLACKBIRD_HANDLE_FLAG_UNWIND_METADATA_VALID;
     }
     if (Telemetry->TebStackBoundsChecked && Telemetry->TebStackBoundsValid)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_TEB_STACK_BOUNDS_VALID;
+        flags |= BLACKBIRD_HANDLE_FLAG_TEB_STACK_BOUNDS_VALID;
     }
     if (Telemetry->TebStackBoundsChecked && Telemetry->FramesOutsideTebStack)
     {
-        flags |= SLEEPWALKER_HANDLE_FLAG_FRAMES_OUTSIDE_TEB_STACK;
+        flags |= BLACKBIRD_HANDLE_FLAG_FRAMES_OUTSIDE_TEB_STACK;
     }
 
-    classId = SleepwalkerHandleClassUnknown;
-    if (Class == SLEEPWALKERHandleLegitimateSyscall)
+    classId = BlackbirdHandleClassUnknown;
+    if (Class == BLACKBIRDHandleLegitimateSyscall)
     {
-        classId = SleepwalkerHandleClassLegitimateSyscall;
+        classId = BlackbirdHandleClassLegitimateSyscall;
     }
-    else if (Class == SLEEPWALKERHandleDirectSyscallSuspect)
+    else if (Class == BLACKBIRDHandleDirectSyscallSuspect)
     {
-        classId = SleepwalkerHandleClassDirectSyscallSuspect;
+        classId = BlackbirdHandleClassDirectSyscallSuspect;
     }
 
-    if (Class == SLEEPWALKERHandleDirectSyscallSuspect && highRiskAccess && anomalySignals >= 3 &&
+    if (Class == BLACKBIRDHandleDirectSyscallSuspect && highRiskAccess && anomalySignals >= 3 &&
         CallerPid != TargetPid)
     {
-        SLEEPWALKEREtwLogDetectionEvent("DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION", 5, CallerPid, TargetPid, 0,
+        BLACKBIRDEtwLogDetectionEvent("DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION", 5, CallerPid, TargetPid, 0,
                                         (UINT32)DesiredAccess, 0,
                                         L"direct-syscall suspect requires multiple stack/module/teb/export anomalies");
     }
@@ -1579,15 +1579,15 @@ static VOID SLEEPWALKERLogHandleTelemetry(_In_ SLEEPWALKER_HANDLE_CLASSIFICATION
                              (Telemetry->UnwindMetadataChecked && !Telemetry->UnwindMetadataValid) ||
                              (Telemetry->TebStackBoundsChecked &&
                               (!Telemetry->TebStackBoundsValid || !Telemetry->FramesOutsideTebStack)));
-    if (stackIntegrityAnomaly && (Class == SLEEPWALKERHandleDirectSyscallSuspect) && highRiskAccess &&
+    if (stackIntegrityAnomaly && (Class == BLACKBIRDHandleDirectSyscallSuspect) && highRiskAccess &&
         anomalySignals >= 4 && CallerPid != TargetPid)
     {
-        SLEEPWALKEREtwLogDetectionEvent(
+        BLACKBIRDEtwLogDetectionEvent(
             "STACK_INTEGRITY_ANOMALY_ON_HANDLE_OP", 6, CallerPid, TargetPid, 0, (UINT32)DesiredAccess, 0,
             L"high-confidence stack integrity anomaly on high-risk handle operation");
     }
 
-    if (SLEEPWALKERControlHasClientsFast())
+    if (BLACKBIRDControlHasClientsFast())
     {
         RtlZeroMemory(&handleEvent, sizeof(handleEvent));
         handleEvent.CallerPid = (UINT64)(ULONG_PTR)CallerPid;
@@ -1676,13 +1676,13 @@ static VOID SLEEPWALKERLogHandleTelemetry(_In_ SLEEPWALKER_HANDLE_CLASSIFICATION
             RtlCopyMemory(handleEvent.StackSnapshot, Telemetry->StackSnapshot, safeStackBytes);
         }
 
-        SLEEPWALKERControlPublishHandleEvent(&handleEvent);
+        BLACKBIRDControlPublishHandleEvent(&handleEvent);
     }
 }
 
-static VOID SLEEPWALKERCaptureDeepPathData(_In_ HANDLE CallerProcessId, _In_ BOOLEAN ShouldCapture,
+static VOID BLACKBIRDCaptureDeepPathData(_In_ HANDLE CallerProcessId, _In_ BOOLEAN ShouldCapture,
                                            _In_ const MEMORY_BASIC_INFORMATION *Mbi,
-                                           _Inout_ PSLEEPWALKER_HANDLE_TELEMETRY Telemetry)
+                                           _Inout_ PBLACKBIRD_HANDLE_TELEMETRY Telemetry)
 {
     NTSTATUS status;
     PEPROCESS sourceProcess = NULL;
@@ -1706,7 +1706,7 @@ static VOID SLEEPWALKERCaptureDeepPathData(_In_ HANDLE CallerProcessId, _In_ BOO
         return;
     }
 
-    if (SLEEPWALKERDeepCacheLookup(CallerProcessId, Mbi->BaseAddress, Mbi->RegionSize, Mbi->Protect, Mbi->State,
+    if (BLACKBIRDDeepCacheLookup(CallerProcessId, Mbi->BaseAddress, Mbi->RegionSize, Mbi->Protect, Mbi->State,
                                    Mbi->Type, Telemetry->DeepSample, &sampleSize))
     {
         Telemetry->DeepPathCaptured = TRUE;
@@ -1739,15 +1739,15 @@ static VOID SLEEPWALKERCaptureDeepPathData(_In_ HANDLE CallerProcessId, _In_ BOO
     Telemetry->DeepSampleSize = (ULONG)bytesRead;
     Telemetry->DeepPathCaptured = TRUE;
     Telemetry->DeepPathCacheHit = FALSE;
-    SLEEPWALKERDeepCacheStore(CallerProcessId, Mbi->BaseAddress, Mbi->RegionSize, Mbi->Protect, Mbi->State, Mbi->Type,
+    BLACKBIRDDeepCacheStore(CallerProcessId, Mbi->BaseAddress, Mbi->RegionSize, Mbi->Protect, Mbi->State, Mbi->Type,
                               Telemetry->DeepSample, Telemetry->DeepSampleSize);
 }
 
-static VOID SLEEPWALKERClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HANDLE CallerThreadId,
+static VOID BLACKBIRDClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HANDLE CallerThreadId,
                                           _In_ BOOLEAN IsThreadObject, _In_ BOOLEAN IsDuplicateOperation, _In_ ULONG FrameCount,
                                           _In_reads_(FrameCount) PVOID *Frames,
-                                          _In_opt_ const SLEEPWALKER_HANDLE_WORK *Work,
-                                          _Out_ PSLEEPWALKER_HANDLE_TELEMETRY Telemetry)
+                                          _In_opt_ const BLACKBIRD_HANDLE_WORK *Work,
+                                          _Out_ PBLACKBIRD_HANDLE_TELEMETRY Telemetry)
 {
     NTSTATUS status;
     OBJECT_ATTRIBUTES objectAttributes;
@@ -1775,7 +1775,7 @@ static VOID SLEEPWALKERClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HAND
     Telemetry->OpenProcessStatus = STATUS_UNSUCCESSFUL;
     Telemetry->BasicInfoStatus = STATUS_UNSUCCESSFUL;
     Telemetry->SectionNameStatus = STATUS_UNSUCCESSFUL;
-    SLEEPWALKERApplyWorkCaptureToTelemetry(Work, Telemetry);
+    BLACKBIRDApplyWorkCaptureToTelemetry(Work, Telemetry);
 
     if (FrameCount == 0 || Frames == NULL || Frames[0] == NULL)
     {
@@ -1795,8 +1795,8 @@ static VOID SLEEPWALKERClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HAND
     Telemetry->OpenProcessStatus = status;
     if (!NT_SUCCESS(status))
     {
-        SLEEPWALKER_DBG_PRINT(DPFLTR_TRACE_LEVEL,
-                              "SLEEPWALKER[DBG]: ZwOpenProcess failed callerPid=%p status=0x%08X.\n", CallerProcessId,
+        BLACKBIRD_DBG_PRINT(DPFLTR_TRACE_LEVEL,
+                              "BLACKBIRD[DBG]: ZwOpenProcess failed callerPid=%p status=0x%08X.\n", CallerProcessId,
                               (ULONG)status);
         return;
     }
@@ -1812,7 +1812,7 @@ static VOID SLEEPWALKERClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HAND
     (void)PsLookupProcessByProcessId(CallerProcessId, &sourceProcess);
 
     RtlZeroMemory(&mbi, sizeof(mbi));
-    status = ZwQueryVirtualMemory(processHandle, Telemetry->OriginAddress, SLEEPWALKERMemoryBasicInformation, &mbi,
+    status = ZwQueryVirtualMemory(processHandle, Telemetry->OriginAddress, BLACKBIRDMemoryBasicInformation, &mbi,
                                   sizeof(mbi), NULL);
     Telemetry->BasicInfoStatus = status;
     if (NT_SUCCESS(status))
@@ -1825,8 +1825,8 @@ static VOID SLEEPWALKERClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HAND
     }
     else
     {
-        SLEEPWALKER_DBG_PRINT(DPFLTR_TRACE_LEVEL,
-                              "SLEEPWALKER[DBG]: ZwQueryVirtualMemory(basic) failed callerPid=%p status=0x%08X.\n",
+        BLACKBIRD_DBG_PRINT(DPFLTR_TRACE_LEVEL,
+                              "BLACKBIRD[DBG]: ZwQueryVirtualMemory(basic) failed callerPid=%p status=0x%08X.\n",
                               CallerProcessId, (ULONG)status);
     }
     if (InterlockedCompareExchange(&g_HandleMonitorStopping, 0, 0) != 0)
@@ -1840,34 +1840,34 @@ static VOID SLEEPWALKERClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HAND
     }
 
     RtlZeroMemory(sectionNameRaw, sizeof(sectionNameRaw));
-    status = ZwQueryVirtualMemory(processHandle, Telemetry->OriginAddress, SLEEPWALKERMemorySectionName, sectionNameRaw,
+    status = ZwQueryVirtualMemory(processHandle, Telemetry->OriginAddress, BLACKBIRDMemorySectionName, sectionNameRaw,
                                   sizeof(sectionNameRaw), NULL);
     Telemetry->SectionNameStatus = status;
     if (NT_SUCCESS(status))
     {
         sectionName = (PUNICODE_STRING)sectionNameRaw;
-        SLEEPWALKERSafeCopyUnicode(sectionName, Telemetry->OriginPath, RTL_NUMBER_OF(Telemetry->OriginPath));
+        BLACKBIRDSafeCopyUnicode(sectionName, Telemetry->OriginPath, RTL_NUMBER_OF(Telemetry->OriginPath));
     }
     else
     {
-        SLEEPWALKER_DBG_PRINT(DPFLTR_TRACE_LEVEL,
-                              "SLEEPWALKER[DBG]: ZwQueryVirtualMemory(section) failed callerPid=%p status=0x%08X.\n",
+        BLACKBIRD_DBG_PRINT(DPFLTR_TRACE_LEVEL,
+                              "BLACKBIRD[DBG]: ZwQueryVirtualMemory(section) failed callerPid=%p status=0x%08X.\n",
                               CallerProcessId, (ULONG)status);
     }
 
     RtlInitUnicodeString(&originPathUs, Telemetry->OriginPath);
-    execProtect = SLEEPWALKERIsExecutableProtection(Telemetry->OriginProtect);
-    fromNtdll = SLEEPWALKERIsNtdllPath(&originPathUs);
-    fromSyscallModule = SLEEPWALKERIsSyscallStubModulePath(&originPathUs);
+    execProtect = BLACKBIRDIsExecutableProtection(Telemetry->OriginProtect);
+    fromNtdll = BLACKBIRDIsNtdllPath(&originPathUs);
+    fromSyscallModule = BLACKBIRDIsSyscallStubModulePath(&originPathUs);
     // Capture sample bytes for executable origins, including ntdll/win32u stubs, so UI can disassemble real origin bytes.
     deepPathGate = execProtect;
-    SLEEPWALKERCaptureDeepPathData(CallerProcessId, deepPathGate, &mbi, Telemetry);
+    BLACKBIRDCaptureDeepPathData(CallerProcessId, deepPathGate, &mbi, Telemetry);
 
-    Telemetry->StackValidated = SLEEPWALKERValidateStackFrames(processHandle, Telemetry->FrameCount, Telemetry->Frames,
+    Telemetry->StackValidated = BLACKBIRDValidateStackFrames(processHandle, Telemetry->FrameCount, Telemetry->Frames,
                                                                &Telemetry->StackSpoofSuspect);
     if (sourceProcess != NULL && Telemetry->FrameCount > 1 && Telemetry->Frames[1] != NULL)
     {
-        Telemetry->ReturnAddressValid = SLEEPWALKERValidateReturnAddress(sourceProcess, Telemetry->Frames[1]);
+        Telemetry->ReturnAddressValid = BLACKBIRDValidateReturnAddress(sourceProcess, Telemetry->Frames[1]);
     }
     else
     {
@@ -1880,13 +1880,13 @@ static VOID SLEEPWALKERClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HAND
     }
     else
     {
-        (void)SLEEPWALKERGetNtdllBaseFromFrames(processHandle, Telemetry->FrameCount, Telemetry->Frames, &ntdllBase);
+        (void)BLACKBIRDGetNtdllBaseFromFrames(processHandle, Telemetry->FrameCount, Telemetry->Frames, &ntdllBase);
     }
 
-    expectedExportName = SLEEPWALKERGetExpectedSyscallExport(IsThreadObject, IsDuplicateOperation);
-    hasExpectedSyscall = SLEEPWALKERResolveExportSyscallNumber(sourceProcess, ntdllBase, expectedExportName,
+    expectedExportName = BLACKBIRDGetExpectedSyscallExport(IsThreadObject, IsDuplicateOperation);
+    hasExpectedSyscall = BLACKBIRDResolveExportSyscallNumber(sourceProcess, ntdllBase, expectedExportName,
                                                                &expectedSyscallNumber);
-    hasObservedSyscall = SLEEPWALKERExtractSyscallNumberNearAddress(sourceProcess, Telemetry->OriginAddress,
+    hasObservedSyscall = BLACKBIRDExtractSyscallNumberNearAddress(sourceProcess, Telemetry->OriginAddress,
                                                                     &observedSyscallNumber);
     Telemetry->SyscallExportChecked = hasExpectedSyscall;
     Telemetry->SyscallExportMatch = hasExpectedSyscall && hasObservedSyscall &&
@@ -1894,28 +1894,28 @@ static VOID SLEEPWALKERClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HAND
 
     Telemetry->ModuleChainChecked = TRUE;
     Telemetry->ModuleChainSane =
-        SLEEPWALKERValidateModuleChainSanity(processHandle, Telemetry->FrameCount, Telemetry->Frames);
+        BLACKBIRDValidateModuleChainSanity(processHandle, Telemetry->FrameCount, Telemetry->Frames);
 
     Telemetry->UnwindMetadataChecked = (sourceProcess != NULL);
     Telemetry->UnwindMetadataValid =
         Telemetry->UnwindMetadataChecked &&
-        SLEEPWALKERValidateUnwindMetadata(processHandle, sourceProcess, Telemetry->FrameCount, Telemetry->Frames);
+        BLACKBIRDValidateUnwindMetadata(processHandle, sourceProcess, Telemetry->FrameCount, Telemetry->Frames);
 
     stackLimit = 0;
     stackBase = 0;
     Telemetry->TebStackBoundsChecked = (sourceProcess != NULL && CallerThreadId != NULL);
     Telemetry->TebStackBoundsValid =
         Telemetry->TebStackBoundsChecked &&
-        SLEEPWALKERQueryTebStackBounds(CallerProcessId, CallerThreadId, sourceProcess, &stackLimit, &stackBase);
+        BLACKBIRDQueryTebStackBounds(CallerProcessId, CallerThreadId, sourceProcess, &stackLimit, &stackBase);
     Telemetry->FramesOutsideTebStack =
         Telemetry->TebStackBoundsValid &&
-        SLEEPWALKERFramesOutsideStackBounds(Telemetry->FrameCount, Telemetry->Frames, stackLimit, stackBase);
+        BLACKBIRDFramesOutsideStackBounds(Telemetry->FrameCount, Telemetry->Frames, stackLimit, stackBase);
 
     if (sourceProcess != NULL &&
-        (Telemetry->CaptureFlags & SLEEPWALKER_HANDLE_CAPTURE_CONTEXT_VALID) != 0 &&
+        (Telemetry->CaptureFlags & BLACKBIRD_HANDLE_CAPTURE_CONTEXT_VALID) != 0 &&
         Telemetry->RegRsp != 0)
     {
-        SLEEPWALKERCaptureStackSnapshot(sourceProcess, Telemetry->RegRsp, Telemetry);
+        BLACKBIRDCaptureStackSnapshot(sourceProcess, Telemetry->RegRsp, Telemetry);
     }
 
     if (sourceProcess != NULL)
@@ -1925,10 +1925,10 @@ static VOID SLEEPWALKERClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HAND
     ZwClose(processHandle);
 }
 
-static VOID SLEEPWALKERHandleWorkRoutine(_In_ PVOID Context)
+static VOID BLACKBIRDHandleWorkRoutine(_In_ PVOID Context)
 {
-    PSLEEPWALKER_HANDLE_WORK work = (PSLEEPWALKER_HANDLE_WORK)Context;
-    SLEEPWALKER_HANDLE_TELEMETRY telemetry;
+    PBLACKBIRD_HANDLE_WORK work = (PBLACKBIRD_HANDLE_WORK)Context;
+    BLACKBIRD_HANDLE_TELEMETRY telemetry;
     UNICODE_STRING originPathUs;
     BOOLEAN execProtect;
     BOOLEAN fromNtdll;
@@ -1936,7 +1936,7 @@ static VOID SLEEPWALKERHandleWorkRoutine(_In_ PVOID Context)
     BOOLEAN fromExe;
     BOOLEAN highRiskAccess;
     UINT32 anomalySignals;
-    SLEEPWALKER_HANDLE_CLASSIFICATION classification = SLEEPWALKERHandleUnknown;
+    BLACKBIRD_HANDLE_CLASSIFICATION classification = BLACKBIRDHandleUnknown;
 
     PAGED_CODE();
     if (KeGetCurrentIrql() != PASSIVE_LEVEL)
@@ -1947,55 +1947,55 @@ static VOID SLEEPWALKERHandleWorkRoutine(_In_ PVOID Context)
     {
         goto Exit;
     }
-    if (!SLEEPWALKERControlHasClientsFast())
+    if (!BLACKBIRDControlHasClientsFast())
     {
         goto Exit;
     }
 
-    SLEEPWALKERClassifyUserOrigin(work->CallerPid, work->CallerTid, work->IsThreadObject, work->IsDuplicateOperation,
+    BLACKBIRDClassifyUserOrigin(work->CallerPid, work->CallerTid, work->IsThreadObject, work->IsDuplicateOperation,
                                   work->FrameCount, work->Frames, work, &telemetry);
 
     RtlInitUnicodeString(&originPathUs, telemetry.OriginPath);
-    execProtect = SLEEPWALKERIsExecutableProtection(telemetry.OriginProtect);
+    execProtect = BLACKBIRDIsExecutableProtection(telemetry.OriginProtect);
 
-    fromNtdll = SLEEPWALKERIsNtdllPath(&originPathUs);
-    fromSyscallModule = SLEEPWALKERIsSyscallStubModulePath(&originPathUs);
-    fromExe = SLEEPWALKERUnicodeContainsInsensitive(&originPathUs, L".exe", 4);
-    highRiskAccess = SLEEPWALKERHandleAccessIsHighRisk(work->DesiredAccess, work->IsThreadObject);
-    anomalySignals = SLEEPWALKERCountHandleAnomalySignals(execProtect, fromSyscallModule, &telemetry);
+    fromNtdll = BLACKBIRDIsNtdllPath(&originPathUs);
+    fromSyscallModule = BLACKBIRDIsSyscallStubModulePath(&originPathUs);
+    fromExe = BLACKBIRDUnicodeContainsInsensitive(&originPathUs, L".exe", 4);
+    highRiskAccess = BLACKBIRDHandleAccessIsHighRisk(work->DesiredAccess, work->IsThreadObject);
+    anomalySignals = BLACKBIRDCountHandleAnomalySignals(execProtect, fromSyscallModule, &telemetry);
     if (fromSyscallModule && telemetry.StackValidated && !telemetry.StackSpoofSuspect && telemetry.ReturnAddressValid &&
         telemetry.ModuleChainChecked &&
         telemetry.ModuleChainSane && telemetry.UnwindMetadataChecked && telemetry.UnwindMetadataValid &&
         telemetry.TebStackBoundsChecked && telemetry.TebStackBoundsValid && telemetry.FramesOutsideTebStack)
     {
-        classification = SLEEPWALKERHandleLegitimateSyscall;
+        classification = BLACKBIRDHandleLegitimateSyscall;
     }
     else if (highRiskAccess && execProtect && anomalySignals >= 2)
     {
-        classification = SLEEPWALKERHandleDirectSyscallSuspect;
+        classification = BLACKBIRDHandleDirectSyscallSuspect;
     }
     else
     {
-        classification = SLEEPWALKERHandleUnknown;
+        classification = BLACKBIRDHandleUnknown;
     }
 
-    SLEEPWALKERLogHandleTelemetry(classification, work->CallerPid, work->TargetPid, work->DesiredAccess,
+    BLACKBIRDLogHandleTelemetry(classification, work->CallerPid, work->TargetPid, work->DesiredAccess,
                                   work->IsThreadObject, work->IsDuplicateOperation, execProtect, fromNtdll, fromExe,
                                   &telemetry);
 
-    SLEEPWALKER_DBG_PRINT(DPFLTR_INFO_LEVEL,
-                          "SLEEPWALKER[DBG]: handle event caller=%p target=%p access=0x%08X class=%s open=0x%08X "
+    BLACKBIRD_DBG_PRINT(DPFLTR_INFO_LEVEL,
+                          "BLACKBIRD[DBG]: handle event caller=%p target=%p access=0x%08X class=%s open=0x%08X "
                           "basic=0x%08X section=0x%08X frames=%lu.\n",
                           work->CallerPid, work->TargetPid, work->DesiredAccess,
-                          SLEEPWALKERHandleClassToString(classification), (ULONG)telemetry.OpenProcessStatus,
+                          BLACKBIRDHandleClassToString(classification), (ULONG)telemetry.OpenProcessStatus,
                           (ULONG)telemetry.BasicInfoStatus, (ULONG)telemetry.SectionNameStatus, work->FrameCount);
 
 Exit:
-    SLEEPWALKERHandleReleaseWorkSlot();
+    BLACKBIRDHandleReleaseWorkSlot();
     ExFreePoolWithTag(work, 'hdtT');
 }
 
-static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
+static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(
     _In_ PVOID RegistrationContext, _Inout_ POB_PRE_OPERATION_INFORMATION OperationInformation)
 {
     ACCESS_MASK desiredAccess;
@@ -2004,8 +2004,8 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
     HANDLE targetPid;
     PEPROCESS targetProcess;
     PETHREAD targetThread;
-    PSLEEPWALKER_HANDLE_WORK work;
-    PVOID userFrames[SLEEPWALKER_MAX_FULL_EVENT_FRAMES] = {0};
+    PBLACKBIRD_HANDLE_WORK work;
+    PVOID userFrames[BLACKBIRD_MAX_FULL_EVENT_FRAMES] = {0};
     ULONG frameCount;
     ULONG copyCount;
     ULONG fullCopyCount;
@@ -2077,7 +2077,7 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
     {
         return OB_PREOP_SUCCESS;
     }
-    if (!SLEEPWALKERControlHasClientsFast())
+    if (!BLACKBIRDControlHasClientsFast())
     {
         return OB_PREOP_SUCCESS;
     }
@@ -2087,13 +2087,13 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
     callerPid32 = (UINT32)(ULONG_PTR)callerPid;
     targetPid32 = (UINT32)(ULONG_PTR)targetPid;
     secondaryPid32 = (targetPid32 != callerPid32) ? targetPid32 : 0;
-    streamMask = SLEEPWALKER_STREAM_HANDLE;
+    streamMask = BLACKBIRD_STREAM_HANDLE;
     if (hasVmWriteOrFull)
     {
-        streamMask |= SLEEPWALKER_STREAM_MEMORY;
+        streamMask |= BLACKBIRD_STREAM_MEMORY;
     }
 
-    if (!SLEEPWALKERControlHasPidInterest(callerPid32, secondaryPid32, streamMask))
+    if (!BLACKBIRDControlHasPidInterest(callerPid32, secondaryPid32, streamMask))
     {
         return OB_PREOP_SUCCESS;
     }
@@ -2101,44 +2101,44 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
     intentFlags = 0;
     if (hasVmWriteOrFull)
     {
-        intentFlags |= SLEEPWALKER_INTENT_PROCESS_MEMORY;
+        intentFlags |= BLACKBIRD_INTENT_PROCESS_MEMORY;
     }
     if (hasThreadContextAccess)
     {
-        intentFlags |= SLEEPWALKER_INTENT_THREAD_CONTEXT;
+        intentFlags |= BLACKBIRD_INTENT_THREAD_CONTEXT;
     }
     if (isDuplicateOperation && (intentFlags != 0))
     {
-        intentFlags |= SLEEPWALKER_INTENT_DUP_HANDLE;
+        intentFlags |= BLACKBIRD_INTENT_DUP_HANDLE;
     }
 
     if (intentFlags != 0)
     {
-        SLEEPWALKERCorrelationRecordHandleIntent(callerPid, targetPid, desiredAccess, intentFlags);
+        BLACKBIRDCorrelationRecordHandleIntent(callerPid, targetPid, desiredAccess, intentFlags);
     }
     if (isThreadObject)
     {
-        SLEEPWALKERApcMonitorRecordThreadHandleIntent(callerPid, targetPid, desiredAccess, isDuplicateOperation);
+        BLACKBIRDApcMonitorRecordThreadHandleIntent(callerPid, targetPid, desiredAccess, isDuplicateOperation);
     }
 
-    if (!SLEEPWALKERHandleTryAcquireWorkSlot())
+    if (!BLACKBIRDHandleTryAcquireWorkSlot())
     {
         failureCounter = InterlockedIncrement(&g_HandleCallbackDropLogCounter);
         if (failureCounter == 1 || ((failureCounter & 0xFF) == 0))
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                       "SLEEPWALKER: handle callback drop caller=%p target=%p access=0x%08X total=%lu.\n", callerPid,
+                       "BLACKBIRD: handle callback drop caller=%p target=%p access=0x%08X total=%lu.\n", callerPid,
                        targetPid, desiredAccess, (ULONG)failureCounter);
         }
-        SLEEPWALKER_DBG_PRINT(
+        BLACKBIRD_DBG_PRINT(
             DPFLTR_WARNING_LEVEL,
-            "SLEEPWALKER[DBG]: dropping handle preop caller=%p target=%p access=0x%08X (work slot unavailable).\n",
+            "BLACKBIRD[DBG]: dropping handle preop caller=%p target=%p access=0x%08X (work slot unavailable).\n",
             callerPid, targetPid, desiredAccess);
         return OB_PREOP_SUCCESS;
     }
 
     work =
-        (PSLEEPWALKER_HANDLE_WORK)SLEEPWALKERAllocatePoolCompat(POOL_FLAG_NON_PAGED | POOL_FLAG_UNINITIALIZED,
+        (PBLACKBIRD_HANDLE_WORK)BLACKBIRDAllocatePoolCompat(POOL_FLAG_NON_PAGED | POOL_FLAG_UNINITIALIZED,
                                                                 sizeof(*work), 'hdtT');
     if (work == NULL)
     {
@@ -2146,11 +2146,11 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
         if (failureCounter == 1 || ((failureCounter & 0xFF) == 0))
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                       "SLEEPWALKER: handle callback alloc failure caller=%p target=%p access=0x%08X total=%lu.\n",
+                       "BLACKBIRD: handle callback alloc failure caller=%p target=%p access=0x%08X total=%lu.\n",
                        callerPid, targetPid, desiredAccess, (ULONG)failureCounter);
         }
-        SLEEPWALKER_DBG_PRINT(DPFLTR_ERROR_LEVEL, "SLEEPWALKER[DBG]: ExAllocatePool2 failed for handle work item.\n");
-        SLEEPWALKERHandleReleaseWorkSlot();
+        BLACKBIRD_DBG_PRINT(DPFLTR_ERROR_LEVEL, "BLACKBIRD[DBG]: ExAllocatePool2 failed for handle work item.\n");
+        BLACKBIRDHandleReleaseWorkSlot();
         return OB_PREOP_SUCCESS;
     }
 
@@ -2165,7 +2165,7 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
     frameCount = 0;
     copyCount = 0;
     fullCopyCount = 0;
-    SLEEPWALKERCaptureRegisterSnapshot(work);
+    BLACKBIRDCaptureRegisterSnapshot(work);
     shouldCaptureStack = isDuplicateOperation ||
                          ((desiredAccess & (PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD |
                                             THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME)) != 0) ||
@@ -2199,11 +2199,11 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
             {
                 DbgPrintEx(
                     DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                    "SLEEPWALKER: handle callback stack capture fault caller=%p target=%p access=0x%08X total=%lu.\n",
+                    "BLACKBIRD: handle callback stack capture fault caller=%p target=%p access=0x%08X total=%lu.\n",
                     callerPid, targetPid, desiredAccess, (ULONG)failureCounter);
             }
-            SLEEPWALKER_DBG_PRINT(DPFLTR_WARNING_LEVEL,
-                                  "SLEEPWALKER[DBG]: RtlWalkFrameChain fault caller=%p target=%p access=0x%08X.\n",
+            BLACKBIRD_DBG_PRINT(DPFLTR_WARNING_LEVEL,
+                                  "BLACKBIRD[DBG]: RtlWalkFrameChain fault caller=%p target=%p access=0x%08X.\n",
                                   callerPid, targetPid, desiredAccess);
         }
     }
@@ -2211,17 +2211,17 @@ static OB_PREOP_CALLBACK_STATUS SLEEPWALKERProcessPreOperation(
     work->FrameCount = copyCount;
     work->FullFrameCount = fullCopyCount;
 
-    ExInitializeWorkItem(&work->WorkItem, SLEEPWALKERHandleWorkRoutine, work);
+    ExInitializeWorkItem(&work->WorkItem, BLACKBIRDHandleWorkRoutine, work);
     ExQueueWorkItem(&work->WorkItem, DelayedWorkQueue);
-    SLEEPWALKER_DBG_PRINT(DPFLTR_TRACE_LEVEL,
-                          "SLEEPWALKER[DBG]: queued handle work caller=%p target=%p access=0x%08X frames=%lu.\n",
+    BLACKBIRD_DBG_PRINT(DPFLTR_TRACE_LEVEL,
+                          "BLACKBIRD[DBG]: queued handle work caller=%p target=%p access=0x%08X frames=%lu.\n",
                           callerPid, targetPid, desiredAccess, copyCount);
 
     return OB_PREOP_SUCCESS;
 }
 
 NTSTATUS
-SLEEPWALKERHandleMonitorInitialize(VOID)
+BLACKBIRDHandleMonitorInitialize(VOID)
 {
     NTSTATUS status;
     LARGE_INTEGER freq;
@@ -2248,12 +2248,12 @@ SLEEPWALKERHandleMonitorInitialize(VOID)
     RtlZeroMemory(&g_OperationRegistration, sizeof(g_OperationRegistration));
     g_OperationRegistration[0].ObjectType = PsProcessType;
     g_OperationRegistration[0].Operations = OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE;
-    g_OperationRegistration[0].PreOperation = SLEEPWALKERProcessPreOperation;
+    g_OperationRegistration[0].PreOperation = BLACKBIRDProcessPreOperation;
     g_OperationRegistration[0].PostOperation = NULL;
 
     g_OperationRegistration[1].ObjectType = PsThreadType;
     g_OperationRegistration[1].Operations = OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE;
-    g_OperationRegistration[1].PreOperation = SLEEPWALKERProcessPreOperation;
+    g_OperationRegistration[1].PreOperation = BLACKBIRDProcessPreOperation;
     g_OperationRegistration[1].PostOperation = NULL;
 
     RtlZeroMemory(&g_CallbackRegistration, sizeof(g_CallbackRegistration));
@@ -2267,17 +2267,17 @@ SLEEPWALKERHandleMonitorInitialize(VOID)
     status = ObRegisterCallbacks(&g_CallbackRegistration, &g_ProcessObRegistrationHandle);
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "SLEEPWALKER: ObRegisterCallbacks failed (0x%08X).\n",
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: ObRegisterCallbacks failed (0x%08X).\n",
                    status);
         return status;
     }
 
     g_HandleMonitorRegistered = TRUE;
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "SLEEPWALKER: process handle monitor initialized.\n");
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: process handle monitor initialized.\n");
     return STATUS_SUCCESS;
 }
 
-VOID SLEEPWALKERHandleMonitorUninitialize(VOID)
+VOID BLACKBIRDHandleMonitorUninitialize(VOID)
 {
     LARGE_INTEGER waitInterval;
 
@@ -2307,7 +2307,7 @@ VOID SLEEPWALKERHandleMonitorUninitialize(VOID)
         if (waitStatus == STATUS_TIMEOUT)
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
-                       "SLEEPWALKER: handle monitor draining (outstanding=%ld).\n",
+                       "BLACKBIRD: handle monitor draining (outstanding=%ld).\n",
                        InterlockedCompareExchange(&g_HandleOutstandingWork, 0, 0));
         }
     }
@@ -2316,13 +2316,13 @@ VOID SLEEPWALKERHandleMonitorUninitialize(VOID)
     RtlZeroMemory(g_DeepCache, sizeof(g_DeepCache));
     InterlockedExchange(&g_DeepCacheWriteIndex, -1);
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
-               "SLEEPWALKER: process handle monitor uninitialized (dropped=%ld, stackCaptureFaults=%ld).\n",
+               "BLACKBIRD: process handle monitor uninitialized (dropped=%ld, stackCaptureFaults=%ld).\n",
                InterlockedCompareExchange(&g_HandleDroppedWork, 0, 0),
                InterlockedCompareExchange(&g_HandleStackCaptureFaults, 0, 0));
 }
 
 BOOLEAN
-SLEEPWALKERHandleMonitorSelfCheck(VOID)
+BLACKBIRDHandleMonitorSelfCheck(VOID)
 {
     if (!g_HandleMonitorRegistered)
     {
@@ -2340,8 +2340,8 @@ SLEEPWALKERHandleMonitorSelfCheck(VOID)
     {
         return FALSE;
     }
-    if (g_OperationRegistration[0].PreOperation != SLEEPWALKERProcessPreOperation ||
-        g_OperationRegistration[1].PreOperation != SLEEPWALKERProcessPreOperation)
+    if (g_OperationRegistration[0].PreOperation != BLACKBIRDProcessPreOperation ||
+        g_OperationRegistration[1].PreOperation != BLACKBIRDProcessPreOperation)
     {
         return FALSE;
     }

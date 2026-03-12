@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     internal enum IntelDetailsCategory
     {

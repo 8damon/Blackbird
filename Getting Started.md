@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide is the shortest path to a working Sleepwalker alpha deployment in a lab or VM.
+This guide is the shortest path to a working Blackbird beta v1.2 deployment in a lab or VM.
 
 ## 1. Prerequisites
 
@@ -13,35 +13,35 @@ This guide is the shortest path to a working Sleepwalker alpha deployment in a l
 
 Build these projects:
 
-- `vcxproj/Sleepwalker.vcxproj`
-- `vcxproj/SleepwalkerController.vcxproj`
-- `vcxproj/SleepwalkerSensorCore.vcxproj`
-- `vcxproj/SleepwalkerClient.vcxproj`
-- `vcxproj/SleepwalkerIoctlTest.vcxproj`
-- `interface/SleepwalkerInterface.csproj`
+- `vcxproj/Blackbird.vcxproj`
+- `vcxproj/BlackbirdController.vcxproj`
+- `vcxproj/BlackbirdSensorCore.vcxproj`
+- `vcxproj/BlackbirdClient.vcxproj`
+- `vcxproj/BlackbirdIoctlTest.vcxproj`
+- `interface/BlackbirdInterface.csproj`
 
 Typical artifacts:
 
-- `x64\Debug\sleepwlkr.sys`
-- `x64\Debug\SleepwlkrController.exe`
-- `x64\Debug\SleepwalkerSensorCore.dll`
-- `x64\Debug\SleepwalkerClient.exe`
-- `x64\Debug\SleepwalkerIoctlTest.exe`
-- `interface\bin\x64\Debug\net9.0-windows\SleepwalkerInterface.exe`
+- `x64\<Configuration>\blackbird.sys`
+- `x64\<Configuration>\BlackbirdController.exe`
+- `x64\<Configuration>\BlackbirdSensorCore.dll`
+- `x64\<Configuration>\BlackbirdClient.exe`
+- `x64\<Configuration>\BlackbirdTestSuite.exe`
+- `interface\bin\<Configuration>\net9.0-windows\BlackbirdInterface.exe`
 
 ## 3. Install And Start The Driver
 
 From an elevated shell:
 
 ```bat
-pnputil /add-driver "Sleepwalker.inf" /install
-sc start sleepwlkr
+pnputil /add-driver "Blackbird.inf" /install
+sc start blackbird
 ```
 
 Check state:
 
 ```bat
-sc query sleepwlkr
+sc query blackbird
 ```
 
 ## 4. Install And Start The Controller
@@ -50,17 +50,17 @@ Recommended service install:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\usage\install-controller-service.ps1
-sc query SleepwlkrController
+sc query BlackbirdController
 ```
 
-If you are iterating quickly, you can also run `SleepwlkrController.exe` directly in your VM instead of installing it as a service.
+If you are iterating quickly, you can also run `BlackbirdController.exe` directly in your VM instead of installing it as a service.
 
 ## 5. Validate The Stack
 
 Run the validation harness before opening the interface:
 
 ```bat
-.\x64\Debug\SleepwalkerIoctlTest.exe
+.\x64\Debug\BlackbirdTestSuite.exe
 ```
 
 Expected outcome:
@@ -74,10 +74,10 @@ Expected outcome:
 Start:
 
 ```bat
-.\interface\bin\x64\Debug\net9.0-windows\SleepwalkerInterface.exe
+.\interface\bin\Debug\net9.0-windows\BlackbirdInterface.exe
 ```
 
-If you deployed the interface output somewhere else, make sure `SleepwalkerSensorCore.dll` beside the interface is from the same build as the controller.
+If you deployed the interface output somewhere else, make sure `BlackbirdSensorCore.dll` beside the interface is from the same build as the controller.
 
 ## 7. First Operator Workflow
 
@@ -106,7 +106,7 @@ The interface supports:
 
 ### `OpenControlDevice failed (win32=233)`
 
-Usually means the interface-side `SleepwalkerSensorCore.dll` does not match the running controller ABI, or the broker dropped the pipe during handshake.
+Usually means the interface-side `BlackbirdSensorCore.dll` does not match the running controller ABI, or the broker dropped the pipe during handshake.
 
 ### Interface connects but no live data appears
 

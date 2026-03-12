@@ -46,26 +46,26 @@ typedef struct _MEMORY_BASIC_INFORMATION
     ULONG Type;
 } MEMORY_BASIC_INFORMATION, *PMEMORY_BASIC_INFORMATION;
 
-typedef enum _SLEEPWALKER_MEMORY_INFORMATION_CLASS
+typedef enum _BLACKBIRD_MEMORY_INFORMATION_CLASS
 {
-    SLEEPWALKERMemoryBasicInformation = 0
-} SLEEPWALKER_MEMORY_INFORMATION_CLASS;
+    BLACKBIRDMemoryBasicInformation = 0
+} BLACKBIRD_MEMORY_INFORMATION_CLASS;
 
-typedef enum _SLEEPWALKER_NOTIFY_MODE
+typedef enum _BLACKBIRD_NOTIFY_MODE
 {
-    SLEEPWALKERNotifyNone = 0,
-    SLEEPWALKERNotifyEx
-} SLEEPWALKER_NOTIFY_MODE;
+    BLACKBIRDNotifyNone = 0,
+    BLACKBIRDNotifyEx
+} BLACKBIRD_NOTIFY_MODE;
 
-typedef NTSTATUS(NTAPI *PSLEEPWALKER_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX)(_In_ PSCREATETHREADNOTIFYTYPE NotifyType,
+typedef NTSTATUS(NTAPI *PBLACKBIRD_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX)(_In_ PSCREATETHREADNOTIFYTYPE NotifyType,
                                                                              _In_ PVOID NotifyRoutine);
 
-#define SLEEPWALKER_THREAD_MAX_OUTSTANDING_WORK 4096
-#define SLEEPWALKER_THREAD_CORRELATION_WINDOW_MS 5000
-#define SLEEPWALKER_THREAD_IMAGE_CACHE_SIZE 128
-#define SLEEPWALKER_THREAD_IMAGE_CACHE_TTL_MS 2000
+#define BLACKBIRD_THREAD_MAX_OUTSTANDING_WORK 4096
+#define BLACKBIRD_THREAD_CORRELATION_WINDOW_MS 5000
+#define BLACKBIRD_THREAD_IMAGE_CACHE_SIZE 128
+#define BLACKBIRD_THREAD_IMAGE_CACHE_TTL_MS 2000
 
-static SLEEPWALKER_NOTIFY_MODE g_NotifyMode = SLEEPWALKERNotifyNone;
+static BLACKBIRD_NOTIFY_MODE g_NotifyMode = BLACKBIRDNotifyNone;
 
 NTSYSAPI NTSTATUS NTAPI ZwQueryInformationThread(_In_ HANDLE ThreadHandle, _In_ THREADINFOCLASS ThreadInformationClass,
                                                  _Out_writes_bytes_(ThreadInformationLength) PVOID ThreadInformation,
@@ -75,7 +75,7 @@ NTSYSAPI NTSTATUS NTAPI ZwOpenThread(_Out_ PHANDLE ThreadHandle, _In_ ACCESS_MAS
                                      _In_ POBJECT_ATTRIBUTES ObjectAttributes, _In_ PCLIENT_ID ClientId);
 
 NTSYSAPI NTSTATUS NTAPI ZwQueryVirtualMemory(_In_ HANDLE ProcessHandle, _In_opt_ PVOID BaseAddress,
-                                             _In_ SLEEPWALKER_MEMORY_INFORMATION_CLASS MemoryInformationClass,
+                                             _In_ BLACKBIRD_MEMORY_INFORMATION_CLASS MemoryInformationClass,
                                              _Out_writes_bytes_(MemoryInformationLength) PVOID MemoryInformation,
                                              _In_ SIZE_T MemoryInformationLength, _Out_opt_ PSIZE_T ReturnLength);
 
@@ -91,31 +91,31 @@ static volatile LONG g_ThreadDropLogCounter = 0;
 static volatile LONG g_ThreadLookupFailureCounter = 0;
 static volatile LONG g_ThreadAllocFailureCounter = 0;
 static volatile LONG g_ThreadInitFailureCounter = 0;
-static PSLEEPWALKER_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX g_SetNotifyRoutineEx = NULL;
+static PBLACKBIRD_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX g_SetNotifyRoutineEx = NULL;
 static KSPIN_LOCK g_ThreadImageCacheLock;
 static volatile LONG g_ThreadImageCacheWriteIndex = -1;
 static ULONGLONG g_ThreadImageCacheQpcFrequency = 1;
 
-typedef struct _SLEEPWALKER_THREAD_IMAGE_CACHE_ENTRY
+typedef struct _BLACKBIRD_THREAD_IMAGE_CACHE_ENTRY
 {
     HANDLE ProcessId;
     PVOID ImageBase;
     SIZE_T ImageSize;
     INT64 TimestampQpc;
-} SLEEPWALKER_THREAD_IMAGE_CACHE_ENTRY, *PSLEEPWALKER_THREAD_IMAGE_CACHE_ENTRY;
+} BLACKBIRD_THREAD_IMAGE_CACHE_ENTRY, *PBLACKBIRD_THREAD_IMAGE_CACHE_ENTRY;
 
-static SLEEPWALKER_THREAD_IMAGE_CACHE_ENTRY g_ThreadImageCache[SLEEPWALKER_THREAD_IMAGE_CACHE_SIZE];
+static BLACKBIRD_THREAD_IMAGE_CACHE_ENTRY g_ThreadImageCache[BLACKBIRD_THREAD_IMAGE_CACHE_SIZE];
 
-typedef struct _SLEEPWALKER_THREAD_WORK
+typedef struct _BLACKBIRD_THREAD_WORK
 {
     WORK_QUEUE_ITEM WorkItem;
     HANDLE ProcessId;
     HANDLE ThreadId;
     HANDLE CreatorProcessId; // heuristic only
     PEPROCESS Process;       // referenced
-} SLEEPWALKER_THREAD_WORK, *PSLEEPWALKER_THREAD_WORK;
+} BLACKBIRD_THREAD_WORK, *PBLACKBIRD_THREAD_WORK;
 
-static BOOLEAN SLEEPWALKERThreadTryAcquireWorkSlot(VOID)
+static BOOLEAN BLACKBIRDThreadTryAcquireWorkSlot(VOID)
 {
     LONG current;
     LONG dropCounter;
@@ -123,7 +123,7 @@ static BOOLEAN SLEEPWALKERThreadTryAcquireWorkSlot(VOID)
     for (;;)
     {
         current = InterlockedCompareExchange(&g_OutstandingWork, 0, 0);
-        if (current >= SLEEPWALKER_THREAD_MAX_OUTSTANDING_WORK)
+        if (current >= BLACKBIRD_THREAD_MAX_OUTSTANDING_WORK)
         {
             InterlockedIncrement(&g_DroppedWork);
             dropCounter = InterlockedIncrement(&g_ThreadDropLogCounter);
@@ -131,8 +131,8 @@ static BOOLEAN SLEEPWALKERThreadTryAcquireWorkSlot(VOID)
             {
                 DbgPrintEx(
                     DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                    "SLEEPWALKER: thread callback drop (work queue full max=%lu) totalDrops=%lu outstanding=%ld.\n",
-                    SLEEPWALKER_THREAD_MAX_OUTSTANDING_WORK, (ULONG)dropCounter, current);
+                    "BLACKBIRD: thread callback drop (work queue full max=%lu) totalDrops=%lu outstanding=%ld.\n",
+                    BLACKBIRD_THREAD_MAX_OUTSTANDING_WORK, (ULONG)dropCounter, current);
             }
             return FALSE;
         }
@@ -148,15 +148,15 @@ static BOOLEAN SLEEPWALKERThreadTryAcquireWorkSlot(VOID)
     }
 }
 
-static PSLEEPWALKER_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX SLEEPWALKERResolvePsSetCreateThreadNotifyRoutineEx(VOID)
+static PBLACKBIRD_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX BLACKBIRDResolvePsSetCreateThreadNotifyRoutineEx(VOID)
 {
     UNICODE_STRING routineName;
 
     RtlInitUnicodeString(&routineName, L"PsSetCreateThreadNotifyRoutineEx");
-    return (PSLEEPWALKER_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX)MmGetSystemRoutineAddress(&routineName);
+    return (PBLACKBIRD_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX)MmGetSystemRoutineAddress(&routineName);
 }
 
-static VOID SLEEPWALKERThreadReleaseWorkSlot(VOID)
+static VOID BLACKBIRDThreadReleaseWorkSlot(VOID)
 {
     if (InterlockedDecrement(&g_OutstandingWork) == 0)
     {
@@ -164,7 +164,7 @@ static VOID SLEEPWALKERThreadReleaseWorkSlot(VOID)
     }
 }
 
-static ULONGLONG SLEEPWALKERThreadMsToQpc(_In_ UINT32 Milliseconds)
+static ULONGLONG BLACKBIRDThreadMsToQpc(_In_ UINT32 Milliseconds)
 {
     ULONGLONG ticks;
 
@@ -177,7 +177,7 @@ static ULONGLONG SLEEPWALKERThreadMsToQpc(_In_ UINT32 Milliseconds)
     return (ticks == 0) ? 1 : ticks;
 }
 
-static BOOLEAN SLEEPWALKERThreadImageCacheLookup(_In_ HANDLE ProcessId, _Out_ PVOID *ImageBase, _Out_ SIZE_T *ImageSize)
+static BOOLEAN BLACKBIRDThreadImageCacheLookup(_In_ HANDLE ProcessId, _Out_ PVOID *ImageBase, _Out_ SIZE_T *ImageSize)
 {
     KIRQL oldIrql;
     INT64 nowQpc;
@@ -190,12 +190,12 @@ static BOOLEAN SLEEPWALKERThreadImageCacheLookup(_In_ HANDLE ProcessId, _Out_ PV
     }
 
     nowQpc = KeQueryPerformanceCounter(NULL).QuadPart;
-    maxAgeQpc = SLEEPWALKERThreadMsToQpc(SLEEPWALKER_THREAD_IMAGE_CACHE_TTL_MS);
+    maxAgeQpc = BLACKBIRDThreadMsToQpc(BLACKBIRD_THREAD_IMAGE_CACHE_TTL_MS);
 
     KeAcquireSpinLock(&g_ThreadImageCacheLock, &oldIrql);
     for (i = 0; i < RTL_NUMBER_OF(g_ThreadImageCache); ++i)
     {
-        const SLEEPWALKER_THREAD_IMAGE_CACHE_ENTRY *entry = &g_ThreadImageCache[i];
+        const BLACKBIRD_THREAD_IMAGE_CACHE_ENTRY *entry = &g_ThreadImageCache[i];
         INT64 ageQpc;
 
         if (entry->TimestampQpc == 0 || entry->ProcessId != ProcessId || entry->ImageBase == NULL || entry->ImageSize == 0)
@@ -218,7 +218,7 @@ static BOOLEAN SLEEPWALKERThreadImageCacheLookup(_In_ HANDLE ProcessId, _Out_ PV
     return FALSE;
 }
 
-static VOID SLEEPWALKERThreadImageCacheStore(_In_ HANDLE ProcessId, _In_ PVOID ImageBase, _In_ SIZE_T ImageSize)
+static VOID BLACKBIRDThreadImageCacheStore(_In_ HANDLE ProcessId, _In_ PVOID ImageBase, _In_ SIZE_T ImageSize)
 {
     KIRQL oldIrql;
     LONG index;
@@ -237,7 +237,7 @@ static VOID SLEEPWALKERThreadImageCacheStore(_In_ HANDLE ProcessId, _In_ PVOID I
 
     KeAcquireSpinLock(&g_ThreadImageCacheLock, &oldIrql);
     {
-        SLEEPWALKER_THREAD_IMAGE_CACHE_ENTRY *entry = &g_ThreadImageCache[(ULONG)index % RTL_NUMBER_OF(g_ThreadImageCache)];
+        BLACKBIRD_THREAD_IMAGE_CACHE_ENTRY *entry = &g_ThreadImageCache[(ULONG)index % RTL_NUMBER_OF(g_ThreadImageCache)];
         entry->ProcessId = ProcessId;
         entry->ImageBase = ImageBase;
         entry->ImageSize = ImageSize;
@@ -246,7 +246,7 @@ static VOID SLEEPWALKERThreadImageCacheStore(_In_ HANDLE ProcessId, _In_ PVOID I
     KeReleaseSpinLock(&g_ThreadImageCacheLock, oldIrql);
 }
 
-static VOID SLEEPWALKERLogThreadTelemetry(_In_ HANDLE ProcessId, _In_ HANDLE ThreadId, _In_ HANDLE CreatorPid,
+static VOID BLACKBIRDLogThreadTelemetry(_In_ HANDLE ProcessId, _In_ HANDLE ThreadId, _In_ HANDLE CreatorPid,
                                           _In_ PVOID StartAddress, _In_ PVOID ImageBase, _In_ SIZE_T ImageSize,
                                           _In_ BOOLEAN GotStart, _In_ BOOLEAN GotRange, _In_ BOOLEAN IsRemoteCreator,
                                           _In_ BOOLEAN OutsideMainImage, _In_ UINT32 CorrelationFlags,
@@ -269,9 +269,9 @@ static VOID SLEEPWALKERLogThreadTelemetry(_In_ HANDLE ProcessId, _In_ HANDLE Thr
         }
     }
 
-    startRegionExecutable = SLEEPWALKERIsExecutableProtection(StartRegionProtect);
+    startRegionExecutable = BLACKBIRDIsExecutableProtection(StartRegionProtect);
 
-    SLEEPWALKEREtwLogThreadEvent(ProcessId, ThreadId, CreatorPid, StartAddress, ImageBase, ImageSize, GotStart,
+    BLACKBIRDEtwLogThreadEvent(ProcessId, ThreadId, CreatorPid, StartAddress, ImageBase, ImageSize, GotStart,
                                  GotRange, IsRemoteCreator, OutsideMainImage, CorrelationFlags, CorrelationAccessMask,
                                  CorrelationAgeMs, StartRegionProtect, StartRegionState, StartRegionType,
                                  StartRegionStatus, frameCount, frames);
@@ -280,44 +280,44 @@ static VOID SLEEPWALKERLogThreadTelemetry(_In_ HANDLE ProcessId, _In_ HANDLE Thr
         UINT32 flags = 0;
         if (GotStart)
         {
-            flags |= SLEEPWALKER_THREAD_FLAG_GOT_START;
+            flags |= BLACKBIRD_THREAD_FLAG_GOT_START;
         }
         if (GotRange)
         {
-            flags |= SLEEPWALKER_THREAD_FLAG_GOT_RANGE;
+            flags |= BLACKBIRD_THREAD_FLAG_GOT_RANGE;
         }
         if (IsRemoteCreator)
         {
-            flags |= SLEEPWALKER_THREAD_FLAG_REMOTE_CREATOR;
+            flags |= BLACKBIRD_THREAD_FLAG_REMOTE_CREATOR;
         }
         if (OutsideMainImage)
         {
-            flags |= SLEEPWALKER_THREAD_FLAG_OUTSIDE_MAIN_IMG;
+            flags |= BLACKBIRD_THREAD_FLAG_OUTSIDE_MAIN_IMG;
         }
         if (CorrelationFlags != 0)
         {
-            flags |= SLEEPWALKER_THREAD_FLAG_CORRELATED_INTENT;
+            flags |= BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT;
         }
-        if ((CorrelationFlags & SLEEPWALKER_INTENT_PROCESS_MEMORY) != 0)
+        if ((CorrelationFlags & BLACKBIRD_INTENT_PROCESS_MEMORY) != 0)
         {
-            flags |= SLEEPWALKER_THREAD_FLAG_CORR_MEMORY;
+            flags |= BLACKBIRD_THREAD_FLAG_CORR_MEMORY;
         }
-        if ((CorrelationFlags & SLEEPWALKER_INTENT_THREAD_CONTEXT) != 0)
+        if ((CorrelationFlags & BLACKBIRD_INTENT_THREAD_CONTEXT) != 0)
         {
-            flags |= SLEEPWALKER_THREAD_FLAG_CORR_THREAD_CTX;
+            flags |= BLACKBIRD_THREAD_FLAG_CORR_THREAD_CTX;
         }
-        if ((CorrelationFlags & SLEEPWALKER_INTENT_DUP_HANDLE) != 0)
+        if ((CorrelationFlags & BLACKBIRD_INTENT_DUP_HANDLE) != 0)
         {
-            flags |= SLEEPWALKER_THREAD_FLAG_CORR_DUP_HANDLE;
+            flags |= BLACKBIRD_THREAD_FLAG_CORR_DUP_HANDLE;
         }
         if (startRegionExecutable)
         {
-            flags |= SLEEPWALKER_THREAD_FLAG_START_REGION_EXEC;
+            flags |= BLACKBIRD_THREAD_FLAG_START_REGION_EXEC;
         }
 
-        if (SLEEPWALKERControlHasClientsFast())
+        if (BLACKBIRDControlHasClientsFast())
         {
-            SLEEPWALKERControlPublishThreadEvent((UINT64)(ULONG_PTR)ProcessId, (UINT64)(ULONG_PTR)ThreadId,
+            BLACKBIRDControlPublishThreadEvent((UINT64)(ULONG_PTR)ProcessId, (UINT64)(ULONG_PTR)ThreadId,
                                                  (UINT64)(ULONG_PTR)CreatorPid, (UINT64)(ULONG_PTR)StartAddress,
                                                  (UINT64)(ULONG_PTR)ImageBase, (UINT64)ImageSize, flags, frameCount,
                                                  frames);
@@ -325,7 +325,7 @@ static VOID SLEEPWALKERLogThreadTelemetry(_In_ HANDLE ProcessId, _In_ HANDLE Thr
     }
 }
 
-static BOOLEAN SLEEPWALKERQueryThreadStartAddress(_In_ HANDLE ProcessId, _In_ HANDLE ThreadId,
+static BOOLEAN BLACKBIRDQueryThreadStartAddress(_In_ HANDLE ProcessId, _In_ HANDLE ThreadId,
                                                   _Out_ PVOID *StartAddress)
 {
     NTSTATUS status;
@@ -356,7 +356,7 @@ static BOOLEAN SLEEPWALKERQueryThreadStartAddress(_In_ HANDLE ProcessId, _In_ HA
     return NT_SUCCESS(status);
 }
 
-static BOOLEAN SLEEPWALKERGetProcessImageRange(_In_ HANDLE ProcessId, _In_ PEPROCESS Process, _Out_ PVOID *ImageBase,
+static BOOLEAN BLACKBIRDGetProcessImageRange(_In_ HANDLE ProcessId, _In_ PEPROCESS Process, _Out_ PVOID *ImageBase,
                                                _Out_ SIZE_T *ImageSize)
 {
     NTSTATUS status;
@@ -369,7 +369,7 @@ static BOOLEAN SLEEPWALKERGetProcessImageRange(_In_ HANDLE ProcessId, _In_ PEPRO
     *ImageBase = NULL;
     *ImageSize = 0;
 
-    if (SLEEPWALKERThreadImageCacheLookup(ProcessId, ImageBase, ImageSize))
+    if (BLACKBIRDThreadImageCacheLookup(ProcessId, ImageBase, ImageSize))
     {
         return TRUE;
     }
@@ -390,7 +390,7 @@ static BOOLEAN SLEEPWALKERGetProcessImageRange(_In_ HANDLE ProcessId, _In_ PEPRO
     }
 
     RtlZeroMemory(&mbi, sizeof(mbi));
-    status = ZwQueryVirtualMemory(hProcess, base, SLEEPWALKERMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
+    status = ZwQueryVirtualMemory(hProcess, base, BLACKBIRDMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
 
     ZwClose(hProcess);
 
@@ -401,11 +401,11 @@ static BOOLEAN SLEEPWALKERGetProcessImageRange(_In_ HANDLE ProcessId, _In_ PEPRO
 
     *ImageBase = base;
     *ImageSize = mbi.RegionSize;
-    SLEEPWALKERThreadImageCacheStore(ProcessId, base, mbi.RegionSize);
+    BLACKBIRDThreadImageCacheStore(ProcessId, base, mbi.RegionSize);
     return TRUE;
 }
 
-static NTSTATUS SLEEPWALKERQueryAddressRegion(_In_ HANDLE ProcessId, _In_ PVOID Address, _Out_ ULONG *Protect,
+static NTSTATUS BLACKBIRDQueryAddressRegion(_In_ HANDLE ProcessId, _In_ PVOID Address, _Out_ ULONG *Protect,
                                               _Out_ ULONG *State, _Out_ ULONG *Type)
 {
     NTSTATUS status;
@@ -443,7 +443,7 @@ static NTSTATUS SLEEPWALKERQueryAddressRegion(_In_ HANDLE ProcessId, _In_ PVOID 
     }
 
     RtlZeroMemory(&mbi, sizeof(mbi));
-    status = ZwQueryVirtualMemory(hProcess, Address, SLEEPWALKERMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
+    status = ZwQueryVirtualMemory(hProcess, Address, BLACKBIRDMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
     ZwClose(hProcess);
 
     if (!NT_SUCCESS(status))
@@ -466,9 +466,9 @@ static NTSTATUS SLEEPWALKERQueryAddressRegion(_In_ HANDLE ProcessId, _In_ PVOID 
     return STATUS_SUCCESS;
 }
 
-static VOID SLEEPWALKERThreadWorkRoutine(_In_ PVOID Context)
+static VOID BLACKBIRDThreadWorkRoutine(_In_ PVOID Context)
 {
-    PSLEEPWALKER_THREAD_WORK w = (PSLEEPWALKER_THREAD_WORK)Context;
+    PBLACKBIRD_THREAD_WORK w = (PBLACKBIRD_THREAD_WORK)Context;
     PVOID threadStart = NULL;
     PVOID imageBase = NULL;
     SIZE_T imageSize = 0;
@@ -507,8 +507,8 @@ static VOID SLEEPWALKERThreadWorkRoutine(_In_ PVOID Context)
         creatorPidForTelemetry = w->ProcessId;
     }
 
-    hasCorrelation = SLEEPWALKERHollowingResolveThreadCorrelation(
-        w->ProcessId, creatorPidForTelemetry, SLEEPWALKER_THREAD_CORRELATION_WINDOW_MS, &creatorPidForTelemetry,
+    hasCorrelation = BLACKBIRDHollowingResolveThreadCorrelation(
+        w->ProcessId, creatorPidForTelemetry, BLACKBIRD_THREAD_CORRELATION_WINDOW_MS, &creatorPidForTelemetry,
         &correlationFlags, &correlationAccessMask, &correlationAgeMs);
     if (!hasCorrelation)
     {
@@ -523,10 +523,10 @@ static VOID SLEEPWALKERThreadWorkRoutine(_In_ PVOID Context)
     if (shouldCaptureDetailed)
     {
         // Best-effort: process/thread may be terminating; fail gracefully.
-        gotStart = SLEEPWALKERQueryThreadStartAddress(w->ProcessId, w->ThreadId, &threadStart);
+        gotStart = BLACKBIRDQueryThreadStartAddress(w->ProcessId, w->ThreadId, &threadStart);
         if (gotStart && threadStart != NULL)
         {
-            gotRange = SLEEPWALKERGetProcessImageRange(w->ProcessId, w->Process, &imageBase, &imageSize);
+            gotRange = BLACKBIRDGetProcessImageRange(w->ProcessId, w->Process, &imageBase, &imageSize);
         }
 
         if (gotStart && gotRange && threadStart != NULL && imageBase != NULL && imageSize != 0)
@@ -547,12 +547,12 @@ static VOID SLEEPWALKERThreadWorkRoutine(_In_ PVOID Context)
 
         if (gotStart && threadStart != NULL)
         {
-            startRegionStatus = SLEEPWALKERQueryAddressRegion(w->ProcessId, threadStart, &startRegionProtect,
+            startRegionStatus = BLACKBIRDQueryAddressRegion(w->ProcessId, threadStart, &startRegionProtect,
                                                               &startRegionState, &startRegionType);
         }
         if (NT_SUCCESS(startRegionStatus))
         {
-            startRegionExecutable = SLEEPWALKERIsExecutableProtection(startRegionProtect);
+            startRegionExecutable = BLACKBIRDIsExecutableProtection(startRegionProtect);
             startRegionNonImage = (startRegionType != MEM_IMAGE);
         }
     }
@@ -562,11 +562,11 @@ static VOID SLEEPWALKERThreadWorkRoutine(_In_ PVOID Context)
         goto Exit;
     }
 
-    SLEEPWALKERLogThreadTelemetry(w->ProcessId, w->ThreadId, creatorPidForTelemetry, threadStart, imageBase, imageSize,
+    BLACKBIRDLogThreadTelemetry(w->ProcessId, w->ThreadId, creatorPidForTelemetry, threadStart, imageBase, imageSize,
                                   gotStart, gotRange, isRemoteCreator, outsideMainImage, correlationFlags,
                                   correlationAccessMask, correlationAgeMs, startRegionProtect, startRegionState,
                                   startRegionType, startRegionStatus);
-    SLEEPWALKERHollowingObserveThread(w->ProcessId, creatorPidForTelemetry, outsideMainImage, gotStart,
+    BLACKBIRDHollowingObserveThread(w->ProcessId, creatorPidForTelemetry, outsideMainImage, gotStart,
                                       startRegionExecutable, startRegionNonImage, correlationFlags,
                                       correlationAccessMask, correlationAgeMs);
 
@@ -578,10 +578,10 @@ Exit:
 
     ExFreePoolWithTag(w, 'traT');
 
-    SLEEPWALKERThreadReleaseWorkSlot();
+    BLACKBIRDThreadReleaseWorkSlot();
 }
 
-VOID SLEEPWALKERThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Create)
+VOID BLACKBIRDThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Create)
 {
     LONG failureCounter;
     HANDLE creatorProcessId;
@@ -597,7 +597,7 @@ VOID SLEEPWALKERThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN C
     {
         return;
     }
-    if (!SLEEPWALKERControlHasClientsFast())
+    if (!BLACKBIRDControlHasClientsFast())
     {
         return;
     }
@@ -606,12 +606,12 @@ VOID SLEEPWALKERThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN C
     processPid32 = (UINT32)(ULONG_PTR)ProcessId;
     creatorPid32 = (UINT32)(ULONG_PTR)creatorProcessId;
     secondaryPid32 = (creatorPid32 != processPid32) ? creatorPid32 : 0;
-    if (!SLEEPWALKERControlHasPidInterest(processPid32, secondaryPid32, SLEEPWALKER_STREAM_THREAD))
+    if (!BLACKBIRDControlHasPidInterest(processPid32, secondaryPid32, BLACKBIRD_STREAM_THREAD))
     {
         return;
     }
 
-    if (!SLEEPWALKERThreadTryAcquireWorkSlot())
+    if (!BLACKBIRDThreadTryAcquireWorkSlot())
     {
         return;
     }
@@ -625,15 +625,15 @@ VOID SLEEPWALKERThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN C
         if (failureCounter == 1 || ((failureCounter & 0xFF) == 0))
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                       "SLEEPWALKER: thread callback lookup failure pid=%p tid=%p status=0x%08X total=%lu.\n",
+                       "BLACKBIRD: thread callback lookup failure pid=%p tid=%p status=0x%08X total=%lu.\n",
                        ProcessId, ThreadId, status, (ULONG)failureCounter);
         }
-        SLEEPWALKERThreadReleaseWorkSlot();
+        BLACKBIRDThreadReleaseWorkSlot();
         return;
     }
 
-    PSLEEPWALKER_THREAD_WORK w =
-        (PSLEEPWALKER_THREAD_WORK)SLEEPWALKERAllocatePoolCompat(POOL_FLAG_NON_PAGED | POOL_FLAG_UNINITIALIZED,
+    PBLACKBIRD_THREAD_WORK w =
+        (PBLACKBIRD_THREAD_WORK)BLACKBIRDAllocatePoolCompat(POOL_FLAG_NON_PAGED | POOL_FLAG_UNINITIALIZED,
                                                                 sizeof(*w), 'traT');
     if (!w)
     {
@@ -641,11 +641,11 @@ VOID SLEEPWALKERThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN C
         if (failureCounter == 1 || ((failureCounter & 0xFF) == 0))
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                       "SLEEPWALKER: thread callback alloc failure pid=%p tid=%p total=%lu.\n", ProcessId, ThreadId,
+                       "BLACKBIRD: thread callback alloc failure pid=%p tid=%p total=%lu.\n", ProcessId, ThreadId,
                        (ULONG)failureCounter);
         }
         ObDereferenceObject(process);
-        SLEEPWALKERThreadReleaseWorkSlot();
+        BLACKBIRDThreadReleaseWorkSlot();
         return;
     }
 
@@ -655,13 +655,13 @@ VOID SLEEPWALKERThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN C
     w->CreatorProcessId = creatorProcessId; // heuristic only
     w->Process = process;                          // already referenced by lookup
 
-    ExInitializeWorkItem(&w->WorkItem, SLEEPWALKERThreadWorkRoutine, w);
+    ExInitializeWorkItem(&w->WorkItem, BLACKBIRDThreadWorkRoutine, w);
 
     ExQueueWorkItem(&w->WorkItem, DelayedWorkQueue);
 }
 
 NTSTATUS
-SLEEPWALKERThreadMonitorInitialize(VOID)
+BLACKBIRDThreadMonitorInitialize(VOID)
 {
     NTSTATUS status;
     LONG failureCounter;
@@ -687,13 +687,13 @@ SLEEPWALKERThreadMonitorInitialize(VOID)
         g_ThreadImageCacheQpcFrequency = (freq.QuadPart > 0) ? (ULONGLONG)freq.QuadPart : 1;
     }
 
-    g_SetNotifyRoutineEx = SLEEPWALKERResolvePsSetCreateThreadNotifyRoutineEx();
+    g_SetNotifyRoutineEx = BLACKBIRDResolvePsSetCreateThreadNotifyRoutineEx();
     if (g_SetNotifyRoutineEx == NULL)
     {
         return STATUS_PROCEDURE_NOT_FOUND;
     }
 
-    status = g_SetNotifyRoutineEx(PsCreateThreadNotifyNonSystem, (PVOID)SLEEPWALKERThreadNotifyRoutine);
+    status = g_SetNotifyRoutineEx(PsCreateThreadNotifyNonSystem, (PVOID)BLACKBIRDThreadNotifyRoutine);
 
     if (!NT_SUCCESS(status))
     {
@@ -701,7 +701,7 @@ SLEEPWALKERThreadMonitorInitialize(VOID)
         if (failureCounter == 1 || ((failureCounter & 0xFF) == 0))
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                       "SLEEPWALKER: thread monitor callback registration failure status=0x%08X total=%lu.\n", status,
+                       "BLACKBIRD: thread monitor callback registration failure status=0x%08X total=%lu.\n", status,
                        (ULONG)failureCounter);
         }
         g_SetNotifyRoutineEx = NULL;
@@ -709,11 +709,11 @@ SLEEPWALKERThreadMonitorInitialize(VOID)
     }
 
     g_ThreadNotifyRegistered = TRUE;
-    g_NotifyMode = SLEEPWALKERNotifyEx;
+    g_NotifyMode = BLACKBIRDNotifyEx;
     return STATUS_SUCCESS;
 }
 
-VOID SLEEPWALKERThreadMonitorUninitialize(VOID)
+VOID BLACKBIRDThreadMonitorUninitialize(VOID)
 {
     NTSTATUS status;
     LARGE_INTEGER waitInterval;
@@ -728,16 +728,16 @@ VOID SLEEPWALKERThreadMonitorUninitialize(VOID)
     }
 
     InterlockedExchange(&g_ThreadMonitorStopping, 1);
-    status = PsRemoveCreateThreadNotifyRoutine(SLEEPWALKERThreadNotifyRoutine);
+    status = PsRemoveCreateThreadNotifyRoutine(BLACKBIRDThreadNotifyRoutine);
     if (!NT_SUCCESS(status))
     {
         DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                   "SLEEPWALKER: thread monitor callback removal failed; monitor remains registered (status=0x%08X).\n",
+                   "BLACKBIRD: thread monitor callback removal failed; monitor remains registered (status=0x%08X).\n",
                    status);
         return;
     }
 
-    g_NotifyMode = SLEEPWALKERNotifyNone;
+    g_NotifyMode = BLACKBIRDNotifyNone;
     g_ThreadNotifyRegistered = FALSE;
     g_SetNotifyRoutineEx = NULL;
 
@@ -750,19 +750,19 @@ VOID SLEEPWALKERThreadMonitorUninitialize(VOID)
         if (waitStatus == STATUS_TIMEOUT)
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
-                       "SLEEPWALKER: thread monitor draining (outstanding=%ld).\n",
+                       "BLACKBIRD: thread monitor draining (outstanding=%ld).\n",
                        InterlockedCompareExchange(&g_OutstandingWork, 0, 0));
         }
     }
     RtlZeroMemory(g_ThreadImageCache, sizeof(g_ThreadImageCache));
     InterlockedExchange(&g_ThreadImageCacheWriteIndex, -1);
     InterlockedExchange(&g_ThreadMonitorStopping, 0);
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "SLEEPWALKER: thread monitor uninitialized (dropped=%ld).\n",
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: thread monitor uninitialized (dropped=%ld).\n",
                InterlockedCompareExchange(&g_DroppedWork, 0, 0));
 }
 
 BOOLEAN
-SLEEPWALKERThreadMonitorSelfCheck(VOID)
+BLACKBIRDThreadMonitorSelfCheck(VOID)
 {
     LONG outstanding;
 
@@ -770,13 +770,13 @@ SLEEPWALKERThreadMonitorSelfCheck(VOID)
     {
         return FALSE;
     }
-    if (g_NotifyMode != SLEEPWALKERNotifyEx || g_SetNotifyRoutineEx == NULL)
+    if (g_NotifyMode != BLACKBIRDNotifyEx || g_SetNotifyRoutineEx == NULL)
     {
         return FALSE;
     }
 
     outstanding = InterlockedCompareExchange(&g_OutstandingWork, 0, 0);
-    if (outstanding < 0 || outstanding > SLEEPWALKER_THREAD_MAX_OUTSTANDING_WORK)
+    if (outstanding < 0 || outstanding > BLACKBIRD_THREAD_MAX_OUTSTANDING_WORK)
     {
         return FALSE;
     }

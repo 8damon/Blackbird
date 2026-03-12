@@ -11,7 +11,7 @@ NTKERNELAPI ULONGLONG PsGetProcessStartKey(_In_ PEPROCESS Process);
 NTKERNELAPI ULONG PsGetProcessSessionIdEx(_In_ PEPROCESS Process);
 NTSYSAPI NTSTATUS NTAPI SeLocateProcessImageName(_In_ PEPROCESS Process, _Out_ PUNICODE_STRING *pImageFileName);
 
-static VOID SLEEPWALKERFillImagePathFromProcessObject(_In_ PEPROCESS Process, _Out_writes_z_(OutputChars) PWSTR Output,
+static VOID BLACKBIRDFillImagePathFromProcessObject(_In_ PEPROCESS Process, _Out_writes_z_(OutputChars) PWSTR Output,
                                                       _In_ size_t OutputChars)
 {
     NTSTATUS status;
@@ -36,7 +36,7 @@ static VOID SLEEPWALKERFillImagePathFromProcessObject(_In_ PEPROCESS Process, _O
     ExFreePool(imageName);
 }
 
-static VOID SLEEPWALKERProcessNotifyRoutineEx(_Inout_ PEPROCESS Process, _In_ HANDLE ProcessId,
+static VOID BLACKBIRDProcessNotifyRoutineEx(_Inout_ PEPROCESS Process, _In_ HANDLE ProcessId,
                                               _Inout_opt_ PPS_CREATE_NOTIFY_INFO CreateInfo)
 {
     WCHAR imagePath[512];
@@ -66,20 +66,20 @@ static VOID SLEEPWALKERProcessNotifyRoutineEx(_Inout_ PEPROCESS Process, _In_ HA
         creatorTid = CreateInfo->CreatingThreadId.UniqueThread;
         createStatus = CreateInfo->CreationStatus;
 
-        SLEEPWALKERSafeCopyUnicode(CreateInfo->ImageFileName, imagePath, RTL_NUMBER_OF(imagePath));
+        BLACKBIRDSafeCopyUnicode(CreateInfo->ImageFileName, imagePath, RTL_NUMBER_OF(imagePath));
 
-        SLEEPWALKERSafeCopyUnicode(CreateInfo->CommandLine, commandLine, RTL_NUMBER_OF(commandLine));
+        BLACKBIRDSafeCopyUnicode(CreateInfo->CommandLine, commandLine, RTL_NUMBER_OF(commandLine));
 
-        SLEEPWALKERFillImagePathFromProcessObject(Process, imagePath, RTL_NUMBER_OF(imagePath));
+        BLACKBIRDFillImagePathFromProcessObject(Process, imagePath, RTL_NUMBER_OF(imagePath));
     }
 
-    SLEEPWALKEREtwLogProcessEvent(ProcessId, parentPid, creatorPid, creatorTid, startKey, sessionId, isCreate,
+    BLACKBIRDEtwLogProcessEvent(ProcessId, parentPid, creatorPid, creatorTid, startKey, sessionId, isCreate,
                                   createStatus, (imagePath[0] != L'\0') ? imagePath : NULL,
                                   (commandLine[0] != L'\0') ? commandLine : NULL);
 }
 
 NTSTATUS
-SLEEPWALKERProcessMonitorInitialize(VOID)
+BLACKBIRDProcessMonitorInitialize(VOID)
 {
     NTSTATUS status;
     LONG failures;
@@ -93,25 +93,25 @@ SLEEPWALKERProcessMonitorInitialize(VOID)
         return STATUS_SUCCESS;
     }
 
-    status = PsSetCreateProcessNotifyRoutineEx(SLEEPWALKERProcessNotifyRoutineEx, FALSE);
+    status = PsSetCreateProcessNotifyRoutineEx(BLACKBIRDProcessNotifyRoutineEx, FALSE);
     if (!NT_SUCCESS(status))
     {
         failures = InterlockedIncrement(&g_ProcessMonitorFailureCounter);
         if (failures == 1 || ((failures & 0xFF) == 0))
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                       "SLEEPWALKER: process monitor callback registration failed status=0x%08X total=%lu.\n", status,
+                       "BLACKBIRD: process monitor callback registration failed status=0x%08X total=%lu.\n", status,
                        (ULONG)failures);
         }
         return status;
     }
 
     InterlockedExchange(&g_ProcessMonitorRegistered, 1);
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "SLEEPWALKER: process monitor initialized.\n");
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: process monitor initialized.\n");
     return STATUS_SUCCESS;
 }
 
-VOID SLEEPWALKERProcessMonitorUninitialize(VOID)
+VOID BLACKBIRDProcessMonitorUninitialize(VOID)
 {
     NTSTATUS status;
 
@@ -124,22 +124,22 @@ VOID SLEEPWALKERProcessMonitorUninitialize(VOID)
         return;
     }
 
-    status = PsSetCreateProcessNotifyRoutineEx(SLEEPWALKERProcessNotifyRoutineEx, TRUE);
+    status = PsSetCreateProcessNotifyRoutineEx(BLACKBIRDProcessNotifyRoutineEx, TRUE);
     if (!NT_SUCCESS(status))
     {
         DbgPrintEx(
             DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-            "SLEEPWALKER: process monitor callback removal failed; monitor remains registered (status=0x%08X).\n",
+            "BLACKBIRD: process monitor callback removal failed; monitor remains registered (status=0x%08X).\n",
             status);
         return;
     }
 
     InterlockedExchange(&g_ProcessMonitorRegistered, 0);
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "SLEEPWALKER: process monitor uninitialized.\n");
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: process monitor uninitialized.\n");
 }
 
 BOOLEAN
-SLEEPWALKERProcessMonitorSelfCheck(VOID)
+BLACKBIRDProcessMonitorSelfCheck(VOID)
 {
     return (InterlockedCompareExchange(&g_ProcessMonitorRegistered, 0, 0) != 0);
 }

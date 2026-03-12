@@ -1,7 +1,7 @@
 param(
     [switch]$Uninstall,
-    [string]$ServiceName = "SleepwlkrController",
-    [string]$DisplayName = "Sleepwalker Controller Service",
+    [string]$ServiceName = "BlackbirdController",
+    [string]$DisplayName = "Blackbird Controller Service",
     [string]$BinaryPath = ""
 )
 
@@ -14,7 +14,7 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 
 if ([string]::IsNullOrWhiteSpace($BinaryPath)) {
     $repoRoot = Split-Path -Parent $PSScriptRoot
-    $BinaryPath = Join-Path $repoRoot "x64\\Release\\SleepwlkrController.exe"
+    $BinaryPath = Join-Path $repoRoot "x64\\Release\\BlackbirdController.exe"
 }
 
 if ($Uninstall) {

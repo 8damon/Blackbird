@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="./diagram/MAIN_INTERFACE.png.png" width="980" alt="Blackbird main interface" />
+  <img src="./diagram/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
 </p>
 
 ## What Blackbird Is For

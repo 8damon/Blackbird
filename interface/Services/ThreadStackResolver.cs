@@ -5,7 +5,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     [SupportedOSPlatform("windows")]
     internal static class ThreadStackResolver

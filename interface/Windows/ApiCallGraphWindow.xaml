@@ -1,0 +1,123 @@
+<Window x:Class="BlackbirdInterface.ApiCallGraphWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="API Call Graph"
+        Width="1180"
+        Height="760"
+        MinWidth="860"
+        MinHeight="520"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        Background="{DynamicResource WinBgBrush}">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Background="{DynamicResource WinHeaderBrush}"
+                Padding="8,3"
+                Margin="0,0,0,8"
+                MouseLeftButtonDown="Root_MouseLeftButtonDown">
+            <DockPanel LastChildFill="False">
+                <TextBlock Text="API Call Graph"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+                <Button DockPanel.Dock="Right"
+                        Content="✕"
+                        Width="22"
+                        Height="20"
+                        Margin="8,0,0,0"
+                        VerticalAlignment="Top"
+                        Click="TopClose_Click"/>
+            </DockPanel>
+        </Border>
+
+        <Border Grid.Row="1"
+                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                BorderThickness="1"
+                Background="{DynamicResource WinPanelBrush}"
+                Padding="8,6"
+                Margin="0,0,0,8">
+            <DockPanel LastChildFill="False">
+                <TextBlock x:Name="SummaryBlock"
+                           DockPanel.Dock="Left"
+                           FontWeight="SemiBold"
+                           Text="No API hook data yet"/>
+                <TextBlock x:Name="SubSummaryBlock"
+                           DockPanel.Dock="Right"
+                           Foreground="{DynamicResource WinMutedTextBrush}"
+                           Text="dot graph updates live"/>
+            </DockPanel>
+        </Border>
+
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2.2*"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="1.6*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    BorderBrush="{DynamicResource WinBorderBrush}"
+                    BorderThickness="1"
+                    Background="{DynamicResource WinPanelBrush}">
+                <DataGrid x:Name="ApiGrid"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          CanUserReorderColumns="False"
+                          CanUserResizeRows="False"
+                          ColumnHeaderHeight="24"
+                          RowHeight="24"
+                          BorderThickness="0">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="API" Width="1.3*" Binding="{Binding ApiName}"/>
+                        <DataGridTextColumn Header="Path" Width="1.2*" Binding="{Binding PathLabel}"/>
+                        <DataGridTextColumn Header="Thread" Width="90" Binding="{Binding ThreadLabel}"/>
+                        <DataGridTextColumn Header="Hits" Width="72" Binding="{Binding Hits}"/>
+                        <DataGridTextColumn Header="Flame" Width="*" Binding="{Binding FlameBar}"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Border>
+
+            <Border Grid.Column="2"
+                    BorderBrush="{DynamicResource WinBorderBrush}"
+                    BorderThickness="1"
+                    Background="{DynamicResource WinPanelBrush}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Border Grid.Row="0"
+                            Background="{DynamicResource WinHeaderBrush}"
+                            BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                            BorderThickness="0,0,0,1"
+                            Padding="8,4">
+                        <TextBlock Text="DOT Graph"
+                                   FontWeight="SemiBold"/>
+                    </Border>
+                    <TextBox Grid.Row="1"
+                             x:Name="DotGraphTextBox"
+                             FontFamily="Consolas"
+                             FontSize="12"
+                             BorderThickness="0"
+                             IsReadOnly="True"
+                             TextWrapping="NoWrap"
+                             VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Auto"
+                             AcceptsReturn="True"
+                             Background="{DynamicResource WinPanelBrush}"/>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

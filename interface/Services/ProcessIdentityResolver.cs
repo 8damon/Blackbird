@@ -2,7 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     internal static class ProcessIdentityResolver
     {

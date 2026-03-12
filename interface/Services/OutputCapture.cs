@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     internal static class OutputCapture
     {

@@ -1,13 +1,13 @@
 using System.Windows;
 using System.Windows.Media;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     internal static class UiPalette
     {
         public static Color Text => AsColor("WinTextBrush", Color.FromRgb(0xD8, 0xD8, 0xD8));
         public static Color MutedText => AsColor("WinMutedTextBrush", Color.FromRgb(0x9A, 0x9A, 0x9A));
-        public static Color Accent => AsColor("WinAccentBrush", Color.FromRgb(0x4C, 0x8F, 0xD2));
+        public static Color Accent => AsColor("WinAccentBrush", Color.FromRgb(0x8E, 0x20, 0x20));
 
         public static Brush SurfaceBrush => AsBrush("WinPanelBrush", Color.FromRgb(0x15, 0x15, 0x15));
         public static Brush SurfaceAltBrush => AsBrush("WinHeaderBrush", Color.FromRgb(0x1C, 0x1C, 0x1C));
@@ -16,7 +16,7 @@ namespace SleepwalkerInterface
         public static Brush GridStrongBrush => AsBrush("WinBorderBrush", Color.FromRgb(0x2B, 0x2B, 0x2B));
         public static Brush TextBrush => AsBrush("WinTextBrush", Color.FromRgb(0xD8, 0xD8, 0xD8));
         public static Brush MutedTextBrush => AsBrush("WinMutedTextBrush", Color.FromRgb(0x9A, 0x9A, 0x9A));
-        public static Brush AccentBrush => AsBrush("WinAccentBrush", Color.FromRgb(0x4C, 0x8F, 0xD2));
+        public static Brush AccentBrush => AsBrush("WinAccentBrush", Color.FromRgb(0x8E, 0x20, 0x20));
 
         private static Brush AsBrush(string key, Color fallback)
         {

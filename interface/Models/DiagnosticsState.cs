@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     internal static class DiagnosticsState
     {

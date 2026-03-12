@@ -5,7 +5,7 @@ using System.Globalization;
 using System.Text;
 using System.Windows;
 
-namespace SleepwalkerInterface
+namespace BlackbirdInterface
 {
     public partial class HandleEvidenceWindow : Window
     {

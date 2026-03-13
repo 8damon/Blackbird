@@ -10,7 +10,7 @@ namespace BlackbirdInterface
     public partial class MainWindow
     {
         private readonly string _sessionCacheDirectory =
-            Path.Combine(Path.GetTempPath(), "BlackbirdInterface", "session-cache");
+            Path.Combine(Path.GetTempPath(), "Blackbird", "session-cache");
 
         private string? _sessionFilePath;
 

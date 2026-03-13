@@ -127,8 +127,8 @@
                     <Setter Property="Background" Value="#FF2A2A2A"/>
                 </Trigger>
                 <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="#334C8FD2"/>
-                    <Setter Property="Foreground" Value="#FFF1F5FF"/>
+                    <Setter Property="Background" Value="#33323232"/>
+                    <Setter Property="Foreground" Value="#FFF1F1F1"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -419,3 +419,4 @@
         </Grid>
     </Grid>
 </Window>
+

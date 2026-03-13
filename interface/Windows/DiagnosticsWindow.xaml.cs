@@ -40,12 +40,16 @@ namespace BlackbirdInterface
             var lines = OutputCapture.Snapshot();
             OutputBox.Text = string.Join(Environment.NewLine, lines);
             OutputBox.ScrollToEnd();
+            OutputLinesBlock.Text = lines.Count.ToString();
         }
 
         private void RefreshState()
         {
-            StateBox.Text = string.Join(Environment.NewLine, DiagnosticsState.SnapshotLines());
+            var lines = DiagnosticsState.SnapshotLines();
+            StateBox.Text = string.Join(Environment.NewLine, lines);
             StateBox.ScrollToHome();
+            StateLinesBlock.Text = lines.Count.ToString();
+            RefreshStampBlock.Text = DateTime.Now.ToString("HH:mm:ss");
         }
 
         private void OutputCapture_LineReceived(string line)
@@ -59,10 +63,15 @@ namespace BlackbirdInterface
                     OutputBox.AppendText(Environment.NewLine);
                 OutputBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {line}");
                 OutputBox.ScrollToEnd();
+                OutputLinesBlock.Text = OutputBox.LineCount.ToString();
             }), DispatcherPriority.Background);
         }
 
-        private void Clear_Click(object sender, RoutedEventArgs e) => OutputBox.Clear();
+        private void Clear_Click(object sender, RoutedEventArgs e)
+        {
+            OutputBox.Clear();
+            OutputLinesBlock.Text = "0";
+        }
         private void RefreshState_Click(object sender, RoutedEventArgs e) => RefreshState();
 
         private void Root_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

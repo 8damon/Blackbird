@@ -15,7 +15,10 @@ namespace BlackbirdInterface
         public event RoutedEventHandler? InspectRequested;
 
         private readonly BulkObservableCollection<GroupedEventRow> _items = new();
+        private readonly List<GroupedEventRow> _allItems = new();
         private readonly Dictionary<string, GroupedEventRow> _byKey = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, GroupedEventRow> _visibleByKey = new(StringComparer.Ordinal);
+        private string _relationFilter = "ALL RELATIONS";
 
         internal int ItemCount => _items.Count;
         internal int TotalRawCount { get; private set; }
@@ -91,6 +94,8 @@ namespace BlackbirdInterface
                 {
                     existing.Details.RemoveAt(0);
                 }
+
+                SyncVisibleRow(existing);
             }
             else
             {
@@ -119,20 +124,26 @@ namespace BlackbirdInterface
                         }
                     }
                 };
-                _items.Add(row);
+                _allItems.Add(row);
                 _byKey[key] = row;
+                SyncVisibleRow(row);
             }
 
-            while (_items.Count > 2000)
+            while (_allItems.Count > 2000)
             {
-                string evictKey = _items[0].GroupKey;
-                _items.RemoveAt(0);
+                GroupedEventRow evicted = _allItems[0];
+                string evictKey = evicted.GroupKey;
+                _allItems.RemoveAt(0);
                 _byKey.Remove(evictKey);
+                if (_visibleByKey.Remove(evictKey))
+                {
+                    _items.Remove(evicted);
+                }
             }
         }
 
         internal IReadOnlyList<GroupedEventRow> SnapshotItems()
-            => _items.Select(x => x.Clone()).ToList();
+            => _allItems.Select(x => x.Clone()).ToList();
 
         internal GroupedEventRow? GetSelectedGroupClone()
             => (RelationsGrid.SelectedItem as GroupedEventRow)?.Clone();
@@ -140,10 +151,11 @@ namespace BlackbirdInterface
         internal void LoadHistory(IEnumerable<GroupedEventRow> groups)
         {
             _items.Clear();
+            _allItems.Clear();
             _byKey.Clear();
+            _visibleByKey.Clear();
             TotalRawCount = 0;
 
-            var clones = new List<GroupedEventRow>();
             foreach (GroupedEventRow source in groups)
             {
                 GroupedEventRow clone = source.Clone();
@@ -157,12 +169,12 @@ namespace BlackbirdInterface
                         return x;
                     })
                     .ToList();
-                clones.Add(clone);
+                _allItems.Add(clone);
                 _byKey[clone.GroupKey] = clone;
                 TotalRawCount += clone.Hits;
             }
 
-            _items.ReplaceAll(clones);
+            ApplyFilter();
             UpdateSummary();
             UpdateNoDataOverlay();
         }
@@ -170,7 +182,9 @@ namespace BlackbirdInterface
         internal void ClearAll()
         {
             _items.Clear();
+            _allItems.Clear();
             _byKey.Clear();
+            _visibleByKey.Clear();
             TotalRawCount = 0;
             UpdateSummary();
             UpdateNoDataOverlay();
@@ -179,9 +193,9 @@ namespace BlackbirdInterface
         internal void TrimDetailPayload(int keepPerGroup)
         {
             int keep = Math.Max(1, keepPerGroup);
-            for (int i = 0; i < _items.Count; i += 1)
+            for (int i = 0; i < _allItems.Count; i += 1)
             {
-                GroupedEventRow row = _items[i];
+                GroupedEventRow row = _allItems[i];
                 if (row.Details.Count <= keep)
                 {
                     continue;
@@ -194,16 +208,88 @@ namespace BlackbirdInterface
                     .ToList();
                 _byKey[row.GroupKey] = row;
             }
+
+            ApplyFilter();
         }
 
         private void UpdateSummary()
         {
+            if (SummaryBlock == null)
+            {
+                return;
+            }
+
             SummaryBlock.Text = $"Groups: {_items.Count} / Events: {TotalRawCount}";
         }
 
         private void UpdateNoDataOverlay()
         {
+            if (NoDataOverlay == null)
+            {
+                return;
+            }
+
             NoDataOverlay.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void ApplyFilter()
+        {
+            var visible = new List<GroupedEventRow>();
+            _visibleByKey.Clear();
+            foreach (GroupedEventRow row in _allItems)
+            {
+                if (!MatchesFilter(row))
+                {
+                    continue;
+                }
+
+                visible.Add(row);
+                _visibleByKey[row.GroupKey] = row;
+            }
+
+            _items.ReplaceAll(visible);
+        }
+
+        private void SyncVisibleRow(GroupedEventRow row)
+        {
+            bool matches = MatchesFilter(row);
+            bool visible = _visibleByKey.ContainsKey(row.GroupKey);
+            if (matches)
+            {
+                if (!visible)
+                {
+                    _items.Add(row);
+                    _visibleByKey[row.GroupKey] = row;
+                }
+
+                return;
+            }
+
+            if (!visible)
+            {
+                return;
+            }
+
+            _visibleByKey.Remove(row.GroupKey);
+            _items.Remove(row);
+        }
+
+        private bool MatchesFilter(GroupedEventRow row)
+        {
+            string filter = _relationFilter;
+            if (string.IsNullOrWhiteSpace(filter) || filter.Equals("ALL RELATIONS", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return filter.ToUpperInvariant() switch
+            {
+                "THREADCREATE" => row.Event.Contains("ThreadCreate", StringComparison.OrdinalIgnoreCase),
+                "HANDLE" => !row.Event.Contains("ThreadCreate", StringComparison.OrdinalIgnoreCase),
+                "HIGH+" => row.Severity.Equals("Critical", StringComparison.OrdinalIgnoreCase) ||
+                           row.Severity.Equals("High", StringComparison.OrdinalIgnoreCase),
+                _ => true
+            };
         }
 
         private void RelationsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -218,5 +304,13 @@ namespace BlackbirdInterface
 
         private void RelationsBtnClose_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, e);
         private void RelationsBtnInspect_Click(object sender, RoutedEventArgs e) => InspectRequested?.Invoke(this, e);
+        private void RelationFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            _ = e;
+            ComboBox? combo = sender as ComboBox ?? RelationFilter;
+            _relationFilter = ((combo?.SelectedItem as ComboBoxItem)?.Content as string ?? "ALL RELATIONS").Trim();
+            ApplyFilter();
+            UpdateNoDataOverlay();
+        }
     }
 }

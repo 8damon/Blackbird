@@ -316,6 +316,38 @@ namespace BlackbirdInterface
 
             s.MemoryMetrics = _cachedMemoryMetrics.Select(CloneMetric).ToList();
             s.MemoryPages = _cachedMemoryPages.Select(ClonePage).ToList();
+            PopulateMemoryBreakdown(s, _cachedMemoryPages);
+        }
+
+        private static void PopulateMemoryBreakdown(PerformanceSample sample, IReadOnlyList<MemoryPageSample> pages)
+        {
+            ulong commit = 0;
+            ulong image = 0;
+            ulong mapped = 0;
+            ulong privateVad = 0;
+
+            for (int i = 0; i < pages.Count; i += 1)
+            {
+                MemoryPageSample page = pages[i];
+                commit += page.RegionSize;
+                switch (page.Type)
+                {
+                case 0x1000000:
+                    image += page.RegionSize;
+                    break;
+                case 0x40000:
+                    mapped += page.RegionSize;
+                    break;
+                case 0x20000:
+                    privateVad += page.RegionSize;
+                    break;
+                }
+            }
+
+            sample.CommitBytes = commit;
+            sample.ImageBytes = image;
+            sample.MappedBytes = mapped;
+            sample.PrivateVadBytes = privateVad;
         }
 
         private static List<MemoryMetricSample> BuildMemoryMetricSnapshot(Process process)

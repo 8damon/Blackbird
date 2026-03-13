@@ -81,13 +81,14 @@ If you deployed the interface output somewhere else, make sure `BlackbirdSensorC
 
 ## 7. First Operator Workflow
 
-1. Use `Select Target` to attach to a process.
-2. Confirm uplink/backend status in the main shell.
-3. Watch the timeline, event log, heuristics, and ETW panes populate.
-4. Open `Detection Chain` or an inspector by double-clicking grouped telemetry.
-5. Use the time-travel slider to move from live view into historical view.
-6. Open `Thread Stack` or `Handle Evidence` when you need capture-time context.
-7. Save or export the session when the review is complete.
+1. Use `Select Target` to attach to a process or launch a new one.
+2. Confirm options in the `Launch Parameters` dialog.
+3. Confirm uplink/backend status in the main shell.
+4. Watch the timeline, event log, heuristics, and ETW panes populate.
+5. Open `Detection Chain` or an inspector by double-clicking grouped telemetry.
+6. Use the time-travel slider to move from live view into historical view.
+7. Open `Thread Stack` or `Handle Evidence` when you need capture-time context.
+8. Save or export the session when the review is complete.
 
 ## 8. Session Files And Export
 
@@ -116,6 +117,7 @@ Check:
 - driver service is running
 - controller is using the expected broker/service protocol
 - target exited before sampling began
+- `Launch Parameters` disabled hooks or selected an attach-only mode where `EarlyBird APC` is unavailable
 
 ### Time travel shows `No data`
 

@@ -260,6 +260,8 @@ Current event names:
 - `ImageTelemetry`
 - `RegistryTelemetry`
 - `DetectionTelemetry`
+- `SystemInformationTelemetry`
+- `NtApiTelemetry`
 
 ### Key ETW-Only Fields
 

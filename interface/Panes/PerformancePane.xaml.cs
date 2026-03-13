@@ -158,6 +158,9 @@ namespace BlackbirdInterface
                 RamChart.SetSeries(new[]
                 {
                     new ChartSeries("Private bytes", Brush(0x43, 0xF2, 0x72), SeriesScale.AutoToViewMax, p => p.PrivateBytes, ChartValueFormat.Bytes),
+                    new ChartSeries("Commit", Brush(0x66, 0xD9, 0xEF), SeriesScale.AutoToViewMax, p => p.CommitBytes, ChartValueFormat.Bytes),
+                    new ChartSeries("MEM_IMAGE", Brush(0xFF, 0xC8, 0x57), SeriesScale.AutoToViewMax, p => p.ImageBytes, ChartValueFormat.Bytes),
+                    new ChartSeries("MEM_MAPPED", Brush(0xB2, 0x8D, 0xFF), SeriesScale.AutoToViewMax, p => p.MappedBytes, ChartValueFormat.Bytes),
                 });
             }
 
@@ -605,6 +608,10 @@ namespace BlackbirdInterface
                 DiskWriteBytesPerSec = src.DiskWriteBytesPerSec,
                 PrivateBytes = src.PrivateBytes,
                 ReservedBytes = src.ReservedBytes,
+                CommitBytes = src.CommitBytes,
+                ImageBytes = src.ImageBytes,
+                MappedBytes = src.MappedBytes,
+                PrivateVadBytes = src.PrivateVadBytes,
                 NetInBytesPerSec = src.NetInBytesPerSec,
                 NetOutBytesPerSec = src.NetOutBytesPerSec,
                 NetPacketsPerSec = src.NetPacketsPerSec,
@@ -1244,6 +1251,8 @@ namespace BlackbirdInterface
                     {
                         row = new NetworkPeerRow
                         {
+                            LocalEndpoint = tokens[1],
+                            RemoteEndpoint = remoteEndpoint,
                             RemoteAddress = remoteAddress,
                             Protocol = protocol,
                             State = state,
@@ -2006,6 +2015,8 @@ namespace BlackbirdInterface
 
     public sealed class NetworkPeerRow
     {
+        public string LocalEndpoint { get; set; } = "";
+        public string RemoteEndpoint { get; set; } = "";
         public string RemoteAddress { get; set; } = "";
         public string DnsName { get; set; } = "";
         public string Protocol { get; set; } = "";

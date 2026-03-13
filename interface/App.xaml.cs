@@ -60,6 +60,13 @@ namespace BlackbirdInterface
                 return;
             }
 
+            await ShowVirtualizationPreflightAsync();
+            if (!await EnsureStartupSystemsReadyAsync())
+            {
+                Shutdown();
+                return;
+            }
+
             var loading = new LoadingWindow();
             loading.SetProgress(8, "Initializing startup...", "Preparing main interface.");
             loading.Show();
@@ -138,6 +145,41 @@ namespace BlackbirdInterface
             ShutdownMode = ShutdownMode.OnMainWindowClose;
         }
 
+        private static async Task ShowVirtualizationPreflightAsync()
+        {
+            VirtualizationProbeReport report = await Task.Run(VirtualizationProbe.Run);
+            MessageBoxImage icon = report.VmLikely ? MessageBoxImage.Information : MessageBoxImage.Warning;
+            ThemedMessageBox.Show(
+                Current?.MainWindow,
+                report.BuildOperatorMessage(),
+                "Environment Preflight",
+                MessageBoxButton.OK,
+                icon);
+        }
+
+        private static async Task<bool> EnsureStartupSystemsReadyAsync()
+        {
+            for (;;)
+            {
+                BlackbirdPreflightReport report = await Task.Run(() => BlackbirdPreflight.Run(0, ensureServicesRunning: true));
+                if (report.StartupReady)
+                {
+                    return true;
+                }
+
+                MessageBoxResult choice = ThemedMessageBox.Show(
+                    Current?.MainWindow,
+                    report.BuildStartupFailureMessage() + "\nRetry startup preflight?",
+                    "Startup System Preflight",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Error);
+                if (choice != MessageBoxResult.Yes)
+                {
+                    return false;
+                }
+            }
+        }
+
         private static void HandleStartupFailure(Exception ex)
         {
             Exception root = ex;
@@ -150,7 +192,8 @@ namespace BlackbirdInterface
                 $"Startup failed.\n\n" +
                 $"Top: {ex.GetType().Name}: {ex.Message}\n\n" +
                 $"Root: {root.GetType().Name}: {root.Message}\n\n" +
-                $"Stack:\n{ex.StackTrace}";
+                $"Top Stack:\n{ex.StackTrace}\n\n" +
+                $"Root Stack:\n{root.StackTrace}";
             try
             {
                 ThemedMessageBox.Show(

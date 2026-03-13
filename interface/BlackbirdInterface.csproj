@@ -6,9 +6,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
 
     <AssemblyName>BlackbirdInterface</AssemblyName>
-    <Product>Blackbird Platform</Product>
+    <Product>Blackbird</Product>
     <Company>TITAN Softwork Solutions</Company>
     <Version>1.2.0-beta</Version>
     <AssemblyVersion>1.2.0.0</AssemblyVersion>
@@ -67,6 +68,7 @@
 
   <ItemGroup>
     <Resource Include="Resources\BK.ico" />
+    <Resource Include="Resources\*.png" />
   </ItemGroup>
 
   <ItemGroup>

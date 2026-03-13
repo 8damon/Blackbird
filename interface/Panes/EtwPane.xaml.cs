@@ -17,9 +17,12 @@ namespace BlackbirdInterface
         public event RoutedEventHandler? InspectRequested;
 
         private readonly BulkObservableCollection<GroupedEventRow> _items = new();
+        private readonly List<GroupedEventRow> _allItems = new();
         private readonly Dictionary<string, GroupedEventRow> _byKey = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, GroupedEventRow> _visibleByKey = new(StringComparer.Ordinal);
         private int _totalRawCount;
         private bool _hasThreatIntelEvents;
+        private string _feedFilter = "ALL FEEDS";
 
         public EtwPane()
         {
@@ -92,6 +95,8 @@ namespace BlackbirdInterface
                 {
                     existing.Details.RemoveAt(0);
                 }
+
+                SyncVisibleRow(existing);
             }
             else
             {
@@ -120,21 +125,27 @@ namespace BlackbirdInterface
                         }
                     }
                 };
-                _items.Add(row);
+                _allItems.Add(row);
                 _byKey[key] = row;
+                SyncVisibleRow(row);
             }
 
-            while (_items.Count > 2000)
+            while (_allItems.Count > 2000)
             {
-                string evictKey = _items[0].GroupKey;
-                _items.RemoveAt(0);
+                GroupedEventRow evicted = _allItems[0];
+                string evictKey = evicted.GroupKey;
+                _allItems.RemoveAt(0);
                 _byKey.Remove(evictKey);
+                if (_visibleByKey.Remove(evictKey))
+                {
+                    _items.Remove(evicted);
+                }
             }
 
         }
 
         internal IReadOnlyList<GroupedEventRow> SnapshotItems()
-            => _items.Select(x => x.Clone()).ToList();
+            => _allItems.Select(x => x.Clone()).ToList();
 
         internal GroupedEventRow? GetSelectedGroupClone()
             => (EventsGrid.SelectedItem as GroupedEventRow)?.Clone();
@@ -142,17 +153,18 @@ namespace BlackbirdInterface
         internal void LoadHistory(IEnumerable<GroupedEventRow> groups)
         {
             _items.Clear();
+            _allItems.Clear();
             _byKey.Clear();
+            _visibleByKey.Clear();
             _totalRawCount = 0;
             _hasThreatIntelEvents = false;
 
-            var clones = new List<GroupedEventRow>();
             foreach (GroupedEventRow source in groups)
             {
                 GroupedEventRow clone = source.Clone();
                 clone.Hits = Math.Max(1, clone.Hits);
                 clone.Details = clone.Details.OrderBy(x => x.TimestampUtc).ToList();
-                clones.Add(clone);
+                _allItems.Add(clone);
                 _byKey[clone.GroupKey] = clone;
                 _totalRawCount += clone.Hits;
                 if (clone.Details.Any(x => x.Source.Equals("ThreatIntel", StringComparison.OrdinalIgnoreCase)))
@@ -161,7 +173,7 @@ namespace BlackbirdInterface
                 }
             }
 
-            _items.ReplaceAll(clones);
+            ApplyFilter();
             UpdateSummary();
             UpdateNoDataOverlay();
         }
@@ -169,7 +181,9 @@ namespace BlackbirdInterface
         public void ClearAll()
         {
             _items.Clear();
+            _allItems.Clear();
             _byKey.Clear();
+            _visibleByKey.Clear();
             _totalRawCount = 0;
             _hasThreatIntelEvents = false;
             UpdateSummary();
@@ -179,9 +193,9 @@ namespace BlackbirdInterface
         internal void TrimDetailPayload(int keepPerGroup)
         {
             int keep = Math.Max(1, keepPerGroup);
-            for (int i = 0; i < _items.Count; i += 1)
+            for (int i = 0; i < _allItems.Count; i += 1)
             {
-                GroupedEventRow row = _items[i];
+                GroupedEventRow row = _allItems[i];
                 if (row.Details.Count <= keep)
                 {
                     continue;
@@ -194,17 +208,91 @@ namespace BlackbirdInterface
                     .ToList();
                 _byKey[row.GroupKey] = row;
             }
+
+            ApplyFilter();
         }
 
         private void UpdateSummary()
         {
+            if (SummaryBlock == null)
+            {
+                return;
+            }
+
             string tiState = _hasThreatIntelEvents ? "TI: integrated" : "TI: unavailable";
             SummaryBlock.Text = $"Groups: {_items.Count} / Events: {_totalRawCount} / {tiState}";
         }
 
         private void UpdateNoDataOverlay()
         {
+            if (NoDataOverlay == null)
+            {
+                return;
+            }
+
             NoDataOverlay.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void ApplyFilter()
+        {
+            var visible = new List<GroupedEventRow>();
+            _visibleByKey.Clear();
+            foreach (GroupedEventRow row in _allItems)
+            {
+                if (!MatchesFilter(row))
+                {
+                    continue;
+                }
+
+                visible.Add(row);
+                _visibleByKey[row.GroupKey] = row;
+            }
+
+            _items.ReplaceAll(visible);
+        }
+
+        private void SyncVisibleRow(GroupedEventRow row)
+        {
+            bool matches = MatchesFilter(row);
+            bool visible = _visibleByKey.ContainsKey(row.GroupKey);
+            if (matches)
+            {
+                if (!visible)
+                {
+                    _items.Add(row);
+                    _visibleByKey[row.GroupKey] = row;
+                }
+
+                return;
+            }
+
+            if (!visible)
+            {
+                return;
+            }
+
+            _visibleByKey.Remove(row.GroupKey);
+            _items.Remove(row);
+        }
+
+        private bool MatchesFilter(GroupedEventRow row)
+        {
+            string filter = _feedFilter;
+            if (string.IsNullOrWhiteSpace(filter) || filter.Equals("ALL FEEDS", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return filter.ToUpperInvariant() switch
+            {
+                "THREATINTEL" => row.Event.StartsWith("TI/", StringComparison.OrdinalIgnoreCase) ||
+                                 row.Details.Any(x => x.Source.Equals("ThreatIntel", StringComparison.OrdinalIgnoreCase)),
+                "DETECTION" => row.Detection.Contains("DETECTION", StringComparison.OrdinalIgnoreCase) ||
+                               row.Event.Contains("Detection", StringComparison.OrdinalIgnoreCase),
+                "PROCESS/THREAD" => row.Event.Contains("Process", StringComparison.OrdinalIgnoreCase) ||
+                                    row.Event.Contains("Thread", StringComparison.OrdinalIgnoreCase),
+                _ => true
+            };
         }
 
         private void EventsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -218,6 +306,14 @@ namespace BlackbirdInterface
         }
 
         private void EtwBtnInspect_Click(object sender, RoutedEventArgs e) => InspectRequested?.Invoke(this, e);
+        private void FeedFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            _ = e;
+            ComboBox? combo = sender as ComboBox ?? FeedFilter;
+            _feedFilter = ((combo?.SelectedItem as ComboBoxItem)?.Content as string ?? "ALL FEEDS").Trim();
+            ApplyFilter();
+            UpdateNoDataOverlay();
+        }
 
         private void EtwBtnReorder_Click(object sender, RoutedEventArgs e) => ReorderRequested?.Invoke(this, e);
         private void EtwBtnFloat_Click(object sender, RoutedEventArgs e) => FloatRequested?.Invoke(this, e);

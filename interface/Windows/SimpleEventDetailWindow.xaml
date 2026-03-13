@@ -44,11 +44,11 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ItemBorder" Property="Background" Value="#1E4C8FD2"/>
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#1E303030"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="ItemBorder" Property="Background" Value="#334C8FD2"/>
-                                <Setter Property="Foreground" Value="#FFF1F5FF"/>
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#33323232"/>
+                                <Setter Property="Foreground" Value="#FFF1F1F1"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -56,8 +56,8 @@
             </Setter>
             <Style.Triggers>
                 <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="#334C8FD2"/>
-                    <Setter Property="Foreground" Value="#FFF1F5FF"/>
+                    <Setter Property="Background" Value="#33323232"/>
+                    <Setter Property="Foreground" Value="#FFF1F1F1"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -157,3 +157,4 @@
         </StackPanel>
     </Grid>
 </Window>
+

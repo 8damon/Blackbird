@@ -1446,9 +1446,17 @@ namespace BlackbirdInterface
             for (int i = 0; i < views.Count; i += 1)
             {
                 BrokerEtwEventView view = views[i];
+                bool kernelNtApiEvent =
+                    view.Source.Equals("Blackbird", StringComparison.OrdinalIgnoreCase) &&
+                    ((!string.IsNullOrWhiteSpace(view.Operation) &&
+                      view.Operation.StartsWith("Nt", StringComparison.OrdinalIgnoreCase)) ||
+                     (!string.IsNullOrWhiteSpace(view.EventName) &&
+                      view.EventName.StartsWith("Nt", StringComparison.OrdinalIgnoreCase)));
                 bool isApiHookCall = view.Family == BlackbirdNative.IpcEtwFamilyUserHook &&
                                      (string.Equals(view.DetectionName, "USERMODE_HOOK_API_CALL", StringComparison.OrdinalIgnoreCase) ||
-                                      string.Equals(view.DetectionName, "USERMODE_MEMORY_ACTIVITY", StringComparison.OrdinalIgnoreCase));
+                                      string.Equals(view.DetectionName, "USERMODE_MEMORY_ACTIVITY", StringComparison.OrdinalIgnoreCase) ||
+                                      string.Equals(view.DetectionName, "USERMODE_PROCESS_RECON", StringComparison.OrdinalIgnoreCase) ||
+                                      kernelNtApiEvent);
                 if (isApiHookCall)
                 {
                     TelemetryEvent? apiTimelineEvent = HandleApiHookEvent(view);
@@ -2406,6 +2414,7 @@ namespace BlackbirdInterface
             DiagnosticsState.SetValue("Broker Caps", $"0x{report.BrokerCapabilities:X8}");
             DiagnosticsState.SetValue("Broker TI", report.ThreatIntelEnabled ? "Enabled" : "Disabled");
             DiagnosticsState.SetValue("Broker TI Enable Err", report.ThreatIntelEnableError.ToString());
+            DiagnosticsState.SetValue("Hook DLL", report.HookDllExists ? "Found" : $"Missing ({report.HookDllPath})");
             ApplyConnectivityStatus(report, userInitiated);
         }
 
@@ -2436,6 +2445,11 @@ namespace BlackbirdInterface
             if (!report.DriverProxyOk)
             {
                 issues.Add("driver proxy unavailable");
+            }
+
+            if (!report.HookDllExists)
+            {
+                issues.Add($"hook dll missing ({report.HookDllPath})");
             }
 
             if (report.EtwUplinkCapable && !report.EtwUplinkQueryOk)

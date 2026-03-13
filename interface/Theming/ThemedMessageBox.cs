@@ -20,9 +20,9 @@ namespace BlackbirdInterface
             {
                 Title = title,
                 Width = 540,
-                Height = 230,
+                Height = 300,
                 MinWidth = 460,
-                MinHeight = 190,
+                MinHeight = 220,
                 WindowStartupLocation = owner == null ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner,
                 Owner = owner,
                 Background = GetBrush("MessageBoxBgBrush", Color.FromRgb(0x08, 0x08, 0x08)),
@@ -53,24 +53,48 @@ namespace BlackbirdInterface
             Grid.SetRow(titleBar, 0);
             layout.Children.Add(titleBar);
 
-            string iconPrefix = image switch
+            string iconGlyph = GetMessageIconGlyph(image);
+            var contentGrid = new Grid
             {
-                MessageBoxImage.Warning => "⚠ ",
-                MessageBoxImage.Error => "⛔ ",
-                MessageBoxImage.Information => "ℹ ",
-                _ => ""
+                Margin = new Thickness(10, 8, 10, 8)
             };
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = string.IsNullOrEmpty(iconGlyph) ? new GridLength(0) : GridLength.Auto });
+            contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            if (!string.IsNullOrEmpty(iconGlyph))
+            {
+                var iconBlock = new TextBlock
+                {
+                    Text = iconGlyph,
+                    FontSize = 18,
+                    Margin = new Thickness(2, 0, 10, 0),
+                    VerticalAlignment = VerticalAlignment.Top,
+                    Foreground = GetMessageIconBrush(image)
+                };
+                Grid.SetColumn(iconBlock, 0);
+                contentGrid.Children.Add(iconBlock);
+            }
 
             var messageBlock = new TextBlock
             {
-                Text = iconPrefix + message,
+                Text = message,
                 TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(14, 12, 14, 12),
                 VerticalAlignment = VerticalAlignment.Top,
                 Foreground = GetBrush("MessageBoxMutedTextBrush", Color.FromRgb(0xB0, 0xB0, 0xB0))
             };
-            Grid.SetRow(messageBlock, 1);
-            layout.Children.Add(messageBlock);
+
+            var messageScroll = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                CanContentScroll = false,
+                Content = messageBlock
+            };
+            Grid.SetColumn(messageScroll, 1);
+            contentGrid.Children.Add(messageScroll);
+
+            Grid.SetRow(contentGrid, 1);
+            layout.Children.Add(contentGrid);
 
             var buttonPanel = new StackPanel
             {
@@ -181,23 +205,39 @@ namespace BlackbirdInterface
             Grid.SetRow(titleBar, 0);
             layout.Children.Add(titleBar);
 
-            string iconPrefix = image switch
+            string iconGlyph = GetMessageIconGlyph(image);
+            var messagePanel = new Grid
             {
-                MessageBoxImage.Warning => "⚠ ",
-                MessageBoxImage.Error => "⛔ ",
-                MessageBoxImage.Information => "ℹ ",
-                _ => ""
+                Margin = new Thickness(14, 12, 14, 12)
             };
+            messagePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = string.IsNullOrEmpty(iconGlyph) ? new GridLength(0) : GridLength.Auto });
+            messagePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            if (!string.IsNullOrEmpty(iconGlyph))
+            {
+                var iconBlock = new TextBlock
+                {
+                    Text = iconGlyph,
+                    FontSize = 18,
+                    Margin = new Thickness(2, 0, 10, 0),
+                    VerticalAlignment = VerticalAlignment.Top,
+                    Foreground = GetMessageIconBrush(image)
+                };
+                Grid.SetColumn(iconBlock, 0);
+                messagePanel.Children.Add(iconBlock);
+            }
 
             var messageBlock = new TextBlock
             {
-                Text = iconPrefix + message,
-                Margin = new Thickness(14, 12, 14, 12),
+                Text = message,
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = GetBrush("MessageBoxMutedTextBrush", Color.FromRgb(0xB0, 0xB0, 0xB0))
             };
-            Grid.SetRow(messageBlock, 1);
-            layout.Children.Add(messageBlock);
+            Grid.SetColumn(messageBlock, 1);
+            messagePanel.Children.Add(messageBlock);
+
+            Grid.SetRow(messagePanel, 1);
+            layout.Children.Add(messagePanel);
 
             shell.Child = layout;
             toast.Content = shell;
@@ -359,6 +399,28 @@ namespace BlackbirdInterface
             var brush = new SolidColorBrush(fallback);
             brush.Freeze();
             return brush;
+        }
+
+        private static string GetMessageIconGlyph(MessageBoxImage image)
+        {
+            return image switch
+            {
+                MessageBoxImage.Warning => "⚠",
+                MessageBoxImage.Error => "⛔",
+                MessageBoxImage.Information => "ℹ",
+                _ => string.Empty
+            };
+        }
+
+        private static Brush GetMessageIconBrush(MessageBoxImage image)
+        {
+            return image switch
+            {
+                MessageBoxImage.Warning => GetBrush("WinWarningBrush", Color.FromRgb(0xF2, 0xC8, 0x11)),
+                MessageBoxImage.Error => GetBrush("WinErrorBrush", Color.FromRgb(0xE8, 0x11, 0x23)),
+                MessageBoxImage.Information => GetBrush("WinAccentBrush", Color.FromRgb(0x58, 0xA6, 0xFF)),
+                _ => GetBrush("MessageBoxTextBrush", Color.FromRgb(0xE6, 0xE6, 0xE6))
+            };
         }
 
         private static Style BuildMessageButtonStyle()

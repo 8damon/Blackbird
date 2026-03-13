@@ -93,17 +93,26 @@ NTSTATUS BLACKBIRDNtApiHookInstall(_Inout_ PBLACKBIRD_NTAPI_HOOK Hook, _Outptr_o
     if (Hook->RoutineAddress == NULL)
     {
         BLACKBIRD_HOOK_LOG(DPFLTR_WARNING_LEVEL,
-                           "BLACKBIRD: ntapi hook export resolve miss api=%s n0=%ws n1=%ws n2=%ws, trying ssdt.\n",
+                           "BLACKBIRD: ntapi hook export resolve miss api=%s n0=%ws n1=%ws n2=%ws (trying ssdt fallback).\n",
                            (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>",
                            (Hook->Descriptor.Name0 != NULL) ? Hook->Descriptor.Name0 : L"<null>",
                            (Hook->Descriptor.Name1 != NULL) ? Hook->Descriptor.Name1 : L"<null>",
                            (Hook->Descriptor.Name2 != NULL) ? Hook->Descriptor.Name2 : L"<null>");
+        if (Hook->Descriptor.FallbackSignatureSize == 0)
+        {
+            BLACKBIRD_HOOK_LOG(DPFLTR_WARNING_LEVEL,
+                               "BLACKBIRD: ntapi hook ssdt fallback unavailable api=%s reason=no-signature.\n",
+                               (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>");
+        }
         Hook->RoutineAddress = BLACKBIRDNtApiResolveViaSsdtSignature(&Hook->Descriptor);
         if (Hook->RoutineAddress == NULL)
         {
             BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
-                               "BLACKBIRD: ntapi hook resolve failed api=%s.\n",
-                               (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>");
+                               "BLACKBIRD: ntapi hook resolve failed api=%s n0=%ws n1=%ws n2=%ws.\n",
+                               (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>",
+                               (Hook->Descriptor.Name0 != NULL) ? Hook->Descriptor.Name0 : L"<null>",
+                               (Hook->Descriptor.Name1 != NULL) ? Hook->Descriptor.Name1 : L"<null>",
+                               (Hook->Descriptor.Name2 != NULL) ? Hook->Descriptor.Name2 : L"<null>");
             return STATUS_PROCEDURE_NOT_FOUND;
         }
     }

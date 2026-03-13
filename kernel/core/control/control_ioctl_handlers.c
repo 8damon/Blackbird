@@ -575,17 +575,7 @@ NTSTATUS BLACKBIRDHandleGetEventIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQ
                        requesterPid,
                        emptyCounter);
         }
-        if (Client->PendingGetEventQueue == NULL)
-        {
-            return STATUS_INVALID_DEVICE_STATE;
-        }
-
-        status = WdfRequestForwardToIoQueue(Request, Client->PendingGetEventQueue);
-        if (!NT_SUCCESS(status))
-        {
-            return status;
-        }
-        return STATUS_PENDING;
+        return STATUS_NO_MORE_ENTRIES;
     }
 
     {

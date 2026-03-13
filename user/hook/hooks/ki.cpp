@@ -68,7 +68,7 @@ namespace
         return nullptr;
     }
 
-#endif // _WIN64
+#endif
 }
 
 bool KeSetKiHook(KiHookCallback callback) noexcept

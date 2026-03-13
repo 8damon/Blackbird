@@ -91,10 +91,6 @@ typedef struct _BLACKBIRD_CONTROLLER_CLIENT
     HANDLE EtwSharedDataEvent;
     PBLACKBIRD_IPC_SHARED_RING_HEADER EtwSharedHeader;
     PBYTE EtwSharedRecords;
-    BOOL PendingLaunchArmed;
-    DWORD PendingLaunchPid;
-    ULONGLONG PendingLaunchArmedTick;
-    WCHAR PendingLaunchImagePath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
     volatile LONG HookReadyMask;
     ULONGLONG HookReadyTick;
     volatile LONG DispatchRefCount;

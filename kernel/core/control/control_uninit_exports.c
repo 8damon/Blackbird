@@ -20,6 +20,7 @@ VOID BLACKBIRDControlUninitialize(VOID)
     }
     InterlockedExchange(&g_ControlTotalQueuedEvents, 0);
     InterlockedExchange(&g_QueryImageInflight, 0);
+    InterlockedExchange(&g_ControlTelemetryArmed, 0);
     g_ClientCount = 0;
 }
 
@@ -217,4 +218,19 @@ BLACKBIRDControlHasPidInterest(_In_ UINT32 PrimaryProcessId, _In_ UINT32 Seconda
     }
 
     return hasInterest;
+}
+
+BOOLEAN
+BLACKBIRDControlIsArmedFast(VOID)
+{
+    if (InterlockedCompareExchange(&g_ControlInitialized, 0, 0) == 0)
+    {
+        return FALSE;
+    }
+    if (InterlockedCompareExchange(&g_ControlShutdown, 0, 0) != 0)
+    {
+        return FALSE;
+    }
+
+    return (InterlockedCompareExchange(&g_ControlTelemetryArmed, 0, 0) != 0);
 }

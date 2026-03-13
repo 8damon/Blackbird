@@ -760,6 +760,26 @@ BOOL BLACKBIRDSCSetPids(_In_ HANDLE Device, _In_reads_(ProcessCount) const DWORD
     return DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_SET_PIDS, &req, sizeof(req), NULL, 0, &bytes, NULL);
 }
 
+BOOL BLACKBIRDSCArmPendingLaunch(_In_ HANDLE Device, _In_ const BLACKBIRD_ARM_PENDING_LAUNCH_REQUEST *Request)
+{
+    DWORD bytes = 0;
+
+    if (Device == NULL || Device == INVALID_HANDLE_VALUE || Request == NULL)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    if (BLACKBIRDSCIsClientProtocol())
+    {
+        SetLastError(ERROR_NOT_SUPPORTED);
+        return FALSE;
+    }
+
+    return DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_ARM_PENDING_LAUNCH, (LPVOID)Request, sizeof(*Request), NULL,
+                           0, &bytes, NULL);
+}
+
 BOOL BLACKBIRDSCGetEvent(_In_ HANDLE Device, _Out_ BLACKBIRD_EVENT_RECORD *Record, _Out_opt_ DWORD *BytesReturned)
 {
     DWORD bytes = 0;

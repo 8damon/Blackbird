@@ -85,6 +85,8 @@ extern "C"
     BLACKBIRDSC_API BOOL BLACKBIRDSCUnsubscribe(_In_ HANDLE Device, _In_ DWORD ProcessId);
     BLACKBIRDSC_API BOOL BLACKBIRDSCSetPids(_In_ HANDLE Device, _In_reads_(ProcessCount) const DWORD *ProcessIds,
                                                 _In_ DWORD ProcessCount, _In_ DWORD StreamMask);
+    BLACKBIRDSC_API BOOL BLACKBIRDSCArmPendingLaunch(_In_ HANDLE Device,
+                                                         _In_ const BLACKBIRD_ARM_PENDING_LAUNCH_REQUEST *Request);
     BLACKBIRDSC_API BOOL BLACKBIRDSCGetEvent(_In_ HANDLE Device, _Out_ BLACKBIRD_EVENT_RECORD *Record,
                                                  _Out_opt_ DWORD *BytesReturned);
     BLACKBIRDSC_API BOOL BLACKBIRDSCGetStats(_In_ HANDLE Device, _Out_ BLACKBIRD_STATS_RESPONSE *Stats,

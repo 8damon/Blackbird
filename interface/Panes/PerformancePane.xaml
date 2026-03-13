@@ -176,8 +176,9 @@
                                       RowHeight="22"
                                       Visibility="Collapsed">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Remote IP" Width="150" Binding="{Binding RemoteAddress}"/>
-                                    <DataGridTextColumn Header="DNS" Width="220" Binding="{Binding DnsName}"/>
+                                    <DataGridTextColumn Header="Local Socket" Width="150" Binding="{Binding LocalEndpoint}"/>
+                                    <DataGridTextColumn Header="Remote Socket" Width="170" Binding="{Binding RemoteEndpoint}"/>
+                                    <DataGridTextColumn Header="DNS" Width="200" Binding="{Binding DnsName}"/>
                                     <DataGridTextColumn Header="Proto" Width="70" Binding="{Binding Protocol}"/>
                                     <DataGridTextColumn Header="State" Width="120" Binding="{Binding State}"/>
                                     <DataGridTextColumn Header="Hits" Width="70" Binding="{Binding ConnectionCount}"/>
@@ -252,7 +253,7 @@
                                                 <Setter Property="FontWeight" Value="SemiBold"/>
                                             </DataTrigger>
                                             <DataTrigger Binding="{Binding IsWaiting}" Value="True">
-                                                <Setter Property="Foreground" Value="#FFC6D9FF"/>
+                                                <Setter Property="Foreground" Value="#FFBEBEBE"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -499,3 +500,5 @@
         </Grid>
     </Grid>
 </UserControl>
+
+

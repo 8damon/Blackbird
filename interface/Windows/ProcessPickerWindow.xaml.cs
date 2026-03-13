@@ -122,17 +122,7 @@ namespace BlackbirdInterface
                 return;
             }
 
-            LaunchOptionsPanel.Visibility = ShowLaunchOptions ? Visibility.Visible : Visibility.Collapsed;
-            bool hooksEnabled = ShowLaunchOptions && (UseUsermodeHooksCheckBox?.IsChecked == true);
-            if (EarlyBirdApcCheckBox != null)
-            {
-                // EarlyBird APC is optional and only relevant when hooks are enabled.
-                EarlyBirdApcCheckBox.IsEnabled = hooksEnabled;
-                if (!hooksEnabled)
-                {
-                    EarlyBirdApcCheckBox.IsChecked = false;
-                }
-            }
+            LaunchOptionsPanel.Visibility = Visibility.Collapsed;
         }
 
         private void UseUsermodeHooksCheckBox_Changed(object sender, RoutedEventArgs e)

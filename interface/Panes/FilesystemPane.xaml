@@ -116,6 +116,7 @@
                        Grid.Column="1"
                        Margin="0,0,8,0"
                        VerticalAlignment="Center"
+                       Visibility="Collapsed"
                        TextTrimming="CharacterEllipsis"
                        Foreground="{DynamicResource WinMutedTextBrush}"
                        Text="No filesystem events yet"/>
@@ -130,21 +131,10 @@
                       VerticalContentAlignment="Center"
                       Background="{DynamicResource WinPanelBrush}"
                       Foreground="{DynamicResource WinTextBrush}"
-                      BorderBrush="{DynamicResource WinBorderBrush}"
-                      Style="{StaticResource FilesystemOperationFilterStyle}"
-                      ItemContainerStyle="{StaticResource FilesystemOperationFilterComboItemStyle}"
-                      SelectionChanged="OperationFilter_SelectionChanged">
-                <ComboBox.Resources>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#FF121212"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#FFD8D8D8"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#334C8FD2"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFF1F5FF"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#FF1C1C1C"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#FFD8D8D8"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#FF141414"/>
-                    <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="#FFD8D8D8"/>
-                </ComboBox.Resources>
-            </ComboBox>
+                      BorderBrush="{DynamicResource FilesystemHeaderBrush}"
+                      Style="{StaticResource PaneFilterComboStyle}"
+                      ItemContainerStyle="{StaticResource PaneFilterComboItemStyle}"
+                      SelectionChanged="OperationFilter_SelectionChanged"/>
 
             <TextBox x:Name="SearchBox"
                      Grid.Column="3"
@@ -176,9 +166,9 @@
         </Grid>
 
         <Border Grid.Row="1"
-                Margin="4"
+                Margin="0"
                 BorderBrush="{DynamicResource WinBorderBrush}"
-                BorderThickness="1">
+                BorderThickness="0">
             <Grid>
                 <DataGrid x:Name="FilesystemGrid"
                           AutoGenerateColumns="False"
@@ -208,11 +198,11 @@
                                     <Setter Property="Background" Value="#1C4C4217"/>
                                 </DataTrigger>
                                 <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Background" Value="#1E4C8FD2"/>
+                                    <Setter Property="Background" Value="#1E303030"/>
                                 </Trigger>
                                 <Trigger Property="IsSelected" Value="True">
-                                    <Setter Property="Background" Value="#334C8FD2"/>
-                                    <Setter Property="Foreground" Value="#FFF1F5FF"/>
+                                    <Setter Property="Background" Value="#33323232"/>
+                                    <Setter Property="Foreground" Value="#FFF1F1F1"/>
                                 </Trigger>
                             </Style.Triggers>
                         </Style>
@@ -247,3 +237,4 @@
         </Border>
     </Grid>
 </UserControl>
+

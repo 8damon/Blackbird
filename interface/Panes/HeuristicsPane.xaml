@@ -12,6 +12,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="146"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
@@ -29,10 +30,28 @@
                        Grid.Column="1"
                        Margin="0,0,8,0"
                        VerticalAlignment="Center"
+                       Visibility="Collapsed"
                        Foreground="{DynamicResource WinMutedTextBrush}"
                        Text="No detections yet"/>
 
-            <Button Grid.Column="2"
+            <ComboBox x:Name="SeverityFilter"
+                      Grid.Column="2"
+                      Width="138"
+                      Height="24"
+                      Margin="2,4,6,4"
+                      VerticalAlignment="Center"
+                      BorderBrush="{DynamicResource HeuristicsHeaderBrush}"
+                      Style="{StaticResource PaneFilterComboStyle}"
+                      ItemContainerStyle="{StaticResource PaneFilterComboItemStyle}"
+                      SelectionChanged="SeverityFilter_SelectionChanged">
+                <ComboBoxItem Content="ALL" IsSelected="True"/>
+                <ComboBoxItem Content="CRITICAL"/>
+                <ComboBoxItem Content="HIGH"/>
+                <ComboBoxItem Content="MEDIUM"/>
+                <ComboBoxItem Content="LOW"/>
+            </ComboBox>
+
+            <Button Grid.Column="3"
                     x:Name="HeurBtnInspect"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="↗"
@@ -40,7 +59,7 @@
                     Height="22"
                     ToolTip="Open heuristics inspector"
                     Click="HeurBtnInspect_Click"/>
-            <Button Grid.Column="3"
+            <Button Grid.Column="4"
                     x:Name="HeurBtnReorder"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="⇅"
@@ -48,7 +67,7 @@
                     Height="22"
                     ToolTip="Reorder ETW/Heuristics panes"
                     Click="HeurBtnReorder_Click"/>
-            <Button Grid.Column="4"
+            <Button Grid.Column="5"
                     x:Name="HeurBtnFloat"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="⧉"
@@ -56,7 +75,7 @@
                     Height="22"
                     ToolTip="Float / re-dock pane"
                     Click="HeurBtnFloat_Click"/>
-            <Button Grid.Column="5"
+            <Button Grid.Column="6"
                     x:Name="HeurBtnClose"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="✕"
@@ -68,9 +87,9 @@
         </Grid>
 
         <Border Grid.Row="1"
-                Margin="4"
+                Margin="0"
                 BorderBrush="{DynamicResource WinBorderBrush}"
-                BorderThickness="1">
+                BorderThickness="0">
             <Grid>
                 <DataGrid x:Name="HeuristicsGrid"
                           AutoGenerateColumns="False"
@@ -100,7 +119,7 @@
                                     <Setter Property="Background" Value="#2A5E521E"/>
                                 </DataTrigger>
                                 <Trigger Property="IsSelected" Value="True">
-                                    <Setter Property="Background" Value="#3A6EA6D8"/>
+                                    <Setter Property="Background" Value="#3A4A4A4A"/>
                                     <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
                                 </Trigger>
                             </Style.Triggers>

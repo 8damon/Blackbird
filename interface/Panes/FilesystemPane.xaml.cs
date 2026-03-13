@@ -299,11 +299,21 @@ namespace BlackbirdInterface
 
         private void UpdateSummary()
         {
+            if (SummaryBlock == null)
+            {
+                return;
+            }
+
             SummaryBlock.Text = $"Shown {_items.Count}/{_allItems.Count} | Events {_totalRawCount}";
         }
 
         private void UpdateNoDataOverlay()
         {
+            if (NoDataOverlay == null)
+            {
+                return;
+            }
+
             NoDataOverlay.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
@@ -341,9 +351,9 @@ namespace BlackbirdInterface
 
         private void OperationFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            _ = sender;
             _ = e;
-            _operationFilter = (OperationFilter.SelectedItem as string ?? "ALL").Trim();
+            ComboBox? combo = sender as ComboBox ?? OperationFilter;
+            _operationFilter = ((combo?.SelectedItem as string) ?? ((combo?.SelectedItem as ComboBoxItem)?.Content as string) ?? "ALL").Trim();
             if (_operationFilter.Length == 0)
             {
                 _operationFilter = "ALL";

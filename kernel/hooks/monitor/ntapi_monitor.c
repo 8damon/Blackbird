@@ -57,22 +57,6 @@ typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_EX)(_In_ ULONG Sy
                                                                         PVOID SystemInformation,
                                                                     _In_ ULONG SystemInformationLength,
                                                                     _Out_opt_ PULONG ReturnLength);
-typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_CREATE_SECTION_EX)(_Out_ PHANDLE SectionHandle, _In_ ACCESS_MASK DesiredAccess,
-                                                          _In_opt_ POBJECT_ATTRIBUTES ObjectAttributes,
-                                                          _In_opt_ PLARGE_INTEGER MaximumSize,
-                                                          _In_ ULONG SectionPageProtection,
-                                                          _In_ ULONG AllocationAttributes, _In_opt_ HANDLE FileHandle,
-                                                          _In_reads_opt_(ExtendedParameterCount) PVOID ExtendedParameters,
-                                                          _In_ ULONG ExtendedParameterCount);
-typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_MAP_VIEW_OF_SECTION_EX)(
-    _In_ HANDLE SectionHandle, _In_ HANDLE ProcessHandle, _Inout_ PVOID *BaseAddress,
-    _Inout_opt_ PLARGE_INTEGER SectionOffset, _Inout_ PSIZE_T ViewSize, _In_ ULONG AllocationType,
-    _In_ ULONG Win32Protect, _In_reads_opt_(ExtendedParameterCount) PVOID ExtendedParameters,
-    _In_ ULONG ExtendedParameterCount);
-typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_ALLOCATE_VIRTUAL_MEMORY_EX)(
-    _In_ HANDLE ProcessHandle, _Inout_ PVOID *BaseAddress, _Inout_ PSIZE_T RegionSize, _In_ ULONG AllocationType,
-    _In_ ULONG Protect, _In_reads_opt_(ExtendedParameterCount) PVOID ExtendedParameters,
-    _In_ ULONG ExtendedParameterCount);
 
 typedef enum _BLACKBIRD_HOOK_ID
 {
@@ -84,9 +68,6 @@ typedef enum _BLACKBIRD_HOOK_ID
     BLACKBIRD_HOOK_MAP_VIEW_OF_SECTION,
     BLACKBIRD_HOOK_ALLOCATE_VIRTUAL_MEMORY,
     BLACKBIRD_HOOK_QUERY_SYSTEM_INFORMATION_EX,
-    BLACKBIRD_HOOK_CREATE_SECTION_EX,
-    BLACKBIRD_HOOK_MAP_VIEW_OF_SECTION_EX,
-    BLACKBIRD_HOOK_ALLOCATE_VIRTUAL_MEMORY_EX,
     BLACKBIRD_HOOK_COUNT
 } BLACKBIRD_HOOK_ID;
 
@@ -114,9 +95,6 @@ PBLACKBIRD_NT_CREATE_SECTION g_OriginalNtCreateSection = NULL;
 PBLACKBIRD_NT_MAP_VIEW_OF_SECTION g_OriginalNtMapViewOfSection = NULL;
 PBLACKBIRD_NT_ALLOCATE_VIRTUAL_MEMORY g_OriginalNtAllocateVirtualMemory = NULL;
 PBLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_EX g_OriginalNtQuerySystemInformationEx = NULL;
-PBLACKBIRD_NT_CREATE_SECTION_EX g_OriginalNtCreateSectionEx = NULL;
-PBLACKBIRD_NT_MAP_VIEW_OF_SECTION_EX g_OriginalNtMapViewOfSectionEx = NULL;
-PBLACKBIRD_NT_ALLOCATE_VIRTUAL_MEMORY_EX g_OriginalNtAllocateVirtualMemoryEx = NULL;
 
 NTSTATUS NTAPI BLACKBIRDNtQuerySystemInformationHook(_In_ ULONG SystemInformationClass,
                                                             _Out_writes_bytes_opt_(SystemInformationLength)
@@ -152,22 +130,6 @@ NTSTATUS NTAPI BLACKBIRDNtQuerySystemInformationExHook(_In_ ULONG SystemInformat
                                                                   PVOID SystemInformation,
                                                               _In_ ULONG SystemInformationLength,
                                                               _Out_opt_ PULONG ReturnLength);
-NTSTATUS NTAPI BLACKBIRDNtCreateSectionExHook(_Out_ PHANDLE SectionHandle, _In_ ACCESS_MASK DesiredAccess,
-                                                     _In_opt_ POBJECT_ATTRIBUTES ObjectAttributes,
-                                                     _In_opt_ PLARGE_INTEGER MaximumSize,
-                                                     _In_ ULONG SectionPageProtection,
-                                                     _In_ ULONG AllocationAttributes, _In_opt_ HANDLE FileHandle,
-                                                     _In_reads_opt_(ExtendedParameterCount) PVOID ExtendedParameters,
-                                                     _In_ ULONG ExtendedParameterCount);
-NTSTATUS NTAPI BLACKBIRDNtMapViewOfSectionExHook(
-    _In_ HANDLE SectionHandle, _In_ HANDLE ProcessHandle, _Inout_ PVOID *BaseAddress,
-    _Inout_opt_ PLARGE_INTEGER SectionOffset, _Inout_ PSIZE_T ViewSize, _In_ ULONG AllocationType,
-    _In_ ULONG Win32Protect, _In_reads_opt_(ExtendedParameterCount) PVOID ExtendedParameters,
-    _In_ ULONG ExtendedParameterCount);
-NTSTATUS NTAPI BLACKBIRDNtAllocateVirtualMemoryExHook(
-    _In_ HANDLE ProcessHandle, _Inout_ PVOID *BaseAddress, _Inout_ PSIZE_T RegionSize, _In_ ULONG AllocationType,
-    _In_ ULONG Protect, _In_reads_opt_(ExtendedParameterCount) PVOID ExtendedParameters,
-    _In_ ULONG ExtendedParameterCount);
 extern NTSTATUS NTAPI BLACKBIRDNtAllocateVirtualMemoryHookStub(_In_ HANDLE ProcessHandle, _Inout_ PVOID *BaseAddress,
                                                                _In_ ULONG_PTR ZeroBits, _Inout_ PSIZE_T RegionSize,
                                                                _In_ ULONG AllocationType, _In_ ULONG Protect);
@@ -193,8 +155,7 @@ static const BLACKBIRD_NTAPI_HOOK_DESCRIPTOR g_HookDescriptors[BLACKBIRD_HOOK_CO
     {"NtQueryInformationProcess", L"NtQueryProcessInformation", L"NtQueryInformationProcess",
      L"ZwQueryInformationProcess", (PVOID)BLACKBIRDNtQueryInformationProcessHook, 19, TRUE, 0, {0}, 0},
     {"NtWriteVirtualMemory", L"NtWriteVirtualMemory", L"ZwWriteVirtualMemory", NULL,
-     (PVOID)BLACKBIRDNtWriteVirtualMemoryHook, 17, TRUE, 0,
-     {0x48, 0x83, 0xEC, 0x38, 0x48, 0x8B, 0x44, 0x24}, 8},
+     (PVOID)BLACKBIRDNtWriteVirtualMemoryHook, 17, TRUE, 0, {0x48, 0x83, 0xEC, 0x38, 0x48, 0x8B, 0x44, 0x24}, 8},
     {"NtProtectVirtualMemory", L"NtProtectVirtualMemory", L"ZwProtectVirtualMemory", NULL,
      (PVOID)BLACKBIRDNtProtectVirtualMemoryHook, 20, TRUE, 0, {0}, 0},
     {"NtCreateSection", L"NtCreateSection", L"ZwCreateSection", NULL, (PVOID)BLACKBIRDNtCreateSectionHook, 17, TRUE, 0,
@@ -205,12 +166,6 @@ static const BLACKBIRD_NTAPI_HOOK_DESCRIPTOR g_HookDescriptors[BLACKBIRD_HOOK_CO
      (PVOID)BLACKBIRDNtAllocateVirtualMemoryHookStub, 20, TRUE, 0, {0}, 0},
     {"NtQuerySystemInformationEx", L"NtQuerySystemInformationEx", L"ZwQuerySystemInformationEx", NULL,
      (PVOID)BLACKBIRDNtQuerySystemInformationExHook, 20, TRUE, 0, {0}, 0},
-    {"NtCreateSectionEx", L"NtCreateSectionEx", L"ZwCreateSectionEx", NULL, (PVOID)BLACKBIRDNtCreateSectionExHook, 20,
-     TRUE, 0, {0}, 0},
-    {"NtMapViewOfSectionEx", L"NtMapViewOfSectionEx", L"ZwMapViewOfSectionEx", NULL,
-     (PVOID)BLACKBIRDNtMapViewOfSectionExHook, 20, TRUE, 0, {0}, 0},
-    {"NtAllocateVirtualMemoryEx", L"NtAllocateVirtualMemoryEx", L"ZwAllocateVirtualMemoryEx", NULL,
-     (PVOID)BLACKBIRDNtAllocateVirtualMemoryExHook, 20, TRUE, 0, {0}, 0},
 };
 
 static PVOID *BLACKBIRDNtApiOriginalSlot(_In_ BLACKBIRD_HOOK_ID HookId)
@@ -233,12 +188,6 @@ static PVOID *BLACKBIRDNtApiOriginalSlot(_In_ BLACKBIRD_HOOK_ID HookId)
         return (PVOID *)&g_OriginalNtAllocateVirtualMemory;
     case BLACKBIRD_HOOK_QUERY_SYSTEM_INFORMATION_EX:
         return (PVOID *)&g_OriginalNtQuerySystemInformationEx;
-    case BLACKBIRD_HOOK_CREATE_SECTION_EX:
-        return (PVOID *)&g_OriginalNtCreateSectionEx;
-    case BLACKBIRD_HOOK_MAP_VIEW_OF_SECTION_EX:
-        return (PVOID *)&g_OriginalNtMapViewOfSectionEx;
-    case BLACKBIRD_HOOK_ALLOCATE_VIRTUAL_MEMORY_EX:
-        return (PVOID *)&g_OriginalNtAllocateVirtualMemoryEx;
     default:
         return NULL;
     }
@@ -529,12 +478,15 @@ BLACKBIRDNtApiMonitorInitialize(VOID)
         status = BLACKBIRDNtApiHookInstall(&g_Hooks[i], originalSlot);
         if (!NT_SUCCESS(status))
         {
-            if (!g_HookDescriptors[i].Required)
+            if (!g_HookDescriptors[i].Required || status == STATUS_PROCEDURE_NOT_FOUND)
             {
-                DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                           "BLACKBIRD: ntapi hook optional disabled api=%s status=0x%08X.\n",
-                           g_HookDescriptors[i].ApiName,
-                           status);
+                DbgPrintEx(
+                    DPFLTR_IHVDRIVER_ID,
+                    DPFLTR_WARNING_LEVEL,
+                    "BLACKBIRD: ntapi hook unavailable api=%s required=%u status=0x%08X (continuing without this hook).\n",
+                    g_HookDescriptors[i].ApiName,
+                    g_HookDescriptors[i].Required ? 1u : 0u,
+                    status);
                 if (originalSlot != NULL)
                 {
                     *originalSlot = NULL;
@@ -567,9 +519,6 @@ Fail:
     g_OriginalNtMapViewOfSection = NULL;
     g_OriginalNtAllocateVirtualMemory = NULL;
     g_OriginalNtQuerySystemInformationEx = NULL;
-    g_OriginalNtCreateSectionEx = NULL;
-    g_OriginalNtMapViewOfSectionEx = NULL;
-    g_OriginalNtAllocateVirtualMemoryEx = NULL;
     InterlockedExchange(&g_NtApiMonitorInitialized, 0);
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
                "BLACKBIRD: ntapi monitor init failed during install status=0x%08X.\n",
@@ -610,9 +559,6 @@ VOID BLACKBIRDNtApiMonitorUninitialize(VOID)
     g_OriginalNtMapViewOfSection = NULL;
     g_OriginalNtAllocateVirtualMemory = NULL;
     g_OriginalNtQuerySystemInformationEx = NULL;
-    g_OriginalNtCreateSectionEx = NULL;
-    g_OriginalNtMapViewOfSectionEx = NULL;
-    g_OriginalNtAllocateVirtualMemoryEx = NULL;
     InterlockedExchange(&g_NtApiMonitorUnloading, 0);
 }
 
@@ -620,6 +566,7 @@ BOOLEAN
 BLACKBIRDNtApiMonitorSelfCheck(VOID)
 {
     UINT32 i;
+    PVOID *originalSlot;
 
     if (InterlockedCompareExchange(&g_NtApiMonitorInitialized, 0, 0) == 0)
     {
@@ -636,14 +583,15 @@ BLACKBIRDNtApiMonitorSelfCheck(VOID)
         {
             return FALSE;
         }
+
+        originalSlot = BLACKBIRDNtApiOriginalSlot((BLACKBIRD_HOOK_ID)i);
+        if (originalSlot == NULL || *originalSlot == NULL)
+        {
+            return FALSE;
+        }
     }
 
-    return (g_OriginalNtQuerySystemInformation != NULL && g_OriginalNtQueryInformationProcess != NULL &&
-            g_OriginalNtWriteVirtualMemory != NULL &&
-            g_OriginalNtProtectVirtualMemory != NULL && g_OriginalNtCreateSection != NULL &&
-            g_OriginalNtMapViewOfSection != NULL && g_OriginalNtAllocateVirtualMemory != NULL &&
-            g_OriginalNtQuerySystemInformationEx != NULL && g_OriginalNtCreateSectionEx != NULL &&
-            g_OriginalNtMapViewOfSectionEx != NULL && g_OriginalNtAllocateVirtualMemoryEx != NULL);
+    return TRUE;
 }
 
 #else

@@ -679,22 +679,21 @@ DWORD ControllerInjectionAttachAndVerify(_In_ DWORD ProcessId, _In_z_ PCWSTR Hoo
     return ERROR_SUCCESS;
 }
 
-DWORD ControllerInjectionLaunchSuspendedAndStage(_In_ HANDLE ClientPipe, _In_z_ PCWSTR ImagePath,
-                                                 _In_z_ PCWSTR HookDllPath, _In_ DWORD Flags,
-                                                 _Out_ PROCESS_INFORMATION *ProcessInfoOut)
+DWORD ControllerInjectionLaunchAndVerify(_In_ HANDLE ClientPipe, _In_z_ PCWSTR ImagePath, _In_z_ PCWSTR HookDllPath,
+                                         _In_ DWORD Flags, _In_ DWORD VerifyTimeoutMs, _Out_ DWORD *ProcessIdOut)
 {
     PROCESS_INFORMATION processInfo;
     DWORD err = ERROR_SUCCESS;
     BOOL useEarlyBirdApc = FALSE;
 
     if (ClientPipe == NULL || ClientPipe == INVALID_HANDLE_VALUE || ImagePath == NULL || ImagePath[0] == L'\0' ||
-        HookDllPath == NULL || HookDllPath[0] == L'\0' || ProcessInfoOut == NULL)
+        HookDllPath == NULL || HookDllPath[0] == L'\0' || ProcessIdOut == NULL)
     {
         return ERROR_INVALID_PARAMETER;
     }
 
+    *ProcessIdOut = 0;
     ZeroMemory(&processInfo, sizeof(processInfo));
-    ZeroMemory(ProcessInfoOut, sizeof(*ProcessInfoOut));
 
     if (!ControllerInjectionPathPointsToFile(ImagePath))
     {
@@ -743,55 +742,37 @@ DWORD ControllerInjectionLaunchSuspendedAndStage(_In_ HANDLE ClientPipe, _In_z_ 
         return err;
     }
 
-    *ProcessInfoOut = processInfo;
-    return ERROR_SUCCESS;
-}
-
-DWORD ControllerInjectionResumeAndVerifyLaunchedProcess(_Inout_ PROCESS_INFORMATION *ProcessInfo,
-                                                        _In_z_ PCWSTR HookDllPath,
-                                                        _In_ DWORD VerifyTimeoutMs)
-{
-    DWORD err = ERROR_SUCCESS;
-
-    if (ProcessInfo == NULL || HookDllPath == NULL || HookDllPath[0] == L'\0' || ProcessInfo->hProcess == NULL ||
-        ProcessInfo->hProcess == INVALID_HANDLE_VALUE || ProcessInfo->hThread == NULL ||
-        ProcessInfo->hThread == INVALID_HANDLE_VALUE || ProcessInfo->dwProcessId == 0)
-    {
-        return ERROR_INVALID_PARAMETER;
-    }
-
-    if (ResumeThread(ProcessInfo->hThread) == (DWORD)-1)
+    if (ResumeThread(processInfo.hThread) == (DWORD)-1)
     {
         err = GetLastError();
-        (void)TerminateProcess(ProcessInfo->hProcess, 1);
-        (void)CloseHandle(ProcessInfo->hThread);
-        (void)CloseHandle(ProcessInfo->hProcess);
-        ZeroMemory(ProcessInfo, sizeof(*ProcessInfo));
+        (void)TerminateProcess(processInfo.hProcess, 1);
+        (void)CloseHandle(processInfo.hThread);
+        (void)CloseHandle(processInfo.hProcess);
         return err == ERROR_SUCCESS ? ERROR_GEN_FAILURE : err;
     }
 
-    (void)ControllerWaitForHookReady(ProcessInfo->dwProcessId);
+    // Launch success should not be hard-coupled to hook-ready timing.
+    (void)ControllerWaitForHookReady(processInfo.dwProcessId);
 
     if (ControllerInjectionIsStealthHookModule(HookDllPath))
     {
-        (void)CloseHandle(ProcessInfo->hThread);
-        (void)CloseHandle(ProcessInfo->hProcess);
-        ZeroMemory(ProcessInfo, sizeof(*ProcessInfo));
+        *ProcessIdOut = processInfo.dwProcessId;
+        (void)CloseHandle(processInfo.hThread);
+        (void)CloseHandle(processInfo.hProcess);
         return ERROR_SUCCESS;
     }
 
-    if (!ControllerInjectionVerifyHookLoaded(ProcessInfo->dwProcessId, HookDllPath, VerifyTimeoutMs))
+    if (!ControllerInjectionVerifyHookLoaded(processInfo.dwProcessId, HookDllPath, VerifyTimeoutMs))
     {
         err = GetLastError();
-        (void)TerminateProcess(ProcessInfo->hProcess, 1);
-        (void)CloseHandle(ProcessInfo->hThread);
-        (void)CloseHandle(ProcessInfo->hProcess);
-        ZeroMemory(ProcessInfo, sizeof(*ProcessInfo));
+        (void)TerminateProcess(processInfo.hProcess, 1);
+        (void)CloseHandle(processInfo.hThread);
+        (void)CloseHandle(processInfo.hProcess);
         return (err == ERROR_SUCCESS) ? ERROR_DLL_NOT_FOUND : err;
     }
 
-    (void)CloseHandle(ProcessInfo->hThread);
-    (void)CloseHandle(ProcessInfo->hProcess);
-    ZeroMemory(ProcessInfo, sizeof(*ProcessInfo));
+    *ProcessIdOut = processInfo.dwProcessId;
+    (void)CloseHandle(processInfo.hThread);
+    (void)CloseHandle(processInfo.hProcess);
     return ERROR_SUCCESS;
 }

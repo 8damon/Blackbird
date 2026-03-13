@@ -370,6 +370,154 @@ static BOOL ControllerEtwResolveRelation(_In_ const BLACKBIRD_IPC_ETW_EVENT *Eve
     return TRUE;
 }
 
+static PCWSTR ControllerPathFileName(_In_opt_z_ PCWSTR Path)
+{
+    PCWSTR slash = NULL;
+    PCWSTR fileName = Path;
+
+    if (Path == NULL || Path[0] == L'\0')
+    {
+        return L"";
+    }
+
+    slash = wcsrchr(Path, L'\\');
+    if (slash != NULL && slash[1] != L'\0')
+    {
+        fileName = slash + 1;
+    }
+
+    slash = wcsrchr(fileName, L'/');
+    if (slash != NULL && slash[1] != L'\0')
+    {
+        fileName = slash + 1;
+    }
+
+    return fileName;
+}
+
+static BOOL ControllerPathEqualsInsensitive(_In_opt_z_ PCWSTR Left, _In_opt_z_ PCWSTR Right)
+{
+    PCWSTR leftFile;
+    PCWSTR rightFile;
+
+    if (Left == NULL || Right == NULL || Left[0] == L'\0' || Right[0] == L'\0')
+    {
+        return FALSE;
+    }
+
+    if (_wcsicmp(Left, Right) == 0)
+    {
+        return TRUE;
+    }
+
+    leftFile = ControllerPathFileName(Left);
+    rightFile = ControllerPathFileName(Right);
+    return (leftFile[0] != L'\0' && rightFile[0] != L'\0' && _wcsicmp(leftFile, rightFile) == 0);
+}
+
+static BOOL ControllerTryReadEventImagePath(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event, _Outptr_result_z_ PCWSTR *Path)
+{
+    if (Path == NULL || Event == NULL)
+    {
+        return FALSE;
+    }
+
+    *Path = NULL;
+    if ((Event->Family == BlackbirdIpcEtwFamilyProcess || Event->Family == BlackbirdIpcEtwFamilyImage) &&
+        Event->ImagePath[0] != L'\0')
+    {
+        *Path = Event->ImagePath;
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+static BOOL ControllerClientMatchPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                     _In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
+{
+    PCWSTR eventImagePath = NULL;
+    DWORD eventPid = 0;
+
+    if (Client == NULL || Event == NULL)
+    {
+        return FALSE;
+    }
+
+    if (Client->PendingLaunchPid != 0 && ControllerEtwEventMatchesPid(Event, Client->PendingLaunchPid))
+    {
+        return TRUE;
+    }
+
+    if (!Client->PendingLaunchArmed || Client->PendingLaunchImagePath[0] == L'\0')
+    {
+        return FALSE;
+    }
+
+    if (!ControllerTryReadEventImagePath(Event, &eventImagePath))
+    {
+        return FALSE;
+    }
+
+    if (!ControllerPathEqualsInsensitive(Client->PendingLaunchImagePath, eventImagePath))
+    {
+        return FALSE;
+    }
+
+    if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
+    {
+        eventPid = (DWORD)Event->ProcessId;
+    }
+    else if (Event->EventProcessId != 0)
+    {
+        eventPid = Event->EventProcessId;
+    }
+
+    if (eventPid != 0)
+    {
+        DWORD i;
+
+        Client->PendingLaunchPid = eventPid;
+        Client->PendingLaunchArmed = FALSE;
+        Client->PendingLaunchArmedTick = 0;
+
+        for (i = 0; i < Client->SubscriptionCount; ++i)
+        {
+            if (Client->Subscriptions[i].ProcessId == eventPid)
+            {
+                Client->Subscriptions[i].StreamMask |= BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK;
+                if (Client->Subscriptions[i].Dynamic)
+                {
+                    Client->Subscriptions[i].Dynamic = FALSE;
+                    Client->Subscriptions[i].Depth = 0;
+                    Client->Subscriptions[i].SourceProcessId = 0;
+                    Client->Subscriptions[i].LastSeenTick = 0;
+                }
+                ControllerMarkDriverSubscriptionsDirty();
+                ControllerLog("[MON] pending launch matched clientPid=%lu targetPid=%lu image=%ws\n",
+                              Client->ProcessId, eventPid, eventImagePath);
+                return TRUE;
+            }
+        }
+
+        if (Client->SubscriptionCount < BLACKBIRD_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS)
+        {
+            Client->Subscriptions[Client->SubscriptionCount].ProcessId = eventPid;
+            Client->Subscriptions[Client->SubscriptionCount].StreamMask = BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK;
+            Client->Subscriptions[Client->SubscriptionCount].Dynamic = FALSE;
+            Client->Subscriptions[Client->SubscriptionCount].SourceProcessId = 0;
+            Client->Subscriptions[Client->SubscriptionCount].Depth = 0;
+            Client->Subscriptions[Client->SubscriptionCount].LastSeenTick = 0;
+            Client->SubscriptionCount += 1;
+            ControllerMarkDriverSubscriptionsDirty();
+            ControllerLog("[MON] pending launch matched clientPid=%lu targetPid=%lu image=%ws\n",
+                          Client->ProcessId, eventPid, eventImagePath);
+        }
+    }
+
+    return TRUE;
+}
+
 static BOOL ControllerClientHasEtwMatchLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
                                               _In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
 {
@@ -386,6 +534,11 @@ static BOOL ControllerClientHasEtwMatchLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
         {
             return TRUE;
         }
+    }
+
+    if (ControllerClientMatchPendingLaunchLocked(Client, Event))
+    {
+        return TRUE;
     }
 
     return FALSE;

@@ -30,7 +30,6 @@ static bool ShouldUnlinkModule() noexcept
 
 static DWORD WINAPI BkRuntimeBootstrapThread(LPVOID)
 {
-    // Keep DllMain minimal. Any expensive/risky work happens here.
     if (ShouldUnlinkModule())
     {
         __try
@@ -39,7 +38,6 @@ static DWORD WINAPI BkRuntimeBootstrapThread(LPVOID)
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
-            OutputDebugStringA("[SR71][ERR] UnlinkModule raised an exception during bootstrap.\n");
         }
     }
 
@@ -49,7 +47,6 @@ static DWORD WINAPI BkRuntimeBootstrapThread(LPVOID)
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
-        OutputDebugStringA("[SR71][ERR] BkRuntimeThreadProc raised an exception during bootstrap.\n");
         return 0;
     }
 }

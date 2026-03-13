@@ -15,7 +15,10 @@ enum class WinsockOperation : std::uint32_t
     WsaSend = 0,
     WsaRecv = 1,
     Send = 2,
-    Recv = 3
+    Recv = 3,
+    Connect = 4,
+    WsaConnect = 5,
+    GetAddrInfoW = 6
 };
 
 struct WinsockHookBuffer
@@ -31,6 +34,7 @@ struct WinsockHookContext
     const WinsockHookBuffer* Buffers;
     std::uint32_t            BufferCount;
     void* Caller;
+    std::uint64_t            Args[4];
 };
 
 using WinsockHookCallback = void(*)(const WinsockHookContext& context) noexcept;

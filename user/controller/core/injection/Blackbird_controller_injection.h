@@ -22,12 +22,16 @@ DWORD ControllerInjectionAttachAndVerify(
     _In_z_ PCWSTR HookDllPath,
     _In_ DWORD VerifyTimeoutMs);
 
-DWORD ControllerInjectionLaunchAndVerify(
+DWORD ControllerInjectionLaunchSuspendedAndStage(
     _In_ HANDLE ClientPipe,
     _In_z_ PCWSTR ImagePath,
     _In_z_ PCWSTR HookDllPath,
     _In_ DWORD Flags,
-    _In_ DWORD VerifyTimeoutMs,
-    _Out_ DWORD *ProcessIdOut);
+    _Out_ PROCESS_INFORMATION *ProcessInfoOut);
+
+DWORD ControllerInjectionResumeAndVerifyLaunchedProcess(
+    _Inout_ PROCESS_INFORMATION *ProcessInfo,
+    _In_z_ PCWSTR HookDllPath,
+    _In_ DWORD VerifyTimeoutMs);
 
 #endif

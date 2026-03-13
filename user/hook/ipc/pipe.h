@@ -8,7 +8,7 @@
 namespace XIPC
 {
     inline constexpr const wchar_t* PIPE_NAME = BLACKBIRD_IPC_PIPE_NAME;
-    inline constexpr DWORD   KHOK_MAGIC = 0x4B4F484B; // 'KHOK'
+    inline constexpr DWORD   KHOK_MAGIC = 0x4B4F484B;
     inline constexpr DWORD   KHOK_VERSION = 1;
     inline constexpr DWORD   MAX_NAME_CHARS = 256;
     inline constexpr DWORD   PIPE_DEFAULT_TIMEOUT_MS = 5000;
@@ -20,10 +20,8 @@ namespace XIPC
         WinsockEvent = 3,
         NtEvent = 4,
         KiEvent = 5,
-
-        // Blackbird exception channels
-        BkExceptionLowNoise = 6,  // process-wide / low-noise channel
-        BkExceptionHighPriv = 7   // DLL-specific / high-priv channel
+        BkExceptionLowNoise = 6,
+        BkExceptionHighPriv = 7
     };
 
     struct WinsockEventHeader
@@ -70,8 +68,8 @@ namespace XIPC
         std::uint64_t ExceptionAddress;
 
         std::uint32_t ModuleNameChars; 
-        std::uint32_t ExceptionInfoCount; // <= 4
-        std::uint32_t StackFrameCount;    // <= 64
+        std::uint32_t ExceptionInfoCount;
+        std::uint32_t StackFrameCount;
         std::uint32_t Reserved;
 
         std::uint64_t ExceptionInfo[4];

@@ -5,19 +5,11 @@
 namespace
 {
     using RtlCaptureStackBackTrace_t = USHORT(WINAPI*)(ULONG, ULONG, PVOID*, PULONG);
-
-    // Global state (single binding for TelemetryArguments)
     static std::atomic<void*> g_veh_handle{ nullptr };
     static std::atomic<bk::blackbird::TelemetryArguments*> g_args{ nullptr };
     static std::atomic<bool> g_installed{ false };
-
-    // Cached target module basename (lowercase)
     static wchar_t g_target_lower[bk::blackbird::kMaxModuleName]{};
-
-    // Stack capture resolver
     static std::atomic<RtlCaptureStackBackTrace_t> g_capture{ nullptr };
-
-    // TLS recursion guard
     static std::atomic<DWORD> g_tls{ TLS_OUT_OF_INDEXES };
 
     static inline wchar_t ToLowerW(wchar_t c) noexcept
@@ -113,11 +105,8 @@ namespace
 
     static bool DefaultMemoryFaultHandling(const bk::blackbird::Event& evt) noexcept
     {
-        // Guard page violations are typically continuable (PAGE_GUARD clears on first hit)
         if (evt.exception_code == STATUS_GUARD_PAGE_VIOLATION)
             return true;
-
-        // AV / in-page errors: do not continue unless caller remediates
         return false;
     }
 
@@ -136,7 +125,7 @@ namespace
         EnsureTls();
         DWORD idx = g_tls.load(std::memory_order_acquire);
         if (idx == TLS_OUT_OF_INDEXES)
-            return true; // proceed without guard
+            return true;
 
         void* v = TlsGetValue(idx);
         if (v)
@@ -195,8 +184,6 @@ namespace
 
         for (ULONG i = 0; i < evt.exception_info_count; ++i)
             evt.exception_info[i] = ep->ExceptionRecord->ExceptionInformation[i];
-
-        // Module attribution (best-effort)
         GetModuleBasenameLowerFromAddress(
             evt.exception_address,
             evt.module_basename_lower,
@@ -204,8 +191,6 @@ namespace
         );
 
         evt.is_target_module = EqualsLower(evt.module_basename_lower, g_target_lower);
-
-        // Stack capture (best-effort)
         if (a->capture_stack)
         {
             (void)EnsureRtlCaptureResolved();
@@ -217,8 +202,6 @@ namespace
 
             evt.stack_frame_count = CaptureStack(a->stack_frames_to_skip, maxF, evt.stack);
         }
-
-        // Telemetry routing
         if (evt.is_target_module)
         {
             if (a->low_noise_telemetry) a->low_noise_telemetry(evt, a->user);
@@ -227,15 +210,11 @@ namespace
         {
             if (a->high_noise_telemetry) a->high_noise_telemetry(evt, a->user);
         }
-
-        // Non-continuable exceptions must propagate
         if (evt.is_noncontinuable)
         {
             LeaveHandler();
             return EXCEPTION_CONTINUE_SEARCH;
         }
-
-        // Memory fault handling
         if (evt.is_memory_fault)
         {
             bool handled = false;
@@ -248,8 +227,6 @@ namespace
             LeaveHandler();
             return handled ? EXCEPTION_CONTINUE_EXECUTION : EXCEPTION_CONTINUE_SEARCH;
         }
-
-        // Other exceptions
         if (!evt.is_target_module && a->swallow_non_target_exceptions)
         {
             LeaveHandler();
@@ -265,14 +242,10 @@ PVOID BkRegisterVectoredExceptionHandler(BkBlackbirdTelemetryArguments* args) no
 {
     if (!args)
         return nullptr;
-
-    // Cache target (lowercase basename)
     CopyLowerBasename(args->target_module_basename, g_target_lower, bk::blackbird::kMaxModuleName);
 
     if (args->capture_stack)
         (void)EnsureRtlCaptureResolved();
-
-    // If already installed, update args + optionally promote
     void* existing = g_veh_handle.load(std::memory_order_acquire);
     if (existing)
     {
@@ -316,7 +289,6 @@ BOOL BkPromoteVectoredExceptionHandlerToFront() noexcept
     void* nh = AddVectoredExceptionHandler(1, BlackbirdVeh);
     if (!nh)
     {
-        // Fall back to non-first to avoid losing coverage entirely
         nh = AddVectoredExceptionHandler(0, BlackbirdVeh);
         if (!nh)
         {

@@ -11,7 +11,6 @@ namespace IC_STACKTRACE
 {
     namespace
     {
-        // RtlCaptureStackBackTrace exists on modern Windows; declare it explicitly.
         using RtlCaptureStackBackTraceFn =
             USHORT(WINAPI*)(ULONG FramesToSkip, ULONG FramesToCapture, PVOID* BackTrace, PULONG BackTraceHash);
 
@@ -46,7 +45,6 @@ namespace IC_STACKTRACE
             moduleNameOut[0] = '\0';
 
             HMODULE mod = nullptr;
-            // Works for addresses within loaded modules.
             if (!::GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                 reinterpret_cast<LPCSTR>(ip), &mod) || !mod)
             {
@@ -60,8 +58,6 @@ namespace IC_STACKTRACE
                 rvaOut = static_cast<std::uint32_t>(addr - base);
 
             ::GetModuleFileNameA(mod, moduleNameOut, MAX_PATH);
-
-            // Trim to basename for nicer logs
             const char* slash = std::strrchr(moduleNameOut, '\\');
             if (slash && slash[1] != '\0')
             {
@@ -81,14 +77,10 @@ namespace IC_STACKTRACE
 
         if (maxFrames > (std::uint32_t)kMaxFrames)
             maxFrames = (std::uint32_t)kMaxFrames;
-
-        // +1 to skip Capture itself
         const ULONG frames = g_RtlCapture(ULONG(skip + 1), ULONG(maxFrames),
             reinterpret_cast<PVOID*>(out.Frames), nullptr);
 
         out.Count = static_cast<std::uint16_t>(frames);
-
-        // We only filled Ip slots; clear module fields.
         for (std::uint16_t i = 0; i < out.Count; ++i)
         {
             out.Frames[i].ModuleBase = nullptr;
@@ -137,8 +129,6 @@ namespace IC_STACKTRACE
             rf.Ip = trace.Frames[i].Ip;
 
             FillModuleInfo(rf.Ip, rf.ModuleBase, rf.Rva, rf.ModuleName);
-
-            // SYMBOL_INFO is variable-sized; allocate on stack.
             alignas(SYMBOL_INFO) unsigned char symBuffer[sizeof(SYMBOL_INFO) + 256];
             auto* sym = reinterpret_cast<SYMBOL_INFO*>(symBuffer);
             std::memset(sym, 0, sizeof(symBuffer));

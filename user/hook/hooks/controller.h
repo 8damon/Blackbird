@@ -19,6 +19,7 @@ struct WinsockCapturedEvent
     SOCKET           Socket;
     WinsockOperation Operation;
     void*            Caller;
+    std::uint64_t    Args[4];
     std::vector<std::uint8_t> Data;
 
     IC_STACKTRACE::Trace Stack;

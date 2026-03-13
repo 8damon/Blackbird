@@ -59,6 +59,8 @@ This is where an operator attaches to a target, watches activity arrive, and piv
 
 Operator UX behavior in this panel:
 
+- after picking a process, a dedicated `Launch Parameters` dialog collects hook/launch options before live attach or launch proceeds
+- icon-backed command bars expose target control, preflight, switching views, session import/export, and time-travel entry points directly from the shell
 - timeline timestamps stay layered above event markers for readability
 - horizontal timeline scrubber tracks true latest-event position during live follow
 - timeline event selection stays synced with the event log grid and persists across live updates when the event remains in-view
@@ -122,7 +124,7 @@ Representative detections include:
 - process hollowing and injection intent chains
 - suspicious `ntdll` image path or mapping behavior
 - multiple `ntdll` image mappings
-- high-value registry activity
+- registry activity
 - driver dispatch or object tamper drift
 
 For the full contract and field-level details, see [API.md](./API.md).
@@ -157,7 +159,7 @@ Blackbird is split into a few main parts:
 7. Sessions can be saved, reopened, imported, or exported for later review.
 
 <p align="center">
-  <img src="./diagram/Blackbird_DIA.png" width="980" alt="Blackbird platform diagram" />
+  <img src="./diagram/BLACKBIRD_DIAGRAM.png" width="980" alt="Blackbird platform diagram" />
 </p>
 
 ## Build Outputs
@@ -179,6 +181,11 @@ Common runtime artifacts:
 - `BlackbirdClient.exe`
 - `BlackbirdTestSuite.exe`
 - `BlackbirdInterface.exe`
+
+Interface resources:
+
+- `interface/Resources/*.png`
+  - WPF toolbar/session icons embedded automatically by the interface project
 
 ## Quick Start
 

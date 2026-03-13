@@ -57,22 +57,6 @@ typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_EX)(_In_ ULONG Sy
                                                                         PVOID SystemInformation,
                                                                     _In_ ULONG SystemInformationLength,
                                                                     _Out_opt_ PULONG ReturnLength);
-typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_CREATE_SECTION_EX)(_Out_ PHANDLE SectionHandle, _In_ ACCESS_MASK DesiredAccess,
-                                                          _In_opt_ POBJECT_ATTRIBUTES ObjectAttributes,
-                                                          _In_opt_ PLARGE_INTEGER MaximumSize,
-                                                          _In_ ULONG SectionPageProtection,
-                                                          _In_ ULONG AllocationAttributes, _In_opt_ HANDLE FileHandle,
-                                                          _In_reads_opt_(ExtendedParameterCount) PVOID ExtendedParameters,
-                                                          _In_ ULONG ExtendedParameterCount);
-typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_MAP_VIEW_OF_SECTION_EX)(
-    _In_ HANDLE SectionHandle, _In_ HANDLE ProcessHandle, _Inout_ PVOID *BaseAddress,
-    _Inout_opt_ PLARGE_INTEGER SectionOffset, _Inout_ PSIZE_T ViewSize, _In_ ULONG AllocationType,
-    _In_ ULONG Win32Protect, _In_reads_opt_(ExtendedParameterCount) PVOID ExtendedParameters,
-    _In_ ULONG ExtendedParameterCount);
-typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_ALLOCATE_VIRTUAL_MEMORY_EX)(
-    _In_ HANDLE ProcessHandle, _Inout_ PVOID *BaseAddress, _Inout_ PSIZE_T RegionSize, _In_ ULONG AllocationType,
-    _In_ ULONG Protect, _In_reads_opt_(ExtendedParameterCount) PVOID ExtendedParameters,
-    _In_ ULONG ExtendedParameterCount);
 
 extern EX_RUNDOWN_REF g_NtApiRundown;
 extern volatile LONG g_NtApiAllocatePreLogBudget;
@@ -87,9 +71,6 @@ extern PBLACKBIRD_NT_CREATE_SECTION g_OriginalNtCreateSection;
 extern PBLACKBIRD_NT_MAP_VIEW_OF_SECTION g_OriginalNtMapViewOfSection;
 extern PBLACKBIRD_NT_ALLOCATE_VIRTUAL_MEMORY g_OriginalNtAllocateVirtualMemory;
 extern PBLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_EX g_OriginalNtQuerySystemInformationEx;
-extern PBLACKBIRD_NT_CREATE_SECTION_EX g_OriginalNtCreateSectionEx;
-extern PBLACKBIRD_NT_MAP_VIEW_OF_SECTION_EX g_OriginalNtMapViewOfSectionEx;
-extern PBLACKBIRD_NT_ALLOCATE_VIRTUAL_MEMORY_EX g_OriginalNtAllocateVirtualMemoryEx;
 
 VOID BLACKBIRDNtApiHookEnter(VOID);
 VOID BLACKBIRDNtApiHookExit(VOID);
@@ -143,21 +124,6 @@ NTSTATUS NTAPI BLACKBIRDNtQuerySystemInformationExHook(_In_ ULONG SystemInformat
                                                        _Out_writes_bytes_opt_(SystemInformationLength)
                                                            PVOID SystemInformation,
                                                        _In_ ULONG SystemInformationLength, _Out_opt_ PULONG ReturnLength);
-NTSTATUS NTAPI BLACKBIRDNtCreateSectionExHook(_Out_ PHANDLE SectionHandle, _In_ ACCESS_MASK DesiredAccess,
-                                              _In_opt_ POBJECT_ATTRIBUTES ObjectAttributes,
-                                              _In_opt_ PLARGE_INTEGER MaximumSize, _In_ ULONG SectionPageProtection,
-                                              _In_ ULONG AllocationAttributes, _In_opt_ HANDLE FileHandle,
-                                              _In_reads_opt_(ExtendedParameterCount) PVOID ExtendedParameters,
-                                              _In_ ULONG ExtendedParameterCount);
-NTSTATUS NTAPI BLACKBIRDNtMapViewOfSectionExHook(
-    _In_ HANDLE SectionHandle, _In_ HANDLE ProcessHandle, _Inout_ PVOID *BaseAddress,
-    _Inout_opt_ PLARGE_INTEGER SectionOffset, _Inout_ PSIZE_T ViewSize, _In_ ULONG AllocationType,
-    _In_ ULONG Win32Protect, _In_reads_opt_(ExtendedParameterCount) PVOID ExtendedParameters,
-    _In_ ULONG ExtendedParameterCount);
-NTSTATUS NTAPI BLACKBIRDNtAllocateVirtualMemoryExHook(
-    _In_ HANDLE ProcessHandle, _Inout_ PVOID *BaseAddress, _Inout_ PSIZE_T RegionSize, _In_ ULONG AllocationType,
-    _In_ ULONG Protect, _In_reads_opt_(ExtendedParameterCount) PVOID ExtendedParameters,
-    _In_ ULONG ExtendedParameterCount);
 NTSTATUS NTAPI BLACKBIRDNtAllocateVirtualMemoryPreLog(_In_ HANDLE ProcessHandle, _Inout_ PVOID *BaseAddress,
                                                       _In_ ULONG_PTR ZeroBits, _Inout_ PSIZE_T RegionSize,
                                                       _In_ ULONG AllocationType, _In_ ULONG Protect);

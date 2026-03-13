@@ -44,6 +44,84 @@ static BOOL ControllerProxySetShutdownMode(VOID)
     return ok;
 }
 
+static VOID ControllerClientClearPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client)
+{
+    if (Client == NULL)
+    {
+        return;
+    }
+
+    Client->PendingLaunchArmed = FALSE;
+    Client->PendingLaunchPid = 0;
+    Client->PendingLaunchArmedTick = 0;
+    Client->PendingLaunchImagePath[0] = L'\0';
+}
+
+static VOID ControllerClientArmPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                   _In_opt_z_ PCWSTR ImagePath)
+{
+    if (Client == NULL)
+    {
+        return;
+    }
+
+    ControllerClientClearPendingLaunchLocked(Client);
+    if (ImagePath == NULL || ImagePath[0] == L'\0')
+    {
+        return;
+    }
+
+    (void)StringCchCopyW(Client->PendingLaunchImagePath, RTL_NUMBER_OF(Client->PendingLaunchImagePath), ImagePath);
+    Client->PendingLaunchArmed = TRUE;
+    Client->PendingLaunchArmedTick = GetTickCount64();
+}
+
+static VOID ControllerClientPrimePendingLaunchPidLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                        _In_ DWORD ProcessId)
+{
+    DWORD i;
+
+    if (Client == NULL || ProcessId == 0)
+    {
+        return;
+    }
+
+    Client->PendingLaunchPid = ProcessId;
+    Client->PendingLaunchArmed = FALSE;
+    Client->PendingLaunchArmedTick = 0;
+
+    for (i = 0; i < Client->SubscriptionCount; ++i)
+    {
+        if (Client->Subscriptions[i].ProcessId == ProcessId)
+        {
+            Client->Subscriptions[i].StreamMask |= BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK;
+            if (Client->Subscriptions[i].Dynamic)
+            {
+                Client->Subscriptions[i].Dynamic = FALSE;
+                Client->Subscriptions[i].Depth = 0;
+                Client->Subscriptions[i].SourceProcessId = 0;
+                Client->Subscriptions[i].LastSeenTick = 0;
+            }
+            ControllerMarkDriverSubscriptionsDirty();
+            return;
+        }
+    }
+
+    if (Client->SubscriptionCount >= BLACKBIRD_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS)
+    {
+        return;
+    }
+
+    Client->Subscriptions[Client->SubscriptionCount].ProcessId = ProcessId;
+    Client->Subscriptions[Client->SubscriptionCount].StreamMask = BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK;
+    Client->Subscriptions[Client->SubscriptionCount].Dynamic = FALSE;
+    Client->Subscriptions[Client->SubscriptionCount].SourceProcessId = 0;
+    Client->Subscriptions[Client->SubscriptionCount].Depth = 0;
+    Client->Subscriptions[Client->SubscriptionCount].LastSeenTick = 0;
+    Client->SubscriptionCount += 1;
+    ControllerMarkDriverSubscriptionsDirty();
+}
+
 static VOID ControllerClientAddOrRefreshLaunchSubscriptionLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
                                                                  _In_ DWORD ProcessId)
 {
@@ -365,17 +443,9 @@ DWORD ControllerWaitForHookReady(_In_ DWORD ProcessId)
     }
 }
 
-#define BLACKBIRD_CAPTURE_REQUIRED_HEALTH_MASK                                                   \
-    (BLACKBIRD_HEALTH_CONTROL_READY | BLACKBIRD_HEALTH_ETW_READY |                             \
-     BLACKBIRD_HEALTH_PROCESS_MONITOR_READY | BLACKBIRD_HEALTH_IMAGE_MONITOR_READY)
-
 static DWORD ControllerEnsureCaptureReadyForLaunch(VOID)
 {
     DWORD openErr = ERROR_SUCCESS;
-    BLACKBIRD_HEALTH_RESPONSE health;
-    DWORD healthErr = ERROR_SUCCESS;
-    DWORD healthBytes = 0;
-    BOOL healthOk = FALSE;
 
     if (ControllerShouldStop())
     {
@@ -401,37 +471,7 @@ static DWORD ControllerEnsureCaptureReadyForLaunch(VOID)
         return (openErr == ERROR_SUCCESS) ? ERROR_DEVICE_NOT_CONNECTED : openErr;
     }
 
-    ZeroMemory(&health, sizeof(health));
-    EnterCriticalSection(&g_DriverLock);
-    if (g_DriverHandle != INVALID_HANDLE_VALUE)
-    {
-        healthOk = BLACKBIRDSCGetHealth(g_DriverHandle, &health, &healthBytes);
-        if (!healthOk)
-        {
-            healthErr = GetLastError();
-        }
-    }
-    LeaveCriticalSection(&g_DriverLock);
-    if (!healthOk)
-    {
-        if (healthErr == ERROR_SUCCESS)
-        {
-            healthErr = ERROR_NOT_READY;
-        }
-        return healthErr;
-    }
-    if ((health.HealthMask & BLACKBIRD_CAPTURE_REQUIRED_HEALTH_MASK) != BLACKBIRD_CAPTURE_REQUIRED_HEALTH_MASK)
-    {
-        ControllerLog("[IPC][WARN] launch capture gate failed health=0x%08lX tamper=0x%08lX bytes=%lu\n",
-                      health.HealthMask, health.TamperMask, healthBytes);
-        return ERROR_NOT_READY;
-    }
-    if (health.TamperMask != 0)
-    {
-        ControllerLog("[IPC][WARN] launch capture continuing with kernel tamper mask=0x%08lX\n", health.TamperMask);
-    }
-
-    (void)ControllerApplyDriverSubscriptionsIfDirty();
+    ControllerMarkDriverSubscriptionsDirty();
     return ERROR_SUCCESS;
 }
 
@@ -2002,15 +2042,12 @@ static DWORD ControllerClientSetUserHookTarget(
 {
     WCHAR hookDllPath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
     BLACKBIRD_QUERY_PROCESS_IMAGE_RESPONSE kernelImage;
-    BLACKBIRD_ARM_PENDING_LAUNCH_REQUEST pendingLaunchRequest;
-    PROCESS_INFORMATION stagedProcessInfo;
     WIN32_FILE_ATTRIBUTE_DATA hookAttrs;
     BOOL hookPathVisible = FALSE;
     ULONGLONG hookSize = 0;
     DWORD err = ERROR_SUCCESS;
     DWORD targetPid = 0;
     BOOL kernelAssured = FALSE;
-    BOOL pendingLaunchArmed = FALSE;
 
     if (Client == NULL || Request == NULL || Response == NULL)
     {
@@ -2020,8 +2057,6 @@ static DWORD ControllerClientSetUserHookTarget(
     ZeroMemory(Response, sizeof(*Response));
     ZeroMemory(hookDllPath, sizeof(hookDllPath));
     ZeroMemory(&kernelImage, sizeof(kernelImage));
-    ZeroMemory(&pendingLaunchRequest, sizeof(pendingLaunchRequest));
-    ZeroMemory(&stagedProcessInfo, sizeof(stagedProcessInfo));
 
     if (!ControllerInjectionResolveHookDllPath(Request, hookDllPath, RTL_NUMBER_OF(hookDllPath)))
     {
@@ -2044,6 +2079,9 @@ static DWORD ControllerClientSetUserHookTarget(
     switch (Request->Mode)
     {
     case BlackbirdIpcUserHookTargetAttach:
+        EnterCriticalSection(&Client->Lock);
+        ControllerClientClearPendingLaunchLocked(Client);
+        LeaveCriticalSection(&Client->Lock);
         if (Request->ProcessId == 0)
         {
             return ERROR_INVALID_PARAMETER;
@@ -2075,60 +2113,31 @@ static DWORD ControllerClientSetUserHookTarget(
             return err;
         }
 
-        if (!ControllerBuildPendingLaunchRequest(Request->ImagePath, BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK,
-                                                 &pendingLaunchRequest))
-        {
-            return ERROR_INVALID_PARAMETER;
-        }
-
-        EnterCriticalSection(&g_DriverLock);
-        pendingLaunchArmed = (g_DriverHandle != INVALID_HANDLE_VALUE) &&
-                             BLACKBIRDSCArmPendingLaunch(g_DriverHandle, &pendingLaunchRequest);
-        if (!pendingLaunchArmed)
-        {
-            err = GetLastError();
-        }
-        LeaveCriticalSection(&g_DriverLock);
-        if (!pendingLaunchArmed)
-        {
-            return err == ERROR_SUCCESS ? ERROR_NOT_READY : err;
-        }
-
-        err = ControllerInjectionLaunchSuspendedAndStage(Client->Pipe, Request->ImagePath, hookDllPath, Request->Flags,
-                                                         &stagedProcessInfo);
-        pendingLaunchRequest.Flags = BLACKBIRD_PENDING_LAUNCH_FLAG_CLEAR;
-        pendingLaunchRequest.StreamMask = BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK;
-        EnterCriticalSection(&g_DriverLock);
-        if (g_DriverHandle != INVALID_HANDLE_VALUE &&
-            !BLACKBIRDSCArmPendingLaunch(g_DriverHandle, &pendingLaunchRequest))
-        {
-            ControllerLog("[IPC][WARN] pending launch clear failed image=%ws err=%lu\n", Request->ImagePath,
-                          GetLastError());
-        }
-        LeaveCriticalSection(&g_DriverLock);
-        if (err != ERROR_SUCCESS)
-        {
-            return err;
-        }
-
-        targetPid = stagedProcessInfo.dwProcessId;
         EnterCriticalSection(&Client->Lock);
-        ControllerClientAddOrRefreshLaunchSubscriptionLocked(Client, targetPid);
+        ControllerClientArmPendingLaunchLocked(Client, Request->ImagePath);
         LeaveCriticalSection(&Client->Lock);
-        if (!ControllerApplyDriverSubscriptionsIfDirty())
-        {
-            ControllerLog("[IPC][WARN] driver subscription refresh after staged launch failed pid=%lu err=%lu\n",
-                          targetPid, GetLastError());
-        }
 
-        err = ControllerInjectionResumeAndVerifyLaunchedProcess(&stagedProcessInfo, hookDllPath,
-                                                                BLACKBIRD_CONTROLLER_INJECTION_VERIFY_TIMEOUT_MS);
+        err = ControllerInjectionLaunchAndVerify(Client->Pipe, Request->ImagePath, hookDllPath, Request->Flags,
+                                                 BLACKBIRD_CONTROLLER_INJECTION_VERIFY_TIMEOUT_MS, &targetPid);
         if (err != ERROR_SUCCESS)
         {
             EnterCriticalSection(&Client->Lock);
-            ControllerClientRemoveSubscriptionByPidLocked(Client, targetPid);
+            ControllerClientClearPendingLaunchLocked(Client);
             LeaveCriticalSection(&Client->Lock);
-            (void)ControllerApplyDriverSubscriptionsIfDirty();
+            return err;
+        }
+
+        EnterCriticalSection(&Client->Lock);
+        ControllerClientPrimePendingLaunchPidLocked(Client, targetPid);
+        LeaveCriticalSection(&Client->Lock);
+        (void)ControllerApplyDriverSubscriptionsIfDirty();
+
+        err = ControllerWaitForHookReady(targetPid);
+        if (err != ERROR_SUCCESS)
+        {
+            EnterCriticalSection(&Client->Lock);
+            ControllerClientClearPendingLaunchLocked(Client);
+            LeaveCriticalSection(&Client->Lock);
             return err;
         }
         break;

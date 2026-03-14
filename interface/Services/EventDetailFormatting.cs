@@ -700,21 +700,68 @@ namespace BlackbirdInterface
 
         internal static string ClassifyHookSensorOrigin(BrokerEtwEventView view)
         {
-            if (view.Family == BlackbirdNative.IpcEtwFamilyUserHook ||
+            bool blackbirdProducer = view.Source.Equals("Blackbird", StringComparison.OrdinalIgnoreCase);
+            bool userHookFamily = view.Family == BlackbirdNative.IpcEtwFamilyUserHook;
+
+            if (blackbirdProducer &&
+                userHookFamily &&
+                view.Task != 0)
+            {
+                return "Kernel Hook";
+            }
+
+            if (ReasonContainsToken(view.Reason, "kind", "kernel_ntapi"))
+            {
+                return "Kernel Hook";
+            }
+
+            if (userHookFamily ||
                 (!string.IsNullOrWhiteSpace(view.DetectionName) &&
                  view.DetectionName.StartsWith("USERMODE_", StringComparison.OrdinalIgnoreCase)))
             {
                 return "Usermode Hook";
             }
 
-            if (view.Source.Equals("Blackbird", StringComparison.OrdinalIgnoreCase) &&
-                ((!string.IsNullOrWhiteSpace(view.Operation) && view.Operation.StartsWith("Nt", StringComparison.OrdinalIgnoreCase)) ||
-                 (!string.IsNullOrWhiteSpace(view.EventName) && view.EventName.StartsWith("Nt", StringComparison.OrdinalIgnoreCase))))
+            return "Unclassified";
+        }
+
+        private static bool ReasonContainsToken(string? reason, string key, string expectedValue)
+        {
+            if (string.IsNullOrWhiteSpace(reason) ||
+                string.IsNullOrWhiteSpace(key) ||
+                string.IsNullOrWhiteSpace(expectedValue))
             {
-                return "Kernel Event";
+                return false;
             }
 
-            return "Unclassified";
+            string token = key + "=";
+            ReadOnlySpan<char> span = reason.AsSpan();
+            int index = 0;
+            while (index < span.Length)
+            {
+                int nextSpace = span[index..].IndexOf(' ');
+                ReadOnlySpan<char> segment = nextSpace >= 0
+                    ? span.Slice(index, nextSpace)
+                    : span[index..];
+
+                if (segment.StartsWith(token, StringComparison.OrdinalIgnoreCase))
+                {
+                    ReadOnlySpan<char> value = segment[token.Length..];
+                    if (value.Equals(expectedValue, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+
+                if (nextSpace < 0)
+                {
+                    break;
+                }
+
+                index += nextSpace + 1;
+            }
+
+            return false;
         }
 
         internal static string InferSampleDisassembly(byte[]? sample, int sampleSize)

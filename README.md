@@ -1,4 +1,6 @@
-<h1 align="center">[BLACKBIRD Alpha v1.2](https://titansoftwork.com/blackbird/)</h1>
+<h1 align="center">
+  <a href="https://titansoftwork.com/blackbird/">BLACKBIRD Alpha v1.2</a>
+</h1>
 <p align="center"><b>DFIR Kernel Telemetry & Detection Platform for Windows</b></p>
 
 <p align="center">

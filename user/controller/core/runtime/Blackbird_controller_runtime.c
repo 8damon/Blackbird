@@ -1331,6 +1331,11 @@ static BOOL ControllerStartCore(VOID)
         return FALSE;
     }
 
+    if (!ControllerSymbolServiceStart())
+    {
+        ControllerLog("[WARN] controller symbol service start failed (%lu)\n", GetLastError());
+    }
+
     BLACKBIRDSCUseServiceProtocol();
     g_DriverHandle = BLACKBIRDSCOpenControlDevice();
     if (g_DriverHandle == INVALID_HANDLE_VALUE)
@@ -1473,6 +1478,7 @@ static VOID ControllerStopCore(VOID)
         g_StopEvent = NULL;
     }
 
+    ControllerSymbolServiceStop();
     ControllerResetHollowingState();
 
     ControllerLog("[*] BlackbirdController: core stopped\n");

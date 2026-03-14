@@ -545,6 +545,7 @@ static BOOL ControllerClientHasEtwMatchLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
 }
 VOID ControllerDispatchEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
 {
+    BLACKBIRD_IPC_ETW_EVENT enriched;
     PBLACKBIRD_CONTROLLER_CLIENT client;
     PBLACKBIRD_CONTROLLER_CLIENT dispatchClients[BLACKBIRD_CONTROLLER_MAX_CLIENTS];
     DWORD dispatchCount = 0;
@@ -557,7 +558,10 @@ VOID ControllerDispatchEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
         return;
     }
 
-    if (ControllerEtwResolveRelation(Event, &sourcePid, &targetPid))
+    enriched = *Event;
+    ControllerSymbolServiceEnrichEvent(&enriched);
+
+    if (ControllerEtwResolveRelation(&enriched, &sourcePid, &targetPid))
     {
         ControllerExpandMonitoringGraph(sourcePid, targetPid, BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK);
     }
@@ -576,9 +580,9 @@ VOID ControllerDispatchEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
     {
         client = dispatchClients[i];
         EnterCriticalSection(&client->Lock);
-        if (ControllerClientHasEtwMatchLocked(client, Event))
+        if (ControllerClientHasEtwMatchLocked(client, &enriched))
         {
-            (void)ControllerClientEnqueueEtwEventLocked(client, Event);
+            (void)ControllerClientEnqueueEtwEventLocked(client, &enriched);
         }
         LeaveCriticalSection(&client->Lock);
         ControllerClientReleaseFromDispatch(client);

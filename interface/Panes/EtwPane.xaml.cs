@@ -63,6 +63,8 @@ namespace BlackbirdInterface
             string source = string.IsNullOrWhiteSpace(entry.Source) ? "Blackbird" : entry.Source;
             string actor = ProcessIdentityResolver.Describe(entry.ActorPid);
             string target = ProcessIdentityResolver.Describe(entry.TargetPid);
+            string actorToolTip = ProcessIdentityResolver.HoverText(entry.ActorPid);
+            string targetToolTip = ProcessIdentityResolver.HoverText(entry.TargetPid);
             string detailText = entry.Details;
             string key =
                 $"{eventName}|{severity}|{detection}|{source}";
@@ -88,6 +90,9 @@ namespace BlackbirdInterface
                     Target = target,
                     ActorPid = entry.ActorPid,
                     TargetPid = entry.TargetPid,
+                    ActorToolTip = actorToolTip,
+                    TargetToolTip = targetToolTip,
+                    ArgumentSummary = entry.ArgumentSummary,
                     Details = detailText
                 });
 
@@ -121,6 +126,9 @@ namespace BlackbirdInterface
                             Target = target,
                             ActorPid = entry.ActorPid,
                             TargetPid = entry.TargetPid,
+                            ActorToolTip = actorToolTip,
+                            TargetToolTip = targetToolTip,
+                            ArgumentSummary = entry.ArgumentSummary,
                             Details = detailText
                         }
                     }
@@ -321,9 +329,12 @@ namespace BlackbirdInterface
 
         private static string BuildDetectionLabel(BrokerEtwEventView entry)
         {
+            string sensorOrigin = EventDetailFormatting.ClassifyHookSensorOrigin(entry);
             if (!string.IsNullOrWhiteSpace(entry.DetectionName))
             {
-                return entry.DetectionName;
+                return sensorOrigin == "Unclassified"
+                    ? entry.DetectionName
+                    : $"{sensorOrigin.ToUpperInvariant()} | {entry.DetectionName}";
             }
 
             string eventName = (entry.EventName ?? string.Empty).Trim();
@@ -369,7 +380,9 @@ namespace BlackbirdInterface
 
             if (!string.IsNullOrWhiteSpace(eventName))
             {
-                return eventName;
+                return sensorOrigin == "Unclassified"
+                    ? eventName
+                    : $"{sensorOrigin.ToUpperInvariant()} | {eventName}";
             }
 
             return "UNCLASSIFIED_EVENT";

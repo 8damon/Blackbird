@@ -9,6 +9,9 @@ namespace BlackbirdInterface
 {
     public partial class MainWindow
     {
+        private static readonly TimeSpan SessionSpillInterval = TimeSpan.FromSeconds(15);
+        private const int LiveGroupedDetailSpillThreshold = 24_000;
+        private const int LiveThreadStackSpillThreshold = 512;
         private readonly string _sessionCacheDirectory =
             Path.Combine(Path.GetTempPath(), "Blackbird", "session-cache");
 
@@ -27,11 +30,13 @@ namespace BlackbirdInterface
 
         private SessionFileTab BuildTabSnapshot(ProcessSessionTab tab)
         {
+            bool hasPersistedSnapshot = TryLoadTabSnapshot(tab, out SessionFileTab? persistedSnapshot) &&
+                                        persistedSnapshot != null;
             bool hasInlineData = HasInlineSessionData(tab);
             if (!hasInlineData &&
-                TryLoadTabSnapshot(tab, out SessionFileTab? persistedSnapshot) &&
-                persistedSnapshot != null)
+                hasPersistedSnapshot)
             {
+                persistedSnapshot ??= new SessionFileTab();
                 persistedSnapshot.Title = NormalizeSessionTitle(tab.Title);
                 persistedSnapshot.CaptureStartUtc = tab.CaptureStartUtc;
                 persistedSnapshot.ViewDurationSeconds = tab.ViewDurationSeconds;
@@ -45,29 +50,52 @@ namespace BlackbirdInterface
 
             EnsureSessionMaterialized(tab);
 
+            IEnumerable<TelemetryEvent> sessionEvents = EnumerateSessionEvents(tab);
+            List<TelemetryEvent> events = sessionEvents.Any()
+                ? sessionEvents.Select(CloneTelemetryEvent).ToList()
+                : (persistedSnapshot?.Events.Select(CloneTelemetryEvent).ToList() ?? new List<TelemetryEvent>());
+            List<PerformanceSample> performanceHistory = tab.PerformanceHistory.Count > 0
+                ? tab.PerformanceHistory.Select(ClonePerformanceSample).ToList()
+                : (persistedSnapshot?.PerformanceHistory.Select(ClonePerformanceSample).ToList() ?? new List<PerformanceSample>());
+            List<ThreadLifecycleEventSample> threadLifecycleHistory = tab.ThreadLifecycleHistory.Count > 0
+                ? tab.ThreadLifecycleHistory.Select(CloneThreadLifecycleEvent).ToList()
+                : (persistedSnapshot?.ThreadLifecycleHistory.Select(CloneThreadLifecycleEvent).ToList() ?? new List<ThreadLifecycleEventSample>());
             List<GroupedEventRow> etw = _etwHistoryByPid.TryGetValue(tab.Pid, out var etwRows)
                 ? etwRows.Select(x => x.Clone()).ToList()
-                : new List<GroupedEventRow>();
+                : (persistedSnapshot?.EtwGroups.Select(x => x.Clone()).ToList() ?? new List<GroupedEventRow>());
             List<GroupedEventRow> heuristics = _heuristicsHistoryByPid.TryGetValue(tab.Pid, out var heurRows)
                 ? heurRows.Select(x => x.Clone()).ToList()
-                : new List<GroupedEventRow>();
+                : (persistedSnapshot?.HeuristicsGroups.Select(x => x.Clone()).ToList() ?? new List<GroupedEventRow>());
             List<GroupedEventRow> filesystem = _filesystemHistoryByPid.TryGetValue(tab.Pid, out var fsRows)
                 ? fsRows.Select(x => x.Clone()).ToList()
-                : new List<GroupedEventRow>();
+                : (persistedSnapshot?.FilesystemGroups.Select(x => x.Clone()).ToList() ?? new List<GroupedEventRow>());
             List<GroupedEventRow> relations = _relationsHistoryByPid.TryGetValue(tab.Pid, out var relRows)
                 ? relRows.Select(x => x.Clone()).ToList()
-                : new List<GroupedEventRow>();
+                : (persistedSnapshot?.ProcessRelationsGroups.Select(x => x.Clone()).ToList() ?? new List<GroupedEventRow>());
             List<ApiCallGraphRowSnapshot> apiGraph = _apiGraphHistoryByPid.TryGetValue(tab.Pid, out var apiRows)
                 ? apiRows.Select(x => new ApiCallGraphRowSnapshot
                 {
                     ApiName = x.ApiName,
+                    SensorOrigin = x.SensorOrigin,
                     SourcePid = x.SourcePid,
                     TargetPid = x.TargetPid,
                     ThreadId = x.ThreadId,
                     Hits = x.Hits,
                     LastSeenUtc = x.LastSeenUtc
                 }).ToList()
-                : new List<ApiCallGraphRowSnapshot>();
+                : (persistedSnapshot?.ApiGraphRows.Select(x => new ApiCallGraphRowSnapshot
+                {
+                    ApiName = x.ApiName,
+                    SensorOrigin = x.SensorOrigin,
+                    SourcePid = x.SourcePid,
+                    TargetPid = x.TargetPid,
+                    ThreadId = x.ThreadId,
+                    Hits = x.Hits,
+                    LastSeenUtc = x.LastSeenUtc
+                }).ToList() ?? new List<ApiCallGraphRowSnapshot>());
+            List<ThreadStackHistoryArchiveEntry> threadStacks = tab.ThreadStackHistories.Count > 0
+                ? tab.ThreadStackHistories.Select(x => x.Clone()).ToList()
+                : (persistedSnapshot?.ThreadStackHistories.Select(x => x.Clone()).ToList() ?? new List<ThreadStackHistoryArchiveEntry>());
 
             return new SessionFileTab
             {
@@ -80,14 +108,15 @@ namespace BlackbirdInterface
                 UseUsermodeHooks = tab.UseUsermodeHooks,
                 TargetExited = tab.TargetExited,
                 OfflineSnapshot = tab.OfflineSnapshot,
-                Events = EnumerateSessionEvents(tab).Select(CloneTelemetryEvent).ToList(),
-                PerformanceHistory = tab.PerformanceHistory.Select(ClonePerformanceSample).ToList(),
-                ThreadLifecycleHistory = tab.ThreadLifecycleHistory.Select(CloneThreadLifecycleEvent).ToList(),
+                Events = events,
+                PerformanceHistory = performanceHistory,
+                ThreadLifecycleHistory = threadLifecycleHistory,
                 EtwGroups = etw,
                 HeuristicsGroups = heuristics,
                 FilesystemGroups = filesystem,
                 ProcessRelationsGroups = relations,
-                ApiGraphRows = apiGraph
+                ApiGraphRows = apiGraph,
+                ThreadStackHistories = threadStacks
             };
         }
 
@@ -114,6 +143,7 @@ namespace BlackbirdInterface
             tab.Events.Clear();
             tab.PerformanceHistory.Clear();
             tab.ThreadLifecycleHistory.Clear();
+            tab.ThreadStackHistories.Clear();
             _etwHistoryByPid.Remove(tab.Pid);
             _heuristicsHistoryByPid.Remove(tab.Pid);
             _filesystemHistoryByPid.Remove(tab.Pid);
@@ -164,6 +194,8 @@ namespace BlackbirdInterface
             tab.PerformanceHistory.AddRange(snapshot.PerformanceHistory.Select(ClonePerformanceSample));
             tab.ThreadLifecycleHistory.Clear();
             tab.ThreadLifecycleHistory.AddRange(snapshot.ThreadLifecycleHistory.Select(CloneThreadLifecycleEvent));
+            tab.ThreadStackHistories.Clear();
+            tab.ThreadStackHistories.AddRange(snapshot.ThreadStackHistories.Select(x => x.Clone()));
 
             _etwHistoryByPid[tab.Pid] = CompactGroupsForMemory(snapshot.EtwGroups, 48);
             _heuristicsHistoryByPid[tab.Pid] = CompactGroupsForMemory(snapshot.HeuristicsGroups, 48);
@@ -173,6 +205,7 @@ namespace BlackbirdInterface
                 .Select(x => new ApiCallGraphRowSnapshot
                 {
                     ApiName = x.ApiName,
+                    SensorOrigin = x.SensorOrigin,
                     SourcePid = x.SourcePid,
                     TargetPid = x.TargetPid,
                     ThreadId = x.ThreadId,
@@ -202,6 +235,7 @@ namespace BlackbirdInterface
                    tab.Events.Count > 0 ||
                    tab.PerformanceHistory.Count > 0 ||
                    tab.ThreadLifecycleHistory.Count > 0 ||
+                   tab.ThreadStackHistories.Count > 0 ||
                    _etwHistoryByPid.ContainsKey(tab.Pid) ||
                    _heuristicsHistoryByPid.ContainsKey(tab.Pid) ||
                    _filesystemHistoryByPid.ContainsKey(tab.Pid) ||
@@ -376,7 +410,8 @@ namespace BlackbirdInterface
                             HeuristicsGroups = incoming.HeuristicsGroups,
                             FilesystemGroups = incoming.FilesystemGroups,
                             ProcessRelationsGroups = incoming.ProcessRelationsGroups,
-                            ApiGraphRows = incoming.ApiGraphRows
+                            ApiGraphRows = incoming.ApiGraphRows,
+                            ThreadStackHistories = incoming.ThreadStackHistories
                         }
                     }
                 });
@@ -384,6 +419,7 @@ namespace BlackbirdInterface
                 tab.Events.Clear();
                 tab.PerformanceHistory.Clear();
                 tab.ThreadLifecycleHistory.Clear();
+                tab.ThreadStackHistories.Clear();
                 _etwHistoryByPid.Remove(tab.Pid);
                 _heuristicsHistoryByPid.Remove(tab.Pid);
                 _filesystemHistoryByPid.Remove(tab.Pid);
@@ -406,36 +442,7 @@ namespace BlackbirdInterface
 
         private void SaveSessionAs_Click(object sender, RoutedEventArgs e)
         {
-            var dialog = new SaveFileDialog
-            {
-                Filter = "Blackbird Session Archive (*.swlkr;*.blackbird)|*.swlkr;*.blackbird|All files (*.*)|*.*",
-                DefaultExt = ".swlkr",
-                AddExtension = true,
-                OverwritePrompt = true,
-                FileName = $"blackbird-{DateTime.UtcNow:yyyyMMdd-HHmmss}.swlkr"
-            };
-
-            if (!string.IsNullOrWhiteSpace(_sessionFilePath))
-            {
-                dialog.InitialDirectory = Path.GetDirectoryName(_sessionFilePath);
-            }
-
-            if (dialog.ShowDialog(this) != true)
-            {
-                return;
-            }
-
-            try
-            {
-                SessionFileArchive archive = BuildWorkspaceArchive();
-                SessionFileStorage.SaveArchive(dialog.FileName, archive);
-                _sessionFilePath = dialog.FileName;
-                StatusBlock.Text = $"SESSION SAVED: {Path.GetFileName(dialog.FileName)}";
-            }
-            catch (Exception ex)
-            {
-                ThemedMessageBox.Show(this, $"Failed to save session.\n\n{ex.Message}", "Save Session", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+            SaveSessionArchiveViaDialog();
         }
 
         private void ExportSession_Click(object sender, RoutedEventArgs e)
@@ -554,6 +561,233 @@ namespace BlackbirdInterface
             {
                 ThemedMessageBox.Show(this, $"Failed to import session.\n\n{error}", "Import Session", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private bool PrepareSessionShutdown()
+        {
+            if (_isMainWindowShuttingDown || !HasSessionCacheData())
+            {
+                return true;
+            }
+
+            MessageBoxResult choice = ThemedMessageBox.Show(
+                this,
+                "Save the current Blackbird session before exit?\n\nSelecting No removes the temporary session datastore on teardown.",
+                "Exit Session",
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Question);
+            if (choice == MessageBoxResult.Cancel)
+            {
+                return false;
+            }
+
+            return choice != MessageBoxResult.Yes || SaveSessionArchiveViaDialog();
+        }
+
+        private bool SaveSessionArchiveViaDialog()
+        {
+            var dialog = new SaveFileDialog
+            {
+                Filter = "Blackbird Session Archive (*.swlkr;*.blackbird)|*.swlkr;*.blackbird|All files (*.*)|*.*",
+                DefaultExt = ".swlkr",
+                AddExtension = true,
+                OverwritePrompt = true,
+                FileName = $"blackbird-{DateTime.UtcNow:yyyyMMdd-HHmmss}.swlkr"
+            };
+
+            if (!string.IsNullOrWhiteSpace(_sessionFilePath))
+            {
+                dialog.InitialDirectory = Path.GetDirectoryName(_sessionFilePath);
+            }
+
+            if (dialog.ShowDialog(this) != true)
+            {
+                return false;
+            }
+
+            try
+            {
+                SessionFileArchive archive = BuildWorkspaceArchive();
+                SessionFileStorage.SaveArchive(dialog.FileName, archive);
+                _sessionFilePath = dialog.FileName;
+                StatusBlock.Text = $"SESSION SAVED: {Path.GetFileName(dialog.FileName)}";
+                return true;
+            }
+            catch (Exception ex)
+            {
+                ThemedMessageBox.Show(this, $"Failed to save session.\n\n{ex.Message}", "Save Session", MessageBoxButton.OK, MessageBoxImage.Error);
+                return false;
+            }
+        }
+
+        private bool HasSessionCacheData()
+        {
+            if (_currentSession != null &&
+                (_allEvents.Count > 0 ||
+                 _currentSession.PerformanceHistory.Count > 0 ||
+                 _currentSession.ThreadLifecycleHistory.Count > 0 ||
+                 _currentSession.ThreadStackHistories.Count > 0))
+            {
+                return true;
+            }
+
+            return _processTabs.Any(x => HasInlineSessionData(x) || (!string.IsNullOrWhiteSpace(x.BackingStorePath) && File.Exists(x.BackingStorePath)));
+        }
+
+        private void CleanupTemporarySessionBackingStores()
+        {
+            foreach (ProcessSessionTab tab in _processTabs)
+            {
+                if (string.IsNullOrWhiteSpace(tab.BackingStorePath) || !File.Exists(tab.BackingStorePath))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    File.Delete(tab.BackingStorePath);
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        private void SpillCurrentSessionWorkingSetIfNeeded()
+        {
+            if (_currentSession == null || _currentSession.OfflineSnapshot || _currentSession.Pid <= 0)
+            {
+                return;
+            }
+
+            DateTime now = DateTime.UtcNow;
+            if (_currentSession.BackingStorePath != null &&
+                File.Exists(_currentSession.BackingStorePath) &&
+                now - File.GetLastWriteTimeUtc(_currentSession.BackingStorePath) < SessionSpillInterval)
+            {
+                return;
+            }
+
+            int totalGroupedDetails =
+                EtwPaneHost.SnapshotItems().Sum(x => x.Details.Count) +
+                HeuristicsPaneHost.SnapshotItems().Sum(x => x.Details.Count) +
+                FilesystemPaneHost.SnapshotItems().Sum(x => x.Details.Count) +
+                ProcessRelationsPaneHost.SnapshotItems().Sum(x => x.Details.Count);
+            int threadStackSnapshots = _currentSession.ThreadStackHistories.Sum(x => x.Snapshots.Count);
+            if (totalGroupedDetails < LiveGroupedDetailSpillThreshold &&
+                threadStackSnapshots < LiveThreadStackSpillThreshold)
+            {
+                return;
+            }
+
+            _currentSession.CaptureStartUtc = _captureStartUtc;
+            _currentSession.LaneFocusKey = _laneFocusKey;
+            _currentSession.ViewDurationSeconds = EventsPaneHost.Timeline.ViewDurationSeconds;
+            _currentSession.ViewStartSeconds = EventsPaneHost.Timeline.ViewStartSeconds;
+            SaveIntelSessionState(_currentSession.Pid);
+
+            SessionFileTab snapshot = BuildTabSnapshot(_currentSession);
+            string path = _currentSession.BackingStorePath ?? AllocateSessionCachePath(_currentSession.Pid);
+            _currentSession.BackingStorePath = path;
+            SessionFileStorage.SaveArchive(path, new SessionFileArchive
+            {
+                Version = SessionFileStorage.CurrentVersion,
+                SavedUtc = now,
+                ActivePid = _currentSession.Pid,
+                Tabs = new List<SessionFileTab> { snapshot }
+            });
+
+            EtwPaneHost.TrimDetailPayload(48);
+            HeuristicsPaneHost.TrimDetailPayload(48);
+            FilesystemPaneHost.TrimDetailPayload(48);
+            ProcessRelationsPaneHost.TrimDetailPayload(48);
+            TrimThreadStackHistories(_currentSession, 64);
+            SaveIntelSessionState(_currentSession.Pid);
+        }
+
+        private static void TrimThreadStackHistories(ProcessSessionTab tab, int keepSnapshotsPerThread)
+        {
+            int keep = Math.Max(1, keepSnapshotsPerThread);
+            foreach (ThreadStackHistoryArchiveEntry history in tab.ThreadStackHistories)
+            {
+                if (history.Snapshots.Count <= keep)
+                {
+                    continue;
+                }
+
+                history.Snapshots = history.Snapshots
+                    .OrderByDescending(x => x.CapturedAtUtc)
+                    .Take(keep)
+                    .OrderBy(x => x.CapturedAtUtc)
+                    .ToList();
+            }
+        }
+
+        private IReadOnlyList<ThreadStackSessionSnapshot> GetThreadStackHistory(int pid, int tid, string state)
+        {
+            ProcessSessionTab? tab = ResolveSessionTab(pid);
+            if (tab == null)
+            {
+                return Array.Empty<ThreadStackSessionSnapshot>();
+            }
+
+            EnsureSessionMaterialized(tab);
+            ThreadStackHistoryArchiveEntry? history = tab.ThreadStackHistories.FirstOrDefault(x =>
+                x.Tid == tid &&
+                string.Equals(x.State, state ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+            return history?.Snapshots.Select(x => x.Clone()).ToList() ?? (IReadOnlyList<ThreadStackSessionSnapshot>)Array.Empty<ThreadStackSessionSnapshot>();
+        }
+
+        private void PersistThreadStackSnapshot(int pid, int tid, string state, ThreadStackSessionSnapshot snapshot)
+        {
+            if (snapshot == null)
+            {
+                return;
+            }
+
+            ProcessSessionTab? tab = ResolveSessionTab(pid);
+            if (tab == null)
+            {
+                return;
+            }
+
+            EnsureSessionMaterialized(tab);
+            string normalizedState = state ?? string.Empty;
+            ThreadStackHistoryArchiveEntry? history = tab.ThreadStackHistories.FirstOrDefault(x =>
+                x.Tid == tid &&
+                string.Equals(x.State, normalizedState, StringComparison.OrdinalIgnoreCase));
+            if (history == null)
+            {
+                history = new ThreadStackHistoryArchiveEntry
+                {
+                    Tid = tid,
+                    State = normalizedState
+                };
+                tab.ThreadStackHistories.Add(history);
+            }
+
+            int existingIndex = history.Snapshots.FindIndex(x => x.CapturedAtUtc == snapshot.CapturedAtUtc);
+            if (existingIndex >= 0)
+            {
+                history.Snapshots[existingIndex] = snapshot.Clone();
+            }
+            else
+            {
+                history.Snapshots.Add(snapshot.Clone());
+                history.Snapshots = history.Snapshots
+                    .OrderBy(x => x.CapturedAtUtc)
+                    .ToList();
+            }
+        }
+
+        private ProcessSessionTab? ResolveSessionTab(int pid)
+        {
+            if (_currentSession != null && _currentSession.Pid == pid)
+            {
+                return _currentSession;
+            }
+
+            return _processTabs.FirstOrDefault(x => x.Pid == pid);
         }
     }
 }

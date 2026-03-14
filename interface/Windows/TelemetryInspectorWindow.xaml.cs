@@ -335,6 +335,7 @@ namespace BlackbirdInterface
             AddPair(selection, "Target", detail.Target);
             AddPair(selection, "Actor PID", actorPid == 0 ? "-" : actorPid.ToString(CultureInfo.InvariantCulture));
             AddPair(selection, "Target PID", targetPid == 0 ? "-" : targetPid.ToString(CultureInfo.InvariantCulture));
+            AddPair(selection, "Argument Summary", detail.ArgumentSummary);
             AddPair(selection, "Reason", EventDetailsParsing.FallbackText(detail.Reason));
             AddPair(selection, "Correlated Handle Evidence", hasHandleEvidence ? "Available" : "None");
 

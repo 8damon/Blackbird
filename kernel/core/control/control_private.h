@@ -32,15 +32,22 @@ typedef struct _BLACKBIRD_CLIENT
 {
     LIST_ENTRY Link;
     LIST_ENTRY EventQueue;
+    WDFQUEUE PendingGetEventQueue;
     FAST_MUTEX Lock;
     UINT32 Sequence;
     UINT32 QueueDepth;
     UINT32 DroppedEvents;
     UINT32 SubscriptionCount;
+    UINT32 PendingLaunchStreamMask;
     ULONGLONG QueryWindowStart100ns;
     UINT32 QueryWindowCount;
+    BOOLEAN PendingLaunchArmed;
+    UCHAR PendingLaunchReserved[3];
     volatile LONG RefCount;
     BLACKBIRD_SUBSCRIPTION Subscriptions[BLACKBIRD_MAX_CLIENT_SUBSCRIPTIONS];
+    WCHAR PendingLaunchPathNormDos[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+    WCHAR PendingLaunchPathNormNt[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+    WCHAR PendingLaunchPathTail[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
 } BLACKBIRD_CLIENT, *PBLACKBIRD_CLIENT;
 
 typedef struct _BLACKBIRD_FILE_CONTEXT
@@ -56,6 +63,7 @@ extern LIST_ENTRY g_ClientList;
 extern LONG g_ClientCount;
 extern volatile LONG g_ControlInitialized;
 extern volatile LONG g_ControlShutdown;
+extern volatile LONG g_ControlTelemetryArmed;
 extern volatile LONG g_ControlQueueDropLogCounter;
 extern volatile LONG g_ControlTotalQueuedEvents;
 extern volatile LONG g_QueryImageInflight;
@@ -102,6 +110,7 @@ VOID BLACKBIRDReleaseQueryInflightSlot(VOID);
 VOID BLACKBIRDClientFreeQueuedEvents(_Inout_ PBLACKBIRD_CLIENT Client);
 VOID BLACKBIRDClientRelease(_Inout_ PBLACKBIRD_CLIENT Client);
 VOID BLACKBIRDClientReference(_Inout_ PBLACKBIRD_CLIENT Client);
+VOID BLACKBIRDControlRefreshArmedState(VOID);
 BOOLEAN BLACKBIRDClientMatchSubscriptionEither(_In_ PBLACKBIRD_CLIENT Client, _In_ UINT32 PrimaryProcessId,
                                                  _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask);
 VOID BLACKBIRDPublishRecordToSubscribers(_In_ UINT32 PrimaryPid, _In_ UINT32 SecondaryPid, _In_ UINT32 StreamMask,
@@ -120,6 +129,7 @@ NTSTATUS BLACKBIRDHandleGetStatsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQ
 NTSTATUS BLACKBIRDHandleGetHealthIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request,
                                          _Out_ size_t *BytesOut);
 NTSTATUS BLACKBIRDHandleSetPidsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
+NTSTATUS BLACKBIRDHandleArmPendingLaunchIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
 NTSTATUS BLACKBIRDHandleQueryProcessImageIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request,
                                                  _Out_ size_t *BytesOut);
 NTSTATUS BLACKBIRDHandleSetShutdownModeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);

@@ -25,6 +25,7 @@ namespace BlackbirdInterface
         private readonly Dictionary<string, string> _apiGraphReasonByKey = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _apiGraphActionByKey = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _apiGraphDecodedByKey = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _apiGraphSensorByKey = new(StringComparer.Ordinal);
         private readonly Dictionary<ulong, ApiMemoryPageSignal> _apiMemorySignalsByPage = new();
         private bool _apiGraphSnapshotDirty;
 
@@ -71,6 +72,7 @@ namespace BlackbirdInterface
             _apiGraphReasonByKey.Clear();
             _apiGraphActionByKey.Clear();
             _apiGraphDecodedByKey.Clear();
+            _apiGraphSensorByKey.Clear();
             _apiMemorySignalsByPage.Clear();
             PublishApiGraphSnapshot();
             IpcUplinkPaneHost.SetInactive("No IPC diagnostics yet", "Enable uplink and wait for stats sample.");
@@ -260,6 +262,7 @@ namespace BlackbirdInterface
                 _apiGraphReasonByKey.Clear();
                 _apiGraphActionByKey.Clear();
                 _apiGraphDecodedByKey.Clear();
+                _apiGraphSensorByKey.Clear();
                 _apiMemorySignalsByPage.Clear();
                 PublishApiGraphSnapshot();
             }
@@ -351,8 +354,17 @@ namespace BlackbirdInterface
                     IoctlParsedEvent? filesystem = MapIoctlFilesystem(ioctl);
                     if (relation != null)
                     {
-                        ProcessIdentityResolver.Prime(relation.SourcePid);
-                        ProcessIdentityResolver.Prime(relation.TargetPid);
+                        _ = ProcessIdentityResolver.Resolve(relation.SourcePid);
+                        _ = ProcessIdentityResolver.Resolve(relation.TargetPid);
+                    }
+                    if (heuristic != null)
+                    {
+                        _ = ProcessIdentityResolver.Resolve(heuristic.ActorPid);
+                        _ = ProcessIdentityResolver.Resolve(heuristic.TargetPid);
+                    }
+                    if (filesystem != null)
+                    {
+                        _ = ProcessIdentityResolver.Resolve(filesystem.FileProcessPid);
                     }
                     if (telemetry != null || relation != null || heuristic != null || threadLifecycle != null ||
                         filesystem != null)
@@ -371,8 +383,8 @@ namespace BlackbirdInterface
                     Interlocked.Decrement(ref _pendingEtwCount);
 
                     BrokerEtwEventView view = MapBrokerEtwEvent(etw);
-                    ProcessIdentityResolver.Prime(view.ActorPid);
-                    ProcessIdentityResolver.Prime(view.TargetPid);
+                    _ = ProcessIdentityResolver.Resolve(view.ActorPid);
+                    _ = ProcessIdentityResolver.Resolve(view.TargetPid);
 
                     _pendingUiWork.Enqueue(BackendUiWorkItem.FromEtw(view));
                     Interlocked.Increment(ref _pendingUiWorkCount);
@@ -538,6 +550,8 @@ namespace BlackbirdInterface
                     FilesystemPaneHost.TotalRawCount);
                 SetExplorerHasData("Filesystem", FilesystemPaneHost.ItemCount > 0);
             }
+
+            SpillCurrentSessionWorkingSetIfNeeded();
 
             if (etwBatch.Count > 0)
             {
@@ -1310,6 +1324,14 @@ namespace BlackbirdInterface
             uint actor = ResolveBrokerEtwActorPid(etw);
             uint target = ResolveBrokerEtwTargetPid(etw);
             DateTime now = DateTime.UtcNow;
+            string operation = BlackbirdNative.AnsiBufferToString(etw.Operation);
+            string actorDisplay = ProcessIdentityResolver.Resolve(actor);
+            string targetDisplay = ProcessIdentityResolver.Resolve(target);
+            string argumentSummary = EventDetailFormatting.BuildNtApiArgumentSummary(
+                !string.IsNullOrWhiteSpace(operation) ? operation : eventName,
+                ParseReasonFields(reason),
+                actorDisplay,
+                targetDisplay);
 
             return new BrokerEtwEventView
             {
@@ -1340,7 +1362,7 @@ namespace BlackbirdInterface
                 DetectionName = detection,
                 Reason = reason,
                 ClassName = BlackbirdNative.AnsiBufferToString(etw.ClassName),
-                Operation = BlackbirdNative.AnsiBufferToString(etw.Operation),
+                Operation = operation,
                 DesiredAccess = etw.DesiredAccess,
                 OriginAddress = etw.OriginAddress,
                 OriginProtect = etw.OriginProtect,
@@ -1376,7 +1398,8 @@ namespace BlackbirdInterface
                 CommandLine = BlackbirdNative.WideBufferToString(etw.CommandLine),
                 KeyPath = BlackbirdNative.WideBufferToString(etw.KeyPath),
                 ValueName = BlackbirdNative.WideBufferToString(etw.ValueName),
-                RepeatCount = 1
+                RepeatCount = 1,
+                ArgumentSummary = argumentSummary
             };
         }
 
@@ -1446,9 +1469,18 @@ namespace BlackbirdInterface
             for (int i = 0; i < views.Count; i += 1)
             {
                 BrokerEtwEventView view = views[i];
-                bool isApiHookCall = view.Family == BlackbirdNative.IpcEtwFamilyUserHook &&
-                                     (string.Equals(view.DetectionName, "USERMODE_HOOK_API_CALL", StringComparison.OrdinalIgnoreCase) ||
-                                      string.Equals(view.DetectionName, "USERMODE_MEMORY_ACTIVITY", StringComparison.OrdinalIgnoreCase));
+                bool kernelNtApiEvent =
+                    view.Source.Equals("Blackbird", StringComparison.OrdinalIgnoreCase) &&
+                    view.Family != BlackbirdNative.IpcEtwFamilyUserHook &&
+                    ((!string.IsNullOrWhiteSpace(view.Operation) &&
+                      view.Operation.StartsWith("Nt", StringComparison.OrdinalIgnoreCase)) ||
+                     (!string.IsNullOrWhiteSpace(view.EventName) &&
+                      view.EventName.StartsWith("Nt", StringComparison.OrdinalIgnoreCase)));
+                bool usermodeHookEvent = view.Family == BlackbirdNative.IpcEtwFamilyUserHook &&
+                                         (string.Equals(view.DetectionName, "USERMODE_HOOK_API_CALL", StringComparison.OrdinalIgnoreCase) ||
+                                          string.Equals(view.DetectionName, "USERMODE_MEMORY_ACTIVITY", StringComparison.OrdinalIgnoreCase) ||
+                                          string.Equals(view.DetectionName, "USERMODE_PROCESS_RECON", StringComparison.OrdinalIgnoreCase));
+                bool isApiHookCall = usermodeHookEvent || kernelNtApiEvent;
                 if (isApiHookCall)
                 {
                     TelemetryEvent? apiTimelineEvent = HandleApiHookEvent(view);
@@ -1707,12 +1739,14 @@ namespace BlackbirdInterface
             {
                 existing.Hits = Math.Max(1, existing.Hits + 1);
                 existing.LastSeenUtc = view.TimestampUtc;
+                existing.SensorOrigin = EventDetailFormatting.ClassifyHookSensorOrigin(view);
             }
             else
             {
                 _apiGraphRowsByKey[key] = new ApiCallGraphRowSnapshot
                 {
                     ApiName = apiName,
+                    SensorOrigin = EventDetailFormatting.ClassifyHookSensorOrigin(view),
                     SourcePid = sourcePid,
                     TargetPid = targetPid,
                     ThreadId = threadId,
@@ -1726,6 +1760,7 @@ namespace BlackbirdInterface
             (string decodedAction, string decodedDetail) = BuildApiDecodedAction(view, rawReason);
             _apiGraphActionByKey[key] = decodedAction;
             _apiGraphDecodedByKey[key] = decodedDetail;
+            _apiGraphSensorByKey[key] = EventDetailFormatting.ClassifyHookSensorOrigin(view);
 
             ScheduleApiGraphSnapshot();
             if (string.IsNullOrWhiteSpace(view.Details))
@@ -1755,6 +1790,7 @@ namespace BlackbirdInterface
                 .Select(x => new ApiCallGraphRowSnapshot
                 {
                     ApiName = x.ApiName,
+                    SensorOrigin = x.SensorOrigin,
                     SourcePid = x.SourcePid,
                     TargetPid = x.TargetPid,
                     ThreadId = x.ThreadId,
@@ -1781,10 +1817,14 @@ namespace BlackbirdInterface
                 string decodedDetail = _apiGraphDecodedByKey.TryGetValue(key, out string? detail)
                     ? detail
                     : rawReason;
+                string sensor = _apiGraphSensorByKey.TryGetValue(key, out string? sensorLabel) ? sensorLabel : "Unclassified";
                 rows.Add(new ApiCallGraphMainRowView
                 {
                     GraphKey = key,
                     ApiName = string.IsNullOrWhiteSpace(row.ApiName) ? "unknown" : row.ApiName,
+                    SensorLabel = sensor,
+                    SensorBackground = BuildApiSensorBackground(sensor),
+                    SensorForeground = BuildApiSensorForeground(sensor),
                     PathLabel = $"{row.SourcePid} -> {target}",
                     ThreadLabel = row.ThreadId == 0 ? "-" : row.ThreadId.ToString(CultureInfo.InvariantCulture),
                     Hits = Math.Max(1, row.Hits),
@@ -2327,6 +2367,7 @@ namespace BlackbirdInterface
                 .Select(x => new ApiCallGraphRowSnapshot
                 {
                     ApiName = x.ApiName,
+                    SensorOrigin = x.SensorOrigin,
                     SourcePid = x.SourcePid,
                     TargetPid = x.TargetPid,
                     ThreadId = x.ThreadId,
@@ -2362,6 +2403,7 @@ namespace BlackbirdInterface
             _apiGraphReasonByKey.Clear();
             _apiGraphActionByKey.Clear();
             _apiGraphDecodedByKey.Clear();
+            _apiGraphSensorByKey.Clear();
             _apiMemorySignalsByPage.Clear();
             foreach (ApiCallGraphRowSnapshot row in apiGraph)
             {
@@ -2369,12 +2411,16 @@ namespace BlackbirdInterface
                 _apiGraphRowsByKey[key] = new ApiCallGraphRowSnapshot
                 {
                     ApiName = row.ApiName,
+                    SensorOrigin = row.SensorOrigin,
                     SourcePid = row.SourcePid,
                     TargetPid = row.TargetPid,
                     ThreadId = row.ThreadId,
                     Hits = row.Hits,
                     LastSeenUtc = row.LastSeenUtc
                 };
+                _apiGraphSensorByKey[key] = string.IsNullOrWhiteSpace(row.SensorOrigin)
+                    ? "Unclassified"
+                    : row.SensorOrigin;
             }
             PublishApiGraphSnapshot();
             if (EtwPaneHost.ItemCount > 0)
@@ -2396,6 +2442,24 @@ namespace BlackbirdInterface
             RefreshExplorerDataBadges();
         }
 
+        private static System.Windows.Media.Brush BuildApiSensorBackground(string sensor)
+        {
+            return sensor.StartsWith("Kernel", StringComparison.OrdinalIgnoreCase)
+                ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x45, 0x1A, 0x1A))
+                : sensor.StartsWith("Usermode", StringComparison.OrdinalIgnoreCase)
+                    ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x12, 0x2D, 0x4A))
+                    : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x24, 0x24, 0x24));
+        }
+
+        private static System.Windows.Media.Brush BuildApiSensorForeground(string sensor)
+        {
+            return sensor.StartsWith("Kernel", StringComparison.OrdinalIgnoreCase)
+                ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xFF, 0xC7, 0xC7))
+                : sensor.StartsWith("Usermode", StringComparison.OrdinalIgnoreCase)
+                    ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xB9, 0xE3, 0xFF))
+                    : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xD0, 0xD0, 0xD0));
+        }
+
         private async Task RunPreflightAsync(int pid, bool userInitiated = false)
         {
             BlackbirdPreflightReport report = await Task.Run(() => BlackbirdPreflight.Run(pid));
@@ -2406,6 +2470,7 @@ namespace BlackbirdInterface
             DiagnosticsState.SetValue("Broker Caps", $"0x{report.BrokerCapabilities:X8}");
             DiagnosticsState.SetValue("Broker TI", report.ThreatIntelEnabled ? "Enabled" : "Disabled");
             DiagnosticsState.SetValue("Broker TI Enable Err", report.ThreatIntelEnableError.ToString());
+            DiagnosticsState.SetValue("Hook DLL", report.HookDllExists ? "Found" : $"Missing ({report.HookDllPath})");
             ApplyConnectivityStatus(report, userInitiated);
         }
 
@@ -2436,6 +2501,11 @@ namespace BlackbirdInterface
             if (!report.DriverProxyOk)
             {
                 issues.Add("driver proxy unavailable");
+            }
+
+            if (!report.HookDllExists)
+            {
+                issues.Add($"hook dll missing ({report.HookDllPath})");
             }
 
             if (report.EtwUplinkCapable && !report.EtwUplinkQueryOk)

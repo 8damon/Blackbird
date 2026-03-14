@@ -53,6 +53,29 @@ namespace
         int
         );
 
+    using ConnectFn = int (WSAAPI*)(
+        SOCKET,
+        const sockaddr*,
+        int
+        );
+
+    using WsaConnectFn = int (WSAAPI*)(
+        SOCKET,
+        const sockaddr*,
+        int,
+        LPWSABUF,
+        LPWSABUF,
+        LPQOS,
+        LPQOS
+        );
+
+    using GetAddrInfoWFn = INT (WSAAPI*)(
+        PCWSTR,
+        PCWSTR,
+        const ADDRINFOW*,
+        PADDRINFOW*
+        );
+
     struct HookEntry
     {
         const char* ModuleName;
@@ -65,6 +88,9 @@ namespace
     static WsarecvFn           g_OriginalWsarecv = nullptr;
     static SendFn              g_OriginalSend = nullptr;
     static RecvFn              g_OriginalRecv = nullptr;
+    static ConnectFn           g_OriginalConnect = nullptr;
+    static WsaConnectFn        g_OriginalWsaConnect = nullptr;
+    static GetAddrInfoWFn      g_OriginalGetAddrInfoW = nullptr;
     static WinsockHookCallback g_ActiveCallback = nullptr;
     static bool                g_HooksInstalled = false;
     static __declspec(thread) bool g_InHook = false;
@@ -338,12 +364,135 @@ namespace
         return result;
     }
 
+    int WSAAPI ConnectHook(
+        SOCKET socketHandle,
+        const sockaddr* name,
+        int nameLength)
+    {
+        if (!g_InHook && g_ActiveCallback != nullptr &&
+            name != nullptr && nameLength > 0)
+        {
+            g_InHook = true;
+
+            WinsockHookBuffer bufferView{};
+            bufferView.Data = name;
+            bufferView.Length = static_cast<std::size_t>(nameLength);
+
+            WinsockHookContext context{};
+            context.Operation = WinsockOperation::Connect;
+            context.Socket = socketHandle;
+            context.Buffers = &bufferView;
+            context.BufferCount = 1U;
+            context.Caller = _ReturnAddress();
+            context.Args[0] = static_cast<std::uint64_t>(name->sa_family);
+            context.Args[1] = static_cast<std::uint64_t>(nameLength);
+
+            g_ActiveCallback(context);
+
+            g_InHook = false;
+        }
+
+        if (g_OriginalConnect == nullptr)
+        {
+            return SOCKET_ERROR;
+        }
+
+        return g_OriginalConnect(socketHandle, name, nameLength);
+    }
+
+    int WSAAPI WsaConnectHook(
+        SOCKET socketHandle,
+        const sockaddr* name,
+        int nameLength,
+        LPWSABUF callerData,
+        LPWSABUF calleeData,
+        LPQOS sqos,
+        LPQOS gqos)
+    {
+        if (!g_InHook && g_ActiveCallback != nullptr &&
+            name != nullptr && nameLength > 0)
+        {
+            g_InHook = true;
+
+            WinsockHookBuffer bufferView{};
+            bufferView.Data = name;
+            bufferView.Length = static_cast<std::size_t>(nameLength);
+
+            WinsockHookContext context{};
+            context.Operation = WinsockOperation::WsaConnect;
+            context.Socket = socketHandle;
+            context.Buffers = &bufferView;
+            context.BufferCount = 1U;
+            context.Caller = _ReturnAddress();
+            context.Args[0] = static_cast<std::uint64_t>(name->sa_family);
+            context.Args[1] = static_cast<std::uint64_t>(nameLength);
+
+            g_ActiveCallback(context);
+
+            g_InHook = false;
+        }
+
+        if (g_OriginalWsaConnect == nullptr)
+        {
+            return SOCKET_ERROR;
+        }
+
+        return g_OriginalWsaConnect(socketHandle, name, nameLength, callerData, calleeData, sqos, gqos);
+    }
+
+    INT WSAAPI GetAddrInfoWHook(
+        PCWSTR nodeName,
+        PCWSTR serviceName,
+        const ADDRINFOW* hints,
+        PADDRINFOW* result)
+    {
+        if (!g_InHook && g_ActiveCallback != nullptr && nodeName != nullptr && nodeName[0] != L'\0')
+        {
+            g_InHook = true;
+
+            std::size_t chars = 0;
+            while (nodeName[chars] != L'\0' && chars < 31)
+            {
+                ++chars;
+            }
+
+            WinsockHookBuffer bufferView{};
+            bufferView.Data = nodeName;
+            bufferView.Length = chars * sizeof(wchar_t);
+
+            WinsockHookContext context{};
+            context.Operation = WinsockOperation::GetAddrInfoW;
+            context.Socket = INVALID_SOCKET;
+            context.Buffers = &bufferView;
+            context.BufferCount = 1U;
+            context.Caller = _ReturnAddress();
+            context.Args[0] = (hints != nullptr) ? static_cast<std::uint64_t>(hints->ai_family) : 0ull;
+            context.Args[1] = (serviceName != nullptr && serviceName[0] != L'\0')
+                ? reinterpret_cast<std::uint64_t>(serviceName)
+                : 0ull;
+
+            g_ActiveCallback(context);
+
+            g_InHook = false;
+        }
+
+        if (g_OriginalGetAddrInfoW == nullptr)
+        {
+            return EAI_FAIL;
+        }
+
+        return g_OriginalGetAddrInfoW(nodeName, serviceName, hints, result);
+    }
+
     static HookEntry g_HookEntries[] =
     {
         { "WS2_32.dll", "WSASend", reinterpret_cast<void**>(&g_OriginalWsasend), reinterpret_cast<void*>(&WsasendHook) },
         { "WS2_32.dll", "WSARecv", reinterpret_cast<void**>(&g_OriginalWsarecv), reinterpret_cast<void*>(&WsarecvHook) },
         { "WS2_32.dll", "send",    reinterpret_cast<void**>(&g_OriginalSend),    reinterpret_cast<void*>(&SendHook)    },
         { "WS2_32.dll", "recv",    reinterpret_cast<void**>(&g_OriginalRecv),    reinterpret_cast<void*>(&RecvHook)    },
+        { "WS2_32.dll", "connect", reinterpret_cast<void**>(&g_OriginalConnect), reinterpret_cast<void*>(&ConnectHook) },
+        { "WS2_32.dll", "WSAConnect", reinterpret_cast<void**>(&g_OriginalWsaConnect), reinterpret_cast<void*>(&WsaConnectHook) },
+        { "WS2_32.dll", "GetAddrInfoW", reinterpret_cast<void**>(&g_OriginalGetAddrInfoW), reinterpret_cast<void*>(&GetAddrInfoWHook) },
     };
 
     bool PatchImportAddressTableForModule(HMODULE moduleHandle, bool install)

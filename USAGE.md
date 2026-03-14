@@ -139,10 +139,16 @@ BlackbirdInterface.exe
 Main workflow:
 
 1. `Select Target`
-2. review timeline, events, ETW, heuristics, and relations
-3. scrub the time-travel slider when needed
-4. open `Detection Chain`, `ETW Inspector`, `Handle Evidence`, or `Thread Stack`
-5. save/export the session
+2. confirm choices in `Launch Parameters`
+3. review timeline, events, ETW, heuristics, and relations
+4. scrub the time-travel slider when needed
+5. open `Detection Chain`, `ETW Inspector`, `Handle Evidence`, or `Thread Stack`
+6. save/export the session
+
+Notes:
+
+- attaching to a running process cannot use `EarlyBird APC`; that option is only available when launching a new process
+- interface command icons are loaded from `interface/Resources/*.png` and embedded automatically by the interface project
 
 ## Session Export
 

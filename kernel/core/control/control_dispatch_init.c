@@ -97,6 +97,9 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUE
     case IOCTL_BLACKBIRD_SET_PIDS:
         status = BLACKBIRDHandleSetPidsIoctl(ctx->Client, Request);
         break;
+    case IOCTL_BLACKBIRD_ARM_PENDING_LAUNCH:
+        status = BLACKBIRDHandleArmPendingLaunchIoctl(ctx->Client, Request);
+        break;
     case IOCTL_BLACKBIRD_QUERY_PROCESS_IMAGE:
         status = BLACKBIRDHandleQueryProcessImageIoctl(ctx->Client, Request, &bytesOut);
         break;
@@ -111,6 +114,11 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUE
                    requesterPid,
                    IoControlCode);
         break;
+    }
+
+    if (status == STATUS_PENDING)
+    {
+        return;
     }
 
     if (IoControlCode != IOCTL_BLACKBIRD_GET_EVENT || (!NT_SUCCESS(status) && status != STATUS_NO_MORE_ENTRIES))
@@ -155,6 +163,7 @@ BLACKBIRDControlInitialize(_In_ WDFDRIVER Driver)
     InitializeListHead(&g_ClientList);
     g_ClientCount = 0;
     InterlockedExchange(&g_ControlShutdown, 0);
+    InterlockedExchange(&g_ControlTelemetryArmed, 0);
     InterlockedExchange(&g_ControlQueueDropLogCounter, 0);
     InterlockedExchange(&g_ControlTotalQueuedEvents, 0);
     InterlockedExchange(&g_QueryImageInflight, 0);

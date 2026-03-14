@@ -99,9 +99,26 @@ namespace BlackbirdInterface
         private static readonly Brush ProcessStateUnknownBackground = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x1E));
         private static readonly Brush ProcessStateUnknownBorder = new SolidColorBrush(Color.FromRgb(0x4A, 0x4A, 0x4A));
         private static readonly Brush ProcessStateUnknownForeground = new SolidColorBrush(Color.FromRgb(0xB8, 0xB8, 0xB8));
-        private const string WindowTitleBase = "BLACKBIRD";
+        private static readonly Brush ToolbarInactiveBackground = new SolidColorBrush(Color.FromRgb(0x18, 0x18, 0x18));
+        private static readonly Brush ToolbarInactiveBorder = new SolidColorBrush(Color.FromRgb(0x46, 0x46, 0x46));
+        private static readonly Brush ToolbarInactiveForeground = new SolidColorBrush(Color.FromRgb(0x7A, 0x7A, 0x7A));
+        private static readonly Brush ToolbarTargetBackground = new SolidColorBrush(Color.FromRgb(0xC9, 0xC9, 0xC9));
+        private static readonly Brush ToolbarTargetBorder = new SolidColorBrush(Color.FromRgb(0xE2, 0xE2, 0xE2));
+        private static readonly Brush ToolbarTargetForeground = new SolidColorBrush(Color.FromRgb(0x10, 0x10, 0x10));
+        private static readonly Brush ToolbarPauseBackground = new SolidColorBrush(Color.FromRgb(0x3B, 0x24, 0x11));
+        private static readonly Brush ToolbarPauseBorder = new SolidColorBrush(Color.FromRgb(0xE1, 0x92, 0x2C));
+        private static readonly Brush ToolbarPauseForeground = new SolidColorBrush(Color.FromRgb(0xF0, 0xAB, 0x4B));
+        private static readonly Brush ToolbarResumeBackground = new SolidColorBrush(Color.FromRgb(0x14, 0x35, 0x1C));
+        private static readonly Brush ToolbarResumeBorder = new SolidColorBrush(Color.FromRgb(0x4C, 0xC5, 0x68));
+        private static readonly Brush ToolbarResumeForeground = new SolidColorBrush(Color.FromRgb(0x98, 0xEF, 0xAD));
+        private static readonly Brush ToolbarStopBackground = new SolidColorBrush(Color.FromRgb(0x3D, 0x15, 0x1A));
+        private static readonly Brush ToolbarStopBorder = new SolidColorBrush(Color.FromRgb(0xD6, 0x43, 0x43));
+        private static readonly Brush ToolbarStopForeground = new SolidColorBrush(Color.FromRgb(0xF0, 0x74, 0x74));
+        private const string WindowTitleBase = "Blackbird";
 
+        private const uint ProcessTerminate = 0x0001;
         private const uint ProcessSynchronize = 0x00100000;
+        private const uint ProcessSuspendResume = 0x0800;
         private const uint ProcessVmRead = 0x0010;
         private const uint ProcessQueryLimitedInformation = 0x1000;
 
@@ -137,7 +154,9 @@ namespace BlackbirdInterface
             };
             _apiGraphRefreshTimer.Tick += ApiGraphRefreshTimer_Tick;
             Loaded += OnLoaded;
+            Closing += OnClosing;
             Closed += OnClosed;
+            RefreshToolbarCommandState();
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)
@@ -238,6 +257,15 @@ namespace BlackbirdInterface
             _currentSession = null;
         }
 
+        private void OnClosing(object? sender, CancelEventArgs e)
+        {
+            _ = sender;
+            if (!PrepareSessionShutdown())
+            {
+                e.Cancel = true;
+            }
+        }
+
         private void OnClosed(object? sender, EventArgs e)
         {
             _isMainWindowShuttingDown = true;
@@ -307,20 +335,20 @@ namespace BlackbirdInterface
             DisposePreparedLaunchBackendSession();
             StopBackendSession();
             HideDockPreview();
+            CleanupTemporarySessionBackingStores();
         }
 
         private void SetupExplorer()
         {
             _explorer.Clear();
 
-            // Pane identity colors: events=blue, performance=green.
-            _explorer.Add(new GraphExplorerItem("Events", new SolidColorBrush(Color.FromRgb(0x4C, 0x8F, 0xD2))) { IsEnabled = true });
+            _explorer.Add(new GraphExplorerItem("Events", new SolidColorBrush(Color.FromRgb(0xAA, 0x7D, 0x4A))) { IsEnabled = true });
             _explorer.Add(new GraphExplorerItem("Performance", new SolidColorBrush(Color.FromRgb(0x58, 0xB6, 0x58))) { IsEnabled = true });
             _explorer.Add(new GraphExplorerItem("ETW", new SolidColorBrush(Color.FromRgb(0xD2, 0x89, 0x34))) { IsEnabled = true });
             _explorer.Add(new GraphExplorerItem("Heuristics", new SolidColorBrush(Color.FromRgb(0xD2, 0x55, 0x55))) { IsEnabled = true });
             _explorer.Add(new GraphExplorerItem("Filesystem", new SolidColorBrush(Color.FromRgb(0x45, 0x8E, 0x7A))) { IsEnabled = true });
             _explorer.Add(new GraphExplorerItem("Process Relations", new SolidColorBrush(Color.FromRgb(0xD2, 0xB8, 0x55))) { IsEnabled = true });
-            _explorer.Add(new GraphExplorerItem("IPC Uplink", new SolidColorBrush(Color.FromRgb(0x4A, 0xC1, 0xC6)))
+            _explorer.Add(new GraphExplorerItem("IPC Uplink", new SolidColorBrush(Color.FromRgb(0x52, 0xA9, 0xB3)))
             {
                 IsEnabled = false,
                 ShowDetails = false,
@@ -1046,6 +1074,7 @@ namespace BlackbirdInterface
         private void RefreshProcessStateBadge()
         {
             UpdateWindowTitle();
+            RefreshToolbarCommandState();
 
             if (ProcessStateBadge == null || ProcessStateBlock == null)
             {
@@ -1095,6 +1124,45 @@ namespace BlackbirdInterface
             ProcessStateBadge.Background = background;
             ProcessStateBadge.BorderBrush = border;
             ProcessStateBlock.Foreground = foreground;
+        }
+
+        private void RefreshToolbarCommandState()
+        {
+            bool hasAttachedTarget = _currentSession != null &&
+                                     _currentSession.Pid > 0 &&
+                                     !_currentSession.OfflineSnapshot &&
+                                     !_currentSession.TargetExited;
+
+            bool canPause = hasAttachedTarget;
+            bool canResume = false;
+            if (hasAttachedTarget)
+            {
+                IntelScopeStatus scope = ((IIntelDetailsProvider)this).GetIntelScopeStatus();
+                if (scope == IntelScopeStatus.Waiting)
+                {
+                    canPause = false;
+                    canResume = true;
+                }
+            }
+
+            SetToolbarCommandButtonState(TargetCommandButton, TargetCommandGlyph, true, ToolbarTargetBackground, ToolbarTargetBorder, ToolbarTargetForeground);
+            SetToolbarCommandButtonState(PauseCommandButton, PauseCommandGlyph, canPause, ToolbarPauseBackground, ToolbarPauseBorder, ToolbarPauseForeground);
+            SetToolbarCommandButtonState(ResumeCommandButton, ResumeCommandGlyph, canResume, ToolbarResumeBackground, ToolbarResumeBorder, ToolbarResumeForeground);
+            SetToolbarCommandButtonState(TerminateCommandButton, TerminateCommandGlyph, hasAttachedTarget, ToolbarStopBackground, ToolbarStopBorder, ToolbarStopForeground);
+        }
+
+        private static void SetToolbarCommandButtonState(Button? button, Border? glyph, bool enabled, Brush activeBackground, Brush activeBorder, Brush activeForeground)
+        {
+            if (button == null || glyph == null)
+            {
+                return;
+            }
+
+            button.IsEnabled = enabled;
+            button.Background = enabled ? activeBackground : ToolbarInactiveBackground;
+            button.BorderBrush = enabled ? activeBorder : ToolbarInactiveBorder;
+            button.Foreground = enabled ? activeForeground : ToolbarInactiveForeground;
+            glyph.Background = enabled ? activeForeground : ToolbarInactiveForeground;
         }
 
         // -------------------------------
@@ -2064,13 +2132,120 @@ namespace BlackbirdInterface
         private void EventLogWindow_EtwFeedRequested(object? sender, EventLogCardOpenRequestedEventArgs e)
         {
             _ = sender;
-            _ = e;
+            if (e == null)
+            {
+                return;
+            }
+
+            var matches = _focusedEvents
+                .Where(ev => EventMatchesLogCard(ev, e.Group, e.SubType, e.Summary, e.Details, e.Pid, e.Tid))
+                .ToList();
+            OpenEventLogDetailWindow("Event Log Detail", matches);
         }
 
         private void EventsPaneHost_EventLogEntryOpenRequested(object? sender, EventLogEntryOpenRequestedEventArgs e)
         {
             _ = sender;
-            _ = e;
+            if (e?.Event == null)
+            {
+                return;
+            }
+
+            TelemetryEvent selected = e.Event;
+            var matches = _focusedEvents
+                .Where(ev => EventMatchesLogCard(
+                    ev,
+                    selected.Group,
+                    selected.SubType,
+                    selected.Summary,
+                    selected.Details,
+                    selected.PID,
+                    selected.TID))
+                .ToList();
+            OpenEventLogDetailWindow("Event Detail", matches);
+        }
+
+        private void OpenEventLogDetailWindow(string title, IReadOnlyList<TelemetryEvent> matches)
+        {
+            if (matches == null || matches.Count == 0)
+            {
+                return;
+            }
+
+            GroupedEventRow row = BuildEventLogDetailRow(matches);
+            var detail = new SimpleEventDetailWindow(title, row)
+            {
+                Owner = this
+            };
+            detail.Show();
+            detail.Activate();
+        }
+
+        private static bool EventMatchesLogCard(
+            TelemetryEvent ev,
+            string group,
+            string subType,
+            string summary,
+            string details,
+            int pid,
+            int tid)
+        {
+            if (ev == null)
+            {
+                return false;
+            }
+
+            return string.Equals(ev.Group ?? string.Empty, group ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(ev.SubType ?? string.Empty, subType ?? string.Empty, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(ev.Summary ?? string.Empty, summary ?? string.Empty, StringComparison.Ordinal) &&
+                   string.Equals(ev.Details ?? string.Empty, details ?? string.Empty, StringComparison.Ordinal) &&
+                   ev.PID == pid &&
+                   ev.TID == tid;
+        }
+
+        private static GroupedEventRow BuildEventLogDetailRow(IReadOnlyList<TelemetryEvent> matches)
+        {
+            TelemetryEvent first = matches[0];
+            string group = string.IsNullOrWhiteSpace(first.Group) ? "Other" : first.Group;
+            string subType = first.SubType ?? string.Empty;
+            string eventName = string.IsNullOrWhiteSpace(subType) ? group : $"{group}/{subType}";
+            string summary = first.Summary ?? string.Empty;
+            string key = $"{group}\u001F{subType}\u001F{first.PID}\u001F{first.TID}\u001F{summary}\u001F{first.Details}";
+
+            var row = new GroupedEventRow
+            {
+                GroupKey = key,
+                LastSeenUtc = matches.Max(x => x.TimestampUtc),
+                Event = eventName,
+                Severity = "Event",
+                Detection = summary,
+                Hits = matches.Count
+            };
+
+            foreach (TelemetryEvent ev in matches.OrderByDescending(x => x.TimestampUtc))
+            {
+                string actor = string.IsNullOrWhiteSpace(ev.ProcessName)
+                    ? $"pid:{ev.PID}"
+                    : ev.ProcessName;
+                string target = ev.TID > 0 ? $"tid={ev.TID}" : string.Empty;
+
+                row.Details.Add(new GroupedEventDetailRow
+                {
+                    TimestampUtc = ev.TimestampUtc,
+                    Event = eventName,
+                    Severity = "Event",
+                    Detection = ev.Summary ?? string.Empty,
+                    Source = group,
+                    Actor = actor,
+                    Target = target,
+                    ActorPid = ev.PID > 0 ? unchecked((uint)ev.PID) : 0u,
+                    TargetPid = 0u,
+                    ActorToolTip = ev.PID > 0 ? $"PID {ev.PID}" : string.Empty,
+                    Details = ev.Details ?? string.Empty
+                });
+            }
+
+            return row;
         }
 
         private void TogglePerformanceFloatDock()
@@ -2190,6 +2365,8 @@ namespace BlackbirdInterface
                 pid,
                 row.Tid,
                 row.State,
+                initialHistory: GetThreadStackHistory(pid, row.Tid, row.State),
+                onSnapshotCaptured: snapshot => PersistThreadStackSnapshot(pid, row.Tid, row.State, snapshot),
                 observationTimeUtcProvider: GetCurrentObservedUtc,
                 liveCaptureAvailableProvider: () =>
                     _currentSession != null &&
@@ -2610,6 +2787,26 @@ namespace BlackbirdInterface
 
                 int selectedPid = picker.SelectedPid;
                 bool hookPreconfigured = false;
+                bool useUsermodeHooks = false;
+                bool autoOpenApiGraph = false;
+                bool useEarlyBirdApcLaunch = false;
+                if (showLaunchOptions && (picker.LaunchSelectedImage || selectedPid > 0))
+                {
+                    var parametersWindow = new LaunchParametersWindow(isLaunchTarget: picker.LaunchSelectedImage)
+                    {
+                        Owner = this
+                    };
+                    bool? parametersAccepted = parametersWindow.ShowDialog();
+                    if (parametersAccepted != true)
+                    {
+                        return;
+                    }
+
+                    useUsermodeHooks = parametersWindow.UseUsermodeHooks;
+                    autoOpenApiGraph = parametersWindow.AutoOpenApiGraphWindow;
+                    useEarlyBirdApcLaunch = parametersWindow.UseEarlyBirdApcLaunch;
+                }
+
                 if (showLaunchOptions && picker.LaunchSelectedImage)
                 {
                     string launchImagePath = picker.LaunchImagePath?.Trim() ?? string.Empty;
@@ -2619,7 +2816,7 @@ namespace BlackbirdInterface
                         return;
                     }
 
-                    if (picker.UseUsermodeHooks)
+                    if (useUsermodeHooks)
                     {
                         LoadingWindow? launchLoading = null;
                         bool launchOk;
@@ -2639,7 +2836,7 @@ namespace BlackbirdInterface
                             launchOk = await Task.Run(() =>
                                 TryLaunchWithUsermodeHooksAndPrepareSession(
                                     launchImagePath,
-                                    picker.UseEarlyBirdApcLaunch,
+                                    useEarlyBirdApcLaunch,
                                     out launchedPid,
                                     out preparedSession,
                                     out launchError));
@@ -2696,8 +2893,8 @@ namespace BlackbirdInterface
                 }
 
                 _pendingLaunchOptions = showLaunchOptions;
-                _pendingUseUsermodeHooks = showLaunchOptions && picker.UseUsermodeHooks;
-                _pendingAutoOpenApiGraph = showLaunchOptions && picker.AutoOpenApiGraphWindow;
+                _pendingUseUsermodeHooks = showLaunchOptions && useUsermodeHooks;
+                _pendingAutoOpenApiGraph = showLaunchOptions && autoOpenApiGraph;
                 _pendingHookPreconfigured = hookPreconfigured;
                 PidBox.Text = selectedPid.ToString();
                 Connect_Click(this, new RoutedEventArgs());
@@ -2759,8 +2956,154 @@ namespace BlackbirdInterface
             return TryOpenSessionArchivePath(path, merge: false, out error);
         }
 
-        private void Suspend_Click(object sender, RoutedEventArgs e) { }
+        private void Suspend_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryControlTargetExecution(suspend: true, out string error))
+            {
+                ThemedMessageBox.Show(this, error, "Pause Target", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            StatusBlock.Text = $"TARGET PAUSED: PID {TryGetPid()}";
+            RefreshProcessStateBadge();
+        }
+
+        private void Resume_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryControlTargetExecution(suspend: false, out string error))
+            {
+                ThemedMessageBox.Show(this, error, "Resume Target", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            StatusBlock.Text = $"TARGET RESUMED: PID {TryGetPid()}";
+            RefreshProcessStateBadge();
+        }
+
+        private void TerminateTarget_Click(object sender, RoutedEventArgs e)
+        {
+            int pid = _currentSession?.Pid ?? TryGetPid();
+            if (pid <= 0)
+            {
+                ThemedMessageBox.Show(this, "No target process is selected.", "Terminate Target", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (_currentSession?.OfflineSnapshot == true)
+            {
+                ThemedMessageBox.Show(this, "Cannot terminate an offline session.", "Terminate Target", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (_currentSession?.TargetExited == true)
+            {
+                ThemedMessageBox.Show(this, $"PID {pid} has already exited.", "Terminate Target", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var confirm = ThemedMessageBox.Show(
+                this,
+                $"Terminate PID {pid} and stop live capture for this tab?",
+                "Terminate Target",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (confirm != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            if (!TryTerminateTargetProcess(pid, out string error))
+            {
+                ThemedMessageBox.Show(this, error, "Terminate Target", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            HandleTargetProcessExit(pid);
+        }
         private void Restart_Click(object sender, RoutedEventArgs e) { }
+
+        private bool TryControlTargetExecution(bool suspend, out string error)
+        {
+            error = string.Empty;
+            int pid = _currentSession?.Pid ?? TryGetPid();
+            if (pid <= 0)
+            {
+                error = "No target process is selected.";
+                return false;
+            }
+
+            if (_currentSession?.OfflineSnapshot == true)
+            {
+                error = "Cannot control execution for an offline session.";
+                return false;
+            }
+
+            if (_currentSession?.TargetExited == true)
+            {
+                error = $"PID {pid} has already exited.";
+                return false;
+            }
+
+            IntPtr handle = Kernel32Native.OpenProcess(
+                ProcessSuspendResume | ProcessQueryLimitedInformation | ProcessSynchronize,
+                false,
+                unchecked((uint)pid));
+            if (handle == IntPtr.Zero)
+            {
+                int openErr = Marshal.GetLastWin32Error();
+                error = $"Failed to open PID {pid} for execution control (win32={openErr}).";
+                return false;
+            }
+
+            try
+            {
+                int status = suspend
+                    ? Kernel32Native.NtSuspendProcess(handle)
+                    : Kernel32Native.NtResumeProcess(handle);
+                if (status < 0)
+                {
+                    error = $"{(suspend ? "NtSuspendProcess" : "NtResumeProcess")} failed (ntstatus=0x{unchecked((uint)status):X8}).";
+                    return false;
+                }
+
+                return true;
+            }
+            finally
+            {
+                _ = Kernel32Native.CloseHandle(handle);
+            }
+        }
+
+        private bool TryTerminateTargetProcess(int pid, out string error)
+        {
+            error = string.Empty;
+            IntPtr handle = Kernel32Native.OpenProcess(
+                ProcessTerminate | ProcessQueryLimitedInformation | ProcessSynchronize,
+                false,
+                unchecked((uint)pid));
+            if (handle == IntPtr.Zero)
+            {
+                int openErr = Marshal.GetLastWin32Error();
+                error = $"Failed to open PID {pid} for termination (win32={openErr}).";
+                return false;
+            }
+
+            try
+            {
+                if (!Kernel32Native.TerminateProcess(handle, 1))
+                {
+                    int terminateErr = Marshal.GetLastWin32Error();
+                    error = $"TerminateProcess failed for PID {pid} (win32={terminateErr}).";
+                    return false;
+                }
+
+                return true;
+            }
+            finally
+            {
+                _ = Kernel32Native.CloseHandle(handle);
+            }
+        }
 
         // -------------------------------
         // Demo feed
@@ -3379,6 +3722,9 @@ namespace BlackbirdInterface
         {
             public string GraphKey { get; set; } = string.Empty;
             public string ApiName { get; set; } = string.Empty;
+            public string SensorLabel { get; set; } = string.Empty;
+            public Brush? SensorBackground { get; set; }
+            public Brush? SensorForeground { get; set; }
             public string PathLabel { get; set; } = string.Empty;
             public string ThreadLabel { get; set; } = string.Empty;
             public string LastSeen { get; set; } = string.Empty;
@@ -3408,6 +3754,7 @@ namespace BlackbirdInterface
         public List<TelemetryEvent> Events { get; } = new();
         public List<PerformanceSample> PerformanceHistory { get; } = new();
         public List<ThreadLifecycleEventSample> ThreadLifecycleHistory { get; } = new();
+        public List<ThreadStackHistoryArchiveEntry> ThreadStackHistories { get; } = new();
         public DateTime CaptureStartUtc { get; set; } = DateTime.UtcNow;
         public double ViewDurationSeconds { get; set; } = 120;
         public double ViewStartSeconds { get; set; }

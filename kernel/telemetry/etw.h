@@ -56,4 +56,12 @@ VOID BLACKBIRDEtwLogDetectionEvent(_In_z_ PCSTR DetectionName, _In_ ULONG Severi
                                      _In_ UINT32 CorrelationAccessMask, _In_ UINT32 CorrelationAgeMs,
                                      _In_opt_z_ PCWSTR Reason);
 
+VOID BLACKBIRDEtwLogSystemInfoEvent(_In_ HANDLE CallerPid, _In_ HANDLE CallerTid, _In_ ULONG SystemInformationClass,
+                                      _In_ ULONG SystemInformationLength, _In_ ULONG ReturnLength,
+                                      _In_ NTSTATUS QueryStatus);
+
+VOID BLACKBIRDEtwLogNtApiEvent(_In_z_ PCSTR ApiName, _In_ HANDLE CallerPid, _In_ HANDLE CallerTid, _In_ UINT64 Arg0,
+                                 _In_ UINT64 Arg1, _In_ UINT64 Arg2, _In_ UINT64 Arg3, _In_ UINT64 Arg4,
+                                 _In_ UINT64 Arg5, _In_ UINT64 Arg6, _In_ UINT64 Arg7, _In_ NTSTATUS CallStatus);
+
 #endif

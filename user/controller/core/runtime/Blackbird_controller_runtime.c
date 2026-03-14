@@ -567,6 +567,14 @@ static BOOL ControllerShouldForwardEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_
     {
         return FALSE;
     }
+    if (wcscmp(EventName, L"NtApiTelemetry") == 0)
+    {
+        return TRUE;
+    }
+    if (wcscmp(EventName, L"SystemInformationTelemetry") == 0)
+    {
+        return TRUE;
+    }
 
     return FALSE;
 }
@@ -580,10 +588,19 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
     ULONGLONG threadId = 0;
     ULONGLONG callerPid = 0;
     ULONGLONG targetPid = 0;
+    ULONGLONG callerTid = 0;
     ULONGLONG parentProcessId = 0;
     ULONGLONG creatorProcessId = 0;
     ULONGLONG creatorThreadId = 0;
     ULONGLONG processStartKey = 0;
+    ULONGLONG arg0 = 0;
+    ULONGLONG arg1 = 0;
+    ULONGLONG arg2 = 0;
+    ULONGLONG arg3 = 0;
+    ULONGLONG arg4 = 0;
+    ULONGLONG arg5 = 0;
+    ULONGLONG arg6 = 0;
+    ULONGLONG arg7 = 0;
     ULONGLONG originAddress = 0;
     ULONGLONG deepAllocationBase = 0;
     ULONGLONG deepRegionSize = 0;
@@ -608,14 +625,20 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
     ULONG notifyClass = 0;
     ULONG dataType = 0;
     ULONG dataSize = 0;
+    ULONG systemInformationClass = 0;
+    ULONG systemInformationLength = 0;
+    ULONG returnLength = 0;
     LONG statusOpenProcess = 0;
     LONG statusBasicInfo = 0;
     LONG statusSectionName = 0;
     LONG startRegionStatus = 0;
     LONG createStatus = 0;
+    LONG callStatus = 0;
+    LONG queryStatus = 0;
     BOOL boolValue = FALSE;
     UCHAR signatureLevel = 0;
     UCHAR signatureType = 0;
+    CHAR apiName[96];
     DWORD i;
 
     UNREFERENCED_PARAMETER(Context);
@@ -626,6 +649,7 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
     }
 
     ZeroMemory(&event, sizeof(event));
+    ZeroMemory(apiName, sizeof(apiName));
     event.EventId = Record->EventHeader.EventDescriptor.Id;
     event.Opcode = Record->EventHeader.EventDescriptor.Opcode;
     event.Task = Record->EventHeader.EventDescriptor.Task;
@@ -676,6 +700,7 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
     }
     (void)ControllerEtwGetU64Property(Record, L"threadId", &threadId);
     (void)ControllerEtwGetU64Property(Record, L"callerPid", &callerPid);
+    (void)ControllerEtwGetU64Property(Record, L"callerTid", &callerTid);
     (void)ControllerEtwGetU64Property(Record, L"targetPid", &targetPid);
     (void)ControllerEtwGetU64Property(Record, L"parentProcessId", &parentProcessId);
     (void)ControllerEtwGetU64Property(Record, L"creatorProcessId", &creatorProcessId);
@@ -903,6 +928,115 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
             (void)StringCchCopyA(event.DetectionName, RTL_NUMBER_OF(event.DetectionName), "UNKNOWN");
         }
         (void)ControllerEtwGetWideProperty(Record, L"reason", event.Reason, RTL_NUMBER_OF(event.Reason));
+    }
+    else if (EventName != NULL && wcscmp(EventName, L"NtApiTelemetry") == 0)
+    {
+        event.Family = BlackbirdIpcEtwFamilyUserHook;
+
+        (void)ControllerEtwGetAnsiProperty(Record, L"api", apiName, RTL_NUMBER_OF(apiName));
+        if (apiName[0] == '\0')
+        {
+            (void)StringCchCopyA(apiName, RTL_NUMBER_OF(apiName), "UNKNOWN_NTAPI");
+        }
+        (void)StringCchCopyA(event.Operation, RTL_NUMBER_OF(event.Operation), apiName);
+        (void)MultiByteToWideChar(CP_ACP, 0, apiName, -1, event.EventName, (int)RTL_NUMBER_OF(event.EventName));
+
+        (void)ControllerEtwGetU64Property(Record, L"arg0", &arg0);
+        (void)ControllerEtwGetU64Property(Record, L"arg1", &arg1);
+        (void)ControllerEtwGetU64Property(Record, L"arg2", &arg2);
+        (void)ControllerEtwGetU64Property(Record, L"arg3", &arg3);
+        (void)ControllerEtwGetU64Property(Record, L"arg4", &arg4);
+        (void)ControllerEtwGetU64Property(Record, L"arg5", &arg5);
+        (void)ControllerEtwGetU64Property(Record, L"arg6", &arg6);
+        (void)ControllerEtwGetU64Property(Record, L"arg7", &arg7);
+        (void)ControllerEtwGetI32Property(Record, L"status", &callStatus);
+
+        if (callerPid != 0)
+        {
+            event.ProcessId = callerPid;
+            event.CallerPid = callerPid;
+        }
+        if (callerTid != 0)
+        {
+            event.ThreadId = callerTid;
+        }
+
+        if (lstrcmpiA(apiName, "NtAllocateVirtualMemory") == 0)
+        {
+            event.Severity = 2u;
+            (void)StringCchCopyA(event.DetectionName, RTL_NUMBER_OF(event.DetectionName), "USERMODE_MEMORY_ACTIVITY");
+            (void)StringCchPrintfW(event.Reason, RTL_NUMBER_OF(event.Reason),
+                                   L"memory.alloc base=0x%llX size=0x%llX allocType=0x%llX protect=0x%llX status=0x%08X",
+                                   (unsigned long long)arg1, (unsigned long long)arg2, (unsigned long long)arg4,
+                                   (unsigned long long)arg5, (unsigned int)callStatus);
+        }
+        else if (lstrcmpiA(apiName, "NtProtectVirtualMemory") == 0)
+        {
+            event.Severity = 3u;
+            (void)StringCchCopyA(event.DetectionName, RTL_NUMBER_OF(event.DetectionName), "USERMODE_MEMORY_ACTIVITY");
+            (void)StringCchPrintfW(event.Reason, RTL_NUMBER_OF(event.Reason),
+                                   L"memory.protect base=0x%llX size=0x%llX newProtect=0x%llX oldProtect=0x%llX status=0x%08X",
+                                   (unsigned long long)arg1, (unsigned long long)arg2, (unsigned long long)arg3,
+                                   (unsigned long long)arg4, (unsigned int)callStatus);
+        }
+        else if (lstrcmpiA(apiName, "NtWriteVirtualMemory") == 0)
+        {
+            event.Severity = 3u;
+            (void)StringCchCopyA(event.DetectionName, RTL_NUMBER_OF(event.DetectionName), "USERMODE_MEMORY_ACTIVITY");
+            (void)StringCchPrintfW(event.Reason, RTL_NUMBER_OF(event.Reason),
+                                   L"memory.write base=0x%llX size=0x%llX bytesWritten=0x%llX status=0x%08X",
+                                   (unsigned long long)arg1, (unsigned long long)arg3, (unsigned long long)arg4,
+                                   (unsigned int)callStatus);
+        }
+        else if (lstrcmpiA(apiName, "NtQueryInformationProcess") == 0 ||
+                 lstrcmpiA(apiName, "NtQuerySystemInformation") == 0)
+        {
+            event.Severity = 3u;
+            (void)StringCchCopyA(event.DetectionName, RTL_NUMBER_OF(event.DetectionName), "USERMODE_PROCESS_RECON");
+            (void)StringCchPrintfW(event.Reason, RTL_NUMBER_OF(event.Reason),
+                                   L"process.recon api=%S c0=0x%llX c1=0x%llX c2=0x%llX c3=0x%llX status=0x%08X", apiName,
+                                   (unsigned long long)arg0, (unsigned long long)arg1, (unsigned long long)arg2,
+                                   (unsigned long long)arg3, (unsigned int)callStatus);
+        }
+        else
+        {
+            event.Severity = 2u;
+            (void)StringCchCopyA(event.DetectionName, RTL_NUMBER_OF(event.DetectionName), "USERMODE_HOOK_API_CALL");
+            (void)StringCchPrintfW(
+                event.Reason, RTL_NUMBER_OF(event.Reason),
+                L"kind=kernel_ntapi api=%S c0=0x%llX c1=0x%llX c2=0x%llX c3=0x%llX c4=0x%llX c5=0x%llX c6=0x%llX c7=0x%llX status=0x%08X",
+                apiName, (unsigned long long)arg0, (unsigned long long)arg1, (unsigned long long)arg2,
+                (unsigned long long)arg3, (unsigned long long)arg4, (unsigned long long)arg5, (unsigned long long)arg6,
+                (unsigned long long)arg7, (unsigned int)callStatus);
+        }
+    }
+    else if (EventName != NULL && wcscmp(EventName, L"SystemInformationTelemetry") == 0)
+    {
+        event.Family = BlackbirdIpcEtwFamilyUserHook;
+        event.Severity = 3u;
+        if (callerPid != 0)
+        {
+            event.ProcessId = callerPid;
+            event.CallerPid = callerPid;
+        }
+        if (callerTid != 0)
+        {
+            event.ThreadId = callerTid;
+        }
+        (void)StringCchCopyA(event.Operation, RTL_NUMBER_OF(event.Operation), "NtQuerySystemInformation");
+        (void)StringCchCopyW(event.EventName, RTL_NUMBER_OF(event.EventName), L"NtQuerySystemInformation");
+        (void)StringCchCopyA(event.DetectionName, RTL_NUMBER_OF(event.DetectionName), "USERMODE_PROCESS_RECON");
+
+        (void)ControllerEtwGetU32Property(Record, L"systemInformationClass", &systemInformationClass);
+        (void)ControllerEtwGetU32Property(Record, L"systemInformationLength", &systemInformationLength);
+        (void)ControllerEtwGetU32Property(Record, L"returnLength", &returnLength);
+        (void)ControllerEtwGetI32Property(Record, L"queryStatus", &queryStatus);
+
+        (void)StringCchPrintfW(
+            event.Reason, RTL_NUMBER_OF(event.Reason),
+            L"process.recon api=NtQuerySystemInformation systemInformationClass=0x%X systemInformationLength=0x%X returnLength=0x%X status=0x%08X",
+            (unsigned int)systemInformationClass, (unsigned int)systemInformationLength, (unsigned int)returnLength,
+            (unsigned int)queryStatus);
     }
     else
     {
@@ -1197,6 +1331,11 @@ static BOOL ControllerStartCore(VOID)
         return FALSE;
     }
 
+    if (!ControllerSymbolServiceStart())
+    {
+        ControllerLog("[WARN] controller symbol service start failed (%lu)\n", GetLastError());
+    }
+
     BLACKBIRDSCUseServiceProtocol();
     g_DriverHandle = BLACKBIRDSCOpenControlDevice();
     if (g_DriverHandle == INVALID_HANDLE_VALUE)
@@ -1339,6 +1478,7 @@ static VOID ControllerStopCore(VOID)
         g_StopEvent = NULL;
     }
 
+    ControllerSymbolServiceStop();
     ControllerResetHollowingState();
 
     ControllerLog("[*] BlackbirdController: core stopped\n");

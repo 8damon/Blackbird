@@ -62,3 +62,7 @@ StingerInitDbgX.txt
 .dotnet_home/
 .dotnet-home/
 RuntimeTest/
+
+# Local research notes
+BK_HOOKING.md
+FUTURE.md

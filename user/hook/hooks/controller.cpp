@@ -63,6 +63,10 @@ void WinsockHookController::EnqueueEvent(
     evt.Socket = context.Socket;
     evt.Operation = context.Operation;
     evt.Caller = context.Caller;
+    for (std::size_t i = 0; i < RTL_NUMBER_OF(evt.Args); ++i)
+    {
+        evt.Args[i] = context.Args[i];
+    }
 
     if (context.Buffers && context.BufferCount > 0)
     {
@@ -82,7 +86,7 @@ void WinsockHookController::EnqueueEvent(
         }
     }
 
-    IC_STACKTRACE::Capture(evt.Stack, /*skip=*/ 2);
+    IC_STACKTRACE::Capture(evt.Stack, 2);
 
     std::lock_guard<std::mutex> lock(s_QueueMutex);
     s_Queue.push_back(std::move(evt));

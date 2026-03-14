@@ -12,32 +12,102 @@
     <Grid Margin="10,0,10,10">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="130"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <DockPanel Margin="0,0,0,8"
-                       LastChildFill="False"
-                       MouseLeftButtonDown="Root_MouseLeftButtonDown">
-                <TextBlock Text="Debug / Console Output"
-                           FontSize="14"
-                           FontWeight="SemiBold"
-                           VerticalAlignment="Center"/>
-                <TextBlock x:Name="TargetBlock"
-                           Margin="12,0,0,0"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource WinMutedTextBrush}"/>
-                <Button DockPanel.Dock="Right"
-                        Content="✕"
-                        Width="22"
-                        Height="20"
-                        Margin="8,0,0,0"
-                        VerticalAlignment="Top"
-                        Click="Close_Click"/>
-            </DockPanel>
+            <Border Grid.Row="0"
+                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                    BorderThickness="0,0,0,1"
+                    Background="{DynamicResource WinHeaderBrush}"
+                    Padding="10,6"
+                    Margin="0,0,0,8"
+                    MouseLeftButtonDown="Root_MouseLeftButtonDown">
+                <DockPanel LastChildFill="False">
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                        <TextBlock Text="Diagnostics Cockpit"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                        <Border Margin="10,0,0,0"
+                                Padding="8,2"
+                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                BorderThickness="1"
+                                Background="{DynamicResource WinPanelBrush}">
+                            <TextBlock x:Name="TargetBlock"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource WinMutedTextBrush}"/>
+                        </Border>
+                    </StackPanel>
+                    <Button DockPanel.Dock="Right"
+                            Content="✕"
+                            Width="24"
+                            Height="22"
+                            Margin="8,0,0,0"
+                            VerticalAlignment="Top"
+                            Click="Close_Click"/>
+                </DockPanel>
+            </Border>
 
-            <Border Grid.Row="1"
+            <UniformGrid Grid.Row="1"
+                         Columns="3"
+                         Margin="0,0,0,8">
+                <Border Margin="0,0,6,0"
+                        Padding="10,8"
+                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                        BorderThickness="1"
+                        Background="{DynamicResource WinPanelBrush}">
+                    <StackPanel>
+                        <TextBlock Text="STATE LINES"
+                                   FontSize="10"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                        <TextBlock x:Name="StateLinesBlock"
+                                   Margin="0,4,0,0"
+                                   FontSize="20"
+                                   FontWeight="Bold"
+                                   Text="-"/>
+                    </StackPanel>
+                </Border>
+                <Border Margin="3,0"
+                        Padding="10,8"
+                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                        BorderThickness="1"
+                        Background="{DynamicResource WinPanelBrush}">
+                    <StackPanel>
+                        <TextBlock Text="OUTPUT LINES"
+                                   FontSize="10"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                        <TextBlock x:Name="OutputLinesBlock"
+                                   Margin="0,4,0,0"
+                                   FontSize="20"
+                                   FontWeight="Bold"
+                                   Text="-"/>
+                    </StackPanel>
+                </Border>
+                <Border Margin="6,0,0,0"
+                        Padding="10,8"
+                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                        BorderThickness="1"
+                        Background="{DynamicResource WinPanelBrush}">
+                    <StackPanel>
+                        <TextBlock Text="LAST REFRESH"
+                                   FontSize="10"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                        <TextBlock x:Name="RefreshStampBlock"
+                                   Margin="0,4,0,0"
+                                   FontSize="20"
+                                   FontWeight="Bold"
+                                   Text="--:--:--"/>
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+
+            <Border Grid.Row="2"
                     BorderBrush="{DynamicResource WinBorderBrush}"
                     BorderThickness="1"
                     Padding="6"
@@ -65,7 +135,7 @@
                 </Grid>
             </Border>
 
-            <TextBox Grid.Row="2"
+            <TextBox Grid.Row="3"
                      x:Name="OutputBox"
                      IsReadOnly="True"
                      AcceptsReturn="True"
@@ -76,7 +146,7 @@
                      FontFamily="Consolas"
                      FontSize="12"/>
 
-            <Grid Grid.Row="3" Margin="0,10,0,0">
+            <Grid Grid.Row="4" Margin="0,10,0,0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>

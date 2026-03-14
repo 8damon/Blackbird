@@ -22,10 +22,16 @@ VOID BLACKBIRDControlPublishThreadEvent(_In_ UINT64 ProcessId, _In_ UINT64 Threa
 VOID BLACKBIRDControlPublishFileEvent(_In_ const BLACKBIRD_FILE_EVENT *FileEvent);
 
 BOOLEAN
+BLACKBIRDControlBindPendingLaunchProcess(_In_ UINT32 ProcessId, _In_opt_ PCUNICODE_STRING ImagePath);
+
+BOOLEAN
 BLACKBIRDControlSelfCheck(VOID);
 
 BOOLEAN
 BLACKBIRDControlHasClientsFast(VOID);
+
+BOOLEAN
+BLACKBIRDControlIsArmedFast(VOID);
 
 BOOLEAN
 BLACKBIRDControlHasPidInterest(_In_ UINT32 PrimaryProcessId, _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask);

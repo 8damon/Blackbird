@@ -20,6 +20,10 @@ namespace BlackbirdInterface
         // RAM (bytes)
         public double PrivateBytes { get; set; }
         public double ReservedBytes { get; set; }
+        public double CommitBytes { get; set; }
+        public double ImageBytes { get; set; }
+        public double MappedBytes { get; set; }
+        public double PrivateVadBytes { get; set; }
 
         // Network
         public double NetInBytesPerSec { get; set; }

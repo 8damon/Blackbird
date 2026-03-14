@@ -35,11 +35,12 @@ namespace BlackbirdInterface
         public List<GroupedEventRow> FilesystemGroups { get; set; } = new();
         public List<GroupedEventRow> ProcessRelationsGroups { get; set; } = new();
         public List<ApiCallGraphRowSnapshot> ApiGraphRows { get; set; } = new();
+        public List<ThreadStackHistoryArchiveEntry> ThreadStackHistories { get; set; } = new();
     }
 
     internal static class SessionFileStorage
     {
-        internal const int CurrentVersion = 1;
+        internal const int CurrentVersion = 2;
         private const long MaxCompressedArchiveBytes = 64L * 1024L * 1024L;
         private const long MaxUncompressedArchiveBytes = 256L * 1024L * 1024L;
         private const int MaxTabCount = 128;
@@ -47,6 +48,8 @@ namespace BlackbirdInterface
         private const int MaxPerformanceSamplesPerTab = 500_000;
         private const int MaxThreadLifecycleEventsPerTab = 500_000;
         private const int MaxGroupedRowsPerCategory = 250_000;
+        private const int MaxThreadStackHistoriesPerTab = 8_192;
+        private const int MaxThreadStackSnapshotsPerHistory = 2_048;
 
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
@@ -161,6 +164,7 @@ namespace BlackbirdInterface
                 tab.FilesystemGroups ??= new List<GroupedEventRow>();
                 tab.ProcessRelationsGroups ??= new List<GroupedEventRow>();
                 tab.ApiGraphRows ??= new List<ApiCallGraphRowSnapshot>();
+                tab.ThreadStackHistories ??= new List<ThreadStackHistoryArchiveEntry>();
             }
         }
 
@@ -194,6 +198,18 @@ namespace BlackbirdInterface
                     tab.ApiGraphRows.Count > MaxGroupedRowsPerCategory)
                 {
                     throw new InvalidDataException($"PID {tab.Pid} has too many grouped intel rows.");
+                }
+                if (tab.ThreadStackHistories.Count > MaxThreadStackHistoriesPerTab)
+                {
+                    throw new InvalidDataException($"PID {tab.Pid} has too many thread stack histories.");
+                }
+
+                foreach (ThreadStackHistoryArchiveEntry history in tab.ThreadStackHistories)
+                {
+                    if (history.Snapshots.Count > MaxThreadStackSnapshotsPerHistory)
+                    {
+                        throw new InvalidDataException($"PID {tab.Pid} TID {history.Tid} has too many thread stack snapshots.");
+                    }
                 }
             }
         }

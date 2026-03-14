@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 
 namespace BlackbirdInterface
@@ -564,6 +565,158 @@ namespace BlackbirdInterface
             return sb.ToString();
         }
 
+        internal static string BuildNtApiArgumentSummary(
+            string? apiName,
+            IReadOnlyDictionary<string, string> fields,
+            string? actor,
+            string? target)
+        {
+            string api = string.IsNullOrWhiteSpace(apiName) ? "unknown" : apiName.Trim();
+            string actorText = string.IsNullOrWhiteSpace(actor) ? "actor" : actor.Trim();
+            string targetText = string.IsNullOrWhiteSpace(target) ? "target" : target.Trim();
+
+            if (api.Equals("NtAllocateVirtualMemory", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong processHandle = FirstU64(fields, "c0", "a0");
+                ulong baseAddress = FirstU64(fields, "base", "c1", "a1");
+                ulong regionSize = FirstU64(fields, "size", "c2", "a3");
+                ulong allocType = FirstU64(fields, "allocType", "c4", "a4");
+                uint protect = (uint)FirstU64(fields, "protect", "c5", "a5");
+                return $"{actorText} allocates 0x{regionSize:X} bytes in {targetText} at 0x{baseAddress:X} " +
+                       $"using handle 0x{processHandle:X}, {DescribeMemoryAllocationType(allocType)}, {DescribeMemoryProtection(protect)}";
+            }
+
+            if (api.Equals("NtProtectVirtualMemory", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong processHandle = FirstU64(fields, "c0", "a0");
+                ulong baseAddress = FirstU64(fields, "base", "c1", "a1");
+                ulong regionSize = FirstU64(fields, "size", "c2", "a2");
+                uint newProtect = (uint)FirstU64(fields, "newProtect", "c3", "a3");
+                uint oldProtect = (uint)FirstU64(fields, "oldProtect", "c4", "a4");
+                return $"{actorText} changes protection in {targetText} at 0x{baseAddress:X} size 0x{regionSize:X} " +
+                       $"via handle 0x{processHandle:X} from {DescribeMemoryProtection(oldProtect)} to {DescribeMemoryProtection(newProtect)}";
+            }
+
+            if (api.Equals("NtWriteVirtualMemory", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong processHandle = FirstU64(fields, "c0", "a0");
+                ulong baseAddress = FirstU64(fields, "base", "c1", "a1");
+                ulong buffer = FirstU64(fields, "c2", "a2");
+                ulong size = FirstU64(fields, "size", "c3", "a3");
+                return $"{actorText} writes 0x{size:X} bytes from 0x{buffer:X} into {targetText} at 0x{baseAddress:X} via handle 0x{processHandle:X}";
+            }
+
+            if (api.Equals("NtReadVirtualMemory", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong processHandle = FirstU64(fields, "c0", "a0");
+                ulong baseAddress = FirstU64(fields, "base", "c1", "a1");
+                ulong buffer = FirstU64(fields, "c2", "a2");
+                ulong size = FirstU64(fields, "size", "c3", "a3");
+                return $"{actorText} reads 0x{size:X} bytes from {targetText} at 0x{baseAddress:X} into 0x{buffer:X} via handle 0x{processHandle:X}";
+            }
+
+            if (api.Equals("NtOpenProcess", StringComparison.OrdinalIgnoreCase))
+            {
+                uint desiredAccess = (uint)FirstU64(fields, "desiredAccess", "c1", "a1");
+                ulong clientId = FirstU64(fields, "c2", "a2");
+                return $"{actorText} opens a process handle to {targetText} with {DescribeHandleAccess(desiredAccess)} " +
+                       $"(clientId=0x{clientId:X})";
+            }
+
+            if (api.Equals("NtOpenThread", StringComparison.OrdinalIgnoreCase))
+            {
+                uint desiredAccess = (uint)FirstU64(fields, "desiredAccess", "c1", "a1");
+                ulong clientId = FirstU64(fields, "c2", "a2");
+                ulong threadId = FirstU64(fields, "targetTid", "c3", "a3");
+                return $"{actorText} opens a thread handle in {targetText} with {DescribeHandleAccess(desiredAccess)} " +
+                       $"(clientId=0x{clientId:X}, tid=0x{threadId:X})";
+            }
+
+            if (api.Equals("NtDuplicateObject", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong srcProcess = FirstU64(fields, "srcProcess", "a0");
+                ulong srcHandle = FirstU64(fields, "srcHandle", "a1");
+                ulong dstProcess = FirstU64(fields, "dstProcess", "a2");
+                uint desiredAccess = (uint)FirstU64(fields, "desiredAccess", "a4");
+                ulong options = FirstU64(fields, "options", "a6");
+                return $"{actorText} duplicates handle 0x{srcHandle:X} from process handle 0x{srcProcess:X} into 0x{dstProcess:X} " +
+                       $"with {DescribeHandleAccess(desiredAccess)} (options=0x{options:X})";
+            }
+
+            if (api.Equals("NtCreateThreadEx", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong targetHandle = FirstU64(fields, "c0", "a2");
+                ulong startAddress = FirstU64(fields, "c3", "a3");
+                ulong parameter = FirstU64(fields, "c4", "a4");
+                ulong createFlags = FirstU64(fields, "c6", "a6");
+                return $"{actorText} creates a thread in {targetText} at 0x{startAddress:X} via handle 0x{targetHandle:X} " +
+                       $"(param=0x{parameter:X}, flags=0x{createFlags:X})";
+            }
+
+            if (api.Equals("NtSetContextThread", StringComparison.OrdinalIgnoreCase) ||
+                api.Equals("NtGetContextThread", StringComparison.OrdinalIgnoreCase) ||
+                api.Equals("NtSuspendThread", StringComparison.OrdinalIgnoreCase) ||
+                api.Equals("NtResumeThread", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong threadHandle = FirstU64(fields, "threadHandle", "c0", "a0");
+                ulong arg1 = FirstU64(fields, "arg1", "c1", "a1");
+                return $"{actorText} invokes {api} on thread handle 0x{threadHandle:X} in {targetText} (arg1=0x{arg1:X})";
+            }
+
+            if (api.Equals("NtQueueApcThread", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong threadHandle = FirstU64(fields, "threadHandle", "c0", "a0");
+                ulong routine = FirstU64(fields, "routine", "c1", "a1");
+                ulong arg1 = FirstU64(fields, "arg1", "c2", "a2");
+                ulong arg2 = FirstU64(fields, "arg2", "c3", "a3");
+                ulong arg3 = FirstU64(fields, "arg3", "a4");
+                return $"{actorText} queues APC routine 0x{routine:X} on thread handle 0x{threadHandle:X} " +
+                       $"(args: 0x{arg1:X}, 0x{arg2:X}, 0x{arg3:X})";
+            }
+
+            if (api.Equals("NtQueryInformationProcess", StringComparison.OrdinalIgnoreCase) ||
+                api.Equals("NtQueryVirtualMemory", StringComparison.OrdinalIgnoreCase) ||
+                api.Equals("NtQuerySystemInformation", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong c0 = FirstU64(fields, "c0", "a0", "systemInformationClass");
+                ulong c1 = FirstU64(fields, "c1", "a1", "systemInformationLength");
+                ulong c2 = FirstU64(fields, "c2", "a2", "returnLength");
+                return $"{actorText} queries {api} against {targetText} (arg0=0x{c0:X}, arg1=0x{c1:X}, arg2=0x{c2:X})";
+            }
+
+            var rawArgs = new List<string>(8);
+            foreach (string key in new[] { "c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7" })
+            {
+                if (fields.TryGetValue(key, out string? value) && !string.IsNullOrWhiteSpace(value))
+                {
+                    rawArgs.Add($"{key}={value}");
+                }
+            }
+
+            return rawArgs.Count == 0
+                ? $"{actorText} invokes {api} against {targetText}"
+                : $"{actorText} invokes {api} against {targetText} ({string.Join(", ", rawArgs)})";
+        }
+
+        internal static string ClassifyHookSensorOrigin(BrokerEtwEventView view)
+        {
+            if (view.Family == BlackbirdNative.IpcEtwFamilyUserHook ||
+                (!string.IsNullOrWhiteSpace(view.DetectionName) &&
+                 view.DetectionName.StartsWith("USERMODE_", StringComparison.OrdinalIgnoreCase)))
+            {
+                return "Usermode Hook";
+            }
+
+            if (view.Source.Equals("Blackbird", StringComparison.OrdinalIgnoreCase) &&
+                ((!string.IsNullOrWhiteSpace(view.Operation) && view.Operation.StartsWith("Nt", StringComparison.OrdinalIgnoreCase)) ||
+                 (!string.IsNullOrWhiteSpace(view.EventName) && view.EventName.StartsWith("Nt", StringComparison.OrdinalIgnoreCase))))
+            {
+                return "Kernel Event";
+            }
+
+            return "Unclassified";
+        }
+
         internal static string InferSampleDisassembly(byte[]? sample, int sampleSize)
         {
             if (sample == null || sampleSize <= 0)
@@ -892,6 +1045,59 @@ namespace BlackbirdInterface
             }
 
             return string.Join(" | ", tokens);
+        }
+
+        private static ulong FirstU64(IReadOnlyDictionary<string, string> fields, params string[] keys)
+        {
+            foreach (string key in keys)
+            {
+                if (fields.TryGetValue(key, out string? value) && TryParseU64(value, out ulong parsed))
+                {
+                    return parsed;
+                }
+            }
+
+            return 0;
+        }
+
+        private static bool TryParseU64(string? text, out ulong value)
+        {
+            value = 0;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+
+            string compact = text.Trim();
+            if (compact.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                return ulong.TryParse(compact[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
+            }
+
+            return ulong.TryParse(compact, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        private static string DescribeMemoryAllocationType(ulong allocType)
+        {
+            var labels = new List<string>(4);
+            if ((allocType & 0x1000) != 0)
+            {
+                labels.Add("MEM_COMMIT");
+            }
+            if ((allocType & 0x2000) != 0)
+            {
+                labels.Add("MEM_RESERVE");
+            }
+            if ((allocType & 0x1000000) != 0)
+            {
+                labels.Add("MEM_LARGE_PAGES");
+            }
+            if ((allocType & 0x20000) != 0)
+            {
+                labels.Add("MEM_PHYSICAL");
+            }
+
+            return labels.Count == 0 ? "<none>" : string.Join(" | ", labels);
         }
     }
 }

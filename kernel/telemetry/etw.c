@@ -300,3 +300,41 @@ VOID BLACKBIRDEtwLogDetectionEvent(_In_z_ PCSTR DetectionName, _In_ ULONG Severi
                       TraceLoggingUInt32(CorrelationAgeMs, "correlationAgeMs"),
                       TraceLoggingWideString(safeReason, "reason"));
 }
+
+VOID BLACKBIRDEtwLogSystemInfoEvent(_In_ HANDLE CallerPid, _In_ HANDLE CallerTid, _In_ ULONG SystemInformationClass,
+                                      _In_ ULONG SystemInformationLength, _In_ ULONG ReturnLength,
+                                      _In_ NTSTATUS QueryStatus)
+{
+    if (!BLACKBIRDEtwIsStarted())
+    {
+        return;
+    }
+
+    TraceLoggingWrite(g_BlackbirdEtwProvider, "SystemInformationTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerPid, "callerPid"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerTid, "callerTid"),
+                      TraceLoggingUInt32(SystemInformationClass, "systemInformationClass"),
+                      TraceLoggingUInt32(SystemInformationLength, "systemInformationLength"),
+                      TraceLoggingUInt32(ReturnLength, "returnLength"),
+                      TraceLoggingHexInt32((LONG)QueryStatus, "queryStatus"));
+}
+
+VOID BLACKBIRDEtwLogNtApiEvent(_In_z_ PCSTR ApiName, _In_ HANDLE CallerPid, _In_ HANDLE CallerTid, _In_ UINT64 Arg0,
+                                 _In_ UINT64 Arg1, _In_ UINT64 Arg2, _In_ UINT64 Arg3, _In_ UINT64 Arg4,
+                                 _In_ UINT64 Arg5, _In_ UINT64 Arg6, _In_ UINT64 Arg7, _In_ NTSTATUS CallStatus)
+{
+    if (!BLACKBIRDEtwIsStarted())
+    {
+        return;
+    }
+
+    TraceLoggingWrite(g_BlackbirdEtwProvider, "NtApiTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+                      TraceLoggingString((ApiName != NULL) ? ApiName : "UNKNOWN", "api"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerPid, "callerPid"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerTid, "callerTid"),
+                      TraceLoggingHexUInt64(Arg0, "arg0"), TraceLoggingHexUInt64(Arg1, "arg1"),
+                      TraceLoggingHexUInt64(Arg2, "arg2"), TraceLoggingHexUInt64(Arg3, "arg3"),
+                      TraceLoggingHexUInt64(Arg4, "arg4"), TraceLoggingHexUInt64(Arg5, "arg5"),
+                      TraceLoggingHexUInt64(Arg6, "arg6"), TraceLoggingHexUInt64(Arg7, "arg7"),
+                      TraceLoggingHexInt32((LONG)CallStatus, "status"));
+}

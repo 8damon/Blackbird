@@ -9,7 +9,7 @@ static volatile LONG g_ImageMonitorRegistered = 0;
 static volatile LONG g_ImageMonitorFailureCounter = 0;
 static KSPIN_LOCK g_NtdllTrackLock;
 typedef NTSTATUS(NTAPI *PBLACKBIRD_PS_SET_LOAD_IMAGE_NOTIFY_ROUTINE_EX)(_In_ PLOAD_IMAGE_NOTIFY_ROUTINE NotifyRoutine,
-                                                                          _In_ ULONG Flags);
+                                                                        _In_ ULONG Flags);
 static PBLACKBIRD_PS_SET_LOAD_IMAGE_NOTIFY_ROUTINE_EX g_SetLoadImageNotifyRoutineEx = NULL;
 
 typedef struct _BLACKBIRD_NTDLL_TRACK_ENTRY
@@ -25,7 +25,7 @@ static PBLACKBIRD_PS_SET_LOAD_IMAGE_NOTIFY_ROUTINE_EX BLACKBIRDResolvePsSetLoadI
     UNICODE_STRING routineName;
 
     RtlInitUnicodeString(&routineName, L"PsSetLoadImageNotifyRoutineEx");
-    return (PBLACKBIRD_PS_SET_LOAD_IMAGE_NOTIFY_ROUTINE_EX)MmGetSystemRoutineAddress(&routineName);
+    return (PBLACKBIRD_PS_SET_LOAD_IMAGE_NOTIFY_ROUTINE_EX) MmGetSystemRoutineAddress(&routineName);
 }
 
 static ULONG BLACKBIRDTrackNtdllLoad(_In_ HANDLE ProcessId)
@@ -34,12 +34,12 @@ static ULONG BLACKBIRDTrackNtdllLoad(_In_ HANDLE ProcessId)
     ULONG count;
     KIRQL oldIrql;
 
-    index = ((ULONG)((ULONG_PTR)ProcessId >> 2)) % BLACKBIRD_NTDLL_TRACK_SLOTS;
+    index = ((ULONG) ((ULONG_PTR) ProcessId >> 2)) % BLACKBIRD_NTDLL_TRACK_SLOTS;
 
     KeAcquireSpinLock(&g_NtdllTrackLock, &oldIrql);
-    if (g_NtdllTrack[index].ProcessId != (UINT64)(ULONG_PTR)ProcessId)
+    if (g_NtdllTrack[index].ProcessId != (UINT64) (ULONG_PTR) ProcessId)
     {
-        g_NtdllTrack[index].ProcessId = (UINT64)(ULONG_PTR)ProcessId;
+        g_NtdllTrack[index].ProcessId = (UINT64) (ULONG_PTR) ProcessId;
         g_NtdllTrack[index].LoadCount = 0;
     }
     g_NtdllTrack[index].LoadCount += 1;
@@ -49,8 +49,9 @@ static ULONG BLACKBIRDTrackNtdllLoad(_In_ HANDLE ProcessId)
     return count;
 }
 
-static VOID BLACKBIRDImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImageName, _In_ HANDLE ProcessId,
-                                              _In_ PIMAGE_INFO ImageInfo)
+static VOID BLACKBIRDImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImageName,
+                                            _In_ HANDLE ProcessId,
+                                            _In_ PIMAGE_INFO ImageInfo)
 {
     WCHAR path[512];
     BOOLEAN isSignatureKnown = FALSE;
@@ -71,13 +72,18 @@ static VOID BLACKBIRDImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImageNa
 
 #if (NTDDI_VERSION >= NTDDI_WIN8)
     isSignatureKnown = TRUE;
-    signatureLevel = (UCHAR)ImageInfo->ImageSignatureLevel;
-    signatureType = (UCHAR)ImageInfo->ImageSignatureType;
+    signatureLevel = (UCHAR) ImageInfo->ImageSignatureLevel;
+    signatureType = (UCHAR) ImageInfo->ImageSignatureType;
 #endif
 
-    BLACKBIRDEtwLogImageLoadEvent(ProcessId, ImageInfo->ImageBase, ImageInfo->ImageSize,
-                                    ImageInfo->SystemModeImage ? TRUE : FALSE, isSignatureKnown, signatureLevel,
-                                    signatureType, (path[0] != L'\0') ? path : NULL);
+    BLACKBIRDEtwLogImageLoadEvent(ProcessId,
+                                  ImageInfo->ImageBase,
+                                  ImageInfo->ImageSize,
+                                  ImageInfo->SystemModeImage ? TRUE : FALSE,
+                                  isSignatureKnown,
+                                  signatureLevel,
+                                  signatureType,
+                                  (path[0] != L'\0') ? path : NULL);
 
     if (path[0] == L'\0' || ImageInfo->SystemModeImage)
     {
@@ -91,8 +97,8 @@ static VOID BLACKBIRDImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImageNa
         return;
     }
 
-    isKnownGoodNtdllPath = BLACKBIRDUnicodeContainsInsensitive(&imagePathUs, L"\\system32\\ntdll.dll", 20) ||
-                           BLACKBIRDUnicodeContainsInsensitive(&imagePathUs, L"\\knowndlls\\ntdll.dll", 20);
+    isKnownGoodNtdllPath = BLACKBIRDUnicodeContainsInsensitive(&imagePathUs, L"\\system32\\ntdll.dll", 20)
+            || BLACKBIRDUnicodeContainsInsensitive(&imagePathUs, L"\\knowndlls\\ntdll.dll", 20);
 
     ntdllLoadCount = BLACKBIRDTrackNtdllLoad(ProcessId);
 
@@ -103,8 +109,14 @@ static VOID BLACKBIRDImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImageNa
 
     if (ntdllLoadCount > 1)
     {
-        BLACKBIRDEtwLogDetectionEvent("MULTIPLE_NTDLL_IMAGE_MAPPINGS", 3, ProcessId, ProcessId, 0, 0, 0,
-                                        L"multiple ntdll image-load events observed for process");
+        BLACKBIRDEtwLogDetectionEvent("MULTIPLE_NTDLL_IMAGE_MAPPINGS",
+                                      3,
+                                      ProcessId,
+                                      ProcessId,
+                                      0,
+                                      0,
+                                      0,
+                                      L"multiple ntdll image-load events observed for process");
     }
 }
 
@@ -138,9 +150,11 @@ BLACKBIRDImageMonitorInitialize(VOID)
         failures = InterlockedIncrement(&g_ImageMonitorFailureCounter);
         if (failures == 1 || ((failures & 0xFF) == 0))
         {
-            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                       "BLACKBIRD: image monitor callback registration failed status=0x%08X total=%lu.\n", status,
-                       (ULONG)failures);
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                       DPFLTR_ERROR_LEVEL,
+                       "BLACKBIRD: image monitor callback registration failed status=0x%08X total=%lu.\n",
+                       status,
+                       (ULONG) failures);
         }
         g_SetLoadImageNotifyRoutineEx = NULL;
         return status;
@@ -167,7 +181,8 @@ VOID BLACKBIRDImageMonitorUninitialize(VOID)
     status = PsRemoveLoadImageNotifyRoutine(BLACKBIRDImageLoadNotifyRoutine);
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                   DPFLTR_ERROR_LEVEL,
                    "BLACKBIRD: image monitor callback removal failed; monitor remains registered (status=0x%08X).\n",
                    status);
         return;

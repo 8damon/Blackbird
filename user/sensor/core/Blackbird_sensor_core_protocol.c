@@ -26,11 +26,11 @@ BLACKBIRDSC_API BOOL BLACKBIRDSCUseClientProtocol(_In_opt_z_ PCWSTR PipeName, _I
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;
         }
-        (void)StringCchCopyW(g_BlackbirdPipeName, RTL_NUMBER_OF(g_BlackbirdPipeName), PipeName);
+        (void) StringCchCopyW(g_BlackbirdPipeName, RTL_NUMBER_OF(g_BlackbirdPipeName), PipeName);
     }
     else
     {
-        (void)StringCchCopyW(g_BlackbirdPipeName, RTL_NUMBER_OF(g_BlackbirdPipeName), BLACKBIRD_IPC_PIPE_NAME);
+        (void) StringCchCopyW(g_BlackbirdPipeName, RTL_NUMBER_OF(g_BlackbirdPipeName), BLACKBIRD_IPC_PIPE_NAME);
     }
 
     if (ConnectTimeoutMs == 0)
@@ -52,18 +52,19 @@ BLACKBIRDSC_API BLACKBIRDSC_PROTOCOL_MODE BLACKBIRDSCGetProtocolMode(VOID)
     BLACKBIRDSC_PROTOCOL_MODE mode;
 
     AcquireSRWLockShared(&g_BlackbirdProtocolLock);
-    mode = (BLACKBIRDSC_PROTOCOL_MODE)g_BlackbirdProtocolMode;
+    mode = (BLACKBIRDSC_PROTOCOL_MODE) g_BlackbirdProtocolMode;
     ReleaseSRWLockShared(&g_BlackbirdProtocolLock);
     return mode;
 }
 
-static VOID BLACKBIRDSCGetClientTransportConfig(_Out_writes_z_(PipeChars) PWSTR PipeName, _In_ size_t PipeChars,
-                                                  _Out_ DWORD *ConnectTimeoutMs)
+static VOID BLACKBIRDSCGetClientTransportConfig(_Out_writes_z_(PipeChars) PWSTR PipeName,
+                                                _In_ size_t PipeChars,
+                                                _Out_ DWORD *ConnectTimeoutMs)
 {
     AcquireSRWLockShared(&g_BlackbirdProtocolLock);
     if (PipeName != NULL && PipeChars > 0)
     {
-        (void)StringCchCopyW(PipeName, PipeChars, g_BlackbirdPipeName);
+        (void) StringCchCopyW(PipeName, PipeChars, g_BlackbirdPipeName);
     }
     if (ConnectTimeoutMs != NULL)
     {
@@ -96,23 +97,26 @@ static SRWLOCK g_BlackbirdSharedChannelLock = SRWLOCK_INIT;
 static PBLACKBIRDSC_SHARED_CHANNEL g_BlackbirdSharedChannels = NULL;
 
 static BOOL BLACKBIRDSCPopSharedRing(_Inout_ volatile BLACKBIRD_IPC_SHARED_RING_HEADER *Header,
-                                       _In_reads_bytes_(Header->Capacity * Header->RecordSize) const BYTE *Records,
-                                       _In_ HANDLE DataReadyEvent, _Out_writes_bytes_(RecordSize) VOID *Record,
-                                       _In_ UINT32 RecordSize)
+                                     _In_reads_bytes_(Header->Capacity * Header->RecordSize) const BYTE *Records,
+                                     _In_ HANDLE DataReadyEvent,
+                                     _Out_writes_bytes_(RecordSize) VOID *Record,
+                                     _In_ UINT32 RecordSize)
 {
     LONG writeIndex;
     LONG readIndex;
     LONG nextIndex;
 
-    if (Header == NULL || Records == NULL || Record == NULL || DataReadyEvent == NULL || DataReadyEvent == INVALID_HANDLE_VALUE ||
-        Header->Capacity == 0 || Header->RecordSize != RecordSize || RecordSize == 0)
+    if (Header == NULL || Records == NULL || Record == NULL || DataReadyEvent == NULL
+        || DataReadyEvent == INVALID_HANDLE_VALUE || Header->Capacity == 0 || Header->RecordSize != RecordSize
+        || RecordSize == 0)
     {
         return FALSE;
     }
 
     writeIndex = Header->WriteIndex;
     readIndex = Header->ReadIndex;
-    if (writeIndex < 0 || readIndex < 0 || writeIndex >= (LONG)Header->Capacity || readIndex >= (LONG)Header->Capacity)
+    if (writeIndex < 0 || readIndex < 0 || writeIndex >= (LONG) Header->Capacity
+        || readIndex >= (LONG) Header->Capacity)
     {
         Header->WriteIndex = 0;
         Header->ReadIndex = 0;
@@ -124,21 +128,21 @@ static BOOL BLACKBIRDSCPopSharedRing(_Inout_ volatile BLACKBIRD_IPC_SHARED_RING_
         return FALSE;
     }
 
-    (void)CopyMemory(Record, Records + ((SIZE_T)readIndex * (SIZE_T)RecordSize), RecordSize);
+    (void) CopyMemory(Record, Records + ((SIZE_T) readIndex * (SIZE_T) RecordSize), RecordSize);
     MemoryBarrier();
     nextIndex = readIndex + 1;
-    if (nextIndex >= (LONG)Header->Capacity)
+    if (nextIndex >= (LONG) Header->Capacity)
     {
         nextIndex = 0;
     }
     Header->ReadIndex = nextIndex;
     if (nextIndex == Header->WriteIndex)
     {
-        (void)ResetEvent(DataReadyEvent);
+        (void) ResetEvent(DataReadyEvent);
         MemoryBarrier();
         if (nextIndex != Header->WriteIndex)
         {
-            (void)SetEvent(DataReadyEvent);
+            (void) SetEvent(DataReadyEvent);
         }
     }
     return TRUE;
@@ -153,36 +157,36 @@ static VOID BLACKBIRDSCReleaseSharedChannel(_Inout_ PBLACKBIRDSC_SHARED_CHANNEL 
 
     if (Channel->IoctlHeader != NULL)
     {
-        (void)UnmapViewOfFile((PVOID)Channel->IoctlHeader);
+        (void) UnmapViewOfFile((PVOID) Channel->IoctlHeader);
         Channel->IoctlHeader = NULL;
         Channel->IoctlRecords = NULL;
     }
     if (Channel->EtwHeader != NULL)
     {
-        (void)UnmapViewOfFile((PVOID)Channel->EtwHeader);
+        (void) UnmapViewOfFile((PVOID) Channel->EtwHeader);
         Channel->EtwHeader = NULL;
         Channel->EtwRecords = NULL;
     }
 
     if (Channel->IoctlDataReadyEvent != NULL && Channel->IoctlDataReadyEvent != INVALID_HANDLE_VALUE)
     {
-        (void)CloseHandle(Channel->IoctlDataReadyEvent);
+        (void) CloseHandle(Channel->IoctlDataReadyEvent);
         Channel->IoctlDataReadyEvent = NULL;
     }
     if (Channel->EtwDataReadyEvent != NULL && Channel->EtwDataReadyEvent != INVALID_HANDLE_VALUE)
     {
-        (void)CloseHandle(Channel->EtwDataReadyEvent);
+        (void) CloseHandle(Channel->EtwDataReadyEvent);
         Channel->EtwDataReadyEvent = NULL;
     }
 
     if (Channel->IoctlMapping != NULL && Channel->IoctlMapping != INVALID_HANDLE_VALUE)
     {
-        (void)CloseHandle(Channel->IoctlMapping);
+        (void) CloseHandle(Channel->IoctlMapping);
         Channel->IoctlMapping = NULL;
     }
     if (Channel->EtwMapping != NULL && Channel->EtwMapping != INVALID_HANDLE_VALUE)
     {
-        (void)CloseHandle(Channel->EtwMapping);
+        (void) CloseHandle(Channel->EtwMapping);
         Channel->EtwMapping = NULL;
     }
 }
@@ -201,7 +205,7 @@ static PBLACKBIRDSC_SHARED_CHANNEL BLACKBIRDSCRetainSharedChannel(_In_ HANDLE De
     {
         if (channel->Device == Device)
         {
-            (void)InterlockedIncrement(&channel->RefCount);
+            (void) InterlockedIncrement(&channel->RefCount);
             break;
         }
     }
@@ -255,17 +259,17 @@ static VOID BLACKBIRDSCForgetSharedChannel(_In_ HANDLE Device)
 }
 
 static BOOL BLACKBIRDSCRegisterSharedChannel(_In_ HANDLE Device,
-                                               _In_ const BLACKBIRD_IPC_OPEN_SHARED_RING_RESPONSE *Response)
+                                             _In_ const BLACKBIRD_IPC_OPEN_SHARED_RING_RESPONSE *Response)
 {
     PBLACKBIRDSC_SHARED_CHANNEL channel;
     SIZE_T ioctlViewBytes;
     SIZE_T etwViewBytes;
 
-    if (Device == NULL || Device == INVALID_HANDLE_VALUE || Response == NULL || Response->IoctlMappingHandle == 0 ||
-        Response->IoctlDataReadyEventHandle == 0 || Response->EtwMappingHandle == 0 ||
-        Response->EtwDataReadyEventHandle == 0 || Response->IoctlCapacity == 0 || Response->EtwCapacity == 0 ||
-        Response->IoctlRecordSize != sizeof(BLACKBIRD_EVENT_RECORD) ||
-        Response->EtwRecordSize != sizeof(BLACKBIRD_IPC_ETW_EVENT))
+    if (Device == NULL || Device == INVALID_HANDLE_VALUE || Response == NULL || Response->IoctlMappingHandle == 0
+        || Response->IoctlDataReadyEventHandle == 0 || Response->EtwMappingHandle == 0
+        || Response->EtwDataReadyEventHandle == 0 || Response->IoctlCapacity == 0 || Response->EtwCapacity == 0
+        || Response->IoctlRecordSize != sizeof(BLACKBIRD_EVENT_RECORD)
+        || Response->EtwRecordSize != sizeof(BLACKBIRD_IPC_ETW_EVENT))
     {
         SetLastError(ERROR_INVALID_DATA);
         return FALSE;
@@ -273,7 +277,7 @@ static BOOL BLACKBIRDSCRegisterSharedChannel(_In_ HANDLE Device,
 
     BLACKBIRDSCForgetSharedChannel(Device);
 
-    channel = (PBLACKBIRDSC_SHARED_CHANNEL)calloc(1, sizeof(*channel));
+    channel = (PBLACKBIRDSC_SHARED_CHANNEL) calloc(1, sizeof(*channel));
     if (channel == NULL)
     {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
@@ -282,24 +286,20 @@ static BOOL BLACKBIRDSCRegisterSharedChannel(_In_ HANDLE Device,
 
     channel->Device = Device;
     channel->RefCount = 1;
-    channel->IoctlMapping = (HANDLE)(ULONG_PTR)Response->IoctlMappingHandle;
-    channel->IoctlDataReadyEvent = (HANDLE)(ULONG_PTR)Response->IoctlDataReadyEventHandle;
-    channel->EtwMapping = (HANDLE)(ULONG_PTR)Response->EtwMappingHandle;
-    channel->EtwDataReadyEvent = (HANDLE)(ULONG_PTR)Response->EtwDataReadyEventHandle;
+    channel->IoctlMapping = (HANDLE) (ULONG_PTR) Response->IoctlMappingHandle;
+    channel->IoctlDataReadyEvent = (HANDLE) (ULONG_PTR) Response->IoctlDataReadyEventHandle;
+    channel->EtwMapping = (HANDLE) (ULONG_PTR) Response->EtwMappingHandle;
+    channel->EtwDataReadyEvent = (HANDLE) (ULONG_PTR) Response->EtwDataReadyEventHandle;
 
-    ioctlViewBytes = sizeof(BLACKBIRD_IPC_SHARED_RING_HEADER) +
-                     ((SIZE_T)Response->IoctlCapacity * (SIZE_T)Response->IoctlRecordSize);
-    etwViewBytes = sizeof(BLACKBIRD_IPC_SHARED_RING_HEADER) +
-                   ((SIZE_T)Response->EtwCapacity * (SIZE_T)Response->EtwRecordSize);
+    ioctlViewBytes = sizeof(BLACKBIRD_IPC_SHARED_RING_HEADER)
+            + ((SIZE_T) Response->IoctlCapacity * (SIZE_T) Response->IoctlRecordSize);
+    etwViewBytes = sizeof(BLACKBIRD_IPC_SHARED_RING_HEADER)
+            + ((SIZE_T) Response->EtwCapacity * (SIZE_T) Response->EtwRecordSize);
 
-    channel->IoctlHeader =
-        (volatile BLACKBIRD_IPC_SHARED_RING_HEADER *)MapViewOfFile(channel->IoctlMapping,
-                                                                      FILE_MAP_READ | FILE_MAP_WRITE, 0, 0,
-                                                                      ioctlViewBytes);
-    channel->EtwHeader =
-        (volatile BLACKBIRD_IPC_SHARED_RING_HEADER *)MapViewOfFile(channel->EtwMapping,
-                                                                      FILE_MAP_READ | FILE_MAP_WRITE, 0, 0,
-                                                                      etwViewBytes);
+    channel->IoctlHeader = (volatile BLACKBIRD_IPC_SHARED_RING_HEADER *) MapViewOfFile(
+            channel->IoctlMapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, ioctlViewBytes);
+    channel->EtwHeader = (volatile BLACKBIRD_IPC_SHARED_RING_HEADER *) MapViewOfFile(
+            channel->EtwMapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, etwViewBytes);
     if (channel->IoctlHeader == NULL || channel->EtwHeader == NULL)
     {
         DWORD err = GetLastError();
@@ -309,8 +309,8 @@ static BOOL BLACKBIRDSCRegisterSharedChannel(_In_ HANDLE Device,
         return FALSE;
     }
 
-    channel->IoctlRecords = ((PBYTE)channel->IoctlHeader) + sizeof(BLACKBIRD_IPC_SHARED_RING_HEADER);
-    channel->EtwRecords = ((PBYTE)channel->EtwHeader) + sizeof(BLACKBIRD_IPC_SHARED_RING_HEADER);
+    channel->IoctlRecords = ((PBYTE) channel->IoctlHeader) + sizeof(BLACKBIRD_IPC_SHARED_RING_HEADER);
+    channel->EtwRecords = ((PBYTE) channel->EtwHeader) + sizeof(BLACKBIRD_IPC_SHARED_RING_HEADER);
 
     AcquireSRWLockExclusive(&g_BlackbirdSharedChannelLock);
     channel->Next = g_BlackbirdSharedChannels;
@@ -319,8 +319,9 @@ static BOOL BLACKBIRDSCRegisterSharedChannel(_In_ HANDLE Device,
     return TRUE;
 }
 
-static BOOL BLACKBIRDSCIpcTransact(_In_ HANDLE Device, _In_ const BLACKBIRD_IPC_PACKET *Request,
-                                     _Out_ BLACKBIRD_IPC_PACKET *Response)
+static BOOL BLACKBIRDSCIpcTransact(_In_ HANDLE Device,
+                                   _In_ const BLACKBIRD_IPC_PACKET *Request,
+                                   _Out_ BLACKBIRD_IPC_PACKET *Response)
 {
     DWORD bytes = 0;
 
@@ -341,9 +342,9 @@ static BOOL BLACKBIRDSCIpcTransact(_In_ HANDLE Device, _In_ const BLACKBIRD_IPC_
         return FALSE;
     }
 
-    if (Response->Magic != BLACKBIRD_IPC_MAGIC || Response->Version != BLACKBIRD_IPC_VERSION ||
-        Response->PacketType != BlackbirdIpcPacketResponse || Response->Command != Request->Command ||
-        Response->Sequence != Request->Sequence)
+    if (Response->Magic != BLACKBIRD_IPC_MAGIC || Response->Version != BLACKBIRD_IPC_VERSION
+        || Response->PacketType != BlackbirdIpcPacketResponse || Response->Command != Request->Command
+        || Response->Sequence != Request->Sequence)
     {
         SetLastError(ERROR_BAD_FORMAT);
         return FALSE;
@@ -365,7 +366,7 @@ static VOID BLACKBIRDSCInitIpcRequest(_Out_ BLACKBIRD_IPC_PACKET *Request, _In_ 
     Request->Version = BLACKBIRD_IPC_VERSION;
     Request->PacketType = BlackbirdIpcPacketRequest;
     Request->Command = Command;
-    Request->Sequence = (UINT32)InterlockedIncrement(&g_BlackbirdIpcSequence);
+    Request->Sequence = (UINT32) InterlockedIncrement(&g_BlackbirdIpcSequence);
 }
 
 VOID WINAPI BLACKBIRDSCInternalRecordCallback(_In_ PEVENT_RECORD Record)
@@ -381,7 +382,7 @@ VOID WINAPI BLACKBIRDSCInternalRecordCallback(_In_ PEVENT_RECORD Record)
         return;
     }
 
-    session = (BLACKBIRDSC_ETW_SESSION_INTERNAL *)Record->UserContext;
+    session = (BLACKBIRDSC_ETW_SESSION_INTERNAL *) Record->UserContext;
     if (session == NULL || session->Callback == NULL)
     {
         return;
@@ -390,13 +391,13 @@ VOID WINAPI BLACKBIRDSCInternalRecordCallback(_In_ PEVENT_RECORD Record)
     status = TdhGetEventInformation(Record, 0, NULL, NULL, &size);
     if (status == ERROR_INSUFFICIENT_BUFFER && size != 0)
     {
-        info = (PTRACE_EVENT_INFO)malloc(size);
+        info = (PTRACE_EVENT_INFO) malloc(size);
         if (info != NULL)
         {
             status = TdhGetEventInformation(Record, 0, NULL, info, &size);
             if (status == ERROR_SUCCESS && info->EventNameOffset != 0)
             {
-                eventName = (PCWSTR)(((PBYTE)info) + info->EventNameOffset);
+                eventName = (PCWSTR) (((PBYTE) info) + info->EventNameOffset);
             }
         }
     }
@@ -409,8 +410,8 @@ VOID WINAPI BLACKBIRDSCInternalRecordCallback(_In_ PEVENT_RECORD Record)
     }
 }
 
-static VOID BLACKBIRDSCCopyAnsiToWide(_In_z_ const char *Source, _Out_writes_z_(OutputChars) PWSTR Output,
-                                        _In_ size_t OutputChars)
+static VOID
+BLACKBIRDSCCopyAnsiToWide(_In_z_ const char *Source, _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
 {
     int converted;
 
@@ -425,10 +426,10 @@ static VOID BLACKBIRDSCCopyAnsiToWide(_In_z_ const char *Source, _Out_writes_z_(
         return;
     }
 
-    converted = MultiByteToWideChar(CP_UTF8, 0, Source, -1, Output, (int)OutputChars);
+    converted = MultiByteToWideChar(CP_UTF8, 0, Source, -1, Output, (int) OutputChars);
     if (converted <= 0)
     {
-        converted = MultiByteToWideChar(CP_ACP, 0, Source, -1, Output, (int)OutputChars);
+        converted = MultiByteToWideChar(CP_ACP, 0, Source, -1, Output, (int) OutputChars);
     }
     if (converted <= 0)
     {
@@ -436,10 +437,11 @@ static VOID BLACKBIRDSCCopyAnsiToWide(_In_z_ const char *Source, _Out_writes_z_(
     }
 }
 
-VOID WINAPI BLACKBIRDSCStgDetectionBridgeCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName,
-                                                    _In_opt_ PVOID Context)
+VOID WINAPI BLACKBIRDSCStgDetectionBridgeCallback(_In_ PEVENT_RECORD Record,
+                                                  _In_opt_z_ PCWSTR EventName,
+                                                  _In_opt_ PVOID Context)
 {
-    BLACKBIRDSC_STG_DETECTION_BRIDGE *bridge = (BLACKBIRDSC_STG_DETECTION_BRIDGE *)Context;
+    BLACKBIRDSC_STG_DETECTION_BRIDGE *bridge = (BLACKBIRDSC_STG_DETECTION_BRIDGE *) Context;
     SwkDetectionEvent event;
     char detectionNameAnsi[128];
 
@@ -463,15 +465,15 @@ VOID WINAPI BLACKBIRDSCStgDetectionBridgeCallback(_In_ PEVENT_RECORD Record, _In
 
     event.EtwProcessId = Record->EventHeader.ProcessId;
     event.EtwThreadId = Record->EventHeader.ThreadId;
-    event.TimestampQpc = (ULONGLONG)Record->EventHeader.TimeStamp.QuadPart;
+    event.TimestampQpc = (ULONGLONG) Record->EventHeader.TimeStamp.QuadPart;
 
-    (void)BLACKBIRDGetU32Property(Record, L"severity", &event.Severity);
-    (void)BLACKBIRDGetU64Property(Record, L"processId", &event.ProcessId);
-    (void)BLACKBIRDGetU64Property(Record, L"targetPid", &event.TargetPid);
-    (void)BLACKBIRDGetU32Property(Record, L"correlationFlags", &event.CorrelationFlags);
-    (void)BLACKBIRDGetU32Property(Record, L"correlationAccessMask", &event.CorrelationAccessMask);
-    (void)BLACKBIRDGetU32Property(Record, L"correlationAgeMs", &event.CorrelationAgeMs);
-    (void)BLACKBIRDGetWideProperty(Record, L"reason", event.Reason, RTL_NUMBER_OF(event.Reason));
+    (void) BLACKBIRDGetU32Property(Record, L"severity", &event.Severity);
+    (void) BLACKBIRDGetU64Property(Record, L"processId", &event.ProcessId);
+    (void) BLACKBIRDGetU64Property(Record, L"targetPid", &event.TargetPid);
+    (void) BLACKBIRDGetU32Property(Record, L"correlationFlags", &event.CorrelationFlags);
+    (void) BLACKBIRDGetU32Property(Record, L"correlationAccessMask", &event.CorrelationAccessMask);
+    (void) BLACKBIRDGetU32Property(Record, L"correlationAgeMs", &event.CorrelationAgeMs);
+    (void) BLACKBIRDGetWideProperty(Record, L"reason", event.Reason, RTL_NUMBER_OF(event.Reason));
 
     if (BLACKBIRDGetAnsiProperty(Record, L"detectionName", detectionNameAnsi, RTL_NUMBER_OF(detectionNameAnsi)))
     {
@@ -479,7 +481,7 @@ VOID WINAPI BLACKBIRDSCStgDetectionBridgeCallback(_In_ PEVENT_RECORD Record, _In
     }
     if (event.DetectionName[0] == L'\0')
     {
-        (void)StringCchCopyW(event.DetectionName, RTL_NUMBER_OF(event.DetectionName), L"UNKNOWN");
+        (void) StringCchCopyW(event.DetectionName, RTL_NUMBER_OF(event.DetectionName), L"UNKNOWN");
     }
 
     bridge->Callback(&event, bridge->CallbackContext);
@@ -495,8 +497,13 @@ BLACKBIRDSCOpenControlDevice(VOID)
         InterlockedExchange(&g_BlackbirdBrokerCapabilities, 0);
         InterlockedExchange(&g_BlackbirdBrokerThreatIntelEnabled, 0);
         InterlockedExchange(&g_BlackbirdBrokerThreatIntelEnableError, 0);
-        h = CreateFileW(L"\\\\.\\Global\\BlackbirdCtl", GENERIC_READ | GENERIC_WRITE,
-                        FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        h = CreateFileW(L"\\\\.\\Global\\BlackbirdCtl",
+                        GENERIC_READ | GENERIC_WRITE,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE,
+                        NULL,
+                        OPEN_EXISTING,
+                        FILE_ATTRIBUTE_NORMAL,
+                        NULL);
         return h;
     }
     else
@@ -519,29 +526,29 @@ BLACKBIRDSCOpenControlDevice(VOID)
             return h;
         }
 
-        (void)SetNamedPipeHandleState(h, &mode, NULL, NULL);
+        (void) SetNamedPipeHandleState(h, &mode, NULL, NULL);
 
         BLACKBIRDSCInitIpcRequest(&request, BlackbirdIpcCommandHandshake);
         request.Payload.HandshakeRequest.RequestedVersion = BLACKBIRD_IPC_VERSION;
         if (!BLACKBIRDSCIpcTransact(h, &request, &response))
         {
-            (void)BLACKBIRDSCCloseControlDevice(h);
+            (void) BLACKBIRDSCCloseControlDevice(h);
             return INVALID_HANDLE_VALUE;
         }
 
-        if (response.Payload.HandshakeResponse.NegotiatedVersion == 0 ||
-            response.Payload.HandshakeResponse.NegotiatedVersion > BLACKBIRD_IPC_VERSION)
+        if (response.Payload.HandshakeResponse.NegotiatedVersion == 0
+            || response.Payload.HandshakeResponse.NegotiatedVersion > BLACKBIRD_IPC_VERSION)
         {
-            (void)BLACKBIRDSCCloseControlDevice(h);
+            (void) BLACKBIRDSCCloseControlDevice(h);
             SetLastError(ERROR_REVISION_MISMATCH);
             return INVALID_HANDLE_VALUE;
         }
 
-        InterlockedExchange(&g_BlackbirdBrokerCapabilities, (LONG)response.Payload.HandshakeResponse.Capabilities);
+        InterlockedExchange(&g_BlackbirdBrokerCapabilities, (LONG) response.Payload.HandshakeResponse.Capabilities);
         InterlockedExchange(&g_BlackbirdBrokerThreatIntelEnabled,
                             response.Payload.HandshakeResponse.ThreatIntelEnabled ? 1 : 0);
         InterlockedExchange(&g_BlackbirdBrokerThreatIntelEnableError,
-                            (LONG)response.Payload.HandshakeResponse.Reserved);
+                            (LONG) response.Payload.HandshakeResponse.Reserved);
         InterlockedExchange(&g_BlackbirdLastSharedRingError, ERROR_NOT_FOUND);
 
         {
@@ -572,18 +579,18 @@ BLACKBIRDSCOpenControlDevice(VOID)
 
             if (ringReady)
             {
-                InterlockedOr(&g_BlackbirdBrokerCapabilities, (LONG)BLACKBIRD_IPC_CAP_SHARED_RING);
+                InterlockedOr(&g_BlackbirdBrokerCapabilities, (LONG) BLACKBIRD_IPC_CAP_SHARED_RING);
                 InterlockedExchange(&g_BlackbirdLastSharedRingError, ERROR_SUCCESS);
             }
             else
             {
-                InterlockedAnd(&g_BlackbirdBrokerCapabilities, ~(LONG)BLACKBIRD_IPC_CAP_SHARED_RING);
+                InterlockedAnd(&g_BlackbirdBrokerCapabilities, ~(LONG) BLACKBIRD_IPC_CAP_SHARED_RING);
                 if (ringErr == ERROR_SUCCESS)
                 {
                     ringErr = ERROR_NOT_FOUND;
                 }
-                InterlockedExchange(&g_BlackbirdLastSharedRingError, (LONG)ringErr);
-                (void)BLACKBIRDSCCloseControlDevice(h);
+                InterlockedExchange(&g_BlackbirdLastSharedRingError, (LONG) ringErr);
+                (void) BLACKBIRDSCCloseControlDevice(h);
                 SetLastError(ringErr);
                 return INVALID_HANDLE_VALUE;
             }
@@ -618,7 +625,7 @@ BOOL BLACKBIRDSCGetBrokerInfo(_Out_opt_ UINT32 *Capabilities, _Out_opt_ BOOL *Th
 
     if (Capabilities != NULL)
     {
-        *Capabilities = (UINT32)InterlockedCompareExchange(&g_BlackbirdBrokerCapabilities, 0, 0);
+        *Capabilities = (UINT32) InterlockedCompareExchange(&g_BlackbirdBrokerCapabilities, 0, 0);
     }
     if (ThreatIntelEnabled != NULL)
     {
@@ -627,8 +634,9 @@ BOOL BLACKBIRDSCGetBrokerInfo(_Out_opt_ UINT32 *Capabilities, _Out_opt_ BOOL *Th
     return TRUE;
 }
 
-BLACKBIRDSC_API BOOL BLACKBIRDSCHasSharedChannel(_In_ HANDLE Device, _Out_opt_ BOOL *HasIoctlChannel,
-                                                     _Out_opt_ BOOL *HasEtwChannel)
+BLACKBIRDSC_API BOOL BLACKBIRDSCHasSharedChannel(_In_ HANDLE Device,
+                                                 _Out_opt_ BOOL *HasIoctlChannel,
+                                                 _Out_opt_ BOOL *HasEtwChannel)
 {
     PBLACKBIRDSC_SHARED_CHANNEL channel;
     BOOL hasIoctl = FALSE;
@@ -666,7 +674,7 @@ BLACKBIRDSC_API BOOL BLACKBIRDSCHasSharedChannel(_In_ HANDLE Device, _Out_opt_ B
 
 BLACKBIRDSC_API DWORD BLACKBIRDSCGetLastSharedRingError(VOID)
 {
-    return (DWORD)InterlockedCompareExchange(&g_BlackbirdLastSharedRingError, 0, 0);
+    return (DWORD) InterlockedCompareExchange(&g_BlackbirdLastSharedRingError, 0, 0);
 }
 
 DWORD BLACKBIRDSCGetBrokerThreatIntelEnableError(VOID)
@@ -677,12 +685,12 @@ DWORD BLACKBIRDSCGetBrokerThreatIntelEnableError(VOID)
         return ERROR_NOT_SUPPORTED;
     }
 
-    return (DWORD)InterlockedCompareExchange(&g_BlackbirdBrokerThreatIntelEnableError, 0, 0);
+    return (DWORD) InterlockedCompareExchange(&g_BlackbirdBrokerThreatIntelEnableError, 0, 0);
 }
 
 DWORD BLACKBIRDSCGetLastThreatIntelEnableError(VOID)
 {
-    return (DWORD)InterlockedCompareExchange(&g_BlackbirdLastTiEnableError, 0, 0);
+    return (DWORD) InterlockedCompareExchange(&g_BlackbirdLastTiEnableError, 0, 0);
 }
 
 BOOL BLACKBIRDSCSubscribe(_In_ HANDLE Device, _In_ DWORD ProcessId, _In_ DWORD StreamMask)
@@ -703,7 +711,7 @@ BOOL BLACKBIRDSCSubscribe(_In_ HANDLE Device, _In_ DWORD ProcessId, _In_ DWORD S
         return BLACKBIRDSCIpcTransact(Device, &request, &response);
     }
 
-    return DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_SUBSCRIBE, &req, sizeof(req), NULL, 0, &bytes, NULL);
+    return DeviceIoControl(Device, (DWORD) IOCTL_BLACKBIRD_SUBSCRIBE, &req, sizeof(req), NULL, 0, &bytes, NULL);
 }
 
 BOOL BLACKBIRDSCUnsubscribe(_In_ HANDLE Device, _In_ DWORD ProcessId)
@@ -723,11 +731,13 @@ BOOL BLACKBIRDSCUnsubscribe(_In_ HANDLE Device, _In_ DWORD ProcessId)
         return BLACKBIRDSCIpcTransact(Device, &request, &response);
     }
 
-    return DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_UNSUBSCRIBE, &req, sizeof(req), NULL, 0, &bytes, NULL);
+    return DeviceIoControl(Device, (DWORD) IOCTL_BLACKBIRD_UNSUBSCRIBE, &req, sizeof(req), NULL, 0, &bytes, NULL);
 }
 
-BOOL BLACKBIRDSCSetPids(_In_ HANDLE Device, _In_reads_(ProcessCount) const DWORD *ProcessIds, _In_ DWORD ProcessCount,
-                          _In_ DWORD StreamMask)
+BOOL BLACKBIRDSCSetPids(_In_ HANDLE Device,
+                        _In_reads_(ProcessCount) const DWORD *ProcessIds,
+                        _In_ DWORD ProcessCount,
+                        _In_ DWORD StreamMask)
 {
     BLACKBIRD_SET_PIDS_REQUEST req;
     DWORD bytes = 0;
@@ -757,7 +767,7 @@ BOOL BLACKBIRDSCSetPids(_In_ HANDLE Device, _In_reads_(ProcessCount) const DWORD
         return BLACKBIRDSCIpcTransact(Device, &request, &response);
     }
 
-    return DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_SET_PIDS, &req, sizeof(req), NULL, 0, &bytes, NULL);
+    return DeviceIoControl(Device, (DWORD) IOCTL_BLACKBIRD_SET_PIDS, &req, sizeof(req), NULL, 0, &bytes, NULL);
 }
 
 BOOL BLACKBIRDSCArmPendingLaunch(_In_ HANDLE Device, _In_ const BLACKBIRD_ARM_PENDING_LAUNCH_REQUEST *Request)
@@ -776,8 +786,14 @@ BOOL BLACKBIRDSCArmPendingLaunch(_In_ HANDLE Device, _In_ const BLACKBIRD_ARM_PE
         return FALSE;
     }
 
-    return DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_ARM_PENDING_LAUNCH, (LPVOID)Request, sizeof(*Request), NULL,
-                           0, &bytes, NULL);
+    return DeviceIoControl(Device,
+                           (DWORD) IOCTL_BLACKBIRD_ARM_PENDING_LAUNCH,
+                           (LPVOID) Request,
+                           sizeof(*Request),
+                           NULL,
+                           0,
+                           &bytes,
+                           NULL);
 }
 
 BOOL BLACKBIRDSCGetEvent(_In_ HANDLE Device, _Out_ BLACKBIRD_EVENT_RECORD *Record, _Out_opt_ DWORD *BytesReturned)
@@ -798,14 +814,17 @@ BOOL BLACKBIRDSCGetEvent(_In_ HANDLE Device, _Out_ BLACKBIRD_EVENT_RECORD *Recor
         channel = BLACKBIRDSCRetainSharedChannel(Device);
         if (channel != NULL && channel->IoctlHeader != NULL)
         {
-            ok = BLACKBIRDSCPopSharedRing(channel->IoctlHeader, channel->IoctlRecords, channel->IoctlDataReadyEvent,
-                                            Record, sizeof(*Record));
+            ok = BLACKBIRDSCPopSharedRing(
+                    channel->IoctlHeader, channel->IoctlRecords, channel->IoctlDataReadyEvent, Record, sizeof(*Record));
             if (!ok)
             {
                 if (WaitForSingleObject(channel->IoctlDataReadyEvent, 0) == WAIT_OBJECT_0)
                 {
-                    ok = BLACKBIRDSCPopSharedRing(channel->IoctlHeader, channel->IoctlRecords,
-                                                    channel->IoctlDataReadyEvent, Record, sizeof(*Record));
+                    ok = BLACKBIRDSCPopSharedRing(channel->IoctlHeader,
+                                                  channel->IoctlRecords,
+                                                  channel->IoctlDataReadyEvent,
+                                                  Record,
+                                                  sizeof(*Record));
                 }
             }
             if (ok)
@@ -830,7 +849,7 @@ BOOL BLACKBIRDSCGetEvent(_In_ HANDLE Device, _Out_ BLACKBIRD_EVENT_RECORD *Recor
     }
     else
     {
-        ok = DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_GET_EVENT, NULL, 0, Record, sizeof(*Record), &bytes, NULL);
+        ok = DeviceIoControl(Device, (DWORD) IOCTL_BLACKBIRD_GET_EVENT, NULL, 0, Record, sizeof(*Record), &bytes, NULL);
     }
 
     if (BytesReturned != NULL)
@@ -866,7 +885,7 @@ BOOL BLACKBIRDSCGetStats(_In_ HANDLE Device, _Out_ BLACKBIRD_STATS_RESPONSE *Sta
     }
     else
     {
-        ok = DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_GET_STATS, NULL, 0, Stats, sizeof(*Stats), &bytes, NULL);
+        ok = DeviceIoControl(Device, (DWORD) IOCTL_BLACKBIRD_GET_STATS, NULL, 0, Stats, sizeof(*Stats), &bytes, NULL);
     }
 
     if (BytesReturned != NULL)
@@ -876,8 +895,7 @@ BOOL BLACKBIRDSCGetStats(_In_ HANDLE Device, _Out_ BLACKBIRD_STATS_RESPONSE *Sta
     return ok;
 }
 
-BOOL BLACKBIRDSCGetHealth(_In_ HANDLE Device, _Out_ BLACKBIRD_HEALTH_RESPONSE *Health,
-                            _Out_opt_ DWORD *BytesReturned)
+BOOL BLACKBIRDSCGetHealth(_In_ HANDLE Device, _Out_ BLACKBIRD_HEALTH_RESPONSE *Health, _Out_opt_ DWORD *BytesReturned)
 {
     DWORD bytes = 0;
     BOOL ok;
@@ -895,7 +913,7 @@ BOOL BLACKBIRDSCGetHealth(_In_ HANDLE Device, _Out_ BLACKBIRD_HEALTH_RESPONSE *H
         return FALSE;
     }
 
-    ok = DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_GET_HEALTH, NULL, 0, Health, sizeof(*Health), &bytes, NULL);
+    ok = DeviceIoControl(Device, (DWORD) IOCTL_BLACKBIRD_GET_HEALTH, NULL, 0, Health, sizeof(*Health), &bytes, NULL);
     if (BytesReturned != NULL)
     {
         *BytesReturned = bytes;
@@ -903,8 +921,10 @@ BOOL BLACKBIRDSCGetHealth(_In_ HANDLE Device, _Out_ BLACKBIRD_HEALTH_RESPONSE *H
     return ok;
 }
 
-BOOL BLACKBIRDSCQueryProcessImagePath(_In_ HANDLE Device, _In_ DWORD ProcessId,
-                                        _Out_writes_z_(OutputChars) PWSTR Output, _In_ DWORD OutputChars)
+BOOL BLACKBIRDSCQueryProcessImagePath(_In_ HANDLE Device,
+                                      _In_ DWORD ProcessId,
+                                      _Out_writes_z_(OutputChars) PWSTR Output,
+                                      _In_ DWORD OutputChars)
 {
     BLACKBIRD_QUERY_PROCESS_IMAGE_REQUEST req;
     BLACKBIRD_QUERY_PROCESS_IMAGE_RESPONSE resp;
@@ -937,8 +957,14 @@ BOOL BLACKBIRDSCQueryProcessImagePath(_In_ HANDLE Device, _In_ DWORD ProcessId,
     }
     else
     {
-        ok = DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_QUERY_PROCESS_IMAGE, &req, sizeof(req), &resp, sizeof(resp),
-                             &bytes, NULL);
+        ok = DeviceIoControl(Device,
+                             (DWORD) IOCTL_BLACKBIRD_QUERY_PROCESS_IMAGE,
+                             &req,
+                             sizeof(req),
+                             &resp,
+                             sizeof(resp),
+                             &bytes,
+                             NULL);
     }
     if (!ok)
     {
@@ -962,9 +988,13 @@ BOOL BLACKBIRDSCQueryProcessImagePath(_In_ HANDLE Device, _In_ DWORD ProcessId,
     return TRUE;
 }
 
-BOOL BLACKBIRDSCSetUserHookTarget(
-    _In_ HANDLE Device, _In_ DWORD Mode, _In_ DWORD ProcessId, _In_ DWORD Flags, _In_opt_z_ PCWSTR ImagePath,
-    _In_opt_z_ PCWSTR HookDllPath, _Out_opt_ BLACKBIRD_IPC_SET_USER_HOOK_TARGET_RESPONSE *Response)
+BOOL BLACKBIRDSCSetUserHookTarget(_In_ HANDLE Device,
+                                  _In_ DWORD Mode,
+                                  _In_ DWORD ProcessId,
+                                  _In_ DWORD Flags,
+                                  _In_opt_z_ PCWSTR ImagePath,
+                                  _In_opt_z_ PCWSTR HookDllPath,
+                                  _Out_opt_ BLACKBIRD_IPC_SET_USER_HOOK_TARGET_RESPONSE *Response)
 {
     BLACKBIRD_IPC_PACKET request;
     BLACKBIRD_IPC_PACKET response;
@@ -987,11 +1017,11 @@ BOOL BLACKBIRDSCSetUserHookTarget(
     payload.Flags = Flags;
     if (ImagePath != NULL)
     {
-        (void)StringCchCopyW(payload.ImagePath, RTL_NUMBER_OF(payload.ImagePath), ImagePath);
+        (void) StringCchCopyW(payload.ImagePath, RTL_NUMBER_OF(payload.ImagePath), ImagePath);
     }
     if (HookDllPath != NULL)
     {
-        (void)StringCchCopyW(payload.HookDllPath, RTL_NUMBER_OF(payload.HookDllPath), HookDllPath);
+        (void) StringCchCopyW(payload.HookDllPath, RTL_NUMBER_OF(payload.HookDllPath), HookDllPath);
     }
 
     BLACKBIRDSCInitIpcRequest(&request, BlackbirdIpcCommandSetUserHookTarget);
@@ -1020,7 +1050,7 @@ BOOL BLACKBIRDSCSetShutdownMode(_In_ HANDLE Device)
         return BLACKBIRDSCIpcTransact(Device, &request, &response);
     }
 
-    return DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_SET_SHUTDOWN_MODE, NULL, 0, NULL, 0, &bytes, NULL);
+    return DeviceIoControl(Device, (DWORD) IOCTL_BLACKBIRD_SET_SHUTDOWN_MODE, NULL, 0, NULL, 0, &bytes, NULL);
 }
 
 BOOL BLACKBIRDSCGetEtwEvent(_In_ HANDLE Device, _Out_ BLACKBIRD_IPC_ETW_EVENT *Event, _In_ DWORD TimeoutMs)
@@ -1043,15 +1073,15 @@ BOOL BLACKBIRDSCGetEtwEvent(_In_ HANDLE Device, _Out_ BLACKBIRD_IPC_ETW_EVENT *E
     channel = BLACKBIRDSCRetainSharedChannel(Device);
     if (channel != NULL && channel->EtwHeader != NULL)
     {
-        BOOL ok = BLACKBIRDSCPopSharedRing(channel->EtwHeader, channel->EtwRecords, channel->EtwDataReadyEvent,
-                                             Event, sizeof(*Event));
+        BOOL ok = BLACKBIRDSCPopSharedRing(
+                channel->EtwHeader, channel->EtwRecords, channel->EtwDataReadyEvent, Event, sizeof(*Event));
         if (!ok)
         {
             DWORD waitResult = WaitForSingleObject(channel->EtwDataReadyEvent, TimeoutMs);
             if (waitResult == WAIT_OBJECT_0)
             {
-                ok = BLACKBIRDSCPopSharedRing(channel->EtwHeader, channel->EtwRecords, channel->EtwDataReadyEvent,
-                                                Event, sizeof(*Event));
+                ok = BLACKBIRDSCPopSharedRing(
+                        channel->EtwHeader, channel->EtwRecords, channel->EtwDataReadyEvent, Event, sizeof(*Event));
             }
             else if (waitResult == WAIT_TIMEOUT)
             {
@@ -1121,4 +1151,3 @@ BLACKBIRDSCParseStreamMaskA(_In_z_ const char *Text)
     free(copy);
     return mask;
 }
-

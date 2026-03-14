@@ -42,16 +42,16 @@ static BOOL BLACKBIRDSCTryEnablePrivilege(_In_z_ PCWSTR PrivilegeName)
 
 static VOID BLACKBIRDSCTryEnableEtwPrivileges(VOID)
 {
-    (void)BLACKBIRDSCTryEnablePrivilege(L"SeSystemProfilePrivilege");
-    (void)BLACKBIRDSCTryEnablePrivilege(L"SeDebugPrivilege");
-    (void)BLACKBIRDSCTryEnablePrivilege(L"SeSecurityPrivilege");
+    (void) BLACKBIRDSCTryEnablePrivilege(L"SeSystemProfilePrivilege");
+    (void) BLACKBIRDSCTryEnablePrivilege(L"SeDebugPrivilege");
+    (void) BLACKBIRDSCTryEnablePrivilege(L"SeSecurityPrivilege");
 }
 
 ULONG BLACKBIRDSCStopSessionByName(_In_z_ PCWSTR SessionName)
 {
     ULONG status;
     const ULONG propsBytes = sizeof(EVENT_TRACE_PROPERTIES) + (1024 * sizeof(WCHAR));
-    PEVENT_TRACE_PROPERTIES props = (PEVENT_TRACE_PROPERTIES)calloc(1, propsBytes);
+    PEVENT_TRACE_PROPERTIES props = (PEVENT_TRACE_PROPERTIES) calloc(1, propsBytes);
     PWSTR loggerName;
 
     if (SessionName == NULL)
@@ -65,8 +65,8 @@ ULONG BLACKBIRDSCStopSessionByName(_In_z_ PCWSTR SessionName)
 
     props->Wnode.BufferSize = propsBytes;
     props->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
-    loggerName = (PWSTR)((PBYTE)props + props->LoggerNameOffset);
-    (void)StringCchCopyW(loggerName, 512, SessionName);
+    loggerName = (PWSTR) ((PBYTE) props + props->LoggerNameOffset);
+    (void) StringCchCopyW(loggerName, 512, SessionName);
 
     status = ControlTraceW(0, SessionName, props, EVENT_TRACE_CONTROL_STOP);
     free(props);
@@ -79,7 +79,7 @@ ULONG BLACKBIRDSCStopSessionByName(_In_z_ PCWSTR SessionName)
 }
 
 BOOL BLACKBIRDSCStartEtwSession(_In_ const BLACKBIRDSC_ETW_SESSION_CONFIG *Config,
-                                  _Outptr_ BLACKBIRDSC_ETW_SESSION **Session)
+                                _Outptr_ BLACKBIRDSC_ETW_SESSION **Session)
 {
     BLACKBIRDSC_ETW_SESSION_INTERNAL *internal = NULL;
     EVENT_TRACE_LOGFILEW log;
@@ -94,21 +94,21 @@ BOOL BLACKBIRDSCStartEtwSession(_In_ const BLACKBIRDSC_ETW_SESSION_CONFIG *Confi
     {
         *Session = NULL;
     }
-    if (Config == NULL || Session == NULL || Config->SessionName == NULL || Config->Providers == NULL ||
-        Config->ProviderCount == 0 || Config->Callback == NULL)
+    if (Config == NULL || Session == NULL || Config->SessionName == NULL || Config->Providers == NULL
+        || Config->ProviderCount == 0 || Config->Callback == NULL)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
 
-    internal = (BLACKBIRDSC_ETW_SESSION_INTERNAL *)calloc(1, sizeof(*internal));
+    internal = (BLACKBIRDSC_ETW_SESSION_INTERNAL *) calloc(1, sizeof(*internal));
     if (internal == NULL)
     {
         SetLastError(ERROR_OUTOFMEMORY);
         return FALSE;
     }
 
-    (void)StringCchCopyW(internal->SessionName, RTL_NUMBER_OF(internal->SessionName), Config->SessionName);
+    (void) StringCchCopyW(internal->SessionName, RTL_NUMBER_OF(internal->SessionName), Config->SessionName);
     internal->Callback = Config->Callback;
     internal->CallbackContext = Config->CallbackContext;
     internal->RunStoppedEvent = CreateEventW(NULL, TRUE, TRUE, NULL);
@@ -120,11 +120,11 @@ BOOL BLACKBIRDSCStartEtwSession(_In_ const BLACKBIRDSC_ETW_SESSION_CONFIG *Confi
 
     BLACKBIRDSCTryEnableEtwPrivileges();
 
-    (void)BLACKBIRDSCStopSessionByName(internal->SessionName);
+    (void) BLACKBIRDSCStopSessionByName(internal->SessionName);
     Sleep(80);
 
     propsBytes = sizeof(EVENT_TRACE_PROPERTIES) + (1024 * sizeof(WCHAR));
-    props = (PEVENT_TRACE_PROPERTIES)calloc(1, propsBytes);
+    props = (PEVENT_TRACE_PROPERTIES) calloc(1, propsBytes);
     if (props == NULL)
     {
         CloseHandle(internal->RunStoppedEvent);
@@ -142,8 +142,8 @@ BOOL BLACKBIRDSCStartEtwSession(_In_ const BLACKBIRDSC_ETW_SESSION_CONFIG *Confi
      */
     props->LogFileMode = EVENT_TRACE_REAL_TIME_MODE | EVENT_TRACE_SECURE_MODE;
     props->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
-    loggerName = (PWSTR)((PBYTE)props + props->LoggerNameOffset);
-    (void)StringCchCopyW(loggerName, 512, internal->SessionName);
+    loggerName = (PWSTR) ((PBYTE) props + props->LoggerNameOffset);
+    (void) StringCchCopyW(loggerName, 512, internal->SessionName);
 
     status = ERROR_GEN_FAILURE;
     for (startAttempt = 0; startAttempt < 6; ++startAttempt)
@@ -155,7 +155,7 @@ BOOL BLACKBIRDSCStartEtwSession(_In_ const BLACKBIRDSC_ETW_SESSION_CONFIG *Confi
         }
         if (status == ERROR_ALREADY_EXISTS)
         {
-            (void)BLACKBIRDSCStopSessionByName(internal->SessionName);
+            (void) BLACKBIRDSCStopSessionByName(internal->SessionName);
             Sleep(120);
             continue;
         }
@@ -173,16 +173,21 @@ BOOL BLACKBIRDSCStartEtwSession(_In_ const BLACKBIRDSC_ETW_SESSION_CONFIG *Confi
 
     for (i = 0; i < Config->ProviderCount; ++i)
     {
-        status = EnableTraceEx2(internal->SessionHandle, &Config->Providers[i].ProviderId,
-                                EVENT_CONTROL_CODE_ENABLE_PROVIDER, Config->Providers[i].Level,
-                                Config->Providers[i].MatchAnyKeyword, Config->Providers[i].MatchAllKeyword, 0, NULL);
+        status = EnableTraceEx2(internal->SessionHandle,
+                                &Config->Providers[i].ProviderId,
+                                EVENT_CONTROL_CODE_ENABLE_PROVIDER,
+                                Config->Providers[i].Level,
+                                Config->Providers[i].MatchAnyKeyword,
+                                Config->Providers[i].MatchAllKeyword,
+                                0,
+                                NULL);
         if (status != ERROR_SUCCESS)
         {
             if (IsEqualGUID(&Config->Providers[i].ProviderId, &BLACKBIRDSC_PROVIDER_GUID_TI))
             {
-                (void)InterlockedExchange(&g_BlackbirdLastTiEnableError, (LONG)status);
+                (void) InterlockedExchange(&g_BlackbirdLastTiEnableError, (LONG) status);
             }
-            (void)BLACKBIRDSCStopSessionByName(internal->SessionName);
+            (void) BLACKBIRDSCStopSessionByName(internal->SessionName);
             free(props);
             CloseHandle(internal->RunStoppedEvent);
             free(internal);
@@ -201,7 +206,7 @@ BOOL BLACKBIRDSCStartEtwSession(_In_ const BLACKBIRDSC_ETW_SESSION_CONFIG *Confi
     if (internal->TraceHandle == INVALID_PROCESSTRACE_HANDLE)
     {
         status = GetLastError();
-        (void)BLACKBIRDSCStopSessionByName(internal->SessionName);
+        (void) BLACKBIRDSCStopSessionByName(internal->SessionName);
         free(props);
         CloseHandle(internal->RunStoppedEvent);
         free(internal);
@@ -210,15 +215,16 @@ BOOL BLACKBIRDSCStartEtwSession(_In_ const BLACKBIRDSC_ETW_SESSION_CONFIG *Confi
     }
 
     free(props);
-    *Session = (BLACKBIRDSC_ETW_SESSION *)internal;
+    *Session = (BLACKBIRDSC_ETW_SESSION *) internal;
     return TRUE;
 }
 
-BOOL BLACKBIRDSCStartBlackbirdEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL EnableThreatIntelProvider,
-                                             _In_ BLACKBIRDSC_ETW_EVENT_CALLBACK Callback,
-                                             _In_opt_ PVOID CallbackContext,
-                                             _Outptr_ BLACKBIRDSC_ETW_SESSION **Session,
-                                             _Out_opt_ BOOL *ThreatIntelEnabled)
+BOOL BLACKBIRDSCStartBlackbirdEtwSession(_In_z_ PCWSTR SessionName,
+                                         _In_ BOOL EnableThreatIntelProvider,
+                                         _In_ BLACKBIRDSC_ETW_EVENT_CALLBACK Callback,
+                                         _In_opt_ PVOID CallbackContext,
+                                         _Outptr_ BLACKBIRDSC_ETW_SESSION **Session,
+                                         _Out_opt_ BOOL *ThreatIntelEnabled)
 {
     BLACKBIRDSC_ETW_PROVIDER_CONFIG providers[3];
     BLACKBIRDSC_ETW_PROVIDER_CONFIG providerAttempt[3];
@@ -239,7 +245,7 @@ BOOL BLACKBIRDSCStartBlackbirdEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL En
         *Session = NULL;
     }
 
-    (void)InterlockedExchange(&g_BlackbirdLastTiEnableError, ERROR_SUCCESS);
+    (void) InterlockedExchange(&g_BlackbirdLastTiEnableError, ERROR_SUCCESS);
 
     if (SessionName == NULL || Callback == NULL || Session == NULL)
     {
@@ -266,7 +272,7 @@ BOOL BLACKBIRDSCStartBlackbirdEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL En
     config.Callback = Callback;
     config.CallbackContext = CallbackContext;
 
-    (void)BLACKBIRDSCStopSessionByName(SessionName);
+    (void) BLACKBIRDSCStopSessionByName(SessionName);
     Sleep(80);
 
     providerAttempt[0] = providers[0];
@@ -288,11 +294,11 @@ BOOL BLACKBIRDSCStartBlackbirdEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL En
     {
         lastErr = GetLastError();
     }
-    tiErr = (DWORD)InterlockedCompareExchange(&g_BlackbirdLastTiEnableError, 0, 0);
+    tiErr = (DWORD) InterlockedCompareExchange(&g_BlackbirdLastTiEnableError, 0, 0);
 
-    if (!started && EnableThreatIntelProvider &&
-        (tiErr != ERROR_SUCCESS || lastErr == ERROR_ACCESS_DENIED || lastErr == ERROR_PRIVILEGE_NOT_HELD ||
-         lastErr == ERROR_NOT_FOUND || lastErr == ERROR_INVALID_PARAMETER))
+    if (!started && EnableThreatIntelProvider
+        && (tiErr != ERROR_SUCCESS || lastErr == ERROR_ACCESS_DENIED || lastErr == ERROR_PRIVILEGE_NOT_HELD
+            || lastErr == ERROR_NOT_FOUND || lastErr == ERROR_INVALID_PARAMETER))
     {
         providerAttempt[0] = providers[0];
         providerAttempt[1] = providers[1];
@@ -348,7 +354,7 @@ BOOL BLACKBIRDSCStartBlackbirdEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL En
     {
         if (tiErr != ERROR_SUCCESS)
         {
-            (void)InterlockedExchange(&g_BlackbirdLastTiEnableError, (LONG)tiErr);
+            (void) InterlockedExchange(&g_BlackbirdLastTiEnableError, (LONG) tiErr);
         }
         SetLastError(err);
         return FALSE;
@@ -360,18 +366,21 @@ BOOL BLACKBIRDSCStartBlackbirdEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL En
     }
     if (startedWithTi)
     {
-        (void)InterlockedExchange(&g_BlackbirdLastTiEnableError, ERROR_SUCCESS);
+        (void) InterlockedExchange(&g_BlackbirdLastTiEnableError, ERROR_SUCCESS);
     }
     else if (tiErr != ERROR_SUCCESS)
     {
-        (void)InterlockedExchange(&g_BlackbirdLastTiEnableError, (LONG)tiErr);
+        (void) InterlockedExchange(&g_BlackbirdLastTiEnableError, (LONG) tiErr);
     }
     return TRUE;
 }
 
-BOOL SwkStartDetectionEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL EnableThreatIntelProvider,
-                                 _In_ SwkDetectionCallback Callback, _In_opt_ PVOID CallbackContext,
-                                 _Outptr_ BLACKBIRDSC_ETW_SESSION **Session, _Out_opt_ BOOL *ThreatIntelEnabled)
+BOOL SwkStartDetectionEtwSession(_In_z_ PCWSTR SessionName,
+                                 _In_ BOOL EnableThreatIntelProvider,
+                                 _In_ SwkDetectionCallback Callback,
+                                 _In_opt_ PVOID CallbackContext,
+                                 _Outptr_ BLACKBIRDSC_ETW_SESSION **Session,
+                                 _Out_opt_ BOOL *ThreatIntelEnabled)
 {
     BLACKBIRDSC_STG_DETECTION_BRIDGE *bridge;
     BLACKBIRDSC_ETW_SESSION_INTERNAL *internal;
@@ -392,7 +401,7 @@ BOOL SwkStartDetectionEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL EnableThre
         return FALSE;
     }
 
-    bridge = (BLACKBIRDSC_STG_DETECTION_BRIDGE *)calloc(1, sizeof(*bridge));
+    bridge = (BLACKBIRDSC_STG_DETECTION_BRIDGE *) calloc(1, sizeof(*bridge));
     if (bridge == NULL)
     {
         SetLastError(ERROR_OUTOFMEMORY);
@@ -402,9 +411,12 @@ BOOL SwkStartDetectionEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL EnableThre
     bridge->Callback = Callback;
     bridge->CallbackContext = CallbackContext;
 
-    if (!BLACKBIRDSCStartBlackbirdEtwSession(SessionName, EnableThreatIntelProvider,
-                                                 BLACKBIRDSCStgDetectionBridgeCallback, bridge, Session,
-                                                 ThreatIntelEnabled))
+    if (!BLACKBIRDSCStartBlackbirdEtwSession(SessionName,
+                                             EnableThreatIntelProvider,
+                                             BLACKBIRDSCStgDetectionBridgeCallback,
+                                             bridge,
+                                             Session,
+                                             ThreatIntelEnabled))
     {
         err = GetLastError();
         free(bridge);
@@ -412,7 +424,7 @@ BOOL SwkStartDetectionEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL EnableThre
         return FALSE;
     }
 
-    internal = (BLACKBIRDSC_ETW_SESSION_INTERNAL *)(*Session);
+    internal = (BLACKBIRDSC_ETW_SESSION_INTERNAL *) (*Session);
     if (internal == NULL)
     {
         free(bridge);
@@ -426,7 +438,7 @@ BOOL SwkStartDetectionEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL EnableThre
 ULONG
 BLACKBIRDSCRunEtwSession(_In_ BLACKBIRDSC_ETW_SESSION *Session)
 {
-    BLACKBIRDSC_ETW_SESSION_INTERNAL *internal = (BLACKBIRDSC_ETW_SESSION_INTERNAL *)Session;
+    BLACKBIRDSC_ETW_SESSION_INTERNAL *internal = (BLACKBIRDSC_ETW_SESSION_INTERNAL *) Session;
 
     if (internal == NULL || internal->TraceHandle == 0 || internal->TraceHandle == INVALID_PROCESSTRACE_HANDLE)
     {
@@ -434,13 +446,13 @@ BLACKBIRDSCRunEtwSession(_In_ BLACKBIRDSC_ETW_SESSION *Session)
     }
 
     InterlockedIncrement(&internal->ActiveRuns);
-    (void)ResetEvent(internal->RunStoppedEvent);
+    (void) ResetEvent(internal->RunStoppedEvent);
 
     {
         ULONG status = ProcessTrace(&internal->TraceHandle, 1, NULL, NULL);
         if (InterlockedDecrement(&internal->ActiveRuns) == 0)
         {
-            (void)SetEvent(internal->RunStoppedEvent);
+            (void) SetEvent(internal->RunStoppedEvent);
         }
         return status;
     }
@@ -448,7 +460,7 @@ BLACKBIRDSCRunEtwSession(_In_ BLACKBIRDSC_ETW_SESSION *Session)
 
 VOID BLACKBIRDSCStopEtwSession(_In_opt_ BLACKBIRDSC_ETW_SESSION *Session)
 {
-    BLACKBIRDSC_ETW_SESSION_INTERNAL *internal = (BLACKBIRDSC_ETW_SESSION_INTERNAL *)Session;
+    BLACKBIRDSC_ETW_SESSION_INTERNAL *internal = (BLACKBIRDSC_ETW_SESSION_INTERNAL *) Session;
 
     if (internal == NULL)
     {
@@ -463,13 +475,13 @@ VOID BLACKBIRDSCStopEtwSession(_In_opt_ BLACKBIRDSC_ETW_SESSION *Session)
 
     if (internal->SessionHandle != 0)
     {
-        (void)BLACKBIRDSCStopSessionByName(internal->SessionName);
+        (void) BLACKBIRDSCStopSessionByName(internal->SessionName);
         internal->SessionHandle = 0;
     }
 
     if (internal->RunStoppedEvent != NULL && InterlockedCompareExchange(&internal->ActiveRuns, 0, 0) > 0)
     {
-        (void)WaitForSingleObject(internal->RunStoppedEvent, 10000);
+        (void) WaitForSingleObject(internal->RunStoppedEvent, 10000);
     }
 
     if (internal->RunStoppedEvent != NULL)

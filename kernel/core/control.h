@@ -14,10 +14,15 @@ VOID BLACKBIRDControlBeginShutdown(VOID);
 
 VOID BLACKBIRDControlPublishHandleEvent(_In_ const BLACKBIRD_HANDLE_EVENT *HandleEvent);
 
-VOID BLACKBIRDControlPublishThreadEvent(_In_ UINT64 ProcessId, _In_ UINT64 ThreadId, _In_ UINT64 CreatorPid,
-                                          _In_ UINT64 StartAddress, _In_ UINT64 ImageBase, _In_ UINT64 ImageSize,
-                                          _In_ UINT32 Flags, _In_ UINT32 FrameCount,
-                                          _In_reads_opt_(FrameCount) PVOID const *Frames);
+VOID BLACKBIRDControlPublishThreadEvent(_In_ UINT64 ProcessId,
+                                        _In_ UINT64 ThreadId,
+                                        _In_ UINT64 CreatorPid,
+                                        _In_ UINT64 StartAddress,
+                                        _In_ UINT64 ImageBase,
+                                        _In_ UINT64 ImageSize,
+                                        _In_ UINT32 Flags,
+                                        _In_ UINT32 FrameCount,
+                                        _In_reads_opt_(FrameCount) PVOID const *Frames);
 
 VOID BLACKBIRDControlPublishFileEvent(_In_ const BLACKBIRD_FILE_EVENT *FileEvent);
 

@@ -21,16 +21,16 @@ NTSTATUS BLACKBIRDHandleSubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFRE
     UINT32 subscriptionCountSnapshot;
     UINT32 mergedMask;
 
-    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
+    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *) &in, &inSize);
     if (!NT_SUCCESS(status))
     {
         return status;
     }
     UNREFERENCED_PARAMETER(inSize);
 
-    if ((in->StreamMask &
-         (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD |
-          BLACKBIRD_STREAM_FILESYSTEM)) == 0)
+    if ((in->StreamMask
+         & (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD | BLACKBIRD_STREAM_FILESYSTEM))
+        == 0)
     {
         return STATUS_INVALID_PARAMETER;
     }
@@ -51,7 +51,8 @@ NTSTATUS BLACKBIRDHandleSubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFRE
             requesterPid = BLACKBIRDGetRequestorPid(Request);
             DbgPrintEx(DPFLTR_IHVDRIVER_ID,
                        DPFLTR_INFO_LEVEL,
-                       "BLACKBIRD: subscribe update requesterPid=%lu targetPid=%lu streamMask=0x%08X mergedMask=0x%08X subscriptions=%lu.\n",
+                       "BLACKBIRD: subscribe update requesterPid=%lu targetPid=%lu streamMask=0x%08X mergedMask=0x%08X "
+                       "subscriptions=%lu.\n",
                        requesterPid,
                        in->ProcessId,
                        in->StreamMask,
@@ -96,7 +97,7 @@ NTSTATUS BLACKBIRDHandleUnsubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDF
     ULONG requesterPid;
     UINT32 subscriptionCountSnapshot;
 
-    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
+    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *) &in, &inSize);
     if (!NT_SUCCESS(status))
     {
         return status;
@@ -151,7 +152,7 @@ NTSTATUS BLACKBIRDHandleGetStatsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQ
 
     *BytesOut = 0;
 
-    status = WdfRequestRetrieveOutputBuffer(Request, sizeof(*out), (PVOID *)&out, &outSize);
+    status = WdfRequestRetrieveOutputBuffer(Request, sizeof(*out), (PVOID *) &out, &outSize);
     if (!NT_SUCCESS(status))
     {
         return status;
@@ -185,8 +186,7 @@ NTSTATUS BLACKBIRDHandleGetStatsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQ
     return STATUS_SUCCESS;
 }
 
-NTSTATUS BLACKBIRDHandleGetHealthIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request,
-                                         _Out_ size_t *BytesOut)
+NTSTATUS BLACKBIRDHandleGetHealthIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut)
 {
     NTSTATUS status;
     PBLACKBIRD_HEALTH_RESPONSE out;
@@ -200,7 +200,7 @@ NTSTATUS BLACKBIRDHandleGetHealthIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFRE
     }
     *BytesOut = 0;
 
-    status = WdfRequestRetrieveOutputBuffer(Request, sizeof(*out), (PVOID *)&out, &outSize);
+    status = WdfRequestRetrieveOutputBuffer(Request, sizeof(*out), (PVOID *) &out, &outSize);
     if (!NT_SUCCESS(status))
     {
         return status;
@@ -270,7 +270,7 @@ NTSTATUS BLACKBIRDHandleSetPidsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQU
     UINT32 appliedCount;
     ULONG requesterPid;
 
-    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
+    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *) &in, &inSize);
     if (!NT_SUCCESS(status))
     {
         return status;
@@ -278,9 +278,9 @@ NTSTATUS BLACKBIRDHandleSetPidsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQU
     UNREFERENCED_PARAMETER(inSize);
 
     streamMask = in->StreamMask;
-    if ((streamMask &
-         (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD |
-          BLACKBIRD_STREAM_FILESYSTEM)) == 0)
+    if ((streamMask
+         & (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD | BLACKBIRD_STREAM_FILESYSTEM))
+        == 0)
     {
         return STATUS_INVALID_PARAMETER;
     }
@@ -357,7 +357,7 @@ NTSTATUS BLACKBIRDHandleArmPendingLaunchIoctl(_In_ PBLACKBIRD_CLIENT Client, _In
     BOOLEAN clearOnly;
     BOOLEAN hasPathSpec;
 
-    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
+    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *) &in, &inSize);
     if (!NT_SUCCESS(status))
     {
         return status;
@@ -370,11 +370,14 @@ NTSTATUS BLACKBIRDHandleArmPendingLaunchIoctl(_In_ PBLACKBIRD_CLIENT Client, _In
     }
 
     clearOnly = ((in->Flags & BLACKBIRD_PENDING_LAUNCH_FLAG_CLEAR) != 0);
-    hasPathSpec = (in->ImagePathNormDos[0] != L'\0' || in->ImagePathNormNt[0] != L'\0' || in->ImagePathTail[0] != L'\0');
+    hasPathSpec =
+            (in->ImagePathNormDos[0] != L'\0' || in->ImagePathNormNt[0] != L'\0' || in->ImagePathTail[0] != L'\0');
     if (!clearOnly)
     {
-        if ((in->StreamMask & (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD |
-                               BLACKBIRD_STREAM_FILESYSTEM)) == 0)
+        if ((in->StreamMask
+             & (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD
+                | BLACKBIRD_STREAM_FILESYSTEM))
+            == 0)
         {
             return STATUS_INVALID_PARAMETER;
         }
@@ -395,12 +398,13 @@ NTSTATUS BLACKBIRDHandleArmPendingLaunchIoctl(_In_ PBLACKBIRD_CLIENT Client, _In
     {
         Client->PendingLaunchStreamMask = in->StreamMask;
         Client->PendingLaunchArmed = TRUE;
-        (void)RtlStringCchCopyW(Client->PendingLaunchPathNormDos, RTL_NUMBER_OF(Client->PendingLaunchPathNormDos),
-                                in->ImagePathNormDos);
-        (void)RtlStringCchCopyW(Client->PendingLaunchPathNormNt, RTL_NUMBER_OF(Client->PendingLaunchPathNormNt),
-                                in->ImagePathNormNt);
-        (void)RtlStringCchCopyW(Client->PendingLaunchPathTail, RTL_NUMBER_OF(Client->PendingLaunchPathTail),
-                                in->ImagePathTail);
+        (void) RtlStringCchCopyW(Client->PendingLaunchPathNormDos,
+                                 RTL_NUMBER_OF(Client->PendingLaunchPathNormDos),
+                                 in->ImagePathNormDos);
+        (void) RtlStringCchCopyW(
+                Client->PendingLaunchPathNormNt, RTL_NUMBER_OF(Client->PendingLaunchPathNormNt), in->ImagePathNormNt);
+        (void) RtlStringCchCopyW(
+                Client->PendingLaunchPathTail, RTL_NUMBER_OF(Client->PendingLaunchPathTail), in->ImagePathTail);
     }
     ExReleaseFastMutex(&Client->Lock);
 
@@ -418,8 +422,9 @@ NTSTATUS BLACKBIRDHandleArmPendingLaunchIoctl(_In_ PBLACKBIRD_CLIENT Client, _In
     return STATUS_SUCCESS;
 }
 
-static NTSTATUS BLACKBIRDResolveProcessImagePath(_In_ UINT32 ProcessId, _Out_writes_z_(OutputChars) PWSTR Output,
-                                                   _In_ size_t OutputChars)
+static NTSTATUS BLACKBIRDResolveProcessImagePath(_In_ UINT32 ProcessId,
+                                                 _Out_writes_z_(OutputChars) PWSTR Output,
+                                                 _In_ size_t OutputChars)
 {
     NTSTATUS status;
     PEPROCESS process = NULL;
@@ -431,7 +436,7 @@ static NTSTATUS BLACKBIRDResolveProcessImagePath(_In_ UINT32 ProcessId, _Out_wri
     }
     Output[0] = L'\0';
 
-    status = PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)ProcessId, &process);
+    status = PsLookupProcessByProcessId((HANDLE) (ULONG_PTR) ProcessId, &process);
     if (!NT_SUCCESS(status))
     {
         return status;
@@ -463,8 +468,8 @@ static NTSTATUS BLACKBIRDResolveProcessImagePath(_In_ UINT32 ProcessId, _Out_wri
     return status;
 }
 
-NTSTATUS BLACKBIRDHandleQueryProcessImageIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request,
-                                                 _Out_ size_t *BytesOut)
+NTSTATUS
+BLACKBIRDHandleQueryProcessImageIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut)
 {
     NTSTATUS status;
     PBLACKBIRD_QUERY_PROCESS_IMAGE_REQUEST in;
@@ -486,9 +491,10 @@ NTSTATUS BLACKBIRDHandleQueryProcessImageIoctl(_In_ PBLACKBIRD_CLIENT Client, _I
         ExReleaseFastMutex(&Client->Lock);
         if (throttleCounter == 1 || ((throttleCounter & 0xFF) == 0))
         {
-            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                       DPFLTR_WARNING_LEVEL,
                        "BLACKBIRD: throttling IOCTL_BLACKBIRD_QUERY_PROCESS_IMAGE total=%lu.\n",
-                       (ULONG)throttleCounter);
+                       (ULONG) throttleCounter);
         }
         return STATUS_QUOTA_EXCEEDED;
     }
@@ -500,7 +506,7 @@ NTSTATUS BLACKBIRDHandleQueryProcessImageIoctl(_In_ PBLACKBIRD_CLIENT Client, _I
         return STATUS_DEVICE_BUSY;
     }
 
-    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
+    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *) &in, &inSize);
     if (!NT_SUCCESS(status))
     {
         BLACKBIRDReleaseQueryInflightSlot();
@@ -508,7 +514,7 @@ NTSTATUS BLACKBIRDHandleQueryProcessImageIoctl(_In_ PBLACKBIRD_CLIENT Client, _I
     }
     UNREFERENCED_PARAMETER(inSize);
 
-    status = WdfRequestRetrieveOutputBuffer(Request, sizeof(*out), (PVOID *)&out, &outSize);
+    status = WdfRequestRetrieveOutputBuffer(Request, sizeof(*out), (PVOID *) &out, &outSize);
     if (!NT_SUCCESS(status))
     {
         BLACKBIRDReleaseQueryInflightSlot();
@@ -551,7 +557,7 @@ NTSTATUS BLACKBIRDHandleGetEventIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQ
     {
         return STATUS_DEVICE_NOT_READY;
     }
-    status = WdfRequestRetrieveOutputBuffer(Request, sizeof(*out), (PVOID *)&out, &outSize);
+    status = WdfRequestRetrieveOutputBuffer(Request, sizeof(*out), (PVOID *) &out, &outSize);
     if (!NT_SUCCESS(status))
     {
         return status;
@@ -599,7 +605,8 @@ NTSTATUS BLACKBIRDHandleGetEventIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQ
         requesterPid = BLACKBIRDGetRequestorPid(Request);
         DbgPrintEx(DPFLTR_IHVDRIVER_ID,
                    DPFLTR_INFO_LEVEL,
-                   "BLACKBIRD: get-event delivered requesterPid=%lu deliveredCount=%ld queueDepthNow=%lu eventType=%lu seq=%lu.\n",
+                   "BLACKBIRD: get-event delivered requesterPid=%lu deliveredCount=%ld queueDepthNow=%lu eventType=%lu "
+                   "seq=%lu.\n",
                    requesterPid,
                    deliverCounter,
                    queueDepthSnapshot,

@@ -1,9 +1,10 @@
 #include "blackbird_ioctl_test_internal.h"
 
-static VOID WINAPI BlackbirdEtwRecordCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName,
-                                                _In_opt_ PVOID Context)
+static VOID WINAPI BlackbirdEtwRecordCallback(_In_ PEVENT_RECORD Record,
+                                              _In_opt_z_ PCWSTR EventName,
+                                              _In_opt_ PVOID Context)
 {
-    ETW_CAPTURE *cap = (ETW_CAPTURE *)Context;
+    ETW_CAPTURE *cap = (ETW_CAPTURE *) Context;
     CHAR detectionName[128];
 
     if (cap == NULL || Record == NULL)
@@ -18,27 +19,27 @@ static VOID WINAPI BlackbirdEtwRecordCallback(_In_ PEVENT_RECORD Record, _In_opt
         InterlockedIncrement(&cap->TiEvents);
         switch (task)
         {
-        case 1:
-            InterlockedIncrement(&cap->TiAllocVmEvents);
-            break;
-        case 2:
-            InterlockedIncrement(&cap->TiProtectVmEvents);
-            break;
-        case 7:
-            InterlockedIncrement(&cap->TiWriteVmEvents);
-            break;
-        case 13:
-            InterlockedIncrement(&cap->TiSyscallUsageEvents);
-            break;
-        default:
-            InterlockedIncrement(&cap->TiUnknownTaskEvents);
-            break;
+            case 1:
+                InterlockedIncrement(&cap->TiAllocVmEvents);
+                break;
+            case 2:
+                InterlockedIncrement(&cap->TiProtectVmEvents);
+                break;
+            case 7:
+                InterlockedIncrement(&cap->TiWriteVmEvents);
+                break;
+            case 13:
+                InterlockedIncrement(&cap->TiSyscallUsageEvents);
+                break;
+            default:
+                InterlockedIncrement(&cap->TiUnknownTaskEvents);
+                break;
         }
         return;
     }
 
-    if (!IsEqualGUID(&Record->EventHeader.ProviderId, &BLACKBIRDSC_PROVIDER_GUID_BLACKBIRD) || EventName == NULL ||
-        EventName[0] == L'\0')
+    if (!IsEqualGUID(&Record->EventHeader.ProviderId, &BLACKBIRDSC_PROVIDER_GUID_BLACKBIRD) || EventName == NULL
+        || EventName[0] == L'\0')
     {
         InterlockedIncrement(&cap->UnknownEvents);
         return;
@@ -90,8 +91,8 @@ static VOID WINAPI BlackbirdEtwRecordCallback(_In_ PEVENT_RECORD Record, _In_opt
             {
                 InterlockedIncrement(&cap->DetectDirectSyscallSuspect);
             }
-            else if (strcmp(detectionName, "POSSIBLE_MANUAL_MAP_OR_HOLLOWING_EXECUTION") == 0 ||
-                     strcmp(detectionName, "REMOTE_THREAD_START_IN_NON_IMAGE_EXECUTABLE_REGION") == 0)
+            else if (strcmp(detectionName, "POSSIBLE_MANUAL_MAP_OR_HOLLOWING_EXECUTION") == 0
+                     || strcmp(detectionName, "REMOTE_THREAD_START_IN_NON_IMAGE_EXECUTABLE_REGION") == 0)
             {
                 InterlockedIncrement(&cap->DetectManualMapOrHollowingExec);
             }
@@ -141,11 +142,11 @@ static VOID WINAPI BlackbirdEtwRecordCallback(_In_ PEVENT_RECORD Record, _In_opt
 
 static DWORD WINAPI EtwConsumerThreadProc(_In_ LPVOID Context)
 {
-    ETW_CAPTURE *cap = (ETW_CAPTURE *)Context;
+    ETW_CAPTURE *cap = (ETW_CAPTURE *) Context;
     ULONG status;
 
     status = BLACKBIRDSCRunEtwSession(cap->Session);
-    InterlockedExchange(&cap->ProcessTraceStatus, (LONG)status);
+    InterlockedExchange(&cap->ProcessTraceStatus, (LONG) status);
     return status;
 }
 
@@ -163,25 +164,33 @@ static BOOL StartEtwCapture(_Out_ ETW_CAPTURE *cap)
     cap->Session = NULL;
     cap->ProcessTraceStatus = ERROR_SUCCESS;
     cap->TiProviderEnabled = FALSE;
-    (void)StringCchCopyW(cap->SessionName, RTL_NUMBER_OF(cap->SessionName), BLACKBIRD_SUITE_ETW_SESSION);
+    (void) StringCchCopyW(cap->SessionName, RTL_NUMBER_OF(cap->SessionName), BLACKBIRD_SUITE_ETW_SESSION);
 
-    (void)BLACKBIRDSCStopSessionByName(BLACKBIRD_SUITE_ETW_SESSION);
-    (void)BLACKBIRDSCStopSessionByName(L"BlackbirdSensorSession");
+    (void) BLACKBIRDSCStopSessionByName(BLACKBIRD_SUITE_ETW_SESSION);
+    (void) BLACKBIRDSCStopSessionByName(L"BlackbirdSensorSession");
     Sleep(80);
 
-    if (!BLACKBIRDSCStartBlackbirdEtwSession(cap->SessionName, TRUE, BlackbirdEtwRecordCallback, cap,
-                                                 &cap->Session, &cap->TiProviderEnabled))
+    if (!BLACKBIRDSCStartBlackbirdEtwSession(
+                cap->SessionName, TRUE, BlackbirdEtwRecordCallback, cap, &cap->Session, &cap->TiProviderEnabled))
     {
         err = GetLastError();
         printf("[INFO] ETW start failed err=%lu session=%ws\n", err, cap->SessionName);
         if (err == ERROR_ACCESS_DENIED || err == ERROR_ALREADY_EXISTS)
         {
-            if (swprintf_s(fallbackName, RTL_NUMBER_OF(fallbackName), L"%ls-%lu", BLACKBIRD_SUITE_ETW_SESSION,
-                           GetCurrentProcessId()) > 0)
+            if (swprintf_s(fallbackName,
+                           RTL_NUMBER_OF(fallbackName),
+                           L"%ls-%lu",
+                           BLACKBIRD_SUITE_ETW_SESSION,
+                           GetCurrentProcessId())
+                > 0)
             {
-                (void)StringCchCopyW(cap->SessionName, RTL_NUMBER_OF(cap->SessionName), fallbackName);
-                if (!BLACKBIRDSCStartBlackbirdEtwSession(cap->SessionName, TRUE, BlackbirdEtwRecordCallback, cap,
-                                                             &cap->Session, &cap->TiProviderEnabled))
+                (void) StringCchCopyW(cap->SessionName, RTL_NUMBER_OF(cap->SessionName), fallbackName);
+                if (!BLACKBIRDSCStartBlackbirdEtwSession(cap->SessionName,
+                                                         TRUE,
+                                                         BlackbirdEtwRecordCallback,
+                                                         cap,
+                                                         &cap->Session,
+                                                         &cap->TiProviderEnabled))
                 {
                     err = GetLastError();
                     printf("[INFO] ETW fallback start failed err=%lu session=%ws\n", err, cap->SessionName);
@@ -235,7 +244,7 @@ static VOID StopEtwCapture(_Inout_ ETW_CAPTURE *cap)
 
     if (cap->TraceThread != NULL)
     {
-        (void)WaitForSingleObject(cap->TraceThread, 5000);
+        (void) WaitForSingleObject(cap->TraceThread, 5000);
         CloseHandle(cap->TraceThread);
         cap->TraceThread = NULL;
     }
@@ -255,21 +264,21 @@ static VOID BrokerCaptureCountEvent(_Inout_ BROKER_ETW_CAPTURE *cap, _In_ const 
         InterlockedIncrement(&cap->TiEvents);
         switch (event->Task)
         {
-        case 1:
-            InterlockedIncrement(&cap->TiAllocVmEvents);
-            break;
-        case 2:
-            InterlockedIncrement(&cap->TiProtectVmEvents);
-            break;
-        case 7:
-            InterlockedIncrement(&cap->TiWriteVmEvents);
-            break;
-        case 13:
-            InterlockedIncrement(&cap->TiSyscallUsageEvents);
-            break;
-        default:
-            InterlockedIncrement(&cap->TiUnknownTaskEvents);
-            break;
+            case 1:
+                InterlockedIncrement(&cap->TiAllocVmEvents);
+                break;
+            case 2:
+                InterlockedIncrement(&cap->TiProtectVmEvents);
+                break;
+            case 7:
+                InterlockedIncrement(&cap->TiWriteVmEvents);
+                break;
+            case 13:
+                InterlockedIncrement(&cap->TiSyscallUsageEvents);
+                break;
+            default:
+                InterlockedIncrement(&cap->TiUnknownTaskEvents);
+                break;
         }
         return;
     }
@@ -328,7 +337,7 @@ static VOID BrokerCaptureCountEvent(_Inout_ BROKER_ETW_CAPTURE *cap, _In_ const 
 
 static DWORD WINAPI BrokerEtwConsumerThreadProc(_In_ LPVOID Context)
 {
-    BROKER_ETW_CAPTURE *cap = (BROKER_ETW_CAPTURE *)Context;
+    BROKER_ETW_CAPTURE *cap = (BROKER_ETW_CAPTURE *) Context;
 
     if (cap == NULL || cap->Device == NULL || cap->Device == INVALID_HANDLE_VALUE)
     {
@@ -346,8 +355,8 @@ static DWORD WINAPI BrokerEtwConsumerThreadProc(_In_ LPVOID Context)
             {
                 continue;
             }
-            if (err == ERROR_NOT_READY || err == ERROR_OPERATION_ABORTED || err == ERROR_DEVICE_NOT_CONNECTED ||
-                err == ERROR_BROKEN_PIPE)
+            if (err == ERROR_NOT_READY || err == ERROR_OPERATION_ABORTED || err == ERROR_DEVICE_NOT_CONNECTED
+                || err == ERROR_BROKEN_PIPE)
             {
                 break;
             }
@@ -364,8 +373,10 @@ static DWORD WINAPI BrokerEtwConsumerThreadProc(_In_ LPVOID Context)
 
     return 0;
 }
-BOOL StartBrokerEtwCapture(_Out_ BROKER_ETW_CAPTURE *cap, _In_reads_opt_(SeedCount) const DWORD *SeedPids,
-                                  _In_ DWORD SeedCount, _In_ DWORD StreamMask)
+BOOL StartBrokerEtwCapture(_Out_ BROKER_ETW_CAPTURE *cap,
+                           _In_reads_opt_(SeedCount) const DWORD *SeedPids,
+                           _In_ DWORD SeedCount,
+                           _In_ DWORD StreamMask)
 {
     UINT32 capabilities = 0;
     BOOL tiEnabled = FALSE;
@@ -398,7 +409,7 @@ BOOL StartBrokerEtwCapture(_Out_ BROKER_ETW_CAPTURE *cap, _In_reads_opt_(SeedCou
     {
         if (!BLACKBIRDSCSetPids(cap->Device, SeedPids, SeedCount, StreamMask))
         {
-            (void)BLACKBIRDSCCloseControlDevice(cap->Device);
+            (void) BLACKBIRDSCCloseControlDevice(cap->Device);
             cap->Device = INVALID_HANDLE_VALUE;
             return FALSE;
         }
@@ -410,7 +421,7 @@ BOOL StartBrokerEtwCapture(_Out_ BROKER_ETW_CAPTURE *cap, _In_reads_opt_(SeedCou
     cap->TraceThread = CreateThread(NULL, 0, BrokerEtwConsumerThreadProc, cap, 0, NULL);
     if (cap->TraceThread == NULL)
     {
-        (void)BLACKBIRDSCCloseControlDevice(cap->Device);
+        (void) BLACKBIRDSCCloseControlDevice(cap->Device);
         cap->Device = INVALID_HANDLE_VALUE;
         return FALSE;
     }
@@ -428,14 +439,14 @@ VOID StopBrokerEtwCapture(_Inout_ BROKER_ETW_CAPTURE *cap)
     InterlockedExchange(&cap->StopRequested, 1);
     if (cap->TraceThread != NULL)
     {
-        (void)WaitForSingleObject(cap->TraceThread, 5000);
+        (void) WaitForSingleObject(cap->TraceThread, 5000);
         CloseHandle(cap->TraceThread);
         cap->TraceThread = NULL;
     }
 
     if (cap->Device != NULL && cap->Device != INVALID_HANDLE_VALUE)
     {
-        (void)BLACKBIRDSCCloseControlDevice(cap->Device);
+        (void) BLACKBIRDSCCloseControlDevice(cap->Device);
         cap->Device = INVALID_HANDLE_VALUE;
     }
 }
@@ -445,13 +456,13 @@ BOOL WaitForBrokerEtwEventCoverage(_In_ BROKER_ETW_CAPTURE *cap, _In_ DWORD maxM
 
     while ((GetTickCount64() - start) < maxMs)
     {
-        if (InterlockedCompareExchange(&cap->HandleEvents, 0, 0) > 0 &&
-            InterlockedCompareExchange(&cap->ThreadEvents, 0, 0) > 0 &&
-            InterlockedCompareExchange(&cap->ProcessEvents, 0, 0) > 0 &&
-            InterlockedCompareExchange(&cap->ImageEvents, 0, 0) > 0 &&
-            InterlockedCompareExchange(&cap->RegistryEvents, 0, 0) > 0 &&
-            (!requireApcTelemetry || InterlockedCompareExchange(&cap->ApcEvents, 0, 0) > 0) &&
-            InterlockedCompareExchange(&cap->DetectionEvents, 0, 0) > 0)
+        if (InterlockedCompareExchange(&cap->HandleEvents, 0, 0) > 0
+            && InterlockedCompareExchange(&cap->ThreadEvents, 0, 0) > 0
+            && InterlockedCompareExchange(&cap->ProcessEvents, 0, 0) > 0
+            && InterlockedCompareExchange(&cap->ImageEvents, 0, 0) > 0
+            && InterlockedCompareExchange(&cap->RegistryEvents, 0, 0) > 0
+            && (!requireApcTelemetry || InterlockedCompareExchange(&cap->ApcEvents, 0, 0) > 0)
+            && InterlockedCompareExchange(&cap->DetectionEvents, 0, 0) > 0)
         {
             return TRUE;
         }
@@ -466,13 +477,13 @@ static BOOL WaitForEtwEventCoverage(_In_ ETW_CAPTURE *cap, _In_ DWORD maxMs, _In
 
     while ((GetTickCount64() - start) < maxMs)
     {
-        if (InterlockedCompareExchange(&cap->HandleEvents, 0, 0) > 0 &&
-            InterlockedCompareExchange(&cap->ThreadEvents, 0, 0) > 0 &&
-            InterlockedCompareExchange(&cap->ProcessEvents, 0, 0) > 0 &&
-            InterlockedCompareExchange(&cap->ImageEvents, 0, 0) > 0 &&
-            InterlockedCompareExchange(&cap->RegistryEvents, 0, 0) > 0 &&
-            (!requireApcTelemetry || InterlockedCompareExchange(&cap->ApcEvents, 0, 0) > 0) &&
-            InterlockedCompareExchange(&cap->DetectionEvents, 0, 0) > 0)
+        if (InterlockedCompareExchange(&cap->HandleEvents, 0, 0) > 0
+            && InterlockedCompareExchange(&cap->ThreadEvents, 0, 0) > 0
+            && InterlockedCompareExchange(&cap->ProcessEvents, 0, 0) > 0
+            && InterlockedCompareExchange(&cap->ImageEvents, 0, 0) > 0
+            && InterlockedCompareExchange(&cap->RegistryEvents, 0, 0) > 0
+            && (!requireApcTelemetry || InterlockedCompareExchange(&cap->ApcEvents, 0, 0) > 0)
+            && InterlockedCompareExchange(&cap->DetectionEvents, 0, 0) > 0)
         {
             return TRUE;
         }
@@ -480,6 +491,3 @@ static BOOL WaitForEtwEventCoverage(_In_ ETW_CAPTURE *cap, _In_ DWORD maxMs, _In
     }
     return FALSE;
 }
-
-
-

@@ -20,8 +20,8 @@ HANDLE OpenControlDeviceHandle(void)
     ZeroMemory(brokerPipeWide, sizeof(brokerPipeWide));
     if (brokerPipe != NULL && brokerPipe[0] != '\0')
     {
-        if (MultiByteToWideChar(CP_UTF8, 0, brokerPipe, -1, brokerPipeWide, RTL_NUMBER_OF(brokerPipeWide)) <= 0 &&
-            MultiByteToWideChar(CP_ACP, 0, brokerPipe, -1, brokerPipeWide, RTL_NUMBER_OF(brokerPipeWide)) <= 0)
+        if (MultiByteToWideChar(CP_UTF8, 0, brokerPipe, -1, brokerPipeWide, RTL_NUMBER_OF(brokerPipeWide)) <= 0
+            && MultiByteToWideChar(CP_ACP, 0, brokerPipe, -1, brokerPipeWide, RTL_NUMBER_OF(brokerPipeWide)) <= 0)
         {
             SetLastError(ERROR_INVALID_PARAMETER);
             return INVALID_HANDLE_VALUE;
@@ -43,7 +43,7 @@ HANDLE OpenControlDeviceHandle(void)
 
 static DWORD WINAPI MultiClientWorkerThreadProc(_In_ LPVOID Context)
 {
-    BLACKBIRD_MULTI_CLIENT_WORKER *worker = (BLACKBIRD_MULTI_CLIENT_WORKER *)Context;
+    BLACKBIRD_MULTI_CLIENT_WORKER *worker = (BLACKBIRD_MULTI_CLIENT_WORKER *) Context;
     ULONGLONG start = GetTickCount64();
 
     while ((GetTickCount64() - start) < worker->MaxMs)
@@ -110,13 +110,13 @@ BOOL RunMultiClientParallelIoctlTest(_In_ DWORD CallerPid, _In_ DWORD TargetPid,
             goto Cleanup;
         }
 
-        if (!Subscribe(clients[i], CallerPid,
-                       BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD))
+        if (!Subscribe(
+                    clients[i], CallerPid, BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD))
         {
             goto Cleanup;
         }
-        if (!Subscribe(clients[i], TargetPid,
-                       BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD))
+        if (!Subscribe(
+                    clients[i], TargetPid, BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD))
         {
             goto Cleanup;
         }
@@ -164,7 +164,7 @@ Cleanup:
     {
         if (threads[i] != NULL)
         {
-            (void)WaitForSingleObject(threads[i], 1000);
+            (void) WaitForSingleObject(threads[i], 1000);
             CloseHandle(threads[i]);
             threads[i] = NULL;
         }
@@ -175,8 +175,8 @@ Cleanup:
         pollSum += workers[i].Polls;
         if (clients[i] != INVALID_HANDLE_VALUE)
         {
-            (void)Unsubscribe(clients[i], CallerPid);
-            (void)Unsubscribe(clients[i], TargetPid);
+            (void) Unsubscribe(clients[i], CallerPid);
+            (void) Unsubscribe(clients[i], TargetPid);
             CloseHandle(clients[i]);
             clients[i] = INVALID_HANDLE_VALUE;
         }
@@ -257,13 +257,10 @@ void PumpIoctlEvents(HANDLE h, TEST_STATE *state, const TEST_EXPECTED *expected,
 }
 void GenerateLocalThreadEvent(void)
 {
-    HANDLE t = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE)Sleep, (LPVOID)(ULONG_PTR)15, 0, NULL);
+    HANDLE t = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) Sleep, (LPVOID) (ULONG_PTR) 15, 0, NULL);
     if (t != NULL)
     {
         WaitForSingleObject(t, 2000);
         CloseHandle(t);
     }
 }
-
-
-

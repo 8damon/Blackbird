@@ -22,7 +22,8 @@ typedef struct _BLACKBIRD_SMBIOS_HEADER
 #pragma pack(pop)
 
 static VOID BLACKBIRDNtApiPatchBoundedString(_Inout_updates_bytes_(CurrentLength) PUCHAR CurrentValue,
-                                             _In_ SIZE_T CurrentLength, _In_z_ PCSTR Replacement)
+                                             _In_ SIZE_T CurrentLength,
+                                             _In_z_ PCSTR Replacement)
 {
     SIZE_T replacementLength;
     SIZE_T copyLength;
@@ -44,15 +45,17 @@ static VOID BLACKBIRDNtApiPatchBoundedString(_Inout_updates_bytes_(CurrentLength
     }
 }
 
-static BOOLEAN BLACKBIRDNtApiFindSmbiosStringByIndex(_Inout_ PUCHAR StringsStart, _In_ PUCHAR NextStructure,
-                                                     _In_ UCHAR StringIndex, _Out_ PUCHAR *StringStart,
+static BOOLEAN BLACKBIRDNtApiFindSmbiosStringByIndex(_Inout_ PUCHAR StringsStart,
+                                                     _In_ PUCHAR NextStructure,
+                                                     _In_ UCHAR StringIndex,
+                                                     _Out_ PUCHAR *StringStart,
                                                      _Out_ PUCHAR *StringEnd)
 {
     PUCHAR cursor;
     UCHAR currentIndex;
 
-    if (StringsStart == NULL || NextStructure == NULL || StringStart == NULL || StringEnd == NULL || StringIndex == 0 ||
-        StringsStart >= NextStructure)
+    if (StringsStart == NULL || NextStructure == NULL || StringStart == NULL || StringEnd == NULL || StringIndex == 0
+        || StringsStart >= NextStructure)
     {
         return FALSE;
     }
@@ -91,16 +94,19 @@ static BOOLEAN BLACKBIRDNtApiFindSmbiosStringByIndex(_Inout_ PUCHAR StringsStart
     return FALSE;
 }
 
-static VOID BLACKBIRDNtApiPatchSmbiosString(_Inout_ PUCHAR Structure, _In_ UCHAR StructureLength, _In_ UCHAR StringOffset,
-                                            _Inout_ PUCHAR StringsStart, _In_ PUCHAR NextStructure,
+static VOID BLACKBIRDNtApiPatchSmbiosString(_Inout_ PUCHAR Structure,
+                                            _In_ UCHAR StructureLength,
+                                            _In_ UCHAR StringOffset,
+                                            _Inout_ PUCHAR StringsStart,
+                                            _In_ PUCHAR NextStructure,
                                             _In_z_ PCSTR Replacement)
 {
     UCHAR stringIndex;
     PUCHAR stringStart;
     PUCHAR stringEnd;
 
-    if (Structure == NULL || StringsStart == NULL || NextStructure == NULL || Replacement == NULL ||
-        StringOffset >= StructureLength)
+    if (Structure == NULL || StringsStart == NULL || NextStructure == NULL || Replacement == NULL
+        || StringOffset >= StructureLength)
     {
         return;
     }
@@ -120,7 +126,7 @@ static VOID BLACKBIRDNtApiPatchSmbiosString(_Inout_ PUCHAR Structure, _In_ UCHAR
         return;
     }
 
-    BLACKBIRDNtApiPatchBoundedString(stringStart, (SIZE_T)(stringEnd - stringStart), Replacement);
+    BLACKBIRDNtApiPatchBoundedString(stringStart, (SIZE_T) (stringEnd - stringStart), Replacement);
 }
 
 static VOID BLACKBIRDNtApiRandomizeUuid(_Out_writes_(16) PUCHAR UuidBytes)
@@ -135,15 +141,16 @@ static VOID BLACKBIRDNtApiRandomizeUuid(_Out_writes_(16) PUCHAR UuidBytes)
     }
 
     qpc = KeQueryPerformanceCounter(NULL);
-    seed = (ULONG)(qpc.LowPart ^ (ULONG)(ULONG_PTR)PsGetCurrentProcessId() ^ (ULONG)(ULONG_PTR)PsGetCurrentThreadId());
+    seed = (ULONG) (qpc.LowPart ^ (ULONG) (ULONG_PTR) PsGetCurrentProcessId()
+                    ^ (ULONG) (ULONG_PTR) PsGetCurrentThreadId());
     for (i = 0; i < 16; ++i)
     {
         seed = (seed * 1664525u) + 1013904223u;
-        UuidBytes[i] = (UCHAR)((seed >> 24) & 0xFFu);
+        UuidBytes[i] = (UCHAR) ((seed >> 24) & 0xFFu);
     }
 
-    UuidBytes[6] = (UCHAR)((UuidBytes[6] & 0x0Fu) | 0x40u);
-    UuidBytes[8] = (UCHAR)((UuidBytes[8] & 0x3Fu) | 0x80u);
+    UuidBytes[6] = (UCHAR) ((UuidBytes[6] & 0x0Fu) | 0x40u);
+    UuidBytes[8] = (UCHAR) ((UuidBytes[8] & 0x3Fu) | 0x80u);
 }
 
 static VOID BLACKBIRDNtApiSanitizeSmbiosBlob(_Inout_updates_bytes_(RawLength) PUCHAR RawTable, _In_ ULONG RawLength)
@@ -195,8 +202,8 @@ static VOID BLACKBIRDNtApiSanitizeSmbiosBlob(_Inout_updates_bytes_(RawLength) PU
 
         if (structureType == 0)
         {
-            BLACKBIRDNtApiPatchSmbiosString(cursor, structureLength, 4, stringsStart, nextStructure,
-                                            "American Megatrends Inc.");
+            BLACKBIRDNtApiPatchSmbiosString(
+                    cursor, structureLength, 4, stringsStart, nextStructure, "American Megatrends Inc.");
             BLACKBIRDNtApiPatchSmbiosString(cursor, structureLength, 5, stringsStart, nextStructure, "F.27");
             BLACKBIRDNtApiPatchSmbiosString(cursor, structureLength, 8, stringsStart, nextStructure, "07/15/2021");
             sanitizedCount++;
@@ -236,47 +243,47 @@ static VOID BLACKBIRDNtApiSanitizeSmbiosBlob(_Inout_updates_bytes_(RawLength) PU
 
     if (sanitizedCount != 0 && InterlockedDecrement(&g_NtApiSmbiosSanitizeApplyBudget) >= 0)
     {
-        BLACKBIRD_NTAPI_LOG(DPFLTR_INFO_LEVEL,
-                            "BLACKBIRD: ntapi sanitized smbios structures count=%lu.\n",
-                            sanitizedCount);
+        BLACKBIRD_NTAPI_LOG(
+                DPFLTR_INFO_LEVEL, "BLACKBIRD: ntapi sanitized smbios structures count=%lu.\n", sanitizedCount);
     }
 }
 
 VOID BLACKBIRDNtApiSanitizeFirmwareTableInformation(_In_ ULONG SystemInformationClass,
-                                                           _Out_writes_bytes_opt_(SystemInformationLength)
-                                                               PVOID SystemInformation,
-                                                           _In_ ULONG SystemInformationLength,
-                                                           _In_ NTSTATUS Status)
+                                                    _Out_writes_bytes_opt_(SystemInformationLength)
+                                                            PVOID SystemInformation,
+                                                    _In_ ULONG SystemInformationLength,
+                                                    _In_ NTSTATUS Status)
 {
     PSYSTEM_FIRMWARE_TABLE_INFORMATION firmwareInfo;
     PBLACKBIRD_RAW_SMBIOS_DATA rawSmbios;
     ULONG availableTableBytes;
     ULONG smbiosPayloadLength;
 
-    if (SystemInformationClass != BLACKBIRD_SYSTEM_INFORMATION_CLASS_FIRMWARE_TABLE || !NT_SUCCESS(Status) ||
-        SystemInformation == NULL || SystemInformationLength < sizeof(SYSTEM_FIRMWARE_TABLE_INFORMATION))
+    if (SystemInformationClass != BLACKBIRD_SYSTEM_INFORMATION_CLASS_FIRMWARE_TABLE || !NT_SUCCESS(Status)
+        || SystemInformation == NULL || SystemInformationLength < sizeof(SYSTEM_FIRMWARE_TABLE_INFORMATION))
     {
         return;
     }
 
     __try
     {
-        firmwareInfo = (PSYSTEM_FIRMWARE_TABLE_INFORMATION)SystemInformation;
-        if (firmwareInfo->ProviderSignature != BLACKBIRD_FIRMWARE_PROVIDER_RSMB ||
-            firmwareInfo->Action != SystemFirmwareTable_Get)
+        firmwareInfo = (PSYSTEM_FIRMWARE_TABLE_INFORMATION) SystemInformation;
+        if (firmwareInfo->ProviderSignature != BLACKBIRD_FIRMWARE_PROVIDER_RSMB
+            || firmwareInfo->Action != SystemFirmwareTable_Get)
         {
             return;
         }
 
         availableTableBytes = SystemInformationLength - FIELD_OFFSET(SYSTEM_FIRMWARE_TABLE_INFORMATION, TableBuffer);
-        if (firmwareInfo->TableBufferLength > availableTableBytes ||
-            firmwareInfo->TableBufferLength < sizeof(BLACKBIRD_RAW_SMBIOS_DATA))
+        if (firmwareInfo->TableBufferLength > availableTableBytes
+            || firmwareInfo->TableBufferLength < sizeof(BLACKBIRD_RAW_SMBIOS_DATA))
         {
             return;
         }
 
-        rawSmbios = (PBLACKBIRD_RAW_SMBIOS_DATA)firmwareInfo->TableBuffer;
-        if (rawSmbios->Length > (firmwareInfo->TableBufferLength - FIELD_OFFSET(BLACKBIRD_RAW_SMBIOS_DATA, SMBIOSTableData)))
+        rawSmbios = (PBLACKBIRD_RAW_SMBIOS_DATA) firmwareInfo->TableBuffer;
+        if (rawSmbios->Length
+            > (firmwareInfo->TableBufferLength - FIELD_OFFSET(BLACKBIRD_RAW_SMBIOS_DATA, SMBIOSTableData)))
         {
             return;
         }
@@ -301,5 +308,3 @@ VOID BLACKBIRDNtApiSanitizeFirmwareTableInformation(_In_ ULONG SystemInformation
 }
 
 #endif
-
-

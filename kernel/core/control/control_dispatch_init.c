@@ -1,7 +1,7 @@
 #include "control_private.h"
 
-_Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferLength,
-                                                          size_t InputBufferLength, ULONG IoControlCode)
+_Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(
+        WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferLength, size_t InputBufferLength, ULONG IoControlCode)
 {
     WDFOBJECT fileObj;
     PBLACKBIRD_FILE_CONTEXT ctx;
@@ -64,8 +64,8 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUE
         return;
     }
 
-    if (BLACKBIRDControlIsShutdown() && IoControlCode != IOCTL_BLACKBIRD_GET_STATS &&
-        IoControlCode != IOCTL_BLACKBIRD_GET_HEALTH && IoControlCode != IOCTL_BLACKBIRD_SET_SHUTDOWN_MODE)
+    if (BLACKBIRDControlIsShutdown() && IoControlCode != IOCTL_BLACKBIRD_GET_STATS
+        && IoControlCode != IOCTL_BLACKBIRD_GET_HEALTH && IoControlCode != IOCTL_BLACKBIRD_SET_SHUTDOWN_MODE)
     {
         DbgPrintEx(DPFLTR_IHVDRIVER_ID,
                    DPFLTR_INFO_LEVEL,
@@ -79,41 +79,41 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUE
 
     switch (IoControlCode)
     {
-    case IOCTL_BLACKBIRD_SUBSCRIBE:
-        status = BLACKBIRDHandleSubscribeIoctl(ctx->Client, Request);
-        break;
-    case IOCTL_BLACKBIRD_UNSUBSCRIBE:
-        status = BLACKBIRDHandleUnsubscribeIoctl(ctx->Client, Request);
-        break;
-    case IOCTL_BLACKBIRD_GET_EVENT:
-        status = BLACKBIRDHandleGetEventIoctl(ctx->Client, Request, &bytesOut);
-        break;
-    case IOCTL_BLACKBIRD_GET_STATS:
-        status = BLACKBIRDHandleGetStatsIoctl(ctx->Client, Request, &bytesOut);
-        break;
-    case IOCTL_BLACKBIRD_GET_HEALTH:
-        status = BLACKBIRDHandleGetHealthIoctl(ctx->Client, Request, &bytesOut);
-        break;
-    case IOCTL_BLACKBIRD_SET_PIDS:
-        status = BLACKBIRDHandleSetPidsIoctl(ctx->Client, Request);
-        break;
-    case IOCTL_BLACKBIRD_ARM_PENDING_LAUNCH:
-        status = BLACKBIRDHandleArmPendingLaunchIoctl(ctx->Client, Request);
-        break;
-    case IOCTL_BLACKBIRD_QUERY_PROCESS_IMAGE:
-        status = BLACKBIRDHandleQueryProcessImageIoctl(ctx->Client, Request, &bytesOut);
-        break;
-    case IOCTL_BLACKBIRD_SET_SHUTDOWN_MODE:
-        status = BLACKBIRDHandleSetShutdownModeIoctl(ctx->Client, Request);
-        break;
-    default:
-        status = STATUS_INVALID_DEVICE_REQUEST;
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
-                   DPFLTR_WARNING_LEVEL,
-                   "BLACKBIRD: unsupported ioctl requesterPid=%lu ioctl=0x%08X.\n",
-                   requesterPid,
-                   IoControlCode);
-        break;
+        case IOCTL_BLACKBIRD_SUBSCRIBE:
+            status = BLACKBIRDHandleSubscribeIoctl(ctx->Client, Request);
+            break;
+        case IOCTL_BLACKBIRD_UNSUBSCRIBE:
+            status = BLACKBIRDHandleUnsubscribeIoctl(ctx->Client, Request);
+            break;
+        case IOCTL_BLACKBIRD_GET_EVENT:
+            status = BLACKBIRDHandleGetEventIoctl(ctx->Client, Request, &bytesOut);
+            break;
+        case IOCTL_BLACKBIRD_GET_STATS:
+            status = BLACKBIRDHandleGetStatsIoctl(ctx->Client, Request, &bytesOut);
+            break;
+        case IOCTL_BLACKBIRD_GET_HEALTH:
+            status = BLACKBIRDHandleGetHealthIoctl(ctx->Client, Request, &bytesOut);
+            break;
+        case IOCTL_BLACKBIRD_SET_PIDS:
+            status = BLACKBIRDHandleSetPidsIoctl(ctx->Client, Request);
+            break;
+        case IOCTL_BLACKBIRD_ARM_PENDING_LAUNCH:
+            status = BLACKBIRDHandleArmPendingLaunchIoctl(ctx->Client, Request);
+            break;
+        case IOCTL_BLACKBIRD_QUERY_PROCESS_IMAGE:
+            status = BLACKBIRDHandleQueryProcessImageIoctl(ctx->Client, Request, &bytesOut);
+            break;
+        case IOCTL_BLACKBIRD_SET_SHUTDOWN_MODE:
+            status = BLACKBIRDHandleSetShutdownModeIoctl(ctx->Client, Request);
+            break;
+        default:
+            status = STATUS_INVALID_DEVICE_REQUEST;
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                       DPFLTR_WARNING_LEVEL,
+                       "BLACKBIRD: unsupported ioctl requesterPid=%lu ioctl=0x%08X.\n",
+                       requesterPid,
+                       IoControlCode);
+            break;
     }
 
     if (status == STATUS_PENDING)

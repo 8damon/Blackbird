@@ -13,7 +13,7 @@ static __forceinline PVOID BLACKBIRDAllocatePoolCompat(_In_ POOL_FLAGS Flags, _I
         UNICODE_STRING name;
 
         RtlInitUnicodeString(&name, L"ExAllocatePool2");
-        allocatePool2 = (BLACKBIRD_EX_ALLOCATE_POOL2_FN)MmGetSystemRoutineAddress(&name);
+        allocatePool2 = (BLACKBIRD_EX_ALLOCATE_POOL2_FN) MmGetSystemRoutineAddress(&name);
         InterlockedExchange(&resolved, 1);
     }
 
@@ -37,4 +37,3 @@ static __forceinline PVOID BLACKBIRDAllocatePoolCompat(_In_ POOL_FLAGS Flags, _I
 }
 
 #endif
-

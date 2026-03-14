@@ -95,9 +95,13 @@ PsGetThreadProcessId(_In_ PETHREAD Thread);
 NTSYSAPI
 NTSTATUS
 NTAPI
-MmCopyVirtualMemory(_In_ PEPROCESS FromProcess, _In_ const VOID *FromAddress, _In_ PEPROCESS ToProcess,
-                    _Out_writes_bytes_(BufferSize) PVOID ToAddress, _In_ SIZE_T BufferSize,
-                    _In_ KPROCESSOR_MODE PreviousMode, _Out_ PSIZE_T NumberOfBytesCopied);
+MmCopyVirtualMemory(_In_ PEPROCESS FromProcess,
+                    _In_ const VOID *FromAddress,
+                    _In_ PEPROCESS ToProcess,
+                    _Out_writes_bytes_(BufferSize) PVOID ToAddress,
+                    _In_ SIZE_T BufferSize,
+                    _In_ KPROCESSOR_MODE PreviousMode,
+                    _Out_ PSIZE_T NumberOfBytesCopied);
 
 BOOLEAN BLACKBIRDModeAllowed(_In_ WDFREQUEST Request);
 ULONG BLACKBIRDGetRequestorPid(_In_ WDFREQUEST Request);
@@ -111,10 +115,14 @@ VOID BLACKBIRDClientFreeQueuedEvents(_Inout_ PBLACKBIRD_CLIENT Client);
 VOID BLACKBIRDClientRelease(_Inout_ PBLACKBIRD_CLIENT Client);
 VOID BLACKBIRDClientReference(_Inout_ PBLACKBIRD_CLIENT Client);
 VOID BLACKBIRDControlRefreshArmedState(VOID);
-BOOLEAN BLACKBIRDClientMatchSubscriptionEither(_In_ PBLACKBIRD_CLIENT Client, _In_ UINT32 PrimaryProcessId,
-                                                 _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask);
-VOID BLACKBIRDPublishRecordToSubscribers(_In_ UINT32 PrimaryPid, _In_ UINT32 SecondaryPid, _In_ UINT32 StreamMask,
-                                           _In_ BLACKBIRD_EVENT_RECORD *Record);
+BOOLEAN BLACKBIRDClientMatchSubscriptionEither(_In_ PBLACKBIRD_CLIENT Client,
+                                               _In_ UINT32 PrimaryProcessId,
+                                               _In_ UINT32 SecondaryProcessId,
+                                               _In_ UINT32 StreamMask);
+VOID BLACKBIRDPublishRecordToSubscribers(_In_ UINT32 PrimaryPid,
+                                         _In_ UINT32 SecondaryPid,
+                                         _In_ UINT32 StreamMask,
+                                         _In_ BLACKBIRD_EVENT_RECORD *Record);
 
 EVT_WDF_DEVICE_FILE_CREATE BLACKBIRDEvtFileCreate;
 EVT_WDF_FILE_CLEANUP BLACKBIRDEvtFileCleanup;
@@ -122,16 +130,13 @@ EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL BLACKBIRDEvtIoDeviceControl;
 
 NTSTATUS BLACKBIRDHandleSubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
 NTSTATUS BLACKBIRDHandleUnsubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
-NTSTATUS BLACKBIRDHandleGetEventIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request,
-                                        _Out_ size_t *BytesOut);
-NTSTATUS BLACKBIRDHandleGetStatsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request,
-                                        _Out_ size_t *BytesOut);
-NTSTATUS BLACKBIRDHandleGetHealthIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request,
-                                         _Out_ size_t *BytesOut);
+NTSTATUS BLACKBIRDHandleGetEventIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
+NTSTATUS BLACKBIRDHandleGetStatsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
+NTSTATUS BLACKBIRDHandleGetHealthIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
 NTSTATUS BLACKBIRDHandleSetPidsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
 NTSTATUS BLACKBIRDHandleArmPendingLaunchIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
-NTSTATUS BLACKBIRDHandleQueryProcessImageIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request,
-                                                 _Out_ size_t *BytesOut);
+NTSTATUS
+BLACKBIRDHandleQueryProcessImageIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
 NTSTATUS BLACKBIRDHandleSetShutdownModeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
 
 #endif

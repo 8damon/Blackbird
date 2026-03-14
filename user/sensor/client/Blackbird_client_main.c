@@ -20,13 +20,22 @@ static void LoggerEmitIoctlRecord(_In_ const BLACKBIRD_EVENT_RECORD *Record)
         }
 
         h = &Record->Data.Handle;
-        (void)StringCchPrintfA(msg, RTL_NUMBER_OF(msg),
-                               "seq=%lu class=%u caller=%llu target=%llu access=0x%08X flags=0x%08X origin=0x%llX",
-                               (unsigned long)Record->Header.Sequence, (unsigned)h->ClassId,
-                               (unsigned long long)h->CallerPid, (unsigned long long)h->TargetPid, h->DesiredAccess,
-                               h->Flags, (unsigned long long)h->OriginAddress);
-        LoggerEmitJson((h->ClassId == BlackbirdHandleClassDirectSyscallSuspect) ? 4u : 2u, "ioctl", "handle",
-                       (DWORD)h->CallerPid, (DWORD)h->TargetPid, msg);
+        (void) StringCchPrintfA(msg,
+                                RTL_NUMBER_OF(msg),
+                                "seq=%lu class=%u caller=%llu target=%llu access=0x%08X flags=0x%08X origin=0x%llX",
+                                (unsigned long) Record->Header.Sequence,
+                                (unsigned) h->ClassId,
+                                (unsigned long long) h->CallerPid,
+                                (unsigned long long) h->TargetPid,
+                                h->DesiredAccess,
+                                h->Flags,
+                                (unsigned long long) h->OriginAddress);
+        LoggerEmitJson((h->ClassId == BlackbirdHandleClassDirectSyscallSuspect) ? 4u : 2u,
+                       "ioctl",
+                       "handle",
+                       (DWORD) h->CallerPid,
+                       (DWORD) h->TargetPid,
+                       msg);
         return;
     }
 
@@ -38,13 +47,23 @@ static void LoggerEmitIoctlRecord(_In_ const BLACKBIRD_EVENT_RECORD *Record)
         }
 
         t = &Record->Data.Thread;
-        (void)StringCchPrintfA(msg, RTL_NUMBER_OF(msg),
-                               "seq=%lu process=%llu thread=%llu creator=%llu flags=0x%08X start=0x%llX imageBase=0x%llX",
-                               (unsigned long)Record->Header.Sequence, (unsigned long long)t->ProcessId,
-                               (unsigned long long)t->ThreadId, (unsigned long long)t->CreatorPid, t->Flags,
-                               (unsigned long long)t->StartAddress, (unsigned long long)t->ImageBase);
-        LoggerEmitJson(((t->Flags & BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT) != 0) ? 3u : 1u, "ioctl", "thread",
-                       (DWORD)t->CreatorPid, (DWORD)t->ProcessId, msg);
+        (void) StringCchPrintfA(
+                msg,
+                RTL_NUMBER_OF(msg),
+                "seq=%lu process=%llu thread=%llu creator=%llu flags=0x%08X start=0x%llX imageBase=0x%llX",
+                (unsigned long) Record->Header.Sequence,
+                (unsigned long long) t->ProcessId,
+                (unsigned long long) t->ThreadId,
+                (unsigned long long) t->CreatorPid,
+                t->Flags,
+                (unsigned long long) t->StartAddress,
+                (unsigned long long) t->ImageBase);
+        LoggerEmitJson(((t->Flags & BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT) != 0) ? 3u : 1u,
+                       "ioctl",
+                       "thread",
+                       (DWORD) t->CreatorPid,
+                       (DWORD) t->ProcessId,
+                       msg);
         return;
     }
 
@@ -56,13 +75,22 @@ static void LoggerEmitIoctlRecord(_In_ const BLACKBIRD_EVENT_RECORD *Record)
         }
 
         f = &Record->Data.FileSystem;
-        (void)StringCchPrintfA(
-            msg, RTL_NUMBER_OF(msg),
-            "seq=%lu op=%u process=%llu thread=%llu status=0x%llX info=0x%llX major=%u minor=%u len=%llu offset=0x%llX flags=0x%08X",
-            (unsigned long)Record->Header.Sequence, f->Operation, (unsigned long long)f->ProcessId,
-            (unsigned long long)f->ThreadId, (unsigned long long)f->Status, (unsigned long long)f->Information,
-            f->MajorCode, f->MinorCode, (unsigned long long)f->Length, (unsigned long long)f->ByteOffset, f->Flags);
-        LoggerEmitJson(1u, "ioctl", "filesystem", (DWORD)f->ProcessId, 0, msg);
+        (void) StringCchPrintfA(msg,
+                                RTL_NUMBER_OF(msg),
+                                "seq=%lu op=%u process=%llu thread=%llu status=0x%llX info=0x%llX major=%u minor=%u "
+                                "len=%llu offset=0x%llX flags=0x%08X",
+                                (unsigned long) Record->Header.Sequence,
+                                f->Operation,
+                                (unsigned long long) f->ProcessId,
+                                (unsigned long long) f->ThreadId,
+                                (unsigned long long) f->Status,
+                                (unsigned long long) f->Information,
+                                f->MajorCode,
+                                f->MinorCode,
+                                (unsigned long long) f->Length,
+                                (unsigned long long) f->ByteOffset,
+                                f->Flags);
+        LoggerEmitJson(1u, "ioctl", "filesystem", (DWORD) f->ProcessId, 0, msg);
         return;
     }
 }
@@ -93,7 +121,7 @@ void LoggerEmitEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName)
         {
             return;
         }
-        (void)StringCchCopyA(provider, RTL_NUMBER_OF(provider), "blackbird");
+        (void) StringCchCopyA(provider, RTL_NUMBER_OF(provider), "blackbird");
     }
     else if (IsEqualGUID(&Record->EventHeader.ProviderId, &BLACKBIRDSC_PROVIDER_GUID_TI))
     {
@@ -101,7 +129,7 @@ void LoggerEmitEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName)
         {
             return;
         }
-        (void)StringCchCopyA(provider, RTL_NUMBER_OF(provider), "ti");
+        (void) StringCchCopyA(provider, RTL_NUMBER_OF(provider), "ti");
     }
     else if (IsEqualGUID(&Record->EventHeader.ProviderId, &BLACKBIRDSC_PROVIDER_GUID_KERNEL_NETWORK))
     {
@@ -109,16 +137,16 @@ void LoggerEmitEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName)
         {
             return;
         }
-        (void)StringCchCopyA(provider, RTL_NUMBER_OF(provider), "socket");
+        (void) StringCchCopyA(provider, RTL_NUMBER_OF(provider), "socket");
     }
     else
     {
         return;
     }
 
-    (void)GetEtwU64Property(Record, L"processId", &processId);
-    (void)GetEtwU64Property(Record, L"callerPid", &callerPid);
-    (void)GetEtwU64Property(Record, L"targetPid", &targetPid);
+    (void) GetEtwU64Property(Record, L"processId", &processId);
+    (void) GetEtwU64Property(Record, L"callerPid", &callerPid);
+    (void) GetEtwU64Property(Record, L"targetPid", &targetPid);
     if (processId == 0)
     {
         processId = callerPid;
@@ -129,11 +157,11 @@ void LoggerEmitEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName)
     }
     if (processId > 0 && processId <= 0xFFFFFFFFull)
     {
-        actorPid = (DWORD)processId;
+        actorPid = (DWORD) processId;
     }
     if (targetPid > 0 && targetPid <= 0xFFFFFFFFull)
     {
-        target = (DWORD)targetPid;
+        target = (DWORD) targetPid;
     }
 
     ZeroMemory(eventNameUtf8, sizeof(eventNameUtf8));
@@ -143,7 +171,7 @@ void LoggerEmitEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName)
     }
     if (eventNameUtf8[0] == '\0')
     {
-        (void)StringCchCopyA(eventNameUtf8, RTL_NUMBER_OF(eventNameUtf8), "unknown");
+        (void) StringCchCopyA(eventNameUtf8, RTL_NUMBER_OF(eventNameUtf8), "unknown");
     }
 
     if (EventName != NULL && wcscmp(EventName, L"DetectionTelemetry") == 0)
@@ -151,27 +179,35 @@ void LoggerEmitEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName)
         ZeroMemory(reasonW, sizeof(reasonW));
         ZeroMemory(detectionName, sizeof(detectionName));
         ZeroMemory(reason, sizeof(reason));
-        (void)GetEtwAnsiProperty(Record, L"detectionName", detectionName, RTL_NUMBER_OF(detectionName));
-        (void)GetEtwWideProperty(Record, L"reason", reasonW, RTL_NUMBER_OF(reasonW));
-        (void)GetEtwU64Property(Record, L"severity", &severity);
+        (void) GetEtwAnsiProperty(Record, L"detectionName", detectionName, RTL_NUMBER_OF(detectionName));
+        (void) GetEtwWideProperty(Record, L"reason", reasonW, RTL_NUMBER_OF(reasonW));
+        (void) GetEtwU64Property(Record, L"severity", &severity);
         WideToUtf8(reasonW, reason, RTL_NUMBER_OF(reason));
         if (detectionName[0] == '\0')
         {
-            (void)StringCchCopyA(detectionName, RTL_NUMBER_OF(detectionName), "UNKNOWN");
+            (void) StringCchCopyA(detectionName, RTL_NUMBER_OF(detectionName), "UNKNOWN");
         }
-        (void)StringCchPrintfA(message, RTL_NUMBER_OF(message), "event=%s detection=%s reason=%s", eventNameUtf8,
-                               detectionName, (reason[0] != '\0') ? reason : "<none>");
-        LoggerEmitJson((severity != 0 && severity <= 10) ? (DWORD)severity : 4u, provider, "detection", actorPid,
-                       target, message);
+        (void) StringCchPrintfA(message,
+                                RTL_NUMBER_OF(message),
+                                "event=%s detection=%s reason=%s",
+                                eventNameUtf8,
+                                detectionName,
+                                (reason[0] != '\0') ? reason : "<none>");
+        LoggerEmitJson((severity != 0 && severity <= 10) ? (DWORD) severity : 4u,
+                       provider,
+                       "detection",
+                       actorPid,
+                       target,
+                       message);
         return;
     }
 
-    (void)StringCchPrintfA(message, RTL_NUMBER_OF(message), "event=%s", eventNameUtf8);
+    (void) StringCchPrintfA(message, RTL_NUMBER_OF(message), "event=%s", eventNameUtf8);
     LoggerEmitJson(1u, provider, "event", actorPid, target, message);
 }
 
-static void ResolveBrokerEtwActorTarget(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event, _Out_ DWORD *ActorPid,
-                                        _Out_ DWORD *TargetPid)
+static void
+ResolveBrokerEtwActorTarget(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event, _Out_ DWORD *ActorPid, _Out_ DWORD *TargetPid)
 {
     ULONGLONG actorValue = 0;
     ULONGLONG targetValue = 0;
@@ -191,36 +227,36 @@ static void ResolveBrokerEtwActorTarget(_In_ const BLACKBIRD_IPC_ETW_EVENT *Even
 
     switch (Event->Family)
     {
-    case BlackbirdIpcEtwFamilyHandle:
-    case BlackbirdIpcEtwFamilyApc:
-        actorValue = (Event->CallerPid != 0) ? Event->CallerPid : Event->ProcessId;
-        targetValue = Event->TargetPid;
-        break;
-    case BlackbirdIpcEtwFamilyThread:
-        actorValue = (Event->CreatorProcessId != 0) ? Event->CreatorProcessId : Event->ProcessId;
-        targetValue = Event->ProcessId;
-        break;
-    case BlackbirdIpcEtwFamilyProcess:
-        actorValue = (Event->CreatorProcessId != 0) ? Event->CreatorProcessId : Event->ParentProcessId;
-        targetValue = Event->ProcessId;
-        break;
-    case BlackbirdIpcEtwFamilyImage:
-    case BlackbirdIpcEtwFamilyRegistry:
-    case BlackbirdIpcEtwFamilyDetection:
-    case BlackbirdIpcEtwFamilyThreatIntel:
-    case BlackbirdIpcEtwFamilySocket:
-        actorValue = Event->ProcessId;
-        targetValue = Event->TargetPid;
-        break;
-    default:
-        actorValue = (Event->ProcessId != 0) ? Event->ProcessId : Event->EventProcessId;
-        targetValue = Event->TargetPid;
-        break;
+        case BlackbirdIpcEtwFamilyHandle:
+        case BlackbirdIpcEtwFamilyApc:
+            actorValue = (Event->CallerPid != 0) ? Event->CallerPid : Event->ProcessId;
+            targetValue = Event->TargetPid;
+            break;
+        case BlackbirdIpcEtwFamilyThread:
+            actorValue = (Event->CreatorProcessId != 0) ? Event->CreatorProcessId : Event->ProcessId;
+            targetValue = Event->ProcessId;
+            break;
+        case BlackbirdIpcEtwFamilyProcess:
+            actorValue = (Event->CreatorProcessId != 0) ? Event->CreatorProcessId : Event->ParentProcessId;
+            targetValue = Event->ProcessId;
+            break;
+        case BlackbirdIpcEtwFamilyImage:
+        case BlackbirdIpcEtwFamilyRegistry:
+        case BlackbirdIpcEtwFamilyDetection:
+        case BlackbirdIpcEtwFamilyThreatIntel:
+        case BlackbirdIpcEtwFamilySocket:
+            actorValue = Event->ProcessId;
+            targetValue = Event->TargetPid;
+            break;
+        default:
+            actorValue = (Event->ProcessId != 0) ? Event->ProcessId : Event->EventProcessId;
+            targetValue = Event->TargetPid;
+            break;
     }
 
     if (actorValue != 0 && actorValue <= 0xFFFFFFFFull)
     {
-        *ActorPid = (DWORD)actorValue;
+        *ActorPid = (DWORD) actorValue;
     }
     else if (Event->EventProcessId != 0)
     {
@@ -229,7 +265,7 @@ static void ResolveBrokerEtwActorTarget(_In_ const BLACKBIRD_IPC_ETW_EVENT *Even
 
     if (targetValue != 0 && targetValue <= 0xFFFFFFFFull)
     {
-        *TargetPid = (DWORD)targetValue;
+        *TargetPid = (DWORD) targetValue;
     }
 }
 
@@ -254,7 +290,7 @@ void LoggerEmitBrokerEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
         {
             return;
         }
-        (void)StringCchCopyA(provider, RTL_NUMBER_OF(provider), "blackbird-broker");
+        (void) StringCchCopyA(provider, RTL_NUMBER_OF(provider), "blackbird-broker");
     }
     else if (Event->Source == BlackbirdIpcEtwSourceThreatIntel)
     {
@@ -262,7 +298,7 @@ void LoggerEmitBrokerEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
         {
             return;
         }
-        (void)StringCchCopyA(provider, RTL_NUMBER_OF(provider), "ti-broker");
+        (void) StringCchCopyA(provider, RTL_NUMBER_OF(provider), "ti-broker");
     }
     else if (Event->Source == BlackbirdIpcEtwSourceKernelNetwork)
     {
@@ -270,7 +306,7 @@ void LoggerEmitBrokerEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
         {
             return;
         }
-        (void)StringCchCopyA(provider, RTL_NUMBER_OF(provider), "socket-broker");
+        (void) StringCchCopyA(provider, RTL_NUMBER_OF(provider), "socket-broker");
     }
     else
     {
@@ -286,31 +322,46 @@ void LoggerEmitBrokerEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
     }
     if (eventNameUtf8[0] == '\0')
     {
-        (void)StringCchCopyA(eventNameUtf8, RTL_NUMBER_OF(eventNameUtf8), "unknown");
+        (void) StringCchCopyA(eventNameUtf8, RTL_NUMBER_OF(eventNameUtf8), "unknown");
     }
 
     if (Event->DetectionName[0] != '\0')
     {
         severity = (Event->Severity >= 1 && Event->Severity <= 10) ? Event->Severity : 4;
         kind = "detection";
-        (void)StringCchPrintfA(message, RTL_NUMBER_OF(message), "event=%s detection=%s", eventNameUtf8,
-                               Event->DetectionName);
-        printf("\n[ETW-BROKER] detection=%s severity=%u event=%s actor=%lu target=%lu\n", Event->DetectionName,
-               (unsigned)severity, eventNameUtf8, (unsigned long)actorPid, (unsigned long)targetPid);
+        (void) StringCchPrintfA(
+                message, RTL_NUMBER_OF(message), "event=%s detection=%s", eventNameUtf8, Event->DetectionName);
+        printf("\n[ETW-BROKER] detection=%s severity=%u event=%s actor=%lu target=%lu\n",
+               Event->DetectionName,
+               (unsigned) severity,
+               eventNameUtf8,
+               (unsigned long) actorPid,
+               (unsigned long) targetPid);
     }
     else
     {
-        (void)StringCchPrintfA(message, RTL_NUMBER_OF(message), "event=%s task=%u opcode=%u", eventNameUtf8,
-                               (unsigned)Event->Task, (unsigned)Event->Opcode);
+        (void) StringCchPrintfA(message,
+                                RTL_NUMBER_OF(message),
+                                "event=%s task=%u opcode=%u",
+                                eventNameUtf8,
+                                (unsigned) Event->Task,
+                                (unsigned) Event->Opcode);
         if (Event->Source == BlackbirdIpcEtwSourceThreatIntel)
         {
-            printf("\n[ETW-BROKER][TI] event=%s task=%u actor=%lu target=%lu\n", eventNameUtf8, (unsigned)Event->Task,
-                   (unsigned long)actorPid, (unsigned long)targetPid);
+            printf("\n[ETW-BROKER][TI] event=%s task=%u actor=%lu target=%lu\n",
+                   eventNameUtf8,
+                   (unsigned) Event->Task,
+                   (unsigned long) actorPid,
+                   (unsigned long) targetPid);
         }
         else if (Event->Source == BlackbirdIpcEtwSourceKernelNetwork)
         {
-            printf("\n[ETW-BROKER][SOCKET] event=%s task=%u opcode=%u actor=%lu target=%lu\n", eventNameUtf8,
-                   (unsigned)Event->Task, (unsigned)Event->Opcode, (unsigned long)actorPid, (unsigned long)targetPid);
+            printf("\n[ETW-BROKER][SOCKET] event=%s task=%u opcode=%u actor=%lu target=%lu\n",
+                   eventNameUtf8,
+                   (unsigned) Event->Task,
+                   (unsigned) Event->Opcode,
+                   (unsigned long) actorPid,
+                   (unsigned long) targetPid);
         }
     }
 
@@ -396,12 +447,12 @@ int __cdecl main(int argc, char **argv)
     int i;
     BOOL usingBroker = FALSE;
 
-    (void)SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
+    (void) SetConsoleCtrlHandler(ConsoleCtrlHandler, TRUE);
     ZeroMemory(&attach, sizeof(attach));
     ZeroMemory(&brokerEtw, sizeof(brokerEtw));
     ZeroMemory(&launchTarget, sizeof(launchTarget));
     PolicyDefaults(&policy);
-    for (i = 0; i < (int)RTL_NUMBER_OF(positional); ++i)
+    for (i = 0; i < (int) RTL_NUMBER_OF(positional); ++i)
     {
         positional[i] = NULL;
     }
@@ -431,7 +482,7 @@ int __cdecl main(int argc, char **argv)
     }
 
     positionalCount = 0;
-    for (i = 0; i < (int)RTL_NUMBER_OF(positional); ++i)
+    for (i = 0; i < (int) RTL_NUMBER_OF(positional); ++i)
     {
         positional[i] = NULL;
     }
@@ -525,12 +576,12 @@ int __cdecl main(int argc, char **argv)
         if (!BLACKBIRDSCSetShutdownMode(h))
         {
             printf("[-] failed to enable shutdown mode via IOCTL_BLACKBIRD_SET_SHUTDOWN_MODE: %lu\n", GetLastError());
-            (void)BLACKBIRDSCCloseControlDevice(h);
+            (void) BLACKBIRDSCCloseControlDevice(h);
             return 1;
         }
 
         printf("[*] Driver shutdown mode enabled. Active clients should exit shortly.\n");
-        (void)BLACKBIRDSCCloseControlDevice(h);
+        (void) BLACKBIRDSCCloseControlDevice(h);
         return 0;
     }
 
@@ -608,21 +659,23 @@ int __cdecl main(int argc, char **argv)
         ioctlVerbose = policy.IoctlVerboseOverride;
     }
 
-    (void)LoggerInitialize(&policy, targetPid);
+    (void) LoggerInitialize(&policy, targetPid);
 
     if (!AttachProgramTargetPid(&attach))
     {
         printf("[-] attach failed via IOCTL_BLACKBIRD_SET_PIDS: %lu\n", GetLastError());
         goto Cleanup;
     }
-    printf("[*] Attached target=%lu streams=0x%08lX scope=%s (strict target mode). Ctrl+C to stop.\n", targetPid,
-           streams, ScopeToString(scope));
+    printf("[*] Attached target=%lu streams=0x%08lX scope=%s (strict target mode). Ctrl+C to stop.\n",
+           targetPid,
+           streams,
+           ScopeToString(scope));
     PrimeTargetImageHint(h, &targetSpec, targetPid);
 
     if (launchTarget.Active && !launchTarget.Resumed)
     {
         DWORD resumeResult = ResumeThread(launchTarget.ProcessInfo.hThread);
-        if (resumeResult == (DWORD)-1)
+        if (resumeResult == (DWORD) -1)
         {
             printf("[-] ResumeThread failed for launched target pid=%lu: %lu\n", targetPid, GetLastError());
             goto Cleanup;
@@ -640,14 +693,16 @@ int __cdecl main(int argc, char **argv)
         {
             brokerHasEtwUplink = ((brokerCaps & BLACKBIRD_IPC_CAP_ETW_TI_UPLINK) != 0);
         }
-        if (etwRequested && brokerHasEtwUplink &&
-            StartBrokerEtw(&brokerEtw, &brokerEtwThread, targetPid, streams, scope))
+        if (etwRequested && brokerHasEtwUplink
+            && StartBrokerEtw(&brokerEtw, &brokerEtwThread, targetPid, streams, scope))
         {
             printf("[*] Broker mode active; ETW uplink enabled (service TI=%s tiEnableErr=%lu).\n",
-                   brokerEtw.ThreatIntelEnabled ? "on" : "off", brokerEtw.TiEnableError);
+                   brokerEtw.ThreatIntelEnabled ? "on" : "off",
+                   brokerEtw.TiEnableError);
             if (ioctlVerbose)
             {
-                printf("[*] IOCTL verbose output remains enabled. Use --ioctl-verbose 0 to suppress duplicate dumps.\n");
+                printf("[*] IOCTL verbose output remains enabled. Use --ioctl-verbose 0 to suppress duplicate "
+                       "dumps.\n");
             }
             else
             {
@@ -658,7 +713,8 @@ int __cdecl main(int argc, char **argv)
         {
             if (brokerHasEtwUplink)
             {
-                printf("[WARN] ETW requested, but broker ETW uplink start failed (%lu). Continuing with broker IOCTL stream.\n",
+                printf("[WARN] ETW requested, but broker ETW uplink start failed (%lu). Continuing with broker IOCTL "
+                       "stream.\n",
                        GetLastError());
             }
             else
@@ -724,13 +780,13 @@ Cleanup:
     InterlockedExchange(&g_StopRequested, 1);
     if (brokerEtwThread != NULL)
     {
-        (void)WaitForSingleObject(brokerEtwThread, 3000);
+        (void) WaitForSingleObject(brokerEtwThread, 3000);
         CloseHandle(brokerEtwThread);
         brokerEtwThread = NULL;
     }
     if (brokerEtw.Device != NULL && brokerEtw.Device != INVALID_HANDLE_VALUE)
     {
-        (void)BLACKBIRDSCCloseControlDevice(brokerEtw.Device);
+        (void) BLACKBIRDSCCloseControlDevice(brokerEtw.Device);
         brokerEtw.Device = INVALID_HANDLE_VALUE;
     }
     BLACKBIRDFlushEtwPrinterState();
@@ -743,7 +799,7 @@ Cleanup:
     {
         if (!launchTarget.Resumed && launchTarget.ProcessInfo.hProcess != NULL)
         {
-            (void)TerminateProcess(launchTarget.ProcessInfo.hProcess, ERROR_CANCELLED);
+            (void) TerminateProcess(launchTarget.ProcessInfo.hProcess, ERROR_CANCELLED);
         }
         if (launchTarget.ProcessInfo.hThread != NULL)
         {
@@ -759,6 +815,6 @@ Cleanup:
     }
 
     LoggerShutdown();
-    (void)BLACKBIRDSCCloseControlDevice(h);
+    (void) BLACKBIRDSCCloseControlDevice(h);
     return rc ? 0 : 1;
 }

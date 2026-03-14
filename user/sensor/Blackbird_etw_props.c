@@ -5,8 +5,10 @@
 #include <stdlib.h>
 #include "blackbird_etw_props.h"
 
-static BOOL BLACKBIRDGetPropertyRaw(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                                      _Outptr_result_bytebuffer_(*OutSize) PBYTE *OutBuffer, _Out_ ULONG *OutSize)
+static BOOL BLACKBIRDGetPropertyRaw(_In_ PEVENT_RECORD Record,
+                                    _In_z_ PCWSTR Name,
+                                    _Outptr_result_bytebuffer_(*OutSize) PBYTE *OutBuffer,
+                                    _Out_ ULONG *OutSize)
 {
     TDHSTATUS status;
     PROPERTY_DATA_DESCRIPTOR descriptor;
@@ -15,7 +17,7 @@ static BOOL BLACKBIRDGetPropertyRaw(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Nam
     *OutSize = 0;
 
     RtlZeroMemory(&descriptor, sizeof(descriptor));
-    descriptor.PropertyName = (ULONGLONG)(ULONG_PTR)Name;
+    descriptor.PropertyName = (ULONGLONG) (ULONG_PTR) Name;
     descriptor.ArrayIndex = ULONG_MAX;
 
     status = TdhGetPropertySize(Record, 0, NULL, 1, &descriptor, OutSize);
@@ -24,7 +26,7 @@ static BOOL BLACKBIRDGetPropertyRaw(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Nam
         return FALSE;
     }
 
-    *OutBuffer = (PBYTE)malloc(*OutSize + sizeof(WCHAR));
+    *OutBuffer = (PBYTE) malloc(*OutSize + sizeof(WCHAR));
     if (*OutBuffer == NULL)
     {
         *OutSize = 0;
@@ -56,7 +58,7 @@ BOOL BLACKBIRDGetU32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out
     }
     if (size >= sizeof(ULONG))
     {
-        *Value = *(ULONG *)raw;
+        *Value = *(ULONG *) raw;
         free(raw);
         return TRUE;
     }
@@ -76,7 +78,7 @@ BOOL BLACKBIRDGetU8Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_
     }
     if (size >= sizeof(UCHAR))
     {
-        *Value = *(UCHAR *)raw;
+        *Value = *(UCHAR *) raw;
         free(raw);
         return TRUE;
     }
@@ -96,7 +98,7 @@ BOOL BLACKBIRDGetI32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out
     }
     if (size >= sizeof(LONG))
     {
-        *Value = *(LONG *)raw;
+        *Value = *(LONG *) raw;
         free(raw);
         return TRUE;
     }
@@ -116,7 +118,7 @@ BOOL BLACKBIRDGetU64Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out
     }
     if (size >= sizeof(ULONGLONG))
     {
-        *Value = *(ULONGLONG *)raw;
+        *Value = *(ULONGLONG *) raw;
         free(raw);
         return TRUE;
     }
@@ -138,7 +140,7 @@ BOOL BLACKBIRDGetBoolProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Ou
 
     if (size >= sizeof(BOOLEAN))
     {
-        u = (size >= sizeof(ULONG)) ? *(ULONG *)raw : (ULONG)(*(BOOLEAN *)raw);
+        u = (size >= sizeof(ULONG)) ? *(ULONG *) raw : (ULONG) (*(BOOLEAN *) raw);
         *Value = (u != 0) ? TRUE : FALSE;
         free(raw);
         return TRUE;
@@ -148,8 +150,10 @@ BOOL BLACKBIRDGetBoolProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Ou
     return FALSE;
 }
 
-BOOL BLACKBIRDGetWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PWSTR Output,
-                                _In_ size_t OutputChars)
+BOOL BLACKBIRDGetWideProperty(_In_ PEVENT_RECORD Record,
+                              _In_z_ PCWSTR Name,
+                              _Out_writes_z_(OutputChars) PWSTR Output,
+                              _In_ size_t OutputChars)
 {
     PBYTE raw = NULL;
     ULONG size = 0;
@@ -167,8 +171,8 @@ BOOL BLACKBIRDGetWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Ou
 
     if (size >= sizeof(WCHAR))
     {
-        WCHAR *ws = (WCHAR *)raw;
-        (void)StringCchCopyW(Output, OutputChars, ws);
+        WCHAR *ws = (WCHAR *) raw;
+        (void) StringCchCopyW(Output, OutputChars, ws);
         free(raw);
         return TRUE;
     }
@@ -177,8 +181,10 @@ BOOL BLACKBIRDGetWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Ou
     return FALSE;
 }
 
-BOOL BLACKBIRDGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PSTR Output,
-                                _In_ size_t OutputChars)
+BOOL BLACKBIRDGetAnsiProperty(_In_ PEVENT_RECORD Record,
+                              _In_z_ PCWSTR Name,
+                              _Out_writes_z_(OutputChars) PSTR Output,
+                              _In_ size_t OutputChars)
 {
     PBYTE raw = NULL;
     ULONG size = 0;
@@ -196,7 +202,7 @@ BOOL BLACKBIRDGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Ou
 
     if (size > 0)
     {
-        (void)StringCchCopyA(Output, OutputChars, (PCSTR)raw);
+        (void) StringCchCopyA(Output, OutputChars, (PCSTR) raw);
         free(raw);
         return TRUE;
     }
@@ -205,9 +211,11 @@ BOOL BLACKBIRDGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Ou
     return FALSE;
 }
 
-BOOL BLACKBIRDGetBinaryProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                                  _Out_writes_bytes_(OutputBytes) PBYTE Output, _In_ ULONG OutputBytes,
-                                  _Out_opt_ ULONG *ActualSize)
+BOOL BLACKBIRDGetBinaryProperty(_In_ PEVENT_RECORD Record,
+                                _In_z_ PCWSTR Name,
+                                _Out_writes_bytes_(OutputBytes) PBYTE Output,
+                                _In_ ULONG OutputBytes,
+                                _Out_opt_ ULONG *ActualSize)
 {
     PBYTE raw = NULL;
     ULONG size = 0;

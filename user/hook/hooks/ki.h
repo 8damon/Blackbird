@@ -8,16 +8,16 @@
 
 struct KiHookContext
 {
-    const char* StubName;
-    void*       Caller;
-    void*       StackPointer;
+    const char *StubName;
+    void *Caller;
+    void *StackPointer;
 };
 
-using KiHookCallback = void(*)(const KiHookContext& context) noexcept;
+using KiHookCallback = void (*)(const KiHookContext &context) noexcept;
 
 bool KeSetKiHook(KiHookCallback callback) noexcept;
 bool KeIsKiHookSupported() noexcept;
 
 void KeRemoveKiHook() noexcept;
 
-bool KeCheckKiHookIntegrity(std::uint32_t* mismatchCount) noexcept;
+bool KeCheckKiHookIntegrity(std::uint32_t *mismatchCount) noexcept;

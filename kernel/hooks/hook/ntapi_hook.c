@@ -24,7 +24,7 @@ static BOOLEAN BLACKBIRDNtApiIsKernelPointer(_In_opt_ PVOID Address)
         return FALSE;
     }
 
-    return ((ULONG_PTR)Address >= (ULONG_PTR)MmSystemRangeStart);
+    return ((ULONG_PTR) Address >= (ULONG_PTR) MmSystemRangeStart);
 }
 
 typedef struct _BLACKBIRD_NTAPI_PATCH_CONTEXT
@@ -35,12 +35,14 @@ typedef struct _BLACKBIRD_NTAPI_PATCH_CONTEXT
     SIZE_T Size;
 } BLACKBIRD_NTAPI_PATCH_CONTEXT, *PBLACKBIRD_NTAPI_PATCH_CONTEXT;
 
-VOID BLACKBIRDNtApiFormatBytes(_In_reads_bytes_(Length) const UCHAR *Bytes, _In_ ULONG Length,
-                               _Out_writes_bytes_(OutputSize) PCHAR Output, _In_ SIZE_T OutputSize);
+VOID BLACKBIRDNtApiFormatBytes(_In_reads_bytes_(Length) const UCHAR *Bytes,
+                               _In_ ULONG Length,
+                               _Out_writes_bytes_(OutputSize) PCHAR Output,
+                               _In_ SIZE_T OutputSize);
 VOID BLACKBIRDNtApiBuildJump(_Out_writes_(BLACKBIRD_NTAPI_PATCH_SIZE) UCHAR *Patch, _In_ PVOID Destination);
 VOID BLACKBIRDNtApiRollbackPatchOnInstallFailure(_Inout_ PBLACKBIRD_NTAPI_HOOK Hook, _In_ ULONG OverwriteLength);
-NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_bytes_(Size) const VOID *Source,
-                                           _In_ SIZE_T Size);
+NTSTATUS
+BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_bytes_(Size) const VOID *Source, _In_ SIZE_T Size);
 PVOID BLACKBIRDNtApiResolveAddress(_In_ PCWSTR Name0, _In_opt_ PCWSTR Name1, _In_opt_ PCWSTR Name2);
 PVOID BLACKBIRDNtApiResolveViaSsdtSignature(_In_ const BLACKBIRD_NTAPI_HOOK_DESCRIPTOR *Descriptor);
 
@@ -89,15 +91,16 @@ NTSTATUS BLACKBIRDNtApiHookInstall(_Inout_ PBLACKBIRD_NTAPI_HOOK Hook, _Outptr_o
     }
 
     Hook->RoutineAddress =
-        BLACKBIRDNtApiResolveAddress(Hook->Descriptor.Name0, Hook->Descriptor.Name1, Hook->Descriptor.Name2);
+            BLACKBIRDNtApiResolveAddress(Hook->Descriptor.Name0, Hook->Descriptor.Name1, Hook->Descriptor.Name2);
     if (Hook->RoutineAddress == NULL)
     {
-        BLACKBIRD_HOOK_LOG(DPFLTR_WARNING_LEVEL,
-                           "BLACKBIRD: ntapi hook export resolve miss api=%s n0=%ws n1=%ws n2=%ws (trying ssdt fallback).\n",
-                           (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>",
-                           (Hook->Descriptor.Name0 != NULL) ? Hook->Descriptor.Name0 : L"<null>",
-                           (Hook->Descriptor.Name1 != NULL) ? Hook->Descriptor.Name1 : L"<null>",
-                           (Hook->Descriptor.Name2 != NULL) ? Hook->Descriptor.Name2 : L"<null>");
+        BLACKBIRD_HOOK_LOG(
+                DPFLTR_WARNING_LEVEL,
+                "BLACKBIRD: ntapi hook export resolve miss api=%s n0=%ws n1=%ws n2=%ws (trying ssdt fallback).\n",
+                (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>",
+                (Hook->Descriptor.Name0 != NULL) ? Hook->Descriptor.Name0 : L"<null>",
+                (Hook->Descriptor.Name1 != NULL) ? Hook->Descriptor.Name1 : L"<null>",
+                (Hook->Descriptor.Name2 != NULL) ? Hook->Descriptor.Name2 : L"<null>");
         if (Hook->Descriptor.FallbackSignatureSize == 0)
         {
             BLACKBIRD_HOOK_LOG(DPFLTR_WARNING_LEVEL,
@@ -150,8 +153,8 @@ NTSTATUS BLACKBIRDNtApiHookInstall(_Inout_ PBLACKBIRD_NTAPI_HOOK Hook, _Outptr_o
                        overwriteLength,
                        prologueBytesText);
 
-    trampoline =
-        ExAllocatePoolWithTag(NonPagedPoolExecute, overwriteLength + BLACKBIRD_NTAPI_PATCH_SIZE, BLACKBIRD_NTAPI_HOOK_TAG);
+    trampoline = ExAllocatePoolWithTag(
+            NonPagedPoolExecute, overwriteLength + BLACKBIRD_NTAPI_PATCH_SIZE, BLACKBIRD_NTAPI_HOOK_TAG);
     if (trampoline == NULL)
     {
         BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
@@ -162,15 +165,15 @@ NTSTATUS BLACKBIRDNtApiHookInstall(_Inout_ PBLACKBIRD_NTAPI_HOOK Hook, _Outptr_o
 
     RtlZeroMemory(trampoline, overwriteLength + BLACKBIRD_NTAPI_PATCH_SIZE);
     RtlCopyMemory(trampoline, Hook->OriginalPatch, overwriteLength);
-    BLACKBIRDNtApiBuildJump(trampolineJump, (PVOID)((PUCHAR)Hook->RoutineAddress + overwriteLength));
-    RtlCopyMemory((PUCHAR)trampoline + overwriteLength, trampolineJump, BLACKBIRD_NTAPI_PATCH_SIZE);
-    BLACKBIRDNtApiFormatBytes(trampolineJump, BLACKBIRD_NTAPI_PATCH_SIZE, trampolineJumpBytesText,
-                              sizeof(trampolineJumpBytesText));
+    BLACKBIRDNtApiBuildJump(trampolineJump, (PVOID) ((PUCHAR) Hook->RoutineAddress + overwriteLength));
+    RtlCopyMemory((PUCHAR) trampoline + overwriteLength, trampolineJump, BLACKBIRD_NTAPI_PATCH_SIZE);
+    BLACKBIRDNtApiFormatBytes(
+            trampolineJump, BLACKBIRD_NTAPI_PATCH_SIZE, trampolineJumpBytesText, sizeof(trampolineJumpBytesText));
     BLACKBIRD_HOOK_LOG(DPFLTR_INFO_LEVEL,
                        "BLACKBIRD: ntapi hook trampoline jump api=%s bytes=%s target=%p.\n",
                        (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>",
                        trampolineJumpBytesText,
-                       (PVOID)((PUCHAR)Hook->RoutineAddress + overwriteLength));
+                       (PVOID) ((PUCHAR) Hook->RoutineAddress + overwriteLength));
 
     Hook->Trampoline = trampoline;
     if (Original != NULL)
@@ -279,8 +282,7 @@ VOID BLACKBIRDNtApiHookDeactivate(_Inout_ PBLACKBIRD_NTAPI_HOOK Hook)
     if (Hook->Installed && Hook->RoutineAddress != NULL)
     {
         ULONG overwriteLength = Hook->Descriptor.OverwriteLength;
-        NTSTATUS status =
-            BLACKBIRDNtApiWriteReadonlyMemory(Hook->RoutineAddress, Hook->OriginalPatch, overwriteLength);
+        NTSTATUS status = BLACKBIRDNtApiWriteReadonlyMemory(Hook->RoutineAddress, Hook->OriginalPatch, overwriteLength);
         if (!NT_SUCCESS(status))
         {
             BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
@@ -303,11 +305,12 @@ VOID BLACKBIRDNtApiHookDeactivate(_Inout_ PBLACKBIRD_NTAPI_HOOK Hook)
             }
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
-                BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
-                                   "BLACKBIRD: ntapi hook restore verify read failed api=%s routine=%p status=0x%08X.\n",
-                                   (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>",
-                                   Hook->RoutineAddress,
-                                   GetExceptionCode());
+                BLACKBIRD_HOOK_LOG(
+                        DPFLTR_ERROR_LEVEL,
+                        "BLACKBIRD: ntapi hook restore verify read failed api=%s routine=%p status=0x%08X.\n",
+                        (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>",
+                        Hook->RoutineAddress,
+                        GetExceptionCode());
             }
         }
     }

@@ -4,10 +4,11 @@ BOOL ControllerIsValidStreamMask(_In_ DWORD StreamMask)
     return ((StreamMask & BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK) != 0);
 }
 BOOL ControllerApplyDriverSubscriptions(VOID);
-static BOOL ControllerPruneDynamicSubscriptionsLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client, _In_ ULONGLONG NowTick);
+static BOOL ControllerPruneDynamicSubscriptionsLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                      _In_ ULONGLONG NowTick);
 VOID ControllerMarkDriverSubscriptionsDirty(VOID)
 {
-    (void)InterlockedExchange(&g_DriverSubscriptionsDirty, 1);
+    (void) InterlockedExchange(&g_DriverSubscriptionsDirty, 1);
 }
 BOOL ControllerApplyDriverSubscriptionsIfDirty(VOID)
 {
@@ -52,7 +53,7 @@ BOOL ControllerClientRetainForDispatchLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT
     {
         if (Client->DispatchIdleEvent != NULL)
         {
-            (void)ResetEvent(Client->DispatchIdleEvent);
+            (void) ResetEvent(Client->DispatchIdleEvent);
         }
     }
     return TRUE;
@@ -73,12 +74,13 @@ VOID ControllerClientReleaseFromDispatch(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Cl
         InterlockedExchange(&Client->DispatchRefCount, 0);
         if (Client->DispatchIdleEvent != NULL)
         {
-            (void)SetEvent(Client->DispatchIdleEvent);
+            (void) SetEvent(Client->DispatchIdleEvent);
         }
     }
 }
 
-static VOID ControllerPidMaskSetBit(_Inout_updates_(BLACKBIRD_CONTROLLER_CLIENT_MASK_DWORDS) DWORD *Mask, _In_ DWORD Bit)
+static VOID ControllerPidMaskSetBit(_Inout_updates_(BLACKBIRD_CONTROLLER_CLIENT_MASK_DWORDS) DWORD *Mask,
+                                    _In_ DWORD Bit)
 {
     DWORD wordIndex;
     DWORD bitIndex;
@@ -106,14 +108,15 @@ static LONG ControllerFindPidIndexEntryLocked(_In_ DWORD ProcessId)
     {
         if (g_PidIndex[i].ProcessId == ProcessId)
         {
-            return (LONG)i;
+            return (LONG) i;
         }
     }
 
     return -1;
 }
 
-static BOOL ControllerAddPidIndexSubscriptionLocked(_In_ const BLACKBIRD_CONTROLLER_CLIENT *Client, _In_ DWORD ProcessId,
+static BOOL ControllerAddPidIndexSubscriptionLocked(_In_ const BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                    _In_ DWORD ProcessId,
                                                     _In_ DWORD StreamMask)
 {
     LONG entryIndex;
@@ -141,7 +144,7 @@ static BOOL ControllerAddPidIndexSubscriptionLocked(_In_ const BLACKBIRD_CONTROL
         return TRUE;
     }
 
-    entry = &g_PidIndex[(DWORD)entryIndex];
+    entry = &g_PidIndex[(DWORD) entryIndex];
     entry->StreamMask |= StreamMask;
     ControllerPidMaskSetBit(entry->ClientMask, Client->SlotIndex);
     return TRUE;
@@ -205,7 +208,7 @@ static LONG ControllerFindSubscriptionIndexLocked(_In_ const BLACKBIRD_CONTROLLE
     {
         if (Client->Subscriptions[i].ProcessId == ProcessId)
         {
-            return (LONG)i;
+            return (LONG) i;
         }
     }
 
@@ -229,7 +232,8 @@ VOID ControllerRemoveSubscriptionAtLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *C
     Client->SubscriptionCount -= 1;
 }
 
-static BOOL ControllerPruneDynamicSubscriptionsLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client, _In_ ULONGLONG NowTick)
+static BOOL ControllerPruneDynamicSubscriptionsLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                      _In_ ULONGLONG NowTick)
 {
     BOOL changed = FALSE;
     DWORD i = 0;
@@ -242,15 +246,15 @@ static BOOL ControllerPruneDynamicSubscriptionsLocked(_Inout_ BLACKBIRD_CONTROLL
     while (i < Client->SubscriptionCount)
     {
         const BLACKBIRD_CONTROLLER_SUBSCRIPTION *sub = &Client->Subscriptions[i];
-        if (sub->Dynamic &&
-            (sub->LastSeenTick == 0 ||
-             (NowTick - sub->LastSeenTick) > (ULONGLONG)BLACKBIRD_CONTROLLER_DYNAMIC_SUBSCRIPTION_TTL_MS))
+        if (sub->Dynamic
+            && (sub->LastSeenTick == 0
+                || (NowTick - sub->LastSeenTick) > (ULONGLONG) BLACKBIRD_CONTROLLER_DYNAMIC_SUBSCRIPTION_TTL_MS))
         {
             DWORD expiredPid = sub->ProcessId;
             ControllerRemoveSubscriptionAtLocked(Client, i);
             changed = TRUE;
-            ControllerLog("[MON] dynamic subscription expired clientPid=%lu targetPid=%lu\n", Client->ProcessId,
-                          expiredPid);
+            ControllerLog(
+                    "[MON] dynamic subscription expired clientPid=%lu targetPid=%lu\n", Client->ProcessId, expiredPid);
             continue;
         }
         i += 1;
@@ -289,7 +293,9 @@ BOOL ControllerDropDynamicDescendantsLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT 
                 ControllerRemoveSubscriptionAtLocked(Client, i);
                 changed = TRUE;
                 ControllerLog("[MON] dynamic subscription removed clientPid=%lu targetPid=%lu sourcePid=%lu\n",
-                              Client->ProcessId, removedPid, current);
+                              Client->ProcessId,
+                              removedPid,
+                              current);
                 continue;
             }
             i += 1;
@@ -299,8 +305,10 @@ BOOL ControllerDropDynamicDescendantsLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT 
     return changed;
 }
 
-static BOOL ControllerTryExpandClientRelationLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client, _In_ DWORD SourceProcessId,
-                                                    _In_ DWORD TargetProcessId, _In_ DWORD RelationStreamMask)
+static BOOL ControllerTryExpandClientRelationLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                    _In_ DWORD SourceProcessId,
+                                                    _In_ DWORD TargetProcessId,
+                                                    _In_ DWORD RelationStreamMask)
 {
     ULONGLONG nowTick;
     LONG sourceIndex;
@@ -308,8 +316,8 @@ static BOOL ControllerTryExpandClientRelationLocked(_Inout_ BLACKBIRD_CONTROLLER
     PBLACKBIRD_CONTROLLER_SUBSCRIPTION sourceSub;
     BOOL changed = FALSE;
 
-    if (Client == NULL || SourceProcessId == 0 || TargetProcessId == 0 || SourceProcessId == TargetProcessId ||
-        RelationStreamMask == 0)
+    if (Client == NULL || SourceProcessId == 0 || TargetProcessId == 0 || SourceProcessId == TargetProcessId
+        || RelationStreamMask == 0)
     {
         return FALSE;
     }
@@ -350,8 +358,8 @@ static BOOL ControllerTryExpandClientRelationLocked(_Inout_ BLACKBIRD_CONTROLLER
             UINT32 candidateDepth = sourceSub->Dynamic ? (sourceSub->Depth + 1u) : 1u;
             if (candidateDepth <= BLACKBIRD_CONTROLLER_DYNAMIC_SUBSCRIPTION_MAX_DEPTH)
             {
-                if (targetSub->Depth == 0 || candidateDepth < targetSub->Depth ||
-                    (candidateDepth == targetSub->Depth && targetSub->SourceProcessId != SourceProcessId))
+                if (targetSub->Depth == 0 || candidateDepth < targetSub->Depth
+                    || (candidateDepth == targetSub->Depth && targetSub->SourceProcessId != SourceProcessId))
                 {
                     targetSub->Depth = candidateDepth;
                     targetSub->SourceProcessId = SourceProcessId;
@@ -368,8 +376,8 @@ static BOOL ControllerTryExpandClientRelationLocked(_Inout_ BLACKBIRD_CONTROLLER
         UINT32 targetDepth = sourceSub->Dynamic ? (sourceSub->Depth + 1u) : 1u;
         DWORD slot;
 
-        if (targetDepth > BLACKBIRD_CONTROLLER_DYNAMIC_SUBSCRIPTION_MAX_DEPTH ||
-            Client->SubscriptionCount >= BLACKBIRD_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS)
+        if (targetDepth > BLACKBIRD_CONTROLLER_DYNAMIC_SUBSCRIPTION_MAX_DEPTH
+            || Client->SubscriptionCount >= BLACKBIRD_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS)
         {
             return changed;
         }
@@ -382,13 +390,19 @@ static BOOL ControllerTryExpandClientRelationLocked(_Inout_ BLACKBIRD_CONTROLLER
         Client->Subscriptions[slot].Depth = targetDepth;
         Client->Subscriptions[slot].LastSeenTick = nowTick;
         Client->SubscriptionCount += 1;
-        ControllerLog("[MON] dynamic subscription add clientPid=%lu sourcePid=%lu targetPid=%lu depth=%u mask=0x%08lX\n",
-                      Client->ProcessId, SourceProcessId, TargetProcessId, targetDepth, Client->Subscriptions[slot].StreamMask);
+        ControllerLog(
+                "[MON] dynamic subscription add clientPid=%lu sourcePid=%lu targetPid=%lu depth=%u mask=0x%08lX\n",
+                Client->ProcessId,
+                SourceProcessId,
+                TargetProcessId,
+                targetDepth,
+                Client->Subscriptions[slot].StreamMask);
         return TRUE;
     }
 }
-VOID ControllerExpandMonitoringGraph(_In_ DWORD SourceProcessId, _In_ DWORD TargetProcessId,
-                                            _In_ DWORD RelationStreamMask)
+VOID ControllerExpandMonitoringGraph(_In_ DWORD SourceProcessId,
+                                     _In_ DWORD TargetProcessId,
+                                     _In_ DWORD RelationStreamMask)
 {
     PBLACKBIRD_CONTROLLER_CLIENT client;
     BOOL changed = FALSE;
@@ -412,11 +426,12 @@ VOID ControllerExpandMonitoringGraph(_In_ DWORD SourceProcessId, _In_ DWORD Targ
 
     if (changed)
     {
-        (void)ControllerApplyDriverSubscriptions();
+        (void) ControllerApplyDriverSubscriptions();
     }
 }
 
-static BOOL ControllerRecordMatchesSubscription(_In_ const BLACKBIRD_EVENT_RECORD *Record, _In_ DWORD ProcessId,
+static BOOL ControllerRecordMatchesSubscription(_In_ const BLACKBIRD_EVENT_RECORD *Record,
+                                                _In_ DWORD ProcessId,
                                                 _In_ DWORD StreamMask)
 {
     UINT32 recordMask;
@@ -436,17 +451,17 @@ static BOOL ControllerRecordMatchesSubscription(_In_ const BLACKBIRD_EVENT_RECOR
 
     if (Record->Header.Type == BlackbirdEventTypeHandle)
     {
-        primary = (DWORD)Record->Data.Handle.CallerPid;
-        secondary = (DWORD)Record->Data.Handle.TargetPid;
+        primary = (DWORD) Record->Data.Handle.CallerPid;
+        secondary = (DWORD) Record->Data.Handle.TargetPid;
     }
     else if (Record->Header.Type == BlackbirdEventTypeThread)
     {
-        primary = (DWORD)Record->Data.Thread.ProcessId;
-        secondary = (DWORD)Record->Data.Thread.CreatorPid;
+        primary = (DWORD) Record->Data.Thread.ProcessId;
+        secondary = (DWORD) Record->Data.Thread.CreatorPid;
     }
     else if (Record->Header.Type == BlackbirdEventTypeFileSystem)
     {
-        primary = (DWORD)Record->Data.FileSystem.ProcessId;
+        primary = (DWORD) Record->Data.FileSystem.ProcessId;
         secondary = 0;
     }
     else
@@ -464,8 +479,8 @@ static BOOL ControllerClientHasMatchLocked(_In_ const BLACKBIRD_CONTROLLER_CLIEN
 
     for (i = 0; i < Client->SubscriptionCount; ++i)
     {
-        if (ControllerRecordMatchesSubscription(Record, Client->Subscriptions[i].ProcessId,
-                                                Client->Subscriptions[i].StreamMask))
+        if (ControllerRecordMatchesSubscription(
+                    Record, Client->Subscriptions[i].ProcessId, Client->Subscriptions[i].StreamMask))
         {
             return TRUE;
         }
@@ -484,15 +499,16 @@ static BOOL ControllerSharedRingPushLocked(_Inout_ volatile BLACKBIRD_IPC_SHARED
     LONG readIndex;
     LONG nextIndex;
 
-    if (Header == NULL || Records == NULL || Record == NULL || DataEvent == NULL || DataEvent == INVALID_HANDLE_VALUE ||
-        RecordSize == 0 || Header->Capacity == 0 || Header->RecordSize != RecordSize)
+    if (Header == NULL || Records == NULL || Record == NULL || DataEvent == NULL || DataEvent == INVALID_HANDLE_VALUE
+        || RecordSize == 0 || Header->Capacity == 0 || Header->RecordSize != RecordSize)
     {
         return FALSE;
     }
 
     writeIndex = Header->WriteIndex;
     readIndex = Header->ReadIndex;
-    if (writeIndex < 0 || readIndex < 0 || writeIndex >= (LONG)Header->Capacity || readIndex >= (LONG)Header->Capacity)
+    if (writeIndex < 0 || readIndex < 0 || writeIndex >= (LONG) Header->Capacity
+        || readIndex >= (LONG) Header->Capacity)
     {
         Header->WriteIndex = 0;
         Header->ReadIndex = 0;
@@ -501,7 +517,7 @@ static BOOL ControllerSharedRingPushLocked(_Inout_ volatile BLACKBIRD_IPC_SHARED
     }
 
     nextIndex = writeIndex + 1;
-    if (nextIndex >= (LONG)Header->Capacity)
+    if (nextIndex >= (LONG) Header->Capacity)
     {
         nextIndex = 0;
     }
@@ -512,10 +528,10 @@ static BOOL ControllerSharedRingPushLocked(_Inout_ volatile BLACKBIRD_IPC_SHARED
         return FALSE;
     }
 
-    (void)CopyMemory(Records + ((SIZE_T)writeIndex * (SIZE_T)RecordSize), Record, RecordSize);
+    (void) CopyMemory(Records + ((SIZE_T) writeIndex * (SIZE_T) RecordSize), Record, RecordSize);
     MemoryBarrier();
     Header->WriteIndex = nextIndex;
-    (void)SetEvent(DataEvent);
+    (void) SetEvent(DataEvent);
     return TRUE;
 }
 
@@ -529,15 +545,16 @@ static BOOL ControllerSharedRingPopLocked(_Inout_ volatile BLACKBIRD_IPC_SHARED_
     LONG readIndex;
     LONG nextIndex;
 
-    if (Header == NULL || Records == NULL || Record == NULL || DataEvent == NULL || DataEvent == INVALID_HANDLE_VALUE ||
-        RecordSize == 0 || Header->Capacity == 0 || Header->RecordSize != RecordSize)
+    if (Header == NULL || Records == NULL || Record == NULL || DataEvent == NULL || DataEvent == INVALID_HANDLE_VALUE
+        || RecordSize == 0 || Header->Capacity == 0 || Header->RecordSize != RecordSize)
     {
         return FALSE;
     }
 
     writeIndex = Header->WriteIndex;
     readIndex = Header->ReadIndex;
-    if (writeIndex < 0 || readIndex < 0 || writeIndex >= (LONG)Header->Capacity || readIndex >= (LONG)Header->Capacity)
+    if (writeIndex < 0 || readIndex < 0 || writeIndex >= (LONG) Header->Capacity
+        || readIndex >= (LONG) Header->Capacity)
     {
         Header->WriteIndex = 0;
         Header->ReadIndex = 0;
@@ -549,21 +566,21 @@ static BOOL ControllerSharedRingPopLocked(_Inout_ volatile BLACKBIRD_IPC_SHARED_
         return FALSE;
     }
 
-    (void)CopyMemory(Record, Records + ((SIZE_T)readIndex * (SIZE_T)RecordSize), RecordSize);
+    (void) CopyMemory(Record, Records + ((SIZE_T) readIndex * (SIZE_T) RecordSize), RecordSize);
     MemoryBarrier();
     nextIndex = readIndex + 1;
-    if (nextIndex >= (LONG)Header->Capacity)
+    if (nextIndex >= (LONG) Header->Capacity)
     {
         nextIndex = 0;
     }
     Header->ReadIndex = nextIndex;
     if (nextIndex == Header->WriteIndex)
     {
-        (void)ResetEvent(DataEvent);
+        (void) ResetEvent(DataEvent);
         MemoryBarrier();
         if (nextIndex != Header->WriteIndex)
         {
-            (void)SetEvent(DataEvent);
+            (void) SetEvent(DataEvent);
         }
     }
     return TRUE;
@@ -579,34 +596,34 @@ VOID ControllerClientDestroySharedRingsLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
 
     if (Client->IoctlSharedHeader != NULL)
     {
-        (void)UnmapViewOfFile((PVOID)Client->IoctlSharedHeader);
+        (void) UnmapViewOfFile((PVOID) Client->IoctlSharedHeader);
         Client->IoctlSharedHeader = NULL;
     }
     if (Client->IoctlSharedMapping != NULL && Client->IoctlSharedMapping != INVALID_HANDLE_VALUE)
     {
-        (void)CloseHandle(Client->IoctlSharedMapping);
+        (void) CloseHandle(Client->IoctlSharedMapping);
         Client->IoctlSharedMapping = NULL;
     }
     if (Client->IoctlSharedDataEvent != NULL && Client->IoctlSharedDataEvent != INVALID_HANDLE_VALUE)
     {
-        (void)CloseHandle(Client->IoctlSharedDataEvent);
+        (void) CloseHandle(Client->IoctlSharedDataEvent);
         Client->IoctlSharedDataEvent = NULL;
     }
     Client->IoctlSharedRecords = NULL;
 
     if (Client->EtwSharedHeader != NULL)
     {
-        (void)UnmapViewOfFile((PVOID)Client->EtwSharedHeader);
+        (void) UnmapViewOfFile((PVOID) Client->EtwSharedHeader);
         Client->EtwSharedHeader = NULL;
     }
     if (Client->EtwSharedMapping != NULL && Client->EtwSharedMapping != INVALID_HANDLE_VALUE)
     {
-        (void)CloseHandle(Client->EtwSharedMapping);
+        (void) CloseHandle(Client->EtwSharedMapping);
         Client->EtwSharedMapping = NULL;
     }
     if (Client->EtwSharedDataEvent != NULL && Client->EtwSharedDataEvent != INVALID_HANDLE_VALUE)
     {
-        (void)CloseHandle(Client->EtwSharedDataEvent);
+        (void) CloseHandle(Client->EtwSharedDataEvent);
         Client->EtwSharedDataEvent = NULL;
     }
     Client->EtwSharedRecords = NULL;
@@ -627,7 +644,7 @@ VOID ControllerClientFreeQueueLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client
     Client->QueueDepth = 0;
     if (Client->IoctlQueueDataEvent != NULL)
     {
-        (void)ResetEvent(Client->IoctlQueueDataEvent);
+        (void) ResetEvent(Client->IoctlQueueDataEvent);
     }
 }
 VOID ControllerClientFreeEtwQueueLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client)
@@ -646,7 +663,7 @@ VOID ControllerClientFreeEtwQueueLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Cli
     Client->EtwQueueDepth = 0;
     if (Client->EtwQueueDataEvent != NULL)
     {
-        (void)ResetEvent(Client->EtwQueueDataEvent);
+        (void) ResetEvent(Client->EtwQueueDataEvent);
     }
 }
 
@@ -657,8 +674,11 @@ static BOOL ControllerClientEnqueueRecordLocked(_Inout_ BLACKBIRD_CONTROLLER_CLI
 
     if (Client->SharedRingEnabled && Client->IoctlSharedHeader != NULL)
     {
-        if (!ControllerSharedRingPushLocked(Client->IoctlSharedHeader, Client->IoctlSharedRecords,
-                                            Client->IoctlSharedDataEvent, Record, sizeof(*Record)))
+        if (!ControllerSharedRingPushLocked(Client->IoctlSharedHeader,
+                                            Client->IoctlSharedRecords,
+                                            Client->IoctlSharedDataEvent,
+                                            Record,
+                                            sizeof(*Record)))
         {
             Client->DroppedEvents += 1;
             return FALSE;
@@ -672,14 +692,14 @@ static BOOL ControllerClientEnqueueRecordLocked(_Inout_ BLACKBIRD_CONTROLLER_CLI
         return FALSE;
     }
 
-    node = (PBLACKBIRD_CONTROLLER_EVENT_NODE)calloc(1, sizeof(*node));
+    node = (PBLACKBIRD_CONTROLLER_EVENT_NODE) calloc(1, sizeof(*node));
     if (node == NULL)
     {
         Client->DroppedEvents += 1;
         return FALSE;
     }
 
-    (void)CopyMemory(&node->Record, Record, sizeof(node->Record));
+    (void) CopyMemory(&node->Record, Record, sizeof(node->Record));
     node->Next = NULL;
     if (Client->QueueTail == NULL)
     {
@@ -694,19 +714,22 @@ static BOOL ControllerClientEnqueueRecordLocked(_Inout_ BLACKBIRD_CONTROLLER_CLI
     Client->QueueDepth += 1;
     if (Client->IoctlQueueDataEvent != NULL)
     {
-        (void)SetEvent(Client->IoctlQueueDataEvent);
+        (void) SetEvent(Client->IoctlQueueDataEvent);
     }
     return TRUE;
 }
 BOOL ControllerClientDequeueRecordLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
-                                                _Out_ BLACKBIRD_EVENT_RECORD *Record)
+                                         _Out_ BLACKBIRD_EVENT_RECORD *Record)
 {
     PBLACKBIRD_CONTROLLER_EVENT_NODE node;
 
     if (Client->SharedRingEnabled && Client->IoctlSharedHeader != NULL)
     {
-        return ControllerSharedRingPopLocked(Client->IoctlSharedHeader, Client->IoctlSharedRecords,
-                                             Client->IoctlSharedDataEvent, Record, sizeof(*Record));
+        return ControllerSharedRingPopLocked(Client->IoctlSharedHeader,
+                                             Client->IoctlSharedRecords,
+                                             Client->IoctlSharedDataEvent,
+                                             Record,
+                                             sizeof(*Record));
     }
 
     if (Client->QueueHead == NULL)
@@ -726,22 +749,25 @@ BOOL ControllerClientDequeueRecordLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Cl
     }
     if (Client->QueueHead == NULL && Client->IoctlQueueDataEvent != NULL)
     {
-        (void)ResetEvent(Client->IoctlQueueDataEvent);
+        (void) ResetEvent(Client->IoctlQueueDataEvent);
     }
 
-    (void)CopyMemory(Record, &node->Record, sizeof(*Record));
+    (void) CopyMemory(Record, &node->Record, sizeof(*Record));
     free(node);
     return TRUE;
 }
 BOOL ControllerClientEnqueueEtwEventLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
-                                                  _In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
+                                           _In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
 {
     PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE node;
 
     if (Client->SharedRingEnabled && Client->EtwSharedHeader != NULL)
     {
-        if (!ControllerSharedRingPushLocked(Client->EtwSharedHeader, Client->EtwSharedRecords,
-                                            Client->EtwSharedDataEvent, Event, sizeof(*Event)))
+        if (!ControllerSharedRingPushLocked(Client->EtwSharedHeader,
+                                            Client->EtwSharedRecords,
+                                            Client->EtwSharedDataEvent,
+                                            Event,
+                                            sizeof(*Event)))
         {
             Client->EtwDroppedEvents += 1;
             return FALSE;
@@ -755,14 +781,14 @@ BOOL ControllerClientEnqueueEtwEventLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *
         return FALSE;
     }
 
-    node = (PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE)calloc(1, sizeof(*node));
+    node = (PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE) calloc(1, sizeof(*node));
     if (node == NULL)
     {
         Client->EtwDroppedEvents += 1;
         return FALSE;
     }
 
-    (void)CopyMemory(&node->Event, Event, sizeof(node->Event));
+    (void) CopyMemory(&node->Event, Event, sizeof(node->Event));
     node->Next = NULL;
     if (Client->EtwQueueTail == NULL)
     {
@@ -777,19 +803,19 @@ BOOL ControllerClientEnqueueEtwEventLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *
     Client->EtwQueueDepth += 1;
     if (Client->EtwQueueDataEvent != NULL)
     {
-        (void)SetEvent(Client->EtwQueueDataEvent);
+        (void) SetEvent(Client->EtwQueueDataEvent);
     }
     return TRUE;
 }
 BOOL ControllerClientDequeueEtwEventLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
-                                                  _Out_ BLACKBIRD_IPC_ETW_EVENT *Event)
+                                           _Out_ BLACKBIRD_IPC_ETW_EVENT *Event)
 {
     PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE node;
 
     if (Client->SharedRingEnabled && Client->EtwSharedHeader != NULL)
     {
-        return ControllerSharedRingPopLocked(Client->EtwSharedHeader, Client->EtwSharedRecords,
-                                             Client->EtwSharedDataEvent, Event, sizeof(*Event));
+        return ControllerSharedRingPopLocked(
+                Client->EtwSharedHeader, Client->EtwSharedRecords, Client->EtwSharedDataEvent, Event, sizeof(*Event));
     }
 
     if (Client->EtwQueueHead == NULL)
@@ -809,10 +835,10 @@ BOOL ControllerClientDequeueEtwEventLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *
     }
     if (Client->EtwQueueHead == NULL && Client->EtwQueueDataEvent != NULL)
     {
-        (void)ResetEvent(Client->EtwQueueDataEvent);
+        (void) ResetEvent(Client->EtwQueueDataEvent);
     }
 
-    (void)CopyMemory(Event, &node->Event, sizeof(*Event));
+    (void) CopyMemory(Event, &node->Event, sizeof(*Event));
     free(node);
     return TRUE;
 }
@@ -865,7 +891,7 @@ BOOL ControllerApplyDriverSubscriptions(VOID)
     {
         for (i = 0; i < g_ProgrammedPidCount; ++i)
         {
-            (void)BLACKBIRDSCUnsubscribe(g_DriverHandle, g_ProgrammedPids[i]);
+            (void) BLACKBIRDSCUnsubscribe(g_DriverHandle, g_ProgrammedPids[i]);
         }
         g_ProgrammedPidCount = 0;
         ZeroMemory(g_ProgrammedPids, sizeof(g_ProgrammedPids));
@@ -882,13 +908,14 @@ BOOL ControllerApplyDriverSubscriptions(VOID)
         {
             g_ProgrammedPids[i] = desiredPids[i];
         }
-        ControllerLog("[DRIVER] programmed pid subscriptions count=%lu streamMask=0x%08lX\n", desiredCount,
+        ControllerLog("[DRIVER] programmed pid subscriptions count=%lu streamMask=0x%08lX\n",
+                      desiredCount,
                       BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK);
     }
     else
     {
-        ControllerLog("[DRIVER][WARN] failed to program pid subscriptions count=%lu (%lu)\n", desiredCount,
-                      GetLastError());
+        ControllerLog(
+                "[DRIVER][WARN] failed to program pid subscriptions count=%lu (%lu)\n", desiredCount, GetLastError());
         ControllerMarkDriverSubscriptionsDirty();
     }
 
@@ -919,19 +946,19 @@ VOID ControllerDispatchDriverRecord(_In_ const BLACKBIRD_EVENT_RECORD *Record)
 
     if (Record->Header.Type == BlackbirdEventTypeHandle)
     {
-        sourcePid = (DWORD)Record->Data.Handle.CallerPid;
-        targetPid = (DWORD)Record->Data.Handle.TargetPid;
+        sourcePid = (DWORD) Record->Data.Handle.CallerPid;
+        targetPid = (DWORD) Record->Data.Handle.TargetPid;
         relationMask = BLACKBIRD_STREAM_HANDLE;
     }
     else if (Record->Header.Type == BlackbirdEventTypeThread)
     {
-        sourcePid = (DWORD)Record->Data.Thread.CreatorPid;
-        targetPid = (DWORD)Record->Data.Thread.ProcessId;
+        sourcePid = (DWORD) Record->Data.Thread.CreatorPid;
+        targetPid = (DWORD) Record->Data.Thread.ProcessId;
         relationMask = BLACKBIRD_STREAM_THREAD;
     }
     else if (Record->Header.Type == BlackbirdEventTypeFileSystem)
     {
-        sourcePid = (DWORD)Record->Data.FileSystem.ProcessId;
+        sourcePid = (DWORD) Record->Data.FileSystem.ProcessId;
         targetPid = 0;
         relationMask = 0;
     }
@@ -942,7 +969,8 @@ VOID ControllerDispatchDriverRecord(_In_ const BLACKBIRD_EVENT_RECORD *Record)
     EnterCriticalSection(&g_ClientListLock);
     if (useSlowPath)
     {
-        for (client = g_ClientList; client != NULL && dispatchCount < RTL_NUMBER_OF(dispatchClients); client = client->Next)
+        for (client = g_ClientList; client != NULL && dispatchCount < RTL_NUMBER_OF(dispatchClients);
+             client = client->Next)
         {
             if (ControllerClientRetainForDispatchLocked(client))
             {
@@ -957,22 +985,22 @@ VOID ControllerDispatchDriverRecord(_In_ const BLACKBIRD_EVENT_RECORD *Record)
         if (sourcePid != 0)
         {
             entryIndex = ControllerFindPidIndexEntryLocked(sourcePid);
-            if (entryIndex >= 0 && (g_PidIndex[(DWORD)entryIndex].StreamMask & recordMask) != 0)
+            if (entryIndex >= 0 && (g_PidIndex[(DWORD) entryIndex].StreamMask & recordMask) != 0)
             {
                 for (i = 0; i < RTL_NUMBER_OF(candidateMask); ++i)
                 {
-                    candidateMask[i] |= g_PidIndex[(DWORD)entryIndex].ClientMask[i];
+                    candidateMask[i] |= g_PidIndex[(DWORD) entryIndex].ClientMask[i];
                 }
             }
         }
         if (targetPid != 0 && targetPid != sourcePid)
         {
             entryIndex = ControllerFindPidIndexEntryLocked(targetPid);
-            if (entryIndex >= 0 && (g_PidIndex[(DWORD)entryIndex].StreamMask & recordMask) != 0)
+            if (entryIndex >= 0 && (g_PidIndex[(DWORD) entryIndex].StreamMask & recordMask) != 0)
             {
                 for (i = 0; i < RTL_NUMBER_OF(candidateMask); ++i)
                 {
-                    candidateMask[i] |= g_PidIndex[(DWORD)entryIndex].ClientMask[i];
+                    candidateMask[i] |= g_PidIndex[(DWORD) entryIndex].ClientMask[i];
                 }
             }
         }
@@ -1007,14 +1035,9 @@ VOID ControllerDispatchDriverRecord(_In_ const BLACKBIRD_EVENT_RECORD *Record)
         EnterCriticalSection(&client->Lock);
         if (ControllerClientHasMatchLocked(client, Record))
         {
-            (void)ControllerClientEnqueueRecordLocked(client, Record);
+            (void) ControllerClientEnqueueRecordLocked(client, Record);
         }
         LeaveCriticalSection(&client->Lock);
         ControllerClientReleaseFromDispatch(client);
     }
 }
-
-
-
-
-

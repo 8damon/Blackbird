@@ -27,8 +27,8 @@ static UINT32 BLACKBIRDCorrelationQpcDeltaToMs(_In_ INT64 DeltaQpc)
         return 0;
     }
 
-    deltaValue = (ULONGLONG)DeltaQpc;
-    return (UINT32)((deltaValue * 1000ULL) / g_QpcFrequency);
+    deltaValue = (ULONGLONG) DeltaQpc;
+    return (UINT32) ((deltaValue * 1000ULL) / g_QpcFrequency);
 }
 
 static ULONGLONG BLACKBIRDCorrelationMsToQpc(_In_ UINT32 Ms)
@@ -40,7 +40,7 @@ static ULONGLONG BLACKBIRDCorrelationMsToQpc(_In_ UINT32 Ms)
         return 0;
     }
 
-    ticks = ((ULONGLONG)Ms * g_QpcFrequency) / 1000ULL;
+    ticks = ((ULONGLONG) Ms * g_QpcFrequency) / 1000ULL;
     if (ticks == 0)
     {
         ticks = 1;
@@ -59,7 +59,7 @@ BLACKBIRDCorrelationInitialize(VOID)
     }
 
     KeQueryPerformanceCounter(&freq);
-    g_QpcFrequency = (freq.QuadPart > 0) ? (ULONGLONG)freq.QuadPart : 1;
+    g_QpcFrequency = (freq.QuadPart > 0) ? (ULONGLONG) freq.QuadPart : 1;
     KeInitializeSpinLock(&g_IntentLock);
     RtlZeroMemory(g_IntentRing, sizeof(g_IntentRing));
     InterlockedExchange(&g_IntentWriteIndex, -1);
@@ -77,8 +77,10 @@ VOID BLACKBIRDCorrelationUninitialize(VOID)
     InterlockedExchange(&g_IntentWriteIndex, -1);
 }
 
-VOID BLACKBIRDCorrelationRecordHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ ACCESS_MASK AccessMask,
-                                              _In_ UINT32 IntentFlags)
+VOID BLACKBIRDCorrelationRecordHandleIntent(_In_ HANDLE CallerPid,
+                                            _In_ HANDLE TargetPid,
+                                            _In_ ACCESS_MASK AccessMask,
+                                            _In_ UINT32 IntentFlags)
 {
     LONG idx;
     KIRQL oldIrql;
@@ -99,9 +101,9 @@ VOID BLACKBIRDCorrelationRecordHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE T
     nowQpc = KeQueryPerformanceCounter(NULL).QuadPart;
     KeAcquireSpinLock(&g_IntentLock, &oldIrql);
 
-    g_IntentRing[idx].CallerPid = (UINT64)(ULONG_PTR)CallerPid;
-    g_IntentRing[idx].TargetPid = (UINT64)(ULONG_PTR)TargetPid;
-    g_IntentRing[idx].AccessMask = (UINT32)AccessMask;
+    g_IntentRing[idx].CallerPid = (UINT64) (ULONG_PTR) CallerPid;
+    g_IntentRing[idx].TargetPid = (UINT64) (ULONG_PTR) TargetPid;
+    g_IntentRing[idx].AccessMask = (UINT32) AccessMask;
     g_IntentRing[idx].IntentFlags = IntentFlags;
 
     g_IntentRing[idx].TimestampQpc = nowQpc;
@@ -110,12 +112,15 @@ VOID BLACKBIRDCorrelationRecordHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE T
 }
 
 BOOLEAN
-BLACKBIRDCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ UINT32 WindowMs,
-                                        _Out_opt_ UINT32 *IntentFlags, _Out_opt_ UINT32 *AccessMask,
-                                        _Out_opt_ UINT32 *AgeMs)
+BLACKBIRDCorrelationQueryRecentIntent(_In_ HANDLE CallerPid,
+                                      _In_ HANDLE TargetPid,
+                                      _In_ UINT32 WindowMs,
+                                      _Out_opt_ UINT32 *IntentFlags,
+                                      _Out_opt_ UINT32 *AccessMask,
+                                      _Out_opt_ UINT32 *AgeMs)
 {
-    UINT64 caller = (UINT64)(ULONG_PTR)CallerPid;
-    UINT64 target = (UINT64)(ULONG_PTR)TargetPid;
+    UINT64 caller = (UINT64) (ULONG_PTR) CallerPid;
+    UINT64 target = (UINT64) (ULONG_PTR) TargetPid;
     INT64 nowQpc = KeQueryPerformanceCounter(NULL).QuadPart;
     INT64 newestDeltaQpc = MAXLONGLONG;
     UINT32 aggregateIntentFlags = 0;
@@ -164,7 +169,7 @@ BLACKBIRDCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetP
             continue;
         }
 
-        if ((ULONGLONG)deltaQpc > windowQpc)
+        if ((ULONGLONG) deltaQpc > windowQpc)
         {
             continue;
         }
@@ -200,12 +205,15 @@ BLACKBIRDCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetP
 }
 
 BOOLEAN
-BLACKBIRDCorrelationQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UINT32 WindowMs,
-                                                 _In_ BOOLEAN PreferExternalCaller, _Out_opt_ HANDLE *CallerPid,
-                                                 _Out_opt_ UINT32 *IntentFlags, _Out_opt_ UINT32 *AccessMask,
-                                                 _Out_opt_ UINT32 *AgeMs)
+BLACKBIRDCorrelationQueryRecentIntentForTarget(_In_ HANDLE TargetPid,
+                                               _In_ UINT32 WindowMs,
+                                               _In_ BOOLEAN PreferExternalCaller,
+                                               _Out_opt_ HANDLE *CallerPid,
+                                               _Out_opt_ UINT32 *IntentFlags,
+                                               _Out_opt_ UINT32 *AccessMask,
+                                               _Out_opt_ UINT32 *AgeMs)
 {
-    UINT64 target = (UINT64)(ULONG_PTR)TargetPid;
+    UINT64 target = (UINT64) (ULONG_PTR) TargetPid;
     INT64 nowQpc = KeQueryPerformanceCounter(NULL).QuadPart;
     INT64 bestDeltaQpcAny = MAXLONGLONG;
     UINT64 bestCallerAny = 0;
@@ -265,7 +273,7 @@ BLACKBIRDCorrelationQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UINT3
             continue;
         }
 
-        if ((ULONGLONG)deltaQpc > windowQpc)
+        if ((ULONGLONG) deltaQpc > windowQpc)
         {
             continue;
         }
@@ -320,7 +328,7 @@ BLACKBIRDCorrelationQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UINT3
                 continue;
             }
 
-            if ((ULONGLONG)deltaQpc > windowQpc)
+            if ((ULONGLONG) deltaQpc > windowQpc)
             {
                 continue;
             }
@@ -343,7 +351,7 @@ BLACKBIRDCorrelationQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UINT3
 
     if (CallerPid != NULL)
     {
-        *CallerPid = (HANDLE)(ULONG_PTR)selectedCaller;
+        *CallerPid = (HANDLE) (ULONG_PTR) selectedCaller;
     }
     if (IntentFlags != NULL)
     {

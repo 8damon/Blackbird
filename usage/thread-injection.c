@@ -9,9 +9,12 @@
 
 // {D6C73F8A-6AD8-4F4B-A363-3D2FA31CD0E2}
 static const GUID BLACKBIRD_PROVIDER_GUID = {
-    0xd6c73f8a, 0x6ad8, 0x4f4b, {0xa3, 0x63, 0x3d, 0x2f, 0xa3, 0x1c, 0xd0, 0xe2}};
+    0xd6c73f8a, 0x6ad8, 0x4f4b, { 0xa3, 0x63, 0x3d, 0x2f, 0xa3, 0x1c, 0xd0, 0xe2 }
+};
 
-static BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PSTR Output,
+static BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record,
+                               _In_z_ PCWSTR Name,
+                               _Out_writes_z_(OutputChars) PSTR Output,
                                _In_ size_t OutputChars)
 {
     PROPERTY_DATA_DESCRIPTOR descriptor;
@@ -27,7 +30,7 @@ static BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _O
 
     Output[0] = '\0';
     ZeroMemory(&descriptor, sizeof(descriptor));
-    descriptor.PropertyName = (ULONGLONG)(ULONG_PTR)Name;
+    descriptor.PropertyName = (ULONGLONG) (ULONG_PTR) Name;
     descriptor.ArrayIndex = ULONG_MAX;
 
     status = TdhGetPropertySize(Record, 0, NULL, 1, &descriptor, &size);
@@ -36,7 +39,7 @@ static BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _O
         return FALSE;
     }
 
-    data = (PBYTE)malloc(size + 1);
+    data = (PBYTE) malloc(size + 1);
     if (data == NULL)
     {
         return FALSE;
@@ -46,7 +49,7 @@ static BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _O
     status = TdhGetProperty(Record, 0, NULL, 1, &descriptor, size, data);
     if (status == ERROR_SUCCESS)
     {
-        (void)StringCchCopyA(Output, OutputChars, (PCSTR)data);
+        (void) StringCchCopyA(Output, OutputChars, (PCSTR) data);
         ok = TRUE;
     }
 
@@ -81,9 +84,9 @@ static VOID WINAPI OnEvent(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventNam
         return;
     }
 
-    if (strcmp(detectionName, "REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT") == 0 ||
-        strcmp(detectionName, "REMOTE_THREAD_START_IN_NON_IMAGE_EXECUTABLE_REGION") == 0 ||
-        strcmp(detectionName, "POSSIBLE_MANUAL_MAP_OR_HOLLOWING_EXECUTION") == 0)
+    if (strcmp(detectionName, "REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT") == 0
+        || strcmp(detectionName, "REMOTE_THREAD_START_IN_NON_IMAGE_EXECUTABLE_REGION") == 0
+        || strcmp(detectionName, "POSSIBLE_MANUAL_MAP_OR_HOLLOWING_EXECUTION") == 0)
     {
         printf("[ALERT] thread injection signal: %s\n", detectionName);
     }
@@ -115,7 +118,7 @@ int __cdecl wmain(void)
     }
 
     wprintf(L"ETW session running, press Ctrl+C to stop\n");
-    (void)BLACKBIRDSCRunEtwSession(session);
+    (void) BLACKBIRDSCRunEtwSession(session);
 
     BLACKBIRDSCStopEtwSession(session);
     return 0;

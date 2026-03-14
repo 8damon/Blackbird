@@ -36,9 +36,8 @@
 #define BLACKBIRD_CONTROLLER_HOLLOW_WINDOW_MS 30000u
 #define BLACKBIRD_CONTROLLER_HOLLOW_LARGE_ALLOC_BYTES 0x8000ull
 #define BLACKBIRD_CONTROLLER_MANUAL_MAP_EMIT_COOLDOWN_MS 4000u
-#define BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK                                                   \
-    (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD |           \
-     BLACKBIRD_STREAM_FILESYSTEM)
+#define BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK                                                                        \
+    (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD | BLACKBIRD_STREAM_FILESYSTEM)
 
 typedef struct _BLACKBIRD_CONTROLLER_SUBSCRIPTION
 {
@@ -177,7 +176,9 @@ VOID ControllerReleaseClientSlotLocked(_In_ DWORD SlotIndex);
 VOID ControllerRebuildPidIndexLocked(_Out_opt_ BOOL *DynamicPruned);
 VOID ControllerRemoveSubscriptionAtLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client, _In_ DWORD Index);
 BOOL ControllerDropDynamicDescendantsLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client, _In_ DWORD RootProcessId);
-VOID ControllerExpandMonitoringGraph(_In_ DWORD SourceProcessId, _In_ DWORD TargetProcessId, _In_ DWORD RelationStreamMask);
+VOID ControllerExpandMonitoringGraph(_In_ DWORD SourceProcessId,
+                                     _In_ DWORD TargetProcessId,
+                                     _In_ DWORD RelationStreamMask);
 VOID ControllerClientDestroySharedRingsLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client);
 VOID ControllerClientFreeQueueLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client);
 VOID ControllerClientFreeEtwQueueLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client);
@@ -197,16 +198,23 @@ BOOL ControllerEtwGetU32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, 
 BOOL ControllerEtwGetI32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ LONG *Value);
 BOOL ControllerEtwGetU8Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ UCHAR *Value);
 BOOL ControllerEtwGetBoolProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ BOOL *Value);
-BOOL ControllerEtwGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                                  _Out_writes_z_(OutputChars) PSTR Output, _In_ size_t OutputChars);
-BOOL ControllerEtwGetWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                                  _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars);
-BOOL ControllerEtwCopyBinaryProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                                     _Out_writes_bytes_(Capacity) PBYTE Output, _In_ ULONG Capacity,
+BOOL ControllerEtwGetAnsiProperty(_In_ PEVENT_RECORD Record,
+                                  _In_z_ PCWSTR Name,
+                                  _Out_writes_z_(OutputChars) PSTR Output,
+                                  _In_ size_t OutputChars);
+BOOL ControllerEtwGetWideProperty(_In_ PEVENT_RECORD Record,
+                                  _In_z_ PCWSTR Name,
+                                  _Out_writes_z_(OutputChars) PWSTR Output,
+                                  _In_ size_t OutputChars);
+BOOL ControllerEtwCopyBinaryProperty(_In_ PEVENT_RECORD Record,
+                                     _In_z_ PCWSTR Name,
+                                     _Out_writes_bytes_(Capacity) PBYTE Output,
+                                     _In_ ULONG Capacity,
                                      _Out_opt_ UINT32 *BytesCopied);
 VOID ControllerDispatchEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event);
 
-VOID ControllerProcessHollowingEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName,
+VOID ControllerProcessHollowingEtwRecord(_In_ PEVENT_RECORD Record,
+                                         _In_opt_z_ PCWSTR EventName,
                                          _In_ const BLACKBIRD_IPC_ETW_EVENT *BrokerEvent);
 VOID ControllerResetHollowingState(VOID);
 

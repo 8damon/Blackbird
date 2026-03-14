@@ -36,11 +36,11 @@ VOID ControllerLog(_In_z_ _Printf_format_string_ PCSTR Format, ...)
     va_list args;
 
     va_start(args, Format);
-    (void)StringCchVPrintfA(message, RTL_NUMBER_OF(message), Format, args);
+    (void) StringCchVPrintfA(message, RTL_NUMBER_OF(message), Format, args);
     va_end(args);
 
-    (void)OutputDebugStringA(message);
-    (void)printf("%s", message);
+    (void) OutputDebugStringA(message);
+    (void) printf("%s", message);
 }
 
 VOID ControllerUpdateServiceStatus(_In_ DWORD CurrentState, _In_ DWORD Win32ExitCode, _In_ DWORD WaitHint)
@@ -69,7 +69,7 @@ VOID ControllerUpdateServiceStatus(_In_ DWORD CurrentState, _In_ DWORD Win32Exit
         g_ServiceStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
     }
 
-    (void)SetServiceStatus(g_ServiceStatusHandle, &g_ServiceStatus);
+    (void) SetServiceStatus(g_ServiceStatusHandle, &g_ServiceStatus);
 }
 
 BOOL ControllerShouldStop(VOID)

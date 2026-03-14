@@ -57,17 +57,21 @@ int __cdecl main(int argc, char **argv)
 
         if (rec.Header.Type == BlackbirdEventTypeHandle)
         {
-            printf("handle event: caller=%lu target=%lu access=0x%08lX\n", rec.Payload.Handle.CallerPid,
-                   rec.Payload.Handle.TargetPid, rec.Payload.Handle.DesiredAccess);
+            printf("handle event: caller=%lu target=%lu access=0x%08lX\n",
+                   rec.Payload.Handle.CallerPid,
+                   rec.Payload.Handle.TargetPid,
+                   rec.Payload.Handle.DesiredAccess);
         }
         else if (rec.Header.Type == BlackbirdEventTypeThread)
         {
-            printf("thread event: pid=%lu tid=%lu start=0x%p\n", rec.Payload.Thread.ProcessId,
-                   rec.Payload.Thread.ThreadId, rec.Payload.Thread.StartAddress);
+            printf("thread event: pid=%lu tid=%lu start=0x%p\n",
+                   rec.Payload.Thread.ProcessId,
+                   rec.Payload.Thread.ThreadId,
+                   rec.Payload.Thread.StartAddress);
         }
     }
 
-    (void)BLACKBIRDSCUnsubscribe(h, pid);
+    (void) BLACKBIRDSCUnsubscribe(h, pid);
     CloseHandle(h);
     return 0;
 }

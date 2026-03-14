@@ -25,11 +25,13 @@ typedef struct _BLACKBIRD_NTAPI_PATCH_CONTEXT
     SIZE_T Size;
 } BLACKBIRD_NTAPI_PATCH_CONTEXT, *PBLACKBIRD_NTAPI_PATCH_CONTEXT;
 
-NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_bytes_(Size) const VOID *Source,
-                                           _In_ SIZE_T Size);
+NTSTATUS
+BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_bytes_(Size) const VOID *Source, _In_ SIZE_T Size);
 
-VOID BLACKBIRDNtApiFormatBytes(_In_reads_bytes_(Length) const UCHAR *Bytes, _In_ ULONG Length,
-                                      _Out_writes_bytes_(OutputSize) PCHAR Output, _In_ SIZE_T OutputSize)
+VOID BLACKBIRDNtApiFormatBytes(_In_reads_bytes_(Length) const UCHAR *Bytes,
+                               _In_ ULONG Length,
+                               _Out_writes_bytes_(OutputSize) PCHAR Output,
+                               _In_ SIZE_T OutputSize)
 {
     ULONG i;
     SIZE_T offset = 0;
@@ -66,9 +68,9 @@ static ULONG_PTR BLACKBIRDNtApiBroadcastWrite(_In_ ULONG_PTR Context)
     PBLACKBIRD_NTAPI_PATCH_CONTEXT patchContext;
     SIZE_T i;
 
-    patchContext = (PBLACKBIRD_NTAPI_PATCH_CONTEXT)Context;
-    if (patchContext == NULL || patchContext->Destination == NULL || patchContext->Source == NULL ||
-        patchContext->Size == 0)
+    patchContext = (PBLACKBIRD_NTAPI_PATCH_CONTEXT) Context;
+    if (patchContext == NULL || patchContext->Destination == NULL || patchContext->Source == NULL
+        || patchContext->Size == 0)
     {
         return 0;
     }
@@ -89,7 +91,7 @@ VOID BLACKBIRDNtApiBuildJump(_Out_writes_(BLACKBIRD_NTAPI_PATCH_SIZE) UCHAR *Pat
     ULONGLONG destination64;
     ULONG displacement = 0;
 
-    destination64 = (ULONGLONG)(ULONG_PTR)Destination;
+    destination64 = (ULONGLONG) (ULONG_PTR) Destination;
     Patch[0] = 0xFF; // jmp qword ptr [rip+0]
     Patch[1] = 0x25;
     RtlCopyMemory(&Patch[2], &displacement, sizeof(displacement));
@@ -123,8 +125,8 @@ VOID BLACKBIRDNtApiRollbackPatchOnInstallFailure(_Inout_ PBLACKBIRD_NTAPI_HOOK H
     }
 }
 
-NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_bytes_(Size) const VOID *Source,
-                                                  _In_ SIZE_T Size)
+NTSTATUS
+BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_bytes_(Size) const VOID *Source, _In_ SIZE_T Size)
 {
     PMDL mdl;
     PVOID mappedAddress = NULL;
@@ -136,7 +138,7 @@ NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_byt
         return STATUS_INVALID_PARAMETER;
     }
 
-    mdl = IoAllocateMdl(Destination, (ULONG)Size, FALSE, FALSE, NULL);
+    mdl = IoAllocateMdl(Destination, (ULONG) Size, FALSE, FALSE, NULL);
     if (mdl == NULL)
     {
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -185,13 +187,13 @@ NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_byt
     }
 
     patchContext.Applied = 0;
-    patchContext.Destination = (volatile UCHAR *)mappedAddress;
-    patchContext.Source = (const UCHAR *)Source;
+    patchContext.Destination = (volatile UCHAR *) mappedAddress;
+    patchContext.Source = (const UCHAR *) Source;
     patchContext.Size = Size;
 
     __try
     {
-        KeIpiGenericCall(BLACKBIRDNtApiBroadcastWrite, (ULONG_PTR)&patchContext);
+        KeIpiGenericCall(BLACKBIRDNtApiBroadcastWrite, (ULONG_PTR) &patchContext);
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
@@ -261,7 +263,8 @@ PVOID BLACKBIRDNtApiResolveAddress(_In_ PCWSTR Name0, _In_opt_ PCWSTR Name1, _In
     return address;
 }
 
-static BOOLEAN BLACKBIRDNtApiAddressMatchesSignature(_In_ PVOID Address, _In_reads_bytes_(Size) const UCHAR *Signature,
+static BOOLEAN BLACKBIRDNtApiAddressMatchesSignature(_In_ PVOID Address,
+                                                     _In_reads_bytes_(Size) const UCHAR *Signature,
                                                      _In_ ULONG Size)
 {
     ULONG i;
@@ -272,7 +275,7 @@ static BOOLEAN BLACKBIRDNtApiAddressMatchesSignature(_In_ PVOID Address, _In_rea
         return FALSE;
     }
 
-    bytes = (volatile const UCHAR *)Address;
+    bytes = (volatile const UCHAR *) Address;
     __try
     {
         for (i = 0; i < Size; ++i)
@@ -300,14 +303,14 @@ static PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR BLACKBIRDNtApiResolveServiceDescript
     address = MmGetSystemRoutineAddress(&name);
     if (address != NULL)
     {
-        return (PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR)address;
+        return (PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR) address;
     }
 
     RtlInitUnicodeString(&name, L"KeServiceDescriptorTableShadow");
     address = MmGetSystemRoutineAddress(&name);
     if (address != NULL)
     {
-        return (PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR)address;
+        return (PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR) address;
     }
 
     return NULL;
@@ -339,7 +342,7 @@ static BOOLEAN BLACKBIRDNtApiIsLikelyDescriptor(_In_ PBLACKBIRD_KSERVICE_TABLE_D
     {
         return FALSE;
     }
-    if ((ULONG_PTR)table < (ULONG_PTR)MmSystemRangeStart)
+    if ((ULONG_PTR) table < (ULONG_PTR) MmSystemRangeStart)
     {
         return FALSE;
     }
@@ -364,8 +367,8 @@ static PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR BLACKBIRDNtApiResolveServiceDescript
     ULONG i;
 
     lstar = __readmsr(0xC0000082); // IA32_LSTAR
-    entry = (PUCHAR)(ULONG_PTR)lstar;
-    if (entry == NULL || (ULONG_PTR)entry < (ULONG_PTR)MmSystemRangeStart)
+    entry = (PUCHAR) (ULONG_PTR) lstar;
+    if (entry == NULL || (ULONG_PTR) entry < (ULONG_PTR) MmSystemRangeStart)
     {
         return NULL;
     }
@@ -381,15 +384,15 @@ static PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR BLACKBIRDNtApiResolveServiceDescript
         instr = entry + i;
         __try
         {
-            isLeaRip = (instr[0] == 0x4C && instr[1] == 0x8D &&
-                        (instr[2] == 0x15 || instr[2] == 0x1D || instr[2] == 0x25 || instr[2] == 0x2D));
+            isLeaRip = (instr[0] == 0x4C && instr[1] == 0x8D
+                        && (instr[2] == 0x15 || instr[2] == 0x1D || instr[2] == 0x25 || instr[2] == 0x2D));
             if (!isLeaRip)
             {
                 continue;
             }
 
-            disp = *(LONG *)&instr[3];
-            candidate = (PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR)(instr + 7 + disp);
+            disp = *(LONG *) &instr[3];
+            candidate = (PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR) (instr + 7 + disp);
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
@@ -421,8 +424,8 @@ PVOID BLACKBIRDNtApiResolveViaSsdtSignature(_In_ const BLACKBIRD_NTAPI_HOOK_DESC
     ULONG matchCount = 0;
     PVOID firstMatch = NULL;
 
-    if (Descriptor == NULL || Descriptor->FallbackSignatureSize == 0 ||
-        Descriptor->FallbackSignatureSize > sizeof(Descriptor->FallbackSignature))
+    if (Descriptor == NULL || Descriptor->FallbackSignatureSize == 0
+        || Descriptor->FallbackSignatureSize > sizeof(Descriptor->FallbackSignature))
     {
         return NULL;
     }
@@ -450,8 +453,8 @@ PVOID BLACKBIRDNtApiResolveViaSsdtSignature(_In_ const BLACKBIRD_NTAPI_HOOK_DESC
         return NULL;
     }
 
-    serviceCount =
-        (descriptor->NumberOfServices > BLACKBIRD_SSDT_MAX_SERVICES) ? BLACKBIRD_SSDT_MAX_SERVICES : (ULONG)descriptor->NumberOfServices;
+    serviceCount = (descriptor->NumberOfServices > BLACKBIRD_SSDT_MAX_SERVICES) ? BLACKBIRD_SSDT_MAX_SERVICES
+                                                                                : (ULONG) descriptor->NumberOfServices;
     for (i = 0; i < serviceCount; ++i)
     {
         LONG entry;
@@ -467,9 +470,9 @@ PVOID BLACKBIRDNtApiResolveViaSsdtSignature(_In_ const BLACKBIRD_NTAPI_HOOK_DESC
             continue;
         }
 
-        candidate = (PUCHAR)table + (((LONG_PTR)entry) >> 4);
-        matched = BLACKBIRDNtApiAddressMatchesSignature(candidate, Descriptor->FallbackSignature,
-                                                        Descriptor->FallbackSignatureSize);
+        candidate = (PUCHAR) table + (((LONG_PTR) entry) >> 4);
+        matched = BLACKBIRDNtApiAddressMatchesSignature(
+                candidate, Descriptor->FallbackSignature, Descriptor->FallbackSignatureSize);
         if (!matched)
         {
             continue;
@@ -499,7 +502,4 @@ PVOID BLACKBIRDNtApiResolveViaSsdtSignature(_In_ const BLACKBIRD_NTAPI_HOOK_DESC
     return firstMatch;
 }
 
-
 #endif
-
-

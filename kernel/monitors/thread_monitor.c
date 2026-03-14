@@ -8,7 +8,7 @@
 #include "thread_monitor.h"
 
 #ifndef ThreadQuerySetWin32StartAddress
-#define ThreadQuerySetWin32StartAddress ((THREADINFOCLASS)9)
+#define ThreadQuerySetWin32StartAddress ((THREADINFOCLASS) 9)
 #endif
 
 #ifndef THREAD_QUERY_INFORMATION
@@ -58,7 +58,7 @@ typedef enum _BLACKBIRD_NOTIFY_MODE
 } BLACKBIRD_NOTIFY_MODE;
 
 typedef NTSTATUS(NTAPI *PBLACKBIRD_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX)(_In_ PSCREATETHREADNOTIFYTYPE NotifyType,
-                                                                             _In_ PVOID NotifyRoutine);
+                                                                           _In_ PVOID NotifyRoutine);
 
 #define BLACKBIRD_THREAD_MAX_OUTSTANDING_WORK 4096
 #define BLACKBIRD_THREAD_CORRELATION_WINDOW_MS 5000
@@ -67,17 +67,23 @@ typedef NTSTATUS(NTAPI *PBLACKBIRD_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX)(_In_ 
 
 static BLACKBIRD_NOTIFY_MODE g_NotifyMode = BLACKBIRDNotifyNone;
 
-NTSYSAPI NTSTATUS NTAPI ZwQueryInformationThread(_In_ HANDLE ThreadHandle, _In_ THREADINFOCLASS ThreadInformationClass,
+NTSYSAPI NTSTATUS NTAPI ZwQueryInformationThread(_In_ HANDLE ThreadHandle,
+                                                 _In_ THREADINFOCLASS ThreadInformationClass,
                                                  _Out_writes_bytes_(ThreadInformationLength) PVOID ThreadInformation,
-                                                 _In_ ULONG ThreadInformationLength, _Out_opt_ PULONG ReturnLength);
+                                                 _In_ ULONG ThreadInformationLength,
+                                                 _Out_opt_ PULONG ReturnLength);
 
-NTSYSAPI NTSTATUS NTAPI ZwOpenThread(_Out_ PHANDLE ThreadHandle, _In_ ACCESS_MASK DesiredAccess,
-                                     _In_ POBJECT_ATTRIBUTES ObjectAttributes, _In_ PCLIENT_ID ClientId);
+NTSYSAPI NTSTATUS NTAPI ZwOpenThread(_Out_ PHANDLE ThreadHandle,
+                                     _In_ ACCESS_MASK DesiredAccess,
+                                     _In_ POBJECT_ATTRIBUTES ObjectAttributes,
+                                     _In_ PCLIENT_ID ClientId);
 
-NTSYSAPI NTSTATUS NTAPI ZwQueryVirtualMemory(_In_ HANDLE ProcessHandle, _In_opt_ PVOID BaseAddress,
+NTSYSAPI NTSTATUS NTAPI ZwQueryVirtualMemory(_In_ HANDLE ProcessHandle,
+                                             _In_opt_ PVOID BaseAddress,
                                              _In_ BLACKBIRD_MEMORY_INFORMATION_CLASS MemoryInformationClass,
                                              _Out_writes_bytes_(MemoryInformationLength) PVOID MemoryInformation,
-                                             _In_ SIZE_T MemoryInformationLength, _Out_opt_ PSIZE_T ReturnLength);
+                                             _In_ SIZE_T MemoryInformationLength,
+                                             _Out_opt_ PSIZE_T ReturnLength);
 
 NTKERNELAPI PVOID PsGetProcessSectionBaseAddress(_In_ PEPROCESS Process);
 NTKERNELAPI NTSTATUS PsLookupProcessByProcessId(_In_ HANDLE ProcessId, _Outptr_ PEPROCESS *Process);
@@ -130,9 +136,12 @@ static BOOLEAN BLACKBIRDThreadTryAcquireWorkSlot(VOID)
             if (dropCounter == 1 || ((dropCounter & 0xFF) == 0))
             {
                 DbgPrintEx(
-                    DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                    "BLACKBIRD: thread callback drop (work queue full max=%lu) totalDrops=%lu outstanding=%ld.\n",
-                    BLACKBIRD_THREAD_MAX_OUTSTANDING_WORK, (ULONG)dropCounter, current);
+                        DPFLTR_IHVDRIVER_ID,
+                        DPFLTR_WARNING_LEVEL,
+                        "BLACKBIRD: thread callback drop (work queue full max=%lu) totalDrops=%lu outstanding=%ld.\n",
+                        BLACKBIRD_THREAD_MAX_OUTSTANDING_WORK,
+                        (ULONG) dropCounter,
+                        current);
             }
             return FALSE;
         }
@@ -153,7 +162,7 @@ static PBLACKBIRD_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX BLACKBIRDResolvePsSetCr
     UNICODE_STRING routineName;
 
     RtlInitUnicodeString(&routineName, L"PsSetCreateThreadNotifyRoutineEx");
-    return (PBLACKBIRD_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX)MmGetSystemRoutineAddress(&routineName);
+    return (PBLACKBIRD_PS_SET_CREATE_THREAD_NOTIFY_ROUTINE_EX) MmGetSystemRoutineAddress(&routineName);
 }
 
 static VOID BLACKBIRDThreadReleaseWorkSlot(VOID)
@@ -173,7 +182,7 @@ static ULONGLONG BLACKBIRDThreadMsToQpc(_In_ UINT32 Milliseconds)
         return 0;
     }
 
-    ticks = ((ULONGLONG)Milliseconds * g_ThreadImageCacheQpcFrequency) / 1000ULL;
+    ticks = ((ULONGLONG) Milliseconds * g_ThreadImageCacheQpcFrequency) / 1000ULL;
     return (ticks == 0) ? 1 : ticks;
 }
 
@@ -198,13 +207,14 @@ static BOOLEAN BLACKBIRDThreadImageCacheLookup(_In_ HANDLE ProcessId, _Out_ PVOI
         const BLACKBIRD_THREAD_IMAGE_CACHE_ENTRY *entry = &g_ThreadImageCache[i];
         INT64 ageQpc;
 
-        if (entry->TimestampQpc == 0 || entry->ProcessId != ProcessId || entry->ImageBase == NULL || entry->ImageSize == 0)
+        if (entry->TimestampQpc == 0 || entry->ProcessId != ProcessId || entry->ImageBase == NULL
+            || entry->ImageSize == 0)
         {
             continue;
         }
 
         ageQpc = nowQpc - entry->TimestampQpc;
-        if (ageQpc < 0 || (ULONGLONG)ageQpc > maxAgeQpc)
+        if (ageQpc < 0 || (ULONGLONG) ageQpc > maxAgeQpc)
         {
             continue;
         }
@@ -237,7 +247,8 @@ static VOID BLACKBIRDThreadImageCacheStore(_In_ HANDLE ProcessId, _In_ PVOID Ima
 
     KeAcquireSpinLock(&g_ThreadImageCacheLock, &oldIrql);
     {
-        BLACKBIRD_THREAD_IMAGE_CACHE_ENTRY *entry = &g_ThreadImageCache[(ULONG)index % RTL_NUMBER_OF(g_ThreadImageCache)];
+        BLACKBIRD_THREAD_IMAGE_CACHE_ENTRY *entry =
+                &g_ThreadImageCache[(ULONG) index % RTL_NUMBER_OF(g_ThreadImageCache)];
         entry->ProcessId = ProcessId;
         entry->ImageBase = ImageBase;
         entry->ImageSize = ImageSize;
@@ -246,15 +257,25 @@ static VOID BLACKBIRDThreadImageCacheStore(_In_ HANDLE ProcessId, _In_ PVOID Ima
     KeReleaseSpinLock(&g_ThreadImageCacheLock, oldIrql);
 }
 
-static VOID BLACKBIRDLogThreadTelemetry(_In_ HANDLE ProcessId, _In_ HANDLE ThreadId, _In_ HANDLE CreatorPid,
-                                          _In_ PVOID StartAddress, _In_ PVOID ImageBase, _In_ SIZE_T ImageSize,
-                                          _In_ BOOLEAN GotStart, _In_ BOOLEAN GotRange, _In_ BOOLEAN IsRemoteCreator,
-                                          _In_ BOOLEAN OutsideMainImage, _In_ UINT32 CorrelationFlags,
-                                          _In_ UINT32 CorrelationAccessMask, _In_ UINT32 CorrelationAgeMs,
-                                          _In_ ULONG StartRegionProtect, _In_ ULONG StartRegionState,
-                                          _In_ ULONG StartRegionType, _In_ NTSTATUS StartRegionStatus)
+static VOID BLACKBIRDLogThreadTelemetry(_In_ HANDLE ProcessId,
+                                        _In_ HANDLE ThreadId,
+                                        _In_ HANDLE CreatorPid,
+                                        _In_ PVOID StartAddress,
+                                        _In_ PVOID ImageBase,
+                                        _In_ SIZE_T ImageSize,
+                                        _In_ BOOLEAN GotStart,
+                                        _In_ BOOLEAN GotRange,
+                                        _In_ BOOLEAN IsRemoteCreator,
+                                        _In_ BOOLEAN OutsideMainImage,
+                                        _In_ UINT32 CorrelationFlags,
+                                        _In_ UINT32 CorrelationAccessMask,
+                                        _In_ UINT32 CorrelationAgeMs,
+                                        _In_ ULONG StartRegionProtect,
+                                        _In_ ULONG StartRegionState,
+                                        _In_ ULONG StartRegionType,
+                                        _In_ NTSTATUS StartRegionStatus)
 {
-    PVOID frames[8] = {0};
+    PVOID frames[8] = { 0 };
     ULONG frameCount = 0;
     BOOLEAN startRegionExecutable;
     BOOLEAN captureFrames;
@@ -271,10 +292,25 @@ static VOID BLACKBIRDLogThreadTelemetry(_In_ HANDLE ProcessId, _In_ HANDLE Threa
 
     startRegionExecutable = BLACKBIRDIsExecutableProtection(StartRegionProtect);
 
-    BLACKBIRDEtwLogThreadEvent(ProcessId, ThreadId, CreatorPid, StartAddress, ImageBase, ImageSize, GotStart,
-                                 GotRange, IsRemoteCreator, OutsideMainImage, CorrelationFlags, CorrelationAccessMask,
-                                 CorrelationAgeMs, StartRegionProtect, StartRegionState, StartRegionType,
-                                 StartRegionStatus, frameCount, frames);
+    BLACKBIRDEtwLogThreadEvent(ProcessId,
+                               ThreadId,
+                               CreatorPid,
+                               StartAddress,
+                               ImageBase,
+                               ImageSize,
+                               GotStart,
+                               GotRange,
+                               IsRemoteCreator,
+                               OutsideMainImage,
+                               CorrelationFlags,
+                               CorrelationAccessMask,
+                               CorrelationAgeMs,
+                               StartRegionProtect,
+                               StartRegionState,
+                               StartRegionType,
+                               StartRegionStatus,
+                               frameCount,
+                               frames);
 
     {
         UINT32 flags = 0;
@@ -317,16 +353,20 @@ static VOID BLACKBIRDLogThreadTelemetry(_In_ HANDLE ProcessId, _In_ HANDLE Threa
 
         if (BLACKBIRDControlHasClientsFast())
         {
-            BLACKBIRDControlPublishThreadEvent((UINT64)(ULONG_PTR)ProcessId, (UINT64)(ULONG_PTR)ThreadId,
-                                                 (UINT64)(ULONG_PTR)CreatorPid, (UINT64)(ULONG_PTR)StartAddress,
-                                                 (UINT64)(ULONG_PTR)ImageBase, (UINT64)ImageSize, flags, frameCount,
-                                                 frames);
+            BLACKBIRDControlPublishThreadEvent((UINT64) (ULONG_PTR) ProcessId,
+                                               (UINT64) (ULONG_PTR) ThreadId,
+                                               (UINT64) (ULONG_PTR) CreatorPid,
+                                               (UINT64) (ULONG_PTR) StartAddress,
+                                               (UINT64) (ULONG_PTR) ImageBase,
+                                               (UINT64) ImageSize,
+                                               flags,
+                                               frameCount,
+                                               frames);
         }
     }
 }
 
-static BOOLEAN BLACKBIRDQueryThreadStartAddress(_In_ HANDLE ProcessId, _In_ HANDLE ThreadId,
-                                                  _Out_ PVOID *StartAddress)
+static BOOLEAN BLACKBIRDQueryThreadStartAddress(_In_ HANDLE ProcessId, _In_ HANDLE ThreadId, _Out_ PVOID *StartAddress)
 {
     NTSTATUS status;
     OBJECT_ATTRIBUTES oa;
@@ -349,15 +389,17 @@ static BOOLEAN BLACKBIRDQueryThreadStartAddress(_In_ HANDLE ProcessId, _In_ HAND
         }
     }
 
-    status =
-        ZwQueryInformationThread(hThread, ThreadQuerySetWin32StartAddress, StartAddress, sizeof(*StartAddress), NULL);
+    status = ZwQueryInformationThread(
+            hThread, ThreadQuerySetWin32StartAddress, StartAddress, sizeof(*StartAddress), NULL);
 
     ZwClose(hThread);
     return NT_SUCCESS(status);
 }
 
-static BOOLEAN BLACKBIRDGetProcessImageRange(_In_ HANDLE ProcessId, _In_ PEPROCESS Process, _Out_ PVOID *ImageBase,
-                                               _Out_ SIZE_T *ImageSize)
+static BOOLEAN BLACKBIRDGetProcessImageRange(_In_ HANDLE ProcessId,
+                                             _In_ PEPROCESS Process,
+                                             _Out_ PVOID *ImageBase,
+                                             _Out_ SIZE_T *ImageSize)
 {
     NTSTATUS status;
     OBJECT_ATTRIBUTES oa;
@@ -405,8 +447,8 @@ static BOOLEAN BLACKBIRDGetProcessImageRange(_In_ HANDLE ProcessId, _In_ PEPROCE
     return TRUE;
 }
 
-static NTSTATUS BLACKBIRDQueryAddressRegion(_In_ HANDLE ProcessId, _In_ PVOID Address, _Out_ ULONG *Protect,
-                                              _Out_ ULONG *State, _Out_ ULONG *Type)
+static NTSTATUS BLACKBIRDQueryAddressRegion(
+        _In_ HANDLE ProcessId, _In_ PVOID Address, _Out_ ULONG *Protect, _Out_ ULONG *State, _Out_ ULONG *Type)
 {
     NTSTATUS status;
     OBJECT_ATTRIBUTES oa;
@@ -468,7 +510,7 @@ static NTSTATUS BLACKBIRDQueryAddressRegion(_In_ HANDLE ProcessId, _In_ PVOID Ad
 
 static VOID BLACKBIRDThreadWorkRoutine(_In_ PVOID Context)
 {
-    PBLACKBIRD_THREAD_WORK w = (PBLACKBIRD_THREAD_WORK)Context;
+    PBLACKBIRD_THREAD_WORK w = (PBLACKBIRD_THREAD_WORK) Context;
     PVOID threadStart = NULL;
     PVOID imageBase = NULL;
     SIZE_T imageSize = 0;
@@ -507,9 +549,13 @@ static VOID BLACKBIRDThreadWorkRoutine(_In_ PVOID Context)
         creatorPidForTelemetry = w->ProcessId;
     }
 
-    hasCorrelation = BLACKBIRDHollowingResolveThreadCorrelation(
-        w->ProcessId, creatorPidForTelemetry, BLACKBIRD_THREAD_CORRELATION_WINDOW_MS, &creatorPidForTelemetry,
-        &correlationFlags, &correlationAccessMask, &correlationAgeMs);
+    hasCorrelation = BLACKBIRDHollowingResolveThreadCorrelation(w->ProcessId,
+                                                                creatorPidForTelemetry,
+                                                                BLACKBIRD_THREAD_CORRELATION_WINDOW_MS,
+                                                                &creatorPidForTelemetry,
+                                                                &correlationFlags,
+                                                                &correlationAccessMask,
+                                                                &correlationAgeMs);
     if (!hasCorrelation)
     {
         correlationFlags = 0;
@@ -531,9 +577,9 @@ static VOID BLACKBIRDThreadWorkRoutine(_In_ PVOID Context)
 
         if (gotStart && gotRange && threadStart != NULL && imageBase != NULL && imageSize != 0)
         {
-            ULONG_PTR start = (ULONG_PTR)threadStart;
-            ULONG_PTR base = (ULONG_PTR)imageBase;
-            ULONG_PTR end = base + (ULONG_PTR)imageSize;
+            ULONG_PTR start = (ULONG_PTR) threadStart;
+            ULONG_PTR base = (ULONG_PTR) imageBase;
+            ULONG_PTR end = base + (ULONG_PTR) imageSize;
 
             if (end < base)
             {
@@ -547,8 +593,8 @@ static VOID BLACKBIRDThreadWorkRoutine(_In_ PVOID Context)
 
         if (gotStart && threadStart != NULL)
         {
-            startRegionStatus = BLACKBIRDQueryAddressRegion(w->ProcessId, threadStart, &startRegionProtect,
-                                                              &startRegionState, &startRegionType);
+            startRegionStatus = BLACKBIRDQueryAddressRegion(
+                    w->ProcessId, threadStart, &startRegionProtect, &startRegionState, &startRegionType);
         }
         if (NT_SUCCESS(startRegionStatus))
         {
@@ -562,13 +608,32 @@ static VOID BLACKBIRDThreadWorkRoutine(_In_ PVOID Context)
         goto Exit;
     }
 
-    BLACKBIRDLogThreadTelemetry(w->ProcessId, w->ThreadId, creatorPidForTelemetry, threadStart, imageBase, imageSize,
-                                  gotStart, gotRange, isRemoteCreator, outsideMainImage, correlationFlags,
-                                  correlationAccessMask, correlationAgeMs, startRegionProtect, startRegionState,
-                                  startRegionType, startRegionStatus);
-    BLACKBIRDHollowingObserveThread(w->ProcessId, creatorPidForTelemetry, outsideMainImage, gotStart,
-                                      startRegionExecutable, startRegionNonImage, correlationFlags,
-                                      correlationAccessMask, correlationAgeMs);
+    BLACKBIRDLogThreadTelemetry(w->ProcessId,
+                                w->ThreadId,
+                                creatorPidForTelemetry,
+                                threadStart,
+                                imageBase,
+                                imageSize,
+                                gotStart,
+                                gotRange,
+                                isRemoteCreator,
+                                outsideMainImage,
+                                correlationFlags,
+                                correlationAccessMask,
+                                correlationAgeMs,
+                                startRegionProtect,
+                                startRegionState,
+                                startRegionType,
+                                startRegionStatus);
+    BLACKBIRDHollowingObserveThread(w->ProcessId,
+                                    creatorPidForTelemetry,
+                                    outsideMainImage,
+                                    gotStart,
+                                    startRegionExecutable,
+                                    startRegionNonImage,
+                                    correlationFlags,
+                                    correlationAccessMask,
+                                    correlationAgeMs);
 
 Exit:
     if (w->Process)
@@ -603,8 +668,8 @@ VOID BLACKBIRDThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Cre
     }
 
     creatorProcessId = PsGetCurrentProcessId();
-    processPid32 = (UINT32)(ULONG_PTR)ProcessId;
-    creatorPid32 = (UINT32)(ULONG_PTR)creatorProcessId;
+    processPid32 = (UINT32) (ULONG_PTR) ProcessId;
+    creatorPid32 = (UINT32) (ULONG_PTR) creatorProcessId;
     secondaryPid32 = (creatorPid32 != processPid32) ? creatorPid32 : 0;
     if (!BLACKBIRDControlHasPidInterest(processPid32, secondaryPid32, BLACKBIRD_STREAM_THREAD))
     {
@@ -624,25 +689,31 @@ VOID BLACKBIRDThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Cre
         failureCounter = InterlockedIncrement(&g_ThreadLookupFailureCounter);
         if (failureCounter == 1 || ((failureCounter & 0xFF) == 0))
         {
-            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                       DPFLTR_WARNING_LEVEL,
                        "BLACKBIRD: thread callback lookup failure pid=%p tid=%p status=0x%08X total=%lu.\n",
-                       ProcessId, ThreadId, status, (ULONG)failureCounter);
+                       ProcessId,
+                       ThreadId,
+                       status,
+                       (ULONG) failureCounter);
         }
         BLACKBIRDThreadReleaseWorkSlot();
         return;
     }
 
-    PBLACKBIRD_THREAD_WORK w =
-        (PBLACKBIRD_THREAD_WORK)BLACKBIRDAllocatePoolCompat(POOL_FLAG_NON_PAGED | POOL_FLAG_UNINITIALIZED,
-                                                                sizeof(*w), 'traT');
+    PBLACKBIRD_THREAD_WORK w = (PBLACKBIRD_THREAD_WORK) BLACKBIRDAllocatePoolCompat(
+            POOL_FLAG_NON_PAGED | POOL_FLAG_UNINITIALIZED, sizeof(*w), 'traT');
     if (!w)
     {
         failureCounter = InterlockedIncrement(&g_ThreadAllocFailureCounter);
         if (failureCounter == 1 || ((failureCounter & 0xFF) == 0))
         {
-            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                       "BLACKBIRD: thread callback alloc failure pid=%p tid=%p total=%lu.\n", ProcessId, ThreadId,
-                       (ULONG)failureCounter);
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                       DPFLTR_ERROR_LEVEL,
+                       "BLACKBIRD: thread callback alloc failure pid=%p tid=%p total=%lu.\n",
+                       ProcessId,
+                       ThreadId,
+                       (ULONG) failureCounter);
         }
         ObDereferenceObject(process);
         BLACKBIRDThreadReleaseWorkSlot();
@@ -653,7 +724,7 @@ VOID BLACKBIRDThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Cre
     w->ProcessId = ProcessId;
     w->ThreadId = ThreadId;
     w->CreatorProcessId = creatorProcessId; // heuristic only
-    w->Process = process;                          // already referenced by lookup
+    w->Process = process;                   // already referenced by lookup
 
     ExInitializeWorkItem(&w->WorkItem, BLACKBIRDThreadWorkRoutine, w);
 
@@ -684,7 +755,7 @@ BLACKBIRDThreadMonitorInitialize(VOID)
     InterlockedExchange(&g_ThreadImageCacheWriteIndex, -1);
     {
         LARGE_INTEGER freq = KeQueryPerformanceCounter(NULL);
-        g_ThreadImageCacheQpcFrequency = (freq.QuadPart > 0) ? (ULONGLONG)freq.QuadPart : 1;
+        g_ThreadImageCacheQpcFrequency = (freq.QuadPart > 0) ? (ULONGLONG) freq.QuadPart : 1;
     }
 
     g_SetNotifyRoutineEx = BLACKBIRDResolvePsSetCreateThreadNotifyRoutineEx();
@@ -693,16 +764,18 @@ BLACKBIRDThreadMonitorInitialize(VOID)
         return STATUS_PROCEDURE_NOT_FOUND;
     }
 
-    status = g_SetNotifyRoutineEx(PsCreateThreadNotifyNonSystem, (PVOID)BLACKBIRDThreadNotifyRoutine);
+    status = g_SetNotifyRoutineEx(PsCreateThreadNotifyNonSystem, (PVOID) BLACKBIRDThreadNotifyRoutine);
 
     if (!NT_SUCCESS(status))
     {
         failureCounter = InterlockedIncrement(&g_ThreadInitFailureCounter);
         if (failureCounter == 1 || ((failureCounter & 0xFF) == 0))
         {
-            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                       "BLACKBIRD: thread monitor callback registration failure status=0x%08X total=%lu.\n", status,
-                       (ULONG)failureCounter);
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                       DPFLTR_ERROR_LEVEL,
+                       "BLACKBIRD: thread monitor callback registration failure status=0x%08X total=%lu.\n",
+                       status,
+                       (ULONG) failureCounter);
         }
         g_SetNotifyRoutineEx = NULL;
         return status;
@@ -731,7 +804,8 @@ VOID BLACKBIRDThreadMonitorUninitialize(VOID)
     status = PsRemoveCreateThreadNotifyRoutine(BLACKBIRDThreadNotifyRoutine);
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                   DPFLTR_ERROR_LEVEL,
                    "BLACKBIRD: thread monitor callback removal failed; monitor remains registered (status=0x%08X).\n",
                    status);
         return;
@@ -741,7 +815,7 @@ VOID BLACKBIRDThreadMonitorUninitialize(VOID)
     g_ThreadNotifyRegistered = FALSE;
     g_SetNotifyRoutineEx = NULL;
 
-    waitInterval.QuadPart = -(LONGLONG)1000 * 10000;
+    waitInterval.QuadPart = -(LONGLONG) 1000 * 10000;
     while (InterlockedCompareExchange(&g_OutstandingWork, 0, 0) != 0)
     {
         NTSTATUS waitStatus;
@@ -749,7 +823,8 @@ VOID BLACKBIRDThreadMonitorUninitialize(VOID)
         waitStatus = KeWaitForSingleObject(&g_AllWorkDone, Executive, KernelMode, FALSE, &waitInterval);
         if (waitStatus == STATUS_TIMEOUT)
         {
-            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                       DPFLTR_INFO_LEVEL,
                        "BLACKBIRD: thread monitor draining (outstanding=%ld).\n",
                        InterlockedCompareExchange(&g_OutstandingWork, 0, 0));
         }
@@ -757,7 +832,9 @@ VOID BLACKBIRDThreadMonitorUninitialize(VOID)
     RtlZeroMemory(g_ThreadImageCache, sizeof(g_ThreadImageCache));
     InterlockedExchange(&g_ThreadImageCacheWriteIndex, -1);
     InterlockedExchange(&g_ThreadMonitorStopping, 0);
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: thread monitor uninitialized (dropped=%ld).\n",
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+               DPFLTR_INFO_LEVEL,
+               "BLACKBIRD: thread monitor uninitialized (dropped=%ld).\n",
                InterlockedCompareExchange(&g_DroppedWork, 0, 0));
 }
 

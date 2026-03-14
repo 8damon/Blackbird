@@ -56,7 +56,7 @@ static BOOLEAN BLACKBIRDIsKernelPointer(_In_opt_ PVOID Address)
         return FALSE;
     }
 
-    return ((ULONG_PTR)Address >= (ULONG_PTR)MmSystemRangeStart);
+    return ((ULONG_PTR) Address >= (ULONG_PTR) MmSystemRangeStart);
 }
 
 static VOID BLACKBIRDAntiTamperWorkRoutine(_In_ PVOID Context)
@@ -88,13 +88,13 @@ static VOID BLACKBIRDAntiTamperWorkRoutine(_In_ PVOID Context)
         {
             tamperMask |= BLACKBIRD_TAMPER_MAJOR_FN_CHANGED;
         }
-        if (!BLACKBIRDIsKernelPointer((PVOID)driverObject->MajorFunction[i]))
+        if (!BLACKBIRDIsKernelPointer((PVOID) driverObject->MajorFunction[i]))
         {
             tamperMask |= BLACKBIRD_TAMPER_MAJOR_PTR_INVALID;
         }
     }
 
-    if (!BLACKBIRDIsKernelPointer((PVOID)driverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]))
+    if (!BLACKBIRDIsKernelPointer((PVOID) driverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL]))
     {
         tamperMask |= BLACKBIRD_TAMPER_IOCTL_DISPATCH_INVALID;
     }
@@ -119,8 +119,8 @@ static VOID BLACKBIRDAntiTamperWorkRoutine(_In_ PVOID Context)
     {
         tamperMask |= BLACKBIRD_TAMPER_EXTENSION_MISSING;
     }
-    if (!BLACKBIRDIsKernelPointer(driverObject->DriverStart) || driverObject->DriverSize == 0 ||
-        driverObject->DriverSection == NULL || !BLACKBIRDIsKernelPointer((PVOID)driverObject->DriverInit))
+    if (!BLACKBIRDIsKernelPointer(driverObject->DriverStart) || driverObject->DriverSize == 0
+        || driverObject->DriverSection == NULL || !BLACKBIRDIsKernelPointer((PVOID) driverObject->DriverInit))
     {
         tamperMask |= BLACKBIRD_TAMPER_DRIVER_IMAGE_INVALID;
     }
@@ -132,28 +132,38 @@ static VOID BLACKBIRDAntiTamperWorkRoutine(_In_ PVOID Context)
     {
         tamperMask |= BLACKBIRD_TAMPER_ETW_INTEGRITY;
     }
-    if (!BLACKBIRDHandleMonitorSelfCheck() || !BLACKBIRDThreadMonitorSelfCheck() ||
-        !BLACKBIRDProcessMonitorSelfCheck() || !BLACKBIRDImageMonitorSelfCheck() ||
-        !BLACKBIRDRegistryMonitorSelfCheck() || !BLACKBIRDApcMonitorSelfCheck() ||
-        !BLACKBIRDFileSystemMonitorSelfCheck() || !BLACKBIRDNtApiMonitorSelfCheck() ||
-        !BLACKBIRDCorrelationSelfCheck() || !BLACKBIRDHollowingEngineSelfCheck())
+    if (!BLACKBIRDHandleMonitorSelfCheck() || !BLACKBIRDThreadMonitorSelfCheck() || !BLACKBIRDProcessMonitorSelfCheck()
+        || !BLACKBIRDImageMonitorSelfCheck() || !BLACKBIRDRegistryMonitorSelfCheck() || !BLACKBIRDApcMonitorSelfCheck()
+        || !BLACKBIRDFileSystemMonitorSelfCheck() || !BLACKBIRDNtApiMonitorSelfCheck()
+        || !BLACKBIRDCorrelationSelfCheck() || !BLACKBIRDHollowingEngineSelfCheck())
     {
         tamperMask |= BLACKBIRD_TAMPER_MONITOR_INTEGRITY;
     }
 
-    prevMask = InterlockedExchange(&g_LastTamperMask, (LONG)tamperMask);
-    if (prevMask != (LONG)tamperMask)
+    prevMask = InterlockedExchange(&g_LastTamperMask, (LONG) tamperMask);
+    if (prevMask != (LONG) tamperMask)
     {
         if (tamperMask != 0)
         {
-            BLACKBIRDEtwLogDetectionEvent("DRIVER_DISPATCH_OR_OBJECT_TAMPER", 5, PsGetCurrentProcessId(), NULL,
-                                            tamperMask, 0, 0, L"driver dispatch/object integrity drift detected");
+            BLACKBIRDEtwLogDetectionEvent("DRIVER_DISPATCH_OR_OBJECT_TAMPER",
+                                          5,
+                                          PsGetCurrentProcessId(),
+                                          NULL,
+                                          tamperMask,
+                                          0,
+                                          0,
+                                          L"driver dispatch/object integrity drift detected");
         }
         else if (prevMask != 0)
         {
-            BLACKBIRDEtwLogDetectionEvent("DRIVER_DISPATCH_OR_OBJECT_TAMPER_CLEARED", 2, PsGetCurrentProcessId(),
-                                            NULL, 0, 0, 0,
-                                            L"driver dispatch/object integrity returned to expected state");
+            BLACKBIRDEtwLogDetectionEvent("DRIVER_DISPATCH_OR_OBJECT_TAMPER_CLEARED",
+                                          2,
+                                          PsGetCurrentProcessId(),
+                                          NULL,
+                                          0,
+                                          0,
+                                          0,
+                                          L"driver dispatch/object integrity returned to expected state");
         }
     }
 
@@ -161,8 +171,10 @@ static VOID BLACKBIRDAntiTamperWorkRoutine(_In_ PVOID Context)
     KeSetEvent(&g_WorkDrainEvent, IO_NO_INCREMENT, FALSE);
 }
 
-static VOID BLACKBIRDAntiTamperTimerDpc(_In_ PKDPC Dpc, _In_opt_ PVOID DeferredContext,
-                                          _In_opt_ PVOID SystemArgument1, _In_opt_ PVOID SystemArgument2)
+static VOID BLACKBIRDAntiTamperTimerDpc(_In_ PKDPC Dpc,
+                                        _In_opt_ PVOID DeferredContext,
+                                        _In_opt_ PVOID SystemArgument1,
+                                        _In_opt_ PVOID SystemArgument2)
 {
     UNREFERENCED_PARAMETER(Dpc);
     UNREFERENCED_PARAMETER(DeferredContext);
@@ -219,7 +231,7 @@ BLACKBIRDAntiTamperInitialize(_In_ PDRIVER_OBJECT DriverObject)
     KeInitializeTimer(&g_Timer);
     KeInitializeDpc(&g_TimerDpc, BLACKBIRDAntiTamperTimerDpc, NULL);
 
-    dueTime.QuadPart = -(LONGLONG)BLACKBIRD_TAMPER_CHECK_PERIOD_MS * 10000LL;
+    dueTime.QuadPart = -(LONGLONG) BLACKBIRD_TAMPER_CHECK_PERIOD_MS * 10000LL;
     KeSetTimerEx(&g_Timer, dueTime, BLACKBIRD_TAMPER_CHECK_PERIOD_MS, &g_TimerDpc);
     return STATUS_SUCCESS;
 }
@@ -251,5 +263,5 @@ VOID BLACKBIRDAntiTamperUninitialize(VOID)
 
 ULONG BLACKBIRDAntiTamperGetLastMask(VOID)
 {
-    return (ULONG)InterlockedCompareExchange(&g_LastTamperMask, 0, 0);
+    return (ULONG) InterlockedCompareExchange(&g_LastTamperMask, 0, 0);
 }

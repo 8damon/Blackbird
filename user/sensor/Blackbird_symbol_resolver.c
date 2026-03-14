@@ -66,7 +66,7 @@ void BLACKBIRDSymbolResolverInitialize(void)
 
     if (GetEnvironmentVariableA("_NT_SYMBOL_PATH", ntSymbolPath, RTL_NUMBER_OF(ntSymbolPath)) == 0)
     {
-        (void)SymSetSearchPath(g_SymbolProcess, BLACKBIRD_DEFAULT_SYMBOL_PATH);
+        (void) SymSetSearchPath(g_SymbolProcess, BLACKBIRD_DEFAULT_SYMBOL_PATH);
     }
 
     BLACKBIRDLoadKernelModules();
@@ -76,7 +76,7 @@ void BLACKBIRDSymbolResolverCleanup(void)
 {
     if (g_SymbolsReady)
     {
-        (void)SymCleanup(g_SymbolProcess);
+        (void) SymCleanup(g_SymbolProcess);
     }
     g_SymbolProcess = NULL;
     g_SymbolsReady = FALSE;
@@ -85,9 +85,9 @@ void BLACKBIRDSymbolResolverCleanup(void)
 
 void BLACKBIRDSymbolResolverPrintAddress(UINT64 address)
 {
-    DWORD64 addr = (DWORD64)address;
+    DWORD64 addr = (DWORD64) address;
     CHAR symBuffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME];
-    PSYMBOL_INFO symInfo = (PSYMBOL_INFO)symBuffer;
+    PSYMBOL_INFO symInfo = (PSYMBOL_INFO) symBuffer;
     DWORD64 symDisplacement = 0;
     IMAGEHLP_MODULE64 modInfo;
     IMAGEHLP_LINE64 lineInfo;
@@ -96,7 +96,7 @@ void BLACKBIRDSymbolResolverPrintAddress(UINT64 address)
     BOOL gotMod = FALSE;
     BOOL gotLine = FALSE;
 
-    printf("0x%llX", (unsigned long long)address);
+    printf("0x%llX", (unsigned long long) address);
 
     if (!g_SymbolsReady)
     {
@@ -122,15 +122,15 @@ void BLACKBIRDSymbolResolverPrintAddress(UINT64 address)
 
     if (gotMod && gotSym)
     {
-        printf(" %s!%s+0x%llX", modInfo.ModuleName, symInfo->Name, (unsigned long long)symDisplacement);
+        printf(" %s!%s+0x%llX", modInfo.ModuleName, symInfo->Name, (unsigned long long) symDisplacement);
     }
     else if (gotSym)
     {
-        printf(" %s+0x%llX", symInfo->Name, (unsigned long long)symDisplacement);
+        printf(" %s+0x%llX", symInfo->Name, (unsigned long long) symDisplacement);
     }
     else if (gotMod)
     {
-        printf(" %s+0x%llX", modInfo.ModuleName, (unsigned long long)(addr - modInfo.BaseOfImage));
+        printf(" %s+0x%llX", modInfo.ModuleName, (unsigned long long) (addr - modInfo.BaseOfImage));
     }
     else if (BLACKBIRDIsLikelyKernelAddress(address))
     {

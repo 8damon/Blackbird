@@ -153,7 +153,7 @@ typedef struct _BLACKBIRD_MULTI_CLIENT_WORKER
 #define BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION_CLASS 35
 
 #ifndef NT_SUCCESS
-#define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
+#define NT_SUCCESS(Status) (((NTSTATUS) (Status)) >= 0)
 #endif
 
 #define BLACKBIRD_CI_OPTION_ENABLED 0x0001
@@ -188,16 +188,22 @@ BOOL RunMultiClientParallelIoctlTest(_In_ DWORD CallerPid, _In_ DWORD TargetPid,
 void PumpIoctlEvents(HANDLE h, TEST_STATE *state, const TEST_EXPECTED *expected, DWORD maxMs);
 void GenerateLocalThreadEvent(void);
 
-BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                        _Out_writes_z_(OutputChars) PSTR Output, _In_ size_t OutputChars);
-BOOL StartBrokerEtwCapture(_Out_ BROKER_ETW_CAPTURE *cap, _In_reads_opt_(SeedCount) const DWORD *SeedPids,
-                           _In_ DWORD SeedCount, _In_ DWORD StreamMask);
+BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record,
+                        _In_z_ PCWSTR Name,
+                        _Out_writes_z_(OutputChars) PSTR Output,
+                        _In_ size_t OutputChars);
+BOOL StartBrokerEtwCapture(_Out_ BROKER_ETW_CAPTURE *cap,
+                           _In_reads_opt_(SeedCount) const DWORD *SeedPids,
+                           _In_ DWORD SeedCount,
+                           _In_ DWORD StreamMask);
 VOID StopBrokerEtwCapture(_Inout_ BROKER_ETW_CAPTURE *cap);
 BOOL WaitForBrokerEtwEventCoverage(_In_ BROKER_ETW_CAPTURE *cap, _In_ DWORD maxMs, _In_ BOOL requireApcTelemetry);
 
 BOOL SuiteInitReport(_Inout_ SUITE_RESULTS *Results);
 VOID SuiteCloseReport(_Inout_ SUITE_RESULTS *Results, _In_ DWORD Polls);
-VOID RecordResult(_Inout_ SUITE_RESULTS *Results, _In_ BOOL Passed, _In_z_ const char *PassText,
+VOID RecordResult(_Inout_ SUITE_RESULTS *Results,
+                  _In_ BOOL Passed,
+                  _In_z_ const char *PassText,
                   _In_opt_z_ const char *FailText);
 VOID RecordSkip(_Inout_ SUITE_RESULTS *Results, _In_z_ const char *SkipText);
 VOID LogEnvironmentBaseline(_Inout_ SUITE_RESULTS *Results);

@@ -1,7 +1,7 @@
 #include "blackbird_client_internal.h"
 
-static BOOL LaunchTargetSuspended(_In_ const BLACKBIRD_TARGET_SPEC *Spec, _Out_ BLACKBIRD_LAUNCH_TARGET *Launch,
-                                  _Out_ DWORD *Pid)
+static BOOL
+LaunchTargetSuspended(_In_ const BLACKBIRD_TARGET_SPEC *Spec, _Out_ BLACKBIRD_LAUNCH_TARGET *Launch, _Out_ DWORD *Pid)
 {
     STARTUPINFOW si;
     PROCESS_INFORMATION pi;
@@ -29,7 +29,8 @@ static BOOL LaunchTargetSuspended(_In_ const BLACKBIRD_TARGET_SPEC *Spec, _Out_ 
     return TRUE;
 }
 
-BOOL ResolveTargetPid(_In_ const BLACKBIRD_TARGET_SPEC *Spec, _Out_ DWORD *Pid,
+BOOL ResolveTargetPid(_In_ const BLACKBIRD_TARGET_SPEC *Spec,
+                      _Out_ DWORD *Pid,
                       _Out_opt_ BLACKBIRD_LAUNCH_TARGET *Launch)
 {
     DWORD foundPid;
@@ -47,43 +48,43 @@ BOOL ResolveTargetPid(_In_ const BLACKBIRD_TARGET_SPEC *Spec, _Out_ DWORD *Pid,
 
     switch (Spec->Kind)
     {
-    case BlackbirdTargetPid:
-        *Pid = Spec->Pid;
-        return TRUE;
+        case BlackbirdTargetPid:
+            *Pid = Spec->Pid;
+            return TRUE;
 
-    case BlackbirdTargetName:
-        foundPid = FindProcessIdByNameW(Spec->Name);
-        if (foundPid == 0)
-        {
-            SetLastError(ERROR_NOT_FOUND);
-            return FALSE;
-        }
-        *Pid = foundPid;
-        return TRUE;
-
-    case BlackbirdTargetPath:
-        foundPid = FindProcessIdByPathSpec(Spec);
-        if (foundPid != 0)
-        {
+        case BlackbirdTargetName:
+            foundPid = FindProcessIdByNameW(Spec->Name);
+            if (foundPid == 0)
+            {
+                SetLastError(ERROR_NOT_FOUND);
+                return FALSE;
+            }
             *Pid = foundPid;
             return TRUE;
-        }
 
-        wprintf(L"[*] Waiting for path match via ProcessTelemetry/ImageTelemetry: %ls\n", Spec->PathRaw);
-        if (!WaitForPathLaunchViaEtw(Spec, &foundPid))
-        {
-            return FALSE;
-        }
-        *Pid = foundPid;
-        return TRUE;
+        case BlackbirdTargetPath:
+            foundPid = FindProcessIdByPathSpec(Spec);
+            if (foundPid != 0)
+            {
+                *Pid = foundPid;
+                return TRUE;
+            }
 
-    case BlackbirdTargetLaunch:
-        if (Launch == NULL)
-        {
-            SetLastError(ERROR_INVALID_PARAMETER);
-            return FALSE;
-        }
-        return LaunchTargetSuspended(Spec, Launch, Pid);
+            wprintf(L"[*] Waiting for path match via ProcessTelemetry/ImageTelemetry: %ls\n", Spec->PathRaw);
+            if (!WaitForPathLaunchViaEtw(Spec, &foundPid))
+            {
+                return FALSE;
+            }
+            *Pid = foundPid;
+            return TRUE;
+
+        case BlackbirdTargetLaunch:
+            if (Launch == NULL)
+            {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return FALSE;
+            }
+            return LaunchTargetSuspended(Spec, Launch, Pid);
     }
 
     SetLastError(ERROR_INVALID_PARAMETER);
@@ -104,7 +105,7 @@ VOID PrimeTargetImageHint(_In_ HANDLE Device, _In_ const BLACKBIRD_TARGET_SPEC *
     imagePath[0] = L'\0';
     if ((Spec->Kind == BlackbirdTargetLaunch || Spec->Kind == BlackbirdTargetPath) && Spec->PathRaw[0] != L'\0')
     {
-        (void)StringCchCopyW(imagePath, RTL_NUMBER_OF(imagePath), Spec->PathRaw);
+        (void) StringCchCopyW(imagePath, RTL_NUMBER_OF(imagePath), Spec->PathRaw);
     }
     else
     {
@@ -122,9 +123,8 @@ VOID PrimeTargetImageHint(_In_ HANDLE Device, _In_ const BLACKBIRD_TARGET_SPEC *
 
     if (imagePath[0] == L'\0' && Device != INVALID_HANDLE_VALUE)
     {
-        (void)BLACKBIRDSCQueryProcessImagePath(Device, TargetPid, imagePath, (DWORD)RTL_NUMBER_OF(imagePath));
+        (void) BLACKBIRDSCQueryProcessImagePath(Device, TargetPid, imagePath, (DWORD) RTL_NUMBER_OF(imagePath));
     }
 
-    BLACKBIRDPrimeProcessImagePath((ULONGLONG)TargetPid, imagePath);
+    BLACKBIRDPrimeProcessImagePath((ULONGLONG) TargetPid, imagePath);
 }
-

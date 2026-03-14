@@ -1,7 +1,9 @@
 #include "../blackbird_controller_private.h"
 
-static BOOL ControllerEtwGetPropertyRaw(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                                        _Outptr_result_bytebuffer_(*OutSize) PBYTE *OutBuffer, _Out_ ULONG *OutSize)
+static BOOL ControllerEtwGetPropertyRaw(_In_ PEVENT_RECORD Record,
+                                        _In_z_ PCWSTR Name,
+                                        _Outptr_result_bytebuffer_(*OutSize) PBYTE *OutBuffer,
+                                        _Out_ ULONG *OutSize)
 {
     TDHSTATUS status;
     PROPERTY_DATA_DESCRIPTOR descriptor;
@@ -15,7 +17,7 @@ static BOOL ControllerEtwGetPropertyRaw(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR
     *OutSize = 0;
 
     ZeroMemory(&descriptor, sizeof(descriptor));
-    descriptor.PropertyName = (ULONGLONG)(ULONG_PTR)Name;
+    descriptor.PropertyName = (ULONGLONG) (ULONG_PTR) Name;
     descriptor.ArrayIndex = ULONG_MAX;
 
     status = TdhGetPropertySize(Record, 0, NULL, 1, &descriptor, OutSize);
@@ -24,7 +26,7 @@ static BOOL ControllerEtwGetPropertyRaw(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR
         return FALSE;
     }
 
-    *OutBuffer = (PBYTE)calloc(1, *OutSize + sizeof(WCHAR));
+    *OutBuffer = (PBYTE) calloc(1, *OutSize + sizeof(WCHAR));
     if (*OutBuffer == NULL)
     {
         *OutSize = 0;
@@ -60,13 +62,13 @@ BOOL ControllerEtwGetU64Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, 
 
     if (size >= sizeof(ULONGLONG))
     {
-        *Value = *(ULONGLONG *)raw;
+        *Value = *(ULONGLONG *) raw;
         free(raw);
         return TRUE;
     }
     if (size >= sizeof(ULONG))
     {
-        *Value = *(ULONG *)raw;
+        *Value = *(ULONG *) raw;
         free(raw);
         return TRUE;
     }
@@ -91,7 +93,7 @@ BOOL ControllerEtwGetU32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, 
     }
     if (size >= sizeof(ULONG))
     {
-        *Value = *(ULONG *)raw;
+        *Value = *(ULONG *) raw;
         free(raw);
         return TRUE;
     }
@@ -116,7 +118,7 @@ BOOL ControllerEtwGetI32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, 
     }
     if (size >= sizeof(LONG))
     {
-        *Value = *(LONG *)raw;
+        *Value = *(LONG *) raw;
         free(raw);
         return TRUE;
     }
@@ -166,7 +168,7 @@ BOOL ControllerEtwGetBoolProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
     }
     if (size >= sizeof(ULONG))
     {
-        *Value = (*(ULONG *)raw != 0) ? TRUE : FALSE;
+        *Value = (*(ULONG *) raw != 0) ? TRUE : FALSE;
         free(raw);
         return TRUE;
     }
@@ -180,8 +182,10 @@ BOOL ControllerEtwGetBoolProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
     free(raw);
     return FALSE;
 }
-BOOL ControllerEtwGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                                         _Out_writes_z_(OutputChars) PSTR Output, _In_ size_t OutputChars)
+BOOL ControllerEtwGetAnsiProperty(_In_ PEVENT_RECORD Record,
+                                  _In_z_ PCWSTR Name,
+                                  _Out_writes_z_(OutputChars) PSTR Output,
+                                  _In_ size_t OutputChars)
 {
     PBYTE raw = NULL;
     ULONG size = 0;
@@ -199,7 +203,7 @@ BOOL ControllerEtwGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
 
     if (size > 0)
     {
-        (void)StringCchCopyA(Output, OutputChars, (PCSTR)raw);
+        (void) StringCchCopyA(Output, OutputChars, (PCSTR) raw);
         free(raw);
         return TRUE;
     }
@@ -207,8 +211,10 @@ BOOL ControllerEtwGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
     free(raw);
     return FALSE;
 }
-BOOL ControllerEtwGetWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                                         _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
+BOOL ControllerEtwGetWideProperty(_In_ PEVENT_RECORD Record,
+                                  _In_z_ PCWSTR Name,
+                                  _Out_writes_z_(OutputChars) PWSTR Output,
+                                  _In_ size_t OutputChars)
 {
     PBYTE raw = NULL;
     ULONG size = 0;
@@ -226,7 +232,7 @@ BOOL ControllerEtwGetWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
 
     if (size >= sizeof(WCHAR))
     {
-        (void)StringCchCopyW(Output, OutputChars, (PCWSTR)raw);
+        (void) StringCchCopyW(Output, OutputChars, (PCWSTR) raw);
         free(raw);
         return TRUE;
     }
@@ -234,8 +240,11 @@ BOOL ControllerEtwGetWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
     free(raw);
     return FALSE;
 }
-BOOL ControllerEtwCopyBinaryProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_bytes_(Capacity) PBYTE Output,
-                                            _In_ ULONG Capacity, _Out_opt_ UINT32 *BytesCopied)
+BOOL ControllerEtwCopyBinaryProperty(_In_ PEVENT_RECORD Record,
+                                     _In_z_ PCWSTR Name,
+                                     _Out_writes_bytes_(Capacity) PBYTE Output,
+                                     _In_ ULONG Capacity,
+                                     _Out_opt_ UINT32 *BytesCopied)
 {
     PBYTE raw = NULL;
     ULONG size = 0;
@@ -279,7 +288,7 @@ static BOOL ControllerU64ToPid(_In_ ULONGLONG Value, _Out_ DWORD *ProcessId)
         return FALSE;
     }
 
-    *ProcessId = (DWORD)Value;
+    *ProcessId = (DWORD) Value;
     return TRUE;
 }
 
@@ -294,25 +303,25 @@ static BOOL ControllerEtwEventMatchesPid(_In_ const BLACKBIRD_IPC_ETW_EVENT *Eve
     {
         return TRUE;
     }
-    if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull && (DWORD)Event->ProcessId == ProcessId)
+    if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull && (DWORD) Event->ProcessId == ProcessId)
     {
         return TRUE;
     }
-    if (Event->CallerPid != 0 && Event->CallerPid <= 0xFFFFFFFFull && (DWORD)Event->CallerPid == ProcessId)
+    if (Event->CallerPid != 0 && Event->CallerPid <= 0xFFFFFFFFull && (DWORD) Event->CallerPid == ProcessId)
     {
         return TRUE;
     }
-    if (Event->TargetPid != 0 && Event->TargetPid <= 0xFFFFFFFFull && (DWORD)Event->TargetPid == ProcessId)
+    if (Event->TargetPid != 0 && Event->TargetPid <= 0xFFFFFFFFull && (DWORD) Event->TargetPid == ProcessId)
     {
         return TRUE;
     }
-    if (Event->ParentProcessId != 0 && Event->ParentProcessId <= 0xFFFFFFFFull &&
-        (DWORD)Event->ParentProcessId == ProcessId)
+    if (Event->ParentProcessId != 0 && Event->ParentProcessId <= 0xFFFFFFFFull
+        && (DWORD) Event->ParentProcessId == ProcessId)
     {
         return TRUE;
     }
-    if (Event->CreatorProcessId != 0 && Event->CreatorProcessId <= 0xFFFFFFFFull &&
-        (DWORD)Event->CreatorProcessId == ProcessId)
+    if (Event->CreatorProcessId != 0 && Event->CreatorProcessId <= 0xFFFFFFFFull
+        && (DWORD) Event->CreatorProcessId == ProcessId)
     {
         return TRUE;
     }
@@ -320,8 +329,8 @@ static BOOL ControllerEtwEventMatchesPid(_In_ const BLACKBIRD_IPC_ETW_EVENT *Eve
     return FALSE;
 }
 
-static BOOL ControllerEtwResolveRelation(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event, _Out_ DWORD *SourcePid,
-                                         _Out_ DWORD *TargetPid)
+static BOOL
+ControllerEtwResolveRelation(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event, _Out_ DWORD *SourcePid, _Out_ DWORD *TargetPid)
 {
     ULONGLONG sourceValue = 0;
     ULONGLONG targetValue = 0;
@@ -336,28 +345,28 @@ static BOOL ControllerEtwResolveRelation(_In_ const BLACKBIRD_IPC_ETW_EVENT *Eve
 
     switch (Event->Family)
     {
-    case BlackbirdIpcEtwFamilyHandle:
-    case BlackbirdIpcEtwFamilyApc:
-        sourceValue = (Event->CallerPid != 0) ? Event->CallerPid : Event->ProcessId;
-        targetValue = Event->TargetPid;
-        break;
-    case BlackbirdIpcEtwFamilyThread:
-        sourceValue = (Event->CreatorProcessId != 0) ? Event->CreatorProcessId : Event->ProcessId;
-        targetValue = Event->ProcessId;
-        break;
-    case BlackbirdIpcEtwFamilyProcess:
-        sourceValue = (Event->CreatorProcessId != 0) ? Event->CreatorProcessId : Event->ParentProcessId;
-        targetValue = Event->ProcessId;
-        break;
-    case BlackbirdIpcEtwFamilyDetection:
-    case BlackbirdIpcEtwFamilyThreatIntel:
-    case BlackbirdIpcEtwFamilyUserHook:
-    case BlackbirdIpcEtwFamilySocket:
-        sourceValue = Event->ProcessId;
-        targetValue = Event->TargetPid;
-        break;
-    default:
-        return FALSE;
+        case BlackbirdIpcEtwFamilyHandle:
+        case BlackbirdIpcEtwFamilyApc:
+            sourceValue = (Event->CallerPid != 0) ? Event->CallerPid : Event->ProcessId;
+            targetValue = Event->TargetPid;
+            break;
+        case BlackbirdIpcEtwFamilyThread:
+            sourceValue = (Event->CreatorProcessId != 0) ? Event->CreatorProcessId : Event->ProcessId;
+            targetValue = Event->ProcessId;
+            break;
+        case BlackbirdIpcEtwFamilyProcess:
+            sourceValue = (Event->CreatorProcessId != 0) ? Event->CreatorProcessId : Event->ParentProcessId;
+            targetValue = Event->ProcessId;
+            break;
+        case BlackbirdIpcEtwFamilyDetection:
+        case BlackbirdIpcEtwFamilyThreatIntel:
+        case BlackbirdIpcEtwFamilyUserHook:
+        case BlackbirdIpcEtwFamilySocket:
+            sourceValue = Event->ProcessId;
+            targetValue = Event->TargetPid;
+            break;
+        default:
+            return FALSE;
     }
 
     if (!ControllerU64ToPid(sourceValue, SourcePid) || !ControllerU64ToPid(targetValue, TargetPid))
@@ -423,8 +432,8 @@ static BOOL ControllerTryReadEventImagePath(_In_ const BLACKBIRD_IPC_ETW_EVENT *
     }
 
     *Path = NULL;
-    if ((Event->Family == BlackbirdIpcEtwFamilyProcess || Event->Family == BlackbirdIpcEtwFamilyImage) &&
-        Event->ImagePath[0] != L'\0')
+    if ((Event->Family == BlackbirdIpcEtwFamilyProcess || Event->Family == BlackbirdIpcEtwFamilyImage)
+        && Event->ImagePath[0] != L'\0')
     {
         *Path = Event->ImagePath;
         return TRUE;
@@ -466,7 +475,7 @@ static BOOL ControllerClientMatchPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLE
 
     if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
     {
-        eventPid = (DWORD)Event->ProcessId;
+        eventPid = (DWORD) Event->ProcessId;
     }
     else if (Event->EventProcessId != 0)
     {
@@ -495,7 +504,9 @@ static BOOL ControllerClientMatchPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLE
                 }
                 ControllerMarkDriverSubscriptionsDirty();
                 ControllerLog("[MON] pending launch matched clientPid=%lu targetPid=%lu image=%ws\n",
-                              Client->ProcessId, eventPid, eventImagePath);
+                              Client->ProcessId,
+                              eventPid,
+                              eventImagePath);
                 return TRUE;
             }
         }
@@ -511,7 +522,9 @@ static BOOL ControllerClientMatchPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLE
             Client->SubscriptionCount += 1;
             ControllerMarkDriverSubscriptionsDirty();
             ControllerLog("[MON] pending launch matched clientPid=%lu targetPid=%lu image=%ws\n",
-                          Client->ProcessId, eventPid, eventImagePath);
+                          Client->ProcessId,
+                          eventPid,
+                          eventImagePath);
         }
     }
 
@@ -582,14 +595,9 @@ VOID ControllerDispatchEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
         EnterCriticalSection(&client->Lock);
         if (ControllerClientHasEtwMatchLocked(client, &enriched))
         {
-            (void)ControllerClientEnqueueEtwEventLocked(client, &enriched);
+            (void) ControllerClientEnqueueEtwEventLocked(client, &enriched);
         }
         LeaveCriticalSection(&client->Lock);
         ControllerClientReleaseFromDispatch(client);
     }
 }
-
-
-
-
-

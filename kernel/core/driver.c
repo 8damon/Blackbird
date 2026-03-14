@@ -109,13 +109,13 @@ static NTSTATUS BLACKBIRDDriverSelfTest(VOID)
     }
 
     flags = InterlockedCompareExchange(&g_InitFlags, 0, 0);
-    if ((flags & BLACKBIRD_INIT_ETW) == 0 || (flags & BLACKBIRD_INIT_CONTROL) == 0 ||
-        (flags & BLACKBIRD_INIT_APC_MONITOR) == 0 || (flags & BLACKBIRD_INIT_PROCESS_MONITOR) == 0 ||
-        (flags & BLACKBIRD_INIT_IMAGE_MONITOR) == 0 || (flags & BLACKBIRD_INIT_REGISTRY_MONITOR) == 0 ||
-        (flags & BLACKBIRD_INIT_THREAD_MONITOR) == 0 || (flags & BLACKBIRD_INIT_FILESYSTEM_MONITOR) == 0 ||
-        (flags & BLACKBIRD_INIT_HANDLE_MONITOR) == 0 || (flags & BLACKBIRD_INIT_NTAPI_MONITOR) == 0 ||
-        (flags & BLACKBIRD_INIT_ANTI_TAMPER) == 0 || (flags & BLACKBIRD_INIT_CORRELATION) == 0 ||
-        (flags & BLACKBIRD_INIT_HOLLOWING_ENGINE) == 0)
+    if ((flags & BLACKBIRD_INIT_ETW) == 0 || (flags & BLACKBIRD_INIT_CONTROL) == 0
+        || (flags & BLACKBIRD_INIT_APC_MONITOR) == 0 || (flags & BLACKBIRD_INIT_PROCESS_MONITOR) == 0
+        || (flags & BLACKBIRD_INIT_IMAGE_MONITOR) == 0 || (flags & BLACKBIRD_INIT_REGISTRY_MONITOR) == 0
+        || (flags & BLACKBIRD_INIT_THREAD_MONITOR) == 0 || (flags & BLACKBIRD_INIT_FILESYSTEM_MONITOR) == 0
+        || (flags & BLACKBIRD_INIT_HANDLE_MONITOR) == 0 || (flags & BLACKBIRD_INIT_NTAPI_MONITOR) == 0
+        || (flags & BLACKBIRD_INIT_ANTI_TAMPER) == 0 || (flags & BLACKBIRD_INIT_CORRELATION) == 0
+        || (flags & BLACKBIRD_INIT_HOLLOWING_ENGINE) == 0)
     {
         return STATUS_DEVICE_CONFIGURATION_ERROR;
     }
@@ -141,7 +141,9 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtDriverUnload(WDFDRIVER Driver)
 
     if (KeGetCurrentIrql() != PASSIVE_LEVEL)
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: unload called at invalid IRQL=%lu.\n",
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                   DPFLTR_ERROR_LEVEL,
+                   "BLACKBIRD: unload called at invalid IRQL=%lu.\n",
                    KeGetCurrentIrql());
         return;
     }
@@ -207,8 +209,7 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
     status = BLACKBIRDControlInitialize(WdfGetDriver());
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: control plane init failed (0x%08X).\n",
-                   status);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: control plane init failed (0x%08X).\n", status);
         goto ExitFailure;
     }
     InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_CONTROL);
@@ -224,8 +225,8 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
     status = BLACKBIRDHollowingEngineInitialize();
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: hollowing engine init failed (0x%08X).\n",
-                   status);
+        DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: hollowing engine init failed (0x%08X).\n", status);
         goto ExitFailure;
     }
     InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_HOLLOWING_ENGINE);
@@ -241,8 +242,8 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
     status = BLACKBIRDProcessMonitorInitialize();
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: process monitor init failed (0x%08X).\n",
-                   status);
+        DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: process monitor init failed (0x%08X).\n", status);
         goto ExitFailure;
     }
     InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_PROCESS_MONITOR);
@@ -250,8 +251,7 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
     status = BLACKBIRDImageMonitorInitialize();
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: image monitor init failed (0x%08X).\n",
-                   status);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: image monitor init failed (0x%08X).\n", status);
         goto ExitFailure;
     }
     InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_IMAGE_MONITOR);
@@ -259,8 +259,8 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
     status = BLACKBIRDRegistryMonitorInitialize(DriverObject);
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: registry monitor init failed (0x%08X).\n",
-                   status);
+        DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: registry monitor init failed (0x%08X).\n", status);
         goto ExitFailure;
     }
     InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_REGISTRY_MONITOR);
@@ -268,8 +268,8 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
     status = BLACKBIRDThreadMonitorInitialize();
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: thread monitor init failed (0x%08X).\n",
-                   status);
+        DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: thread monitor init failed (0x%08X).\n", status);
         goto ExitFailure;
     }
     InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_THREAD_MONITOR);
@@ -277,7 +277,9 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
     status = BLACKBIRDFileSystemMonitorInitialize(DriverObject);
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: filesystem monitor init failed (0x%08X).\n",
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                   DPFLTR_ERROR_LEVEL,
+                   "BLACKBIRD: filesystem monitor init failed (0x%08X).\n",
                    status);
         goto ExitFailure;
     }
@@ -286,8 +288,8 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
     status = BLACKBIRDHandleMonitorInitialize();
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: handle monitor init failed (0x%08X).\n",
-                   status);
+        DbgPrintEx(
+                DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: handle monitor init failed (0x%08X).\n", status);
         goto ExitFailure;
     }
     InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_HANDLE_MONITOR);
@@ -295,8 +297,7 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
     status = BLACKBIRDNtApiMonitorInitialize();
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: ntapi monitor init failed (0x%08X).\n",
-                   status);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: ntapi monitor init failed (0x%08X).\n", status);
         goto ExitFailure;
     }
     InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_NTAPI_MONITOR);

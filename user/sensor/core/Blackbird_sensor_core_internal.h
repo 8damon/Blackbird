@@ -15,7 +15,7 @@
 #include "..\blackbird_etw_props.h"
 
 #ifndef NT_SUCCESS
-#define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
+#define NT_SUCCESS(Status) (((NTSTATUS) (Status)) >= 0)
 #endif
 
 typedef struct _BLACKBIRDSC_ETW_SESSION
@@ -48,7 +48,8 @@ extern volatile LONG g_BlackbirdLastSharedRingError;
 extern SRWLOCK g_BlackbirdProtocolLock;
 
 VOID WINAPI BLACKBIRDSCInternalRecordCallback(_In_ PEVENT_RECORD Record);
-VOID WINAPI BLACKBIRDSCStgDetectionBridgeCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName,
-                                                    _In_opt_ PVOID Context);
+VOID WINAPI BLACKBIRDSCStgDetectionBridgeCallback(_In_ PEVENT_RECORD Record,
+                                                  _In_opt_z_ PCWSTR EventName,
+                                                  _In_opt_ PVOID Context);
 
 #endif

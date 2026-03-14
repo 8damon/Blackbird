@@ -152,35 +152,49 @@ void PolicyDefaults(_Out_ BLACKBIRD_CLIENT_POLICY *Policy);
 BOOL PolicySetKeyValue(_Inout_ BLACKBIRD_CLIENT_POLICY *Policy, _In_z_ const char *Key, _In_z_ const char *Value);
 BOOL LoadPolicyFile(_In_z_ const char *Path, _Inout_ BLACKBIRD_CLIENT_POLICY *Policy);
 
-BOOL ResolveTargetPid(_In_ const BLACKBIRD_TARGET_SPEC *Spec, _Out_ DWORD *Pid,
+BOOL ResolveTargetPid(_In_ const BLACKBIRD_TARGET_SPEC *Spec,
+                      _Out_ DWORD *Pid,
                       _Out_opt_ BLACKBIRD_LAUNCH_TARGET *Launch);
 VOID PrimeTargetImageHint(_In_ HANDLE Device, _In_ const BLACKBIRD_TARGET_SPEC *Spec, _In_ DWORD TargetPid);
 BOOL AttachProgramTargetPid(_Inout_ BLACKBIRD_ATTACH_CONTEXT *Attach);
 
 BOOL WaitForPathLaunchViaEtw(_In_ const BLACKBIRD_TARGET_SPEC *Spec, _Out_ DWORD *Pid);
-BOOL BrokerEtwEventMatchesTargetPid(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event, _In_ DWORD TargetPid,
+BOOL BrokerEtwEventMatchesTargetPid(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event,
+                                    _In_ DWORD TargetPid,
                                     _In_ BLACKBIRD_TARGET_SCOPE Scope);
-BOOL StartBrokerEtw(_Inout_ BLACKBIRD_BROKER_ETW_CONTEXT *Broker, _Out_ HANDLE *ThreadHandle, _In_ DWORD SeedPid,
-                    _In_ DWORD StreamMask, _In_ BLACKBIRD_TARGET_SCOPE Scope);
+BOOL StartBrokerEtw(_Inout_ BLACKBIRD_BROKER_ETW_CONTEXT *Broker,
+                    _Out_ HANDLE *ThreadHandle,
+                    _In_ DWORD SeedPid,
+                    _In_ DWORD StreamMask,
+                    _In_ BLACKBIRD_TARGET_SCOPE Scope);
 
 void PrintUsage(void);
-BOOL IoctlRecordMatchesTargetPid(_In_ const BLACKBIRD_EVENT_RECORD *Record, _In_ DWORD TargetPid,
+BOOL IoctlRecordMatchesTargetPid(_In_ const BLACKBIRD_EVENT_RECORD *Record,
+                                 _In_ DWORD TargetPid,
                                  _In_ BLACKBIRD_TARGET_SCOPE Scope);
 void PrintHandleEvent(_In_ const BLACKBIRD_HANDLE_EVENT *h, _In_ DWORD sequence);
 void PrintThreadEvent(_In_ const BLACKBIRD_THREAD_EVENT *t, _In_ DWORD sequence);
 void PrintFileEvent(_In_ const BLACKBIRD_FILE_EVENT *f, _In_ DWORD sequence);
 
 void WideToUtf8(_In_opt_z_ const WCHAR *Wide, _Out_writes_z_(OutputChars) char *Output, _In_ size_t OutputChars);
-BOOL GetEtwWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PWSTR Output,
+BOOL GetEtwWideProperty(_In_ PEVENT_RECORD Record,
+                        _In_z_ PCWSTR Name,
+                        _Out_writes_z_(OutputChars) PWSTR Output,
                         _In_ size_t OutputChars);
-BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PSTR Output,
+BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record,
+                        _In_z_ PCWSTR Name,
+                        _Out_writes_z_(OutputChars) PSTR Output,
                         _In_ size_t OutputChars);
 BOOL GetEtwU64Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ ULONGLONG *Value);
 
 BOOL LoggerInitialize(_In_ const BLACKBIRD_CLIENT_POLICY *Policy, _In_ DWORD TargetPid);
 void LoggerShutdown(void);
-void LoggerEmitJson(_In_ DWORD Severity, _In_z_ const char *Category, _In_z_ const char *Kind, _In_ DWORD Pid,
-                    _In_ DWORD TargetPid, _In_z_ const char *Message);
+void LoggerEmitJson(_In_ DWORD Severity,
+                    _In_z_ const char *Category,
+                    _In_z_ const char *Kind,
+                    _In_ DWORD Pid,
+                    _In_ DWORD TargetPid,
+                    _In_z_ const char *Message);
 void LoggerEmitEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName);
 void LoggerEmitBrokerEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event);
 

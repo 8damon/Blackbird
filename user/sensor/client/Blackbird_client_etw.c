@@ -17,12 +17,15 @@ BOOL WaitForPathLaunchViaEtw(_In_ const BLACKBIRD_TARGET_SPEC *Spec, _Out_ DWORD
     *Pid = 0;
     ZeroMemory(&watch, sizeof(watch));
     ZeroMemory(&run, sizeof(run));
-    (void)StringCchCopyW(watch.TargetNormDos, RTL_NUMBER_OF(watch.TargetNormDos), Spec->PathNormDos);
-    (void)StringCchCopyW(watch.TargetNormNt, RTL_NUMBER_OF(watch.TargetNormNt), Spec->PathNormNt);
-    (void)StringCchCopyW(watch.TargetTail, RTL_NUMBER_OF(watch.TargetTail), Spec->PathTail);
+    (void) StringCchCopyW(watch.TargetNormDos, RTL_NUMBER_OF(watch.TargetNormDos), Spec->PathNormDos);
+    (void) StringCchCopyW(watch.TargetNormNt, RTL_NUMBER_OF(watch.TargetNormNt), Spec->PathNormNt);
+    (void) StringCchCopyW(watch.TargetTail, RTL_NUMBER_OF(watch.TargetTail), Spec->PathTail);
 
-    (void)StringCchPrintfW(sessionName, RTL_NUMBER_OF(sessionName), L"BlackbirdClientWatch-%lu-%lu",
-                           GetCurrentProcessId(), GetTickCount());
+    (void) StringCchPrintfW(sessionName,
+                            RTL_NUMBER_OF(sessionName),
+                            L"BlackbirdClientWatch-%lu-%lu",
+                            GetCurrentProcessId(),
+                            GetTickCount());
 
     if (!BLACKBIRDSCStartBlackbirdEtwSession(sessionName, FALSE, PathWatchEtwCallback, &watch, &session, NULL))
     {
@@ -58,7 +61,7 @@ BOOL WaitForPathLaunchViaEtw(_In_ const BLACKBIRD_TARGET_SPEC *Spec, _Out_ DWORD
     }
 
     BLACKBIRDSCStopEtwSession(session);
-    (void)WaitForSingleObject(etwThread, 3000);
+    (void) WaitForSingleObject(etwThread, 3000);
     CloseHandle(etwThread);
 
     return (*Pid != 0);
@@ -66,14 +69,14 @@ BOOL WaitForPathLaunchViaEtw(_In_ const BLACKBIRD_TARGET_SPEC *Spec, _Out_ DWORD
 
 static DWORD WINAPI LiveEtwRunThreadProc(_In_ LPVOID Context)
 {
-    BLACKBIRD_LIVE_ETW_CONTEXT *live = (BLACKBIRD_LIVE_ETW_CONTEXT *)Context;
+    BLACKBIRD_LIVE_ETW_CONTEXT *live = (BLACKBIRD_LIVE_ETW_CONTEXT *) Context;
 
     if (live == NULL || live->Session == NULL)
     {
         return 1;
     }
 
-    (void)BLACKBIRDSCRunEtwSession(live->Session);
+    (void) BLACKBIRDSCRunEtwSession(live->Session);
     InterlockedExchange(&live->SessionEnded, 1);
     return 0;
 }
@@ -93,8 +96,11 @@ static BOOL StartLiveEtw(_Inout_ BLACKBIRD_LIVE_ETW_CONTEXT *Live, _Out_ HANDLE 
     Live->Session = NULL;
     Live->SessionEnded = 0;
 
-    (void)StringCchPrintfW(sessionName, RTL_NUMBER_OF(sessionName), L"BlackbirdClientLive-%lu-%lu",
-                           GetCurrentProcessId(), GetTickCount());
+    (void) StringCchPrintfW(sessionName,
+                            RTL_NUMBER_OF(sessionName),
+                            L"BlackbirdClientLive-%lu-%lu",
+                            GetCurrentProcessId(),
+                            GetTickCount());
 
     if (!BLACKBIRDSCStartBlackbirdEtwSession(sessionName, TRUE, LiveEtwCallback, Live, &Live->Session, &tiEnabled))
     {
@@ -104,8 +110,7 @@ static BOOL StartLiveEtw(_Inout_ BLACKBIRD_LIVE_ETW_CONTEXT *Live, _Out_ HANDLE 
     if (!tiEnabled)
     {
         DWORD tiErr = BLACKBIRDSCGetLastThreatIntelEnableError();
-        printf("[*] ETW TI provider unavailable (tiEnableErr=%lu); continuing with Blackbird provider only.\n",
-               tiErr);
+        printf("[*] ETW TI provider unavailable (tiEnableErr=%lu); continuing with Blackbird provider only.\n", tiErr);
     }
 
     *ThreadHandle = CreateThread(NULL, 0, LiveEtwRunThreadProc, Live, 0, NULL);
@@ -122,7 +127,7 @@ static BOOL StartLiveEtw(_Inout_ BLACKBIRD_LIVE_ETW_CONTEXT *Live, _Out_ HANDLE 
 
 static DWORD WINAPI BrokerEtwRunThreadProc(_In_ LPVOID Context)
 {
-    BLACKBIRD_BROKER_ETW_CONTEXT *broker = (BLACKBIRD_BROKER_ETW_CONTEXT *)Context;
+    BLACKBIRD_BROKER_ETW_CONTEXT *broker = (BLACKBIRD_BROKER_ETW_CONTEXT *) Context;
 
     if (broker == NULL || broker->Device == NULL || broker->Device == INVALID_HANDLE_VALUE)
     {
@@ -151,8 +156,8 @@ static DWORD WINAPI BrokerEtwRunThreadProc(_In_ LPVOID Context)
         {
             continue;
         }
-        if (err == ERROR_OPERATION_ABORTED || err == ERROR_NOT_READY || err == ERROR_DEVICE_NOT_CONNECTED ||
-            err == ERROR_BROKEN_PIPE)
+        if (err == ERROR_OPERATION_ABORTED || err == ERROR_NOT_READY || err == ERROR_DEVICE_NOT_CONNECTED
+            || err == ERROR_BROKEN_PIPE)
         {
             break;
         }
@@ -170,8 +175,11 @@ static DWORD WINAPI BrokerEtwRunThreadProc(_In_ LPVOID Context)
     return 0;
 }
 
-BOOL StartBrokerEtw(_Inout_ BLACKBIRD_BROKER_ETW_CONTEXT *Broker, _Out_ HANDLE *ThreadHandle, _In_ DWORD SeedPid,
-                    _In_ DWORD StreamMask, _In_ BLACKBIRD_TARGET_SCOPE Scope)
+BOOL StartBrokerEtw(_Inout_ BLACKBIRD_BROKER_ETW_CONTEXT *Broker,
+                    _Out_ HANDLE *ThreadHandle,
+                    _In_ DWORD SeedPid,
+                    _In_ DWORD StreamMask,
+                    _In_ BLACKBIRD_TARGET_SCOPE Scope)
 {
     UINT32 capabilities = 0;
     BOOL tiEnabled = FALSE;
@@ -205,7 +213,7 @@ BOOL StartBrokerEtw(_Inout_ BLACKBIRD_BROKER_ETW_CONTEXT *Broker, _Out_ HANDLE *
     {
         if (!BLACKBIRDSCSetPids(Broker->Device, &SeedPid, 1, StreamMask))
         {
-            (void)BLACKBIRDSCCloseControlDevice(Broker->Device);
+            (void) BLACKBIRDSCCloseControlDevice(Broker->Device);
             Broker->Device = INVALID_HANDLE_VALUE;
             return FALSE;
         }
@@ -220,11 +228,10 @@ BOOL StartBrokerEtw(_Inout_ BLACKBIRD_BROKER_ETW_CONTEXT *Broker, _Out_ HANDLE *
     *ThreadHandle = CreateThread(NULL, 0, BrokerEtwRunThreadProc, Broker, 0, NULL);
     if (*ThreadHandle == NULL)
     {
-        (void)BLACKBIRDSCCloseControlDevice(Broker->Device);
+        (void) BLACKBIRDSCCloseControlDevice(Broker->Device);
         Broker->Device = INVALID_HANDLE_VALUE;
         return FALSE;
     }
 
     return TRUE;
 }
-

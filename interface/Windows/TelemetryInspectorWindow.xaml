@@ -27,6 +27,15 @@
             <Setter Property="TextWrapping" Value="NoWrap"/>
         </Style>
 
+        <Style x:Key="InspectorIdentityCellStyle" TargetType="TextBlock">
+            <Setter Property="ToolTip" Value="{Binding ActorToolTip}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding RelativeSource={RelativeSource Self}, Path=Tag}" Value="Target">
+                    <Setter Property="ToolTip" Value="{Binding TargetToolTip}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <Style x:Key="InspectorTreeItemStyle"
                TargetType="TreeViewItem"
                BasedOn="{StaticResource {x:Type TreeViewItem}}">
@@ -222,8 +231,18 @@
                           SelectionChanged="DetailsGrid_SelectionChanged">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Time" Width="124" Binding="{Binding TimestampUtc, StringFormat=HH:mm:ss.fff}"/>
-                        <DataGridTextColumn Header="Actor" Width="170" Binding="{Binding Actor}"/>
-                        <DataGridTextColumn Header="Target" Width="170" Binding="{Binding Target}"/>
+                        <DataGridTextColumn Header="Actor" Width="170" Binding="{Binding Actor}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource InspectorIdentityCellStyle}"/>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                        <DataGridTextColumn Header="Target" Width="170" Binding="{Binding Target}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource InspectorIdentityCellStyle}">
+                                    <Setter Property="Tag" Value="Target"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                         <DataGridTextColumn Header="Source" Width="110" Binding="{Binding Source}"/>
                         <DataGridTextColumn Header="Detection" Width="*" Binding="{Binding Detection}"/>
                     </DataGrid.Columns>

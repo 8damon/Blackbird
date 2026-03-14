@@ -1722,6 +1722,7 @@ namespace BlackbirdInterface
             string apiName = !string.IsNullOrWhiteSpace(view.EventName)
                 ? view.EventName
                 : (!string.IsNullOrWhiteSpace(view.Operation) ? view.Operation : "unknown");
+            string sensorOrigin = EventDetailFormatting.ClassifyHookSensorOrigin(view);
             uint sourcePid = view.ActorPid != 0 ? view.ActorPid : view.ProcessPid;
             if (sourcePid == 0)
             {
@@ -1734,19 +1735,19 @@ namespace BlackbirdInterface
                 return null;
             }
 
-            string key = BuildApiGraphKey(sourcePid, targetPid, threadId, apiName);
+            string key = BuildApiGraphKey(sourcePid, targetPid, threadId, apiName, sensorOrigin);
             if (_apiGraphRowsByKey.TryGetValue(key, out ApiCallGraphRowSnapshot? existing))
             {
                 existing.Hits = Math.Max(1, existing.Hits + 1);
                 existing.LastSeenUtc = view.TimestampUtc;
-                existing.SensorOrigin = EventDetailFormatting.ClassifyHookSensorOrigin(view);
+                existing.SensorOrigin = sensorOrigin;
             }
             else
             {
                 _apiGraphRowsByKey[key] = new ApiCallGraphRowSnapshot
                 {
                     ApiName = apiName,
-                    SensorOrigin = EventDetailFormatting.ClassifyHookSensorOrigin(view),
+                    SensorOrigin = sensorOrigin,
                     SourcePid = sourcePid,
                     TargetPid = targetPid,
                     ThreadId = threadId,
@@ -1760,7 +1761,7 @@ namespace BlackbirdInterface
             (string decodedAction, string decodedDetail) = BuildApiDecodedAction(view, rawReason);
             _apiGraphActionByKey[key] = decodedAction;
             _apiGraphDecodedByKey[key] = decodedDetail;
-            _apiGraphSensorByKey[key] = EventDetailFormatting.ClassifyHookSensorOrigin(view);
+            _apiGraphSensorByKey[key] = sensorOrigin;
 
             ScheduleApiGraphSnapshot();
             if (string.IsNullOrWhiteSpace(view.Details))
@@ -1807,7 +1808,8 @@ namespace BlackbirdInterface
             foreach (ApiCallGraphRowSnapshot row in snapshot)
             {
                 uint target = row.TargetPid != 0 ? row.TargetPid : row.SourcePid;
-                string key = BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName);
+                string sensor = string.IsNullOrWhiteSpace(row.SensorOrigin) ? "Unclassified" : row.SensorOrigin;
+                string key = BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName, sensor);
                 int flameWidth = Math.Clamp((int)Math.Round((row.Hits / (double)maxHits) * 24.0), 1, 24);
                 double heatPercent = Math.Clamp((row.Hits / (double)maxHits) * 100.0, 0.0, 100.0);
                 string rawReason = _apiGraphReasonByKey.TryGetValue(key, out string? reason) ? reason : string.Empty;
@@ -1817,7 +1819,7 @@ namespace BlackbirdInterface
                 string decodedDetail = _apiGraphDecodedByKey.TryGetValue(key, out string? detail)
                     ? detail
                     : rawReason;
-                string sensor = _apiGraphSensorByKey.TryGetValue(key, out string? sensorLabel) ? sensorLabel : "Unclassified";
+                sensor = _apiGraphSensorByKey.TryGetValue(key, out string? sensorLabel) ? sensorLabel : sensor;
                 rows.Add(new ApiCallGraphMainRowView
                 {
                     GraphKey = key,
@@ -1825,6 +1827,8 @@ namespace BlackbirdInterface
                     SensorLabel = sensor,
                     SensorBackground = BuildApiSensorBackground(sensor),
                     SensorForeground = BuildApiSensorForeground(sensor),
+                    HeatTrackBackground = BuildApiHeatTrackBackground(sensor),
+                    HeatFillBackground = BuildApiHeatFillBackground(sensor),
                     PathLabel = $"{row.SourcePid} -> {target}",
                     ThreadLabel = row.ThreadId == 0 ? "-" : row.ThreadId.ToString(CultureInfo.InvariantCulture),
                     Hits = Math.Max(1, row.Hits),
@@ -1929,8 +1933,8 @@ namespace BlackbirdInterface
             return compact[..260] + "...";
         }
 
-        private static string BuildApiGraphKey(uint sourcePid, uint targetPid, uint threadId, string apiName)
-            => $"{sourcePid}|{targetPid}|{threadId}|{apiName}";
+        private static string BuildApiGraphKey(uint sourcePid, uint targetPid, uint threadId, string apiName, string sensorOrigin)
+            => $"{sourcePid}|{targetPid}|{threadId}|{apiName}|{sensorOrigin}";
 
         private (string Action, string Detail) BuildApiDecodedAction(BrokerEtwEventView view, string rawReason)
         {
@@ -2407,7 +2411,10 @@ namespace BlackbirdInterface
             _apiMemorySignalsByPage.Clear();
             foreach (ApiCallGraphRowSnapshot row in apiGraph)
             {
-                string key = $"{row.SourcePid}|{row.TargetPid}|{row.ThreadId}|{row.ApiName}";
+                string sensorOrigin = string.IsNullOrWhiteSpace(row.SensorOrigin)
+                    ? "Unclassified"
+                    : row.SensorOrigin;
+                string key = BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName, sensorOrigin);
                 _apiGraphRowsByKey[key] = new ApiCallGraphRowSnapshot
                 {
                     ApiName = row.ApiName,
@@ -2418,9 +2425,7 @@ namespace BlackbirdInterface
                     Hits = row.Hits,
                     LastSeenUtc = row.LastSeenUtc
                 };
-                _apiGraphSensorByKey[key] = string.IsNullOrWhiteSpace(row.SensorOrigin)
-                    ? "Unclassified"
-                    : row.SensorOrigin;
+                _apiGraphSensorByKey[key] = sensorOrigin;
             }
             PublishApiGraphSnapshot();
             if (EtwPaneHost.ItemCount > 0)
@@ -2458,6 +2463,24 @@ namespace BlackbirdInterface
                 : sensor.StartsWith("Usermode", StringComparison.OrdinalIgnoreCase)
                     ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xB9, 0xE3, 0xFF))
                     : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xD0, 0xD0, 0xD0));
+        }
+
+        private static System.Windows.Media.Brush BuildApiHeatTrackBackground(string sensor)
+        {
+            return sensor.StartsWith("Kernel", StringComparison.OrdinalIgnoreCase)
+                ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x3A, 0x18, 0x18))
+                : sensor.StartsWith("Usermode", StringComparison.OrdinalIgnoreCase)
+                    ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x13, 0x27, 0x3D))
+                    : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x21, 0x26, 0x2D));
+        }
+
+        private static System.Windows.Media.Brush BuildApiHeatFillBackground(string sensor)
+        {
+            return sensor.StartsWith("Kernel", StringComparison.OrdinalIgnoreCase)
+                ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xB2, 0x4A, 0x4A))
+                : sensor.StartsWith("Usermode", StringComparison.OrdinalIgnoreCase)
+                    ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x3E, 0x84, 0xC6))
+                    : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x5C, 0x66, 0x73));
         }
 
         private async Task RunPreflightAsync(int pid, bool userInitiated = false)

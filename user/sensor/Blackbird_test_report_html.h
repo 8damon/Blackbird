@@ -23,8 +23,11 @@ typedef struct _BLACKBIRD_REPORT_CHECK
     const char *Text;
 } BLACKBIRD_REPORT_CHECK;
 
-BOOL BLACKBIRDWriteHtmlReport(_In_z_ const char *OutputPath, _In_z_ const char *Title,
-                                _In_reads_(MetaCount) const BLACKBIRD_REPORT_META *Metadata, _In_ size_t MetaCount,
-                                _In_reads_(CheckCount) const BLACKBIRD_REPORT_CHECK *Checks, _In_ size_t CheckCount);
+BOOL BLACKBIRDWriteHtmlReport(_In_z_ const char *OutputPath,
+                              _In_z_ const char *Title,
+                              _In_reads_(MetaCount) const BLACKBIRD_REPORT_META *Metadata,
+                              _In_ size_t MetaCount,
+                              _In_reads_(CheckCount) const BLACKBIRD_REPORT_CHECK *Checks,
+                              _In_ size_t CheckCount);
 
 #endif

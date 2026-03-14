@@ -13,10 +13,11 @@ static unsigned __int64 SuiteReadCycles(_In_ const SUITE_RESULTS *Results)
     return 0;
 }
 
-typedef NTSTATUS(NTAPI *BLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_FN)(
-    _In_ SYSTEM_INFORMATION_CLASS SystemInformationClass,
-    _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation, _In_ ULONG SystemInformationLength,
-    _Out_opt_ PULONG ReturnLength);
+typedef NTSTATUS(NTAPI *BLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_FN)(_In_ SYSTEM_INFORMATION_CLASS SystemInformationClass,
+                                                                  _Out_writes_bytes_opt_(SystemInformationLength)
+                                                                          PVOID SystemInformation,
+                                                                  _In_ ULONG SystemInformationLength,
+                                                                  _Out_opt_ PULONG ReturnLength);
 
 typedef NTSTATUS(NTAPI *BLACKBIRD_RTL_GET_VERSION_FN)(_Inout_ PRTL_OSVERSIONINFOW VersionInformation);
 
@@ -31,8 +32,10 @@ typedef struct _BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION
     BOOLEAN KernelDebuggerEnabled;
     BOOLEAN KernelDebuggerNotPresent;
 } BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION;
-BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PSTR Output,
-                               _In_ size_t OutputChars)
+BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record,
+                        _In_z_ PCWSTR Name,
+                        _Out_writes_z_(OutputChars) PSTR Output,
+                        _In_ size_t OutputChars)
 {
     TDHSTATUS status;
     PROPERTY_DATA_DESCRIPTOR descriptor;
@@ -47,7 +50,7 @@ BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writ
     Output[0] = '\0';
 
     ZeroMemory(&descriptor, sizeof(descriptor));
-    descriptor.PropertyName = (ULONGLONG)(ULONG_PTR)Name;
+    descriptor.PropertyName = (ULONGLONG) (ULONG_PTR) Name;
     descriptor.ArrayIndex = ULONG_MAX;
 
     status = TdhGetPropertySize(Record, 0, NULL, 1, &descriptor, &propertySize);
@@ -56,7 +59,7 @@ BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writ
         return FALSE;
     }
 
-    propertyRaw = (PBYTE)malloc(propertySize + 1);
+    propertyRaw = (PBYTE) malloc(propertySize + 1);
     if (propertyRaw == NULL)
     {
         return FALSE;
@@ -66,7 +69,7 @@ BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writ
     status = TdhGetProperty(Record, 0, NULL, 1, &descriptor, propertySize, propertyRaw);
     if (status == ERROR_SUCCESS)
     {
-        (void)StringCchCopyA(Output, OutputChars, (PCSTR)propertyRaw);
+        (void) StringCchCopyA(Output, OutputChars, (PCSTR) propertyRaw);
         ok = TRUE;
     }
 
@@ -89,12 +92,12 @@ static VOID SuiteFreeCollectedData(_Inout_ SUITE_RESULTS *Results)
         {
             if (Results->Meta[i].Key != NULL)
             {
-                free((void *)Results->Meta[i].Key);
+                free((void *) Results->Meta[i].Key);
                 Results->Meta[i].Key = NULL;
             }
             if (Results->Meta[i].Value != NULL)
             {
-                free((void *)Results->Meta[i].Value);
+                free((void *) Results->Meta[i].Value);
                 Results->Meta[i].Value = NULL;
             }
         }
@@ -110,7 +113,7 @@ static VOID SuiteFreeCollectedData(_Inout_ SUITE_RESULTS *Results)
         {
             if (Results->Checks[i].Text != NULL)
             {
-                free((void *)Results->Checks[i].Text);
+                free((void *) Results->Checks[i].Text);
                 Results->Checks[i].Text = NULL;
             }
         }
@@ -132,12 +135,12 @@ static char *SuiteDupString(_In_z_ const char *Text)
     }
 
     len = strlen(Text);
-    copy = (char *)malloc(len + 1);
+    copy = (char *) malloc(len + 1);
     if (copy == NULL)
     {
         return NULL;
     }
-    (void)memcpy(copy, Text, len + 1);
+    (void) memcpy(copy, Text, len + 1);
     return copy;
 }
 
@@ -157,7 +160,7 @@ static BOOL SuiteEnsureMetaCapacity(_Inout_ SUITE_RESULTS *Results)
     }
 
     nextCapacity = (Results->MetaCapacity == 0) ? 16 : (Results->MetaCapacity * 2);
-    grown = (BLACKBIRD_REPORT_META *)realloc(Results->Meta, nextCapacity * sizeof(BLACKBIRD_REPORT_META));
+    grown = (BLACKBIRD_REPORT_META *) realloc(Results->Meta, nextCapacity * sizeof(BLACKBIRD_REPORT_META));
     if (grown == NULL)
     {
         return FALSE;
@@ -185,7 +188,7 @@ static BOOL SuiteEnsureCheckCapacity(_Inout_ SUITE_RESULTS *Results)
     }
 
     nextCapacity = (Results->CheckCapacity == 0) ? 64 : (Results->CheckCapacity * 2);
-    grown = (BLACKBIRD_REPORT_CHECK *)realloc(Results->Checks, nextCapacity * sizeof(BLACKBIRD_REPORT_CHECK));
+    grown = (BLACKBIRD_REPORT_CHECK *) realloc(Results->Checks, nextCapacity * sizeof(BLACKBIRD_REPORT_CHECK));
     if (grown == NULL)
     {
         return FALSE;
@@ -202,14 +205,14 @@ static const char *SuiteCheckStatusText(_In_ BLACKBIRD_REPORT_CHECK_STATUS Statu
 {
     switch (Status)
     {
-    case BlackbirdReportCheckPass:
-        return "PASS";
-    case BlackbirdReportCheckFail:
-        return "FAIL";
-    case BlackbirdReportCheckSkip:
-        return "SKIP";
-    default:
-        return "UNKNOWN";
+        case BlackbirdReportCheckPass:
+            return "PASS";
+        case BlackbirdReportCheckFail:
+            return "FAIL";
+        case BlackbirdReportCheckSkip:
+            return "SKIP";
+        default:
+            return "UNKNOWN";
     }
 }
 
@@ -217,21 +220,21 @@ static INT SuiteCheckSortPriority(_In_ BLACKBIRD_REPORT_CHECK_STATUS Status)
 {
     switch (Status)
     {
-    case BlackbirdReportCheckFail:
-        return 0;
-    case BlackbirdReportCheckSkip:
-        return 1;
-    case BlackbirdReportCheckPass:
-        return 2;
-    default:
-        return 3;
+        case BlackbirdReportCheckFail:
+            return 0;
+        case BlackbirdReportCheckSkip:
+            return 1;
+        case BlackbirdReportCheckPass:
+            return 2;
+        default:
+            return 3;
     }
 }
 
 static int __cdecl SuiteCompareChecks(_In_ const VOID *Left, _In_ const VOID *Right)
 {
-    const BLACKBIRD_REPORT_CHECK *a = (const BLACKBIRD_REPORT_CHECK *)Left;
-    const BLACKBIRD_REPORT_CHECK *b = (const BLACKBIRD_REPORT_CHECK *)Right;
+    const BLACKBIRD_REPORT_CHECK *a = (const BLACKBIRD_REPORT_CHECK *) Left;
+    const BLACKBIRD_REPORT_CHECK *b = (const BLACKBIRD_REPORT_CHECK *) Right;
     INT ap;
     INT bp;
 
@@ -270,13 +273,13 @@ static BOOL SuiteBuildSortedChecks(_In_ const SUITE_RESULTS *Results,
         return TRUE;
     }
 
-    sorted = (BLACKBIRD_REPORT_CHECK *)malloc(Results->CheckCount * sizeof(BLACKBIRD_REPORT_CHECK));
+    sorted = (BLACKBIRD_REPORT_CHECK *) malloc(Results->CheckCount * sizeof(BLACKBIRD_REPORT_CHECK));
     if (sorted == NULL)
     {
         return FALSE;
     }
 
-    (void)memcpy(sorted, Results->Checks, Results->CheckCount * sizeof(BLACKBIRD_REPORT_CHECK));
+    (void) memcpy(sorted, Results->Checks, Results->CheckCount * sizeof(BLACKBIRD_REPORT_CHECK));
     qsort(sorted, Results->CheckCount, sizeof(BLACKBIRD_REPORT_CHECK), SuiteCompareChecks);
 
     *OutChecks = sorted;
@@ -332,8 +335,8 @@ static VOID SuiteLogMetaLine(_Inout_opt_ SUITE_RESULTS *Results, _In_z_ const ch
     Results->MetaCount += 1;
 }
 
-static VOID SuiteRecordCheck(_Inout_opt_ SUITE_RESULTS *Results, _In_ BLACKBIRD_REPORT_CHECK_STATUS Status,
-                             _In_z_ const char *Text)
+static VOID
+SuiteRecordCheck(_Inout_opt_ SUITE_RESULTS *Results, _In_ BLACKBIRD_REPORT_CHECK_STATUS Status, _In_z_ const char *Text)
 {
     UINT32 id;
     const char *statusText;
@@ -357,14 +360,14 @@ static VOID SuiteRecordCheck(_Inout_opt_ SUITE_RESULTS *Results, _In_ BLACKBIRD_
     {
         LARGE_INTEGER qpcNow;
         QueryPerformanceCounter(&qpcNow);
-        nowQpc = (ULONGLONG)qpcNow.QuadPart;
+        nowQpc = (ULONGLONG) qpcNow.QuadPart;
         if (Results->LastCheckQpc != 0 && nowQpc >= Results->LastCheckQpc)
         {
-            deltaMs = ((double)(nowQpc - Results->LastCheckQpc) * 1000.0) / (double)Results->QpcFrequency.QuadPart;
+            deltaMs = ((double) (nowQpc - Results->LastCheckQpc) * 1000.0) / (double) Results->QpcFrequency.QuadPart;
         }
         if (Results->SuiteStartQpc != 0 && nowQpc >= Results->SuiteStartQpc)
         {
-            suiteMs = ((double)(nowQpc - Results->SuiteStartQpc) * 1000.0) / (double)Results->QpcFrequency.QuadPart;
+            suiteMs = ((double) (nowQpc - Results->SuiteStartQpc) * 1000.0) / (double) Results->QpcFrequency.QuadPart;
         }
         Results->LastCheckQpc = nowQpc;
     }
@@ -381,17 +384,22 @@ static VOID SuiteRecordCheck(_Inout_opt_ SUITE_RESULTS *Results, _In_ BLACKBIRD_
 
     if (Results != NULL && Results->CycleCounterAvailable)
     {
-        (void)sprintf_s(rendered, RTL_NUMBER_OF(rendered), "%s [+%.3fms suite=%.3fms +%llu cyc]", Text, deltaMs,
-                        suiteMs, (unsigned long long)deltaCycles);
+        (void) sprintf_s(rendered,
+                         RTL_NUMBER_OF(rendered),
+                         "%s [+%.3fms suite=%.3fms +%llu cyc]",
+                         Text,
+                         deltaMs,
+                         suiteMs,
+                         (unsigned long long) deltaCycles);
     }
     else
     {
-        (void)sprintf_s(rendered, RTL_NUMBER_OF(rendered), "%s [+%.3fms suite=%.3fms]", Text, deltaMs, suiteMs);
+        (void) sprintf_s(rendered, RTL_NUMBER_OF(rendered), "%s [+%.3fms suite=%.3fms]", Text, deltaMs, suiteMs);
     }
 
     if (id != 0)
     {
-        printf("[%s][T%04lu] %s\n", statusText, (unsigned long)id, rendered);
+        printf("[%s][T%04lu] %s\n", statusText, (unsigned long) id, rendered);
     }
     else
     {
@@ -420,7 +428,9 @@ static VOID SuiteRecordCheck(_Inout_opt_ SUITE_RESULTS *Results, _In_ BLACKBIRD_
     Results->CheckCount += 1;
 }
 
-static BOOL QueryRegSzA(_In_z_ const char *SubKey, _In_z_ const char *ValueName, _Out_writes_z_(OutChars) char *Out,
+static BOOL QueryRegSzA(_In_z_ const char *SubKey,
+                        _In_z_ const char *ValueName,
+                        _Out_writes_z_(OutChars) char *Out,
                         _In_ size_t OutChars)
 {
     DWORD bytes;
@@ -431,7 +441,7 @@ static BOOL QueryRegSzA(_In_z_ const char *SubKey, _In_z_ const char *ValueName,
         return FALSE;
     }
 
-    bytes = (DWORD)OutChars;
+    bytes = (DWORD) OutChars;
     Out[0] = '\0';
     status = RegGetValueA(HKEY_LOCAL_MACHINE, SubKey, ValueName, RRF_RT_REG_SZ, NULL, Out, &bytes);
     return (status == ERROR_SUCCESS);
@@ -457,7 +467,7 @@ static BOOL QueryKernelImageVersion(_Out_ DWORD *Major, _Out_ DWORD *Minor, _Out
 {
     WCHAR sysDir[MAX_PATH];
     WCHAR path[MAX_PATH];
-    const WCHAR *names[] = {L"ntoskrnl.exe", L"ntkrnlmp.exe"};
+    const WCHAR *names[] = { L"ntoskrnl.exe", L"ntkrnlmp.exe" };
     DWORD i;
 
     if (Major == NULL || Minor == NULL || Build == NULL || Revision == NULL)
@@ -493,7 +503,7 @@ static BOOL QueryKernelImageVersion(_Out_ DWORD *Major, _Out_ DWORD *Minor, _Out
             continue;
         }
 
-        blob = (BYTE *)malloc(size);
+        blob = (BYTE *) malloc(size);
         if (blob == NULL)
         {
             return FALSE;
@@ -504,7 +514,7 @@ static BOOL QueryKernelImageVersion(_Out_ DWORD *Major, _Out_ DWORD *Minor, _Out
             free(blob);
             continue;
         }
-        if (!VerQueryValueW(blob, L"\\", (LPVOID *)&ffi, &ffiSize) || ffi == NULL || ffiSize < sizeof(*ffi))
+        if (!VerQueryValueW(blob, L"\\", (LPVOID *) &ffi, &ffiSize) || ffi == NULL || ffiSize < sizeof(*ffi))
         {
             free(blob);
             continue;
@@ -551,40 +561,53 @@ VOID LogEnvironmentBaseline(_Inout_ SUITE_RESULTS *Results)
     GetNativeSystemInfo(&si);
     switch (si.wProcessorArchitecture)
     {
-    case PROCESSOR_ARCHITECTURE_AMD64:
-        (void)strcpy_s(arch, RTL_NUMBER_OF(arch), "x64");
-        break;
-    case PROCESSOR_ARCHITECTURE_ARM64:
-        (void)strcpy_s(arch, RTL_NUMBER_OF(arch), "arm64");
-        break;
-    case PROCESSOR_ARCHITECTURE_INTEL:
-        (void)strcpy_s(arch, RTL_NUMBER_OF(arch), "x86");
-        break;
-    default:
-        (void)strcpy_s(arch, RTL_NUMBER_OF(arch), "unknown");
-        break;
+        case PROCESSOR_ARCHITECTURE_AMD64:
+            (void) strcpy_s(arch, RTL_NUMBER_OF(arch), "x64");
+            break;
+        case PROCESSOR_ARCHITECTURE_ARM64:
+            (void) strcpy_s(arch, RTL_NUMBER_OF(arch), "arm64");
+            break;
+        case PROCESSOR_ARCHITECTURE_INTEL:
+            (void) strcpy_s(arch, RTL_NUMBER_OF(arch), "x86");
+            break;
+        default:
+            (void) strcpy_s(arch, RTL_NUMBER_OF(arch), "unknown");
+            break;
     }
 
     ntdll = GetModuleHandleW(L"ntdll.dll");
-    rtlGetVersion = (ntdll != NULL) ? (BLACKBIRD_RTL_GET_VERSION_FN)GetProcAddress(ntdll, "RtlGetVersion") : NULL;
-    ntQuerySystemInformation =
-        (ntdll != NULL) ? (BLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_FN)GetProcAddress(ntdll, "NtQuerySystemInformation")
-                        : NULL;
+    rtlGetVersion = (ntdll != NULL) ? (BLACKBIRD_RTL_GET_VERSION_FN) GetProcAddress(ntdll, "RtlGetVersion") : NULL;
+    ntQuerySystemInformation = (ntdll != NULL)
+            ? (BLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_FN) GetProcAddress(ntdll, "NtQuerySystemInformation")
+            : NULL;
 
-    if (rtlGetVersion != NULL && NT_SUCCESS(rtlGetVersion((PRTL_OSVERSIONINFOW)&osw)))
+    if (rtlGetVersion != NULL && NT_SUCCESS(rtlGetVersion((PRTL_OSVERSIONINFOW) &osw)))
     {
-        (void)QueryRegSzA("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "ProductName", productName,
-                          RTL_NUMBER_OF(productName));
-        (void)QueryRegSzA("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "DisplayVersion", displayVersion,
-                          RTL_NUMBER_OF(displayVersion));
-        (void)QueryRegSzA("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "CurrentBuildNumber", currentBuild,
-                          RTL_NUMBER_OF(currentBuild));
-        (void)QueryRegDword("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "UBR", &ubr);
+        (void) QueryRegSzA("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+                           "ProductName",
+                           productName,
+                           RTL_NUMBER_OF(productName));
+        (void) QueryRegSzA("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+                           "DisplayVersion",
+                           displayVersion,
+                           RTL_NUMBER_OF(displayVersion));
+        (void) QueryRegSzA("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+                           "CurrentBuildNumber",
+                           currentBuild,
+                           RTL_NUMBER_OF(currentBuild));
+        (void) QueryRegDword("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "UBR", &ubr);
 
-        (void)sprintf_s(line, RTL_NUMBER_OF(line), "%s %lu.%lu.%lu ubr=%lu display=%s build=%s arch=%s",
-                        (productName[0] != '\0') ? productName : "Windows", osw.dwMajorVersion, osw.dwMinorVersion,
-                        osw.dwBuildNumber, ubr, (displayVersion[0] != '\0') ? displayVersion : "n/a",
-                        (currentBuild[0] != '\0') ? currentBuild : "n/a", arch);
+        (void) sprintf_s(line,
+                         RTL_NUMBER_OF(line),
+                         "%s %lu.%lu.%lu ubr=%lu display=%s build=%s arch=%s",
+                         (productName[0] != '\0') ? productName : "Windows",
+                         osw.dwMajorVersion,
+                         osw.dwMinorVersion,
+                         osw.dwBuildNumber,
+                         ubr,
+                         (displayVersion[0] != '\0') ? displayVersion : "n/a",
+                         (currentBuild[0] != '\0') ? currentBuild : "n/a",
+                         arch);
         SuiteLogMetaLine(Results, "environmentOs", line);
     }
     else
@@ -594,7 +617,7 @@ VOID LogEnvironmentBaseline(_Inout_ SUITE_RESULTS *Results)
 
     if (QueryKernelImageVersion(&kmj, &kmn, &kbd, &krv))
     {
-        (void)sprintf_s(line, RTL_NUMBER_OF(line), "%lu.%lu.%lu.%lu", kmj, kmn, kbd, krv);
+        (void) sprintf_s(line, RTL_NUMBER_OF(line), "%lu.%lu.%lu.%lu", kmj, kmn, kbd, krv);
         SuiteLogMetaLine(Results, "environmentKernelImageVersion", line);
     }
     else
@@ -604,43 +627,48 @@ VOID LogEnvironmentBaseline(_Inout_ SUITE_RESULTS *Results)
 
     if (ntQuerySystemInformation != NULL)
     {
-        status = ntQuerySystemInformation((SYSTEM_INFORMATION_CLASS)BLACKBIRD_SYSTEM_CODEINTEGRITY_INFORMATION_CLASS,
-                                          &ci, sizeof(ci), NULL);
+        status = ntQuerySystemInformation(
+                (SYSTEM_INFORMATION_CLASS) BLACKBIRD_SYSTEM_CODEINTEGRITY_INFORMATION_CLASS, &ci, sizeof(ci), NULL);
         if (NT_SUCCESS(status))
         {
-            (void)sprintf_s(line, RTL_NUMBER_OF(line),
-                            "0x%08lX enabled %s testsigning %s umci %s hvci %s hvciAudit %s hvciStrict %s debug %s "
-                            "flighting %s whqlEnforce %s",
-                            ci.CodeIntegrityOptions,
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_ENABLED) ? "yes" : "no",
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_TESTSIGN) ? "yes" : "no",
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_UMCI_ENABLED) ? "yes" : "no",
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_HVCI_KMCI_ENABLED) ? "yes" : "no",
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_HVCI_KMCI_AUDIT) ? "yes" : "no",
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_HVCI_KMCI_STRICT) ? "yes" : "no",
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_DEBUGMODE) ? "yes" : "no",
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_FLIGHTING) ? "yes" : "no",
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_WHQL_ENFORCEMENT_ENABLED) ? "yes" : "no");
+            (void) sprintf_s(line,
+                             RTL_NUMBER_OF(line),
+                             "0x%08lX enabled %s testsigning %s umci %s hvci %s hvciAudit %s hvciStrict %s debug %s "
+                             "flighting %s whqlEnforce %s",
+                             ci.CodeIntegrityOptions,
+                             (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_ENABLED) ? "yes" : "no",
+                             (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_TESTSIGN) ? "yes" : "no",
+                             (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_UMCI_ENABLED) ? "yes" : "no",
+                             (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_HVCI_KMCI_ENABLED) ? "yes" : "no",
+                             (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_HVCI_KMCI_AUDIT) ? "yes" : "no",
+                             (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_HVCI_KMCI_STRICT) ? "yes" : "no",
+                             (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_DEBUGMODE) ? "yes" : "no",
+                             (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_FLIGHTING) ? "yes" : "no",
+                             (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_WHQL_ENFORCEMENT_ENABLED) ? "yes" : "no");
             SuiteLogMetaLine(Results, "environmentCiOptions", line);
         }
         else
         {
-            (void)sprintf_s(line, RTL_NUMBER_OF(line), "unavailable ntstatus=0x%08lX", (ULONG)status);
+            (void) sprintf_s(line, RTL_NUMBER_OF(line), "unavailable ntstatus=0x%08lX", (ULONG) status);
             SuiteLogMetaLine(Results, "environmentCiOptions", line);
         }
 
-        status =
-            ntQuerySystemInformation((SYSTEM_INFORMATION_CLASS)BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION_CLASS,
-                                     &kdInfo, sizeof(kdInfo), NULL);
+        status = ntQuerySystemInformation((SYSTEM_INFORMATION_CLASS) BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION_CLASS,
+                                          &kdInfo,
+                                          sizeof(kdInfo),
+                                          NULL);
         if (NT_SUCCESS(status))
         {
-            (void)sprintf_s(line, RTL_NUMBER_OF(line), "%s present %s", kdInfo.KernelDebuggerEnabled ? "yes" : "no",
-                            kdInfo.KernelDebuggerNotPresent ? "no" : "yes");
+            (void) sprintf_s(line,
+                             RTL_NUMBER_OF(line),
+                             "%s present %s",
+                             kdInfo.KernelDebuggerEnabled ? "yes" : "no",
+                             kdInfo.KernelDebuggerNotPresent ? "no" : "yes");
             SuiteLogMetaLine(Results, "environmentKernelDebugger", line);
         }
         else
         {
-            (void)sprintf_s(line, RTL_NUMBER_OF(line), "unavailable ntstatus=0x%08lX", (ULONG)status);
+            (void) sprintf_s(line, RTL_NUMBER_OF(line), "unavailable ntstatus=0x%08lX", (ULONG) status);
             SuiteLogMetaLine(Results, "environmentKernelDebugger", line);
         }
     }
@@ -672,7 +700,7 @@ BOOL SuiteInitReport(_Inout_ SUITE_RESULTS *Results)
     {
         LARGE_INTEGER qpcNow;
         QueryPerformanceCounter(&qpcNow);
-        Results->SuiteStartQpc = (ULONGLONG)qpcNow.QuadPart;
+        Results->SuiteStartQpc = (ULONGLONG) qpcNow.QuadPart;
         Results->LastCheckQpc = Results->SuiteStartQpc;
     }
 #if defined(_M_X64) || defined(_M_IX86)
@@ -691,16 +719,30 @@ BOOL SuiteInitReport(_Inout_ SUITE_RESULTS *Results)
     }
 
     GetSystemTime(&stUtc);
-    if (sprintf_s(fileName, RTL_NUMBER_OF(fileName),
-                  "test-results\\BlackbirdTestSuite-%04u%02u%02u-%02u%02u%02uZ.txt", stUtc.wYear, stUtc.wMonth,
-                  stUtc.wDay, stUtc.wHour, stUtc.wMinute, stUtc.wSecond) <= 0)
+    if (sprintf_s(fileName,
+                  RTL_NUMBER_OF(fileName),
+                  "test-results\\BlackbirdTestSuite-%04u%02u%02u-%02u%02u%02uZ.txt",
+                  stUtc.wYear,
+                  stUtc.wMonth,
+                  stUtc.wDay,
+                  stUtc.wHour,
+                  stUtc.wMinute,
+                  stUtc.wSecond)
+        <= 0)
     {
         return FALSE;
     }
 
-    if (sprintf_s(htmlName, RTL_NUMBER_OF(htmlName),
-                  "test-results\\BlackbirdTestSuite-%04u%02u%02u-%02u%02u%02uZ.html", stUtc.wYear, stUtc.wMonth,
-                  stUtc.wDay, stUtc.wHour, stUtc.wMinute, stUtc.wSecond) <= 0)
+    if (sprintf_s(htmlName,
+                  RTL_NUMBER_OF(htmlName),
+                  "test-results\\BlackbirdTestSuite-%04u%02u%02u-%02u%02u%02uZ.html",
+                  stUtc.wYear,
+                  stUtc.wMonth,
+                  stUtc.wDay,
+                  stUtc.wHour,
+                  stUtc.wMinute,
+                  stUtc.wSecond)
+        <= 0)
     {
         return FALSE;
     }
@@ -711,11 +753,19 @@ BOOL SuiteInitReport(_Inout_ SUITE_RESULTS *Results)
         return FALSE;
     }
 
-    (void)strcpy_s(Results->ReportPath, RTL_NUMBER_OF(Results->ReportPath), fileName);
-    (void)strcpy_s(Results->HtmlReportPath, RTL_NUMBER_OF(Results->HtmlReportPath), htmlName);
+    (void) strcpy_s(Results->ReportPath, RTL_NUMBER_OF(Results->ReportPath), fileName);
+    (void) strcpy_s(Results->HtmlReportPath, RTL_NUMBER_OF(Results->HtmlReportPath), htmlName);
 
-    if (sprintf_s(startedUtc, RTL_NUMBER_OF(startedUtc), "%04u-%02u-%02uT%02u:%02u:%02uZ", stUtc.wYear, stUtc.wMonth,
-                  stUtc.wDay, stUtc.wHour, stUtc.wMinute, stUtc.wSecond) <= 0)
+    if (sprintf_s(startedUtc,
+                  RTL_NUMBER_OF(startedUtc),
+                  "%04u-%02u-%02uT%02u:%02u:%02uZ",
+                  stUtc.wYear,
+                  stUtc.wMonth,
+                  stUtc.wDay,
+                  stUtc.wHour,
+                  stUtc.wMinute,
+                  stUtc.wSecond)
+        <= 0)
     {
         fclose(Results->Report);
         Results->Report = NULL;
@@ -729,7 +779,7 @@ BOOL SuiteInitReport(_Inout_ SUITE_RESULTS *Results)
     if (Results->QpcFrequency.QuadPart > 0)
     {
         CHAR qpcFreq[64];
-        (void)sprintf_s(qpcFreq, RTL_NUMBER_OF(qpcFreq), "%lld", Results->QpcFrequency.QuadPart);
+        (void) sprintf_s(qpcFreq, RTL_NUMBER_OF(qpcFreq), "%lld", Results->QpcFrequency.QuadPart);
         SuiteLogMetaLine(Results, "timingQpcFrequency", qpcFreq);
     }
     SuiteLogMetaLine(Results, "timingCycleCounter", Results->CycleCounterAvailable ? "rdtsc" : "unavailable");
@@ -760,19 +810,24 @@ VOID SuiteCloseReport(_Inout_ SUITE_RESULTS *Results, _In_ DWORD Polls)
     {
         LARGE_INTEGER qpcNow;
         QueryPerformanceCounter(&qpcNow);
-        if ((ULONGLONG)qpcNow.QuadPart >= Results->SuiteStartQpc)
+        if ((ULONGLONG) qpcNow.QuadPart >= Results->SuiteStartQpc)
         {
-            suiteMs = ((double)((ULONGLONG)qpcNow.QuadPart - Results->SuiteStartQpc) * 1000.0) /
-                      (double)Results->QpcFrequency.QuadPart;
+            suiteMs = ((double) ((ULONGLONG) qpcNow.QuadPart - Results->SuiteStartQpc) * 1000.0)
+                    / (double) Results->QpcFrequency.QuadPart;
         }
     }
 
     failed = Results->Total - Results->Passed;
-    (void)sprintf_s(summary, RTL_NUMBER_OF(summary),
-                    "BlackbirdTestSuite complete. tests-passed=%d/%d tests-failed=%d tests-skipped=%d polls=%lu",
-                    Results->Passed, Results->Total, failed, Results->Skipped, Polls);
-    (void)sprintf_s(timingSummary, RTL_NUMBER_OF(timingSummary), "suiteTiming elapsedMs=%.3f polls=%lu", suiteMs,
-                    Polls);
+    (void) sprintf_s(summary,
+                     RTL_NUMBER_OF(summary),
+                     "BlackbirdTestSuite complete. tests-passed=%d/%d tests-failed=%d tests-skipped=%d polls=%lu",
+                     Results->Passed,
+                     Results->Total,
+                     failed,
+                     Results->Skipped,
+                     Polls);
+    (void) sprintf_s(
+            timingSummary, RTL_NUMBER_OF(timingSummary), "suiteTiming elapsedMs=%.3f polls=%lu", suiteMs, Polls);
 
     if (!SuiteBuildSortedChecks(Results, &sortedChecks, &sortedCount))
     {
@@ -797,7 +852,10 @@ VOID SuiteCloseReport(_Inout_ SUITE_RESULTS *Results, _In_ DWORD Polls)
         for (i = 0; i < checksForOutputCount; ++i)
         {
             const char *status = SuiteCheckStatusText(checksForOutput[i].Status);
-            fprintf(Results->Report, "[%s][T%04lu] %s\n", status, (unsigned long)checksForOutput[i].Id,
+            fprintf(Results->Report,
+                    "[%s][T%04lu] %s\n",
+                    status,
+                    (unsigned long) checksForOutput[i].Id,
                     (checksForOutput[i].Text != NULL) ? checksForOutput[i].Text : "");
         }
         fprintf(Results->Report, "\n[INFO] %s\n", timingSummary);
@@ -811,8 +869,12 @@ VOID SuiteCloseReport(_Inout_ SUITE_RESULTS *Results, _In_ DWORD Polls)
 
     if (Results->HtmlReportPath[0] != '\0')
     {
-        htmlWritten = BLACKBIRDWriteHtmlReport(Results->HtmlReportPath, "BlackbirdTestSuite Report", Results->Meta,
-                                                 Results->MetaCount, checksForOutput, checksForOutputCount);
+        htmlWritten = BLACKBIRDWriteHtmlReport(Results->HtmlReportPath,
+                                               "BlackbirdTestSuite Report",
+                                               Results->Meta,
+                                               Results->MetaCount,
+                                               checksForOutput,
+                                               checksForOutputCount);
         if (!htmlWritten)
         {
             printf("reportHtmlStatus=failed\n");
@@ -826,8 +888,10 @@ VOID SuiteCloseReport(_Inout_ SUITE_RESULTS *Results, _In_ DWORD Polls)
 
     SuiteFreeCollectedData(Results);
 }
-VOID RecordResult(_Inout_ SUITE_RESULTS *Results, _In_ BOOL Passed, _In_z_ const char *PassText,
-                         _In_z_ const char *FailText)
+VOID RecordResult(_Inout_ SUITE_RESULTS *Results,
+                  _In_ BOOL Passed,
+                  _In_z_ const char *PassText,
+                  _In_z_ const char *FailText)
 {
     if (Results == NULL)
     {
@@ -855,7 +919,3 @@ VOID RecordSkip(_Inout_ SUITE_RESULTS *Results, _In_z_ const char *SkipText)
     Results->Skipped += 1;
     SuiteRecordCheck(Results, BlackbirdReportCheckSkip, SkipText);
 }
-
-
-
-

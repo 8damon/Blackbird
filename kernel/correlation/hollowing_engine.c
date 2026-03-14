@@ -56,7 +56,7 @@ static ULONGLONG BLACKBIRDHollowMsToQpc(_In_ UINT32 Ms)
         return 0;
     }
 
-    ticks = ((ULONGLONG)Ms * g_HollowQpcFrequency) / 1000ULL;
+    ticks = ((ULONGLONG) Ms * g_HollowQpcFrequency) / 1000ULL;
     if (ticks == 0)
     {
         ticks = 1;
@@ -65,8 +65,8 @@ static ULONGLONG BLACKBIRDHollowMsToQpc(_In_ UINT32 Ms)
     return ticks;
 }
 
-static PBLACKBIRD_HOLLOW_ENTRY BLACKBIRDHollowGetEntryLocked(_In_ HANDLE ActorPid, _In_ HANDLE TargetPid,
-                                                                 _In_ INT64 NowQpc)
+static PBLACKBIRD_HOLLOW_ENTRY
+BLACKBIRDHollowGetEntryLocked(_In_ HANDLE ActorPid, _In_ HANDLE TargetPid, _In_ INT64 NowQpc)
 {
     UINT64 actor;
     UINT64 target;
@@ -75,8 +75,8 @@ static PBLACKBIRD_HOLLOW_ENTRY BLACKBIRDHollowGetEntryLocked(_In_ HANDLE ActorPi
     LONG candidate = -1;
     UINT32 i;
 
-    target = (UINT64)(ULONG_PTR)TargetPid;
-    actor = (UINT64)(ULONG_PTR)ActorPid;
+    target = (UINT64) (ULONG_PTR) TargetPid;
+    actor = (UINT64) (ULONG_PTR) ActorPid;
     if (target == 0)
     {
         return NULL;
@@ -92,7 +92,7 @@ static PBLACKBIRD_HOLLOW_ENTRY BLACKBIRDHollowGetEntryLocked(_In_ HANDLE ActorPi
 
         if (!g_HollowRing[i].Active)
         {
-            candidate = (LONG)i;
+            candidate = (LONG) i;
             break;
         }
 
@@ -101,17 +101,17 @@ static PBLACKBIRD_HOLLOW_ENTRY BLACKBIRDHollowGetEntryLocked(_In_ HANDLE ActorPi
             return &g_HollowRing[i];
         }
 
-        ageQpc = (NowQpc > g_HollowRing[i].LastSeenQpc) ? (ULONGLONG)(NowQpc - g_HollowRing[i].LastSeenQpc) : 0;
+        ageQpc = (NowQpc > g_HollowRing[i].LastSeenQpc) ? (ULONGLONG) (NowQpc - g_HollowRing[i].LastSeenQpc) : 0;
         if (ageQpc > staleQpc)
         {
-            candidate = (LONG)i;
+            candidate = (LONG) i;
             break;
         }
 
         if (g_HollowRing[i].LastSeenQpc < oldestQpc)
         {
             oldestQpc = g_HollowRing[i].LastSeenQpc;
-            candidate = (LONG)i;
+            candidate = (LONG) i;
         }
     }
 
@@ -130,8 +130,9 @@ static PBLACKBIRD_HOLLOW_ENTRY BLACKBIRDHollowGetEntryLocked(_In_ HANDLE ActorPi
     return &g_HollowRing[candidate];
 }
 
-static VOID BLACKBIRDHollowEvaluateMarkDetectionsLocked(_Inout_ PBLACKBIRD_HOLLOW_ENTRY Entry, _In_ INT64 NowQpc,
-                                                          _Out_ PBLACKBIRD_HOLLOW_EMIT Emit)
+static VOID BLACKBIRDHollowEvaluateMarkDetectionsLocked(_Inout_ PBLACKBIRD_HOLLOW_ENTRY Entry,
+                                                        _In_ INT64 NowQpc,
+                                                        _Out_ PBLACKBIRD_HOLLOW_EMIT Emit)
 {
     ULONGLONG ageQpc;
     ULONGLONG windowQpc;
@@ -159,7 +160,7 @@ static VOID BLACKBIRDHollowEvaluateMarkDetectionsLocked(_Inout_ PBLACKBIRD_HOLLO
 
     windowQpc = BLACKBIRDHollowMsToQpc(BLACKBIRD_HOLLOW_WINDOW_MS);
     cooldownQpc = BLACKBIRDHollowMsToQpc(BLACKBIRD_HOLLOW_EMIT_COOLDOWN_MS);
-    ageQpc = (NowQpc > Entry->FirstSeenQpc) ? (ULONGLONG)(NowQpc - Entry->FirstSeenQpc) : 0;
+    ageQpc = (NowQpc > Entry->FirstSeenQpc) ? (ULONGLONG) (NowQpc - Entry->FirstSeenQpc) : 0;
     if (ageQpc > windowQpc)
     {
         Entry->Marks = 0;
@@ -183,16 +184,16 @@ static VOID BLACKBIRDHollowEvaluateMarkDetectionsLocked(_Inout_ PBLACKBIRD_HOLLO
 
     if (strong)
     {
-        ULONGLONG sinceStrongQpc = (NowQpc > Entry->LastStrongEmitQpc) ? (ULONGLONG)(NowQpc - Entry->LastStrongEmitQpc)
-                                                                        : 0;
+        ULONGLONG sinceStrongQpc =
+                (NowQpc > Entry->LastStrongEmitQpc) ? (ULONGLONG) (NowQpc - Entry->LastStrongEmitQpc) : 0;
         if (Entry->LastStrongEmitQpc == 0 || sinceStrongQpc >= cooldownQpc)
         {
             Entry->LastStrongEmitQpc = NowQpc;
             Emit->Emit = TRUE;
             Emit->DetectionName = "KERNEL_PROCESS_HOLLOWING_MARK_CHAIN_STRONG";
             Emit->Severity = 7;
-            Emit->ActorPid = (HANDLE)(ULONG_PTR)Entry->ActorPid;
-            Emit->TargetPid = (HANDLE)(ULONG_PTR)Entry->TargetPid;
+            Emit->ActorPid = (HANDLE) (ULONG_PTR) Entry->ActorPid;
+            Emit->TargetPid = (HANDLE) (ULONG_PTR) Entry->TargetPid;
             Emit->CorrelationFlags = Entry->CorrelationFlags;
             Emit->CorrelationAccessMask = Entry->CorrelationAccessMask;
             Emit->CorrelationAgeMs = Entry->CorrelationAgeMs;
@@ -203,16 +204,16 @@ static VOID BLACKBIRDHollowEvaluateMarkDetectionsLocked(_Inout_ PBLACKBIRD_HOLLO
 
     if (medium)
     {
-        ULONGLONG sinceMediumQpc = (NowQpc > Entry->LastMediumEmitQpc) ? (ULONGLONG)(NowQpc - Entry->LastMediumEmitQpc)
-                                                                        : 0;
+        ULONGLONG sinceMediumQpc =
+                (NowQpc > Entry->LastMediumEmitQpc) ? (ULONGLONG) (NowQpc - Entry->LastMediumEmitQpc) : 0;
         if (Entry->LastMediumEmitQpc == 0 || sinceMediumQpc >= cooldownQpc)
         {
             Entry->LastMediumEmitQpc = NowQpc;
             Emit->Emit = TRUE;
             Emit->DetectionName = "KERNEL_PROCESS_HOLLOWING_MARK_CHAIN_MEDIUM";
             Emit->Severity = 5;
-            Emit->ActorPid = (HANDLE)(ULONG_PTR)Entry->ActorPid;
-            Emit->TargetPid = (HANDLE)(ULONG_PTR)Entry->TargetPid;
+            Emit->ActorPid = (HANDLE) (ULONG_PTR) Entry->ActorPid;
+            Emit->TargetPid = (HANDLE) (ULONG_PTR) Entry->TargetPid;
             Emit->CorrelationFlags = Entry->CorrelationFlags;
             Emit->CorrelationAccessMask = Entry->CorrelationAccessMask;
             Emit->CorrelationAgeMs = Entry->CorrelationAgeMs;
@@ -221,9 +222,12 @@ static VOID BLACKBIRDHollowEvaluateMarkDetectionsLocked(_Inout_ PBLACKBIRD_HOLLO
     }
 }
 
-static VOID BLACKBIRDHollowApplyMarks(_In_ HANDLE ActorPid, _In_ HANDLE TargetPid, _In_ UINT32 Marks,
-                                        _In_ UINT32 CorrelationFlags, _In_ UINT32 CorrelationAccessMask,
-                                        _In_ UINT32 CorrelationAgeMs)
+static VOID BLACKBIRDHollowApplyMarks(_In_ HANDLE ActorPid,
+                                      _In_ HANDLE TargetPid,
+                                      _In_ UINT32 Marks,
+                                      _In_ UINT32 CorrelationFlags,
+                                      _In_ UINT32 CorrelationAccessMask,
+                                      _In_ UINT32 CorrelationAgeMs)
 {
     PBLACKBIRD_HOLLOW_ENTRY entry;
     BLACKBIRD_HOLLOW_EMIT emit;
@@ -264,9 +268,14 @@ static VOID BLACKBIRDHollowApplyMarks(_In_ HANDLE ActorPid, _In_ HANDLE TargetPi
 
     if (emit.Emit)
     {
-        BLACKBIRDEtwLogDetectionEvent(emit.DetectionName, emit.Severity, emit.ActorPid, emit.TargetPid,
-                                        emit.CorrelationFlags, emit.CorrelationAccessMask, emit.CorrelationAgeMs,
-                                        emit.Reason);
+        BLACKBIRDEtwLogDetectionEvent(emit.DetectionName,
+                                      emit.Severity,
+                                      emit.ActorPid,
+                                      emit.TargetPid,
+                                      emit.CorrelationFlags,
+                                      emit.CorrelationAccessMask,
+                                      emit.CorrelationAgeMs,
+                                      emit.Reason);
     }
 }
 
@@ -281,7 +290,7 @@ BLACKBIRDHollowingEngineInitialize(VOID)
     }
 
     KeQueryPerformanceCounter(&freq);
-    g_HollowQpcFrequency = (freq.QuadPart > 0) ? (ULONGLONG)freq.QuadPart : 1;
+    g_HollowQpcFrequency = (freq.QuadPart > 0) ? (ULONGLONG) freq.QuadPart : 1;
     KeInitializeSpinLock(&g_HollowLock);
     RtlZeroMemory(g_HollowRing, sizeof(g_HollowRing));
 
@@ -305,11 +314,13 @@ BLACKBIRDHollowingEngineSelfCheck(VOID)
 }
 
 BOOLEAN
-BLACKBIRDHollowingResolveThreadCorrelation(_In_ HANDLE ProcessId, _In_opt_ HANDLE PreferredCreatorPid,
-                                             _In_ UINT32 WindowMs, _Out_opt_ HANDLE *ResolvedActorPid,
-                                             _Out_opt_ UINT32 *CorrelationFlags,
-                                             _Out_opt_ UINT32 *CorrelationAccessMask,
-                                             _Out_opt_ UINT32 *CorrelationAgeMs)
+BLACKBIRDHollowingResolveThreadCorrelation(_In_ HANDLE ProcessId,
+                                           _In_opt_ HANDLE PreferredCreatorPid,
+                                           _In_ UINT32 WindowMs,
+                                           _Out_opt_ HANDLE *ResolvedActorPid,
+                                           _Out_opt_ UINT32 *CorrelationFlags,
+                                           _Out_opt_ UINT32 *CorrelationAccessMask,
+                                           _Out_opt_ UINT32 *CorrelationAgeMs)
 {
     HANDLE actor;
     HANDLE correlatedCaller = NULL;
@@ -329,8 +340,8 @@ BLACKBIRDHollowingResolveThreadCorrelation(_In_ HANDLE ProcessId, _In_opt_ HANDL
     {
         found = TRUE;
     }
-    else if (BLACKBIRDCorrelationQueryRecentIntentForTarget(ProcessId, WindowMs, TRUE, &correlatedCaller, &flags,
-                                                              &accessMask, &ageMs))
+    else if (BLACKBIRDCorrelationQueryRecentIntentForTarget(
+                     ProcessId, WindowMs, TRUE, &correlatedCaller, &flags, &accessMask, &ageMs))
     {
         found = TRUE;
         if (correlatedCaller != NULL)
@@ -366,10 +377,15 @@ BLACKBIRDHollowingResolveThreadCorrelation(_In_ HANDLE ProcessId, _In_opt_ HANDL
     return found;
 }
 
-VOID BLACKBIRDHollowingObserveThread(_In_ HANDLE ProcessId, _In_opt_ HANDLE ActorPid, _In_ BOOLEAN OutsideMainImage,
-                                       _In_ BOOLEAN GotStart, _In_ BOOLEAN StartRegionExecutable,
-                                       _In_ BOOLEAN StartRegionNonImage, _In_ UINT32 CorrelationFlags,
-                                       _In_ UINT32 CorrelationAccessMask, _In_ UINT32 CorrelationAgeMs)
+VOID BLACKBIRDHollowingObserveThread(_In_ HANDLE ProcessId,
+                                     _In_opt_ HANDLE ActorPid,
+                                     _In_ BOOLEAN OutsideMainImage,
+                                     _In_ BOOLEAN GotStart,
+                                     _In_ BOOLEAN StartRegionExecutable,
+                                     _In_ BOOLEAN StartRegionNonImage,
+                                     _In_ UINT32 CorrelationFlags,
+                                     _In_ UINT32 CorrelationAccessMask,
+                                     _In_ UINT32 CorrelationAgeMs)
 {
     HANDLE actor;
     BOOLEAN isRemoteCreator;
@@ -393,34 +409,61 @@ VOID BLACKBIRDHollowingObserveThread(_In_ HANDLE ProcessId, _In_opt_ HANDLE Acto
 
     if (isRemoteCreator && hasMemoryIntent && (hasThreadContextIntent || hasDuplicateIntent))
     {
-        BLACKBIRDEtwLogDetectionEvent("REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT", 5, actor, ProcessId,
-                                        CorrelationFlags, CorrelationAccessMask, CorrelationAgeMs,
-                                        L"remote thread correlated with memory+thread-context/dup handle intent");
+        BLACKBIRDEtwLogDetectionEvent("REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT",
+                                      5,
+                                      actor,
+                                      ProcessId,
+                                      CorrelationFlags,
+                                      CorrelationAccessMask,
+                                      CorrelationAgeMs,
+                                      L"remote thread correlated with memory+thread-context/dup handle intent");
     }
     if (remoteNonImageExec && hasMemoryIntent)
     {
-        BLACKBIRDEtwLogDetectionEvent("REMOTE_THREAD_START_IN_NON_IMAGE_EXECUTABLE_REGION", 6, actor, ProcessId,
-                                        CorrelationFlags, CorrelationAccessMask, CorrelationAgeMs,
-                                        L"remote thread start resolved to executable non-image memory with memory intent");
+        BLACKBIRDEtwLogDetectionEvent(
+                "REMOTE_THREAD_START_IN_NON_IMAGE_EXECUTABLE_REGION",
+                6,
+                actor,
+                ProcessId,
+                CorrelationFlags,
+                CorrelationAccessMask,
+                CorrelationAgeMs,
+                L"remote thread start resolved to executable non-image memory with memory intent");
     }
     if (isRemoteCreator && hasThreadContextIntent && hasMemoryIntent && (OutsideMainImage || remoteNonImageExec))
     {
-        BLACKBIRDEtwLogDetectionEvent("THREAD_HIJACK_INTENT", 6, actor, ProcessId, CorrelationFlags,
-                                        CorrelationAccessMask, CorrelationAgeMs,
-                                        L"thread-context + memory intent combined with suspicious remote execution");
+        BLACKBIRDEtwLogDetectionEvent("THREAD_HIJACK_INTENT",
+                                      6,
+                                      actor,
+                                      ProcessId,
+                                      CorrelationFlags,
+                                      CorrelationAccessMask,
+                                      CorrelationAgeMs,
+                                      L"thread-context + memory intent combined with suspicious remote execution");
     }
-    if (isRemoteCreator && (OutsideMainImage || remoteNonImageExec) && hasMemoryIntent &&
-        (hasThreadContextIntent || hasDuplicateIntent))
+    if (isRemoteCreator && (OutsideMainImage || remoteNonImageExec) && hasMemoryIntent
+        && (hasThreadContextIntent || hasDuplicateIntent))
     {
-        BLACKBIRDEtwLogDetectionEvent("POSSIBLE_PROCESS_HOLLOWING_OR_INJECTION_INTENT_CHAIN", 7, actor, ProcessId,
-                                        CorrelationFlags, CorrelationAccessMask, CorrelationAgeMs,
-                                        L"memory + thread intent chain with suspicious remote start indicates hollowing/injection");
+        BLACKBIRDEtwLogDetectionEvent(
+                "POSSIBLE_PROCESS_HOLLOWING_OR_INJECTION_INTENT_CHAIN",
+                7,
+                actor,
+                ProcessId,
+                CorrelationFlags,
+                CorrelationAccessMask,
+                CorrelationAgeMs,
+                L"memory + thread intent chain with suspicious remote start indicates hollowing/injection");
     }
     if (isRemoteCreator && remoteNonImageExec && hasMemoryIntent && hasThreadContextIntent)
     {
-        BLACKBIRDEtwLogDetectionEvent("POSSIBLE_MANUAL_MAP_OR_HOLLOWING_EXECUTION", 6, actor, ProcessId,
-                                        CorrelationFlags, CorrelationAccessMask, CorrelationAgeMs,
-                                        L"remote non-image execution with memory+thread context intent");
+        BLACKBIRDEtwLogDetectionEvent("POSSIBLE_MANUAL_MAP_OR_HOLLOWING_EXECUTION",
+                                      6,
+                                      actor,
+                                      ProcessId,
+                                      CorrelationFlags,
+                                      CorrelationAccessMask,
+                                      CorrelationAgeMs,
+                                      L"remote non-image execution with memory+thread context intent");
     }
 
     if (isRemoteCreator)

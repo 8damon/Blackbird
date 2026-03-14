@@ -51,7 +51,7 @@ int __cdecl main(int argc, char **argv)
             ULONGLONG start = GetTickCount64();
             while ((GetTickCount64() - start) < 2500ull)
             {
-                (void)GenerateMemoryHandleIntent(nested.Pi.dwProcessId);
+                (void) GenerateMemoryHandleIntent(nested.Pi.dwProcessId);
                 Sleep(40);
             }
             StopIdleChild(&nested);
@@ -76,11 +76,14 @@ int __cdecl main(int argc, char **argv)
     requireKernelCorrelationSignals = EnvFlagEnabled("BLACKBIRD_TEST_REQUIRE_KERNEL_CORRELATION", FALSE);
     requireApcTelemetry = EnvFlagEnabled("BLACKBIRD_TEST_REQUIRE_APC", FALSE);
     printf("[INFO] suite knobs requireKernelCorrelation=%u requireApcTelemetry=%u\n",
-           requireKernelCorrelationSignals ? 1u : 0u, requireApcTelemetry ? 1u : 0u);
+           requireKernelCorrelationSignals ? 1u : 0u,
+           requireApcTelemetry ? 1u : 0u);
     LogEnvironmentBaseline(&results);
 
     h = OpenControlDeviceHandle();
-    RecordResult(&results, (h != INVALID_HANDLE_VALUE), "opened control device",
+    RecordResult(&results,
+                 (h != INVALID_HANDLE_VALUE),
+                 "opened control device",
                  "failed to open broker or direct control transport");
     if (h == INVALID_HANDLE_VALUE)
     {
@@ -99,10 +102,14 @@ int __cdecl main(int argc, char **argv)
     if (brokerMode)
     {
         DWORD brokerSeedPid = selfPid;
-        brokerEtwStarted = StartBrokerEtwCapture(&brokerEtw, &brokerSeedPid, 1,
-                                                 BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY |
-                                                     BLACKBIRD_STREAM_THREAD);
-        RecordResult(&results, brokerEtwStarted, "started broker ETW/TI uplink capture",
+        brokerEtwStarted =
+                StartBrokerEtwCapture(&brokerEtw,
+                                      &brokerSeedPid,
+                                      1,
+                                      BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD);
+        RecordResult(&results,
+                     brokerEtwStarted,
+                     "started broker ETW/TI uplink capture",
                      "failed to start broker ETW/TI uplink capture");
         if (brokerEtwStarted && !brokerEtw.TiProviderEnabled)
         {
@@ -114,7 +121,9 @@ int __cdecl main(int argc, char **argv)
     badReq.ProcessId = selfPid;
     badReq.StreamMask = 0;
     ok = BLACKBIRDSCSubscribe(h, badReq.ProcessId, badReq.StreamMask);
-    RecordResult(&results, (!ok && GetLastError() == ERROR_INVALID_PARAMETER), "invalid subscribe stream mask rejected",
+    RecordResult(&results,
+                 (!ok && GetLastError() == ERROR_INVALID_PARAMETER),
+                 "invalid subscribe stream mask rejected",
                  "invalid subscribe stream mask was not rejected");
 
     ok = Subscribe(h, selfPid, BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD);
@@ -131,9 +140,13 @@ int __cdecl main(int argc, char **argv)
     RecordResult(&results, ok, "queried IOCTL stats", "get stats failed");
     if (ok)
     {
-        printf("[INFO] stats subscriptionCount=%u queueDepth=%u dropped=%u\n", stats.SubscriptionCount,
-               stats.QueueDepth, stats.DroppedEvents);
-        RecordResult(&results, (bytes == sizeof(stats)), "GET_STATS returned expected byte count",
+        printf("[INFO] stats subscriptionCount=%u queueDepth=%u dropped=%u\n",
+               stats.SubscriptionCount,
+               stats.QueueDepth,
+               stats.DroppedEvents);
+        RecordResult(&results,
+                     (bytes == sizeof(stats)),
+                     "GET_STATS returned expected byte count",
                      "GET_STATS returned unexpected byte count");
     }
 
@@ -150,15 +163,18 @@ int __cdecl main(int argc, char **argv)
         DWORD pidCount = 1u;
         pidList[0] = selfPid;
 
-        setPidsApplied = SetPids(h, pidList, pidCount,
-                                 BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD);
-        RecordResult(&results, setPidsApplied, "applied PID list subscription via IOCTL_BLACKBIRD_SET_PIDS",
+        setPidsApplied = SetPids(
+                h, pidList, pidCount, BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD);
+        RecordResult(&results,
+                     setPidsApplied,
+                     "applied PID list subscription via IOCTL_BLACKBIRD_SET_PIDS",
                      "failed to apply PID list subscription via IOCTL_BLACKBIRD_SET_PIDS");
         if (setPidsApplied)
         {
             ZeroMemory(&stats, sizeof(stats));
             ok = BLACKBIRDSCGetStats(h, &stats, &bytes);
-            RecordResult(&results, (ok && stats.SubscriptionCount == pidCount),
+            RecordResult(&results,
+                         (ok && stats.SubscriptionCount == pidCount),
                          "SET_PIDS applied expected subscription cardinality",
                          "SET_PIDS did not apply expected subscription cardinality");
         }
@@ -167,48 +183,66 @@ int __cdecl main(int argc, char **argv)
     GenerateLocalThreadEvent();
 
     generatedMemoryIntent = GenerateMemoryHandleIntent(child.Pi.dwProcessId);
-    RecordResult(&results, generatedMemoryIntent, "generated memory-handle intent",
+    RecordResult(&results,
+                 generatedMemoryIntent,
+                 "generated memory-handle intent",
                  "failed to generate memory-handle intent");
 
     generatedThreadIntent = GenerateThreadContextHandleIntent(child.Pi.dwThreadId);
-    RecordResult(&results, generatedThreadIntent, "generated thread-context-handle intent",
+    RecordResult(&results,
+                 generatedThreadIntent,
+                 "generated thread-context-handle intent",
                  "failed to generate thread-context-handle intent");
 
     generatedDuplicateIntent = GenerateDuplicateHandleIntent(child.Pi.dwProcessId);
-    RecordResult(&results, generatedDuplicateIntent, "generated duplicate-handle intent",
+    RecordResult(&results,
+                 generatedDuplicateIntent,
+                 "generated duplicate-handle intent",
                  "failed to generate duplicate-handle intent");
 
     if (generatedMemoryIntent)
     {
         generatedRemoteAfterMemory = GenerateRemoteThreadLoadLibraryIntent(child.Pi.dwProcessId);
-        RecordResult(&results, generatedRemoteAfterMemory, "generated remote thread after memory intent",
+        RecordResult(&results,
+                     generatedRemoteAfterMemory,
+                     "generated remote thread after memory intent",
                      "failed to generate remote thread after memory intent");
     }
 
     if (generatedThreadIntent)
     {
         generatedRemoteAfterThread = GenerateRemoteThreadLoadLibraryIntent(child.Pi.dwProcessId);
-        RecordResult(&results, generatedRemoteAfterThread, "generated remote thread after thread-context intent",
+        RecordResult(&results,
+                     generatedRemoteAfterThread,
+                     "generated remote thread after thread-context intent",
                      "failed to generate remote thread after thread-context intent");
     }
 
     if (generatedDuplicateIntent)
     {
         generatedRemoteAfterDup = GenerateRemoteThreadLoadLibraryIntent(child.Pi.dwProcessId);
-        RecordResult(&results, generatedRemoteAfterDup, "generated remote thread after duplicate intent",
+        RecordResult(&results,
+                     generatedRemoteAfterDup,
+                     "generated remote thread after duplicate intent",
                      "failed to generate remote thread after duplicate intent");
     }
 
     generatedRegistry = GenerateRegistryHighValueActivity();
-    RecordResult(&results, generatedRegistry, "generated high-value registry activity",
+    RecordResult(&results,
+                 generatedRegistry,
+                 "generated high-value registry activity",
                  "failed to generate high-value registry activity");
 
     generatedVmApiCalls = GenerateVmApiCallSurface(child.Pi.dwProcessId);
-    RecordResult(&results, generatedVmApiCalls, "generated VM API-call surface (alloc/write/protect)",
+    RecordResult(&results,
+                 generatedVmApiCalls,
+                 "generated VM API-call surface (alloc/write/protect)",
                  "failed to generate VM API-call surface (alloc/write/protect)");
 
     generatedSuspendedChain = GenerateSuspendedHollowingLikeChain();
-    RecordResult(&results, generatedSuspendedChain, "generated suspended hollowing-like chain",
+    RecordResult(&results,
+                 generatedSuspendedChain,
+                 "generated suspended hollowing-like chain",
                  "failed to generate suspended hollowing-like chain");
 
     if (brokerMode)
@@ -225,7 +259,8 @@ int __cdecl main(int argc, char **argv)
             Sleep(60);
         }
 
-        RecordResult(&results, brokerDynamicGraphExpanded,
+        RecordResult(&results,
+                     brokerDynamicGraphExpanded,
                      "broker dynamic PID expansion observed from self seed to related child",
                      "broker dynamic PID expansion not observed from self seed to related child");
 
@@ -243,18 +278,23 @@ int __cdecl main(int argc, char **argv)
                 Sleep(60);
             }
             StopIdleChild(&graphActor);
-            RecordResult(&results, brokerDynamicDepth2Expanded,
+            RecordResult(&results,
+                         brokerDynamicDepth2Expanded,
                          "broker dynamic PID expansion reached second hop (child -> spawned child)",
                          "broker dynamic PID expansion did not reach second hop (child -> spawned child)");
         }
         else
         {
-            RecordResult(&results, FALSE, "started broker graph actor child for second-hop test",
+            RecordResult(&results,
+                         FALSE,
+                         "started broker graph actor child for second-hop test",
                          "failed to start broker graph actor child for second-hop test");
         }
 
         ok = Unsubscribe(h, selfPid);
-        RecordResult(&results, ok, "broker unsubscribe root PID for dynamic cleanup",
+        RecordResult(&results,
+                     ok,
+                     "broker unsubscribe root PID for dynamic cleanup",
                      "broker unsubscribe root PID for dynamic cleanup failed");
         if (ok)
         {
@@ -271,7 +311,8 @@ int __cdecl main(int argc, char **argv)
                 Sleep(60);
             }
         }
-        RecordResult(&results, brokerDynamicCleanupWorked,
+        RecordResult(&results,
+                     brokerDynamicCleanupWorked,
                      "broker dynamic descendant cleanup observed after root unsubscribe",
                      "broker dynamic descendant cleanup missing after root unsubscribe");
 
@@ -279,13 +320,17 @@ int __cdecl main(int argc, char **argv)
         {
             ok = Subscribe(h, selfPid, BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD);
             subscribedSelf = ok;
-            RecordResult(&results, ok, "broker re-subscribed self after dynamic cleanup test",
+            RecordResult(&results,
+                         ok,
+                         "broker re-subscribed self after dynamic cleanup test",
                          "broker failed to re-subscribe self after dynamic cleanup test");
         }
     }
     else
     {
-        RecordResult(&results, FALSE, "broker dynamic PID expansion observed from self seed to related child",
+        RecordResult(&results,
+                     FALSE,
+                     "broker dynamic PID expansion observed from self seed to related child",
                      "broker mode expected but not active");
     }
 
@@ -309,56 +354,62 @@ int __cdecl main(int argc, char **argv)
     }
     if (requireKernelCorrelationSignals && generatedRemoteAfterThread)
     {
-        expected.RequiredThreadFlags |=
-            BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT | BLACKBIRD_THREAD_FLAG_CORR_THREAD_CTX;
+        expected.RequiredThreadFlags |= BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT | BLACKBIRD_THREAD_FLAG_CORR_THREAD_CTX;
     }
     if (requireKernelCorrelationSignals && generatedRemoteAfterDup)
     {
-        expected.RequiredThreadFlags |=
-            BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT | BLACKBIRD_THREAD_FLAG_CORR_DUP_HANDLE;
+        expected.RequiredThreadFlags |= BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT | BLACKBIRD_THREAD_FLAG_CORR_DUP_HANDLE;
     }
 
     PumpIoctlEvents(h, &state, &expected, 14000);
 
-    RecordResult(&results, state.SawThread, "received thread telemetry via IOCTL",
-                 "missing thread telemetry via IOCTL");
+    RecordResult(
+            &results, state.SawThread, "received thread telemetry via IOCTL", "missing thread telemetry via IOCTL");
 
     if (expected.RequireHandleEvent)
     {
-        RecordResult(&results, state.SawHandle, "received handle telemetry via IOCTL",
-                     "missing handle telemetry via IOCTL");
+        RecordResult(
+                &results, state.SawHandle, "received handle telemetry via IOCTL", "missing handle telemetry via IOCTL");
     }
 
     if (generatedMemoryIntent)
     {
-        RecordResult(&results, ((state.HandleFlagUnion & BLACKBIRD_HANDLE_FLAG_MEMORY_RELATED) != 0),
-                     "observed IOCTL handle flag MemoryRelated", "missing IOCTL handle flag MemoryRelated");
+        RecordResult(&results,
+                     ((state.HandleFlagUnion & BLACKBIRD_HANDLE_FLAG_MEMORY_RELATED) != 0),
+                     "observed IOCTL handle flag MemoryRelated",
+                     "missing IOCTL handle flag MemoryRelated");
     }
 
     if (generatedThreadIntent)
     {
-        RecordResult(&results, ((state.HandleFlagUnion & BLACKBIRD_HANDLE_FLAG_THREAD_OBJECT) != 0),
-                     "observed IOCTL handle flag ThreadObject", "missing IOCTL handle flag ThreadObject");
+        RecordResult(&results,
+                     ((state.HandleFlagUnion & BLACKBIRD_HANDLE_FLAG_THREAD_OBJECT) != 0),
+                     "observed IOCTL handle flag ThreadObject",
+                     "missing IOCTL handle flag ThreadObject");
     }
 
     if (generatedDuplicateIntent)
     {
-        RecordResult(&results, ((state.HandleFlagUnion & BLACKBIRD_HANDLE_FLAG_DUPLICATE_OPERATION) != 0),
-                     "observed IOCTL handle flag DuplicateOperation", "missing IOCTL handle flag DuplicateOperation");
+        RecordResult(&results,
+                     ((state.HandleFlagUnion & BLACKBIRD_HANDLE_FLAG_DUPLICATE_OPERATION) != 0),
+                     "observed IOCTL handle flag DuplicateOperation",
+                     "missing IOCTL handle flag DuplicateOperation");
     }
 
     if (generatedRemoteAfterMemory)
     {
         if (requireKernelCorrelationSignals)
         {
-            RecordResult(&results, ((state.ThreadFlagUnion & BLACKBIRD_THREAD_FLAG_CORR_MEMORY) != 0),
-                         "observed IOCTL thread flag CorrelatedMemory", "missing IOCTL thread flag CorrelatedMemory");
+            RecordResult(&results,
+                         ((state.ThreadFlagUnion & BLACKBIRD_THREAD_FLAG_CORR_MEMORY) != 0),
+                         "observed IOCTL thread flag CorrelatedMemory",
+                         "missing IOCTL thread flag CorrelatedMemory");
         }
         else
         {
             RecordSkip(
-                &results,
-                "IOCTL thread flag CorrelatedMemory check skipped (kernel correlation disabled by architecture)");
+                    &results,
+                    "IOCTL thread flag CorrelatedMemory check skipped (kernel correlation disabled by architecture)");
         }
     }
 
@@ -366,14 +417,16 @@ int __cdecl main(int argc, char **argv)
     {
         if (requireKernelCorrelationSignals)
         {
-            RecordResult(&results, ((state.ThreadFlagUnion & BLACKBIRD_THREAD_FLAG_CORR_THREAD_CTX) != 0),
+            RecordResult(&results,
+                         ((state.ThreadFlagUnion & BLACKBIRD_THREAD_FLAG_CORR_THREAD_CTX) != 0),
                          "observed IOCTL thread flag CorrelatedThreadContext",
                          "missing IOCTL thread flag CorrelatedThreadContext");
         }
         else
         {
-            RecordSkip(&results, "IOCTL thread flag CorrelatedThreadContext check skipped (kernel correlation disabled "
-                                 "by architecture)");
+            RecordSkip(&results,
+                       "IOCTL thread flag CorrelatedThreadContext check skipped (kernel correlation disabled "
+                       "by architecture)");
         }
     }
 
@@ -381,21 +434,25 @@ int __cdecl main(int argc, char **argv)
     {
         if (requireKernelCorrelationSignals)
         {
-            RecordResult(&results, ((state.ThreadFlagUnion & BLACKBIRD_THREAD_FLAG_CORR_DUP_HANDLE) != 0),
+            RecordResult(&results,
+                         ((state.ThreadFlagUnion & BLACKBIRD_THREAD_FLAG_CORR_DUP_HANDLE) != 0),
                          "observed IOCTL thread flag CorrelatedDuplicateHandle",
                          "missing IOCTL thread flag CorrelatedDuplicateHandle");
         }
         else
         {
-            RecordSkip(&results, "IOCTL thread flag CorrelatedDuplicateHandle check skipped (kernel correlation "
-                                 "disabled by architecture)");
+            RecordSkip(&results,
+                       "IOCTL thread flag CorrelatedDuplicateHandle check skipped (kernel correlation "
+                       "disabled by architecture)");
         }
     }
 
     if (expected.RequiredThreadFlags != 0)
     {
-        RecordResult(&results, ((state.ThreadFlagUnion & BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT) != 0),
-                     "observed IOCTL thread flag CorrelatedIntent", "missing IOCTL thread flag CorrelatedIntent");
+        RecordResult(&results,
+                     ((state.ThreadFlagUnion & BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT) != 0),
+                     "observed IOCTL thread flag CorrelatedIntent",
+                     "missing IOCTL thread flag CorrelatedIntent");
     }
     else if (generatedRemoteAfterMemory || generatedRemoteAfterThread || generatedRemoteAfterDup)
     {
@@ -404,20 +461,24 @@ int __cdecl main(int argc, char **argv)
     }
 
     multiClientParallelOk = RunMultiClientParallelIoctlTest(selfPid, child.Pi.dwProcessId, &multiClientPolls);
-    RecordResult(&results, multiClientParallelOk, "multi-client parallel IOCTL fanout verified",
+    RecordResult(&results,
+                 multiClientParallelOk,
+                 "multi-client parallel IOCTL fanout verified",
                  "multi-client parallel IOCTL fanout failed");
     printf("[INFO] multi-client parallel polls=%lu clients=%u\n", multiClientPolls, BLACKBIRD_MULTI_CLIENT_COUNT);
 
     if (brokerEtwStarted)
     {
         brokerEtwCoverageMet = WaitForBrokerEtwEventCoverage(&brokerEtw, 10000, requireApcTelemetry);
-        RecordResult(&results, brokerEtwCoverageMet,
+        RecordResult(&results,
+                     brokerEtwCoverageMet,
                      requireApcTelemetry ? "broker ETW uplink received all core event families (including APC)"
                                          : "broker ETW uplink received all core event families (APC optional)",
                      requireApcTelemetry ? "broker ETW uplink missing one or more core event families (including APC)"
                                          : "broker ETW uplink missing one or more core event families (APC optional)");
 
-        RecordResult(&results, (InterlockedCompareExchange(&brokerEtw.DetectionEvents, 0, 0) > 0),
+        RecordResult(&results,
+                     (InterlockedCompareExchange(&brokerEtw.DetectionEvents, 0, 0) > 0),
                      "broker ETW uplink DetectionTelemetry observed",
                      "broker ETW uplink DetectionTelemetry missing");
 
@@ -425,12 +486,18 @@ int __cdecl main(int argc, char **argv)
         {
             if (brokerEtw.TiProviderEnabled)
             {
-                RecordResult(&results, (InterlockedCompareExchange(&brokerEtw.TiAllocVmEvents, 0, 0) > 0),
-                             "broker TI AllocVM API-call observed", "broker TI AllocVM API-call missing");
-                RecordResult(&results, (InterlockedCompareExchange(&brokerEtw.TiWriteVmEvents, 0, 0) > 0),
-                             "broker TI WriteVM API-call observed", "broker TI WriteVM API-call missing");
-                RecordResult(&results, (InterlockedCompareExchange(&brokerEtw.TiProtectVmEvents, 0, 0) > 0),
-                             "broker TI ProtectVM API-call observed", "broker TI ProtectVM API-call missing");
+                RecordResult(&results,
+                             (InterlockedCompareExchange(&brokerEtw.TiAllocVmEvents, 0, 0) > 0),
+                             "broker TI AllocVM API-call observed",
+                             "broker TI AllocVM API-call missing");
+                RecordResult(&results,
+                             (InterlockedCompareExchange(&brokerEtw.TiWriteVmEvents, 0, 0) > 0),
+                             "broker TI WriteVM API-call observed",
+                             "broker TI WriteVM API-call missing");
+                RecordResult(&results,
+                             (InterlockedCompareExchange(&brokerEtw.TiProtectVmEvents, 0, 0) > 0),
+                             "broker TI ProtectVM API-call observed",
+                             "broker TI ProtectVM API-call missing");
             }
             else
             {
@@ -446,7 +513,8 @@ int __cdecl main(int argc, char **argv)
             {
                 LONG hollowMedium = InterlockedCompareExchange(&brokerEtw.DetectHollowingMarkMedium, 0, 0);
                 LONG hollowStrong = InterlockedCompareExchange(&brokerEtw.DetectHollowingMarkStrong, 0, 0);
-                RecordResult(&results, (hollowMedium > 0 || hollowStrong > 0),
+                RecordResult(&results,
+                             (hollowMedium > 0 || hollowStrong > 0),
                              "broker detection PROCESS_HOLLOWING_MARK_CHAIN_(MEDIUM|STRONG) observed",
                              "broker detection PROCESS_HOLLOWING_MARK_CHAIN_(MEDIUM|STRONG) missing");
             }
@@ -456,8 +524,10 @@ int __cdecl main(int argc, char **argv)
             }
         }
 
-        printf("[INFO] broker ETW counts handle=%ld thread=%ld process=%ld image=%ld registry=%ld apc=%ld detection=%ld "
-               "ti=%ld unknown=%ld det{hollowMedium=%ld hollowStrong=%ld hollowTxf=%ld} tiTask{alloc=%ld protect=%ld write=%ld "
+        printf("[INFO] broker ETW counts handle=%ld thread=%ld process=%ld image=%ld registry=%ld apc=%ld "
+               "detection=%ld "
+               "ti=%ld unknown=%ld det{hollowMedium=%ld hollowStrong=%ld hollowTxf=%ld} tiTask{alloc=%ld protect=%ld "
+               "write=%ld "
                "syscallUsage=%ld tiUnknown=%ld}\n",
                InterlockedCompareExchange(&brokerEtw.HandleEvents, 0, 0),
                InterlockedCompareExchange(&brokerEtw.ThreadEvents, 0, 0),
@@ -494,7 +564,7 @@ Cleanup:
 
     if (h != INVALID_HANDLE_VALUE)
     {
-        (void)BLACKBIRDSCCloseControlDevice(h);
+        (void) BLACKBIRDSCCloseControlDevice(h);
     }
 
     BLACKBIRDSymbolResolverCleanup();
@@ -507,4 +577,3 @@ Cleanup:
     SuiteCloseReport(&results, state.Polls);
     return 1;
 }
-

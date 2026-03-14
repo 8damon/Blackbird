@@ -57,12 +57,9 @@ static volatile LONG g_SymbolServiceStarted = 0;
 static volatile LONG g_SymbolQueueDepth = 0;
 static DWORD g_SymbolQueueHead = 0;
 static DWORD g_SymbolQueueTail = 0;
-static BLACKBIRD_CONTROLLER_SYMBOL_REQUEST
-    g_SymbolQueue[BLACKBIRD_CONTROLLER_SYMBOL_MAX_QUEUE_DEPTH];
-static BLACKBIRD_CONTROLLER_SYMBOL_CACHE_ENTRY
-    g_SymbolCache[BLACKBIRD_CONTROLLER_SYMBOL_MAX_CACHE_ENTRIES];
-static BLACKBIRD_CONTROLLER_SYMBOL_PROCESS_CONTEXT
-    g_SymbolContexts[BLACKBIRD_CONTROLLER_SYMBOL_MAX_PROCESS_CONTEXTS];
+static BLACKBIRD_CONTROLLER_SYMBOL_REQUEST g_SymbolQueue[BLACKBIRD_CONTROLLER_SYMBOL_MAX_QUEUE_DEPTH];
+static BLACKBIRD_CONTROLLER_SYMBOL_CACHE_ENTRY g_SymbolCache[BLACKBIRD_CONTROLLER_SYMBOL_MAX_CACHE_ENTRIES];
+static BLACKBIRD_CONTROLLER_SYMBOL_PROCESS_CONTEXT g_SymbolContexts[BLACKBIRD_CONTROLLER_SYMBOL_MAX_PROCESS_CONTEXTS];
 static BLACKBIRD_CONTROLLER_SYMBOL_PROCESS_CONTEXT g_KernelContext;
 
 static BOOL ControllerSymbolServiceIsKernelAddress(_In_ UINT64 Address)
@@ -75,11 +72,10 @@ static BOOL ControllerSymbolServiceIsKernelAddress(_In_ UINT64 Address)
 #endif
 }
 
-static VOID ControllerSymbolServiceAppendReasonToken(
-    _Inout_updates_z_(ReasonChars) PWSTR Reason,
-    _In_ size_t ReasonChars,
-    _In_z_ PCWSTR Key,
-    _In_z_ PCWSTR Value)
+static VOID ControllerSymbolServiceAppendReasonToken(_Inout_updates_z_(ReasonChars) PWSTR Reason,
+                                                     _In_ size_t ReasonChars,
+                                                     _In_z_ PCWSTR Key,
+                                                     _In_z_ PCWSTR Value)
 {
     size_t used;
 
@@ -100,11 +96,10 @@ static VOID ControllerSymbolServiceAppendReasonToken(
     }
 }
 
-static VOID ControllerSymbolServiceStoreCacheEntry(
-    _In_ DWORD ProcessId,
-    _In_ UINT64 Address,
-    _In_z_ PCWSTR Text,
-    _In_opt_z_ PCWSTR Path)
+static VOID ControllerSymbolServiceStoreCacheEntry(_In_ DWORD ProcessId,
+                                                   _In_ UINT64 Address,
+                                                   _In_z_ PCWSTR Text,
+                                                   _In_opt_z_ PCWSTR Path)
 {
     DWORD i;
     DWORD candidate = 0;
@@ -114,15 +109,13 @@ static VOID ControllerSymbolServiceStoreCacheEntry(
     AcquireSRWLockExclusive(&g_SymbolServiceLock);
     for (i = 0; i < RTL_NUMBER_OF(g_SymbolCache); ++i)
     {
-        if (g_SymbolCache[i].Valid &&
-            g_SymbolCache[i].ProcessId == ProcessId &&
-            g_SymbolCache[i].Address == Address)
+        if (g_SymbolCache[i].Valid && g_SymbolCache[i].ProcessId == ProcessId && g_SymbolCache[i].Address == Address)
         {
             g_SymbolCache[i].LastAccessTick = nowTick;
-            (void)StringCchCopyW(g_SymbolCache[i].Text, RTL_NUMBER_OF(g_SymbolCache[i].Text), Text);
+            (void) StringCchCopyW(g_SymbolCache[i].Text, RTL_NUMBER_OF(g_SymbolCache[i].Text), Text);
             if (Path != NULL)
             {
-                (void)StringCchCopyW(g_SymbolCache[i].Path, RTL_NUMBER_OF(g_SymbolCache[i].Path), Path);
+                (void) StringCchCopyW(g_SymbolCache[i].Path, RTL_NUMBER_OF(g_SymbolCache[i].Path), Path);
             }
             ReleaseSRWLockExclusive(&g_SymbolServiceLock);
             return;
@@ -146,10 +139,10 @@ static VOID ControllerSymbolServiceStoreCacheEntry(
     g_SymbolCache[candidate].ProcessId = ProcessId;
     g_SymbolCache[candidate].Address = Address;
     g_SymbolCache[candidate].LastAccessTick = nowTick;
-    (void)StringCchCopyW(g_SymbolCache[candidate].Text, RTL_NUMBER_OF(g_SymbolCache[candidate].Text), Text);
+    (void) StringCchCopyW(g_SymbolCache[candidate].Text, RTL_NUMBER_OF(g_SymbolCache[candidate].Text), Text);
     if (Path != NULL)
     {
-        (void)StringCchCopyW(g_SymbolCache[candidate].Path, RTL_NUMBER_OF(g_SymbolCache[candidate].Path), Path);
+        (void) StringCchCopyW(g_SymbolCache[candidate].Path, RTL_NUMBER_OF(g_SymbolCache[candidate].Path), Path);
     }
     else
     {
@@ -158,13 +151,12 @@ static VOID ControllerSymbolServiceStoreCacheEntry(
     ReleaseSRWLockExclusive(&g_SymbolServiceLock);
 }
 
-static BOOL ControllerSymbolServiceTryGetCached(
-    _In_ DWORD ProcessId,
-    _In_ UINT64 Address,
-    _Out_writes_z_(TextChars) PWSTR Text,
-    _In_ size_t TextChars,
-    _Out_opt_ PWSTR Path,
-    _In_ size_t PathChars)
+static BOOL ControllerSymbolServiceTryGetCached(_In_ DWORD ProcessId,
+                                                _In_ UINT64 Address,
+                                                _Out_writes_z_(TextChars) PWSTR Text,
+                                                _In_ size_t TextChars,
+                                                _Out_opt_ PWSTR Path,
+                                                _In_ size_t PathChars)
 {
     DWORD i;
     ULONGLONG nowTick = GetTickCount64();
@@ -177,17 +169,15 @@ static BOOL ControllerSymbolServiceTryGetCached(
     AcquireSRWLockShared(&g_SymbolServiceLock);
     for (i = 0; i < RTL_NUMBER_OF(g_SymbolCache); ++i)
     {
-        if (!g_SymbolCache[i].Valid ||
-            g_SymbolCache[i].ProcessId != ProcessId ||
-            g_SymbolCache[i].Address != Address)
+        if (!g_SymbolCache[i].Valid || g_SymbolCache[i].ProcessId != ProcessId || g_SymbolCache[i].Address != Address)
         {
             continue;
         }
 
-        (void)StringCchCopyW(Text, TextChars, g_SymbolCache[i].Text);
+        (void) StringCchCopyW(Text, TextChars, g_SymbolCache[i].Text);
         if (Path != NULL && PathChars != 0)
         {
-            (void)StringCchCopyW(Path, PathChars, g_SymbolCache[i].Path);
+            (void) StringCchCopyW(Path, PathChars, g_SymbolCache[i].Path);
         }
         ReleaseSRWLockShared(&g_SymbolServiceLock);
 
@@ -213,9 +203,7 @@ static BOOL ControllerSymbolServiceHasCached(_In_ DWORD ProcessId, _In_ UINT64 A
     AcquireSRWLockShared(&g_SymbolServiceLock);
     for (i = 0; i < RTL_NUMBER_OF(g_SymbolCache); ++i)
     {
-        if (g_SymbolCache[i].Valid &&
-            g_SymbolCache[i].ProcessId == ProcessId &&
-            g_SymbolCache[i].Address == Address)
+        if (g_SymbolCache[i].Valid && g_SymbolCache[i].ProcessId == ProcessId && g_SymbolCache[i].Address == Address)
         {
             found = TRUE;
             break;
@@ -249,7 +237,7 @@ static VOID ControllerSymbolServicePrimeAddress(_In_ DWORD ProcessId, _In_ UINT6
         InterlockedIncrement(&g_SymbolQueueDepth);
         if (g_SymbolQueueEvent != NULL)
         {
-            (void)SetEvent(g_SymbolQueueEvent);
+            (void) SetEvent(g_SymbolQueueEvent);
         }
     }
     LeaveCriticalSection(&g_SymbolQueueLock);
@@ -332,19 +320,20 @@ static VOID ControllerSymbolServiceRefreshKernelModules(VOID)
     {
         WCHAR path[MAX_PATH];
         WCHAR name[MAX_MODULE_NAME32 + 1];
-        UINT64 base = (UINT64)(ULONG_PTR)bases[i];
+        UINT64 base = (UINT64) (ULONG_PTR) bases[i];
         DWORD slot = fresh.ModuleCount;
 
         path[0] = L'\0';
         name[0] = L'\0';
-        (void)GetDeviceDriverFileNameW(bases[i], path, RTL_NUMBER_OF(path));
-        (void)GetDeviceDriverBaseNameW(bases[i], name, RTL_NUMBER_OF(name));
+        (void) GetDeviceDriverFileNameW(bases[i], path, RTL_NUMBER_OF(path));
+        (void) GetDeviceDriverBaseNameW(bases[i], name, RTL_NUMBER_OF(name));
 
         fresh.Modules[slot].Base = base;
         fresh.Modules[slot].End = 0;
-        (void)StringCchCopyW(fresh.Modules[slot].Name, RTL_NUMBER_OF(fresh.Modules[slot].Name),
-                             (name[0] != L'\0') ? name : L"<kernel>");
-        (void)StringCchCopyW(fresh.Modules[slot].Path, RTL_NUMBER_OF(fresh.Modules[slot].Path), path);
+        (void) StringCchCopyW(fresh.Modules[slot].Name,
+                              RTL_NUMBER_OF(fresh.Modules[slot].Name),
+                              (name[0] != L'\0') ? name : L"<kernel>");
+        (void) StringCchCopyW(fresh.Modules[slot].Path, RTL_NUMBER_OF(fresh.Modules[slot].Path), path);
         fresh.ModuleCount += 1;
     }
 
@@ -401,10 +390,10 @@ static BOOL ControllerSymbolServiceRefreshProcessContext(_In_ DWORD ProcessId)
             }
 
             index = fresh.ModuleCount;
-            fresh.Modules[index].Base = (UINT64)(ULONG_PTR)me32.modBaseAddr;
-            fresh.Modules[index].End = fresh.Modules[index].Base + (UINT64)me32.modBaseSize;
-            (void)StringCchCopyW(fresh.Modules[index].Name, RTL_NUMBER_OF(fresh.Modules[index].Name), me32.szModule);
-            (void)StringCchCopyW(fresh.Modules[index].Path, RTL_NUMBER_OF(fresh.Modules[index].Path), me32.szExePath);
+            fresh.Modules[index].Base = (UINT64) (ULONG_PTR) me32.modBaseAddr;
+            fresh.Modules[index].End = fresh.Modules[index].Base + (UINT64) me32.modBaseSize;
+            (void) StringCchCopyW(fresh.Modules[index].Name, RTL_NUMBER_OF(fresh.Modules[index].Name), me32.szModule);
+            (void) StringCchCopyW(fresh.Modules[index].Path, RTL_NUMBER_OF(fresh.Modules[index].Path), me32.szExePath);
             fresh.ModuleCount += 1;
         } while (Module32NextW(snapshot, &me32));
     }
@@ -423,10 +412,9 @@ static BOOL ControllerSymbolServiceRefreshProcessContext(_In_ DWORD ProcessId)
     return TRUE;
 }
 
-static BOOL ControllerSymbolServiceFindModule(
-    _In_ DWORD ProcessId,
-    _In_ UINT64 Address,
-    _Out_ BLACKBIRD_CONTROLLER_SYMBOL_MODULE_ENTRY *Module)
+static BOOL ControllerSymbolServiceFindModule(_In_ DWORD ProcessId,
+                                              _In_ UINT64 Address,
+                                              _Out_ BLACKBIRD_CONTROLLER_SYMBOL_MODULE_ENTRY *Module)
 {
     DWORD i;
     BOOL kernel = ControllerSymbolServiceIsKernelAddress(Address);
@@ -441,8 +429,8 @@ static BOOL ControllerSymbolServiceFindModule(
     if (kernel)
     {
         AcquireSRWLockShared(&g_SymbolServiceLock);
-        if (!g_KernelContext.Valid ||
-            nowTick - g_KernelContext.LastRefreshTick > BLACKBIRD_CONTROLLER_SYMBOL_KERNEL_REFRESH_MS)
+        if (!g_KernelContext.Valid
+            || nowTick - g_KernelContext.LastRefreshTick > BLACKBIRD_CONTROLLER_SYMBOL_KERNEL_REFRESH_MS)
         {
             ReleaseSRWLockShared(&g_SymbolServiceLock);
             ControllerSymbolServiceRefreshKernelModules();
@@ -451,8 +439,7 @@ static BOOL ControllerSymbolServiceFindModule(
 
         for (i = 0; i < g_KernelContext.ModuleCount; ++i)
         {
-            if (Address >= g_KernelContext.Modules[i].Base &&
-                Address < g_KernelContext.Modules[i].End)
+            if (Address >= g_KernelContext.Modules[i].Base && Address < g_KernelContext.Modules[i].End)
             {
                 *Module = g_KernelContext.Modules[i];
                 found = TRUE;
@@ -479,14 +466,14 @@ static BOOL ControllerSymbolServiceFindModule(
                 return FALSE;
             }
             AcquireSRWLockShared(&g_SymbolServiceLock);
-            i = (DWORD)-1;
+            i = (DWORD) -1;
             continue;
         }
 
         for (DWORD moduleIndex = 0; moduleIndex < g_SymbolContexts[i].ModuleCount; ++moduleIndex)
         {
-            if (Address >= g_SymbolContexts[i].Modules[moduleIndex].Base &&
-                Address < g_SymbolContexts[i].Modules[moduleIndex].End)
+            if (Address >= g_SymbolContexts[i].Modules[moduleIndex].Base
+                && Address < g_SymbolContexts[i].Modules[moduleIndex].End)
             {
                 *Module = g_SymbolContexts[i].Modules[moduleIndex];
                 found = TRUE;
@@ -511,8 +498,8 @@ static BOOL ControllerSymbolServiceFindModule(
 
             for (moduleIndex = 0; moduleIndex < g_SymbolContexts[i].ModuleCount; ++moduleIndex)
             {
-                if (Address >= g_SymbolContexts[i].Modules[moduleIndex].Base &&
-                    Address < g_SymbolContexts[i].Modules[moduleIndex].End)
+                if (Address >= g_SymbolContexts[i].Modules[moduleIndex].Base
+                    && Address < g_SymbolContexts[i].Modules[moduleIndex].End)
                 {
                     *Module = g_SymbolContexts[i].Modules[moduleIndex];
                     found = TRUE;
@@ -527,13 +514,12 @@ static BOOL ControllerSymbolServiceFindModule(
     return found;
 }
 
-static BOOL ControllerSymbolServiceResolveAddress(
-    _In_ DWORD ProcessId,
-    _In_ UINT64 Address,
-    _Out_writes_z_(TextChars) PWSTR Text,
-    _In_ size_t TextChars,
-    _Out_opt_ PWSTR Path,
-    _In_ size_t PathChars)
+static BOOL ControllerSymbolServiceResolveAddress(_In_ DWORD ProcessId,
+                                                  _In_ UINT64 Address,
+                                                  _Out_writes_z_(TextChars) PWSTR Text,
+                                                  _In_ size_t TextChars,
+                                                  _Out_opt_ PWSTR Path,
+                                                  _In_ size_t PathChars)
 {
     BLACKBIRD_CONTROLLER_SYMBOL_MODULE_ENTRY module;
     UINT64 displacement;
@@ -560,14 +546,14 @@ static BOOL ControllerSymbolServiceResolveAddress(
     }
 
     displacement = Address - module.Base;
-    if (FAILED(StringCchPrintfW(Text, TextChars, L"%ws+0x%llX", module.Name, (unsigned long long)displacement)))
+    if (FAILED(StringCchPrintfW(Text, TextChars, L"%ws+0x%llX", module.Name, (unsigned long long) displacement)))
     {
         return FALSE;
     }
 
     if (Path != NULL && PathChars != 0)
     {
-        (void)StringCchCopyW(Path, PathChars, module.Path);
+        (void) StringCchCopyW(Path, PathChars, module.Path);
     }
 
     ControllerSymbolServiceStoreCacheEntry(ProcessId, Address, Text, module.Path);
@@ -583,11 +569,11 @@ static DWORD ControllerSymbolServiceResolvePrimaryPid(_In_ const BLACKBIRD_IPC_E
 
     if (Event->ProcessId != 0 && Event->ProcessId <= MAXDWORD)
     {
-        return (DWORD)Event->ProcessId;
+        return (DWORD) Event->ProcessId;
     }
     if (Event->CallerPid != 0 && Event->CallerPid <= MAXDWORD)
     {
-        return (DWORD)Event->CallerPid;
+        return (DWORD) Event->CallerPid;
     }
     return Event->EventProcessId;
 }
@@ -601,10 +587,10 @@ static DWORD ControllerSymbolServiceResolveExecutionPid(_In_ const BLACKBIRD_IPC
         return 0;
     }
 
-    if (Event->TargetPid != 0 && Event->TargetPid <= MAXDWORD &&
-        (Event->Family == BlackbirdIpcEtwFamilyThread || Event->Family == BlackbirdIpcEtwFamilyProcess))
+    if (Event->TargetPid != 0 && Event->TargetPid <= MAXDWORD
+        && (Event->Family == BlackbirdIpcEtwFamilyThread || Event->Family == BlackbirdIpcEtwFamilyProcess))
     {
-        return (DWORD)Event->TargetPid;
+        return (DWORD) Event->TargetPid;
     }
 
     pid = ControllerSymbolServiceResolvePrimaryPid(Event);
@@ -628,12 +614,12 @@ static DWORD WINAPI ControllerSymbolServiceWorkerProc(_In_ LPVOID Context)
                 break;
             }
 
-            (void)WaitForSingleObject(g_SymbolQueueEvent, 125);
+            (void) WaitForSingleObject(g_SymbolQueueEvent, 125);
             continue;
         }
 
-        (void)ControllerSymbolServiceResolveAddress(request.ProcessId, request.Address, text, RTL_NUMBER_OF(text), path,
-                                                    RTL_NUMBER_OF(path));
+        (void) ControllerSymbolServiceResolveAddress(
+                request.ProcessId, request.Address, text, RTL_NUMBER_OF(text), path, RTL_NUMBER_OF(path));
     }
 
     return 0;
@@ -675,12 +661,13 @@ BOOL ControllerSymbolServiceStart(VOID)
         if (g_SymbolWorkerThreads[i] == NULL)
         {
             ControllerLog("[WARN] controller symbol service: worker start failed index=%lu err=%lu\n",
-                          (unsigned long)i, GetLastError());
+                          (unsigned long) i,
+                          GetLastError());
             break;
         }
     }
 
-    ControllerLog("[*] controller symbol service started workers=%lu\n", (unsigned long)i);
+    ControllerLog("[*] controller symbol service started workers=%lu\n", (unsigned long) i);
     return TRUE;
 }
 
@@ -695,14 +682,14 @@ VOID ControllerSymbolServiceStop(VOID)
 
     if (g_SymbolQueueEvent != NULL)
     {
-        (void)SetEvent(g_SymbolQueueEvent);
+        (void) SetEvent(g_SymbolQueueEvent);
     }
 
     for (i = 0; i < RTL_NUMBER_OF(g_SymbolWorkerThreads); ++i)
     {
         if (g_SymbolWorkerThreads[i] != NULL)
         {
-            (void)WaitForSingleObject(g_SymbolWorkerThreads[i], 2000);
+            (void) WaitForSingleObject(g_SymbolWorkerThreads[i], 2000);
             CloseHandle(g_SymbolWorkerThreads[i]);
             g_SymbolWorkerThreads[i] = NULL;
         }
@@ -738,13 +725,13 @@ VOID ControllerSymbolServiceEnrichEvent(_Inout_ BLACKBIRD_IPC_ETW_EVENT *Event)
     originPid = ControllerSymbolServiceResolvePrimaryPid(Event);
     execPid = ControllerSymbolServiceResolveExecutionPid(Event);
 
-    if (Event->OriginAddress != 0 &&
-        ControllerSymbolServiceResolveAddress(originPid, Event->OriginAddress, text, RTL_NUMBER_OF(text), path,
-                                              RTL_NUMBER_OF(path)))
+    if (Event->OriginAddress != 0
+        && ControllerSymbolServiceResolveAddress(
+                originPid, Event->OriginAddress, text, RTL_NUMBER_OF(text), path, RTL_NUMBER_OF(path)))
     {
         if (Event->OriginPath[0] == L'\0' && path[0] != L'\0')
         {
-            (void)StringCchCopyW(Event->OriginPath, RTL_NUMBER_OF(Event->OriginPath), path);
+            (void) StringCchCopyW(Event->OriginPath, RTL_NUMBER_OF(Event->OriginPath), path);
         }
         ControllerSymbolServiceAppendReasonToken(Event->Reason, RTL_NUMBER_OF(Event->Reason), L"originSymbol", text);
     }
@@ -753,8 +740,8 @@ VOID ControllerSymbolServiceEnrichEvent(_Inout_ BLACKBIRD_IPC_ETW_EVENT *Event)
         ControllerSymbolServicePrimeAddress(originPid, Event->OriginAddress);
     }
 
-    if (Event->StartAddress != 0 &&
-        ControllerSymbolServiceResolveAddress(execPid, Event->StartAddress, text, RTL_NUMBER_OF(text), NULL, 0))
+    if (Event->StartAddress != 0
+        && ControllerSymbolServiceResolveAddress(execPid, Event->StartAddress, text, RTL_NUMBER_OF(text), NULL, 0))
     {
         ControllerSymbolServiceAppendReasonToken(Event->Reason, RTL_NUMBER_OF(Event->Reason), L"startSymbol", text);
     }

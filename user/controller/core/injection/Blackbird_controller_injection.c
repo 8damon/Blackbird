@@ -51,8 +51,13 @@ static BOOL ControllerInjectionReadImageMachine(_In_z_ PCWSTR ImagePath, _Out_ U
     ZeroMemory(&dosHeader, sizeof(dosHeader));
     ZeroMemory(&fileHeader, sizeof(fileHeader));
 
-    fileHandle = CreateFileW(ImagePath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
-                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    fileHandle = CreateFileW(ImagePath,
+                             GENERIC_READ,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                             NULL,
+                             OPEN_EXISTING,
+                             FILE_ATTRIBUTE_NORMAL,
+                             NULL);
     if (fileHandle == INVALID_HANDLE_VALUE)
     {
         return FALSE;
@@ -108,10 +113,12 @@ Cleanup:
     return FALSE;
 }
 
-typedef BOOL(WINAPI *BLACKBIRD_IS_WOW64_PROCESS2_FN)(_In_ HANDLE ProcessHandle, _Out_ USHORT *ProcessMachine,
-                                                      _Out_ USHORT *NativeMachine);
+typedef BOOL(WINAPI *BLACKBIRD_IS_WOW64_PROCESS2_FN)(_In_ HANDLE ProcessHandle,
+                                                     _Out_ USHORT *ProcessMachine,
+                                                     _Out_ USHORT *NativeMachine);
 
-static BOOL ControllerInjectionQueryProcessMachine(_In_ HANDLE ProcessHandle, _Out_ USHORT *ProcessMachineOut,
+static BOOL ControllerInjectionQueryProcessMachine(_In_ HANDLE ProcessHandle,
+                                                   _Out_ USHORT *ProcessMachineOut,
                                                    _Out_opt_ USHORT *NativeMachineOut)
 {
     HMODULE kernel32Module = NULL;
@@ -127,8 +134,9 @@ static BOOL ControllerInjectionQueryProcessMachine(_In_ HANDLE ProcessHandle, _O
     }
 
     kernel32Module = GetModuleHandleW(L"kernel32.dll");
-    isWow64Process2Fn = (kernel32Module != NULL) ? (BLACKBIRD_IS_WOW64_PROCESS2_FN)GetProcAddress(kernel32Module, "IsWow64Process2")
-                                                  : NULL;
+    isWow64Process2Fn = (kernel32Module != NULL)
+            ? (BLACKBIRD_IS_WOW64_PROCESS2_FN) GetProcAddress(kernel32Module, "IsWow64Process2")
+            : NULL;
     if (isWow64Process2Fn != NULL)
     {
         if (!isWow64Process2Fn(ProcessHandle, &processMachine, &nativeMachine))
@@ -174,7 +182,8 @@ static DWORD ControllerInjectionValidateHookArchitecture(_In_ HANDLE ProcessHand
     USHORT effectiveProcessMachine = IMAGE_FILE_MACHINE_UNKNOWN;
     DWORD err;
 
-    if (ProcessHandle == NULL || ProcessHandle == INVALID_HANDLE_VALUE || HookDllPath == NULL || HookDllPath[0] == L'\0')
+    if (ProcessHandle == NULL || ProcessHandle == INVALID_HANDLE_VALUE || HookDllPath == NULL
+        || HookDllPath[0] == L'\0')
     {
         return ERROR_INVALID_PARAMETER;
     }
@@ -199,8 +208,8 @@ static DWORD ControllerInjectionValidateHookArchitecture(_In_ HANDLE ProcessHand
     }
 #endif
 
-    if (hookMachine != IMAGE_FILE_MACHINE_UNKNOWN && effectiveProcessMachine != IMAGE_FILE_MACHINE_UNKNOWN &&
-        hookMachine != effectiveProcessMachine)
+    if (hookMachine != IMAGE_FILE_MACHINE_UNKNOWN && effectiveProcessMachine != IMAGE_FILE_MACHINE_UNKNOWN
+        && hookMachine != effectiveProcessMachine)
     {
         return ERROR_BAD_EXE_FORMAT;
     }
@@ -226,10 +235,9 @@ BOOL ControllerInjectionPathPointsToFile(_In_z_ PCWSTR Path)
     return ((attrs & FILE_ATTRIBUTE_DIRECTORY) == 0);
 }
 
-BOOL ControllerInjectionResolveHookDllPath(
-    _In_ const BLACKBIRD_IPC_SET_USER_HOOK_TARGET_REQUEST *Request,
-    _Out_writes_z_(OutputChars) PWSTR Output,
-    _In_ size_t OutputChars)
+BOOL ControllerInjectionResolveHookDllPath(_In_ const BLACKBIRD_IPC_SET_USER_HOOK_TARGET_REQUEST *Request,
+                                           _Out_writes_z_(OutputChars) PWSTR Output,
+                                           _In_ size_t OutputChars)
 {
     WCHAR modulePath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
     PWSTR slash;
@@ -301,12 +309,13 @@ static BOOL ControllerInjectionAcquirePrimaryTokenFromPipe(_In_ HANDLE PipeHandl
     }
 
     if (!OpenThreadToken(GetCurrentThread(),
-                         TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_ADJUST_DEFAULT |
-                             TOKEN_ADJUST_SESSIONID,
-                         FALSE, &token))
+                         TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_ADJUST_DEFAULT
+                                 | TOKEN_ADJUST_SESSIONID,
+                         FALSE,
+                         &token))
     {
         DWORD err = GetLastError();
-        (void)RevertToSelf();
+        (void) RevertToSelf();
         SetLastError(err);
         return FALSE;
     }
@@ -320,9 +329,12 @@ static BOOL ControllerInjectionAcquirePrimaryTokenFromPipe(_In_ HANDLE PipeHandl
     }
 
     if (!DuplicateTokenEx(token,
-                          TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_ADJUST_DEFAULT |
-                              TOKEN_ADJUST_SESSIONID,
-                          NULL, SecurityImpersonation, TokenPrimary, &primaryToken))
+                          TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_ADJUST_DEFAULT
+                                  | TOKEN_ADJUST_SESSIONID,
+                          NULL,
+                          SecurityImpersonation,
+                          TokenPrimary,
+                          &primaryToken))
     {
         DWORD err = GetLastError();
         CloseHandle(token);
@@ -347,7 +359,8 @@ static DWORD ControllerInjectionInjectHookDllIntoProcessHandle(_In_ HANDLE Proce
     SIZE_T bytesWritten = 0;
     DWORD err = ERROR_SUCCESS;
 
-    if (ProcessHandle == NULL || ProcessHandle == INVALID_HANDLE_VALUE || HookDllPath == NULL || HookDllPath[0] == L'\0')
+    if (ProcessHandle == NULL || ProcessHandle == INVALID_HANDLE_VALUE || HookDllPath == NULL
+        || HookDllPath[0] == L'\0')
     {
         return ERROR_INVALID_PARAMETER;
     }
@@ -366,18 +379,20 @@ static DWORD ControllerInjectionInjectHookDllIntoProcessHandle(_In_ HANDLE Proce
         return GetLastError();
     }
 
-    if (!WriteProcessMemory(ProcessHandle, remotePath, HookDllPath, pathBytes, &bytesWritten) || bytesWritten != pathBytes)
+    if (!WriteProcessMemory(ProcessHandle, remotePath, HookDllPath, pathBytes, &bytesWritten)
+        || bytesWritten != pathBytes)
     {
         err = GetLastError();
-        (void)VirtualFreeEx(ProcessHandle, remotePath, 0, MEM_RELEASE);
+        (void) VirtualFreeEx(ProcessHandle, remotePath, 0, MEM_RELEASE);
         return err == ERROR_SUCCESS ? ERROR_WRITE_FAULT : err;
     }
 
-    threadHandle = CreateRemoteThread(ProcessHandle, NULL, 0, (LPTHREAD_START_ROUTINE)loadLibraryProc, remotePath, 0, NULL);
+    threadHandle =
+            CreateRemoteThread(ProcessHandle, NULL, 0, (LPTHREAD_START_ROUTINE) loadLibraryProc, remotePath, 0, NULL);
     if (threadHandle == NULL)
     {
         err = GetLastError();
-        (void)VirtualFreeEx(ProcessHandle, remotePath, 0, MEM_RELEASE);
+        (void) VirtualFreeEx(ProcessHandle, remotePath, 0, MEM_RELEASE);
         return err;
     }
 
@@ -386,7 +401,7 @@ static DWORD ControllerInjectionInjectHookDllIntoProcessHandle(_In_ HANDLE Proce
     {
         err = (waitResult == WAIT_TIMEOUT) ? ERROR_TIMEOUT : GetLastError();
         CloseHandle(threadHandle);
-        (void)VirtualFreeEx(ProcessHandle, remotePath, 0, MEM_RELEASE);
+        (void) VirtualFreeEx(ProcessHandle, remotePath, 0, MEM_RELEASE);
         return err == ERROR_SUCCESS ? ERROR_GEN_FAILURE : err;
     }
 
@@ -394,12 +409,12 @@ static DWORD ControllerInjectionInjectHookDllIntoProcessHandle(_In_ HANDLE Proce
     {
         err = GetLastError();
         CloseHandle(threadHandle);
-        (void)VirtualFreeEx(ProcessHandle, remotePath, 0, MEM_RELEASE);
+        (void) VirtualFreeEx(ProcessHandle, remotePath, 0, MEM_RELEASE);
         return err == ERROR_SUCCESS ? ERROR_GEN_FAILURE : err;
     }
 
     CloseHandle(threadHandle);
-    (void)VirtualFreeEx(ProcessHandle, remotePath, 0, MEM_RELEASE);
+    (void) VirtualFreeEx(ProcessHandle, remotePath, 0, MEM_RELEASE);
 
     if (remoteExit == 0)
     {
@@ -409,7 +424,8 @@ static DWORD ControllerInjectionInjectHookDllIntoProcessHandle(_In_ HANDLE Proce
     return ERROR_SUCCESS;
 }
 
-static DWORD ControllerInjectionQueueHookDllEarlyBirdApc(_In_ HANDLE ProcessHandle, _In_ HANDLE ThreadHandle,
+static DWORD ControllerInjectionQueueHookDllEarlyBirdApc(_In_ HANDLE ProcessHandle,
+                                                         _In_ HANDLE ThreadHandle,
                                                          _In_z_ PCWSTR HookDllPath)
 {
     SIZE_T pathBytes;
@@ -419,8 +435,8 @@ static DWORD ControllerInjectionQueueHookDllEarlyBirdApc(_In_ HANDLE ProcessHand
     SIZE_T bytesWritten = 0;
     DWORD err = ERROR_SUCCESS;
 
-    if (ProcessHandle == NULL || ProcessHandle == INVALID_HANDLE_VALUE || ThreadHandle == NULL ||
-        ThreadHandle == INVALID_HANDLE_VALUE || HookDllPath == NULL || HookDllPath[0] == L'\0')
+    if (ProcessHandle == NULL || ProcessHandle == INVALID_HANDLE_VALUE || ThreadHandle == NULL
+        || ThreadHandle == INVALID_HANDLE_VALUE || HookDllPath == NULL || HookDllPath[0] == L'\0')
     {
         return ERROR_INVALID_PARAMETER;
     }
@@ -439,17 +455,18 @@ static DWORD ControllerInjectionQueueHookDllEarlyBirdApc(_In_ HANDLE ProcessHand
         return GetLastError();
     }
 
-    if (!WriteProcessMemory(ProcessHandle, remotePath, HookDllPath, pathBytes, &bytesWritten) || bytesWritten != pathBytes)
+    if (!WriteProcessMemory(ProcessHandle, remotePath, HookDllPath, pathBytes, &bytesWritten)
+        || bytesWritten != pathBytes)
     {
         err = GetLastError();
-        (void)VirtualFreeEx(ProcessHandle, remotePath, 0, MEM_RELEASE);
+        (void) VirtualFreeEx(ProcessHandle, remotePath, 0, MEM_RELEASE);
         return err == ERROR_SUCCESS ? ERROR_WRITE_FAULT : err;
     }
 
-    if (QueueUserAPC((PAPCFUNC)(ULONG_PTR)loadLibraryProc, ThreadHandle, (ULONG_PTR)remotePath) == 0)
+    if (QueueUserAPC((PAPCFUNC) (ULONG_PTR) loadLibraryProc, ThreadHandle, (ULONG_PTR) remotePath) == 0)
     {
         err = GetLastError();
-        (void)VirtualFreeEx(ProcessHandle, remotePath, 0, MEM_RELEASE);
+        (void) VirtualFreeEx(ProcessHandle, remotePath, 0, MEM_RELEASE);
         return err == ERROR_SUCCESS ? ERROR_GEN_FAILURE : err;
     }
 
@@ -479,8 +496,8 @@ static BOOL ControllerInjectionProbeHookLoaded(_In_ DWORD ProcessId, _In_z_ PCWS
     {
         do
         {
-            if ((module.szModule[0] != L'\0' && _wcsicmp(module.szModule, expectedName) == 0) ||
-                (module.szExePath[0] != L'\0' && _wcsicmp(module.szExePath, HookDllPath) == 0))
+            if ((module.szModule[0] != L'\0' && _wcsicmp(module.szModule, expectedName) == 0)
+                || (module.szExePath[0] != L'\0' && _wcsicmp(module.szExePath, HookDllPath) == 0))
             {
                 found = TRUE;
                 break;
@@ -488,8 +505,8 @@ static BOOL ControllerInjectionProbeHookLoaded(_In_ DWORD ProcessId, _In_z_ PCWS
         } while (Module32NextW(snapshot, &module));
     }
     probeErr = GetLastError();
-    if (probeErr == ERROR_SUCCESS || probeErr == ERROR_NO_MORE_FILES || probeErr == ERROR_BAD_LENGTH ||
-        probeErr == ERROR_PARTIAL_COPY)
+    if (probeErr == ERROR_SUCCESS || probeErr == ERROR_NO_MORE_FILES || probeErr == ERROR_BAD_LENGTH
+        || probeErr == ERROR_PARTIAL_COPY)
     {
         probeErr = ERROR_NOT_FOUND;
     }
@@ -547,21 +564,22 @@ BOOL ControllerInjectionVerifyHookLoaded(_In_ DWORD ProcessId, _In_z_ PCWSTR Hoo
         }
 
         lastErr = GetLastError();
-        if (lastErr == ERROR_PARTIAL_COPY || lastErr == ERROR_BAD_LENGTH || lastErr == ERROR_NO_MORE_FILES ||
-            lastErr == ERROR_SUCCESS)
+        if (lastErr == ERROR_PARTIAL_COPY || lastErr == ERROR_BAD_LENGTH || lastErr == ERROR_NO_MORE_FILES
+            || lastErr == ERROR_SUCCESS)
         {
             lastErr = ERROR_NOT_FOUND;
         }
 
         Sleep(pollSleepMs);
         now = GetTickCount64();
-    } while (now - startTick < (ULONGLONG)TimeoutMs);
+    } while (now - startTick < (ULONGLONG) TimeoutMs);
 
     SetLastError(lastErr == ERROR_SUCCESS ? ERROR_NOT_FOUND : lastErr);
     return FALSE;
 }
 
-static BOOL ControllerInjectionLaunchTargetProcess(_In_ HANDLE ClientPipe, _In_z_ PCWSTR ImagePath,
+static BOOL ControllerInjectionLaunchTargetProcess(_In_ HANDLE ClientPipe,
+                                                   _In_z_ PCWSTR ImagePath,
                                                    _Out_ PROCESS_INFORMATION *ProcessInformation)
 {
     STARTUPINFOW startupInfo;
@@ -571,8 +589,8 @@ static BOOL ControllerInjectionLaunchTargetProcess(_In_ HANDLE ClientPipe, _In_z
     BOOL launched = FALSE;
     DWORD err = ERROR_SUCCESS;
 
-    if (ClientPipe == NULL || ClientPipe == INVALID_HANDLE_VALUE || ImagePath == NULL || ImagePath[0] == L'\0' ||
-        ProcessInformation == NULL)
+    if (ClientPipe == NULL || ClientPipe == INVALID_HANDLE_VALUE || ImagePath == NULL || ImagePath[0] == L'\0'
+        || ProcessInformation == NULL)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
@@ -582,20 +600,34 @@ static BOOL ControllerInjectionLaunchTargetProcess(_In_ HANDLE ClientPipe, _In_z
     ZeroMemory(&processInfo, sizeof(processInfo));
     startupInfo.cb = sizeof(startupInfo);
     ZeroMemory(commandLine, sizeof(commandLine));
-    (void)StringCchPrintfW(commandLine, RTL_NUMBER_OF(commandLine), L"\"%s\"", ImagePath);
+    (void) StringCchPrintfW(commandLine, RTL_NUMBER_OF(commandLine), L"\"%s\"", ImagePath);
 
     if (ControllerInjectionAcquirePrimaryTokenFromPipe(ClientPipe, &clientToken))
     {
-        launched = CreateProcessAsUserW(clientToken, ImagePath, commandLine, NULL, NULL, FALSE,
-                                        CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT, NULL, NULL, &startupInfo,
+        launched = CreateProcessAsUserW(clientToken,
+                                        ImagePath,
+                                        commandLine,
+                                        NULL,
+                                        NULL,
+                                        FALSE,
+                                        CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT,
+                                        NULL,
+                                        NULL,
+                                        &startupInfo,
                                         &processInfo);
         if (!launched)
         {
             err = GetLastError();
             if (err == ERROR_PRIVILEGE_NOT_HELD)
             {
-                launched = CreateProcessWithTokenW(clientToken, LOGON_WITH_PROFILE, ImagePath, commandLine,
-                                                   CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT, NULL, NULL, &startupInfo,
+                launched = CreateProcessWithTokenW(clientToken,
+                                                   LOGON_WITH_PROFILE,
+                                                   ImagePath,
+                                                   commandLine,
+                                                   CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT,
+                                                   NULL,
+                                                   NULL,
+                                                   &startupInfo,
                                                    &processInfo);
                 if (!launched)
                 {
@@ -614,8 +646,8 @@ static BOOL ControllerInjectionLaunchTargetProcess(_In_ HANDLE ClientPipe, _In_z
 
     if (!launched)
     {
-        launched = CreateProcessW(ImagePath, commandLine, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &startupInfo,
-                                  &processInfo);
+        launched = CreateProcessW(
+                ImagePath, commandLine, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &startupInfo, &processInfo);
         if (!launched)
         {
             DWORD fallbackErr = GetLastError();
@@ -642,9 +674,10 @@ DWORD ControllerInjectionAttachAndVerify(_In_ DWORD ProcessId, _In_z_ PCWSTR Hoo
         return ERROR_INVALID_PARAMETER;
     }
 
-    processHandle = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
-                                    PROCESS_VM_READ,
-                                FALSE, ProcessId);
+    processHandle = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION
+                                        | PROCESS_VM_WRITE | PROCESS_VM_READ,
+                                FALSE,
+                                ProcessId);
     if (processHandle == NULL)
     {
         return GetLastError();
@@ -679,15 +712,19 @@ DWORD ControllerInjectionAttachAndVerify(_In_ DWORD ProcessId, _In_z_ PCWSTR Hoo
     return ERROR_SUCCESS;
 }
 
-DWORD ControllerInjectionLaunchAndVerify(_In_ HANDLE ClientPipe, _In_z_ PCWSTR ImagePath, _In_z_ PCWSTR HookDllPath,
-                                         _In_ DWORD Flags, _In_ DWORD VerifyTimeoutMs, _Out_ DWORD *ProcessIdOut)
+DWORD ControllerInjectionLaunchAndVerify(_In_ HANDLE ClientPipe,
+                                         _In_z_ PCWSTR ImagePath,
+                                         _In_z_ PCWSTR HookDllPath,
+                                         _In_ DWORD Flags,
+                                         _In_ DWORD VerifyTimeoutMs,
+                                         _Out_ DWORD *ProcessIdOut)
 {
     PROCESS_INFORMATION processInfo;
     DWORD err = ERROR_SUCCESS;
     BOOL useEarlyBirdApc = FALSE;
 
-    if (ClientPipe == NULL || ClientPipe == INVALID_HANDLE_VALUE || ImagePath == NULL || ImagePath[0] == L'\0' ||
-        HookDllPath == NULL || HookDllPath[0] == L'\0' || ProcessIdOut == NULL)
+    if (ClientPipe == NULL || ClientPipe == INVALID_HANDLE_VALUE || ImagePath == NULL || ImagePath[0] == L'\0'
+        || HookDllPath == NULL || HookDllPath[0] == L'\0' || ProcessIdOut == NULL)
     {
         return ERROR_INVALID_PARAMETER;
     }
@@ -708,9 +745,9 @@ DWORD ControllerInjectionLaunchAndVerify(_In_ HANDLE ClientPipe, _In_z_ PCWSTR I
     err = ControllerInjectionValidateHookArchitecture(processInfo.hProcess, HookDllPath);
     if (err != ERROR_SUCCESS)
     {
-        (void)TerminateProcess(processInfo.hProcess, 1);
-        (void)CloseHandle(processInfo.hThread);
-        (void)CloseHandle(processInfo.hProcess);
+        (void) TerminateProcess(processInfo.hProcess, 1);
+        (void) CloseHandle(processInfo.hThread);
+        (void) CloseHandle(processInfo.hProcess);
         return err;
     }
 
@@ -726,7 +763,8 @@ DWORD ControllerInjectionLaunchAndVerify(_In_ HANDLE ClientPipe, _In_z_ PCWSTR I
         err = ControllerInjectionInjectHookDllIntoProcessHandle(processInfo.hProcess, HookDllPath);
         if (err == ERROR_DLL_INIT_FAILED)
         {
-            DWORD apcErr = ControllerInjectionQueueHookDllEarlyBirdApc(processInfo.hProcess, processInfo.hThread, HookDllPath);
+            DWORD apcErr =
+                    ControllerInjectionQueueHookDllEarlyBirdApc(processInfo.hProcess, processInfo.hThread, HookDllPath);
             if (apcErr == ERROR_SUCCESS)
             {
                 useEarlyBirdApc = TRUE;
@@ -736,43 +774,43 @@ DWORD ControllerInjectionLaunchAndVerify(_In_ HANDLE ClientPipe, _In_z_ PCWSTR I
     }
     if (err != ERROR_SUCCESS)
     {
-        (void)TerminateProcess(processInfo.hProcess, 1);
-        (void)CloseHandle(processInfo.hThread);
-        (void)CloseHandle(processInfo.hProcess);
+        (void) TerminateProcess(processInfo.hProcess, 1);
+        (void) CloseHandle(processInfo.hThread);
+        (void) CloseHandle(processInfo.hProcess);
         return err;
     }
 
-    if (ResumeThread(processInfo.hThread) == (DWORD)-1)
+    if (ResumeThread(processInfo.hThread) == (DWORD) -1)
     {
         err = GetLastError();
-        (void)TerminateProcess(processInfo.hProcess, 1);
-        (void)CloseHandle(processInfo.hThread);
-        (void)CloseHandle(processInfo.hProcess);
+        (void) TerminateProcess(processInfo.hProcess, 1);
+        (void) CloseHandle(processInfo.hThread);
+        (void) CloseHandle(processInfo.hProcess);
         return err == ERROR_SUCCESS ? ERROR_GEN_FAILURE : err;
     }
 
     // Launch success should not be hard-coupled to hook-ready timing.
-    (void)ControllerWaitForHookReady(processInfo.dwProcessId);
+    (void) ControllerWaitForHookReady(processInfo.dwProcessId);
 
     if (ControllerInjectionIsStealthHookModule(HookDllPath))
     {
         *ProcessIdOut = processInfo.dwProcessId;
-        (void)CloseHandle(processInfo.hThread);
-        (void)CloseHandle(processInfo.hProcess);
+        (void) CloseHandle(processInfo.hThread);
+        (void) CloseHandle(processInfo.hProcess);
         return ERROR_SUCCESS;
     }
 
     if (!ControllerInjectionVerifyHookLoaded(processInfo.dwProcessId, HookDllPath, VerifyTimeoutMs))
     {
         err = GetLastError();
-        (void)TerminateProcess(processInfo.hProcess, 1);
-        (void)CloseHandle(processInfo.hThread);
-        (void)CloseHandle(processInfo.hProcess);
+        (void) TerminateProcess(processInfo.hProcess, 1);
+        (void) CloseHandle(processInfo.hThread);
+        (void) CloseHandle(processInfo.hProcess);
         return (err == ERROR_SUCCESS) ? ERROR_DLL_NOT_FOUND : err;
     }
 
     *ProcessIdOut = processInfo.dwProcessId;
-    (void)CloseHandle(processInfo.hThread);
-    (void)CloseHandle(processInfo.hProcess);
+    (void) CloseHandle(processInfo.hThread);
+    (void) CloseHandle(processInfo.hProcess);
     return ERROR_SUCCESS;
 }

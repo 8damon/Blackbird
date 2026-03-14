@@ -5,7 +5,7 @@
 
 #define BLACKBIRD_REG_MON_ALTITUDE L"385000.424244"
 
-static LARGE_INTEGER g_RegistryCookie = {0};
+static LARGE_INTEGER g_RegistryCookie = { 0 };
 static volatile LONG g_RegistryMonitorRegistered = 0;
 static volatile LONG g_RegistryFailureCounter = 0;
 
@@ -18,18 +18,18 @@ static BOOLEAN BLACKBIRDIsHighValueRegistryPath(_In_ PCUNICODE_STRING Path)
         return FALSE;
     }
 
-    if (BLACKBIRDUnicodeContainsInsensitive(Path, L"\\currentversion\\run", 19) ||
-        BLACKBIRDUnicodeContainsInsensitive(Path, L"\\currentversion\\runonce", 23) ||
-        BLACKBIRDUnicodeContainsInsensitive(Path, L"\\image file execution options", 29) ||
-        BLACKBIRDUnicodeContainsInsensitive(Path, L"\\system\\currentcontrolset\\services\\", 35))
+    if (BLACKBIRDUnicodeContainsInsensitive(Path, L"\\currentversion\\run", 19)
+        || BLACKBIRDUnicodeContainsInsensitive(Path, L"\\currentversion\\runonce", 23)
+        || BLACKBIRDUnicodeContainsInsensitive(Path, L"\\image file execution options", 29)
+        || BLACKBIRDUnicodeContainsInsensitive(Path, L"\\system\\currentcontrolset\\services\\", 35))
     {
         return TRUE;
     }
     return FALSE;
 }
 
-static NTSTATUS BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_opt_ PVOID Argument1,
-                                            _In_opt_ PVOID Argument2)
+static NTSTATUS
+BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_opt_ PVOID Argument1, _In_opt_ PVOID Argument2)
 {
     REG_NOTIFY_CLASS notifyClass;
     UNICODE_STRING keyPathUs;
@@ -53,13 +53,13 @@ static NTSTATUS BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_op
         return STATUS_SUCCESS;
     }
 
-    notifyClass = (REG_NOTIFY_CLASS)(ULONG_PTR)Argument1;
+    notifyClass = (REG_NOTIFY_CLASS) (ULONG_PTR) Argument1;
     pid = PsGetCurrentProcessId();
     sessionId = PsGetProcessSessionIdEx(PsGetCurrentProcess());
 
     if (notifyClass == RegNtPreSetValueKey)
     {
-        PREG_SET_VALUE_KEY_INFORMATION info = (PREG_SET_VALUE_KEY_INFORMATION)Argument2;
+        PREG_SET_VALUE_KEY_INFORMATION info = (PREG_SET_VALUE_KEY_INFORMATION) Argument2;
         PUNICODE_STRING keyNameUs = NULL;
         NTSTATUS nameStatus;
 
@@ -82,7 +82,7 @@ static NTSTATUS BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_op
     }
     else if (notifyClass == RegNtPreCreateKeyEx)
     {
-        PREG_CREATE_KEY_INFORMATION info = (PREG_CREATE_KEY_INFORMATION)Argument2;
+        PREG_CREATE_KEY_INFORMATION info = (PREG_CREATE_KEY_INFORMATION) Argument2;
         operation = "CREATE_KEY";
         if (info != NULL && info->CompleteName != NULL)
         {
@@ -93,7 +93,7 @@ static NTSTATUS BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_op
     }
     else if (notifyClass == RegNtPreOpenKeyEx)
     {
-        PREG_OPEN_KEY_INFORMATION info = (PREG_OPEN_KEY_INFORMATION)Argument2;
+        PREG_OPEN_KEY_INFORMATION info = (PREG_OPEN_KEY_INFORMATION) Argument2;
         operation = "OPEN_KEY";
         if (info != NULL && info->CompleteName != NULL)
         {
@@ -104,7 +104,7 @@ static NTSTATUS BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_op
     }
     else if (notifyClass == RegNtPreDeleteValueKey)
     {
-        PREG_DELETE_VALUE_KEY_INFORMATION info = (PREG_DELETE_VALUE_KEY_INFORMATION)Argument2;
+        PREG_DELETE_VALUE_KEY_INFORMATION info = (PREG_DELETE_VALUE_KEY_INFORMATION) Argument2;
         operation = "DELETE_VALUE";
         if (info != NULL)
         {
@@ -125,8 +125,15 @@ static NTSTATUS BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_op
         return STATUS_SUCCESS;
     }
 
-    BLACKBIRDEtwLogRegistryEvent(operation, pid, sessionId, (ULONG)notifyClass, dataType, dataSize, highValuePath,
-                                   (keyPath[0] != L'\0') ? keyPath : NULL, (valueName[0] != L'\0') ? valueName : NULL);
+    BLACKBIRDEtwLogRegistryEvent(operation,
+                                 pid,
+                                 sessionId,
+                                 (ULONG) notifyClass,
+                                 dataType,
+                                 dataSize,
+                                 highValuePath,
+                                 (keyPath[0] != L'\0') ? keyPath : NULL,
+                                 (valueName[0] != L'\0') ? valueName : NULL);
 
     if (highValuePath)
     {
@@ -159,9 +166,11 @@ BLACKBIRDRegistryMonitorInitialize(_In_ PDRIVER_OBJECT DriverObject)
         failures = InterlockedIncrement(&g_RegistryFailureCounter);
         if (failures == 1 || ((failures & 0xFF) == 0))
         {
-            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                       "BLACKBIRD: registry monitor callback registration failed status=0x%08X total=%lu.\n", status,
-                       (ULONG)failures);
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                       DPFLTR_ERROR_LEVEL,
+                       "BLACKBIRD: registry monitor callback registration failed status=0x%08X total=%lu.\n",
+                       status,
+                       (ULONG) failures);
         }
         return status;
     }
@@ -187,10 +196,10 @@ VOID BLACKBIRDRegistryMonitorUninitialize(VOID)
     status = CmUnRegisterCallback(g_RegistryCookie);
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(
-            DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-            "BLACKBIRD: registry monitor callback removal failed; monitor remains registered (status=0x%08X).\n",
-            status);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                   DPFLTR_ERROR_LEVEL,
+                   "BLACKBIRD: registry monitor callback removal failed; monitor remains registered (status=0x%08X).\n",
+                   status);
         return;
     }
 

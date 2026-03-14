@@ -24,8 +24,9 @@ BOOL BLACKBIRDSymStartsWithInsensitive(_In_opt_z_ const char *Text, _In_opt_z_ c
     return (_strnicmp(Text, Prefix, prefixLen) == 0);
 }
 
-BOOL BLACKBIRDSymNormalizeKernelImagePath(_In_z_ const char *RawPath, _Out_writes_z_(OutputChars) char *Output,
-                                            _In_ size_t OutputChars)
+BOOL BLACKBIRDSymNormalizeKernelImagePath(_In_z_ const char *RawPath,
+                                          _Out_writes_z_(OutputChars) char *Output,
+                                          _In_ size_t OutputChars)
 {
     char windowsDir[MAX_PATH];
 
@@ -68,8 +69,9 @@ BOOL BLACKBIRDSymNormalizeKernelImagePath(_In_z_ const char *RawPath, _Out_write
     return FALSE;
 }
 
-BOOL BLACKBIRDSymBuildKernelGuessPath(_In_z_ const char *ModuleName, _Out_writes_z_(OutputChars) char *Output,
-                                        _In_ size_t OutputChars)
+BOOL BLACKBIRDSymBuildKernelGuessPath(_In_z_ const char *ModuleName,
+                                      _Out_writes_z_(OutputChars) char *Output,
+                                      _In_ size_t OutputChars)
 {
     char windowsDir[MAX_PATH];
     const char *suffix;
@@ -98,8 +100,9 @@ BOOL BLACKBIRDSymBuildKernelGuessPath(_In_z_ const char *ModuleName, _Out_writes
 }
 
 DWORD
-BLACKBIRDSymLoadKernelModulesForProcess(_In_ HANDLE SymbolProcess, _Out_opt_ DWORD *LoadedCount,
-                                          _Out_opt_ DWORD *TotalCount)
+BLACKBIRDSymLoadKernelModulesForProcess(_In_ HANDLE SymbolProcess,
+                                        _Out_opt_ DWORD *LoadedCount,
+                                        _Out_opt_ DWORD *TotalCount)
 {
     LPVOID drivers[2048];
     DWORD bytesNeeded = 0;
@@ -133,7 +136,7 @@ BLACKBIRDSymLoadKernelModulesForProcess(_In_ HANDLE SymbolProcess, _Out_opt_ DWO
 
     for (i = 0; i < count; ++i)
     {
-        DWORD64 base = (DWORD64)(ULONG_PTR)drivers[i];
+        DWORD64 base = (DWORD64) (ULONG_PTR) drivers[i];
         char rawPath[MAX_PATH];
         char normPath[MAX_PATH];
         char guessPath[MAX_PATH];
@@ -152,12 +155,12 @@ BLACKBIRDSymLoadKernelModulesForProcess(_In_ HANDLE SymbolProcess, _Out_opt_ DWO
         }
         if (GetDeviceDriverBaseNameA(drivers[i], moduleName, RTL_NUMBER_OF(moduleName)) == 0)
         {
-            (void)strcpy_s(moduleName, RTL_NUMBER_OF(moduleName), "unknown");
+            (void) strcpy_s(moduleName, RTL_NUMBER_OF(moduleName), "unknown");
         }
 
         if (!BLACKBIRDSymNormalizeKernelImagePath(rawPath, normPath, RTL_NUMBER_OF(normPath)))
         {
-            (void)strcpy_s(normPath, RTL_NUMBER_OF(normPath), rawPath);
+            (void) strcpy_s(normPath, RTL_NUMBER_OF(normPath), rawPath);
         }
 
         SetLastError(ERROR_SUCCESS);
@@ -171,8 +174,8 @@ BLACKBIRDSymLoadKernelModulesForProcess(_In_ HANDLE SymbolProcess, _Out_opt_ DWO
             err = GetLastError();
         }
 
-        if (loadedBase == 0 && err != ERROR_SUCCESS &&
-            BLACKBIRDSymBuildKernelGuessPath(moduleName, guessPath, RTL_NUMBER_OF(guessPath)))
+        if (loadedBase == 0 && err != ERROR_SUCCESS
+            && BLACKBIRDSymBuildKernelGuessPath(moduleName, guessPath, RTL_NUMBER_OF(guessPath)))
         {
             SetLastError(ERROR_SUCCESS);
             loadedBase = SymLoadModuleEx(SymbolProcess, NULL, guessPath, moduleName, base, 0, NULL, 0);

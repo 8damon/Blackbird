@@ -43,12 +43,12 @@ static BOOL TryParsePid(_In_z_ const char *text, _Out_ DWORD *pid)
         return FALSE;
     }
 
-    *pid = (DWORD)value;
+    *pid = (DWORD) value;
     return TRUE;
 }
 
-static BOOL ConvertArgToWide(_In_z_ const char *Text, _Out_writes_z_(OutputChars) WCHAR *Output,
-                             _In_ size_t OutputChars)
+static BOOL
+ConvertArgToWide(_In_z_ const char *Text, _Out_writes_z_(OutputChars) WCHAR *Output, _In_ size_t OutputChars)
 {
     int converted;
 
@@ -58,10 +58,10 @@ static BOOL ConvertArgToWide(_In_z_ const char *Text, _Out_writes_z_(OutputChars
     }
 
     Output[0] = L'\0';
-    converted = MultiByteToWideChar(CP_UTF8, 0, Text, -1, Output, (int)OutputChars);
+    converted = MultiByteToWideChar(CP_UTF8, 0, Text, -1, Output, (int) OutputChars);
     if (converted <= 0)
     {
-        converted = MultiByteToWideChar(CP_ACP, 0, Text, -1, Output, (int)OutputChars);
+        converted = MultiByteToWideChar(CP_ACP, 0, Text, -1, Output, (int) OutputChars);
     }
     return (converted > 0);
 }
@@ -127,8 +127,8 @@ static VOID StripWrappingQuotesInPlace(_Inout_updates_z_(BufferChars) WCHAR *Buf
     }
 }
 
-static VOID NormalizePathForCompare(_In_z_ const WCHAR *Input, _Out_writes_z_(OutputChars) WCHAR *Output,
-                                    _In_ size_t OutputChars)
+static VOID
+NormalizePathForCompare(_In_z_ const WCHAR *Input, _Out_writes_z_(OutputChars) WCHAR *Output, _In_ size_t OutputChars)
 {
     size_t i;
     size_t j = 0;
@@ -151,7 +151,7 @@ static VOID NormalizePathForCompare(_In_z_ const WCHAR *Input, _Out_writes_z_(Ou
         {
             ch = L'\\';
         }
-        Output[j++] = (WCHAR)towlower(ch);
+        Output[j++] = (WCHAR) towlower(ch);
     }
     Output[j] = L'\0';
 }
@@ -165,8 +165,8 @@ static BOOL IsDrivePathW(_In_z_ const WCHAR *Path)
     return (Path[0] != L'\0' && Path[1] == L':');
 }
 
-static VOID BuildTailFromDosPath(_In_z_ const WCHAR *DosPath, _Out_writes_z_(TailChars) WCHAR *Tail,
-                                 _In_ size_t TailChars)
+static VOID
+BuildTailFromDosPath(_In_z_ const WCHAR *DosPath, _Out_writes_z_(TailChars) WCHAR *Tail, _In_ size_t TailChars)
 {
     WCHAR normalized[BLACKBIRD_PATH_CHARS];
 
@@ -182,11 +182,11 @@ static VOID BuildTailFromDosPath(_In_z_ const WCHAR *DosPath, _Out_writes_z_(Tai
     }
 
     NormalizePathForCompare(DosPath + 2, normalized, RTL_NUMBER_OF(normalized));
-    (void)StringCchCopyW(Tail, TailChars, normalized);
+    (void) StringCchCopyW(Tail, TailChars, normalized);
 }
 
-static BOOL BuildNtPathFromDosPath(_In_z_ const WCHAR *DosPath, _Out_writes_z_(NtChars) WCHAR *NtPath,
-                                   _In_ size_t NtChars)
+static BOOL
+BuildNtPathFromDosPath(_In_z_ const WCHAR *DosPath, _Out_writes_z_(NtChars) WCHAR *NtPath, _In_ size_t NtChars)
 {
     WCHAR drive[3];
     WCHAR devicePrefix[BLACKBIRD_PATH_CHARS];
@@ -196,7 +196,7 @@ static BOOL BuildNtPathFromDosPath(_In_z_ const WCHAR *DosPath, _Out_writes_z_(N
         return FALSE;
     }
 
-    drive[0] = (WCHAR)towupper(DosPath[0]);
+    drive[0] = (WCHAR) towupper(DosPath[0]);
     drive[1] = L':';
     drive[2] = L'\0';
 
@@ -317,7 +317,7 @@ static BOOL ResolvePathSpec(_In_z_ const char *PathText, _Out_ BLACKBIRD_TARGET_
         fullLen = GetFullPathNameW(effective, RTL_NUMBER_OF(canonical), canonical, NULL);
         if (fullLen == 0 || fullLen >= RTL_NUMBER_OF(canonical))
         {
-            (void)StringCchCopyW(canonical, RTL_NUMBER_OF(canonical), effective);
+            (void) StringCchCopyW(canonical, RTL_NUMBER_OF(canonical), effective);
         }
         effective = canonical;
     }
@@ -328,7 +328,7 @@ static BOOL ResolvePathSpec(_In_z_ const char *PathText, _Out_ BLACKBIRD_TARGET_
     }
 
     Spec->Kind = BlackbirdTargetPath;
-    (void)StringCchCopyW(Spec->PathRaw, RTL_NUMBER_OF(Spec->PathRaw), effective);
+    (void) StringCchCopyW(Spec->PathRaw, RTL_NUMBER_OF(Spec->PathRaw), effective);
     NormalizePathForCompare(effective, Spec->PathNormDos, RTL_NUMBER_OF(Spec->PathNormDos));
 
     if (IsDrivePathW(effective))
@@ -543,8 +543,8 @@ static void TrimAsciiInPlace(_Inout_updates_z_(BufferChars) char *Text, _In_ siz
     }
 
     end = len;
-    while (end > start &&
-           (Text[end - 1] == ' ' || Text[end - 1] == '\t' || Text[end - 1] == '\r' || Text[end - 1] == '\n'))
+    while (end > start
+           && (Text[end - 1] == ' ' || Text[end - 1] == '\t' || Text[end - 1] == '\r' || Text[end - 1] == '\n'))
     {
         end -= 1;
     }
@@ -569,14 +569,14 @@ static BOOL ParseBoolText(_In_z_ const char *Text, _Out_ BOOL *Value)
     {
         return FALSE;
     }
-    if (_stricmp(Text, "1") == 0 || _stricmp(Text, "true") == 0 || _stricmp(Text, "yes") == 0 ||
-        _stricmp(Text, "on") == 0)
+    if (_stricmp(Text, "1") == 0 || _stricmp(Text, "true") == 0 || _stricmp(Text, "yes") == 0
+        || _stricmp(Text, "on") == 0)
     {
         *Value = TRUE;
         return TRUE;
     }
-    if (_stricmp(Text, "0") == 0 || _stricmp(Text, "false") == 0 || _stricmp(Text, "no") == 0 ||
-        _stricmp(Text, "off") == 0)
+    if (_stricmp(Text, "0") == 0 || _stricmp(Text, "false") == 0 || _stricmp(Text, "no") == 0
+        || _stricmp(Text, "off") == 0)
     {
         *Value = FALSE;
         return TRUE;
@@ -613,19 +613,19 @@ BOOL PolicySetKeyValue(_Inout_ BLACKBIRD_CLIENT_POLICY *Policy, _In_z_ const cha
 
     if (_stricmp(Key, "target") == 0)
     {
-        (void)StringCchCopyA(Policy->TargetArg, RTL_NUMBER_OF(Policy->TargetArg), Value);
+        (void) StringCchCopyA(Policy->TargetArg, RTL_NUMBER_OF(Policy->TargetArg), Value);
         Policy->HasTarget = (Policy->TargetArg[0] != '\0');
         return TRUE;
     }
     if (_stricmp(Key, "streams") == 0)
     {
-        (void)StringCchCopyA(Policy->StreamsArg, RTL_NUMBER_OF(Policy->StreamsArg), Value);
+        (void) StringCchCopyA(Policy->StreamsArg, RTL_NUMBER_OF(Policy->StreamsArg), Value);
         Policy->HasStreams = (Policy->StreamsArg[0] != '\0');
         return TRUE;
     }
     if (_stricmp(Key, "scope") == 0)
     {
-        (void)StringCchCopyA(Policy->ScopeArg, RTL_NUMBER_OF(Policy->ScopeArg), Value);
+        (void) StringCchCopyA(Policy->ScopeArg, RTL_NUMBER_OF(Policy->ScopeArg), Value);
         Policy->HasScope = (Policy->ScopeArg[0] != '\0');
         return TRUE;
     }
@@ -645,12 +645,12 @@ BOOL PolicySetKeyValue(_Inout_ BLACKBIRD_CLIENT_POLICY *Policy, _In_z_ const cha
     }
     if (_stricmp(Key, "log.file") == 0)
     {
-        (void)StringCchCopyA(Policy->LogFilePath, RTL_NUMBER_OF(Policy->LogFilePath), Value);
+        (void) StringCchCopyA(Policy->LogFilePath, RTL_NUMBER_OF(Policy->LogFilePath), Value);
         return TRUE;
     }
     if (_stricmp(Key, "log.high_priority_file") == 0 || _stricmp(Key, "high_priority.file") == 0)
     {
-        (void)StringCchCopyA(Policy->HighPriorityFilePath, RTL_NUMBER_OF(Policy->HighPriorityFilePath), Value);
+        (void) StringCchCopyA(Policy->HighPriorityFilePath, RTL_NUMBER_OF(Policy->HighPriorityFilePath), Value);
         return TRUE;
     }
     if (_stricmp(Key, "log.high_priority_min_severity") == 0 || _stricmp(Key, "high_priority.min_severity") == 0)
@@ -660,7 +660,7 @@ BOOL PolicySetKeyValue(_Inout_ BLACKBIRD_CLIENT_POLICY *Policy, _In_z_ const cha
         {
             return FALSE;
         }
-        Policy->HighPriorityMinSeverity = (DWORD)n;
+        Policy->HighPriorityMinSeverity = (DWORD) n;
         return TRUE;
     }
     if (_stricmp(Key, "output.ioctl_verbose") == 0)
@@ -739,7 +739,7 @@ BOOL LoadPolicyFile(_In_z_ const char *Path, _Inout_ BLACKBIRD_CLIENT_POLICY *Po
         return FALSE;
     }
 
-    while (fgets(line, (int)sizeof(line), f) != NULL)
+    while (fgets(line, (int) sizeof(line), f) != NULL)
     {
         char key[256];
         char value[768];
@@ -763,7 +763,7 @@ BOOL LoadPolicyFile(_In_z_ const char *Path, _Inout_ BLACKBIRD_CLIENT_POLICY *Po
             continue;
         }
 
-        keyLen = (size_t)(sep - line);
+        keyLen = (size_t) (sep - line);
         if (keyLen == 0 || keyLen >= RTL_NUMBER_OF(key))
         {
             continue;
@@ -773,7 +773,7 @@ BOOL LoadPolicyFile(_In_z_ const char *Path, _Inout_ BLACKBIRD_CLIENT_POLICY *Po
         ZeroMemory(value, sizeof(value));
         memcpy(key, line, keyLen);
         key[keyLen] = '\0';
-        (void)StringCchCopyA(value, RTL_NUMBER_OF(value), sep + 1);
+        (void) StringCchCopyA(value, RTL_NUMBER_OF(value), sep + 1);
         TrimAsciiInPlace(key, RTL_NUMBER_OF(key));
         TrimAsciiInPlace(value, RTL_NUMBER_OF(value));
 
@@ -788,7 +788,7 @@ BOOL LoadPolicyFile(_In_z_ const char *Path, _Inout_ BLACKBIRD_CLIENT_POLICY *Po
 
         if (!PolicySetKeyValue(Policy, key, value))
         {
-            printf("[WARN] config ignored key '%s' at %s:%lu\n", key, Path, (unsigned long)lineNo);
+            printf("[WARN] config ignored key '%s' at %s:%lu\n", key, Path, (unsigned long) lineNo);
         }
     }
 
@@ -834,7 +834,7 @@ static void JsonEscapeA(_In_z_ const char *Input, _Out_writes_z_(OutputChars) ch
             Output[w++] = '\\';
             Output[w++] = 't';
         }
-        else if ((unsigned char)ch < 0x20)
+        else if ((unsigned char) ch < 0x20)
         {
             continue;
         }
@@ -858,7 +858,7 @@ void WideToUtf8(_In_opt_z_ const WCHAR *Wide, _Out_writes_z_(OutputChars) char *
     {
         return;
     }
-    converted = WideCharToMultiByte(CP_UTF8, 0, Wide, -1, Output, (int)OutputChars, NULL, NULL);
+    converted = WideCharToMultiByte(CP_UTF8, 0, Wide, -1, Output, (int) OutputChars, NULL, NULL);
     if (converted <= 0)
     {
         Output[0] = '\0';
@@ -873,8 +873,16 @@ static void GetTimestampUtcIso(_Out_writes_z_(OutputChars) char *Output, _In_ si
         return;
     }
     GetSystemTime(&st);
-    (void)StringCchPrintfA(Output, OutputChars, "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ", st.wYear, st.wMonth, st.wDay,
-                           st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+    (void) StringCchPrintfA(Output,
+                            OutputChars,
+                            "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ",
+                            st.wYear,
+                            st.wMonth,
+                            st.wDay,
+                            st.wHour,
+                            st.wMinute,
+                            st.wSecond,
+                            st.wMilliseconds);
 }
 
 static void LoggerWriteLine(_In_opt_ FILE *F, _In_z_ const char *Line)
@@ -883,13 +891,17 @@ static void LoggerWriteLine(_In_opt_ FILE *F, _In_z_ const char *Line)
     {
         return;
     }
-    (void)fputs(Line, F);
-    (void)fputc('\n', F);
-    (void)fflush(F);
+    (void) fputs(Line, F);
+    (void) fputc('\n', F);
+    (void) fflush(F);
 }
 
-void LoggerEmitJson(_In_ DWORD Severity, _In_z_ const char *Category, _In_z_ const char *Kind, _In_ DWORD Pid,
-                    _In_ DWORD TargetPid, _In_z_ const char *Message)
+void LoggerEmitJson(_In_ DWORD Severity,
+                    _In_z_ const char *Category,
+                    _In_z_ const char *Kind,
+                    _In_ DWORD Pid,
+                    _In_ DWORD TargetPid,
+                    _In_z_ const char *Message)
 {
     char ts[64];
     char catEsc[128];
@@ -907,11 +919,17 @@ void LoggerEmitJson(_In_ DWORD Severity, _In_z_ const char *Category, _In_z_ con
     JsonEscapeA(Kind, kindEsc, RTL_NUMBER_OF(kindEsc));
     JsonEscapeA(Message, msgEsc, RTL_NUMBER_OF(msgEsc));
 
-    (void)StringCchPrintfA(line, RTL_NUMBER_OF(line),
-                           "{\"ts\":\"%s\",\"source\":\"blackbird-client\",\"category\":\"%s\",\"kind\":\"%s\","
-                           "\"severity\":%lu,\"pid\":%lu,\"targetPid\":%lu,\"message\":\"%s\"}",
-                           ts, catEsc, kindEsc, (unsigned long)Severity, (unsigned long)Pid, (unsigned long)TargetPid,
-                           msgEsc);
+    (void) StringCchPrintfA(line,
+                            RTL_NUMBER_OF(line),
+                            "{\"ts\":\"%s\",\"source\":\"blackbird-client\",\"category\":\"%s\",\"kind\":\"%s\","
+                            "\"severity\":%lu,\"pid\":%lu,\"targetPid\":%lu,\"message\":\"%s\"}",
+                            ts,
+                            catEsc,
+                            kindEsc,
+                            (unsigned long) Severity,
+                            (unsigned long) Pid,
+                            (unsigned long) TargetPid,
+                            msgEsc);
     LoggerWriteLine(g_Logger.LogFile, line);
 
     if (g_Logger.HighPriorityFile != NULL && Severity >= g_Logger.Policy.HighPriorityMinSeverity)
@@ -938,12 +956,14 @@ BOOL LoggerInitialize(_In_ const BLACKBIRD_CLIENT_POLICY *Policy, _In_ DWORD Tar
 
     if (g_Logger.Policy.LogFilePath[0] == '\0')
     {
-        (void)StringCchCopyA(g_Logger.Policy.LogFilePath, RTL_NUMBER_OF(g_Logger.Policy.LogFilePath), "events.swk.jsonl");
+        (void) StringCchCopyA(
+                g_Logger.Policy.LogFilePath, RTL_NUMBER_OF(g_Logger.Policy.LogFilePath), "events.swk.jsonl");
     }
     if (g_Logger.Policy.HighPriorityFilePath[0] == '\0')
     {
-        (void)StringCchCopyA(g_Logger.Policy.HighPriorityFilePath, RTL_NUMBER_OF(g_Logger.Policy.HighPriorityFilePath),
-                             "high_priority.swk.jsonl");
+        (void) StringCchCopyA(g_Logger.Policy.HighPriorityFilePath,
+                              RTL_NUMBER_OF(g_Logger.Policy.HighPriorityFilePath),
+                              "high_priority.swk.jsonl");
     }
 
     g_Logger.LogFile = fopen(g_Logger.Policy.LogFilePath, "ab");
@@ -959,9 +979,10 @@ BOOL LoggerInitialize(_In_ const BLACKBIRD_CLIENT_POLICY *Policy, _In_ DWORD Tar
         printf("[WARN] failed to open high-priority log file '%s'\n", g_Logger.Policy.HighPriorityFilePath);
     }
 
-    printf("[*] JSONL logging enabled file=%s highPriority=%s minSeverity=%lu\n", g_Logger.Policy.LogFilePath,
+    printf("[*] JSONL logging enabled file=%s highPriority=%s minSeverity=%lu\n",
+           g_Logger.Policy.LogFilePath,
            (g_Logger.HighPriorityFile != NULL) ? g_Logger.Policy.HighPriorityFilePath : "<disabled>",
-           (unsigned long)g_Logger.Policy.HighPriorityMinSeverity);
+           (unsigned long) g_Logger.Policy.HighPriorityMinSeverity);
     return TRUE;
 }
 
@@ -979,7 +1000,9 @@ void LoggerShutdown(void)
     }
 }
 
-BOOL GetEtwWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PWSTR Output,
+BOOL GetEtwWideProperty(_In_ PEVENT_RECORD Record,
+                        _In_z_ PCWSTR Name,
+                        _Out_writes_z_(OutputChars) PWSTR Output,
                         _In_ size_t OutputChars)
 {
     PROPERTY_DATA_DESCRIPTOR descriptor;
@@ -995,7 +1018,7 @@ BOOL GetEtwWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writ
 
     Output[0] = L'\0';
     ZeroMemory(&descriptor, sizeof(descriptor));
-    descriptor.PropertyName = (ULONGLONG)(ULONG_PTR)Name;
+    descriptor.PropertyName = (ULONGLONG) (ULONG_PTR) Name;
     descriptor.ArrayIndex = ULONG_MAX;
 
     status = TdhGetPropertySize(Record, 0, NULL, 1, &descriptor, &propertySize);
@@ -1004,7 +1027,7 @@ BOOL GetEtwWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writ
         return FALSE;
     }
 
-    raw = (BYTE *)malloc(propertySize + sizeof(WCHAR));
+    raw = (BYTE *) malloc(propertySize + sizeof(WCHAR));
     if (raw == NULL)
     {
         return FALSE;
@@ -1014,7 +1037,7 @@ BOOL GetEtwWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writ
     status = TdhGetProperty(Record, 0, NULL, 1, &descriptor, propertySize, raw);
     if (status == ERROR_SUCCESS)
     {
-        (void)StringCchCopyW(Output, OutputChars, (PCWSTR)raw);
+        (void) StringCchCopyW(Output, OutputChars, (PCWSTR) raw);
         ok = TRUE;
     }
 
@@ -1022,7 +1045,9 @@ BOOL GetEtwWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writ
     return ok;
 }
 
-BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PSTR Output,
+BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record,
+                        _In_z_ PCWSTR Name,
+                        _Out_writes_z_(OutputChars) PSTR Output,
                         _In_ size_t OutputChars)
 {
     PROPERTY_DATA_DESCRIPTOR descriptor;
@@ -1038,7 +1063,7 @@ BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writ
 
     Output[0] = '\0';
     ZeroMemory(&descriptor, sizeof(descriptor));
-    descriptor.PropertyName = (ULONGLONG)(ULONG_PTR)Name;
+    descriptor.PropertyName = (ULONGLONG) (ULONG_PTR) Name;
     descriptor.ArrayIndex = ULONG_MAX;
 
     status = TdhGetPropertySize(Record, 0, NULL, 1, &descriptor, &propertySize);
@@ -1047,7 +1072,7 @@ BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writ
         return FALSE;
     }
 
-    raw = (BYTE *)malloc(propertySize + 1);
+    raw = (BYTE *) malloc(propertySize + 1);
     if (raw == NULL)
     {
         return FALSE;
@@ -1057,7 +1082,7 @@ BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writ
     status = TdhGetProperty(Record, 0, NULL, 1, &descriptor, propertySize, raw);
     if (status == ERROR_SUCCESS)
     {
-        (void)StringCchCopyA(Output, OutputChars, (PCSTR)raw);
+        (void) StringCchCopyA(Output, OutputChars, (PCSTR) raw);
         ok = TRUE;
     }
 
@@ -1079,7 +1104,7 @@ BOOL GetEtwU64Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ ULON
 
     *Value = 0;
     ZeroMemory(&descriptor, sizeof(descriptor));
-    descriptor.PropertyName = (ULONGLONG)(ULONG_PTR)Name;
+    descriptor.PropertyName = (ULONGLONG) (ULONG_PTR) Name;
     descriptor.ArrayIndex = ULONG_MAX;
 
     status = TdhGetPropertySize(Record, 0, NULL, 1, &descriptor, &propertySize);
@@ -1097,15 +1122,15 @@ BOOL GetEtwU64Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ ULON
 
     if (propertySize >= sizeof(ULONGLONG))
     {
-        *Value = *(const ULONGLONG *)raw;
+        *Value = *(const ULONGLONG *) raw;
     }
     else if (propertySize >= sizeof(ULONG))
     {
-        *Value = *(const ULONG *)raw;
+        *Value = *(const ULONG *) raw;
     }
     else if (propertySize >= sizeof(USHORT))
     {
-        *Value = *(const USHORT *)raw;
+        *Value = *(const USHORT *) raw;
     }
     else
     {
@@ -1148,11 +1173,13 @@ static BOOL EtwPropertyMatchesTargetPid(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR
         return FALSE;
     }
 
-    return ((DWORD)value == TargetPid);
+    return ((DWORD) value == TargetPid);
 }
 
-static BOOL EtwAnyPropertyMatchesTargetPid(_In_ PEVENT_RECORD Record, _In_reads_(NameCount) const PCWSTR *Names,
-                                           _In_ size_t NameCount, _In_ DWORD TargetPid)
+static BOOL EtwAnyPropertyMatchesTargetPid(_In_ PEVENT_RECORD Record,
+                                           _In_reads_(NameCount) const PCWSTR *Names,
+                                           _In_ size_t NameCount,
+                                           _In_ DWORD TargetPid)
 {
     size_t i;
 
@@ -1172,12 +1199,14 @@ static BOOL EtwAnyPropertyMatchesTargetPid(_In_ PEVENT_RECORD Record, _In_reads_
     return FALSE;
 }
 
-static BOOL EtwRecordMatchesTargetPid(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName, _In_ DWORD TargetPid,
+static BOOL EtwRecordMatchesTargetPid(_In_ PEVENT_RECORD Record,
+                                      _In_opt_z_ PCWSTR EventName,
+                                      _In_ DWORD TargetPid,
                                       _In_ BLACKBIRD_TARGET_SCOPE Scope)
 {
-    static const PCWSTR tiActorNames[] = {L"CallingProcessId", L"CallerProcessId", L"SourceProcessId", L"ProcessId"};
-    static const PCWSTR tiTargetNames[] = {L"TargetProcessId", L"NewProcessId", L"DestProcessId"};
-    static const PCWSTR socketActorNames[] = {L"PID", L"ProcessId", L"processId"};
+    static const PCWSTR tiActorNames[] = { L"CallingProcessId", L"CallerProcessId", L"SourceProcessId", L"ProcessId" };
+    static const PCWSTR tiTargetNames[] = { L"TargetProcessId", L"NewProcessId", L"DestProcessId" };
+    static const PCWSTR socketActorNames[] = { L"PID", L"ProcessId", L"processId" };
     BOOL localMatch = FALSE;
     BOOL remoteMatch = FALSE;
 
@@ -1221,14 +1250,14 @@ static BOOL EtwRecordMatchesTargetPid(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWS
 
         if (wcscmp(EventName, L"DetectionTelemetry") == 0 || wcscmp(EventName, L"ApcTelemetry") == 0)
         {
-            localMatch = EtwPropertyMatchesTargetPid(Record, L"processId", TargetPid) ||
-                         EtwPropertyMatchesTargetPid(Record, L"callerPid", TargetPid);
+            localMatch = EtwPropertyMatchesTargetPid(Record, L"processId", TargetPid)
+                    || EtwPropertyMatchesTargetPid(Record, L"callerPid", TargetPid);
             remoteMatch = EtwPropertyMatchesTargetPid(Record, L"targetPid", TargetPid);
             return ScopeMatches(Scope, localMatch, remoteMatch);
         }
 
-        localMatch = EtwPropertyMatchesTargetPid(Record, L"processId", TargetPid) ||
-                     EtwPropertyMatchesTargetPid(Record, L"callerPid", TargetPid);
+        localMatch = EtwPropertyMatchesTargetPid(Record, L"processId", TargetPid)
+                || EtwPropertyMatchesTargetPid(Record, L"callerPid", TargetPid);
         remoteMatch = EtwPropertyMatchesTargetPid(Record, L"targetPid", TargetPid);
         return ScopeMatches(Scope, localMatch, remoteMatch);
     }
@@ -1241,8 +1270,8 @@ static BOOL EtwRecordMatchesTargetPid(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWS
     }
     if (IsEqualGUID(&Record->EventHeader.ProviderId, &BLACKBIRDSC_PROVIDER_GUID_KERNEL_NETWORK))
     {
-        localMatch = (Record->EventHeader.ProcessId == TargetPid) ||
-                     EtwAnyPropertyMatchesTargetPid(Record, socketActorNames, RTL_NUMBER_OF(socketActorNames), TargetPid);
+        localMatch = (Record->EventHeader.ProcessId == TargetPid)
+                || EtwAnyPropertyMatchesTargetPid(Record, socketActorNames, RTL_NUMBER_OF(socketActorNames), TargetPid);
         remoteMatch = FALSE;
         return ScopeMatches(Scope, localMatch, remoteMatch);
     }
@@ -1250,7 +1279,8 @@ static BOOL EtwRecordMatchesTargetPid(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWS
     return FALSE;
 }
 
-BOOL BrokerEtwEventMatchesTargetPid(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event, _In_ DWORD TargetPid,
+BOOL BrokerEtwEventMatchesTargetPid(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event,
+                                    _In_ DWORD TargetPid,
                                     _In_ BLACKBIRD_TARGET_SCOPE Scope)
 {
     DWORD actorPid = 0;
@@ -1265,79 +1295,79 @@ BOOL BrokerEtwEventMatchesTargetPid(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event, _
 
     switch (Event->Family)
     {
-    case BlackbirdIpcEtwFamilyHandle:
-    case BlackbirdIpcEtwFamilyApc:
-        if (Event->CallerPid != 0 && Event->CallerPid <= 0xFFFFFFFFull)
-        {
-            actorPid = (DWORD)Event->CallerPid;
-        }
-        else if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
-        {
-            actorPid = (DWORD)Event->ProcessId;
-        }
-        if (Event->TargetPid != 0 && Event->TargetPid <= 0xFFFFFFFFull)
-        {
-            remotePid = (DWORD)Event->TargetPid;
-        }
-        break;
-    case BlackbirdIpcEtwFamilyThread:
-        if (Event->CreatorProcessId != 0 && Event->CreatorProcessId <= 0xFFFFFFFFull)
-        {
-            actorPid = (DWORD)Event->CreatorProcessId;
-        }
-        else if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
-        {
-            actorPid = (DWORD)Event->ProcessId;
-        }
-        if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
-        {
-            remotePid = (DWORD)Event->ProcessId;
-        }
-        break;
-    case BlackbirdIpcEtwFamilyProcess:
-        if (Event->CreatorProcessId != 0 && Event->CreatorProcessId <= 0xFFFFFFFFull)
-        {
-            actorPid = (DWORD)Event->CreatorProcessId;
-        }
-        else if (Event->ParentProcessId != 0 && Event->ParentProcessId <= 0xFFFFFFFFull)
-        {
-            actorPid = (DWORD)Event->ParentProcessId;
-        }
-        else if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
-        {
-            actorPid = (DWORD)Event->ProcessId;
-        }
-        if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
-        {
-            remotePid = (DWORD)Event->ProcessId;
-        }
-        break;
-    case BlackbirdIpcEtwFamilyDetection:
-    case BlackbirdIpcEtwFamilyThreatIntel:
-    case BlackbirdIpcEtwFamilySocket:
-        if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
-        {
-            actorPid = (DWORD)Event->ProcessId;
-        }
-        if (Event->TargetPid != 0 && Event->TargetPid <= 0xFFFFFFFFull)
-        {
-            remotePid = (DWORD)Event->TargetPid;
-        }
-        break;
-    default:
-        if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
-        {
-            actorPid = (DWORD)Event->ProcessId;
-        }
-        else if (Event->EventProcessId != 0)
-        {
-            actorPid = Event->EventProcessId;
-        }
-        if (Event->TargetPid != 0 && Event->TargetPid <= 0xFFFFFFFFull)
-        {
-            remotePid = (DWORD)Event->TargetPid;
-        }
-        break;
+        case BlackbirdIpcEtwFamilyHandle:
+        case BlackbirdIpcEtwFamilyApc:
+            if (Event->CallerPid != 0 && Event->CallerPid <= 0xFFFFFFFFull)
+            {
+                actorPid = (DWORD) Event->CallerPid;
+            }
+            else if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
+            {
+                actorPid = (DWORD) Event->ProcessId;
+            }
+            if (Event->TargetPid != 0 && Event->TargetPid <= 0xFFFFFFFFull)
+            {
+                remotePid = (DWORD) Event->TargetPid;
+            }
+            break;
+        case BlackbirdIpcEtwFamilyThread:
+            if (Event->CreatorProcessId != 0 && Event->CreatorProcessId <= 0xFFFFFFFFull)
+            {
+                actorPid = (DWORD) Event->CreatorProcessId;
+            }
+            else if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
+            {
+                actorPid = (DWORD) Event->ProcessId;
+            }
+            if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
+            {
+                remotePid = (DWORD) Event->ProcessId;
+            }
+            break;
+        case BlackbirdIpcEtwFamilyProcess:
+            if (Event->CreatorProcessId != 0 && Event->CreatorProcessId <= 0xFFFFFFFFull)
+            {
+                actorPid = (DWORD) Event->CreatorProcessId;
+            }
+            else if (Event->ParentProcessId != 0 && Event->ParentProcessId <= 0xFFFFFFFFull)
+            {
+                actorPid = (DWORD) Event->ParentProcessId;
+            }
+            else if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
+            {
+                actorPid = (DWORD) Event->ProcessId;
+            }
+            if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
+            {
+                remotePid = (DWORD) Event->ProcessId;
+            }
+            break;
+        case BlackbirdIpcEtwFamilyDetection:
+        case BlackbirdIpcEtwFamilyThreatIntel:
+        case BlackbirdIpcEtwFamilySocket:
+            if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
+            {
+                actorPid = (DWORD) Event->ProcessId;
+            }
+            if (Event->TargetPid != 0 && Event->TargetPid <= 0xFFFFFFFFull)
+            {
+                remotePid = (DWORD) Event->TargetPid;
+            }
+            break;
+        default:
+            if (Event->ProcessId != 0 && Event->ProcessId <= 0xFFFFFFFFull)
+            {
+                actorPid = (DWORD) Event->ProcessId;
+            }
+            else if (Event->EventProcessId != 0)
+            {
+                actorPid = Event->EventProcessId;
+            }
+            if (Event->TargetPid != 0 && Event->TargetPid <= 0xFFFFFFFFull)
+            {
+                remotePid = (DWORD) Event->TargetPid;
+            }
+            break;
     }
 
     localMatch = (actorPid == TargetPid);
@@ -1347,7 +1377,7 @@ BOOL BrokerEtwEventMatchesTargetPid(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event, _
 }
 VOID WINAPI LiveEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName, _In_opt_ PVOID Context)
 {
-    BLACKBIRD_LIVE_ETW_CONTEXT *live = (BLACKBIRD_LIVE_ETW_CONTEXT *)Context;
+    BLACKBIRD_LIVE_ETW_CONTEXT *live = (BLACKBIRD_LIVE_ETW_CONTEXT *) Context;
 
     if (Record == NULL || live == NULL || live->Attach == NULL)
     {
@@ -1377,7 +1407,7 @@ VOID WINAPI LiveEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventNa
 }
 VOID WINAPI PathWatchEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName, _In_opt_ PVOID Context)
 {
-    BLACKBIRD_PATH_WATCH_CONTEXT *watch = (BLACKBIRD_PATH_WATCH_CONTEXT *)Context;
+    BLACKBIRD_PATH_WATCH_CONTEXT *watch = (BLACKBIRD_PATH_WATCH_CONTEXT *) Context;
     WCHAR imagePath[BLACKBIRD_PATH_CHARS];
     ULONGLONG pidValue = 0;
     BLACKBIRD_TARGET_SPEC spec;
@@ -1409,33 +1439,31 @@ VOID WINAPI PathWatchEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR Ev
 
     ZeroMemory(&spec, sizeof(spec));
     spec.Kind = BlackbirdTargetPath;
-    (void)StringCchCopyW(spec.PathNormDos, RTL_NUMBER_OF(spec.PathNormDos), watch->TargetNormDos);
-    (void)StringCchCopyW(spec.PathNormNt, RTL_NUMBER_OF(spec.PathNormNt), watch->TargetNormNt);
-    (void)StringCchCopyW(spec.PathTail, RTL_NUMBER_OF(spec.PathTail), watch->TargetTail);
+    (void) StringCchCopyW(spec.PathNormDos, RTL_NUMBER_OF(spec.PathNormDos), watch->TargetNormDos);
+    (void) StringCchCopyW(spec.PathNormNt, RTL_NUMBER_OF(spec.PathNormNt), watch->TargetNormNt);
+    (void) StringCchCopyW(spec.PathTail, RTL_NUMBER_OF(spec.PathTail), watch->TargetTail);
     if (!PathMatchesSpec(&spec, imagePath))
     {
         return;
     }
 
-    watch->MatchedPid = (DWORD)pidValue;
+    watch->MatchedPid = (DWORD) pidValue;
     InterlockedExchange(&watch->Matched, 1);
 }
 
- DWORD WINAPI EtwRunThreadProc(_In_ LPVOID Context)
+DWORD WINAPI EtwRunThreadProc(_In_ LPVOID Context)
 {
-    BLACKBIRD_ETW_RUN_CONTEXT *run = (BLACKBIRD_ETW_RUN_CONTEXT *)Context;
+    BLACKBIRD_ETW_RUN_CONTEXT *run = (BLACKBIRD_ETW_RUN_CONTEXT *) Context;
 
     if (run == NULL || run->Session == NULL)
     {
         return 1;
     }
 
-    (void)BLACKBIRDSCRunEtwSession(run->Session);
+    (void) BLACKBIRDSCRunEtwSession(run->Session);
     if (run->Watch != NULL)
     {
         InterlockedExchange(&run->Watch->SessionEnded, 1);
     }
     return 0;
 }
-
-

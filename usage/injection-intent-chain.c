@@ -9,9 +9,12 @@
 
 // {D6C73F8A-6AD8-4F4B-A363-3D2FA31CD0E2}
 static const GUID BLACKBIRD_PROVIDER_GUID = {
-    0xd6c73f8a, 0x6ad8, 0x4f4b, {0xa3, 0x63, 0x3d, 0x2f, 0xa3, 0x1c, 0xd0, 0xe2}};
+    0xd6c73f8a, 0x6ad8, 0x4f4b, { 0xa3, 0x63, 0x3d, 0x2f, 0xa3, 0x1c, 0xd0, 0xe2 }
+};
 
-static BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PSTR Output,
+static BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record,
+                               _In_z_ PCWSTR Name,
+                               _Out_writes_z_(OutputChars) PSTR Output,
                                _In_ size_t OutputChars)
 {
     PROPERTY_DATA_DESCRIPTOR descriptor;
@@ -27,7 +30,7 @@ static BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _O
 
     Output[0] = '\0';
     ZeroMemory(&descriptor, sizeof(descriptor));
-    descriptor.PropertyName = (ULONGLONG)(ULONG_PTR)Name;
+    descriptor.PropertyName = (ULONGLONG) (ULONG_PTR) Name;
     descriptor.ArrayIndex = ULONG_MAX;
 
     status = TdhGetPropertySize(Record, 0, NULL, 1, &descriptor, &size);
@@ -36,7 +39,7 @@ static BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _O
         return FALSE;
     }
 
-    data = (PBYTE)malloc(size + 1);
+    data = (PBYTE) malloc(size + 1);
     if (data == NULL)
     {
         return FALSE;
@@ -46,7 +49,7 @@ static BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _O
     status = TdhGetProperty(Record, 0, NULL, 1, &descriptor, size, data);
     if (status == ERROR_SUCCESS)
     {
-        (void)StringCchCopyA(Output, OutputChars, (PCSTR)data);
+        (void) StringCchCopyA(Output, OutputChars, (PCSTR) data);
         ok = TRUE;
     }
 
@@ -68,7 +71,7 @@ static BOOL GetEtwUInt32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, 
 
     *Value = 0;
     ZeroMemory(&descriptor, sizeof(descriptor));
-    descriptor.PropertyName = (ULONGLONG)(ULONG_PTR)Name;
+    descriptor.PropertyName = (ULONGLONG) (ULONG_PTR) Name;
     descriptor.ArrayIndex = ULONG_MAX;
 
     status = TdhGetPropertySize(Record, 0, NULL, 1, &descriptor, &size);
@@ -77,7 +80,7 @@ static BOOL GetEtwUInt32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, 
         return FALSE;
     }
 
-    status = TdhGetProperty(Record, 0, NULL, 1, &descriptor, sizeof(value), (PBYTE)&value);
+    status = TdhGetProperty(Record, 0, NULL, 1, &descriptor, sizeof(value), (PBYTE) &value);
     if (status != ERROR_SUCCESS)
     {
         return FALSE;
@@ -115,12 +118,12 @@ static VOID WINAPI OnEvent(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventNam
         return;
     }
 
-    (void)GetEtwUInt32Property(Record, L"severity", &severity);
+    (void) GetEtwUInt32Property(Record, L"severity", &severity);
 
-    if (strcmp(detectionName, "POSSIBLE_PROCESS_HOLLOWING_OR_INJECTION_INTENT_CHAIN") == 0 ||
-        strcmp(detectionName, "DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION") == 0 ||
-        strcmp(detectionName, "SUSPICIOUS_NTDLL_IMAGE_PATH") == 0 ||
-        strcmp(detectionName, "MULTIPLE_NTDLL_IMAGE_MAPPINGS") == 0)
+    if (strcmp(detectionName, "POSSIBLE_PROCESS_HOLLOWING_OR_INJECTION_INTENT_CHAIN") == 0
+        || strcmp(detectionName, "DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION") == 0
+        || strcmp(detectionName, "SUSPICIOUS_NTDLL_IMAGE_PATH") == 0
+        || strcmp(detectionName, "MULTIPLE_NTDLL_IMAGE_MAPPINGS") == 0)
     {
         printf("[ALERT] injection intent signal: %s (severity=%u)\n", detectionName, severity);
     }
@@ -152,7 +155,7 @@ int __cdecl wmain(void)
     }
 
     wprintf(L"ETW session running, press Ctrl+C to stop\n");
-    (void)BLACKBIRDSCRunEtwSession(session);
+    (void) BLACKBIRDSCRunEtwSession(session);
 
     BLACKBIRDSCStopEtwSession(session);
     return 0;

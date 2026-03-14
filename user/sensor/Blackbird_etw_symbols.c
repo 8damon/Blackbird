@@ -59,8 +59,8 @@ static VOID BLACKBIRDLeaveSymbolLock(VOID)
     }
 }
 
-static VOID BLACKBIRDFormatWin32Error(_In_ DWORD ErrorCode, _Out_writes_z_(OutputChars) PWSTR Output,
-                                        _In_ size_t OutputChars)
+static VOID
+BLACKBIRDFormatWin32Error(_In_ DWORD ErrorCode, _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
 {
     WCHAR message[256];
     DWORD chars;
@@ -72,26 +72,32 @@ static VOID BLACKBIRDFormatWin32Error(_In_ DWORD ErrorCode, _Out_writes_z_(Outpu
 
     if (ErrorCode == ERROR_SUCCESS)
     {
-        (void)StringCchCopyW(Output, OutputChars, L"SUCCESS(0)");
+        (void) StringCchCopyW(Output, OutputChars, L"SUCCESS(0)");
         return;
     }
 
     ZeroMemory(message, sizeof(message));
-    chars = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, ErrorCode,
-                           MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), message, RTL_NUMBER_OF(message), NULL);
+    chars = FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+                           NULL,
+                           ErrorCode,
+                           MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                           message,
+                           RTL_NUMBER_OF(message),
+                           NULL);
     if (chars != 0)
     {
-        while (chars > 0 && (message[chars - 1] == L'\r' || message[chars - 1] == L'\n' || message[chars - 1] == L' ' ||
-                             message[chars - 1] == L'\t'))
+        while (chars > 0
+               && (message[chars - 1] == L'\r' || message[chars - 1] == L'\n' || message[chars - 1] == L' '
+                   || message[chars - 1] == L'\t'))
         {
             message[chars - 1] = L'\0';
             chars -= 1;
         }
-        (void)StringCchPrintfW(Output, OutputChars, L"%lu (%ls)", ErrorCode, message);
+        (void) StringCchPrintfW(Output, OutputChars, L"%lu (%ls)", ErrorCode, message);
         return;
     }
 
-    (void)StringCchPrintfW(Output, OutputChars, L"%lu", ErrorCode);
+    (void) StringCchPrintfW(Output, OutputChars, L"%lu", ErrorCode);
 }
 
 static BOOL BLACKBIRDIsLikelyKernelAddress(_In_ ULONGLONG Address)
@@ -130,8 +136,8 @@ static VOID BLACKBIRDResetModuleCache(VOID)
 }
 
 static VOID BLACKBIRDCommitModuleSnapshot(_In_ DWORD ProcessId,
-                                            _In_reads_(ModuleCount) const BLACKBIRD_MODULE_CACHE_ENTRY *Modules,
-                                            _In_ DWORD ModuleCount)
+                                          _In_reads_(ModuleCount) const BLACKBIRD_MODULE_CACHE_ENTRY *Modules,
+                                          _In_ DWORD ModuleCount)
 {
     DWORD i;
     DWORD slot = 0;
@@ -156,7 +162,7 @@ static VOID BLACKBIRDCommitModuleSnapshot(_In_ DWORD ProcessId,
     {
         idx = 0;
     }
-    slot = (DWORD)idx % RTL_NUMBER_OF(g_ModuleCache);
+    slot = (DWORD) idx % RTL_NUMBER_OF(g_ModuleCache);
 
 WriteSnapshot:
     g_ModuleCache[slot].ProcessId = ProcessId;
@@ -195,14 +201,16 @@ static BLACKBIRD_MODULE_CACHE_PID_ENTRY *BLACKBIRDGetOrCreateModuleCacheSlot(_In
     {
         idx = 0;
     }
-    slot = (DWORD)idx % RTL_NUMBER_OF(g_ModuleCache);
+    slot = (DWORD) idx % RTL_NUMBER_OF(g_ModuleCache);
     ZeroMemory(&g_ModuleCache[slot], sizeof(g_ModuleCache[slot]));
     g_ModuleCache[slot].ProcessId = ProcessId;
     return &g_ModuleCache[slot];
 }
 
-static VOID BLACKBIRDCacheSingleModuleRange(_In_ DWORD ProcessId, _In_ ULONGLONG ImageBase, _In_ ULONGLONG ImageSize,
-                                              _In_opt_z_ PCWSTR ImagePath)
+static VOID BLACKBIRDCacheSingleModuleRange(_In_ DWORD ProcessId,
+                                            _In_ ULONGLONG ImageBase,
+                                            _In_ ULONGLONG ImageSize,
+                                            _In_opt_z_ PCWSTR ImagePath)
 {
     BLACKBIRD_MODULE_CACHE_PID_ENTRY *slot;
     DWORD i;
@@ -220,7 +228,7 @@ static VOID BLACKBIRDCacheSingleModuleRange(_In_ DWORD ProcessId, _In_ ULONGLONG
         return;
     }
 
-    moduleSlot = (DWORD)-1;
+    moduleSlot = (DWORD) -1;
     for (i = 0; i < slot->ModuleCount; ++i)
     {
         if (slot->Modules[i].Base == ImageBase)
@@ -230,7 +238,7 @@ static VOID BLACKBIRDCacheSingleModuleRange(_In_ DWORD ProcessId, _In_ ULONGLONG
         }
     }
 
-    if (moduleSlot == (DWORD)-1)
+    if (moduleSlot == (DWORD) -1)
     {
         if (slot->ModuleCount < RTL_NUMBER_OF(slot->Modules))
         {
@@ -239,7 +247,7 @@ static VOID BLACKBIRDCacheSingleModuleRange(_In_ DWORD ProcessId, _In_ ULONGLONG
         }
         else
         {
-            moduleSlot = (DWORD)(ImageBase % RTL_NUMBER_OF(slot->Modules));
+            moduleSlot = (DWORD) (ImageBase % RTL_NUMBER_OF(slot->Modules));
         }
     }
 
@@ -250,12 +258,14 @@ static VOID BLACKBIRDCacheSingleModuleRange(_In_ DWORD ProcessId, _In_ ULONGLONG
     name = BLACKBIRDGetPathBaseName(ImagePath);
     if (name != NULL && name[0] != L'\0')
     {
-        (void)StringCchCopyW(slot->Modules[moduleSlot].Name, RTL_NUMBER_OF(slot->Modules[moduleSlot].Name), name);
+        (void) StringCchCopyW(slot->Modules[moduleSlot].Name, RTL_NUMBER_OF(slot->Modules[moduleSlot].Name), name);
     }
 }
 
-static BOOL BLACKBIRDTryResolveViaModuleCache(_In_ DWORD ProcessId, _In_ ULONGLONG Address,
-                                                _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
+static BOOL BLACKBIRDTryResolveViaModuleCache(_In_ DWORD ProcessId,
+                                              _In_ ULONGLONG Address,
+                                              _Out_writes_z_(OutputChars) PWSTR Output,
+                                              _In_ size_t OutputChars)
 {
     DWORD i;
     DWORD j;
@@ -293,8 +303,11 @@ static BOOL BLACKBIRDTryResolveViaModuleCache(_In_ DWORD ProcessId, _In_ ULONGLO
                 continue;
             }
 
-            (void)StringCchPrintfW(Output, OutputChars, L"%ls+0x%llX",
-                                   entry->Modules[j].Name[0] ? entry->Modules[j].Name : L"<module>", Address - base);
+            (void) StringCchPrintfW(Output,
+                                    OutputChars,
+                                    L"%ls+0x%llX",
+                                    entry->Modules[j].Name[0] ? entry->Modules[j].Name : L"<module>",
+                                    Address - base);
             return TRUE;
         }
     }
@@ -316,11 +329,11 @@ static VOID BLACKBIRDCacheUserPid(_In_ DWORD ProcessId)
     {
         idx = 0;
     }
-    g_UserModulePids[(UINT32)idx % RTL_NUMBER_OF(g_UserModulePids)] = ProcessId;
+    g_UserModulePids[(UINT32) idx % RTL_NUMBER_OF(g_UserModulePids)] = ProcessId;
 }
 
-static VOID BLACKBIRDLoadUserModulesForProcess(_In_ DWORD ProcessId, _In_ BOOL ForceReload,
-                                                 _Out_opt_ DWORD *OpenProcessErrorCode)
+static VOID
+BLACKBIRDLoadUserModulesForProcess(_In_ DWORD ProcessId, _In_ BOOL ForceReload, _Out_opt_ DWORD *OpenProcessErrorCode)
 {
     HANDLE process;
     HMODULE mods[1024];
@@ -343,11 +356,11 @@ static VOID BLACKBIRDLoadUserModulesForProcess(_In_ DWORD ProcessId, _In_ BOOL F
 
     if (ForceReload)
     {
-        (void)SymRefreshModuleList(g_ProcessHandle);
+        (void) SymRefreshModuleList(g_ProcessHandle);
     }
 
-    process =
-        OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, ProcessId);
+    process = OpenProcess(
+            PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, ProcessId);
     if (process == NULL)
     {
         DWORD openErr = GetLastError();
@@ -403,35 +416,41 @@ static VOID BLACKBIRDLoadUserModulesForProcess(_In_ DWORD ProcessId, _In_ BOOL F
             continue;
         }
 
-        (void)GetModuleFileNameExW(process, mods[i], pathW, RTL_NUMBER_OF(pathW));
-        (void)GetModuleBaseNameW(process, mods[i], nameW, RTL_NUMBER_OF(nameW));
+        (void) GetModuleFileNameExW(process, mods[i], pathW, RTL_NUMBER_OF(pathW));
+        (void) GetModuleBaseNameW(process, mods[i], nameW, RTL_NUMBER_OF(nameW));
         if (snapshotCount < RTL_NUMBER_OF(moduleSnapshot))
         {
-            moduleSnapshot[snapshotCount].Base = (ULONGLONG)(ULONG_PTR)mi.lpBaseOfDll;
-            moduleSnapshot[snapshotCount].Size = (ULONGLONG)mi.SizeOfImage;
+            moduleSnapshot[snapshotCount].Base = (ULONGLONG) (ULONG_PTR) mi.lpBaseOfDll;
+            moduleSnapshot[snapshotCount].Size = (ULONGLONG) mi.SizeOfImage;
             moduleSnapshot[snapshotCount].Name[0] = L'\0';
 
             if (nameW[0] != L'\0')
             {
-                (void)StringCchCopyW(moduleSnapshot[snapshotCount].Name,
-                                     RTL_NUMBER_OF(moduleSnapshot[snapshotCount].Name), nameW);
+                (void) StringCchCopyW(
+                        moduleSnapshot[snapshotCount].Name, RTL_NUMBER_OF(moduleSnapshot[snapshotCount].Name), nameW);
             }
             else if (pathW[0] != L'\0')
             {
-                (void)StringCchCopyW(moduleSnapshot[snapshotCount].Name,
-                                     RTL_NUMBER_OF(moduleSnapshot[snapshotCount].Name),
-                                     BLACKBIRDGetPathBaseName(pathW));
+                (void) StringCchCopyW(moduleSnapshot[snapshotCount].Name,
+                                      RTL_NUMBER_OF(moduleSnapshot[snapshotCount].Name),
+                                      BLACKBIRDGetPathBaseName(pathW));
             }
             snapshotCount += 1;
         }
         pathToTry = (pathW[0] != L'\0') ? pathW : NULL;
-        loadedBase = SymLoadModuleExW(g_ProcessHandle, NULL, pathToTry, (nameW[0] != L'\0') ? nameW : NULL,
-                                      (DWORD64)(ULONG_PTR)mi.lpBaseOfDll, mi.SizeOfImage, NULL, 0);
+        loadedBase = SymLoadModuleExW(g_ProcessHandle,
+                                      NULL,
+                                      pathToTry,
+                                      (nameW[0] != L'\0') ? nameW : NULL,
+                                      (DWORD64) (ULONG_PTR) mi.lpBaseOfDll,
+                                      mi.SizeOfImage,
+                                      NULL,
+                                      0);
         symErr = GetLastError();
 
         if ((loadedBase == 0) && pathW[0] != L'\0' && wcsncmp(pathW, L"\\??\\", 4) == 0)
         {
-            (void)StringCchCopyW(pathDos, RTL_NUMBER_OF(pathDos), pathW + 4);
+            (void) StringCchCopyW(pathDos, RTL_NUMBER_OF(pathDos), pathW + 4);
         }
         else if ((loadedBase == 0) && pathW[0] != L'\0' && pathW[0] == L'\\')
         {
@@ -447,23 +466,35 @@ static VOID BLACKBIRDLoadUserModulesForProcess(_In_ DWORD ProcessId, _In_ BOOL F
                 }
                 if (_wcsnicmp(pathW, devicePath, wcslen(devicePath)) == 0)
                 {
-                    (void)StringCchPrintfW(pathDos, RTL_NUMBER_OF(pathDos), L"%c:%ls", drive,
-                                           pathW + wcslen(devicePath));
+                    (void) StringCchPrintfW(
+                            pathDos, RTL_NUMBER_OF(pathDos), L"%c:%ls", drive, pathW + wcslen(devicePath));
                 }
             }
         }
 
         if (loadedBase == 0 && pathDos[0] != L'\0')
         {
-            loadedBase = SymLoadModuleExW(g_ProcessHandle, NULL, pathDos, (nameW[0] != L'\0') ? nameW : NULL,
-                                          (DWORD64)(ULONG_PTR)mi.lpBaseOfDll, mi.SizeOfImage, NULL, 0);
+            loadedBase = SymLoadModuleExW(g_ProcessHandle,
+                                          NULL,
+                                          pathDos,
+                                          (nameW[0] != L'\0') ? nameW : NULL,
+                                          (DWORD64) (ULONG_PTR) mi.lpBaseOfDll,
+                                          mi.SizeOfImage,
+                                          NULL,
+                                          0);
             symErr = GetLastError();
         }
 
         if (loadedBase == 0)
         {
-            loadedBase = SymLoadModuleExW(g_ProcessHandle, NULL, NULL, (nameW[0] != L'\0') ? nameW : NULL,
-                                          (DWORD64)(ULONG_PTR)mi.lpBaseOfDll, mi.SizeOfImage, NULL, SLMFLAG_VIRTUAL);
+            loadedBase = SymLoadModuleExW(g_ProcessHandle,
+                                          NULL,
+                                          NULL,
+                                          (nameW[0] != L'\0') ? nameW : NULL,
+                                          (DWORD64) (ULONG_PTR) mi.lpBaseOfDll,
+                                          mi.SizeOfImage,
+                                          NULL,
+                                          SLMFLAG_VIRTUAL);
             symErr = GetLastError();
         }
 
@@ -502,9 +533,11 @@ static PCWSTR BLACKBIRDGetPathBaseName(_In_z_ PCWSTR Path)
     return (slash != NULL && slash[1] != L'\0') ? (slash + 1) : Path;
 }
 
-static BOOL BLACKBIRDTryResolveViaModuleEnum(_In_ HANDLE ProcessHandle, _In_ ULONGLONG Address,
-                                               _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars,
-                                               _Out_opt_ DWORD *ErrorCode)
+static BOOL BLACKBIRDTryResolveViaModuleEnum(_In_ HANDLE ProcessHandle,
+                                             _In_ ULONGLONG Address,
+                                             _Out_writes_z_(OutputChars) PWSTR Output,
+                                             _In_ size_t OutputChars,
+                                             _Out_opt_ DWORD *ErrorCode)
 {
     HMODULE mods[1024];
     DWORD bytesNeeded = 0;
@@ -545,8 +578,8 @@ static BOOL BLACKBIRDTryResolveViaModuleEnum(_In_ HANDLE ProcessHandle, _In_ ULO
             continue;
         }
 
-        base = (ULONGLONG)(ULONG_PTR)mi.lpBaseOfDll;
-        end = base + (ULONGLONG)mi.SizeOfImage;
+        base = (ULONGLONG) (ULONG_PTR) mi.lpBaseOfDll;
+        end = base + (ULONGLONG) mi.SizeOfImage;
         if (end < base)
         {
             continue;
@@ -556,20 +589,20 @@ static BOOL BLACKBIRDTryResolveViaModuleEnum(_In_ HANDLE ProcessHandle, _In_ ULO
             continue;
         }
 
-        (void)GetModuleBaseNameW(ProcessHandle, mods[i], moduleName, RTL_NUMBER_OF(moduleName));
+        (void) GetModuleBaseNameW(ProcessHandle, mods[i], moduleName, RTL_NUMBER_OF(moduleName));
         if (moduleName[0] == L'\0')
         {
             WCHAR fullPath[1024];
             ZeroMemory(fullPath, sizeof(fullPath));
-            (void)GetModuleFileNameExW(ProcessHandle, mods[i], fullPath, RTL_NUMBER_OF(fullPath));
-            (void)StringCchCopyW(moduleName, RTL_NUMBER_OF(moduleName), BLACKBIRDGetPathBaseName(fullPath));
+            (void) GetModuleFileNameExW(ProcessHandle, mods[i], fullPath, RTL_NUMBER_OF(fullPath));
+            (void) StringCchCopyW(moduleName, RTL_NUMBER_OF(moduleName), BLACKBIRDGetPathBaseName(fullPath));
         }
         if (moduleName[0] == L'\0')
         {
-            (void)StringCchCopyW(moduleName, RTL_NUMBER_OF(moduleName), L"<module>");
+            (void) StringCchCopyW(moduleName, RTL_NUMBER_OF(moduleName), L"<module>");
         }
 
-        (void)StringCchPrintfW(Output, OutputChars, L"%ls+0x%llX [module-enum]", moduleName, Address - base);
+        (void) StringCchPrintfW(Output, OutputChars, L"%ls+0x%llX [module-enum]", moduleName, Address - base);
         return TRUE;
     }
 
@@ -580,9 +613,11 @@ static BOOL BLACKBIRDTryResolveViaModuleEnum(_In_ HANDLE ProcessHandle, _In_ ULO
     return FALSE;
 }
 
-static BOOL BLACKBIRDTryResolveViaMappedFile(_In_ HANDLE ProcessHandle, _In_ ULONGLONG Address,
-                                               _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars,
-                                               _Out_opt_ DWORD *ErrorCode)
+static BOOL BLACKBIRDTryResolveViaMappedFile(_In_ HANDLE ProcessHandle,
+                                             _In_ ULONGLONG Address,
+                                             _Out_writes_z_(OutputChars) PWSTR Output,
+                                             _In_ size_t OutputChars,
+                                             _Out_opt_ DWORD *ErrorCode)
 {
     MEMORY_BASIC_INFORMATION mbi;
     WCHAR mappedPath[1024];
@@ -595,7 +630,7 @@ static BOOL BLACKBIRDTryResolveViaMappedFile(_In_ HANDLE ProcessHandle, _In_ ULO
 
     ZeroMemory(&mbi, sizeof(mbi));
     ZeroMemory(mappedPath, sizeof(mappedPath));
-    if (VirtualQueryEx(ProcessHandle, (LPCVOID)(ULONG_PTR)Address, &mbi, sizeof(mbi)) == 0)
+    if (VirtualQueryEx(ProcessHandle, (LPCVOID) (ULONG_PTR) Address, &mbi, sizeof(mbi)) == 0)
     {
         if (ErrorCode != NULL)
         {
@@ -620,9 +655,12 @@ static BOOL BLACKBIRDTryResolveViaMappedFile(_In_ HANDLE ProcessHandle, _In_ ULO
         return FALSE;
     }
 
-    base = (ULONGLONG)(ULONG_PTR)mbi.AllocationBase;
-    (void)StringCchPrintfW(Output, OutputChars, L"%ls+0x%llX [mapped-file]", BLACKBIRDGetPathBaseName(mappedPath),
-                           (Address >= base) ? (Address - base) : 0);
+    base = (ULONGLONG) (ULONG_PTR) mbi.AllocationBase;
+    (void) StringCchPrintfW(Output,
+                            OutputChars,
+                            L"%ls+0x%llX [mapped-file]",
+                            BLACKBIRDGetPathBaseName(mappedPath),
+                            (Address >= base) ? (Address - base) : 0);
     if (ErrorCode != NULL)
     {
         *ErrorCode = ERROR_SUCCESS;
@@ -630,11 +668,13 @@ static BOOL BLACKBIRDTryResolveViaMappedFile(_In_ HANDLE ProcessHandle, _In_ ULO
     return TRUE;
 }
 
-static BOOL BLACKBIRDTryResolveAddressViaProcess(_In_ DWORD ProcessId, _In_ ULONGLONG Address,
-                                                   _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars,
-                                                   _Out_opt_ DWORD *OpenProcessErrorCode,
-                                                   _Out_opt_ DWORD *ModuleEnumErrorCode,
-                                                   _Out_opt_ DWORD *MappedFileErrorCode)
+static BOOL BLACKBIRDTryResolveAddressViaProcess(_In_ DWORD ProcessId,
+                                                 _In_ ULONGLONG Address,
+                                                 _Out_writes_z_(OutputChars) PWSTR Output,
+                                                 _In_ size_t OutputChars,
+                                                 _Out_opt_ DWORD *OpenProcessErrorCode,
+                                                 _Out_opt_ DWORD *ModuleEnumErrorCode,
+                                                 _Out_opt_ DWORD *MappedFileErrorCode)
 {
     HANDLE process;
     BOOL resolved = FALSE;
@@ -657,8 +697,8 @@ static BOOL BLACKBIRDTryResolveAddressViaProcess(_In_ DWORD ProcessId, _In_ ULON
         return FALSE;
     }
 
-    process =
-        OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, ProcessId);
+    process = OpenProcess(
+            PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, ProcessId);
     if (process == NULL)
     {
         if (OpenProcessErrorCode != NULL)
@@ -678,9 +718,11 @@ static BOOL BLACKBIRDTryResolveAddressViaProcess(_In_ DWORD ProcessId, _In_ ULON
     return resolved;
 }
 
-static BOOL BLACKBIRDTryResolveViaToolhelpSnapshot(_In_ DWORD ProcessId, _In_ ULONGLONG Address,
-                                                     _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars,
-                                                     _Out_opt_ DWORD *ErrorCode)
+static BOOL BLACKBIRDTryResolveViaToolhelpSnapshot(_In_ DWORD ProcessId,
+                                                   _In_ ULONGLONG Address,
+                                                   _Out_writes_z_(OutputChars) PWSTR Output,
+                                                   _In_ size_t OutputChars,
+                                                   _Out_opt_ DWORD *ErrorCode)
 {
     HANDLE snap;
     MODULEENTRY32W me;
@@ -712,8 +754,8 @@ static BOOL BLACKBIRDTryResolveViaToolhelpSnapshot(_In_ DWORD ProcessId, _In_ UL
     {
         do
         {
-            ULONGLONG base = (ULONGLONG)(ULONG_PTR)me.modBaseAddr;
-            ULONGLONG size = (ULONGLONG)me.modBaseSize;
+            ULONGLONG base = (ULONGLONG) (ULONG_PTR) me.modBaseAddr;
+            ULONGLONG size = (ULONGLONG) me.modBaseSize;
             ULONGLONG end = base + size;
 
             if (size == 0 || end < base)
@@ -725,8 +767,11 @@ static BOOL BLACKBIRDTryResolveViaToolhelpSnapshot(_In_ DWORD ProcessId, _In_ UL
                 continue;
             }
 
-            (void)StringCchPrintfW(Output, OutputChars, L"%ls+0x%llX [toolhelp]",
-                                   (me.szModule[0] != L'\0') ? me.szModule : L"<module>", Address - base);
+            (void) StringCchPrintfW(Output,
+                                    OutputChars,
+                                    L"%ls+0x%llX [toolhelp]",
+                                    (me.szModule[0] != L'\0') ? me.szModule : L"<module>",
+                                    Address - base);
             found = TRUE;
             break;
         } while (Module32NextW(snap, &me));
@@ -740,13 +785,15 @@ static BOOL BLACKBIRDTryResolveViaToolhelpSnapshot(_In_ DWORD ProcessId, _In_ UL
     return found;
 }
 
-static VOID BLACKBIRDFormatAddressInternal(_In_ ULONGLONG Address, _Out_writes_z_(OutputChars) PWSTR Output,
-                                             _In_ size_t OutputChars, _Out_opt_ DWORD *SymFromAddrErrorCode,
-                                             _Out_opt_ DWORD *GetModuleInfoErrorCode,
-                                             _Out_opt_ DWORD *GetLineInfoErrorCode)
+static VOID BLACKBIRDFormatAddressInternal(_In_ ULONGLONG Address,
+                                           _Out_writes_z_(OutputChars) PWSTR Output,
+                                           _In_ size_t OutputChars,
+                                           _Out_opt_ DWORD *SymFromAddrErrorCode,
+                                           _Out_opt_ DWORD *GetModuleInfoErrorCode,
+                                           _Out_opt_ DWORD *GetLineInfoErrorCode)
 {
     BYTE buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME];
-    PSYMBOL_INFO symbol = (PSYMBOL_INFO)buffer;
+    PSYMBOL_INFO symbol = (PSYMBOL_INFO) buffer;
     DWORD64 displacement = 0;
     IMAGEHLP_MODULE64 moduleInfo;
     IMAGEHLP_LINE64 lineInfo;
@@ -776,19 +823,19 @@ static VOID BLACKBIRDFormatAddressInternal(_In_ ULONGLONG Address, _Out_writes_z
 
     if (Address == 0)
     {
-        (void)StringCchCopyW(Output, OutputChars, L"<null>");
+        (void) StringCchCopyW(Output, OutputChars, L"<null>");
         return;
     }
     if (!g_Ready)
     {
-        (void)StringCchPrintfW(Output, OutputChars, L"0x%016llX", Address);
+        (void) StringCchPrintfW(Output, OutputChars, L"0x%016llX", Address);
         return;
     }
 
     ZeroMemory(buffer, sizeof(buffer));
     symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
     symbol->MaxNameLen = MAX_SYM_NAME;
-    gotSym = SymFromAddr(g_ProcessHandle, (DWORD64)Address, &displacement, symbol);
+    gotSym = SymFromAddr(g_ProcessHandle, (DWORD64) Address, &displacement, symbol);
     if (!gotSym && SymFromAddrErrorCode != NULL)
     {
         *SymFromAddrErrorCode = GetLastError();
@@ -796,7 +843,7 @@ static VOID BLACKBIRDFormatAddressInternal(_In_ ULONGLONG Address, _Out_writes_z
 
     ZeroMemory(&moduleInfo, sizeof(moduleInfo));
     moduleInfo.SizeOfStruct = sizeof(moduleInfo);
-    gotModule = SymGetModuleInfo64(g_ProcessHandle, (DWORD64)Address, &moduleInfo);
+    gotModule = SymGetModuleInfo64(g_ProcessHandle, (DWORD64) Address, &moduleInfo);
     if (!gotModule && GetModuleInfoErrorCode != NULL)
     {
         *GetModuleInfoErrorCode = GetLastError();
@@ -804,7 +851,7 @@ static VOID BLACKBIRDFormatAddressInternal(_In_ ULONGLONG Address, _Out_writes_z
 
     ZeroMemory(&lineInfo, sizeof(lineInfo));
     lineInfo.SizeOfStruct = sizeof(lineInfo);
-    gotLine = SymGetLineFromAddr64(g_ProcessHandle, (DWORD64)Address, &lineDisplacement, &lineInfo);
+    gotLine = SymGetLineFromAddr64(g_ProcessHandle, (DWORD64) Address, &lineDisplacement, &lineInfo);
     if (!gotLine && GetLineInfoErrorCode != NULL)
     {
         *GetLineInfoErrorCode = GetLastError();
@@ -812,32 +859,36 @@ static VOID BLACKBIRDFormatAddressInternal(_In_ ULONGLONG Address, _Out_writes_z
 
     if (gotModule && gotSym)
     {
-        (void)StringCchPrintfW(Output, OutputChars, L"%S!%S+0x%llX", moduleInfo.ModuleName, symbol->Name, displacement);
+        (void) StringCchPrintfW(
+                Output, OutputChars, L"%S!%S+0x%llX", moduleInfo.ModuleName, symbol->Name, displacement);
     }
     else if (gotSym)
     {
-        (void)StringCchPrintfW(Output, OutputChars, L"%S+0x%llX", symbol->Name, displacement);
+        (void) StringCchPrintfW(Output, OutputChars, L"%S+0x%llX", symbol->Name, displacement);
     }
     else if (gotModule)
     {
-        (void)StringCchPrintfW(Output, OutputChars, L"%S+0x%llX", moduleInfo.ModuleName,
-                               (ULONGLONG)((DWORD64)Address - moduleInfo.BaseOfImage));
+        (void) StringCchPrintfW(Output,
+                                OutputChars,
+                                L"%S+0x%llX",
+                                moduleInfo.ModuleName,
+                                (ULONGLONG) ((DWORD64) Address - moduleInfo.BaseOfImage));
     }
     else if (BLACKBIRDIsLikelyKernelAddress(Address))
     {
-        (void)StringCchPrintfW(Output, OutputChars, L"0x%016llX [kernel-address]", Address);
+        (void) StringCchPrintfW(Output, OutputChars, L"0x%016llX [kernel-address]", Address);
     }
     else
     {
-        (void)StringCchPrintfW(Output, OutputChars, L"0x%016llX [unresolved]", Address);
+        (void) StringCchPrintfW(Output, OutputChars, L"0x%016llX [unresolved]", Address);
     }
 
     if (gotLine && lineInfo.FileName != NULL)
     {
         WCHAR withLine[1024];
-        (void)StringCchPrintfW(withLine, RTL_NUMBER_OF(withLine), L"%ls (%S:%lu)", Output, lineInfo.FileName,
-                               lineInfo.LineNumber);
-        (void)StringCchCopyW(Output, OutputChars, withLine);
+        (void) StringCchPrintfW(
+                withLine, RTL_NUMBER_OF(withLine), L"%ls (%S:%lu)", Output, lineInfo.FileName, lineInfo.LineNumber);
+        (void) StringCchCopyW(Output, OutputChars, withLine);
     }
 }
 
@@ -870,7 +921,7 @@ static BOOL BLACKBIRDReinitializeSymbolEngineLocked(_In_ BOOL PrintWarnings)
 
     if (g_Ready)
     {
-        (void)SymCleanup(g_ProcessHandle);
+        (void) SymCleanup(g_ProcessHandle);
     }
     if (g_SymbolProcessHandle != NULL)
     {
@@ -902,7 +953,7 @@ static BOOL BLACKBIRDReinitializeSymbolEngineLocked(_In_ BOOL PrintWarnings)
 
     if (GetEnvironmentVariableA("_NT_SYMBOL_PATH", symbolPath, RTL_NUMBER_OF(symbolPath)) == 0)
     {
-        (void)SymSetSearchPath(g_ProcessHandle, BLACKBIRD_DEFAULT_SYMBOL_PATH);
+        (void) SymSetSearchPath(g_ProcessHandle, BLACKBIRD_DEFAULT_SYMBOL_PATH);
     }
 
     BLACKBIRDLoadKernelModules();
@@ -933,8 +984,8 @@ static BOOL BLACKBIRDSwitchToTargetProcessLocked(_In_ DWORD ProcessId, _Out_opt_
         return TRUE;
     }
 
-    targetProcess =
-        OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, ProcessId);
+    targetProcess = OpenProcess(
+            PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, ProcessId);
     if (targetProcess == NULL)
     {
         DWORD openErr = GetLastError();
@@ -956,7 +1007,7 @@ static BOOL BLACKBIRDSwitchToTargetProcessLocked(_In_ DWORD ProcessId, _Out_opt_
 
     if (g_Ready)
     {
-        (void)SymCleanup(g_ProcessHandle);
+        (void) SymCleanup(g_ProcessHandle);
     }
     if (g_SymbolProcessHandle != NULL)
     {
@@ -980,18 +1031,19 @@ static BOOL BLACKBIRDSwitchToTargetProcessLocked(_In_ DWORD ProcessId, _Out_opt_
     if (!SymInitialize(g_ProcessHandle, NULL, TRUE))
     {
         DWORD err = GetLastError();
-        wprintf(L"[WARN] symbol resolver: SymInitialize(token=self invade=true pid=%lu) failed err=%lu\n", ProcessId,
+        wprintf(L"[WARN] symbol resolver: SymInitialize(token=self invade=true pid=%lu) failed err=%lu\n",
+                ProcessId,
                 err);
         CloseHandle(g_SymbolProcessHandle);
         g_SymbolProcessHandle = NULL;
-        (void)BLACKBIRDReinitializeSymbolEngineLocked(FALSE);
+        (void) BLACKBIRDReinitializeSymbolEngineLocked(FALSE);
         return FALSE;
     }
     g_Ready = TRUE;
 
     if (GetEnvironmentVariableA("_NT_SYMBOL_PATH", symbolPath, RTL_NUMBER_OF(symbolPath)) == 0)
     {
-        (void)SymSetSearchPath(g_ProcessHandle, BLACKBIRD_DEFAULT_SYMBOL_PATH);
+        (void) SymSetSearchPath(g_ProcessHandle, BLACKBIRD_DEFAULT_SYMBOL_PATH);
     }
 
     BLACKBIRDLoadKernelModules();
@@ -1021,7 +1073,7 @@ void BLACKBIRDEtwSymbolsCleanup(void)
     BLACKBIRDEnterSymbolLock();
     if (g_Ready)
     {
-        (void)SymCleanup(g_ProcessHandle);
+        (void) SymCleanup(g_ProcessHandle);
     }
     if (g_SymbolProcessHandle != NULL)
     {
@@ -1044,16 +1096,20 @@ void BLACKBIRDEtwSymbolsCleanup(void)
     }
 }
 
-void BLACKBIRDEtwSymbolsCacheModuleForProcess(_In_ DWORD ProcessId, _In_ ULONGLONG ImageBase,
-                                                _In_ ULONGLONG ImageSize, _In_opt_z_ PCWSTR ImagePath)
+void BLACKBIRDEtwSymbolsCacheModuleForProcess(_In_ DWORD ProcessId,
+                                              _In_ ULONGLONG ImageBase,
+                                              _In_ ULONGLONG ImageSize,
+                                              _In_opt_z_ PCWSTR ImagePath)
 {
     BLACKBIRDEnterSymbolLock();
     BLACKBIRDCacheSingleModuleRange(ProcessId, ImageBase, ImageSize, ImagePath);
     BLACKBIRDLeaveSymbolLock();
 }
 
-BOOL BLACKBIRDEtwSymbolsTryResolveViaModuleCache(_In_ DWORD ProcessId, _In_ ULONGLONG Address,
-                                                   _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
+BOOL BLACKBIRDEtwSymbolsTryResolveViaModuleCache(_In_ DWORD ProcessId,
+                                                 _In_ ULONGLONG Address,
+                                                 _Out_writes_z_(OutputChars) PWSTR Output,
+                                                 _In_ size_t OutputChars)
 {
     BOOL resolved;
 
@@ -1063,22 +1119,25 @@ BOOL BLACKBIRDEtwSymbolsTryResolveViaModuleCache(_In_ DWORD ProcessId, _In_ ULON
     return resolved;
 }
 
-void BLACKBIRDEtwSymbolsFormatAddress(_In_ ULONGLONG Address, _Out_writes_z_(OutputChars) PWSTR Output,
-                                        _In_ size_t OutputChars)
+void BLACKBIRDEtwSymbolsFormatAddress(_In_ ULONGLONG Address,
+                                      _Out_writes_z_(OutputChars) PWSTR Output,
+                                      _In_ size_t OutputChars)
 {
     BLACKBIRDEnterSymbolLock();
     BLACKBIRDFormatAddressInternal(Address, Output, OutputChars, NULL, NULL, NULL);
     BLACKBIRDLeaveSymbolLock();
 }
 
-void BLACKBIRDEtwSymbolsFormatAddressForProcess(_In_ DWORD ProcessId, _In_ ULONGLONG Address,
-                                                  _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
+void BLACKBIRDEtwSymbolsFormatAddressForProcess(_In_ DWORD ProcessId,
+                                                _In_ ULONGLONG Address,
+                                                _Out_writes_z_(OutputChars) PWSTR Output,
+                                                _In_ size_t OutputChars)
 {
     BLACKBIRDEnterSymbolLock();
     BLACKBIRDFormatAddressInternal(Address, Output, OutputChars, NULL, NULL, NULL);
     if (ProcessId != 0 && Output != NULL && OutputChars != 0 && wcsstr(Output, L"[unresolved]") != NULL)
     {
-        (void)BLACKBIRDTryResolveViaModuleCache(ProcessId, Address, Output, OutputChars);
+        (void) BLACKBIRDTryResolveViaModuleCache(ProcessId, Address, Output, OutputChars);
     }
     BLACKBIRDLeaveSymbolLock();
 }

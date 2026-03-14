@@ -10,7 +10,7 @@ BOOL StartIdleChild(CHILD_CTX *child)
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
 
-    len = GetModuleFileNameW(NULL, imagePath, (DWORD)RTL_NUMBER_OF(imagePath));
+    len = GetModuleFileNameW(NULL, imagePath, (DWORD) RTL_NUMBER_OF(imagePath));
     if (len == 0 || len >= RTL_NUMBER_OF(imagePath))
     {
         return FALSE;
@@ -40,14 +40,14 @@ BOOL StartSpawnAndTouchChild(CHILD_CTX *child)
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
 
-    len = GetModuleFileNameW(NULL, imagePath, (DWORD)RTL_NUMBER_OF(imagePath));
+    len = GetModuleFileNameW(NULL, imagePath, (DWORD) RTL_NUMBER_OF(imagePath));
     if (len == 0 || len >= RTL_NUMBER_OF(imagePath))
     {
         return FALSE;
     }
 
-    if (swprintf_s(cmdLine, RTL_NUMBER_OF(cmdLine), L"\"%ls\" %ls", imagePath, BLACKBIRD_CHILD_SPAWN_AND_TOUCH_ARGW) <
-        0)
+    if (swprintf_s(cmdLine, RTL_NUMBER_OF(cmdLine), L"\"%ls\" %ls", imagePath, BLACKBIRD_CHILD_SPAWN_AND_TOUCH_ARGW)
+        < 0)
     {
         return FALSE;
     }
@@ -72,8 +72,8 @@ void StopIdleChild(CHILD_CTX *child)
     waitResult = WaitForSingleObject(child->Pi.hProcess, 500);
     if (waitResult == WAIT_TIMEOUT)
     {
-        (void)TerminateProcess(child->Pi.hProcess, 0);
-        (void)WaitForSingleObject(child->Pi.hProcess, 2000);
+        (void) TerminateProcess(child->Pi.hProcess, 0);
+        (void) WaitForSingleObject(child->Pi.hProcess, 2000);
     }
 
     CloseHandle(child->Pi.hThread);
@@ -83,7 +83,7 @@ void StopIdleChild(CHILD_CTX *child)
 BOOL GenerateMemoryHandleIntent(DWORD pid)
 {
     HANDLE p = OpenProcess(
-        PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+            PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
     if (p == NULL)
     {
         return FALSE;
@@ -93,8 +93,10 @@ BOOL GenerateMemoryHandleIntent(DWORD pid)
 }
 BOOL GenerateThreadContextHandleIntent(DWORD tid)
 {
-    HANDLE t = OpenThread(
-        THREAD_SET_CONTEXT | THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION, FALSE, tid);
+    HANDLE t = OpenThread(THREAD_SET_CONTEXT | THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME
+                                  | THREAD_QUERY_LIMITED_INFORMATION,
+                          FALSE,
+                          tid);
     if (t == NULL)
     {
         return FALSE;
@@ -108,15 +110,15 @@ BOOL GenerateDuplicateHandleIntent(DWORD pid)
     HANDLE dup = NULL;
     BOOL ok;
 
-    src = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION,
-                      FALSE, pid);
+    src = OpenProcess(
+            PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
     if (src == NULL)
     {
         return FALSE;
     }
 
-    ok = DuplicateHandle(GetCurrentProcess(), src, GetCurrentProcess(), &dup, PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE,
-                         0);
+    ok = DuplicateHandle(
+            GetCurrentProcess(), src, GetCurrentProcess(), &dup, PROCESS_VM_WRITE | PROCESS_VM_READ, FALSE, 0);
 
     if (dup != NULL)
     {
@@ -151,7 +153,7 @@ static BOOL FindRemoteModuleBase(DWORD pid, PCWSTR moduleName, ULONGLONG *baseOu
     {
         if (_wcsicmp(me.szModule, moduleName) == 0)
         {
-            *baseOut = (ULONGLONG)(ULONG_PTR)me.modBaseAddr;
+            *baseOut = (ULONGLONG) (ULONG_PTR) me.modBaseAddr;
             CloseHandle(snap);
             return TRUE;
         }
@@ -203,11 +205,12 @@ BOOL GenerateRemoteThreadLoadLibraryIntent(DWORD pid)
     }
 
     remoteStartAddress =
-        remoteKernel32 + ((ULONGLONG)(ULONG_PTR)localLoadLibraryW - (ULONGLONG)(ULONG_PTR)localKernel32);
+            remoteKernel32 + ((ULONGLONG) (ULONG_PTR) localLoadLibraryW - (ULONGLONG) (ULONG_PTR) localKernel32);
 
-    process = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
-                              PROCESS_VM_READ,
-                          FALSE, pid);
+    process = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE
+                                  | PROCESS_VM_READ,
+                          FALSE,
+                          pid);
     if (process == NULL)
     {
         return FALSE;
@@ -227,8 +230,8 @@ BOOL GenerateRemoteThreadLoadLibraryIntent(DWORD pid)
 
     for (attempt = 0; attempt < 3; ++attempt)
     {
-        thread = CreateRemoteThread(process, NULL, 0, (LPTHREAD_START_ROUTINE)(ULONG_PTR)remoteStartAddress,
-                                    remoteBuffer, 0, NULL);
+        thread = CreateRemoteThread(
+                process, NULL, 0, (LPTHREAD_START_ROUTINE) (ULONG_PTR) remoteStartAddress, remoteBuffer, 0, NULL);
         if (thread != NULL)
         {
             break;
@@ -255,7 +258,7 @@ Exit:
     }
     if (remoteBuffer != NULL)
     {
-        (void)VirtualFreeEx(process, remoteBuffer, 0, MEM_RELEASE);
+        (void) VirtualFreeEx(process, remoteBuffer, 0, MEM_RELEASE);
     }
     if (process != NULL)
     {
@@ -273,13 +276,13 @@ BOOL GenerateVmApiCallSurface(DWORD pid)
     BOOL ok = FALSE;
 
     ZeroMemory(payload, sizeof(payload));
-    for (DWORD i = 0; i < (DWORD)sizeof(payload); ++i)
+    for (DWORD i = 0; i < (DWORD) sizeof(payload); ++i)
     {
-        payload[i] = (BYTE)(i ^ 0x5A);
+        payload[i] = (BYTE) (i ^ 0x5A);
     }
 
-    process = OpenProcess(PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION,
-                          FALSE, pid);
+    process = OpenProcess(
+            PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
     if (process == NULL)
     {
         return FALSE;
@@ -306,7 +309,7 @@ BOOL GenerateVmApiCallSurface(DWORD pid)
 Exit:
     if (remote != NULL)
     {
-        (void)VirtualFreeEx(process, remote, 0, MEM_RELEASE);
+        (void) VirtualFreeEx(process, remote, 0, MEM_RELEASE);
     }
     if (process != NULL)
     {
@@ -342,8 +345,8 @@ BOOL GenerateSuspendedHollowingLikeChain(VOID)
         return FALSE;
     }
 
-    if (!CreateProcessW(imagePath, cmdLine, NULL, NULL, FALSE, CREATE_NO_WINDOW | CREATE_SUSPENDED, NULL, NULL, &si,
-                        &pi))
+    if (!CreateProcessW(
+                imagePath, cmdLine, NULL, NULL, FALSE, CREATE_NO_WINDOW | CREATE_SUSPENDED, NULL, NULL, &si, &pi))
     {
         return FALSE;
     }
@@ -352,9 +355,9 @@ BOOL GenerateSuspendedHollowingLikeChain(VOID)
     remote = VirtualAllocEx(process, NULL, 0x20000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (remote != NULL)
     {
-        for (DWORD i = 0; i < (DWORD)sizeof(payload); ++i)
+        for (DWORD i = 0; i < (DWORD) sizeof(payload); ++i)
         {
-            payload[i] = (BYTE)(0xA5u ^ i);
+            payload[i] = (BYTE) (0xA5u ^ i);
         }
 
         if (WriteProcessMemory(process, remote, payload, sizeof(payload), &written) && written == sizeof(payload))
@@ -366,28 +369,28 @@ BOOL GenerateSuspendedHollowingLikeChain(VOID)
                 ctx.ContextFlags = CONTEXT_CONTROL;
                 if (GetThreadContext(pi.hThread, &ctx))
                 {
-                    (void)SetThreadContext(pi.hThread, &ctx);
+                    (void) SetThreadContext(pi.hThread, &ctx);
                 }
                 chainOk = TRUE;
             }
         }
     }
 
-    if (ResumeThread(pi.hThread) != (DWORD)-1)
+    if (ResumeThread(pi.hThread) != (DWORD) -1)
     {
         resumed = TRUE;
     }
 
     if (resumed)
     {
-        (void)WaitForSingleObject(process, 400);
+        (void) WaitForSingleObject(process, 400);
     }
-    (void)TerminateProcess(process, 0);
-    (void)WaitForSingleObject(process, 1500);
+    (void) TerminateProcess(process, 0);
+    (void) WaitForSingleObject(process, 1500);
 
     if (remote != NULL)
     {
-        (void)VirtualFreeEx(process, remote, 0, MEM_RELEASE);
+        (void) VirtualFreeEx(process, remote, 0, MEM_RELEASE);
     }
     CloseHandle(pi.hThread);
     CloseHandle(process);
@@ -401,22 +404,26 @@ BOOL GenerateRegistryHighValueActivity(void)
     WCHAR valueName[] = L"BlackbirdTestSuite";
     WCHAR valueData[] = L"cmd.exe /c exit";
 
-    status = RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, NULL,
-                             REG_OPTION_NON_VOLATILE, KEY_SET_VALUE | KEY_QUERY_VALUE, NULL, &key, &disposition);
+    status = RegCreateKeyExW(HKEY_CURRENT_USER,
+                             L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                             0,
+                             NULL,
+                             REG_OPTION_NON_VOLATILE,
+                             KEY_SET_VALUE | KEY_QUERY_VALUE,
+                             NULL,
+                             &key,
+                             &disposition);
     if (status != ERROR_SUCCESS)
     {
         return FALSE;
     }
     UNREFERENCED_PARAMETER(disposition);
 
-    status = RegSetValueExW(key, valueName, 0, REG_SZ, (const BYTE *)valueData,
-                            (DWORD)((wcslen(valueData) + 1) * sizeof(WCHAR)));
+    status = RegSetValueExW(
+            key, valueName, 0, REG_SZ, (const BYTE *) valueData, (DWORD) ((wcslen(valueData) + 1) * sizeof(WCHAR)));
 
-    (void)RegDeleteValueW(key, valueName);
+    (void) RegDeleteValueW(key, valueName);
     RegCloseKey(key);
 
     return (status == ERROR_SUCCESS);
 }
-
-
-

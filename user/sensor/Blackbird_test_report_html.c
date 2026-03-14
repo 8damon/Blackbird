@@ -13,28 +13,28 @@ static VOID BLACKBIRDHtmlWriteEscaped(_In_ FILE *File, _In_z_ const char *Text)
         return;
     }
 
-    for (p = (const unsigned char *)Text; *p != '\0'; ++p)
+    for (p = (const unsigned char *) Text; *p != '\0'; ++p)
     {
         switch (*p)
         {
-        case '&':
-            (void)fputs("&amp;", File);
-            break;
-        case '<':
-            (void)fputs("&lt;", File);
-            break;
-        case '>':
-            (void)fputs("&gt;", File);
-            break;
-        case '"':
-            (void)fputs("&quot;", File);
-            break;
-        case '\'':
-            (void)fputs("&#39;", File);
-            break;
-        default:
-            (void)fputc(*p, File);
-            break;
+            case '&':
+                (void) fputs("&amp;", File);
+                break;
+            case '<':
+                (void) fputs("&lt;", File);
+                break;
+            case '>':
+                (void) fputs("&gt;", File);
+                break;
+            case '"':
+                (void) fputs("&quot;", File);
+                break;
+            case '\'':
+                (void) fputs("&#39;", File);
+                break;
+            default:
+                (void) fputc(*p, File);
+                break;
         }
     }
 }
@@ -43,14 +43,14 @@ static const char *BLACKBIRDHtmlStatusText(_In_ BLACKBIRD_REPORT_CHECK_STATUS St
 {
     switch (Status)
     {
-    case BlackbirdReportCheckPass:
-        return "PASS";
-    case BlackbirdReportCheckFail:
-        return "FAIL";
-    case BlackbirdReportCheckSkip:
-        return "SKIP";
-    default:
-        return "UNKNOWN";
+        case BlackbirdReportCheckPass:
+            return "PASS";
+        case BlackbirdReportCheckFail:
+            return "FAIL";
+        case BlackbirdReportCheckSkip:
+            return "SKIP";
+        default:
+            return "UNKNOWN";
     }
 }
 
@@ -58,20 +58,23 @@ static const char *BLACKBIRDHtmlStatusClass(_In_ BLACKBIRD_REPORT_CHECK_STATUS S
 {
     switch (Status)
     {
-    case BlackbirdReportCheckPass:
-        return "pass";
-    case BlackbirdReportCheckFail:
-        return "fail";
-    case BlackbirdReportCheckSkip:
-        return "skip";
-    default:
-        return "unknown";
+        case BlackbirdReportCheckPass:
+            return "pass";
+        case BlackbirdReportCheckFail:
+            return "fail";
+        case BlackbirdReportCheckSkip:
+            return "skip";
+        default:
+            return "unknown";
     }
 }
 
-BOOL BLACKBIRDWriteHtmlReport(_In_z_ const char *OutputPath, _In_z_ const char *Title,
-                                _In_reads_(MetaCount) const BLACKBIRD_REPORT_META *Metadata, _In_ size_t MetaCount,
-                                _In_reads_(CheckCount) const BLACKBIRD_REPORT_CHECK *Checks, _In_ size_t CheckCount)
+BOOL BLACKBIRDWriteHtmlReport(_In_z_ const char *OutputPath,
+                              _In_z_ const char *Title,
+                              _In_reads_(MetaCount) const BLACKBIRD_REPORT_META *Metadata,
+                              _In_ size_t MetaCount,
+                              _In_reads_(CheckCount) const BLACKBIRD_REPORT_CHECK *Checks,
+                              _In_ size_t CheckCount)
 {
     FILE *f;
     size_t i;
@@ -87,64 +90,64 @@ BOOL BLACKBIRDWriteHtmlReport(_In_z_ const char *OutputPath, _In_z_ const char *
         return FALSE;
     }
 
-    (void)fputs("<!doctype html>\n"
-                "<html lang=\"en\">\n"
-                "<head>\n"
-                "  <meta charset=\"utf-8\" />\n"
-                "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n"
-                "  <title>",
-                f);
+    (void) fputs("<!doctype html>\n"
+                 "<html lang=\"en\">\n"
+                 "<head>\n"
+                 "  <meta charset=\"utf-8\" />\n"
+                 "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n"
+                 "  <title>",
+                 f);
     BLACKBIRDHtmlWriteEscaped(f, Title);
-    (void)fputs(
-        "</title>\n"
-        "  <style>\n"
-        "    body { font-family: Segoe UI, Tahoma, sans-serif; margin: 26px; color: #1f2937; background: #f7fafc; }\n"
-        "    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 18px; }\n"
-        "    h1, h2 { margin: 0 0 12px 0; }\n"
-        "    table { width: 100%; border-collapse: collapse; }\n"
-        "    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e5e7eb; }\n"
-        "    .meta th { width: 32%; font-weight: 600; }\n"
-        "    .checks thead th { background: #f3f4f6; }\n"
-        "    .checks tbody tr.pass { background: #ecfdf3; }\n"
-        "    .checks tbody tr.fail { background: #fef2f2; }\n"
-        "    .checks tbody tr.skip { background: #fff7ed; }\n"
-        "    .checks td.status { font-weight: 700; }\n"
-        "    .checks tr.pass td.status { color: #166534; }\n"
-        "    .checks tr.fail td.status { color: #991b1b; }\n"
-        "    .checks tr.skip td.status { color: #9a3412; }\n"
-        "    .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }\n"
-        "  </style>\n"
-        "</head>\n"
-        "<body>\n"
-        "  <div class=\"card\">\n"
-        "    <h1>",
-        f);
+    (void) fputs("</title>\n"
+                 "  <style>\n"
+                 "    body { font-family: Segoe UI, Tahoma, sans-serif; margin: 26px; color: #1f2937; background: "
+                 "#f7fafc; }\n"
+                 "    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 18px; }\n"
+                 "    h1, h2 { margin: 0 0 12px 0; }\n"
+                 "    table { width: 100%; border-collapse: collapse; }\n"
+                 "    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e5e7eb; }\n"
+                 "    .meta th { width: 32%; font-weight: 600; }\n"
+                 "    .checks thead th { background: #f3f4f6; }\n"
+                 "    .checks tbody tr.pass { background: #ecfdf3; }\n"
+                 "    .checks tbody tr.fail { background: #fef2f2; }\n"
+                 "    .checks tbody tr.skip { background: #fff7ed; }\n"
+                 "    .checks td.status { font-weight: 700; }\n"
+                 "    .checks tr.pass td.status { color: #166534; }\n"
+                 "    .checks tr.fail td.status { color: #991b1b; }\n"
+                 "    .checks tr.skip td.status { color: #9a3412; }\n"
+                 "    .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }\n"
+                 "  </style>\n"
+                 "</head>\n"
+                 "<body>\n"
+                 "  <div class=\"card\">\n"
+                 "    <h1>",
+                 f);
     BLACKBIRDHtmlWriteEscaped(f, Title);
-    (void)fputs("</h1>\n"
-                "    <table class=\"meta\">\n"
-                "      <tbody>\n",
-                f);
+    (void) fputs("</h1>\n"
+                 "    <table class=\"meta\">\n"
+                 "      <tbody>\n",
+                 f);
 
     for (i = 0; i < MetaCount; ++i)
     {
         const char *key = (Metadata != NULL && Metadata[i].Key != NULL) ? Metadata[i].Key : "";
         const char *value = (Metadata != NULL && Metadata[i].Value != NULL) ? Metadata[i].Value : "";
-        (void)fputs("        <tr><th>", f);
+        (void) fputs("        <tr><th>", f);
         BLACKBIRDHtmlWriteEscaped(f, key);
-        (void)fputs("</th><td>", f);
+        (void) fputs("</th><td>", f);
         BLACKBIRDHtmlWriteEscaped(f, value);
-        (void)fputs("</td></tr>\n", f);
+        (void) fputs("</td></tr>\n", f);
     }
 
-    (void)fputs("      </tbody>\n"
-                "    </table>\n"
-                "    <h2>Checks</h2>\n"
-                "    <table class=\"checks\">\n"
-                "      <thead>\n"
-                "        <tr><th>ID</th><th>Status</th><th>Check</th></tr>\n"
-                "      </thead>\n"
-                "      <tbody>\n",
-                f);
+    (void) fputs("      </tbody>\n"
+                 "    </table>\n"
+                 "    <h2>Checks</h2>\n"
+                 "    <table class=\"checks\">\n"
+                 "      <thead>\n"
+                 "        <tr><th>ID</th><th>Status</th><th>Check</th></tr>\n"
+                 "      </thead>\n"
+                 "      <tbody>\n",
+                 f);
 
     for (i = 0; i < CheckCount; ++i)
     {
@@ -152,20 +155,22 @@ BOOL BLACKBIRDWriteHtmlReport(_In_z_ const char *OutputPath, _In_z_ const char *
         const char *status = BLACKBIRDHtmlStatusText(Checks[i].Status);
         const char *text = (Checks[i].Text != NULL) ? Checks[i].Text : "";
 
-        fprintf(f, "        <tr class=\"%s\"><td class=\"mono\">T%04lu</td><td class=\"status\">", cls,
-                (unsigned long)Checks[i].Id);
+        fprintf(f,
+                "        <tr class=\"%s\"><td class=\"mono\">T%04lu</td><td class=\"status\">",
+                cls,
+                (unsigned long) Checks[i].Id);
         BLACKBIRDHtmlWriteEscaped(f, status);
-        (void)fputs("</td><td>", f);
+        (void) fputs("</td><td>", f);
         BLACKBIRDHtmlWriteEscaped(f, text);
-        (void)fputs("</td></tr>\n", f);
+        (void) fputs("</td></tr>\n", f);
     }
 
-    (void)fputs("      </tbody>\n"
-                "    </table>\n"
-                "  </div>\n"
-                "</body>\n"
-                "</html>\n",
-                f);
+    (void) fputs("      </tbody>\n"
+                 "    </table>\n"
+                 "  </div>\n"
+                 "</body>\n"
+                 "</html>\n",
+                 f);
 
     fclose(f);
     return TRUE;

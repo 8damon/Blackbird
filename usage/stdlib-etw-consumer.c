@@ -7,7 +7,8 @@
 
 // {D6C73F8A-6AD8-4F4B-A363-3D2FA31CD0E2}
 static const GUID BLACKBIRD_PROVIDER_GUID = {
-    0xd6c73f8a, 0x6ad8, 0x4f4b, {0xa3, 0x63, 0x3d, 0x2f, 0xa3, 0x1c, 0xd0, 0xe2}};
+    0xd6c73f8a, 0x6ad8, 0x4f4b, { 0xa3, 0x63, 0x3d, 0x2f, 0xa3, 0x1c, 0xd0, 0xe2 }
+};
 
 static VOID WINAPI OnEvent(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName, _In_opt_ PVOID Context)
 {
@@ -52,7 +53,7 @@ int __cdecl wmain(void)
     }
 
     wprintf(L"blackbird ETW session running, press Ctrl+C to stop\n");
-    (void)BLACKBIRDSCRunEtwSession(session);
+    (void) BLACKBIRDSCRunEtwSession(session);
 
     BLACKBIRDSCStopEtwSession(session);
     return 0;

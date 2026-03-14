@@ -4,8 +4,8 @@
 #include <ntddk.h>
 
 static __forceinline BOOLEAN BLACKBIRDUnicodeContainsInsensitive(_In_ PCUNICODE_STRING Haystack,
-                                                                   _In_reads_(NeedleChars) PCWSTR Needle,
-                                                                   _In_ USHORT NeedleChars)
+                                                                 _In_reads_(NeedleChars) PCWSTR Needle,
+                                                                 _In_ USHORT NeedleChars)
 {
     USHORT hayChars;
     USHORT i;
@@ -22,7 +22,7 @@ static __forceinline BOOLEAN BLACKBIRDUnicodeContainsInsensitive(_In_ PCUNICODE_
         return FALSE;
     }
 
-    for (i = 0; i <= (USHORT)(hayChars - NeedleChars); ++i)
+    for (i = 0; i <= (USHORT) (hayChars - NeedleChars); ++i)
     {
         BOOLEAN match = TRUE;
         for (j = 0; j < NeedleChars; ++j)
@@ -42,8 +42,8 @@ static __forceinline BOOLEAN BLACKBIRDUnicodeContainsInsensitive(_In_ PCUNICODE_
     return FALSE;
 }
 
-static __forceinline VOID BLACKBIRDSafeCopyUnicode(_In_opt_ PCUNICODE_STRING Source,
-                                                     _Out_writes_z_(DestChars) PWSTR Dest, _In_ SIZE_T DestChars)
+static __forceinline VOID
+BLACKBIRDSafeCopyUnicode(_In_opt_ PCUNICODE_STRING Source, _Out_writes_z_(DestChars) PWSTR Dest, _In_ SIZE_T DestChars)
 {
     SIZE_T copyChars;
 

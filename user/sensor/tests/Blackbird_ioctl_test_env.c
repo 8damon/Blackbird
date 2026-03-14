@@ -9,7 +9,7 @@ BOOL EnvFlagEnabled(_In_z_ const char *Name, _In_ BOOL DefaultValue)
         return DefaultValue;
     }
 
-    if (GetEnvironmentVariableA(Name, value, (DWORD)RTL_NUMBER_OF(value)) == 0)
+    if (GetEnvironmentVariableA(Name, value, (DWORD) RTL_NUMBER_OF(value)) == 0)
     {
         return DefaultValue;
     }
@@ -18,7 +18,7 @@ BOOL EnvFlagEnabled(_In_z_ const char *Name, _In_ BOOL DefaultValue)
     {
         if (value[i] >= 'A' && value[i] <= 'Z')
         {
-            value[i] = (char)(value[i] - 'A' + 'a');
+            value[i] = (char) (value[i] - 'A' + 'a');
         }
     }
 
@@ -33,6 +33,3 @@ BOOL EnvFlagEnabled(_In_z_ const char *Name, _In_ BOOL DefaultValue)
 
     return DefaultValue;
 }
-
-
-

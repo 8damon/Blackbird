@@ -51,15 +51,21 @@ VOID BLACKBIRDControlPublishHandleEvent(_In_ const BLACKBIRD_HANDLE_EVENT *Handl
     record.Data.Handle = *HandleEvent;
 
     BLACKBIRDPublishRecordToSubscribers(
-        (UINT32)HandleEvent->CallerPid,
-        ((UINT32)HandleEvent->TargetPid != (UINT32)HandleEvent->CallerPid) ? (UINT32)HandleEvent->TargetPid : 0,
-        stream, &record);
+            (UINT32) HandleEvent->CallerPid,
+            ((UINT32) HandleEvent->TargetPid != (UINT32) HandleEvent->CallerPid) ? (UINT32) HandleEvent->TargetPid : 0,
+            stream,
+            &record);
 }
 
-VOID BLACKBIRDControlPublishThreadEvent(_In_ UINT64 ProcessId, _In_ UINT64 ThreadId, _In_ UINT64 CreatorPid,
-                                          _In_ UINT64 StartAddress, _In_ UINT64 ImageBase, _In_ UINT64 ImageSize,
-                                          _In_ UINT32 Flags, _In_ UINT32 FrameCount,
-                                          _In_reads_opt_(FrameCount) PVOID const *Frames)
+VOID BLACKBIRDControlPublishThreadEvent(_In_ UINT64 ProcessId,
+                                        _In_ UINT64 ThreadId,
+                                        _In_ UINT64 CreatorPid,
+                                        _In_ UINT64 StartAddress,
+                                        _In_ UINT64 ImageBase,
+                                        _In_ UINT64 ImageSize,
+                                        _In_ UINT32 Flags,
+                                        _In_ UINT32 FrameCount,
+                                        _In_reads_opt_(FrameCount) PVOID const *Frames)
 {
     BLACKBIRD_EVENT_RECORD record;
     UINT32 i;
@@ -90,13 +96,14 @@ VOID BLACKBIRDControlPublishThreadEvent(_In_ UINT64 ProcessId, _In_ UINT64 Threa
     {
         for (i = 0; i < safeCount; ++i)
         {
-            record.Data.Thread.Frames[i] = (UINT64)(ULONG_PTR)Frames[i];
+            record.Data.Thread.Frames[i] = (UINT64) (ULONG_PTR) Frames[i];
         }
     }
 
-    BLACKBIRDPublishRecordToSubscribers((UINT32)ProcessId,
-                                          ((UINT32)CreatorPid != (UINT32)ProcessId) ? (UINT32)CreatorPid : 0,
-                                          BLACKBIRD_STREAM_THREAD, &record);
+    BLACKBIRDPublishRecordToSubscribers((UINT32) ProcessId,
+                                        ((UINT32) CreatorPid != (UINT32) ProcessId) ? (UINT32) CreatorPid : 0,
+                                        BLACKBIRD_STREAM_THREAD,
+                                        &record);
 }
 
 VOID BLACKBIRDControlPublishFileEvent(_In_ const BLACKBIRD_FILE_EVENT *FileEvent)
@@ -119,7 +126,7 @@ VOID BLACKBIRDControlPublishFileEvent(_In_ const BLACKBIRD_FILE_EVENT *FileEvent
     record.Header.TimestampQpc = KeQueryPerformanceCounter(NULL).QuadPart;
     record.Data.FileSystem = *FileEvent;
 
-    BLACKBIRDPublishRecordToSubscribers((UINT32)FileEvent->ProcessId, 0, BLACKBIRD_STREAM_FILESYSTEM, &record);
+    BLACKBIRDPublishRecordToSubscribers((UINT32) FileEvent->ProcessId, 0, BLACKBIRD_STREAM_FILESYSTEM, &record);
 }
 
 BOOLEAN

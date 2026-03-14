@@ -15,11 +15,11 @@
 
 struct WinsockCapturedEvent
 {
-    DWORD            ThreadId;
-    SOCKET           Socket;
+    DWORD ThreadId;
+    SOCKET Socket;
     WinsockOperation Operation;
-    void*            Caller;
-    std::uint64_t    Args[4];
+    void *Caller;
+    std::uint64_t Args[4];
     std::vector<std::uint8_t> Data;
 
     IC_STACKTRACE::Trace Stack;
@@ -27,27 +27,25 @@ struct WinsockCapturedEvent
 
 struct NtCapturedEvent
 {
-    DWORD        ThreadId;
-    NtOperation  Operation;
-    const char* FunctionName;
-    void* Caller;
+    DWORD ThreadId;
+    NtOperation Operation;
+    const char *FunctionName;
+    void *Caller;
     std::uint64_t Args[8];
 };
 
-
 struct KiCapturedEvent
 {
-    DWORD       ThreadId;
-    const char* StubName;
-    void*       Caller;
-    void*       StackPointer;
+    DWORD ThreadId;
+    const char *StubName;
+    void *Caller;
+    void *StackPointer;
 };
-
 
 class WinsockHookController
 {
-public:
-    WinsockHookController()  = default;
+  public:
+    WinsockHookController() = default;
     ~WinsockHookController() = default;
 
     bool Initialize() noexcept;
@@ -55,19 +53,19 @@ public:
 
     std::vector<WinsockCapturedEvent> ConsumeEvents();
 
-private:
-    static void KeWinsockHookCallback(const WinsockHookContext& context) noexcept;
-    static void EnqueueEvent(const WinsockHookContext& context);
+  private:
+    static void KeWinsockHookCallback(const WinsockHookContext &context) noexcept;
+    static void EnqueueEvent(const WinsockHookContext &context);
 
-    static bool                         s_Initialized;
-    static std::mutex                   s_QueueMutex;
+    static bool s_Initialized;
+    static std::mutex s_QueueMutex;
     static std::vector<WinsockCapturedEvent> s_Queue;
 };
 
 class NtHookController
 {
-public:
-    NtHookController()  = default;
+  public:
+    NtHookController() = default;
     ~NtHookController() = default;
 
     bool Initialize() noexcept;
@@ -75,19 +73,19 @@ public:
 
     std::vector<NtCapturedEvent> ConsumeEvents();
 
-private:
-    static void KeNtHookCallback(const NtHookContext& context) noexcept;
-    static void EnqueueEvent(const NtHookContext& context);
+  private:
+    static void KeNtHookCallback(const NtHookContext &context) noexcept;
+    static void EnqueueEvent(const NtHookContext &context);
 
-    static bool                    s_Initialized;
-    static std::mutex              s_QueueMutex;
+    static bool s_Initialized;
+    static std::mutex s_QueueMutex;
     static std::vector<NtCapturedEvent> s_Queue;
 };
 
 class KiHookController
 {
-public:
-    KiHookController()  = default;
+  public:
+    KiHookController() = default;
     ~KiHookController() = default;
 
     bool Initialize() noexcept;
@@ -95,11 +93,11 @@ public:
 
     std::vector<KiCapturedEvent> ConsumeEvents();
 
-private:
-    static void KeKiHookCallback(const KiHookContext& context) noexcept;
-    static void EnqueueEvent(const KiHookContext& context);
+  private:
+    static void KeKiHookCallback(const KiHookContext &context) noexcept;
+    static void EnqueueEvent(const KiHookContext &context);
 
-    static bool                   s_Initialized;
-    static std::mutex             s_QueueMutex;
+    static bool s_Initialized;
+    static std::mutex s_QueueMutex;
     static std::vector<KiCapturedEvent> s_Queue;
 };

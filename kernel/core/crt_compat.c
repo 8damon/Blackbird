@@ -21,7 +21,7 @@ size_t __cdecl strlen(_In_z_ const char *s)
         ++p;
     }
 
-    return (size_t)(p - s);
+    return (size_t) (p - s);
 }
 
 size_t __cdecl wcslen(_In_z_ const wchar_t *s)
@@ -38,5 +38,5 @@ size_t __cdecl wcslen(_In_z_ const wchar_t *s)
         ++p;
     }
 
-    return (size_t)(p - s);
+    return (size_t) (p - s);
 }

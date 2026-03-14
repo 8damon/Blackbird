@@ -12,11 +12,14 @@ static volatile LONG g_ProcessMonitorFailureCounter = 0;
 NTKERNELAPI ULONGLONG PsGetProcessStartKey(_In_ PEPROCESS Process);
 NTKERNELAPI ULONG PsGetProcessSessionIdEx(_In_ PEPROCESS Process);
 NTSYSAPI NTSTATUS NTAPI SeLocateProcessImageName(_In_ PEPROCESS Process, _Out_ PUNICODE_STRING *pImageFileName);
-NTSYSAPI NTSTATUS NTAPI ObQueryNameString(_In_ PVOID Object, _Out_writes_bytes_opt_(Length) POBJECT_NAME_INFORMATION ObjectNameInfo,
-                                          _In_ ULONG Length, _Out_ PULONG ReturnLength);
+NTSYSAPI NTSTATUS NTAPI ObQueryNameString(_In_ PVOID Object,
+                                          _Out_writes_bytes_opt_(Length) POBJECT_NAME_INFORMATION ObjectNameInfo,
+                                          _In_ ULONG Length,
+                                          _Out_ PULONG ReturnLength);
 
-static VOID BLACKBIRDFillImagePathFromFileObject(_In_opt_ PFILE_OBJECT FileObject, _Out_writes_z_(OutputChars) PWSTR Output,
-                                                   _In_ size_t OutputChars)
+static VOID BLACKBIRDFillImagePathFromFileObject(_In_opt_ PFILE_OBJECT FileObject,
+                                                 _Out_writes_z_(OutputChars) PWSTR Output,
+                                                 _In_ size_t OutputChars)
 {
     NTSTATUS status;
     ULONG bytes = 0;
@@ -33,7 +36,7 @@ static VOID BLACKBIRDFillImagePathFromFileObject(_In_opt_ PFILE_OBJECT FileObjec
         return;
     }
 
-    nameInfo = (POBJECT_NAME_INFORMATION)BLACKBIRDAllocatePoolCompat(POOL_FLAG_PAGED, bytes, 'pNbB');
+    nameInfo = (POBJECT_NAME_INFORMATION) BLACKBIRDAllocatePoolCompat(POOL_FLAG_PAGED, bytes, 'pNbB');
     if (nameInfo == NULL)
     {
         return;
@@ -42,14 +45,15 @@ static VOID BLACKBIRDFillImagePathFromFileObject(_In_opt_ PFILE_OBJECT FileObjec
     status = ObQueryNameString(FileObject, nameInfo, bytes, &bytes);
     if (NT_SUCCESS(status) && nameInfo->Name.Buffer != NULL && nameInfo->Name.Length != 0)
     {
-        (void)RtlStringCchCopyNW(Output, OutputChars, nameInfo->Name.Buffer, nameInfo->Name.Length / sizeof(WCHAR));
+        (void) RtlStringCchCopyNW(Output, OutputChars, nameInfo->Name.Buffer, nameInfo->Name.Length / sizeof(WCHAR));
     }
 
     ExFreePoolWithTag(nameInfo, 'pNbB');
 }
 
-static VOID BLACKBIRDFillImagePathFromProcessObject(_In_ PEPROCESS Process, _Out_writes_z_(OutputChars) PWSTR Output,
-                                                      _In_ size_t OutputChars)
+static VOID BLACKBIRDFillImagePathFromProcessObject(_In_ PEPROCESS Process,
+                                                    _Out_writes_z_(OutputChars) PWSTR Output,
+                                                    _In_ size_t OutputChars)
 {
     NTSTATUS status;
     PUNICODE_STRING imageName = NULL;
@@ -69,12 +73,13 @@ static VOID BLACKBIRDFillImagePathFromProcessObject(_In_ PEPROCESS Process, _Out
         return;
     }
 
-    (void)RtlStringCchCopyNW(Output, OutputChars, imageName->Buffer, imageName->Length / sizeof(WCHAR));
+    (void) RtlStringCchCopyNW(Output, OutputChars, imageName->Buffer, imageName->Length / sizeof(WCHAR));
     ExFreePool(imageName);
 }
 
-static VOID BLACKBIRDProcessNotifyRoutineEx(_Inout_ PEPROCESS Process, _In_ HANDLE ProcessId,
-                                              _Inout_opt_ PPS_CREATE_NOTIFY_INFO CreateInfo)
+static VOID BLACKBIRDProcessNotifyRoutineEx(_Inout_ PEPROCESS Process,
+                                            _In_ HANDLE ProcessId,
+                                            _Inout_opt_ PPS_CREATE_NOTIFY_INFO CreateInfo)
 {
     WCHAR imagePath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
     WCHAR commandLine[512];
@@ -112,15 +117,15 @@ static VOID BLACKBIRDProcessNotifyRoutineEx(_Inout_ PEPROCESS Process, _In_ HAND
                 UNICODE_STRING fileObjectImagePath;
 
                 RtlInitUnicodeString(&fileObjectImagePath, imagePath);
-                launchBound = BLACKBIRDControlBindPendingLaunchProcess((UINT32)(ULONG_PTR)ProcessId,
-                                                                       &fileObjectImagePath);
+                launchBound =
+                        BLACKBIRDControlBindPendingLaunchProcess((UINT32) (ULONG_PTR) ProcessId, &fileObjectImagePath);
             }
         }
 
         if (!launchBound && NT_SUCCESS(createStatus) && ProcessId != NULL && CreateInfo->ImageFileName != NULL)
         {
-            launchBound = BLACKBIRDControlBindPendingLaunchProcess((UINT32)(ULONG_PTR)ProcessId,
-                                                                   CreateInfo->ImageFileName);
+            launchBound =
+                    BLACKBIRDControlBindPendingLaunchProcess((UINT32) (ULONG_PTR) ProcessId, CreateInfo->ImageFileName);
         }
 
         if (imagePath[0] == L'\0')
@@ -136,13 +141,20 @@ static VOID BLACKBIRDProcessNotifyRoutineEx(_Inout_ PEPROCESS Process, _In_ HAND
             UNICODE_STRING resolvedImagePath;
 
             RtlInitUnicodeString(&resolvedImagePath, imagePath);
-            (void)BLACKBIRDControlBindPendingLaunchProcess((UINT32)(ULONG_PTR)ProcessId, &resolvedImagePath);
+            (void) BLACKBIRDControlBindPendingLaunchProcess((UINT32) (ULONG_PTR) ProcessId, &resolvedImagePath);
         }
     }
 
-    BLACKBIRDEtwLogProcessEvent(ProcessId, parentPid, creatorPid, creatorTid, startKey, sessionId, isCreate,
-                                  createStatus, (imagePath[0] != L'\0') ? imagePath : NULL,
-                                  (commandLine[0] != L'\0') ? commandLine : NULL);
+    BLACKBIRDEtwLogProcessEvent(ProcessId,
+                                parentPid,
+                                creatorPid,
+                                creatorTid,
+                                startKey,
+                                sessionId,
+                                isCreate,
+                                createStatus,
+                                (imagePath[0] != L'\0') ? imagePath : NULL,
+                                (commandLine[0] != L'\0') ? commandLine : NULL);
 }
 
 NTSTATUS
@@ -166,9 +178,11 @@ BLACKBIRDProcessMonitorInitialize(VOID)
         failures = InterlockedIncrement(&g_ProcessMonitorFailureCounter);
         if (failures == 1 || ((failures & 0xFF) == 0))
         {
-            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                       "BLACKBIRD: process monitor callback registration failed status=0x%08X total=%lu.\n", status,
-                       (ULONG)failures);
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                       DPFLTR_ERROR_LEVEL,
+                       "BLACKBIRD: process monitor callback registration failed status=0x%08X total=%lu.\n",
+                       status,
+                       (ULONG) failures);
         }
         return status;
     }
@@ -194,10 +208,10 @@ VOID BLACKBIRDProcessMonitorUninitialize(VOID)
     status = PsSetCreateProcessNotifyRoutineEx(BLACKBIRDProcessNotifyRoutineEx, TRUE);
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(
-            DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-            "BLACKBIRD: process monitor callback removal failed; monitor remains registered (status=0x%08X).\n",
-            status);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                   DPFLTR_ERROR_LEVEL,
+                   "BLACKBIRD: process monitor callback removal failed; monitor remains registered (status=0x%08X).\n",
+                   status);
         return;
     }
 

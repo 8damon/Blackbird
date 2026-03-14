@@ -18,45 +18,57 @@ typedef struct _BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION
 } BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION, *PBLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION;
 
 typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_QUERY_SYSTEM_INFORMATION)(_In_ ULONG SystemInformationClass,
-                                                                 _Out_writes_bytes_opt_(SystemInformationLength)
-                                                                     PVOID SystemInformation,
-                                                                 _In_ ULONG SystemInformationLength,
-                                                                 _Out_opt_ PULONG ReturnLength);
-typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_QUERY_INFORMATION_PROCESS)(_In_ HANDLE ProcessHandle,
-                                                                  _In_ ULONG ProcessInformationClass,
-                                                                  _Out_writes_bytes_opt_(ProcessInformationLength)
-                                                                      PVOID ProcessInformation,
-                                                                  _In_ ULONG ProcessInformationLength,
-                                                                  _Out_opt_ PULONG ReturnLength);
-typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_WRITE_VIRTUAL_MEMORY)(_In_ HANDLE ProcessHandle, _In_ PVOID BaseAddress,
-                                                             _In_reads_bytes_(BufferSize) PVOID Buffer,
-                                                             _In_ SIZE_T BufferSize,
-                                                             _Out_opt_ PSIZE_T NumberOfBytesWritten);
-typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_PROTECT_VIRTUAL_MEMORY)(_In_ HANDLE ProcessHandle, _Inout_ PVOID *BaseAddress,
-                                                               _Inout_ PSIZE_T RegionSize, _In_ ULONG NewProtect,
-                                                               _Out_ PULONG OldProtect);
-typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_CREATE_SECTION)(_Out_ PHANDLE SectionHandle, _In_ ACCESS_MASK DesiredAccess,
-                                                       _In_opt_ POBJECT_ATTRIBUTES ObjectAttributes,
-                                                       _In_opt_ PLARGE_INTEGER MaximumSize,
-                                                       _In_ ULONG SectionPageProtection,
-                                                       _In_ ULONG AllocationAttributes, _In_opt_ HANDLE FileHandle);
-typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_MAP_VIEW_OF_SECTION)(_In_ HANDLE SectionHandle, _In_ HANDLE ProcessHandle,
-                                                            _Inout_ PVOID *BaseAddress, _In_ ULONG_PTR ZeroBits,
-                                                            _In_ SIZE_T CommitSize,
-                                                            _Inout_opt_ PLARGE_INTEGER SectionOffset,
-                                                            _Inout_ PSIZE_T ViewSize, _In_ ULONG InheritDisposition,
-                                                            _In_ ULONG AllocationType, _In_ ULONG Win32Protect);
-typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_ALLOCATE_VIRTUAL_MEMORY)(_In_ HANDLE ProcessHandle, _Inout_ PVOID *BaseAddress,
-                                                                _In_ ULONG_PTR ZeroBits, _Inout_ PSIZE_T RegionSize,
-                                                                _In_ ULONG AllocationType, _In_ ULONG Protect);
-typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_EX)(_In_ ULONG SystemInformationClass,
-                                                                    _In_reads_bytes_opt_(InputBufferLength)
-                                                                        PVOID InputBuffer,
-                                                                    _In_ ULONG InputBufferLength,
-                                                                    _Out_writes_bytes_opt_(SystemInformationLength)
+                                                                _Out_writes_bytes_opt_(SystemInformationLength)
                                                                         PVOID SystemInformation,
-                                                                    _In_ ULONG SystemInformationLength,
-                                                                    _Out_opt_ PULONG ReturnLength);
+                                                                _In_ ULONG SystemInformationLength,
+                                                                _Out_opt_ PULONG ReturnLength);
+typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_QUERY_INFORMATION_PROCESS)(_In_ HANDLE ProcessHandle,
+                                                                 _In_ ULONG ProcessInformationClass,
+                                                                 _Out_writes_bytes_opt_(ProcessInformationLength)
+                                                                         PVOID ProcessInformation,
+                                                                 _In_ ULONG ProcessInformationLength,
+                                                                 _Out_opt_ PULONG ReturnLength);
+typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_WRITE_VIRTUAL_MEMORY)(_In_ HANDLE ProcessHandle,
+                                                            _In_ PVOID BaseAddress,
+                                                            _In_reads_bytes_(BufferSize) PVOID Buffer,
+                                                            _In_ SIZE_T BufferSize,
+                                                            _Out_opt_ PSIZE_T NumberOfBytesWritten);
+typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_PROTECT_VIRTUAL_MEMORY)(_In_ HANDLE ProcessHandle,
+                                                              _Inout_ PVOID *BaseAddress,
+                                                              _Inout_ PSIZE_T RegionSize,
+                                                              _In_ ULONG NewProtect,
+                                                              _Out_ PULONG OldProtect);
+typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_CREATE_SECTION)(_Out_ PHANDLE SectionHandle,
+                                                      _In_ ACCESS_MASK DesiredAccess,
+                                                      _In_opt_ POBJECT_ATTRIBUTES ObjectAttributes,
+                                                      _In_opt_ PLARGE_INTEGER MaximumSize,
+                                                      _In_ ULONG SectionPageProtection,
+                                                      _In_ ULONG AllocationAttributes,
+                                                      _In_opt_ HANDLE FileHandle);
+typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_MAP_VIEW_OF_SECTION)(_In_ HANDLE SectionHandle,
+                                                           _In_ HANDLE ProcessHandle,
+                                                           _Inout_ PVOID *BaseAddress,
+                                                           _In_ ULONG_PTR ZeroBits,
+                                                           _In_ SIZE_T CommitSize,
+                                                           _Inout_opt_ PLARGE_INTEGER SectionOffset,
+                                                           _Inout_ PSIZE_T ViewSize,
+                                                           _In_ ULONG InheritDisposition,
+                                                           _In_ ULONG AllocationType,
+                                                           _In_ ULONG Win32Protect);
+typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_ALLOCATE_VIRTUAL_MEMORY)(_In_ HANDLE ProcessHandle,
+                                                               _Inout_ PVOID *BaseAddress,
+                                                               _In_ ULONG_PTR ZeroBits,
+                                                               _Inout_ PSIZE_T RegionSize,
+                                                               _In_ ULONG AllocationType,
+                                                               _In_ ULONG Protect);
+typedef NTSTATUS(NTAPI *PBLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_EX)(_In_ ULONG SystemInformationClass,
+                                                                   _In_reads_bytes_opt_(InputBufferLength)
+                                                                           PVOID InputBuffer,
+                                                                   _In_ ULONG InputBufferLength,
+                                                                   _Out_writes_bytes_opt_(SystemInformationLength)
+                                                                           PVOID SystemInformation,
+                                                                   _In_ ULONG SystemInformationLength,
+                                                                   _Out_opt_ PULONG ReturnLength);
 
 typedef enum _BLACKBIRD_HOOK_ID
 {
@@ -97,99 +109,177 @@ PBLACKBIRD_NT_ALLOCATE_VIRTUAL_MEMORY g_OriginalNtAllocateVirtualMemory = NULL;
 PBLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_EX g_OriginalNtQuerySystemInformationEx = NULL;
 
 NTSTATUS NTAPI BLACKBIRDNtQuerySystemInformationHook(_In_ ULONG SystemInformationClass,
-                                                            _Out_writes_bytes_opt_(SystemInformationLength)
-                                                                PVOID SystemInformation,
-                                                            _In_ ULONG SystemInformationLength,
-                                                            _Out_opt_ PULONG ReturnLength);
+                                                     _Out_writes_bytes_opt_(SystemInformationLength)
+                                                             PVOID SystemInformation,
+                                                     _In_ ULONG SystemInformationLength,
+                                                     _Out_opt_ PULONG ReturnLength);
 NTSTATUS NTAPI BLACKBIRDNtQueryInformationProcessHook(_In_ HANDLE ProcessHandle,
-                                                             _In_ ULONG ProcessInformationClass,
-                                                             _Out_writes_bytes_opt_(ProcessInformationLength)
-                                                                 PVOID ProcessInformation,
-                                                             _In_ ULONG ProcessInformationLength,
-                                                             _Out_opt_ PULONG ReturnLength);
-NTSTATUS NTAPI BLACKBIRDNtWriteVirtualMemoryHook(_In_ HANDLE ProcessHandle, _In_ PVOID BaseAddress,
-                                                        _In_reads_bytes_(BufferSize) PVOID Buffer,
-                                                        _In_ SIZE_T BufferSize, _Out_opt_ PSIZE_T NumberOfBytesWritten);
-NTSTATUS NTAPI BLACKBIRDNtProtectVirtualMemoryHook(_In_ HANDLE ProcessHandle, _Inout_ PVOID *BaseAddress,
-                                                          _Inout_ PSIZE_T RegionSize, _In_ ULONG NewProtect,
-                                                          _Out_ PULONG OldProtect);
-NTSTATUS NTAPI BLACKBIRDNtCreateSectionHook(_Out_ PHANDLE SectionHandle, _In_ ACCESS_MASK DesiredAccess,
-                                                   _In_opt_ POBJECT_ATTRIBUTES ObjectAttributes,
-                                                   _In_opt_ PLARGE_INTEGER MaximumSize,
-                                                   _In_ ULONG SectionPageProtection, _In_ ULONG AllocationAttributes,
-                                                   _In_opt_ HANDLE FileHandle);
-NTSTATUS NTAPI BLACKBIRDNtMapViewOfSectionHook(_In_ HANDLE SectionHandle, _In_ HANDLE ProcessHandle,
-                                                      _Inout_ PVOID *BaseAddress, _In_ ULONG_PTR ZeroBits,
-                                                      _In_ SIZE_T CommitSize, _Inout_opt_ PLARGE_INTEGER SectionOffset,
-                                                      _Inout_ PSIZE_T ViewSize, _In_ ULONG InheritDisposition,
-                                                      _In_ ULONG AllocationType, _In_ ULONG Win32Protect);
+                                                      _In_ ULONG ProcessInformationClass,
+                                                      _Out_writes_bytes_opt_(ProcessInformationLength)
+                                                              PVOID ProcessInformation,
+                                                      _In_ ULONG ProcessInformationLength,
+                                                      _Out_opt_ PULONG ReturnLength);
+NTSTATUS NTAPI BLACKBIRDNtWriteVirtualMemoryHook(_In_ HANDLE ProcessHandle,
+                                                 _In_ PVOID BaseAddress,
+                                                 _In_reads_bytes_(BufferSize) PVOID Buffer,
+                                                 _In_ SIZE_T BufferSize,
+                                                 _Out_opt_ PSIZE_T NumberOfBytesWritten);
+NTSTATUS NTAPI BLACKBIRDNtProtectVirtualMemoryHook(_In_ HANDLE ProcessHandle,
+                                                   _Inout_ PVOID *BaseAddress,
+                                                   _Inout_ PSIZE_T RegionSize,
+                                                   _In_ ULONG NewProtect,
+                                                   _Out_ PULONG OldProtect);
+NTSTATUS NTAPI BLACKBIRDNtCreateSectionHook(_Out_ PHANDLE SectionHandle,
+                                            _In_ ACCESS_MASK DesiredAccess,
+                                            _In_opt_ POBJECT_ATTRIBUTES ObjectAttributes,
+                                            _In_opt_ PLARGE_INTEGER MaximumSize,
+                                            _In_ ULONG SectionPageProtection,
+                                            _In_ ULONG AllocationAttributes,
+                                            _In_opt_ HANDLE FileHandle);
+NTSTATUS NTAPI BLACKBIRDNtMapViewOfSectionHook(_In_ HANDLE SectionHandle,
+                                               _In_ HANDLE ProcessHandle,
+                                               _Inout_ PVOID *BaseAddress,
+                                               _In_ ULONG_PTR ZeroBits,
+                                               _In_ SIZE_T CommitSize,
+                                               _Inout_opt_ PLARGE_INTEGER SectionOffset,
+                                               _Inout_ PSIZE_T ViewSize,
+                                               _In_ ULONG InheritDisposition,
+                                               _In_ ULONG AllocationType,
+                                               _In_ ULONG Win32Protect);
 NTSTATUS NTAPI BLACKBIRDNtQuerySystemInformationExHook(_In_ ULONG SystemInformationClass,
-                                                              _In_reads_bytes_opt_(InputBufferLength) PVOID InputBuffer,
-                                                              _In_ ULONG InputBufferLength,
-                                                              _Out_writes_bytes_opt_(SystemInformationLength)
-                                                                  PVOID SystemInformation,
-                                                              _In_ ULONG SystemInformationLength,
-                                                              _Out_opt_ PULONG ReturnLength);
-extern NTSTATUS NTAPI BLACKBIRDNtAllocateVirtualMemoryHookStub(_In_ HANDLE ProcessHandle, _Inout_ PVOID *BaseAddress,
-                                                               _In_ ULONG_PTR ZeroBits, _Inout_ PSIZE_T RegionSize,
-                                                               _In_ ULONG AllocationType, _In_ ULONG Protect);
+                                                       _In_reads_bytes_opt_(InputBufferLength) PVOID InputBuffer,
+                                                       _In_ ULONG InputBufferLength,
+                                                       _Out_writes_bytes_opt_(SystemInformationLength)
+                                                               PVOID SystemInformation,
+                                                       _In_ ULONG SystemInformationLength,
+                                                       _Out_opt_ PULONG ReturnLength);
+extern NTSTATUS NTAPI BLACKBIRDNtAllocateVirtualMemoryHookStub(_In_ HANDLE ProcessHandle,
+                                                               _Inout_ PVOID *BaseAddress,
+                                                               _In_ ULONG_PTR ZeroBits,
+                                                               _Inout_ PSIZE_T RegionSize,
+                                                               _In_ ULONG AllocationType,
+                                                               _In_ ULONG Protect);
 VOID BLACKBIRDNtApiHookExit(VOID);
 
 VOID BLACKBIRDNtApiHookEnter(VOID);
 static VOID BLACKBIRDNtApiWaitForInFlightCalls(VOID);
 VOID BLACKBIRDNtApiSanitizeKernelDebuggerInformation(_In_ ULONG SystemInformationClass,
-                                                            _Out_writes_bytes_opt_(SystemInformationLength)
-                                                                PVOID SystemInformation,
-                                                            _In_ ULONG SystemInformationLength,
-                                                            _In_ NTSTATUS Status);
+                                                     _Out_writes_bytes_opt_(SystemInformationLength)
+                                                             PVOID SystemInformation,
+                                                     _In_ ULONG SystemInformationLength,
+                                                     _In_ NTSTATUS Status);
 VOID BLACKBIRDNtApiSanitizeFirmwareTableInformation(_In_ ULONG SystemInformationClass,
-                                                           _Out_writes_bytes_opt_(SystemInformationLength)
-                                                               PVOID SystemInformation,
-                                                           _In_ ULONG SystemInformationLength,
-                                                           _In_ NTSTATUS Status);
+                                                    _Out_writes_bytes_opt_(SystemInformationLength)
+                                                            PVOID SystemInformation,
+                                                    _In_ ULONG SystemInformationLength,
+                                                    _In_ NTSTATUS Status);
 
 static BLACKBIRD_NTAPI_HOOK g_Hooks[BLACKBIRD_HOOK_COUNT];
 static const BLACKBIRD_NTAPI_HOOK_DESCRIPTOR g_HookDescriptors[BLACKBIRD_HOOK_COUNT] = {
-    {"NtQuerySystemInformation", L"NtQuerySystemInformation", L"ZwQuerySystemInformation", NULL,
-     (PVOID)BLACKBIRDNtQuerySystemInformationHook, 18, TRUE, 0, {0}, 0},
-    {"NtQueryInformationProcess", L"NtQueryProcessInformation", L"NtQueryInformationProcess",
-     L"ZwQueryInformationProcess", (PVOID)BLACKBIRDNtQueryInformationProcessHook, 19, TRUE, 0, {0}, 0},
-    {"NtWriteVirtualMemory", L"NtWriteVirtualMemory", L"ZwWriteVirtualMemory", NULL,
-     (PVOID)BLACKBIRDNtWriteVirtualMemoryHook, 17, TRUE, 0, {0x48, 0x83, 0xEC, 0x38, 0x48, 0x8B, 0x44, 0x24}, 8},
-    {"NtProtectVirtualMemory", L"NtProtectVirtualMemory", L"ZwProtectVirtualMemory", NULL,
-     (PVOID)BLACKBIRDNtProtectVirtualMemoryHook, 20, TRUE, 0, {0}, 0},
-    {"NtCreateSection", L"NtCreateSection", L"ZwCreateSection", NULL, (PVOID)BLACKBIRDNtCreateSectionHook, 17, TRUE, 0,
-     {0}, 0},
-    {"NtMapViewOfSection", L"NtMapViewOfSection", L"ZwMapViewOfSection", NULL, (PVOID)BLACKBIRDNtMapViewOfSectionHook,
-     15, TRUE, 0, {0}, 0},
-    {"NtAllocateVirtualMemory", L"NtAllocateVirtualMemory", L"ZwAllocateVirtualMemory", NULL,
-     (PVOID)BLACKBIRDNtAllocateVirtualMemoryHookStub, 20, TRUE, 0, {0}, 0},
-    {"NtQuerySystemInformationEx", L"NtQuerySystemInformationEx", L"ZwQuerySystemInformationEx", NULL,
-     (PVOID)BLACKBIRDNtQuerySystemInformationExHook, 20, TRUE, 0, {0}, 0},
+    { "NtQuerySystemInformation",
+      L"NtQuerySystemInformation",
+      L"ZwQuerySystemInformation",
+      NULL,
+      (PVOID) BLACKBIRDNtQuerySystemInformationHook,
+      18,
+      TRUE,
+      0,
+      { 0 },
+      0 },
+    { "NtQueryInformationProcess",
+      L"NtQueryProcessInformation",
+      L"NtQueryInformationProcess",
+      L"ZwQueryInformationProcess",
+      (PVOID) BLACKBIRDNtQueryInformationProcessHook,
+      19,
+      TRUE,
+      0,
+      { 0 },
+      0 },
+    { "NtWriteVirtualMemory",
+      L"NtWriteVirtualMemory",
+      L"ZwWriteVirtualMemory",
+      NULL,
+      (PVOID) BLACKBIRDNtWriteVirtualMemoryHook,
+      17,
+      TRUE,
+      0,
+      { 0x48, 0x83, 0xEC, 0x38, 0x48, 0x8B, 0x44, 0x24 },
+      8 },
+    { "NtProtectVirtualMemory",
+      L"NtProtectVirtualMemory",
+      L"ZwProtectVirtualMemory",
+      NULL,
+      (PVOID) BLACKBIRDNtProtectVirtualMemoryHook,
+      20,
+      TRUE,
+      0,
+      { 0 },
+      0 },
+    { "NtCreateSection",
+      L"NtCreateSection",
+      L"ZwCreateSection",
+      NULL,
+      (PVOID) BLACKBIRDNtCreateSectionHook,
+      17,
+      TRUE,
+      0,
+      { 0 },
+      0 },
+    { "NtMapViewOfSection",
+      L"NtMapViewOfSection",
+      L"ZwMapViewOfSection",
+      NULL,
+      (PVOID) BLACKBIRDNtMapViewOfSectionHook,
+      15,
+      TRUE,
+      0,
+      { 0 },
+      0 },
+    { "NtAllocateVirtualMemory",
+      L"NtAllocateVirtualMemory",
+      L"ZwAllocateVirtualMemory",
+      NULL,
+      (PVOID) BLACKBIRDNtAllocateVirtualMemoryHookStub,
+      20,
+      TRUE,
+      0,
+      { 0 },
+      0 },
+    { "NtQuerySystemInformationEx",
+      L"NtQuerySystemInformationEx",
+      L"ZwQuerySystemInformationEx",
+      NULL,
+      (PVOID) BLACKBIRDNtQuerySystemInformationExHook,
+      20,
+      TRUE,
+      0,
+      { 0 },
+      0 },
 };
 
 static PVOID *BLACKBIRDNtApiOriginalSlot(_In_ BLACKBIRD_HOOK_ID HookId)
 {
     switch (HookId)
     {
-    case BLACKBIRD_HOOK_QUERY_SYSTEM_INFORMATION:
-        return (PVOID *)&g_OriginalNtQuerySystemInformation;
-    case BLACKBIRD_HOOK_QUERY_INFORMATION_PROCESS:
-        return (PVOID *)&g_OriginalNtQueryInformationProcess;
-    case BLACKBIRD_HOOK_WRITE_VIRTUAL_MEMORY:
-        return (PVOID *)&g_OriginalNtWriteVirtualMemory;
-    case BLACKBIRD_HOOK_PROTECT_VIRTUAL_MEMORY:
-        return (PVOID *)&g_OriginalNtProtectVirtualMemory;
-    case BLACKBIRD_HOOK_CREATE_SECTION:
-        return (PVOID *)&g_OriginalNtCreateSection;
-    case BLACKBIRD_HOOK_MAP_VIEW_OF_SECTION:
-        return (PVOID *)&g_OriginalNtMapViewOfSection;
-    case BLACKBIRD_HOOK_ALLOCATE_VIRTUAL_MEMORY:
-        return (PVOID *)&g_OriginalNtAllocateVirtualMemory;
-    case BLACKBIRD_HOOK_QUERY_SYSTEM_INFORMATION_EX:
-        return (PVOID *)&g_OriginalNtQuerySystemInformationEx;
-    default:
-        return NULL;
+        case BLACKBIRD_HOOK_QUERY_SYSTEM_INFORMATION:
+            return (PVOID *) &g_OriginalNtQuerySystemInformation;
+        case BLACKBIRD_HOOK_QUERY_INFORMATION_PROCESS:
+            return (PVOID *) &g_OriginalNtQueryInformationProcess;
+        case BLACKBIRD_HOOK_WRITE_VIRTUAL_MEMORY:
+            return (PVOID *) &g_OriginalNtWriteVirtualMemory;
+        case BLACKBIRD_HOOK_PROTECT_VIRTUAL_MEMORY:
+            return (PVOID *) &g_OriginalNtProtectVirtualMemory;
+        case BLACKBIRD_HOOK_CREATE_SECTION:
+            return (PVOID *) &g_OriginalNtCreateSection;
+        case BLACKBIRD_HOOK_MAP_VIEW_OF_SECTION:
+            return (PVOID *) &g_OriginalNtMapViewOfSection;
+        case BLACKBIRD_HOOK_ALLOCATE_VIRTUAL_MEMORY:
+            return (PVOID *) &g_OriginalNtAllocateVirtualMemory;
+        case BLACKBIRD_HOOK_QUERY_SYSTEM_INFORMATION_EX:
+            return (PVOID *) &g_OriginalNtQuerySystemInformationEx;
+        default:
+            return NULL;
     }
 }
 
@@ -206,8 +296,7 @@ VOID BLACKBIRDNtApiHookExit(VOID)
     if (remaining < 0)
     {
         InterlockedExchange(&g_NtApiHookInFlight, 0);
-        BLACKBIRD_NTAPI_LOG(DPFLTR_ERROR_LEVEL,
-                            "BLACKBIRD: ntapi hook in-flight underflow detected and corrected.\n");
+        BLACKBIRD_NTAPI_LOG(DPFLTR_ERROR_LEVEL, "BLACKBIRD: ntapi hook in-flight underflow detected and corrected.\n");
     }
 }
 
@@ -227,31 +316,30 @@ static VOID BLACKBIRDNtApiWaitForInFlightCalls(VOID)
 
         if (InterlockedDecrement(&g_NtApiUninitWaitBudget) >= 0)
         {
-            BLACKBIRD_NTAPI_LOG(DPFLTR_INFO_LEVEL,
-                                "BLACKBIRD: ntapi unload waiting for in-flight hooks count=%ld.\n",
-                                inFlight);
+            BLACKBIRD_NTAPI_LOG(
+                    DPFLTR_INFO_LEVEL, "BLACKBIRD: ntapi unload waiting for in-flight hooks count=%ld.\n", inFlight);
         }
         KeDelayExecutionThread(KernelMode, FALSE, &delay);
     }
 }
 
 VOID BLACKBIRDNtApiSanitizeKernelDebuggerInformation(_In_ ULONG SystemInformationClass,
-                                                            _Out_writes_bytes_opt_(SystemInformationLength)
-                                                                PVOID SystemInformation,
-                                                            _In_ ULONG SystemInformationLength,
-                                                            _In_ NTSTATUS Status)
+                                                     _Out_writes_bytes_opt_(SystemInformationLength)
+                                                             PVOID SystemInformation,
+                                                     _In_ ULONG SystemInformationLength,
+                                                     _In_ NTSTATUS Status)
 {
     PBLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION info;
 
-    if (SystemInformationClass != BLACKBIRD_SYSTEM_INFORMATION_CLASS_KERNEL_DEBUGGER || !NT_SUCCESS(Status) ||
-        SystemInformation == NULL || SystemInformationLength < sizeof(*info))
+    if (SystemInformationClass != BLACKBIRD_SYSTEM_INFORMATION_CLASS_KERNEL_DEBUGGER || !NT_SUCCESS(Status)
+        || SystemInformation == NULL || SystemInformationLength < sizeof(*info))
     {
         return;
     }
 
     __try
     {
-        info = (PBLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION)SystemInformation;
+        info = (PBLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION) SystemInformation;
         info->KernelDebuggerEnabled = FALSE;
         info->KernelDebuggerNotPresent = TRUE;
         if (InterlockedDecrement(&g_NtApiKdSanitizeApplyBudget) >= 0)
@@ -265,15 +353,15 @@ VOID BLACKBIRDNtApiSanitizeKernelDebuggerInformation(_In_ ULONG SystemInformatio
     {
         if (InterlockedDecrement(&g_NtApiKdSanitizeBudget) >= 0)
         {
-            BLACKBIRD_NTAPI_LOG(DPFLTR_WARNING_LEVEL,
-                                "BLACKBIRD: ntapi kernel-debugger sanitize failed class=0x%lX status=0x%08X ex=0x%08X.\n",
-                                SystemInformationClass,
-                                Status,
-                                GetExceptionCode());
+            BLACKBIRD_NTAPI_LOG(
+                    DPFLTR_WARNING_LEVEL,
+                    "BLACKBIRD: ntapi kernel-debugger sanitize failed class=0x%lX status=0x%08X ex=0x%08X.\n",
+                    SystemInformationClass,
+                    Status,
+                    GetExceptionCode());
         }
     }
 }
-
 
 ULONG BLACKBIRDNtApiReadUlongSafe(_In_opt_ PULONG Value)
 {
@@ -361,7 +449,7 @@ ULONGLONG BLACKBIRDNtApiReadLargeIntegerSafe(_In_opt_ PLARGE_INTEGER Value)
     }
     __try
     {
-        observed = (ULONGLONG)Value->QuadPart;
+        observed = (ULONGLONG) Value->QuadPart;
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
@@ -375,8 +463,8 @@ BOOLEAN BLACKBIRDNtApiShouldLog(_Out_ HANDLE *CallerPid)
     HANDLE pid;
     KIRQL irql;
 
-    if (InterlockedCompareExchange(&g_NtApiMonitorInitialized, 0, 0) == 0 ||
-        InterlockedCompareExchange(&g_NtApiMonitorUnloading, 0, 0) != 0)
+    if (InterlockedCompareExchange(&g_NtApiMonitorInitialized, 0, 0) == 0
+        || InterlockedCompareExchange(&g_NtApiMonitorUnloading, 0, 0) != 0)
     {
         if (InterlockedDecrement(&g_NtApiSkipInitBudget) >= 0)
         {
@@ -406,13 +494,13 @@ BOOLEAN BLACKBIRDNtApiShouldLog(_Out_ HANDLE *CallerPid)
     }
 
     pid = PsGetCurrentProcessId();
-    if (!BLACKBIRDControlHasPidInterest((UINT32)(ULONG_PTR)pid, 0, BLACKBIRD_STREAM_MEMORY))
+    if (!BLACKBIRDControlHasPidInterest((UINT32) (ULONG_PTR) pid, 0, BLACKBIRD_STREAM_MEMORY))
     {
         if (InterlockedDecrement(&g_NtApiSkipPidBudget) >= 0)
         {
             BLACKBIRD_NTAPI_LOG(DPFLTR_INFO_LEVEL,
                                 "BLACKBIRD: ntapi should-log skip reason=pid-not-monitored pid=%u.\n",
-                                (UINT32)(ULONG_PTR)pid);
+                                (UINT32) (ULONG_PTR) pid);
         }
         return FALSE;
     }
@@ -422,7 +510,7 @@ BOOLEAN BLACKBIRDNtApiShouldLog(_Out_ HANDLE *CallerPid)
         {
             BLACKBIRD_NTAPI_LOG(DPFLTR_INFO_LEVEL,
                                 "BLACKBIRD: ntapi should-log skip reason=rundown pid=%u.\n",
-                                (UINT32)(ULONG_PTR)pid);
+                                (UINT32) (ULONG_PTR) pid);
         }
         return FALSE;
     }
@@ -431,14 +519,21 @@ BOOLEAN BLACKBIRDNtApiShouldLog(_Out_ HANDLE *CallerPid)
     return TRUE;
 }
 
-VOID BLACKBIRDNtApiLog(_In_z_ PCSTR ApiName, _In_ HANDLE CallerPid, _In_ UINT64 Arg0, _In_ UINT64 Arg1,
-                              _In_ UINT64 Arg2, _In_ UINT64 Arg3, _In_ UINT64 Arg4, _In_ UINT64 Arg5,
-                              _In_ UINT64 Arg6, _In_ UINT64 Arg7, _In_ NTSTATUS Status)
+VOID BLACKBIRDNtApiLog(_In_z_ PCSTR ApiName,
+                       _In_ HANDLE CallerPid,
+                       _In_ UINT64 Arg0,
+                       _In_ UINT64 Arg1,
+                       _In_ UINT64 Arg2,
+                       _In_ UINT64 Arg3,
+                       _In_ UINT64 Arg4,
+                       _In_ UINT64 Arg5,
+                       _In_ UINT64 Arg6,
+                       _In_ UINT64 Arg7,
+                       _In_ NTSTATUS Status)
 {
-    BLACKBIRDEtwLogNtApiEvent(ApiName, CallerPid, PsGetCurrentThreadId(), Arg0, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6,
-                              Arg7, Status);
+    BLACKBIRDEtwLogNtApiEvent(
+            ApiName, CallerPid, PsGetCurrentThreadId(), Arg0, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6, Arg7, Status);
 }
-
 
 NTSTATUS
 BLACKBIRDNtApiMonitorInitialize(VOID)
@@ -470,9 +565,11 @@ BLACKBIRDNtApiMonitorInitialize(VOID)
 
     for (i = 0; i < BLACKBIRD_HOOK_COUNT; ++i)
     {
-        PVOID *originalSlot = BLACKBIRDNtApiOriginalSlot((BLACKBIRD_HOOK_ID)i);
+        PVOID *originalSlot = BLACKBIRDNtApiOriginalSlot((BLACKBIRD_HOOK_ID) i);
 
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: ntapi hook install begin api=%s.\n",
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                   DPFLTR_INFO_LEVEL,
+                   "BLACKBIRD: ntapi hook install begin api=%s.\n",
                    g_HookDescriptors[i].ApiName);
 
         status = BLACKBIRDNtApiHookInstall(&g_Hooks[i], originalSlot);
@@ -480,20 +577,21 @@ BLACKBIRDNtApiMonitorInitialize(VOID)
         {
             if (!g_HookDescriptors[i].Required || status == STATUS_PROCEDURE_NOT_FOUND)
             {
-                DbgPrintEx(
-                    DPFLTR_IHVDRIVER_ID,
-                    DPFLTR_WARNING_LEVEL,
-                    "BLACKBIRD: ntapi hook unavailable api=%s required=%u status=0x%08X (continuing without this hook).\n",
-                    g_HookDescriptors[i].ApiName,
-                    g_HookDescriptors[i].Required ? 1u : 0u,
-                    status);
+                DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                           DPFLTR_WARNING_LEVEL,
+                           "BLACKBIRD: ntapi hook unavailable api=%s required=%u status=0x%08X (continuing without "
+                           "this hook).\n",
+                           g_HookDescriptors[i].ApiName,
+                           g_HookDescriptors[i].Required ? 1u : 0u,
+                           status);
                 if (originalSlot != NULL)
                 {
                     *originalSlot = NULL;
                 }
                 continue;
             }
-            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+                       DPFLTR_ERROR_LEVEL,
                        "BLACKBIRD: ntapi hook install failed api=%s status=0x%08X.\n",
                        g_HookDescriptors[i].ApiName,
                        status);
@@ -520,7 +618,8 @@ Fail:
     g_OriginalNtAllocateVirtualMemory = NULL;
     g_OriginalNtQuerySystemInformationEx = NULL;
     InterlockedExchange(&g_NtApiMonitorInitialized, 0);
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+               DPFLTR_ERROR_LEVEL,
                "BLACKBIRD: ntapi monitor init failed during install status=0x%08X.\n",
                status);
     return status;
@@ -584,7 +683,7 @@ BLACKBIRDNtApiMonitorSelfCheck(VOID)
             return FALSE;
         }
 
-        originalSlot = BLACKBIRDNtApiOriginalSlot((BLACKBIRD_HOOK_ID)i);
+        originalSlot = BLACKBIRDNtApiOriginalSlot((BLACKBIRD_HOOK_ID) i);
         if (originalSlot == NULL || *originalSlot == NULL)
         {
             return FALSE;
@@ -602,9 +701,7 @@ BLACKBIRDNtApiMonitorInitialize(VOID)
     return STATUS_SUCCESS;
 }
 
-VOID BLACKBIRDNtApiMonitorUninitialize(VOID)
-{
-}
+VOID BLACKBIRDNtApiMonitorUninitialize(VOID) {}
 
 BOOLEAN
 BLACKBIRDNtApiMonitorSelfCheck(VOID)
@@ -613,4 +710,3 @@ BLACKBIRDNtApiMonitorSelfCheck(VOID)
 }
 
 #endif
-

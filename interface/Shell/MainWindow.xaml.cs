@@ -3725,6 +3725,8 @@ namespace BlackbirdInterface
             public string SensorLabel { get; set; } = string.Empty;
             public Brush? SensorBackground { get; set; }
             public Brush? SensorForeground { get; set; }
+            public Brush? HeatTrackBackground { get; set; }
+            public Brush? HeatFillBackground { get; set; }
             public string PathLabel { get; set; } = string.Empty;
             public string ThreadLabel { get; set; } = string.Empty;
             public string LastSeen { get; set; } = string.Empty;

@@ -6,8 +6,7 @@ param(
     [string]$SensorCoreDll = "..\BlackbirdSensorCore.dll",
     [string]$InstanceName = "Blackbird Default",
     [string]$InstanceAltitude = "385000.424244",
-    [uint32]$InstanceFlags = 0,
-    [string[]]$LegacyDriverNames = @("sleepwlkr", "sleepwalker")
+    [uint32]$InstanceFlags = 0
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,6 +22,24 @@ if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 
 if ($osBuild -lt 19041) {
     Write-Warning "OS build $osBuild detected. This driver toolchain commonly requires Windows 10 2004+ (build 19041+) for kernel exports."
+}
+
+function Write-Stage {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$Index,
+        [Parameter(Mandatory = $true)]
+        [int]$Total,
+        [Parameter(Mandatory = $true)]
+        [string]$Activity,
+        [Parameter(Mandatory = $true)]
+        [string]$Status
+    )
+
+    $percent = [Math]::Floor(($Index / $Total) * 100)
+    Write-Progress -Id 1 -Activity $Activity -Status $Status -PercentComplete $percent
+    Write-Host ""
+    Write-Host ("[{0}/{1}] {2}" -f $Index, $Total, $Status) -ForegroundColor Cyan
 }
 
 function Resolve-ArtifactPath {
@@ -70,6 +87,29 @@ function Invoke-Sc {
             $detail = "(no output)"
         }
         throw "sc.exe $($Arguments -join ' ') failed with exit code $exitCode`n$detail"
+    }
+}
+
+function Test-ServiceExists {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ServiceName
+    )
+
+    & sc.exe query $ServiceName 2>&1 | Out-Null
+    return $LASTEXITCODE -eq 0
+}
+
+function Assert-PathExists {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [string]$Label
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "$Label missing: $Path"
     }
 }
 
@@ -271,6 +311,31 @@ function Get-MinifilterRegistryDump {
     return ($lines -join [Environment]::NewLine)
 }
 
+function Assert-ServiceRunning {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ServiceName,
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedStatePattern,
+        [Parameter(Mandatory = $true)]
+        [string]$FailureLabel
+    )
+
+    $output = & sc.exe query $ServiceName 2>&1
+    $text = (($output | ForEach-Object { "$_" }) -join [Environment]::NewLine)
+    if ($LASTEXITCODE -ne 0 -or $text -notmatch $ExpectedStatePattern) {
+        throw "$FailureLabel`n$text"
+    }
+}
+
+$totalStages = 6
+$activity = "Blackbird installation"
+
+Write-Host ""
+Write-Host "Blackbird Installer"
+Write-Host "-------------------"
+
+Write-Stage -Index 1 -Total $totalStages -Activity $activity -Status "Resolving build artifacts"
 $driverSrc = Resolve-ArtifactPath `
     -PreferredPath $DriverSys `
     -FallbackPaths @(
@@ -309,28 +374,31 @@ $controllerDir = Join-Path $env:ProgramFiles "Blackbird"
 $controllerDst = Join-Path $controllerDir "BlackbirdController.exe"
 $sensorCoreDst = Join-Path $controllerDir "BlackbirdSensorCore.dll"
 
+Write-Host "[+] Driver: $driverSrc"
+Write-Host "[+] Controller: $controllerSrc"
+Write-Host "[+] SensorCore: $sensorCoreSrc"
+
+Write-Stage -Index 2 -Total $totalStages -Activity $activity -Status "Copying binaries"
 New-Item -ItemType Directory -Path $controllerDir -Force | Out-Null
 Copy-Item -LiteralPath $driverSrc -Destination $driverDst -Force
 Copy-Item -LiteralPath $controllerSrc -Destination $controllerDst -Force
 Copy-Item -LiteralPath $sensorCoreSrc -Destination $sensorCoreDst -Force
 
-foreach ($legacyName in $LegacyDriverNames) {
-    if ([string]::IsNullOrWhiteSpace($legacyName) -or
-        $legacyName.Equals($DriverName, [System.StringComparison]::OrdinalIgnoreCase)) {
-        continue
-    }
-    Remove-MinifilterServiceArtifacts -ServiceName $legacyName
-}
+Assert-PathExists -Path $driverDst -Label "Installed driver"
+Assert-PathExists -Path $controllerDst -Label "Installed controller"
+Assert-PathExists -Path $sensorCoreDst -Label "Installed SensorCore"
 
+Write-Stage -Index 3 -Total $totalStages -Activity $activity -Status "Checking minifilter altitude conflicts"
 $unknownPreCreateConflicts = Remove-ProjectAltitudeConflicts `
     -Altitude $InstanceAltitude `
     -CurrentServiceName $DriverName `
-    -ProjectServiceNames (@($LegacyDriverNames) + @($DriverName))
+    -ProjectServiceNames @($DriverName)
 if ($unknownPreCreateConflicts.Count -gt 0) {
     $list = $unknownPreCreateConflicts -join ", "
     throw "Altitude $InstanceAltitude is already used by non-project minifilter service(s): $list. Change -InstanceAltitude or remove the conflicting filter(s)."
 }
 
+Write-Stage -Index 4 -Total $totalStages -Activity $activity -Status "Registering services"
 Invoke-Sc -Arguments @("stop", $DriverName) -AllowedExitCodes @(0, 1060, 1062)
 Invoke-Sc -Arguments @("delete", $DriverName) -AllowedExitCodes @(0, 1060)
 Invoke-Sc -Arguments @(
@@ -351,6 +419,14 @@ Invoke-Sc -Arguments @("delete", $ControllerName) -AllowedExitCodes @(0, 1060)
 Invoke-Sc -Arguments @("create", $ControllerName, "type=", "own", "start=", "auto", "obj=", "LocalSystem", "binPath=", "`"$controllerDst`"", "DisplayName=", "Blackbird Controller Service")
 Invoke-Sc -Arguments @("failure", $ControllerName, "reset=", "60", "actions=", "restart/5000/restart/5000/restart/5000")
 
+if (-not (Test-ServiceExists -ServiceName $DriverName)) {
+    throw "Driver service '$DriverName' was not created."
+}
+if (-not (Test-ServiceExists -ServiceName $ControllerName)) {
+    throw "Controller service '$ControllerName' was not created."
+}
+
+Write-Stage -Index 5 -Total $totalStages -Activity $activity -Status "Starting driver"
 $driverRecovered = $false
 try {
     Invoke-Sc -Arguments @("start", $DriverName)
@@ -375,7 +451,7 @@ catch {
         $unknownRetryConflicts = Remove-ProjectAltitudeConflicts `
             -Altitude $InstanceAltitude `
             -CurrentServiceName $DriverName `
-            -ProjectServiceNames (@($LegacyDriverNames) + @($DriverName))
+            -ProjectServiceNames @($DriverName)
 
         if ($unknownRetryConflicts.Count -eq 0) {
             try {
@@ -422,7 +498,13 @@ catch {
     }
 }
 
+Assert-ServiceRunning -ServiceName $DriverName -ExpectedStatePattern "STATE\s*:\s*\d+\s+RUNNING" -FailureLabel "Driver service failed to reach RUNNING state."
+
+Write-Stage -Index 6 -Total $totalStages -Activity $activity -Status "Starting controller"
 Invoke-Sc -Arguments @("start", $ControllerName)
+Assert-ServiceRunning -ServiceName $ControllerName -ExpectedStatePattern "STATE\s*:\s*\d+\s+RUNNING" -FailureLabel "Controller service failed to reach RUNNING state."
+
+Write-Progress -Id 1 -Activity $activity -Completed
 
 Write-Host "[*] Installed and started $DriverName + $ControllerName"
 Write-Host "    Driver:     $driverDst"

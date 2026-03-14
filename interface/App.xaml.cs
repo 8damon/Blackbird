@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
+using System.Runtime.InteropServices;
 
 namespace BlackbirdInterface
 {
@@ -311,7 +312,7 @@ namespace BlackbirdInterface
         {
             try
             {
-                string? exePath = Assembly.GetEntryAssembly()?.Location;
+                string? exePath = ResolveCurrentExecutablePath();
                 if (string.IsNullOrWhiteSpace(exePath) || !File.Exists(exePath))
                 {
                     return;
@@ -323,10 +324,6 @@ namespace BlackbirdInterface
                 Directory.CreateDirectory(programsDirectory);
 
                 string shortcutPath = Path.Combine(programsDirectory, "Blackbird.lnk");
-                if (File.Exists(shortcutPath))
-                {
-                    File.Delete(shortcutPath);
-                }
 
                 Type? shellType = Type.GetTypeFromProgID("WScript.Shell");
                 if (shellType == null)
@@ -366,17 +363,44 @@ namespace BlackbirdInterface
                 {
                     if (shortcut != null)
                     {
-                        System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shortcut);
+                        Marshal.FinalReleaseComObject(shortcut);
                     }
                     if (shell != null)
                     {
-                        System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shell);
+                        Marshal.FinalReleaseComObject(shell);
                     }
                 }
             }
             catch
             {
             }
+        }
+
+        private static string? ResolveCurrentExecutablePath()
+        {
+            string? processPath = Environment.ProcessPath;
+            if (!string.IsNullOrWhiteSpace(processPath) &&
+                string.Equals(Path.GetExtension(processPath), ".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                return processPath;
+            }
+
+            using Process current = Process.GetCurrentProcess();
+            string? mainModulePath = current.MainModule?.FileName;
+            if (!string.IsNullOrWhiteSpace(mainModulePath) &&
+                string.Equals(Path.GetExtension(mainModulePath), ".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                return mainModulePath;
+            }
+
+            string? entryAssemblyPath = Assembly.GetEntryAssembly()?.Location;
+            if (!string.IsNullOrWhiteSpace(entryAssemblyPath) &&
+                string.Equals(Path.GetExtension(entryAssemblyPath), ".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                return entryAssemblyPath;
+            }
+
+            return null;
         }
 
         internal static void SetThemeMode(UiThemeMode mode)

@@ -751,7 +751,6 @@ DWORD ControllerInjectionLaunchAndVerify(_In_ HANDLE ClientPipe,
         return err;
     }
 
-    // Honor requested launch mode exactly, including sr71.dll.
     useEarlyBirdApc = ((Flags & BLACKBIRD_IPC_USER_HOOK_FLAG_LAUNCH_EARLYBIRD_APC) != 0u);
 
     if (useEarlyBirdApc)
@@ -789,7 +788,6 @@ DWORD ControllerInjectionLaunchAndVerify(_In_ HANDLE ClientPipe,
         return err == ERROR_SUCCESS ? ERROR_GEN_FAILURE : err;
     }
 
-    // Launch success should not be hard-coupled to hook-ready timing.
     (void) ControllerWaitForHookReady(processInfo.dwProcessId);
 
     if (ControllerInjectionIsStealthHookModule(HookDllPath))

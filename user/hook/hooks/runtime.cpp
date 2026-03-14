@@ -20,10 +20,8 @@
 #include "../instrument/bk.h"
 
 #include <windows.h>
-#include <strsafe.h>
 
 #include <cstdint>
-#include <cstdarg>
 #include <atomic>
 #include <vector>
 #include <cstring>
@@ -63,8 +61,6 @@ namespace
     inline constexpr DWORD kHookReadyNotifyRetrySleepMs = 1u;
     inline constexpr ULONGLONG kIpcInitMaxWaitMs = 15000ull;
     inline constexpr ULONGLONG kHookReadyNotifyMaxWaitMs = 15000ull;
-    inline constexpr ULONGLONG kControllerPrimeMaxWaitMs = 10000ull;
-
     void ResetIntegrityWatchdogState() noexcept
     {
         g_LastIntegrityCheckTick = 0;
@@ -81,19 +77,6 @@ namespace
         g_LastEtwPublishTick = 0;
     }
 
-    void TraceRuntimef(_In_z_ _Printf_format_string_ const char* format, ...) noexcept
-    {
-        char buffer[256];
-        va_list args;
-
-        va_start(args, format);
-        if (SUCCEEDED(StringCchVPrintfA(buffer, RTL_NUMBER_OF(buffer), format, args)))
-        {
-            OutputDebugStringA(buffer);
-        }
-        va_end(args);
-    }
-
     bool EnsureHookControllersReady() noexcept
     {
         if (!g_WinsockInitialized)
@@ -105,13 +88,10 @@ namespace
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
                 g_WinsockInitialized = false;
-                TraceRuntimef("[SR71][ERR] winsock hook init crashed; disabling winsock hook in pid=%lu\n",
-                              GetCurrentProcessId());
             }
             if (!g_WinsockInitialized && !KeIsWinsockHookRequired())
             {
                 g_WinsockInitialized = true;
-                TraceRuntimef("[SR71] winsock hook not required (no WS2_32 import); treating as ready\n");
             }
         }
         if (!g_NtInitialized)
@@ -123,7 +103,6 @@ namespace
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
                 g_NtInitialized = false;
-                TraceRuntimef("[SR71][ERR] nt hook init crashed; disabling nt hook in pid=%lu\n", GetCurrentProcessId());
             }
         }
         if (!g_KiInitialized)
@@ -135,12 +114,10 @@ namespace
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
                 g_KiInitialized = false;
-                TraceRuntimef("[SR71][ERR] ki hook init crashed; disabling ki hook in pid=%lu\n", GetCurrentProcessId());
             }
             if (!g_KiInitialized && !KeIsKiHookSupported())
             {
                 g_KiInitialized = true;
-                TraceRuntimef("[SR71] KI hook not supported on this build; treating as ready\n");
             }
         }
 
@@ -172,27 +149,16 @@ namespace
     bool InitializeIpcWithRetry() noexcept
     {
         ULONGLONG startTick = GetTickCount64();
-        DWORD attempts = 0;
 
         for (;;)
         {
             if (XIPC::Initialize(kIpcInitAttemptTimeoutMs))
             {
-                TraceRuntimef("[SR71] ipc init succeeded attempts=%lu elapsedMs=%llu\n", attempts + 1u,
-                              (unsigned long long)(GetTickCount64() - startTick));
                 return true;
             }
 
-            ++attempts;
-            DWORD err = GetLastError();
-            if (attempts == 1u || (attempts % 5u) == 0u)
-            {
-                TraceRuntimef("[SR71][WARN] ipc init failed attempt=%lu err=%lu\n", attempts, err);
-            }
             if ((GetTickCount64() - startTick) >= kIpcInitMaxWaitMs)
             {
-                TraceRuntimef("[SR71][WARN] ipc init giving up attempts=%lu elapsedMs=%llu\n", attempts,
-                              (unsigned long long)(GetTickCount64() - startTick));
                 return false;
             }
 
@@ -205,7 +171,6 @@ namespace
 
     bool NotifyHookReadyWithRetry() noexcept
     {
-        DWORD attempts = 0;
         ULONGLONG startTick = GetTickCount64();
 
         for (;;)
@@ -214,23 +179,11 @@ namespace
             std::uint32_t localMask = BuildHookReadyMask(true);
             if (XIPC::NotifyHookReady(localMask, &observedMask))
             {
-                TraceRuntimef("[SR71] hook-ready acked localMask=0x%08X observed=0x%08X attempts=%lu elapsedMs=%llu\n",
-                              localMask, observedMask, attempts + 1u,
-                              (unsigned long long)(GetTickCount64() - startTick));
                 return true;
             }
 
-            ++attempts;
-            if (attempts == 1u || (attempts % 32u) == 0u)
-            {
-                TraceRuntimef("[SR71][WARN] hook-ready ack pending localMask=0x%08X observed=0x%08X attempt=%lu\n",
-                              localMask, observedMask, attempts);
-            }
             if ((GetTickCount64() - startTick) >= kHookReadyNotifyMaxWaitMs)
             {
-                TraceRuntimef("[SR71][WARN] hook-ready ack giving up localMask=0x%08X observed=0x%08X attempts=%lu elapsedMs=%llu\n",
-                              localMask, observedMask, attempts,
-                              (unsigned long long)(GetTickCount64() - startTick));
                 return false;
             }
 
@@ -253,6 +206,12 @@ namespace
             return "send";
         case WinsockOperation::Recv:
             return "recv";
+        case WinsockOperation::Connect:
+            return "connect";
+        case WinsockOperation::WsaConnect:
+            return "WSAConnect";
+        case WinsockOperation::GetAddrInfoW:
+            return "GetAddrInfoW";
         default:
             return "winsock";
         }
@@ -272,7 +231,14 @@ namespace
         record.Operation = static_cast<std::uint32_t>(evt.Operation);
         record.Caller = reinterpret_cast<std::uint64_t>(evt.Caller);
         record.Context0 = static_cast<std::uint64_t>(static_cast<ULONG_PTR>(evt.Socket));
-        record.ArgCount = 0;
+        record.Context1 = evt.Args[0];
+        record.Context2 = evt.Args[1];
+        record.Context3 = evt.Args[2];
+        record.ArgCount = 4;
+        for (std::size_t i = 0; i < RTL_NUMBER_OF(evt.Args); ++i)
+        {
+            record.Args[i] = evt.Args[i];
+        }
         record.DataSize = static_cast<std::uint32_t>(sampleSize);
         (void)strncpy_s(record.ApiName, opName, _TRUNCATE);
         (void)strncpy_s(record.ModuleName, "WS2_32", _TRUNCATE);
@@ -638,7 +604,6 @@ void BkRuntimePrimeHooks() noexcept
     BkRegisterVectoredExceptionHandler(&g_sw);
 
     ResetIntegrityWatchdogState();
-    TraceRuntimef("[SR71] runtime primed pid=%lu\n", GetCurrentProcessId());
 }
 
 DWORD WINAPI BkRuntimeThreadProc(LPVOID)
@@ -654,8 +619,6 @@ DWORD WINAPI BkRuntimeThreadProc(LPVOID)
         (void)NotifyHookReadyWithRetry();
     }
 
-    // Initialize hook controllers after IPC handshake so launch readiness is not coupled
-    // to winsock/nt/ki hook setup latency or failures.
     (void)EnsureHookControllersReady();
 
     for (;;)
@@ -667,7 +630,6 @@ DWORD WINAPI BkRuntimeThreadProc(LPVOID)
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
-            TraceRuntimef("[SR71][ERR] runtime loop exception pid=%lu tid=%lu\n", GetCurrentProcessId(), GetCurrentThreadId());
         }
         ::Sleep(60);
     }

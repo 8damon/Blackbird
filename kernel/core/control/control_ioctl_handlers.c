@@ -57,6 +57,7 @@ NTSTATUS BLACKBIRDHandleSubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFRE
                        in->StreamMask,
                        mergedMask,
                        subscriptionCountSnapshot);
+            InterlockedExchange(&g_ControlTelemetryArmed, 1);
             return STATUS_SUCCESS;
         }
     }
@@ -81,6 +82,7 @@ NTSTATUS BLACKBIRDHandleSubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFRE
                in->ProcessId,
                in->StreamMask,
                subscriptionCountSnapshot);
+    InterlockedExchange(&g_ControlTelemetryArmed, 1);
 
     return STATUS_SUCCESS;
 }
@@ -125,6 +127,7 @@ NTSTATUS BLACKBIRDHandleUnsubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDF
                        requesterPid,
                        in->ProcessId,
                        subscriptionCountSnapshot);
+            BLACKBIRDControlRefreshArmedState();
             return STATUS_SUCCESS;
         }
     }
@@ -333,8 +336,86 @@ NTSTATUS BLACKBIRDHandleSetPidsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQU
                in->ProcessCount,
                appliedCount,
                streamMask);
+    if (appliedCount != 0)
+    {
+        InterlockedExchange(&g_ControlTelemetryArmed, 1);
+    }
+    else
+    {
+        BLACKBIRDControlRefreshArmedState();
+    }
 
     return (appliedCount != 0) ? STATUS_SUCCESS : STATUS_INVALID_PARAMETER;
+}
+
+NTSTATUS BLACKBIRDHandleArmPendingLaunchIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request)
+{
+    NTSTATUS status;
+    PBLACKBIRD_ARM_PENDING_LAUNCH_REQUEST in;
+    size_t inSize;
+    ULONG requesterPid;
+    BOOLEAN clearOnly;
+    BOOLEAN hasPathSpec;
+
+    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
+    if (!NT_SUCCESS(status))
+    {
+        return status;
+    }
+    UNREFERENCED_PARAMETER(inSize);
+
+    if (BLACKBIRDControlIsShutdown())
+    {
+        return STATUS_DEVICE_NOT_READY;
+    }
+
+    clearOnly = ((in->Flags & BLACKBIRD_PENDING_LAUNCH_FLAG_CLEAR) != 0);
+    hasPathSpec = (in->ImagePathNormDos[0] != L'\0' || in->ImagePathNormNt[0] != L'\0' || in->ImagePathTail[0] != L'\0');
+    if (!clearOnly)
+    {
+        if ((in->StreamMask & (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD |
+                               BLACKBIRD_STREAM_FILESYSTEM)) == 0)
+        {
+            return STATUS_INVALID_PARAMETER;
+        }
+        if (!hasPathSpec)
+        {
+            return STATUS_INVALID_PARAMETER;
+        }
+    }
+
+    ExAcquireFastMutex(&Client->Lock);
+    Client->PendingLaunchArmed = FALSE;
+    Client->PendingLaunchStreamMask = 0;
+    Client->PendingLaunchPathNormDos[0] = L'\0';
+    Client->PendingLaunchPathNormNt[0] = L'\0';
+    Client->PendingLaunchPathTail[0] = L'\0';
+
+    if (!clearOnly)
+    {
+        Client->PendingLaunchStreamMask = in->StreamMask;
+        Client->PendingLaunchArmed = TRUE;
+        (void)RtlStringCchCopyW(Client->PendingLaunchPathNormDos, RTL_NUMBER_OF(Client->PendingLaunchPathNormDos),
+                                in->ImagePathNormDos);
+        (void)RtlStringCchCopyW(Client->PendingLaunchPathNormNt, RTL_NUMBER_OF(Client->PendingLaunchPathNormNt),
+                                in->ImagePathNormNt);
+        (void)RtlStringCchCopyW(Client->PendingLaunchPathTail, RTL_NUMBER_OF(Client->PendingLaunchPathTail),
+                                in->ImagePathTail);
+    }
+    ExReleaseFastMutex(&Client->Lock);
+
+    requesterPid = BLACKBIRDGetRequestorPid(Request);
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID,
+               DPFLTR_INFO_LEVEL,
+               "BLACKBIRD: pending-launch %s requesterPid=%lu streamMask=0x%08X normDos=%ws normNt=%ws tail=%ws.\n",
+               clearOnly ? "clear" : "arm",
+               requesterPid,
+               in->StreamMask,
+               in->ImagePathNormDos,
+               in->ImagePathNormNt,
+               in->ImagePathTail);
+
+    return STATUS_SUCCESS;
 }
 
 static NTSTATUS BLACKBIRDResolveProcessImagePath(_In_ UINT32 ProcessId, _Out_writes_z_(OutputChars) PWSTR Output,

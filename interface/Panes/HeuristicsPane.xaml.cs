@@ -17,8 +17,11 @@ namespace BlackbirdInterface
         public event RoutedEventHandler? InspectRequested;
 
         private readonly BulkObservableCollection<GroupedEventRow> _items = new();
+        private readonly List<GroupedEventRow> _allItems = new();
         private readonly Dictionary<string, GroupedEventRow> _byKey = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, GroupedEventRow> _visibleByKey = new(StringComparer.Ordinal);
         private int _totalRawCount;
+        private string _severityFilter = "ALL";
 
         internal int ItemCount => _items.Count;
         internal int TotalRawCount => _totalRawCount;
@@ -57,6 +60,8 @@ namespace BlackbirdInterface
             string detection = string.IsNullOrWhiteSpace(item.DetectionName) ? "heuristic" : item.DetectionName;
             string actor = ProcessIdentityResolver.Describe(item.ActorPid);
             string target = ProcessIdentityResolver.Describe(item.TargetPid);
+            string actorToolTip = ProcessIdentityResolver.HoverText(item.ActorPid);
+            string targetToolTip = ProcessIdentityResolver.HoverText(item.TargetPid);
             string key = $"{combinedEvent}|{severity}|{detection}";
             int hits = Math.Max(1, item.RepeatCount);
             string detailsText = item.Details;
@@ -78,12 +83,16 @@ namespace BlackbirdInterface
                     Target = target,
                     ActorPid = item.ActorPid,
                     TargetPid = item.TargetPid,
+                    ActorToolTip = actorToolTip,
+                    TargetToolTip = targetToolTip,
                     Details = detailsText
                 });
                 if (existing.Details.Count > 4000)
                 {
                     existing.Details.RemoveAt(0);
                 }
+
+                SyncVisibleRow(existing);
             }
             else
             {
@@ -108,24 +117,32 @@ namespace BlackbirdInterface
                             Target = target,
                             ActorPid = item.ActorPid,
                             TargetPid = item.TargetPid,
+                            ActorToolTip = actorToolTip,
+                            TargetToolTip = targetToolTip,
                             Details = detailsText
                         }
                     }
                 };
-                _items.Add(row);
+                _allItems.Add(row);
                 _byKey[key] = row;
+                SyncVisibleRow(row);
             }
 
-            while (_items.Count > 2000)
+            while (_allItems.Count > 2000)
             {
-                string evictKey = _items[0].GroupKey;
-                _items.RemoveAt(0);
+                GroupedEventRow evicted = _allItems[0];
+                string evictKey = evicted.GroupKey;
+                _allItems.RemoveAt(0);
                 _byKey.Remove(evictKey);
+                if (_visibleByKey.Remove(evictKey))
+                {
+                    _items.Remove(evicted);
+                }
             }
         }
 
         internal IReadOnlyList<GroupedEventRow> SnapshotItems()
-            => _items.Select(x => x.Clone()).ToList();
+            => _allItems.Select(x => x.Clone()).ToList();
 
         internal GroupedEventRow? GetSelectedGroupClone()
             => (HeuristicsGrid.SelectedItem as GroupedEventRow)?.Clone();
@@ -133,10 +150,11 @@ namespace BlackbirdInterface
         internal void LoadHistory(IEnumerable<GroupedEventRow> groups)
         {
             _items.Clear();
+            _allItems.Clear();
             _byKey.Clear();
+            _visibleByKey.Clear();
             _totalRawCount = 0;
 
-            var clones = new List<GroupedEventRow>();
             foreach (GroupedEventRow source in groups)
             {
                 GroupedEventRow clone = source.Clone();
@@ -147,12 +165,12 @@ namespace BlackbirdInterface
                 {
                     clone.Details[i].Event = NormalizeEventLabel(clone.Details[i].Event);
                 }
-                clones.Add(clone);
+                _allItems.Add(clone);
                 _byKey[clone.GroupKey] = clone;
                 _totalRawCount += clone.Hits;
             }
 
-            _items.ReplaceAll(clones);
+            ApplyFilter();
             UpdateSummary();
             UpdateNoDataOverlay();
         }
@@ -160,7 +178,9 @@ namespace BlackbirdInterface
         public void ClearAll()
         {
             _items.Clear();
+            _allItems.Clear();
             _byKey.Clear();
+            _visibleByKey.Clear();
             _totalRawCount = 0;
             SummaryBlock.Text = "No detections yet";
             UpdateNoDataOverlay();
@@ -169,9 +189,9 @@ namespace BlackbirdInterface
         internal void TrimDetailPayload(int keepPerGroup)
         {
             int keep = Math.Max(1, keepPerGroup);
-            for (int i = 0; i < _items.Count; i += 1)
+            for (int i = 0; i < _allItems.Count; i += 1)
             {
-                GroupedEventRow row = _items[i];
+                GroupedEventRow row = _allItems[i];
                 if (row.Details.Count <= keep)
                 {
                     continue;
@@ -184,16 +204,80 @@ namespace BlackbirdInterface
                     .ToList();
                 _byKey[row.GroupKey] = row;
             }
+
+            ApplyFilter();
         }
 
         private void UpdateSummary()
         {
+            if (SummaryBlock == null)
+            {
+                return;
+            }
+
             SummaryBlock.Text = $"Groups: {_items.Count} / Events: {_totalRawCount}";
         }
 
         private void UpdateNoDataOverlay()
         {
+            if (HeuristicsNoDataOverlay == null)
+            {
+                return;
+            }
+
             HeuristicsNoDataOverlay.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void ApplyFilter()
+        {
+            var visible = new List<GroupedEventRow>();
+            _visibleByKey.Clear();
+            foreach (GroupedEventRow row in _allItems)
+            {
+                if (!MatchesFilter(row))
+                {
+                    continue;
+                }
+
+                visible.Add(row);
+                _visibleByKey[row.GroupKey] = row;
+            }
+
+            _items.ReplaceAll(visible);
+        }
+
+        private void SyncVisibleRow(GroupedEventRow row)
+        {
+            bool matches = MatchesFilter(row);
+            bool visible = _visibleByKey.ContainsKey(row.GroupKey);
+            if (matches)
+            {
+                if (!visible)
+                {
+                    _items.Add(row);
+                    _visibleByKey[row.GroupKey] = row;
+                }
+
+                return;
+            }
+
+            if (!visible)
+            {
+                return;
+            }
+
+            _visibleByKey.Remove(row.GroupKey);
+            _items.Remove(row);
+        }
+
+        private bool MatchesFilter(GroupedEventRow row)
+        {
+            if (string.IsNullOrWhiteSpace(_severityFilter) || _severityFilter.Equals("ALL", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return row.Severity.Equals(_severityFilter, StringComparison.OrdinalIgnoreCase);
         }
 
         private void HeuristicsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -220,5 +304,13 @@ namespace BlackbirdInterface
         private void HeurBtnFloat_Click(object sender, RoutedEventArgs e) => FloatRequested?.Invoke(this, e);
         private void HeurBtnClose_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, e);
         private void HeurBtnInspect_Click(object sender, RoutedEventArgs e) => InspectRequested?.Invoke(this, e);
+        private void SeverityFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            _ = e;
+            ComboBox? combo = sender as ComboBox ?? SeverityFilter;
+            _severityFilter = ((combo?.SelectedItem as ComboBoxItem)?.Content as string ?? "ALL").Trim();
+            ApplyFilter();
+            UpdateNoDataOverlay();
+        }
     }
 }

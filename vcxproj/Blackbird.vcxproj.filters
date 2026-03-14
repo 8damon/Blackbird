@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="Source Files">
@@ -17,6 +17,9 @@
     <Filter Include="Source Files\Correlation">
       <UniqueIdentifier>{9752D0C8-ED3B-4B94-B150-6126B3F08E49}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\Hooks">
+      <UniqueIdentifier>{D1A775A4-BB84-4A26-A782-B43D267D11B2}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Header Files">
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
@@ -33,12 +36,11 @@
     <Filter Include="Header Files\Correlation">
       <UniqueIdentifier>{5D34695C-8C09-4C2B-8B65-EA830A2F7495}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\Hooks">
+      <UniqueIdentifier>{A2C1E4B5-17D9-4A9D-8F12-7359C443C4C6}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Header Files\ABI">
       <UniqueIdentifier>{6F1BDA0C-CA16-4CF5-A322-C77F20EE6474}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Resource Files">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
     <Filter Include="Driver Files">
       <UniqueIdentifier>{8E41214B-6785-4CFE-B992-037D68949A14}</UniqueIdentifier>
@@ -105,6 +107,26 @@
     <ClCompile Include="..\kernel\monitors\filesystem_monitor.c">
       <Filter>Source Files\Monitors</Filter>
     </ClCompile>
+    <ClCompile Include="..\kernel\hooks\hook\ntapi_hook.c">
+      <Filter>Source Files\Hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\kernel\hooks\hook\ntapi_hook_resolve.c">
+      <Filter>Source Files\Hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\kernel\hooks\monitor\ntapi_monitor.c">
+      <Filter>Source Files\Hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\kernel\hooks\monitor\ntapi_monitor_hooks.c">
+      <Filter>Source Files\Hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\kernel\hooks\monitor\ntapi_monitor_firmware.c">
+      <Filter>Source Files\Hooks</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <MASM Include="..\kernel\hooks\asm\ntapi_stubs.asm">
+      <Filter>Source Files\Hooks</Filter>
+    </MASM>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\kernel\core\control.h">
@@ -154,6 +176,15 @@
     </ClInclude>
     <ClInclude Include="..\kernel\monitors\filesystem_monitor.h">
       <Filter>Header Files\Monitors</Filter>
+    </ClInclude>
+    <ClInclude Include="..\kernel\hooks\hook\ntapi_hook.h">
+      <Filter>Header Files\Hooks</Filter>
+    </ClInclude>
+    <ClInclude Include="..\kernel\hooks\monitor\ntapi_monitor.h">
+      <Filter>Header Files\Hooks</Filter>
+    </ClInclude>
+    <ClInclude Include="..\kernel\hooks\monitor\ntapi_monitor_private.h">
+      <Filter>Header Files\Hooks</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

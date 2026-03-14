@@ -670,7 +670,7 @@ namespace BlackbirdInterface
         }
     }
 
-    internal sealed class ThreadContextSnapshot
+    public sealed class ThreadContextSnapshot
     {
         public ulong Rip { get; set; }
         public ulong Rsp { get; set; }

@@ -320,6 +320,56 @@ static BOOL ControllerEtwEventMatchesPid(_In_ const BLACKBIRD_IPC_ETW_EVENT *Eve
     return FALSE;
 }
 
+static BOOL ControllerEtwResolveRelation(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event, _Out_ DWORD *SourcePid,
+                                         _Out_ DWORD *TargetPid)
+{
+    ULONGLONG sourceValue = 0;
+    ULONGLONG targetValue = 0;
+
+    if (Event == NULL || SourcePid == NULL || TargetPid == NULL)
+    {
+        return FALSE;
+    }
+
+    *SourcePid = 0;
+    *TargetPid = 0;
+
+    switch (Event->Family)
+    {
+    case BlackbirdIpcEtwFamilyHandle:
+    case BlackbirdIpcEtwFamilyApc:
+        sourceValue = (Event->CallerPid != 0) ? Event->CallerPid : Event->ProcessId;
+        targetValue = Event->TargetPid;
+        break;
+    case BlackbirdIpcEtwFamilyThread:
+        sourceValue = (Event->CreatorProcessId != 0) ? Event->CreatorProcessId : Event->ProcessId;
+        targetValue = Event->ProcessId;
+        break;
+    case BlackbirdIpcEtwFamilyProcess:
+        sourceValue = (Event->CreatorProcessId != 0) ? Event->CreatorProcessId : Event->ParentProcessId;
+        targetValue = Event->ProcessId;
+        break;
+    case BlackbirdIpcEtwFamilyDetection:
+    case BlackbirdIpcEtwFamilyThreatIntel:
+    case BlackbirdIpcEtwFamilyUserHook:
+    case BlackbirdIpcEtwFamilySocket:
+        sourceValue = Event->ProcessId;
+        targetValue = Event->TargetPid;
+        break;
+    default:
+        return FALSE;
+    }
+
+    if (!ControllerU64ToPid(sourceValue, SourcePid) || !ControllerU64ToPid(targetValue, TargetPid))
+    {
+        *SourcePid = 0;
+        *TargetPid = 0;
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 static PCWSTR ControllerPathFileName(_In_opt_z_ PCWSTR Path)
 {
     PCWSTR slash = NULL;
@@ -383,49 +433,6 @@ static BOOL ControllerTryReadEventImagePath(_In_ const BLACKBIRD_IPC_ETW_EVENT *
     return FALSE;
 }
 
-static VOID ControllerClientAddOrRefreshLaunchSubscriptionLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
-                                                                 _In_ DWORD ProcessId)
-{
-    DWORD i;
-
-    if (Client == NULL || ProcessId == 0)
-    {
-        return;
-    }
-
-    for (i = 0; i < Client->SubscriptionCount; ++i)
-    {
-        if (Client->Subscriptions[i].ProcessId == ProcessId)
-        {
-            Client->Subscriptions[i].StreamMask |= BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK;
-            if (Client->Subscriptions[i].Dynamic)
-            {
-                Client->Subscriptions[i].Dynamic = FALSE;
-                Client->Subscriptions[i].Depth = 0;
-                Client->Subscriptions[i].SourceProcessId = 0;
-                Client->Subscriptions[i].LastSeenTick = 0;
-            }
-            return;
-        }
-    }
-
-    if (Client->SubscriptionCount >= BLACKBIRD_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS)
-    {
-        ControllerLog("[MON][WARN] pending launch subscription dropped clientPid=%lu targetPid=%lu capacity=%lu\n",
-                      Client->ProcessId, ProcessId, BLACKBIRD_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS);
-        return;
-    }
-
-    Client->Subscriptions[Client->SubscriptionCount].ProcessId = ProcessId;
-    Client->Subscriptions[Client->SubscriptionCount].StreamMask = BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK;
-    Client->Subscriptions[Client->SubscriptionCount].Dynamic = FALSE;
-    Client->Subscriptions[Client->SubscriptionCount].SourceProcessId = 0;
-    Client->Subscriptions[Client->SubscriptionCount].Depth = 0;
-    Client->Subscriptions[Client->SubscriptionCount].LastSeenTick = 0;
-    Client->SubscriptionCount += 1;
-    ControllerMarkDriverSubscriptionsDirty();
-}
-
 static BOOL ControllerClientMatchPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
                                                      _In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
 {
@@ -451,6 +458,7 @@ static BOOL ControllerClientMatchPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLE
     {
         return FALSE;
     }
+
     if (!ControllerPathEqualsInsensitive(Client->PendingLaunchImagePath, eventImagePath))
     {
         return FALSE;
@@ -467,62 +475,44 @@ static BOOL ControllerClientMatchPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLE
 
     if (eventPid != 0)
     {
+        DWORD i;
+
         Client->PendingLaunchPid = eventPid;
         Client->PendingLaunchArmed = FALSE;
         Client->PendingLaunchArmedTick = 0;
-        ControllerClientAddOrRefreshLaunchSubscriptionLocked(Client, eventPid);
-        ControllerLog("[MON] pending launch matched clientPid=%lu targetPid=%lu image=%ws\n", Client->ProcessId,
-                      eventPid, eventImagePath);
-    }
 
-    return TRUE;
-}
+        for (i = 0; i < Client->SubscriptionCount; ++i)
+        {
+            if (Client->Subscriptions[i].ProcessId == eventPid)
+            {
+                Client->Subscriptions[i].StreamMask |= BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK;
+                if (Client->Subscriptions[i].Dynamic)
+                {
+                    Client->Subscriptions[i].Dynamic = FALSE;
+                    Client->Subscriptions[i].Depth = 0;
+                    Client->Subscriptions[i].SourceProcessId = 0;
+                    Client->Subscriptions[i].LastSeenTick = 0;
+                }
+                ControllerMarkDriverSubscriptionsDirty();
+                ControllerLog("[MON] pending launch matched clientPid=%lu targetPid=%lu image=%ws\n",
+                              Client->ProcessId, eventPid, eventImagePath);
+                return TRUE;
+            }
+        }
 
-static BOOL ControllerEtwResolveRelation(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event, _Out_ DWORD *SourcePid,
-                                         _Out_ DWORD *TargetPid)
-{
-    ULONGLONG sourceValue = 0;
-    ULONGLONG targetValue = 0;
-
-    if (Event == NULL || SourcePid == NULL || TargetPid == NULL)
-    {
-        return FALSE;
-    }
-
-    *SourcePid = 0;
-    *TargetPid = 0;
-
-    switch (Event->Family)
-    {
-    case BlackbirdIpcEtwFamilyHandle:
-    case BlackbirdIpcEtwFamilyApc:
-        sourceValue = (Event->CallerPid != 0) ? Event->CallerPid : Event->ProcessId;
-        targetValue = Event->TargetPid;
-        break;
-    case BlackbirdIpcEtwFamilyThread:
-        sourceValue = (Event->CreatorProcessId != 0) ? Event->CreatorProcessId : Event->ProcessId;
-        targetValue = Event->ProcessId;
-        break;
-    case BlackbirdIpcEtwFamilyProcess:
-        sourceValue = (Event->CreatorProcessId != 0) ? Event->CreatorProcessId : Event->ParentProcessId;
-        targetValue = Event->ProcessId;
-        break;
-    case BlackbirdIpcEtwFamilyDetection:
-    case BlackbirdIpcEtwFamilyThreatIntel:
-    case BlackbirdIpcEtwFamilyUserHook:
-    case BlackbirdIpcEtwFamilySocket:
-        sourceValue = Event->ProcessId;
-        targetValue = Event->TargetPid;
-        break;
-    default:
-        return FALSE;
-    }
-
-    if (!ControllerU64ToPid(sourceValue, SourcePid) || !ControllerU64ToPid(targetValue, TargetPid))
-    {
-        *SourcePid = 0;
-        *TargetPid = 0;
-        return FALSE;
+        if (Client->SubscriptionCount < BLACKBIRD_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS)
+        {
+            Client->Subscriptions[Client->SubscriptionCount].ProcessId = eventPid;
+            Client->Subscriptions[Client->SubscriptionCount].StreamMask = BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK;
+            Client->Subscriptions[Client->SubscriptionCount].Dynamic = FALSE;
+            Client->Subscriptions[Client->SubscriptionCount].SourceProcessId = 0;
+            Client->Subscriptions[Client->SubscriptionCount].Depth = 0;
+            Client->Subscriptions[Client->SubscriptionCount].LastSeenTick = 0;
+            Client->SubscriptionCount += 1;
+            ControllerMarkDriverSubscriptionsDirty();
+            ControllerLog("[MON] pending launch matched clientPid=%lu targetPid=%lu image=%ws\n",
+                          Client->ProcessId, eventPid, eventImagePath);
+        }
     }
 
     return TRUE;
@@ -555,6 +545,7 @@ static BOOL ControllerClientHasEtwMatchLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
 }
 VOID ControllerDispatchEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
 {
+    BLACKBIRD_IPC_ETW_EVENT enriched;
     PBLACKBIRD_CONTROLLER_CLIENT client;
     PBLACKBIRD_CONTROLLER_CLIENT dispatchClients[BLACKBIRD_CONTROLLER_MAX_CLIENTS];
     DWORD dispatchCount = 0;
@@ -567,7 +558,10 @@ VOID ControllerDispatchEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
         return;
     }
 
-    if (ControllerEtwResolveRelation(Event, &sourcePid, &targetPid))
+    enriched = *Event;
+    ControllerSymbolServiceEnrichEvent(&enriched);
+
+    if (ControllerEtwResolveRelation(&enriched, &sourcePid, &targetPid))
     {
         ControllerExpandMonitoringGraph(sourcePid, targetPid, BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK);
     }
@@ -586,9 +580,9 @@ VOID ControllerDispatchEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
     {
         client = dispatchClients[i];
         EnterCriticalSection(&client->Lock);
-        if (ControllerClientHasEtwMatchLocked(client, Event))
+        if (ControllerClientHasEtwMatchLocked(client, &enriched))
         {
-            (void)ControllerClientEnqueueEtwEventLocked(client, Event);
+            (void)ControllerClientEnqueueEtwEventLocked(client, &enriched);
         }
         LeaveCriticalSection(&client->Lock);
         ControllerClientReleaseFromDispatch(client);

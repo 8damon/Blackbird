@@ -71,6 +71,7 @@ namespace BlackbirdInterface
             string severity = DetermineSeverityLabel(record);
             string path = string.IsNullOrWhiteSpace(record.FilePath) ? "<unknown>" : record.FilePath.Trim();
             string actor = ProcessIdentityResolver.Describe(record.FileProcessPid);
+            string actorToolTip = ProcessIdentityResolver.HoverText(record.FileProcessPid);
 
             string details =
                 $"seq={record.Sequence} operation={operation} pid={record.FileProcessPid} tid={record.FileThreadId} " +
@@ -98,6 +99,7 @@ namespace BlackbirdInterface
                     Target = path,
                     ActorPid = record.FileProcessPid,
                     TargetPid = 0,
+                    ActorToolTip = actorToolTip,
                     Details = details
                 });
 
@@ -131,6 +133,7 @@ namespace BlackbirdInterface
                             Target = path,
                             ActorPid = record.FileProcessPid,
                             TargetPid = 0,
+                            ActorToolTip = actorToolTip,
                             Details = details
                         }
                     }
@@ -299,11 +302,21 @@ namespace BlackbirdInterface
 
         private void UpdateSummary()
         {
+            if (SummaryBlock == null)
+            {
+                return;
+            }
+
             SummaryBlock.Text = $"Shown {_items.Count}/{_allItems.Count} | Events {_totalRawCount}";
         }
 
         private void UpdateNoDataOverlay()
         {
+            if (NoDataOverlay == null)
+            {
+                return;
+            }
+
             NoDataOverlay.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
@@ -341,9 +354,9 @@ namespace BlackbirdInterface
 
         private void OperationFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            _ = sender;
             _ = e;
-            _operationFilter = (OperationFilter.SelectedItem as string ?? "ALL").Trim();
+            ComboBox? combo = sender as ComboBox ?? OperationFilter;
+            _operationFilter = ((combo?.SelectedItem as string) ?? ((combo?.SelectedItem as ComboBoxItem)?.Content as string) ?? "ALL").Trim();
             if (_operationFilter.Length == 0)
             {
                 _operationFilter = "ALL";

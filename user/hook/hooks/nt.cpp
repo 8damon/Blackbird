@@ -196,9 +196,52 @@ namespace RYX_NT
         PULONG BootOptionsLength
         );
 
-    //
-    // Global syscall stub pointers
-    //
+    using NtOpenProcess_t = NTSTATUS(NTAPI*)(
+        PHANDLE ProcessHandle,
+        ACCESS_MASK DesiredAccess,
+        POBJECT_ATTRIBUTES ObjectAttributes,
+        PCLIENT_ID ClientId
+        );
+
+    using NtOpenThread_t = NTSTATUS(NTAPI*)(
+        PHANDLE ThreadHandle,
+        ACCESS_MASK DesiredAccess,
+        POBJECT_ATTRIBUTES ObjectAttributes,
+        PCLIENT_ID ClientId
+        );
+
+    using NtDuplicateObject_t = NTSTATUS(NTAPI*)(
+        HANDLE SourceProcessHandle,
+        HANDLE SourceHandle,
+        HANDLE TargetProcessHandle,
+        PHANDLE TargetHandle,
+        ACCESS_MASK DesiredAccess,
+        ULONG Attributes,
+        ULONG Options
+        );
+
+    using NtGetContextThread_t = NTSTATUS(NTAPI*)(
+        HANDLE ThreadHandle,
+        PCONTEXT ThreadContext
+        );
+
+    using NtSuspendThread_t = NTSTATUS(NTAPI*)(
+        HANDLE ThreadHandle,
+        PULONG PreviousSuspendCount
+        );
+
+    using NtResumeThread_t = NTSTATUS(NTAPI*)(
+        HANDLE ThreadHandle,
+        PULONG PreviousSuspendCount
+        );
+
+    using NtQueueApcThread_t = NTSTATUS(NTAPI*)(
+        HANDLE ThreadHandle,
+        PVOID ApcRoutine,
+        PVOID ApcArgument1,
+        PVOID ApcArgument2,
+        PVOID ApcArgument3
+        );
 
     static NtCreateThread_t            g_NtCreateThreadStub = nullptr;
     static NtCreateThreadEx_t          g_NtCreateThreadExStub = nullptr;
@@ -218,10 +261,13 @@ namespace RYX_NT
     static NtSetContextThread_t        g_NtSetContextThreadStub = nullptr;
     static NtQuerySection_t            g_NtQuerySectionStub = nullptr;
     static NtQueryBootOptions_t        g_NtQueryBootOptionsStub = nullptr;
-
-    //
-    // Hook metadata per target Nt* export
-    //
+    static NtOpenProcess_t             g_NtOpenProcessStub = nullptr;
+    static NtOpenThread_t              g_NtOpenThreadStub = nullptr;
+    static NtDuplicateObject_t         g_NtDuplicateObjectStub = nullptr;
+    static NtGetContextThread_t        g_NtGetContextThreadStub = nullptr;
+    static NtSuspendThread_t           g_NtSuspendThreadStub = nullptr;
+    static NtResumeThread_t            g_NtResumeThreadStub = nullptr;
+    static NtQueueApcThread_t          g_NtQueueApcThreadStub = nullptr;
 
     struct NtTargetHook
     {
@@ -256,13 +302,14 @@ namespace RYX_NT
         { "NtSetContextThread",        NtOperation::NtSetContextThread,        nullptr, nullptr, 0u, {}, false },
         { "NtQuerySection",            NtOperation::NtQuerySection,            nullptr, nullptr, 0u, {}, false },
         { "NtQueryBootOptions",        NtOperation::NtQueryBootOptions,        nullptr, nullptr, 0u, {}, false },
+        { "NtOpenProcess",             NtOperation::NtOpenProcess,             nullptr, nullptr, 0u, {}, false },
+        { "NtOpenThread",              NtOperation::NtOpenThread,              nullptr, nullptr, 0u, {}, false },
+        { "NtDuplicateObject",         NtOperation::NtDuplicateObject,         nullptr, nullptr, 0u, {}, false },
+        { "NtGetContextThread",        NtOperation::NtGetContextThread,        nullptr, nullptr, 0u, {}, false },
+        { "NtSuspendThread",           NtOperation::NtSuspendThread,           nullptr, nullptr, 0u, {}, false },
+        { "NtResumeThread",            NtOperation::NtResumeThread,            nullptr, nullptr, 0u, {}, false },
+        { "NtQueueApcThread",          NtOperation::NtQueueApcThread,          nullptr, nullptr, 0u, {}, false },
     };
-
-    //
-    // Extract syscall index from standard Nt* stub:
-    //   mov r10, rcx        ; 4C 8B D1
-    //   mov eax, imm32      ; B8 xx xx xx xx
-    //
 
     static bool ExtractSyscallIndex(void* targetAddress, std::uint32_t& outIndex) noexcept
     {
@@ -278,14 +325,6 @@ namespace RYX_NT
         return true;
     }
 
-    //
-    // Allocate a tiny executable stub that does:
-    //   mov r10, rcx
-    //   mov eax, <syscallIndex>
-    //   syscall
-    //   ret
-    //
-
     static void* BuildSyscallStub(std::uint32_t syscallIndex) noexcept
     {
         constexpr std::size_t StubSize = 16;
@@ -300,35 +339,19 @@ namespace RYX_NT
             return nullptr;
 
         auto* code = static_cast<std::uint8_t*>(memory);
-
-        // mov r10, rcx
         code[0] = 0x4C;
         code[1] = 0x8B;
         code[2] = 0xD1;
-
-        // mov eax, imm32
         code[3] = 0xB8;
         *reinterpret_cast<std::uint32_t*>(&code[4]) = syscallIndex;
-
-        // syscall
         code[8] = 0x0F;
         code[9] = 0x05;
-
-        // ret
         code[10] = 0xC3;
-
-        // Fill the rest with INT3
         for (std::size_t i = 11; i < StubSize; ++i)
             code[i] = 0xCC;
 
         return memory;
     }
-
-    //
-    // Generic inline hook patcher for x64:
-    //   mov rax, <hook>
-    //   jmp rax
-    //
 
     static bool InstallInlineHook(void* target, void* hook, std::uint8_t original[16]) noexcept
     {
@@ -339,17 +362,11 @@ namespace RYX_NT
             return false;
 
         std::memcpy(original, dst, 16);
-
-        // mov rax, imm64
         dst[0] = 0x48;
         dst[1] = 0xB8;
         *reinterpret_cast<void**>(&dst[2]) = hook;
-
-        // jmp rax
         dst[10] = 0xFF;
         dst[11] = 0xE0;
-
-        // Pad remaining with INT3 (optional).
         dst[12] = 0xCC;
         dst[13] = 0xCC;
         dst[14] = 0xCC;
@@ -989,9 +1006,187 @@ namespace RYX_NT
             BootOptionsLength);
     }
 
-    //
-    // Map function name -> hook entry
-    //
+    NTSTATUS NTAPI NtOpenProcess_Hook(
+        PHANDLE ProcessHandle,
+        ACCESS_MASK DesiredAccess,
+        POBJECT_ATTRIBUTES ObjectAttributes,
+        PCLIENT_ID ClientId)
+    {
+        if (g_ActiveNtCallback)
+        {
+            NtHookContext ctx{};
+            const std::uint64_t targetProcessId =
+                (ClientId != nullptr) ? static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(ClientId->UniqueProcess)) : 0ull;
+            const std::uint64_t targetThreadId =
+                (ClientId != nullptr) ? static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(ClientId->UniqueThread)) : 0ull;
+            ctx.Operation = NtOperation::NtOpenProcess;
+            ctx.FunctionName = "NtOpenProcess";
+            ctx.Caller = _ReturnAddress();
+            ctx.Args[0] = reinterpret_cast<std::uint64_t>(ProcessHandle);
+            ctx.Args[1] = static_cast<std::uint64_t>(DesiredAccess);
+            ctx.Args[2] = targetProcessId;
+            ctx.Args[3] = targetThreadId;
+            ctx.Args[4] = reinterpret_cast<std::uint64_t>(ObjectAttributes);
+            g_ActiveNtCallback(ctx);
+        }
+
+        if (!g_NtOpenProcessStub)
+            return STATUS_NOT_IMPLEMENTED;
+
+        return g_NtOpenProcessStub(ProcessHandle, DesiredAccess, ObjectAttributes, ClientId);
+    }
+
+    NTSTATUS NTAPI NtOpenThread_Hook(
+        PHANDLE ThreadHandle,
+        ACCESS_MASK DesiredAccess,
+        POBJECT_ATTRIBUTES ObjectAttributes,
+        PCLIENT_ID ClientId)
+    {
+        if (g_ActiveNtCallback)
+        {
+            NtHookContext ctx{};
+            const std::uint64_t targetProcessId =
+                (ClientId != nullptr) ? static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(ClientId->UniqueProcess)) : 0ull;
+            const std::uint64_t targetThreadId =
+                (ClientId != nullptr) ? static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(ClientId->UniqueThread)) : 0ull;
+            ctx.Operation = NtOperation::NtOpenThread;
+            ctx.FunctionName = "NtOpenThread";
+            ctx.Caller = _ReturnAddress();
+            ctx.Args[0] = reinterpret_cast<std::uint64_t>(ThreadHandle);
+            ctx.Args[1] = static_cast<std::uint64_t>(DesiredAccess);
+            ctx.Args[2] = targetProcessId;
+            ctx.Args[3] = targetThreadId;
+            ctx.Args[4] = reinterpret_cast<std::uint64_t>(ObjectAttributes);
+            g_ActiveNtCallback(ctx);
+        }
+
+        if (!g_NtOpenThreadStub)
+            return STATUS_NOT_IMPLEMENTED;
+
+        return g_NtOpenThreadStub(ThreadHandle, DesiredAccess, ObjectAttributes, ClientId);
+    }
+
+    NTSTATUS NTAPI NtDuplicateObject_Hook(
+        HANDLE SourceProcessHandle,
+        HANDLE SourceHandle,
+        HANDLE TargetProcessHandle,
+        PHANDLE TargetHandle,
+        ACCESS_MASK DesiredAccess,
+        ULONG Attributes,
+        ULONG Options)
+    {
+        if (g_ActiveNtCallback)
+        {
+            NtHookContext ctx{};
+            ctx.Operation = NtOperation::NtDuplicateObject;
+            ctx.FunctionName = "NtDuplicateObject";
+            ctx.Caller = _ReturnAddress();
+            ctx.Args[0] = reinterpret_cast<std::uint64_t>(SourceProcessHandle);
+            ctx.Args[1] = reinterpret_cast<std::uint64_t>(SourceHandle);
+            ctx.Args[2] = reinterpret_cast<std::uint64_t>(TargetProcessHandle);
+            ctx.Args[3] = reinterpret_cast<std::uint64_t>(TargetHandle);
+            ctx.Args[4] = static_cast<std::uint64_t>(DesiredAccess);
+            ctx.Args[5] = static_cast<std::uint64_t>(Attributes);
+            ctx.Args[6] = static_cast<std::uint64_t>(Options);
+            g_ActiveNtCallback(ctx);
+        }
+
+        if (!g_NtDuplicateObjectStub)
+            return STATUS_NOT_IMPLEMENTED;
+
+        return g_NtDuplicateObjectStub(SourceProcessHandle, SourceHandle, TargetProcessHandle, TargetHandle,
+                                       DesiredAccess, Attributes, Options);
+    }
+
+    NTSTATUS NTAPI NtGetContextThread_Hook(
+        HANDLE ThreadHandle,
+        PCONTEXT ThreadContext)
+    {
+        if (g_ActiveNtCallback)
+        {
+            NtHookContext ctx{};
+            ctx.Operation = NtOperation::NtGetContextThread;
+            ctx.FunctionName = "NtGetContextThread";
+            ctx.Caller = _ReturnAddress();
+            ctx.Args[0] = reinterpret_cast<std::uint64_t>(ThreadHandle);
+            ctx.Args[1] = reinterpret_cast<std::uint64_t>(ThreadContext);
+            g_ActiveNtCallback(ctx);
+        }
+
+        if (!g_NtGetContextThreadStub)
+            return STATUS_NOT_IMPLEMENTED;
+
+        return g_NtGetContextThreadStub(ThreadHandle, ThreadContext);
+    }
+
+    NTSTATUS NTAPI NtSuspendThread_Hook(
+        HANDLE ThreadHandle,
+        PULONG PreviousSuspendCount)
+    {
+        if (g_ActiveNtCallback)
+        {
+            NtHookContext ctx{};
+            ctx.Operation = NtOperation::NtSuspendThread;
+            ctx.FunctionName = "NtSuspendThread";
+            ctx.Caller = _ReturnAddress();
+            ctx.Args[0] = reinterpret_cast<std::uint64_t>(ThreadHandle);
+            ctx.Args[1] = reinterpret_cast<std::uint64_t>(PreviousSuspendCount);
+            g_ActiveNtCallback(ctx);
+        }
+
+        if (!g_NtSuspendThreadStub)
+            return STATUS_NOT_IMPLEMENTED;
+
+        return g_NtSuspendThreadStub(ThreadHandle, PreviousSuspendCount);
+    }
+
+    NTSTATUS NTAPI NtResumeThread_Hook(
+        HANDLE ThreadHandle,
+        PULONG PreviousSuspendCount)
+    {
+        if (g_ActiveNtCallback)
+        {
+            NtHookContext ctx{};
+            ctx.Operation = NtOperation::NtResumeThread;
+            ctx.FunctionName = "NtResumeThread";
+            ctx.Caller = _ReturnAddress();
+            ctx.Args[0] = reinterpret_cast<std::uint64_t>(ThreadHandle);
+            ctx.Args[1] = reinterpret_cast<std::uint64_t>(PreviousSuspendCount);
+            g_ActiveNtCallback(ctx);
+        }
+
+        if (!g_NtResumeThreadStub)
+            return STATUS_NOT_IMPLEMENTED;
+
+        return g_NtResumeThreadStub(ThreadHandle, PreviousSuspendCount);
+    }
+
+    NTSTATUS NTAPI NtQueueApcThread_Hook(
+        HANDLE ThreadHandle,
+        PVOID ApcRoutine,
+        PVOID ApcArgument1,
+        PVOID ApcArgument2,
+        PVOID ApcArgument3)
+    {
+        if (g_ActiveNtCallback)
+        {
+            NtHookContext ctx{};
+            ctx.Operation = NtOperation::NtQueueApcThread;
+            ctx.FunctionName = "NtQueueApcThread";
+            ctx.Caller = _ReturnAddress();
+            ctx.Args[0] = reinterpret_cast<std::uint64_t>(ThreadHandle);
+            ctx.Args[1] = reinterpret_cast<std::uint64_t>(ApcRoutine);
+            ctx.Args[2] = reinterpret_cast<std::uint64_t>(ApcArgument1);
+            ctx.Args[3] = reinterpret_cast<std::uint64_t>(ApcArgument2);
+            ctx.Args[4] = reinterpret_cast<std::uint64_t>(ApcArgument3);
+            g_ActiveNtCallback(ctx);
+        }
+
+        if (!g_NtQueueApcThreadStub)
+            return STATUS_NOT_IMPLEMENTED;
+
+        return g_NtQueueApcThreadStub(ThreadHandle, ApcRoutine, ApcArgument1, ApcArgument2, ApcArgument3);
+    }
 
     static void* GetHookEntry(const char* name) noexcept
     {
@@ -1013,11 +1208,18 @@ namespace RYX_NT
         if (std::strcmp(name, "NtSetContextThread") == 0)        return reinterpret_cast<void*>(&NtSetContextThread_Hook);
         if (std::strcmp(name, "NtQuerySection") == 0)            return reinterpret_cast<void*>(&NtQuerySection_Hook);
         if (std::strcmp(name, "NtQueryBootOptions") == 0)        return reinterpret_cast<void*>(&NtQueryBootOptions_Hook);
+        if (std::strcmp(name, "NtOpenProcess") == 0)             return reinterpret_cast<void*>(&NtOpenProcess_Hook);
+        if (std::strcmp(name, "NtOpenThread") == 0)              return reinterpret_cast<void*>(&NtOpenThread_Hook);
+        if (std::strcmp(name, "NtDuplicateObject") == 0)         return reinterpret_cast<void*>(&NtDuplicateObject_Hook);
+        if (std::strcmp(name, "NtGetContextThread") == 0)        return reinterpret_cast<void*>(&NtGetContextThread_Hook);
+        if (std::strcmp(name, "NtSuspendThread") == 0)           return reinterpret_cast<void*>(&NtSuspendThread_Hook);
+        if (std::strcmp(name, "NtResumeThread") == 0)            return reinterpret_cast<void*>(&NtResumeThread_Hook);
+        if (std::strcmp(name, "NtQueueApcThread") == 0)          return reinterpret_cast<void*>(&NtQueueApcThread_Hook);
         return nullptr;
     }
 }
 
-#endif // _WIN64
+#endif
 
 
 bool KeSetNtHook(NtHookCallback callback) noexcept
@@ -1069,8 +1271,6 @@ bool KeSetNtHook(NtHookCallback callback) noexcept
             continue;
 
         hook.SyscallStubCode = stubCode;
-
-        // :3
         if (std::strcmp(hook.Name, "NtCreateThread") == 0)
             g_NtCreateThreadStub = reinterpret_cast<NtCreateThread_t>(stubCode);
         else if (std::strcmp(hook.Name, "NtCreateThreadEx") == 0)
@@ -1107,6 +1307,20 @@ bool KeSetNtHook(NtHookCallback callback) noexcept
             g_NtQuerySectionStub = reinterpret_cast<NtQuerySection_t>(stubCode);
         else if (std::strcmp(hook.Name, "NtQueryBootOptions") == 0)
             g_NtQueryBootOptionsStub = reinterpret_cast<NtQueryBootOptions_t>(stubCode);
+        else if (std::strcmp(hook.Name, "NtOpenProcess") == 0)
+            g_NtOpenProcessStub = reinterpret_cast<NtOpenProcess_t>(stubCode);
+        else if (std::strcmp(hook.Name, "NtOpenThread") == 0)
+            g_NtOpenThreadStub = reinterpret_cast<NtOpenThread_t>(stubCode);
+        else if (std::strcmp(hook.Name, "NtDuplicateObject") == 0)
+            g_NtDuplicateObjectStub = reinterpret_cast<NtDuplicateObject_t>(stubCode);
+        else if (std::strcmp(hook.Name, "NtGetContextThread") == 0)
+            g_NtGetContextThreadStub = reinterpret_cast<NtGetContextThread_t>(stubCode);
+        else if (std::strcmp(hook.Name, "NtSuspendThread") == 0)
+            g_NtSuspendThreadStub = reinterpret_cast<NtSuspendThread_t>(stubCode);
+        else if (std::strcmp(hook.Name, "NtResumeThread") == 0)
+            g_NtResumeThreadStub = reinterpret_cast<NtResumeThread_t>(stubCode);
+        else if (std::strcmp(hook.Name, "NtQueueApcThread") == 0)
+            g_NtQueueApcThreadStub = reinterpret_cast<NtQueueApcThread_t>(stubCode);
 
         void* hookEntry = GetHookEntry(hook.Name);
         if (!hookEntry)

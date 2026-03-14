@@ -1,6 +1,7 @@
 #include "../blackbird_controller_private.h"
 #include "../injection/blackbird_controller_injection.h"
 #include <math.h>
+#include <wctype.h>
 
 static BOOL ControllerProxyQueryProcessImage(_In_ DWORD ProcessId,
                                              _Out_ BLACKBIRD_QUERY_PROCESS_IMAGE_RESPONSE *Response)
@@ -121,6 +122,230 @@ static VOID ControllerClientPrimePendingLaunchPidLocked(_Inout_ BLACKBIRD_CONTRO
     ControllerMarkDriverSubscriptionsDirty();
 }
 
+static VOID ControllerClientAddOrRefreshLaunchSubscriptionLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                                 _In_ DWORD ProcessId)
+{
+    DWORD i;
+
+    if (Client == NULL)
+    {
+        return;
+    }
+
+    for (i = 0; i < Client->SubscriptionCount; ++i)
+    {
+        if (Client->Subscriptions[i].ProcessId == ProcessId)
+        {
+            Client->Subscriptions[i].StreamMask |= BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK;
+            if (Client->Subscriptions[i].Dynamic)
+            {
+                Client->Subscriptions[i].Dynamic = FALSE;
+                Client->Subscriptions[i].Depth = 0;
+                Client->Subscriptions[i].SourceProcessId = 0;
+                Client->Subscriptions[i].LastSeenTick = 0;
+            }
+            ControllerMarkDriverSubscriptionsDirty();
+            return;
+        }
+    }
+
+    if (Client->SubscriptionCount >= BLACKBIRD_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS)
+    {
+        return;
+    }
+
+    Client->Subscriptions[Client->SubscriptionCount].ProcessId = ProcessId;
+    Client->Subscriptions[Client->SubscriptionCount].StreamMask = BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK;
+    Client->Subscriptions[Client->SubscriptionCount].Dynamic = FALSE;
+    Client->Subscriptions[Client->SubscriptionCount].SourceProcessId = 0;
+    Client->Subscriptions[Client->SubscriptionCount].Depth = 0;
+    Client->Subscriptions[Client->SubscriptionCount].LastSeenTick = 0;
+    Client->SubscriptionCount += 1;
+    ControllerMarkDriverSubscriptionsDirty();
+}
+
+static VOID ControllerClientRemoveSubscriptionByPidLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                          _In_ DWORD ProcessId)
+{
+    DWORD i;
+
+    if (Client == NULL || ProcessId == 0)
+    {
+        return;
+    }
+
+    for (i = 0; i < Client->SubscriptionCount; ++i)
+    {
+        if (Client->Subscriptions[i].ProcessId == ProcessId)
+        {
+            ControllerRemoveSubscriptionAtLocked(Client, i);
+            ControllerMarkDriverSubscriptionsDirty();
+            return;
+        }
+    }
+}
+
+static VOID ControllerNormalizePathForCompare(_In_z_ const WCHAR *Input, _Out_writes_z_(OutputChars) WCHAR *Output,
+                                              _In_ size_t OutputChars)
+{
+    size_t i;
+    size_t j = 0;
+
+    if (Output == NULL || OutputChars == 0)
+    {
+        return;
+    }
+    Output[0] = L'\0';
+
+    if (Input == NULL)
+    {
+        return;
+    }
+
+    for (i = 0; Input[i] != L'\0' && (j + 1) < OutputChars; ++i)
+    {
+        WCHAR ch = Input[i];
+        if (ch == L'/')
+        {
+            ch = L'\\';
+        }
+        Output[j++] = (WCHAR)towlower(ch);
+    }
+    Output[j] = L'\0';
+}
+
+static BOOL ControllerIsDrivePathW(_In_z_ const WCHAR *Path)
+{
+    if (Path == NULL)
+    {
+        return FALSE;
+    }
+    return (Path[0] != L'\0' && Path[1] == L':');
+}
+
+static VOID ControllerBuildTailFromDosPath(_In_z_ const WCHAR *DosPath, _Out_writes_z_(TailChars) WCHAR *Tail,
+                                           _In_ size_t TailChars)
+{
+    WCHAR normalized[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+
+    if (Tail == NULL || TailChars == 0)
+    {
+        return;
+    }
+    Tail[0] = L'\0';
+
+    if (DosPath == NULL || !ControllerIsDrivePathW(DosPath) || DosPath[2] == L'\0')
+    {
+        return;
+    }
+
+    ControllerNormalizePathForCompare(DosPath + 2, normalized, RTL_NUMBER_OF(normalized));
+    (void)StringCchCopyW(Tail, TailChars, normalized);
+}
+
+static BOOL ControllerBuildNtPathFromDosPath(_In_z_ const WCHAR *DosPath, _Out_writes_z_(NtChars) WCHAR *NtPath,
+                                             _In_ size_t NtChars)
+{
+    WCHAR drive[3];
+    WCHAR devicePrefix[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+
+    if (DosPath == NULL || NtPath == NULL || NtChars == 0 || !ControllerIsDrivePathW(DosPath))
+    {
+        return FALSE;
+    }
+
+    drive[0] = (WCHAR)towupper(DosPath[0]);
+    drive[1] = L':';
+    drive[2] = L'\0';
+
+    if (!QueryDosDeviceW(drive, devicePrefix, RTL_NUMBER_OF(devicePrefix)))
+    {
+        NtPath[0] = L'\0';
+        return FALSE;
+    }
+
+    if (FAILED(StringCchPrintfW(NtPath, NtChars, L"%ls%ls", devicePrefix, DosPath + 2)))
+    {
+        NtPath[0] = L'\0';
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static VOID ControllerStripPathPrefixes(_Inout_updates_z_(BufferChars) WCHAR *Buffer, _In_ size_t BufferChars)
+{
+    size_t len;
+
+    if (Buffer == NULL || BufferChars == 0)
+    {
+        return;
+    }
+
+    if (_wcsnicmp(Buffer, L"\\\\?\\", 4) == 0 || _wcsnicmp(Buffer, L"\\??\\", 4) == 0)
+    {
+        len = wcslen(Buffer);
+        if (len > 4)
+        {
+            MoveMemory(Buffer, Buffer + 4, (len - 3) * sizeof(WCHAR));
+        }
+        else
+        {
+            Buffer[0] = L'\0';
+        }
+    }
+}
+
+static BOOL ControllerBuildPendingLaunchRequest(_In_z_ PCWSTR ImagePath,
+                                                _In_ DWORD StreamMask,
+                                                _Out_ BLACKBIRD_ARM_PENDING_LAUNCH_REQUEST *Request)
+{
+    WCHAR canonical[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+    WCHAR ntPath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+    WCHAR effective[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+    DWORD fullLen;
+
+    if (ImagePath == NULL || ImagePath[0] == L'\0' || Request == NULL)
+    {
+        return FALSE;
+    }
+
+    ZeroMemory(Request, sizeof(*Request));
+    ZeroMemory(canonical, sizeof(canonical));
+    ZeroMemory(ntPath, sizeof(ntPath));
+    ZeroMemory(effective, sizeof(effective));
+
+    (void)StringCchCopyW(effective, RTL_NUMBER_OF(effective), ImagePath);
+    ControllerStripPathPrefixes(effective, RTL_NUMBER_OF(effective));
+    if (ControllerIsDrivePathW(effective))
+    {
+        fullLen = GetFullPathNameW(effective, RTL_NUMBER_OF(canonical), canonical, NULL);
+        if (fullLen != 0 && fullLen < RTL_NUMBER_OF(canonical))
+        {
+            (void)StringCchCopyW(effective, RTL_NUMBER_OF(effective), canonical);
+        }
+    }
+
+    Request->StreamMask = StreamMask;
+    ControllerNormalizePathForCompare(effective, Request->ImagePathNormDos, RTL_NUMBER_OF(Request->ImagePathNormDos));
+
+    if (ControllerIsDrivePathW(effective))
+    {
+        ControllerBuildTailFromDosPath(effective, Request->ImagePathTail, RTL_NUMBER_OF(Request->ImagePathTail));
+        if (ControllerBuildNtPathFromDosPath(effective, ntPath, RTL_NUMBER_OF(ntPath)))
+        {
+            ControllerNormalizePathForCompare(ntPath, Request->ImagePathNormNt, RTL_NUMBER_OF(Request->ImagePathNormNt));
+        }
+    }
+    else if (_wcsnicmp(effective, L"\\device\\", 8) == 0 || _wcsnicmp(effective, L"\\systemroot\\", 12) == 0)
+    {
+        ControllerNormalizePathForCompare(effective, Request->ImagePathNormNt, RTL_NUMBER_OF(Request->ImagePathNormNt));
+    }
+
+    return (Request->ImagePathNormDos[0] != L'\0' || Request->ImagePathNormNt[0] != L'\0' ||
+            Request->ImagePathTail[0] != L'\0');
+}
+
 static DWORD ControllerQueryHookReadyMaskForProcess(_In_ DWORD ProcessId)
 {
     PBLACKBIRD_CONTROLLER_CLIENT current;
@@ -218,17 +443,9 @@ DWORD ControllerWaitForHookReady(_In_ DWORD ProcessId)
     }
 }
 
-#define BLACKBIRD_CAPTURE_REQUIRED_HEALTH_MASK                                                   \
-    (BLACKBIRD_HEALTH_CONTROL_READY | BLACKBIRD_HEALTH_ETW_READY |                             \
-     BLACKBIRD_HEALTH_PROCESS_MONITOR_READY | BLACKBIRD_HEALTH_IMAGE_MONITOR_READY)
-
 static DWORD ControllerEnsureCaptureReadyForLaunch(VOID)
 {
     DWORD openErr = ERROR_SUCCESS;
-    BLACKBIRD_HEALTH_RESPONSE health;
-    DWORD healthErr = ERROR_SUCCESS;
-    DWORD healthBytes = 0;
-    BOOL healthOk = FALSE;
 
     if (ControllerShouldStop())
     {
@@ -254,37 +471,7 @@ static DWORD ControllerEnsureCaptureReadyForLaunch(VOID)
         return (openErr == ERROR_SUCCESS) ? ERROR_DEVICE_NOT_CONNECTED : openErr;
     }
 
-    ZeroMemory(&health, sizeof(health));
-    EnterCriticalSection(&g_DriverLock);
-    if (g_DriverHandle != INVALID_HANDLE_VALUE)
-    {
-        healthOk = BLACKBIRDSCGetHealth(g_DriverHandle, &health, &healthBytes);
-        if (!healthOk)
-        {
-            healthErr = GetLastError();
-        }
-    }
-    LeaveCriticalSection(&g_DriverLock);
-    if (!healthOk)
-    {
-        if (healthErr == ERROR_SUCCESS)
-        {
-            healthErr = ERROR_NOT_READY;
-        }
-        return healthErr;
-    }
-    if ((health.HealthMask & BLACKBIRD_CAPTURE_REQUIRED_HEALTH_MASK) != BLACKBIRD_CAPTURE_REQUIRED_HEALTH_MASK)
-    {
-        ControllerLog("[IPC][WARN] launch capture gate failed health=0x%08lX tamper=0x%08lX bytes=%lu\n",
-                      health.HealthMask, health.TamperMask, healthBytes);
-        return ERROR_NOT_READY;
-    }
-    if (health.TamperMask != 0)
-    {
-        ControllerLog("[IPC][WARN] launch capture continuing with kernel tamper mask=0x%08lX\n", health.TamperMask);
-    }
-
-    (void)ControllerApplyDriverSubscriptionsIfDirty();
+    ControllerMarkDriverSubscriptionsDirty();
     return ERROR_SUCCESS;
 }
 
@@ -1291,6 +1478,121 @@ static PCSTR ControllerMemoryAllocTypeName(_In_ UINT32 AllocationType)
     return "UNKNOWN";
 }
 
+static UINT16 ControllerHookByteSwap16(_In_ UINT16 Value)
+{
+    return (UINT16)(((Value & 0x00FFu) << 8) | ((Value & 0xFF00u) >> 8));
+}
+
+static BOOL ControllerHookIsInterestingProcessAccess(_In_ ULONG DesiredAccess)
+{
+    return ((DesiredAccess & PROCESS_VM_OPERATION) != 0) ||
+           ((DesiredAccess & PROCESS_VM_WRITE) != 0) ||
+           ((DesiredAccess & PROCESS_VM_READ) != 0) ||
+           ((DesiredAccess & PROCESS_CREATE_THREAD) != 0) ||
+           ((DesiredAccess & PROCESS_DUP_HANDLE) != 0) ||
+           ((DesiredAccess & PROCESS_QUERY_INFORMATION) != 0) ||
+           ((DesiredAccess & PROCESS_QUERY_LIMITED_INFORMATION) != 0) ||
+           ((DesiredAccess & PROCESS_SUSPEND_RESUME) != 0);
+}
+
+static BOOL ControllerHookIsInterestingThreadAccess(_In_ ULONG DesiredAccess)
+{
+    return ((DesiredAccess & THREAD_SET_CONTEXT) != 0) ||
+           ((DesiredAccess & THREAD_GET_CONTEXT) != 0) ||
+           ((DesiredAccess & THREAD_SUSPEND_RESUME) != 0) ||
+           ((DesiredAccess & THREAD_QUERY_INFORMATION) != 0) ||
+           ((DesiredAccess & THREAD_SET_INFORMATION) != 0);
+}
+
+static UINT32 ControllerHookSeverityForProcessAccess(_In_ ULONG DesiredAccess)
+{
+    if ((DesiredAccess & (PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD)) != 0)
+    {
+        return 6u;
+    }
+    if ((DesiredAccess & (PROCESS_VM_READ | PROCESS_DUP_HANDLE)) != 0)
+    {
+        return 4u;
+    }
+    return 2u;
+}
+
+static UINT32 ControllerHookSeverityForThreadAccess(_In_ ULONG DesiredAccess)
+{
+    if ((DesiredAccess & (THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME)) != 0)
+    {
+        return 6u;
+    }
+    if ((DesiredAccess & (THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION)) != 0)
+    {
+        return 4u;
+    }
+    return 2u;
+}
+
+static BOOL ControllerHookDecodeSockaddr(_In_reads_bytes_(SampleSize) const UINT8 *Sample,
+                                         _In_ UINT32 SampleSize,
+                                         _Out_ UINT16 *FamilyOut,
+                                         _Out_ UINT16 *PortOut)
+{
+    UINT16 family;
+
+    if (FamilyOut == NULL || PortOut == NULL || Sample == NULL || SampleSize < sizeof(UINT16))
+    {
+        return FALSE;
+    }
+
+    CopyMemory(&family, Sample, sizeof(family));
+    *FamilyOut = family;
+    *PortOut = 0;
+
+    if (family == 2u && SampleSize >= 4u)
+    {
+        UINT16 netPort;
+        CopyMemory(&netPort, Sample + 2, sizeof(netPort));
+        *PortOut = ControllerHookByteSwap16(netPort);
+        return TRUE;
+    }
+
+    if (family == 23u && SampleSize >= 4u)
+    {
+        UINT16 netPort;
+        CopyMemory(&netPort, Sample + 2, sizeof(netPort));
+        *PortOut = ControllerHookByteSwap16(netPort);
+        return TRUE;
+    }
+
+    return TRUE;
+}
+
+static VOID ControllerHookCopyWideSampleToReason(_Out_writes_z_(ReasonChars) PWSTR Reason,
+                                                 _In_ size_t ReasonChars,
+                                                 _In_reads_bytes_(SampleSize) const UINT8 *Sample,
+                                                 _In_ UINT32 SampleSize)
+{
+    size_t charCount;
+
+    if (Reason == NULL || ReasonChars == 0)
+    {
+        return;
+    }
+
+    Reason[0] = L'\0';
+    if (Sample == NULL || SampleSize < sizeof(WCHAR))
+    {
+        return;
+    }
+
+    charCount = (size_t)(SampleSize / sizeof(WCHAR));
+    if (charCount >= ReasonChars)
+    {
+        charCount = ReasonChars - 1;
+    }
+
+    CopyMemory(Reason, Sample, charCount * sizeof(WCHAR));
+    Reason[charCount] = L'\0';
+}
+
 static double ControllerComputeSampleEntropy(_In_reads_(SampleSize) const UINT8 *Sample, _In_ UINT32 SampleSize)
 {
     UINT32 i;
@@ -1341,6 +1643,7 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
     BOOL integrityAmsiPatch = FALSE;
     BOOL integrityEtwPatch = FALSE;
     BOOL memoryEvent = FALSE;
+    BOOL specializedEvent = FALSE;
 
     if (Client == NULL || HookEvent == NULL)
     {
@@ -1544,8 +1847,121 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
                 (unsigned long)entropyBucket, (unsigned long)entropyFlips, (unsigned long)protectFlips,
                 (unsigned long)sampleSize);
         }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventNt &&
+                 lstrcmpiA(apiName, "NtOpenProcess") == 0)
+        {
+            ULONG desiredAccess = (ULONG)HookEvent->Context1;
+            UINT32 targetPid = (UINT32)(HookEvent->Context2 & 0xFFFFFFFFull);
+            if (ControllerHookIsInterestingProcessAccess(desiredAccess))
+            {
+                (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "USERMODE_PROCESS_HANDLE_ACTIVITY");
+                mapped.Severity = ControllerHookSeverityForProcessAccess(desiredAccess);
+                mapped.TargetPid = targetPid;
+                specializedEvent = TRUE;
+                (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                       L"process.open targetPid=%lu desiredAccess=0x%X",
+                                       (unsigned long)targetPid, (unsigned int)desiredAccess);
+            }
+        }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventNt &&
+                 lstrcmpiA(apiName, "NtOpenThread") == 0)
+        {
+            ULONG desiredAccess = (ULONG)HookEvent->Context1;
+            UINT32 targetPid = (UINT32)(HookEvent->Context2 & 0xFFFFFFFFull);
+            UINT32 targetTid = (UINT32)(HookEvent->Context3 & 0xFFFFFFFFull);
+            if (ControllerHookIsInterestingThreadAccess(desiredAccess))
+            {
+                (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "USERMODE_THREAD_HANDLE_ACTIVITY");
+                mapped.Severity = ControllerHookSeverityForThreadAccess(desiredAccess);
+                mapped.TargetPid = targetPid;
+                specializedEvent = TRUE;
+                (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                       L"thread.open targetPid=%lu targetTid=%lu desiredAccess=0x%X",
+                                       (unsigned long)targetPid, (unsigned long)targetTid, (unsigned int)desiredAccess);
+            }
+        }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventNt &&
+                 lstrcmpiA(apiName, "NtDuplicateObject") == 0)
+        {
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "USERMODE_DUP_HANDLE_ACTIVITY");
+            mapped.Severity = ((HookEvent->Args[4] & (PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD)) != 0) ? 6u : 3u;
+            specializedEvent = TRUE;
+            (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                   L"handle.duplicate srcProcess=0x%llX srcHandle=0x%llX dstProcess=0x%llX desiredAccess=0x%llX options=0x%llX",
+                                   (unsigned long long)HookEvent->Args[0], (unsigned long long)HookEvent->Args[1],
+                                   (unsigned long long)HookEvent->Args[2], (unsigned long long)HookEvent->Args[4],
+                                   (unsigned long long)HookEvent->Args[6]);
+        }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventNt &&
+                 (lstrcmpiA(apiName, "NtQueryInformationProcess") == 0 ||
+                  lstrcmpiA(apiName, "NtQueryVirtualMemory") == 0 ||
+                  lstrcmpiA(apiName, "NtReadVirtualMemory") == 0 ||
+                  lstrcmpiA(apiName, "NtQuerySystemInformation") == 0))
+        {
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "USERMODE_PROCESS_RECON");
+            mapped.Severity = 3u;
+            specializedEvent = TRUE;
+            (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                   L"process.recon api=%S c0=0x%llX c1=0x%llX c2=0x%llX",
+                                   apiName, (unsigned long long)HookEvent->Context0, (unsigned long long)HookEvent->Context1,
+                                   (unsigned long long)HookEvent->Context2);
+        }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventNt &&
+                 (lstrcmpiA(apiName, "NtSetContextThread") == 0 ||
+                  lstrcmpiA(apiName, "NtGetContextThread") == 0 ||
+                  lstrcmpiA(apiName, "NtSuspendThread") == 0 ||
+                  lstrcmpiA(apiName, "NtResumeThread") == 0))
+        {
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "USERMODE_THREAD_CONTEXT_ACTIVITY");
+            mapped.Severity = (lstrcmpiA(apiName, "NtGetContextThread") == 0) ? 4u : 6u;
+            specializedEvent = TRUE;
+            (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                   L"thread.control api=%S threadHandle=0x%llX arg1=0x%llX",
+                                   apiName, (unsigned long long)HookEvent->Context0, (unsigned long long)HookEvent->Context1);
+        }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventNt &&
+                 lstrcmpiA(apiName, "NtQueueApcThread") == 0)
+        {
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "USERMODE_APC_QUEUE_ACTIVITY");
+            mapped.Severity = 6u;
+            specializedEvent = TRUE;
+            (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                   L"thread.apc threadHandle=0x%llX routine=0x%llX arg1=0x%llX arg2=0x%llX arg3=0x%llX",
+                                   (unsigned long long)HookEvent->Context0, (unsigned long long)HookEvent->Context1,
+                                   (unsigned long long)HookEvent->Context2, (unsigned long long)HookEvent->Context3,
+                                   (unsigned long long)HookEvent->Args[4]);
+        }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventWinsock &&
+                 (lstrcmpiA(apiName, "connect") == 0 || lstrcmpiA(apiName, "WSAConnect") == 0))
+        {
+            UINT16 family = 0;
+            UINT16 port = 0;
+            (void)ControllerHookDecodeSockaddr(HookEvent->DataSample, sampleSize, &family, &port);
+            mapped.Family = BlackbirdIpcEtwFamilySocket;
+            mapped.TargetPid = 0;
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "USERMODE_NETWORK_CONNECT");
+            mapped.Severity = 2u;
+            specializedEvent = TRUE;
+            (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                   L"socket.connect family=%u port=%u socket=0x%llX api=%S",
+                                   (unsigned int)family, (unsigned int)port, (unsigned long long)HookEvent->Context0, apiName);
+        }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventWinsock &&
+                 lstrcmpiA(apiName, "GetAddrInfoW") == 0)
+        {
+            mapped.Family = BlackbirdIpcEtwFamilySocket;
+            mapped.TargetPid = 0;
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "USERMODE_DOMAIN_RESOLUTION");
+            mapped.Severity = 1u;
+            specializedEvent = TRUE;
+            ControllerHookCopyWideSampleToReason(mapped.Reason, RTL_NUMBER_OF(mapped.Reason), HookEvent->DataSample, sampleSize);
+            if (mapped.Reason[0] == L'\0')
+            {
+                (void)StringCchCopyW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason), L"domain.resolve");
+            }
+        }
 
-        if (!memoryEvent)
+        if (!memoryEvent && !specializedEvent)
         {
             (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "USERMODE_HOOK_API_CALL");
 
@@ -1710,6 +2126,7 @@ static DWORD ControllerClientSetUserHookTarget(
             LeaveCriticalSection(&Client->Lock);
             return err;
         }
+
         EnterCriticalSection(&Client->Lock);
         ControllerClientPrimePendingLaunchPidLocked(Client, targetPid);
         LeaveCriticalSection(&Client->Lock);

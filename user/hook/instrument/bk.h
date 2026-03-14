@@ -12,11 +12,6 @@
 
 #include <cstdint>
 #include <cstddef>
-
-//
-// Export macro (optional)
-//  - If you build this into a DLL, define BK_BLACKBIRD_EXPORTS in the project that builds bk.cpp
-//
 #ifndef BK_BLACKBIRD_API
 #  ifdef BK_BLACKBIRD_EXPORTS
 #    define BK_BLACKBIRD_API extern "C" __declspec(dllexport)
@@ -79,24 +74,13 @@ namespace bk::blackbird
         bool swallow_non_target_exceptions = false;
     };
 }
-
-// Convenience aliases in global namespace (optional)
 using BkBlackbirdEvent = bk::blackbird::Event;
 using BkBlackbirdTelemetryArguments = bk::blackbird::TelemetryArguments;
 using BkBlackbirdTelemetryFn = bk::blackbird::TelemetryFn;
 using BkBlackbirdMemoryFaultHandlerFn = bk::blackbird::MemoryFaultHandlerFn;
-
-//
-// Global WinAPI-style API
-//
 BK_BLACKBIRD_API PVOID BkRegisterVectoredExceptionHandler(BkBlackbirdTelemetryArguments* args) noexcept;
 BK_BLACKBIRD_API BOOL  BkPromoteVectoredExceptionHandlerToFront() noexcept;
 BK_BLACKBIRD_API void  BkUnregisterVectoredExceptionHandler() noexcept;
-
-//
-// Backwards/typo-friendly aliases (you used "Vectord" in your message).
-// These are header-only wrappers.
-//
 inline PVOID BkRegisterVectordExceptionHandler(BkBlackbirdTelemetryArguments* args) noexcept
 {
     return BkRegisterVectoredExceptionHandler(args);
@@ -107,4 +91,4 @@ inline void BkUnregisterVectordExceptionHandler() noexcept
     BkUnregisterVectoredExceptionHandler();
 }
 
-#endif // BK_BLACKBIRD_VEH_H
+#endif

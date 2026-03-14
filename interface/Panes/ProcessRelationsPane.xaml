@@ -12,6 +12,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="160"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
@@ -26,10 +27,27 @@
             <TextBlock x:Name="SummaryBlock"
                        Grid.Column="1"
                        VerticalAlignment="Center"
+                       Visibility="Collapsed"
                        Foreground="{DynamicResource WinMutedTextBrush}"
                        Text="No relations yet"/>
 
-            <Button Grid.Column="2"
+            <ComboBox x:Name="RelationFilter"
+                      Grid.Column="2"
+                      Width="152"
+                      Height="24"
+                      Margin="2,4,6,4"
+                      VerticalAlignment="Center"
+                      BorderBrush="{DynamicResource ProcessRelationsHeaderBrush}"
+                      Style="{StaticResource PaneFilterComboStyle}"
+                      ItemContainerStyle="{StaticResource PaneFilterComboItemStyle}"
+                      SelectionChanged="RelationFilter_SelectionChanged">
+                <ComboBoxItem Content="ALL RELATIONS" IsSelected="True"/>
+                <ComboBoxItem Content="THREADCREATE"/>
+                <ComboBoxItem Content="HANDLE"/>
+                <ComboBoxItem Content="HIGH+" />
+            </ComboBox>
+
+            <Button Grid.Column="3"
                     x:Name="RelationsBtnInspect"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="↗"
@@ -37,7 +55,7 @@
                     Height="22"
                     ToolTip="Open relations inspector"
                     Click="RelationsBtnInspect_Click"/>
-            <Button Grid.Column="3"
+            <Button Grid.Column="4"
                     x:Name="RelationsBtnClose"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="✕"
@@ -49,9 +67,9 @@
         </Grid>
 
         <Border Grid.Row="1"
-                Margin="4"
+                Margin="0"
                 BorderBrush="{DynamicResource WinBorderBrush}"
-                BorderThickness="1">
+                BorderThickness="0">
             <Grid>
                 <DataGrid x:Name="RelationsGrid"
                           AutoGenerateColumns="False"
@@ -81,7 +99,7 @@
                                     <Setter Property="Background" Value="#1C4C4217"/>
                                 </DataTrigger>
                                 <Trigger Property="IsSelected" Value="True">
-                                    <Setter Property="Background" Value="#3A6EA6D8"/>
+                                    <Setter Property="Background" Value="#3A4A4A4A"/>
                                     <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
                                 </Trigger>
                             </Style.Triggers>

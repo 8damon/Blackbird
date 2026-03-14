@@ -16,12 +16,18 @@ namespace BlackbirdInterface
         public string Group { get; }
         public string SubType { get; }
         public string Summary { get; }
+        public string Details { get; }
+        public int Pid { get; }
+        public int Tid { get; }
 
-        public EventLogCardOpenRequestedEventArgs(string group, string subType, string summary)
+        public EventLogCardOpenRequestedEventArgs(string group, string subType, string summary, string details, int pid, int tid)
         {
             Group = group ?? string.Empty;
             SubType = subType ?? string.Empty;
             Summary = summary ?? string.Empty;
+            Details = details ?? string.Empty;
+            Pid = pid;
+            Tid = tid;
         }
     }
 
@@ -63,7 +69,7 @@ namespace BlackbirdInterface
                 string subtype = ev.SubType ?? "";
                 string summary = ev.Summary ?? "";
                 string details = ev.Details ?? "";
-                string key = $"{group}\u001F{subtype}\u001F{ev.PID}\u001F{ev.TID}\u001F{summary}\u001F{details}";
+                string key = $"{group}\u001F{subtype}\u001F{ev.PID}\u001F{ev.TID}\u001F{summary}";
 
                 if (!grouped.TryGetValue(key, out var item))
                 {
@@ -91,6 +97,7 @@ namespace BlackbirdInterface
                     if (ev.TimestampUtc > item.LastSeenUtc)
                     {
                         item.LastSeenUtc = ev.TimestampUtc;
+                        item.Details = details;
                     }
                 }
             }
@@ -252,7 +259,9 @@ namespace BlackbirdInterface
                 return;
             }
 
-            EtwFeedRequested?.Invoke(this, new EventLogCardOpenRequestedEventArgs(card.Group, card.SubType, card.Summary));
+            EtwFeedRequested?.Invoke(
+                this,
+                new EventLogCardOpenRequestedEventArgs(card.Group, card.SubType, card.Summary, card.Details, card.PID, card.TID));
         }
 
         private EventLogCardItem? GetCardFromEventSource(DependencyObject? source)

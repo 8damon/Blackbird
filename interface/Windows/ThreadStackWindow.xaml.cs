@@ -27,14 +27,17 @@ namespace BlackbirdInterface
         private readonly string _state;
         private readonly Func<DateTime>? _observationTimeUtcProvider;
         private readonly Func<bool>? _liveCaptureAvailableProvider;
+        private readonly Action<ThreadStackSessionSnapshot>? _onSnapshotCaptured;
         private readonly DispatcherTimer _refreshTimer;
-        private readonly List<ThreadStackSnapshot> _snapshotHistory = new();
+        private readonly List<ThreadStackSessionSnapshot> _snapshotHistory = new();
         private bool _refreshInFlight;
 
         public ThreadStackWindow(
             int pid,
             int tid,
             string state,
+            IEnumerable<ThreadStackSessionSnapshot>? initialHistory = null,
+            Action<ThreadStackSessionSnapshot>? onSnapshotCaptured = null,
             Func<DateTime>? observationTimeUtcProvider = null,
             Func<bool>? liveCaptureAvailableProvider = null)
         {
@@ -44,6 +47,7 @@ namespace BlackbirdInterface
             _pid = pid;
             _tid = tid;
             _state = state;
+            _onSnapshotCaptured = onSnapshotCaptured;
             _observationTimeUtcProvider = observationTimeUtcProvider;
             _liveCaptureAvailableProvider = liveCaptureAvailableProvider;
             _refreshTimer = new DispatcherTimer(DispatcherPriority.Background)
@@ -58,6 +62,12 @@ namespace BlackbirdInterface
 
             UserStackGrid.ItemsSource = UserFrames;
             GeneralRegsList.ItemsSource = GeneralRegs;
+            if (initialHistory != null)
+            {
+                _snapshotHistory.AddRange(initialHistory
+                    .Select(x => x.Clone())
+                    .OrderBy(x => x.CapturedAtUtc));
+            }
 
             SeedRegisterPlaceholders();
             Loaded += async (_, __) =>
@@ -163,19 +173,20 @@ namespace BlackbirdInterface
                     ThreadStackResolveResult result = await Task.Run(() => ThreadStackResolver.Resolve(_pid, _tid, _state));
                     if (HasResolvedStackData(result))
                     {
-                        ThreadStackSnapshot snapshot = CreateSnapshot(DateTime.UtcNow, result);
+                        ThreadStackSessionSnapshot snapshot = CreateSnapshot(DateTime.UtcNow, result);
                         _snapshotHistory.Add(snapshot);
                         if (_snapshotHistory.Count > MaxSnapshotHistory)
                         {
                             _snapshotHistory.RemoveRange(0, _snapshotHistory.Count - MaxSnapshotHistory);
                         }
 
+                        _onSnapshotCaptured?.Invoke(snapshot.Clone());
                         ApplySnapshot(snapshot, $"Live | {snapshot.CapturedAtUtc:HH:mm:ss.fff}");
                         return;
                     }
                 }
 
-                ThreadStackSnapshot? historical = FindHistoricalSnapshot(observedUtc);
+                ThreadStackSessionSnapshot? historical = FindHistoricalSnapshot(observedUtc);
                 if (historical != null)
                 {
                     ApplySnapshot(historical, $"Historical | {historical.CapturedAtUtc:HH:mm:ss.fff}");
@@ -216,7 +227,7 @@ namespace BlackbirdInterface
             return observedUtc >= latestCaptureUtc.AddMilliseconds(-750);
         }
 
-        private ThreadStackSnapshot? FindHistoricalSnapshot(DateTime observedUtc)
+        private ThreadStackSessionSnapshot? FindHistoricalSnapshot(DateTime observedUtc)
         {
             return _snapshotHistory
                 .Where(x => x.CapturedAtUtc <= observedUtc)
@@ -232,9 +243,9 @@ namespace BlackbirdInterface
                    result.ContextSnapshot != null;
         }
 
-        private ThreadStackSnapshot CreateSnapshot(DateTime capturedAtUtc, ThreadStackResolveResult result)
+        private ThreadStackSessionSnapshot CreateSnapshot(DateTime capturedAtUtc, ThreadStackResolveResult result)
         {
-            return new ThreadStackSnapshot
+            return new ThreadStackSessionSnapshot
             {
                 CapturedAtUtc = capturedAtUtc,
                 TebAddress = result.TebAddress,
@@ -247,7 +258,7 @@ namespace BlackbirdInterface
             };
         }
 
-        private void ApplySnapshot(ThreadStackSnapshot snapshot, string note)
+        private void ApplySnapshot(ThreadStackSessionSnapshot snapshot, string note)
         {
             HideNoDataOverlay();
             ResetHeaderMetadata();
@@ -493,52 +504,7 @@ namespace BlackbirdInterface
         }
 
         private static ThreadContextSnapshot? CloneContextSnapshot(ThreadContextSnapshot? snapshot)
-        {
-            if (snapshot == null)
-            {
-                return null;
-            }
-
-            return new ThreadContextSnapshot
-            {
-                Rip = snapshot.Rip,
-                Rsp = snapshot.Rsp,
-                Rbp = snapshot.Rbp,
-                Rax = snapshot.Rax,
-                Rbx = snapshot.Rbx,
-                Rcx = snapshot.Rcx,
-                Rdx = snapshot.Rdx,
-                Rsi = snapshot.Rsi,
-                Rdi = snapshot.Rdi,
-                R8 = snapshot.R8,
-                R9 = snapshot.R9,
-                R10 = snapshot.R10,
-                R11 = snapshot.R11,
-                R12 = snapshot.R12,
-                R13 = snapshot.R13,
-                R14 = snapshot.R14,
-                R15 = snapshot.R15,
-                Dr0 = snapshot.Dr0,
-                Dr1 = snapshot.Dr1,
-                Dr2 = snapshot.Dr2,
-                Dr3 = snapshot.Dr3,
-                Dr6 = snapshot.Dr6,
-                Dr7 = snapshot.Dr7,
-                EFlags = snapshot.EFlags
-            };
-        }
-
-        private sealed class ThreadStackSnapshot
-        {
-            public DateTime CapturedAtUtc { get; init; }
-            public ulong TebAddress { get; init; }
-            public ulong StackBase { get; init; }
-            public ulong StackTop { get; init; }
-            public ushort? TebFlags { get; init; }
-            public ulong StackPointer { get; init; }
-            public ThreadContextSnapshot? ContextSnapshot { get; init; }
-            public List<StackFrameRow> Frames { get; init; } = new();
-        }
+            => snapshot == null ? null : new ThreadStackSessionSnapshot { ContextSnapshot = snapshot }.Clone().ContextSnapshot;
     }
 
     public sealed class RegisterEntry : INotifyPropertyChanged

@@ -751,8 +751,7 @@ DWORD ControllerInjectionLaunchAndVerify(_In_ HANDLE ClientPipe, _In_z_ PCWSTR I
         return err == ERROR_SUCCESS ? ERROR_GEN_FAILURE : err;
     }
 
-    // Legacy-compatible behavior: launch success should not be hard-coupled to hook-ready.
-    // Wait after resume and continue even if hook-ready is delayed/missed.
+    // Launch success should not be hard-coupled to hook-ready timing.
     (void)ControllerWaitForHookReady(processInfo.dwProcessId);
 
     if (ControllerInjectionIsStealthHookModule(HookDllPath))
@@ -773,7 +772,6 @@ DWORD ControllerInjectionLaunchAndVerify(_In_ HANDLE ClientPipe, _In_z_ PCWSTR I
     }
 
     *ProcessIdOut = processInfo.dwProcessId;
-
     (void)CloseHandle(processInfo.hThread);
     (void)CloseHandle(processInfo.hProcess);
     return ERROR_SUCCESS;

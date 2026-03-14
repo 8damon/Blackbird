@@ -67,12 +67,16 @@
                           Grid.Column="2"
                           Height="26"
                           IsEditable="False"
+                          Style="{StaticResource PaneFilterComboStyle}"
+                          ItemContainerStyle="{StaticResource PaneFilterComboItemStyle}"
                           SelectionChanged="Filter_Changed"/>
 
                 <ComboBox x:Name="SubtypeFilterBox"
                           Grid.Column="4"
                           Height="26"
                           IsEditable="False"
+                          Style="{StaticResource PaneFilterComboStyle}"
+                          ItemContainerStyle="{StaticResource PaneFilterComboItemStyle}"
                           SelectionChanged="Filter_Changed"/>
 
                 <Button x:Name="ClearFilterButton"

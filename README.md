@@ -1,5 +1,5 @@
 <h1 align="center">BLACKBIRD Beta v1.2</h1>
-<p align="center"><b>Kernel Telemetry & Detection Platform for Windows</b></p>
+<p align="center"><b>DFIR Kernel Telemetry & Detection Platform for Windows</b></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/-00599C?logo=c&logoColor=white&style=for-the-badge" />
@@ -12,83 +12,33 @@
 </p>
 
 <p align="center">
-  <img src="./diagram/BK_INTERFACE_ULTRAWIDE.png" width="980" alt="Blackbird main interface" />
+  <img src="./media/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
 </p>
 
-## What Blackbird Is For
+# BLACKBIRD
 
-Blackbird is built for:
+Blackbird is a Malware Analysis platform for everyone from SOC's to Hobbyists. BK unifies many tools and concepts into one complete platform, and gives increased visibility and capability from traditional tools due to it leveraging its own kernel-driver. BK removes the complexities of other kernel mode tools by providing a simple install & a detailed interface to control and observe everything from.
 
-- malware analysis
-- suspicious process investigation
-- endpoint telemetry review
-- evidence-heavy detection triage
+## OPERATOR PANEL
 
-It captures process, file, thread, handle, image, registry, network, APC, and detection telemetry, then groups related activity into operator-facing detections and evidence views.
+The main interface is the overseer of all operations, it brings these together;
 
-## Why It Exists
+- Events & Event log
+- Performance counters
+- Network observation
+- Thread observation
+- Memory observation, inspector & treemap
+- Module information
+- PE information
+- ETW feed
+- Heuristics
+- Filesystem events
+- Process relations
+- Uplink performance
 
-Most telemetry tools are good at collecting data and bad at helping an analyst work through it.
+## EVIDENCE & ALTERNATE VIEWS
 
-Blackbird is meant to close that gap:
-
-- the **main operator panel** gives a live view of what matters now
-- the **detection chain** groups related events into something reviewable
-- the **inspectors** let you drill into the actual evidence when a detection needs validation
-
-The point is not just to log activity. The point is to help an operator move from signal to evidence quickly.
-
-## Main Operator Panel
-
-The main interface is the primary workspace for live triage and session review.
-
-It brings together:
-
-- event timeline
-- event log
-- ETW activity
-- heuristics
-- process relations
-- file access
-- backend/session state
-- time-travel controls for historical review
-- resource usage
-- network monitoring
-
-This is where an operator attaches to a target, watches activity arrive, and pivots into deeper evidence when something suspicious shows up.
-
-Operator UX behavior in this panel:
-
-- after picking a process, a dedicated `Launch Parameters` dialog collects hook/launch options before live attach or launch proceeds
-- icon-backed command bars expose target control, preflight, switching views, session import/export, and time-travel entry points directly from the shell
-- timeline timestamps stay layered above event markers for readability
-- horizontal timeline scrubber tracks true latest-event position during live follow
-- timeline event selection stays synced with the event log grid and persists across live updates when the event remains in-view
-
-## Detection Chain
-
-The detection chain is the most important investigation view in the platform.
-
-<p align="center">
-  <img src="./diagram/DETECTION_CHAIN.png" width="980" alt="Blackbird detection chain" />
-</p>
-
-It groups detections by event and detection key so the operator can review related activity as a single chain instead of a pile of disconnected records.
-
-This is where Blackbird becomes useful instead of just noisy.
-
-The detection chain helps answer:
-
-- what happened
-- why it was flagged
-- which events belong together
-- what evidence supports the detection
-
-From there, the operator can pivot into the raw underlying records and supporting inspectors.
-
-## Evidence Views
-
-When a detection needs validation, Blackbird exposes the underlying evidence through dedicated inspectors.
+For deeper inspection, BK provides inspector views when double clicking collections, this will open a window showcasing the details behind the event, and raw data if asked for.
 
 Key views include:
 
@@ -107,87 +57,40 @@ Key views include:
 - **File Inpsector**
   See files accessed and created by the target.
 
-These views exist to support investigation, not decoration. Which is a rare design goal these days.
+## API HOOKING VIEW
 
-## Detection Coverage
+BK provides an alternate view for seeing API hooks captured by the userland sensor in "View, Switch View"
+
+## COVERAGE
 
 Representative detections include:
 
-- direct syscall suspect handle activity
+- direct syscalls
+- handle open
+- memory queries
+- read & write memory
+- manual mapping
+- AMSI & ETW patching
+- hook patching
+- file dropping
 - file opens, reads, creations, special attributes
-- stack integrity anomalies on handle operations
-- remote thread creation
-- remote thread start in non-image executable memory
+- stack integrity anomalies
+- thread creation
 - remote thread activity outside the main image
 - thread hijack and thread-context abuse
-- remote APC creation suspects
+- remote APCs
 - process hollowing and injection intent chains
 - suspicious `ntdll` image path or mapping behavior
 - multiple `ntdll` image mappings
 - registry activity
-- driver dispatch or object tamper drift
 
 For the full contract and field-level details, see [API.md](./API.md).
 
-## Architecture
-
-Blackbird is split into a few main parts:
-
-- `kernel/`  
-  KMDF driver, kernel telemetry, ETW emission, and kernel-side correlation
-
-- `user/controller/`  
-  broker/controller service, IPC, ETW handling, and runtime correlation
-
-- `user/sensor/`  
-  `BlackbirdSensorCore.dll`, `BlackbirdClient.exe`, `BlackbirdTestSuite.exe`
-
-- `interface/`  
-  WPF analyst interface for live capture, time travel, and evidence review
-
-- `abi/`  
-  shared IOCTL and IPC contracts
-
-## How It Works
-
-1. The operator selects or launches a target process.
-2. The interface talks to `BlackbirdSensorCore.dll`.
-3. The sensor core reaches the controller over broker IPC.
-4. The controller owns the driver handle and ETW ingestion path.
-5. Telemetry is collected, correlated, and sent back to the interface.
-6. The main panel updates live, and the operator can pivot into detections and evidence views.
-7. Sessions can be saved, reopened, imported, or exported for later review.
-
 <p align="center">
-  <img src="./diagram/BLACKBIRD_DIAGRAM.png" width="980" alt="Blackbird platform diagram" />
+  <img src="./media/BLACKBIRD_DIAGRAM.png" width="980" alt="Blackbird platform diagram" />
 </p>
 
-## Build Outputs
-
-Common projects:
-
-- `vcxproj/Blackbird.vcxproj`
-- `vcxproj/BlackbirdController.vcxproj`
-- `vcxproj/BlackbirdSensorCore.vcxproj`
-- `vcxproj/BlackbirdClient.vcxproj`
-- `vcxproj/BlackbirdIoctlTest.vcxproj`
-- `interface/BlackbirdInterface.csproj`
-
-Common runtime artifacts:
-
-- `blackbird.sys`
-- `BlackbirdController.exe`
-- `BlackbirdSensorCore.dll`
-- `BlackbirdClient.exe`
-- `BlackbirdTestSuite.exe`
-- `BlackbirdInterface.exe`
-
-Interface resources:
-
-- `interface/Resources/*.png`
-  - WPF toolbar/session icons embedded automatically by the interface project
-
-## Quick Start
+## QUICK START
 
 See these docs for setup and usage:
 
@@ -195,12 +98,3 @@ See these docs for setup and usage:
 - [INSTALL.md](./INSTALL.md)
 - [USAGE.md](./USAGE.md)
 - [API.md](./API.md)
-
-## Documentation Map
-
-- [Getting Started.md](./Getting%20Started.md)
-- [USAGE.md](./USAGE.md)
-- [INSTALL.md](./INSTALL.md)
-- [API.md](./API.md)
-- [user/sensor/README.md](./user/sensor/README.md)
-- [user/controller/core/README.md](./user/controller/core/README.md)

@@ -1053,12 +1053,14 @@
                                                         <Grid Margin="2,0">
                                                             <Border Height="12"
                                                                     CornerRadius="2"
-                                                                    Background="#21262D"
+                                                                    Background="{Binding HeatTrackBackground}"
                                                                     BorderBrush="#2D333B"
                                                                     BorderThickness="1">
                                                                 <ProgressBar Minimum="0"
                                                                              Maximum="100"
                                                                              Value="{Binding HeatPercent}"
+                                                                             Foreground="{Binding HeatFillBackground}"
+                                                                             Background="{Binding HeatTrackBackground}"
                                                                              Height="12"
                                                                              VerticalAlignment="Center"/>
                                                             </Border>

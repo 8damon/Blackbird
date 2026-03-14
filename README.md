@@ -17,6 +17,10 @@
   <img src="./media/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
 </p>
 
+<p align="center">
+  <img src="./media/BLACKBIRD_DIAGRAM.png" width="980" alt="Blackbird platform diagram" />
+</p>
+
 # BLACKBIRD
 
 Blackbird is a Malware Analysis platform for everyone from SOC's to Hobbyists. BK unifies many tools and concepts into one complete platform, and gives increased visibility and capability from traditional tools due to it leveraging its own kernel-driver. BK removes the complexities of other kernel mode tools by providing a simple install & a detailed interface to control and observe everything from.
@@ -87,10 +91,6 @@ Representative detections include:
 - registry activity
 
 For the full contract and field-level details, see [API.md](./API.md).
-
-<p align="center">
-  <img src="./media/BLACKBIRD_DIAGRAM.png" width="980" alt="Blackbird platform diagram" />
-</p>
 
 ## QUICK START
 

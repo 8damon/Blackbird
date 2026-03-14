@@ -59,6 +59,8 @@ namespace BlackbirdInterface
             string severity = EventDetailFormatting.SeverityLabelFromText(EventDetailFormatting.RelationSeverity(item));
             string source = ProcessIdentityResolver.Describe(item.SourcePid);
             string target = ProcessIdentityResolver.Describe(item.TargetPid);
+            string sourceToolTip = ProcessIdentityResolver.HoverText(item.SourcePid);
+            string targetToolTip = ProcessIdentityResolver.HoverText(item.TargetPid);
             string detection = string.Equals(eventName, "ThreadCreate", StringComparison.OrdinalIgnoreCase)
                 ? "Cross-process thread creation activity"
                 : "Cross-process handle activity";
@@ -88,6 +90,8 @@ namespace BlackbirdInterface
                     Target = target,
                     ActorPid = item.SourcePid,
                     TargetPid = item.TargetPid,
+                    ActorToolTip = sourceToolTip,
+                    TargetToolTip = targetToolTip,
                     Details = details
                 });
                 if (existing.Details.Count > 4000)
@@ -120,6 +124,8 @@ namespace BlackbirdInterface
                             Target = target,
                             ActorPid = item.SourcePid,
                             TargetPid = item.TargetPid,
+                            ActorToolTip = sourceToolTip,
+                            TargetToolTip = targetToolTip,
                             Details = details
                         }
                     }

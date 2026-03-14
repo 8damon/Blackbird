@@ -60,6 +60,8 @@ namespace BlackbirdInterface
             string detection = string.IsNullOrWhiteSpace(item.DetectionName) ? "heuristic" : item.DetectionName;
             string actor = ProcessIdentityResolver.Describe(item.ActorPid);
             string target = ProcessIdentityResolver.Describe(item.TargetPid);
+            string actorToolTip = ProcessIdentityResolver.HoverText(item.ActorPid);
+            string targetToolTip = ProcessIdentityResolver.HoverText(item.TargetPid);
             string key = $"{combinedEvent}|{severity}|{detection}";
             int hits = Math.Max(1, item.RepeatCount);
             string detailsText = item.Details;
@@ -81,6 +83,8 @@ namespace BlackbirdInterface
                     Target = target,
                     ActorPid = item.ActorPid,
                     TargetPid = item.TargetPid,
+                    ActorToolTip = actorToolTip,
+                    TargetToolTip = targetToolTip,
                     Details = detailsText
                 });
                 if (existing.Details.Count > 4000)
@@ -113,6 +117,8 @@ namespace BlackbirdInterface
                             Target = target,
                             ActorPid = item.ActorPid,
                             TargetPid = item.TargetPid,
+                            ActorToolTip = actorToolTip,
+                            TargetToolTip = targetToolTip,
                             Details = detailsText
                         }
                     }

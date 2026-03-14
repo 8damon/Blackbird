@@ -44,6 +44,9 @@
     <ClCompile Include="..\user\controller\core\ipc\blackbird_controller_ipc.c">
       <Filter>Controller Core\IPC</Filter>
     </ClCompile>
+    <ClCompile Include="..\user\controller\core\runtime\blackbird_controller_symbol_service.c">
+      <Filter>Controller Core\Runtime</Filter>
+    </ClCompile>
     <ClCompile Include="..\user\controller\core\runtime\blackbird_controller_runtime.c">
       <Filter>Controller Core\Runtime</Filter>
     </ClCompile>

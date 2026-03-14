@@ -71,6 +71,7 @@ namespace BlackbirdInterface
             string severity = DetermineSeverityLabel(record);
             string path = string.IsNullOrWhiteSpace(record.FilePath) ? "<unknown>" : record.FilePath.Trim();
             string actor = ProcessIdentityResolver.Describe(record.FileProcessPid);
+            string actorToolTip = ProcessIdentityResolver.HoverText(record.FileProcessPid);
 
             string details =
                 $"seq={record.Sequence} operation={operation} pid={record.FileProcessPid} tid={record.FileThreadId} " +
@@ -98,6 +99,7 @@ namespace BlackbirdInterface
                     Target = path,
                     ActorPid = record.FileProcessPid,
                     TargetPid = 0,
+                    ActorToolTip = actorToolTip,
                     Details = details
                 });
 
@@ -131,6 +133,7 @@ namespace BlackbirdInterface
                             Target = path,
                             ActorPid = record.FileProcessPid,
                             TargetPid = 0,
+                            ActorToolTip = actorToolTip,
                             Details = details
                         }
                     }

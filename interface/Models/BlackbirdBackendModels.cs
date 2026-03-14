@@ -248,6 +248,7 @@ namespace BlackbirdInterface
         public string KeyPath { get; set; } = "";
         public string ValueName { get; set; } = "";
         public int RepeatCount { get; set; } = 1;
+        public string ArgumentSummary { get; set; } = string.Empty;
 
         public string Summary
         {
@@ -336,7 +337,8 @@ namespace BlackbirdInterface
                 CommandLine = CommandLine,
                 KeyPath = KeyPath,
                 ValueName = ValueName,
-                RepeatCount = RepeatCount
+                RepeatCount = RepeatCount,
+                ArgumentSummary = ArgumentSummary
             };
         }
 
@@ -722,6 +724,9 @@ namespace BlackbirdInterface
         private string _target = "";
         private uint _actorPid;
         private uint _targetPid;
+        private string _actorToolTip = "";
+        private string _targetToolTip = "";
+        private string _argumentSummary = "";
         private string _details = "";
         private Dictionary<string, string>? _detailFields;
 
@@ -779,6 +784,24 @@ namespace BlackbirdInterface
             set => SetField(ref _targetPid, value);
         }
 
+        public string ActorToolTip
+        {
+            get => _actorToolTip;
+            set => SetField(ref _actorToolTip, value ?? string.Empty);
+        }
+
+        public string TargetToolTip
+        {
+            get => _targetToolTip;
+            set => SetField(ref _targetToolTip, value ?? string.Empty);
+        }
+
+        public string ArgumentSummary
+        {
+            get => _argumentSummary;
+            set => SetField(ref _argumentSummary, value ?? string.Empty);
+        }
+
         public string Details
         {
             get => _details;
@@ -833,7 +856,7 @@ namespace BlackbirdInterface
         public string Reason => GetDetailField("reason");
 
         public string FilterText =>
-            $"{TimestampUtc:O} {Event} {Severity} {Detection} {Source} {Actor} {Target} {ActorPid} {TargetPid} {Details} {EventPid} {EventTid} {Flags} {Access} {AgeMs} {Reason}";
+            $"{TimestampUtc:O} {Event} {Severity} {Detection} {Source} {Actor} {Target} {ActorPid} {TargetPid} {ArgumentSummary} {Details} {EventPid} {EventTid} {Flags} {Access} {AgeMs} {Reason}";
 
         public GroupedEventDetailRow Clone()
         {
@@ -848,6 +871,9 @@ namespace BlackbirdInterface
                 Target = Target,
                 ActorPid = ActorPid,
                 TargetPid = TargetPid,
+                ActorToolTip = ActorToolTip,
+                TargetToolTip = TargetToolTip,
+                ArgumentSummary = ArgumentSummary,
                 Details = Details
             };
         }
@@ -1065,6 +1091,7 @@ namespace BlackbirdInterface
     internal sealed class ApiCallGraphRowSnapshot
     {
         public string ApiName { get; set; } = "";
+        public string SensorOrigin { get; set; } = "";
         public uint SourcePid { get; set; }
         public uint TargetPid { get; set; }
         public uint ThreadId { get; set; }

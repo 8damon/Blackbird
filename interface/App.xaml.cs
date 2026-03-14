@@ -7,6 +7,8 @@ using System.Windows.Media;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Reflection;
 
 namespace BlackbirdInterface
 {
@@ -66,6 +68,7 @@ namespace BlackbirdInterface
                 Shutdown();
                 return;
             }
+            EnsureStartMenuShortcut();
 
             var loading = new LoadingWindow();
             loading.SetProgress(8, "Initializing startup...", "Preparing main interface.");
@@ -302,6 +305,78 @@ namespace BlackbirdInterface
         private static async Task YieldForUiFrameAsync()
         {
             await Application.Current.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Render);
+        }
+
+        private static void EnsureStartMenuShortcut()
+        {
+            try
+            {
+                string? exePath = Assembly.GetEntryAssembly()?.Location;
+                if (string.IsNullOrWhiteSpace(exePath) || !File.Exists(exePath))
+                {
+                    return;
+                }
+
+                string programsDirectory = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.StartMenu),
+                    "Programs");
+                Directory.CreateDirectory(programsDirectory);
+
+                string shortcutPath = Path.Combine(programsDirectory, "Blackbird.lnk");
+                if (File.Exists(shortcutPath))
+                {
+                    File.Delete(shortcutPath);
+                }
+
+                Type? shellType = Type.GetTypeFromProgID("WScript.Shell");
+                if (shellType == null)
+                {
+                    return;
+                }
+
+                object? shell = null;
+                object? shortcut = null;
+                try
+                {
+                    shell = Activator.CreateInstance(shellType);
+                    if (shell == null)
+                    {
+                        return;
+                    }
+
+                    shortcut = shellType.InvokeMember(
+                        "CreateShortcut",
+                        BindingFlags.InvokeMethod,
+                        binder: null,
+                        target: shell,
+                        args: new object[] { shortcutPath });
+                    if (shortcut == null)
+                    {
+                        return;
+                    }
+
+                    Type shortcutType = shortcut.GetType();
+                    shortcutType.InvokeMember("TargetPath", BindingFlags.SetProperty, null, shortcut, new object[] { exePath });
+                    shortcutType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, shortcut, new object[] { Path.GetDirectoryName(exePath) ?? string.Empty });
+                    shortcutType.InvokeMember("Description", BindingFlags.SetProperty, null, shortcut, new object[] { "Blackbird analyst shell" });
+                    shortcutType.InvokeMember("IconLocation", BindingFlags.SetProperty, null, shortcut, new object[] { $"{exePath},0" });
+                    shortcutType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortcut, Array.Empty<object>());
+                }
+                finally
+                {
+                    if (shortcut != null)
+                    {
+                        System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shortcut);
+                    }
+                    if (shell != null)
+                    {
+                        System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shell);
+                    }
+                }
+            }
+            catch
+            {
+            }
         }
 
         internal static void SetThemeMode(UiThemeMode mode)

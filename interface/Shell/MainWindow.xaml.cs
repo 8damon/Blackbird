@@ -154,6 +154,7 @@ namespace BlackbirdInterface
             };
             _apiGraphRefreshTimer.Tick += ApiGraphRefreshTimer_Tick;
             Loaded += OnLoaded;
+            Closing += OnClosing;
             Closed += OnClosed;
             RefreshToolbarCommandState();
         }
@@ -256,6 +257,15 @@ namespace BlackbirdInterface
             _currentSession = null;
         }
 
+        private void OnClosing(object? sender, CancelEventArgs e)
+        {
+            _ = sender;
+            if (!PrepareSessionShutdown())
+            {
+                e.Cancel = true;
+            }
+        }
+
         private void OnClosed(object? sender, EventArgs e)
         {
             _isMainWindowShuttingDown = true;
@@ -325,6 +335,7 @@ namespace BlackbirdInterface
             DisposePreparedLaunchBackendSession();
             StopBackendSession();
             HideDockPreview();
+            CleanupTemporarySessionBackingStores();
         }
 
         private void SetupExplorer()
@@ -2214,8 +2225,8 @@ namespace BlackbirdInterface
             foreach (TelemetryEvent ev in matches.OrderByDescending(x => x.TimestampUtc))
             {
                 string actor = string.IsNullOrWhiteSpace(ev.ProcessName)
-                    ? $"pid={ev.PID}"
-                    : $"{ev.ProcessName} ({ev.PID})";
+                    ? $"pid:{ev.PID}"
+                    : ev.ProcessName;
                 string target = ev.TID > 0 ? $"tid={ev.TID}" : string.Empty;
 
                 row.Details.Add(new GroupedEventDetailRow
@@ -2229,6 +2240,7 @@ namespace BlackbirdInterface
                     Target = target,
                     ActorPid = ev.PID > 0 ? unchecked((uint)ev.PID) : 0u,
                     TargetPid = 0u,
+                    ActorToolTip = ev.PID > 0 ? $"PID {ev.PID}" : string.Empty,
                     Details = ev.Details ?? string.Empty
                 });
             }
@@ -2353,6 +2365,8 @@ namespace BlackbirdInterface
                 pid,
                 row.Tid,
                 row.State,
+                initialHistory: GetThreadStackHistory(pid, row.Tid, row.State),
+                onSnapshotCaptured: snapshot => PersistThreadStackSnapshot(pid, row.Tid, row.State, snapshot),
                 observationTimeUtcProvider: GetCurrentObservedUtc,
                 liveCaptureAvailableProvider: () =>
                     _currentSession != null &&
@@ -3708,6 +3722,9 @@ namespace BlackbirdInterface
         {
             public string GraphKey { get; set; } = string.Empty;
             public string ApiName { get; set; } = string.Empty;
+            public string SensorLabel { get; set; } = string.Empty;
+            public Brush? SensorBackground { get; set; }
+            public Brush? SensorForeground { get; set; }
             public string PathLabel { get; set; } = string.Empty;
             public string ThreadLabel { get; set; } = string.Empty;
             public string LastSeen { get; set; } = string.Empty;
@@ -3737,6 +3754,7 @@ namespace BlackbirdInterface
         public List<TelemetryEvent> Events { get; } = new();
         public List<PerformanceSample> PerformanceHistory { get; } = new();
         public List<ThreadLifecycleEventSample> ThreadLifecycleHistory { get; } = new();
+        public List<ThreadStackHistoryArchiveEntry> ThreadStackHistories { get; } = new();
         public DateTime CaptureStartUtc { get; set; } = DateTime.UtcNow;
         public double ViewDurationSeconds { get; set; } = 120;
         public double ViewStartSeconds { get; set; }

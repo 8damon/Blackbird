@@ -210,6 +210,10 @@ VOID ControllerProcessHollowingEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ P
                                          _In_ const BLACKBIRD_IPC_ETW_EVENT *BrokerEvent);
 VOID ControllerResetHollowingState(VOID);
 
+BOOL ControllerSymbolServiceStart(VOID);
+VOID ControllerSymbolServiceStop(VOID);
+VOID ControllerSymbolServiceEnrichEvent(_Inout_ BLACKBIRD_IPC_ETW_EVENT *Event);
+
 BOOL ControllerCreatePipeSecurity(_Out_ PSECURITY_ATTRIBUTES SecurityAttributes,
                                   _Outptr_ PSECURITY_DESCRIPTOR *SecurityDescriptor);
 DWORD ControllerWaitForHookReady(_In_ DWORD ProcessId);

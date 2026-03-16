@@ -66,6 +66,13 @@ RuntimeTest/
 # Local research notes
 BK_HOOKING.md
 FUTURE.md
+/docs/
+/.hypervisor/
+/hypervisor/
+/.publish/
+/.vscode/
+*_wpftmp.csproj
 
 /SVR
 ./SVR
+

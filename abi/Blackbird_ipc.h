@@ -29,7 +29,8 @@ typedef enum _BLACKBIRD_IPC_COMMAND
     BlackbirdIpcCommandOpenSharedRing = 10,
     BlackbirdIpcCommandPublishHookEvent = 11,
     BlackbirdIpcCommandSetUserHookTarget = 12,
-    BlackbirdIpcCommandNotifyHookReady = 13
+    BlackbirdIpcCommandNotifyHookReady = 13,
+    BlackbirdIpcCommandControlProcessExecution = 14
 } BLACKBIRD_IPC_COMMAND;
 
 typedef struct _BLACKBIRD_IPC_HANDSHAKE_REQUEST
@@ -300,6 +301,7 @@ typedef union _BLACKBIRD_IPC_PAYLOAD
     BLACKBIRD_STATS_RESPONSE StatsResponse;
     BLACKBIRD_QUERY_PROCESS_IMAGE_REQUEST QueryProcessImageRequest;
     BLACKBIRD_QUERY_PROCESS_IMAGE_RESPONSE QueryProcessImageResponse;
+    BLACKBIRD_CONTROL_EXECUTION_REQUEST ControlProcessExecutionRequest;
 } BLACKBIRD_IPC_PAYLOAD, *PBLACKBIRD_IPC_PAYLOAD;
 
 typedef struct _BLACKBIRD_IPC_PACKET
@@ -321,3 +323,5 @@ typedef struct _BLACKBIRD_IPC_PACKET
 #define BLACKBIRD_IPC_CAP_USER_HOOK_READY 0x00000020u
 
 #endif
+
+

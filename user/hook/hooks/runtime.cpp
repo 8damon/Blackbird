@@ -345,7 +345,7 @@ namespace
         record.Args[0] = g_IntegrityCheckCount;
         record.Args[1] = static_cast<std::uint64_t>(GetTickCount64());
         (void)strncpy_s(record.ApiName, "HookIntegrity", _TRUNCATE);
-        (void)strncpy_s(record.ModuleName, "sr71", _TRUNCATE);
+        (void)strncpy_s(record.ModuleName, "SR71", _TRUNCATE);
         return PublishHookEvent(record);
     }
 
@@ -597,7 +597,7 @@ void BkRuntimePrimeHooks() noexcept
     }
 
     static BkBlackbirdTelemetryArguments g_sw{};
-    g_sw.target_module_basename = L"sr71.dll";
+    g_sw.target_module_basename = L"SR71.dll";
     g_sw.low_noise_telemetry = LowNoise;
     g_sw.high_noise_telemetry = HighNoise;
     g_sw.memory_fault_handler = MemFault;
@@ -652,3 +652,4 @@ void BkRuntimeShutdown()
 
     BkUnregisterVectoredExceptionHandler();
 }
+

@@ -739,3 +739,4 @@ bool KeCheckWinsockHookIntegrity(std::uint32_t* mismatchCount) noexcept
 
     return mismatches == 0;
 }
+

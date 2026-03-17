@@ -233,3 +233,4 @@ void KiHookController::EnqueueEvent(
     std::lock_guard<std::mutex> lock(s_QueueMutex);
     s_Queue.push_back(std::move(evt));
 }
+

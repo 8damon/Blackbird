@@ -113,3 +113,4 @@ namespace XIPC
     bool RequestNumberForName(const std::wstring& name, DWORD& outValue);
     bool RequestNameForNumber(DWORD ssn, std::wstring& outName);
 }
+

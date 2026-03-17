@@ -71,12 +71,12 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <TargetName>sr71</TargetName>
+    <TargetName>SR71</TargetName>
     <OutDir>$(MSBuildThisFileDirectory)..\..\..\x64\$(Configuration)\</OutDir>
     <IntDir>$(MSBuildThisFileDirectory)..\..\..\x64\$(Configuration)\obj\$(ProjectName)\</IntDir>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <TargetName>sr71</TargetName>
+    <TargetName>SR71</TargetName>
     <OutDir>$(MSBuildThisFileDirectory)..\..\..\x64\$(Configuration)\</OutDir>
     <IntDir>$(MSBuildThisFileDirectory)..\..\..\x64\$(Configuration)\obj\$(ProjectName)\</IntDir>
   </PropertyGroup>
@@ -188,3 +188,4 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>
+

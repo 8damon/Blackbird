@@ -314,3 +314,4 @@ void BkUnregisterVectoredExceptionHandler() noexcept
     g_args.store(nullptr, std::memory_order_release);
     g_target_lower[0] = L'\0';
 }
+

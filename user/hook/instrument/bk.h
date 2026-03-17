@@ -55,7 +55,7 @@ namespace bk::blackbird
 
     struct TelemetryArguments final
     {
-        const wchar_t* target_module_basename = L"sr71.dll";
+        const wchar_t* target_module_basename = L"SR71.dll";
 
         TelemetryFn low_noise_telemetry = nullptr;
         TelemetryFn high_noise_telemetry = nullptr;
@@ -92,3 +92,4 @@ inline void BkUnregisterVectordExceptionHandler() noexcept
 }
 
 #endif
+

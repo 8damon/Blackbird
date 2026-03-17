@@ -170,3 +170,4 @@ BOOL BLACKBIRDWriteHtmlReport(_In_z_ const char *OutputPath, _In_z_ const char *
     fclose(f);
     return TRUE;
 }
+

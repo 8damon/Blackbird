@@ -21,3 +21,4 @@ volatile LONG g_BlackbirdLastTiEnableError = 0;
 volatile LONG g_BlackbirdLastSharedRingError = ERROR_NOT_FOUND;
 SRWLOCK g_BlackbirdProtocolLock = SRWLOCK_INIT;
 
+

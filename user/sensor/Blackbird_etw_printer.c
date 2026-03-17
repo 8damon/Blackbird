@@ -1432,3 +1432,4 @@ void BLACKBIRDPrintThreatIntelRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWST
         wprintf(L"Signal APC queue/insertion TI event\n");
     }
 }
+

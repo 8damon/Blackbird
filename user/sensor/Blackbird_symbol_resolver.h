@@ -9,3 +9,4 @@ void BLACKBIRDSymbolResolverCleanup(void);
 void BLACKBIRDSymbolResolverPrintAddress(UINT64 address);
 
 #endif
+

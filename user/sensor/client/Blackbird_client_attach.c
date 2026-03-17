@@ -128,3 +128,4 @@ VOID PrimeTargetImageHint(_In_ HANDLE Device, _In_ const BLACKBIRD_TARGET_SPEC *
     BLACKBIRDPrimeProcessImagePath((ULONGLONG)TargetPid, imagePath);
 }
 
+

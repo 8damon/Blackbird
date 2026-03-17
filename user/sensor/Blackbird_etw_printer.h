@@ -11,3 +11,4 @@ void BLACKBIRDPrimeProcessImageFromEtw(_In_ PEVENT_RECORD Record, _In_opt_z_ PCW
 void BLACKBIRDFlushEtwPrinterState(void);
 
 #endif
+

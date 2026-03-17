@@ -1082,3 +1082,4 @@ void BLACKBIRDEtwSymbolsFormatAddressForProcess(_In_ DWORD ProcessId, _In_ ULONG
     }
     BLACKBIRDLeaveSymbolLock();
 }
+

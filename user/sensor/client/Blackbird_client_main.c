@@ -762,3 +762,4 @@ Cleanup:
     (void)BLACKBIRDSCCloseControlDevice(h);
     return rc ? 0 : 1;
 }
+

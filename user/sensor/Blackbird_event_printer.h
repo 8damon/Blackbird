@@ -7,3 +7,4 @@
 void BLACKBIRDEventPrinterPrintRecord(const BLACKBIRD_EVENT_RECORD *rec);
 
 #endif
+

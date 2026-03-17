@@ -17,3 +17,4 @@ filter.ioctl.thread: 1
 filter.ioctl.filesystem: 1
 filter.etw.blackbird: 1
 filter.etw.ti: 1
+

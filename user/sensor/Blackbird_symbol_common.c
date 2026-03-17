@@ -202,3 +202,4 @@ BLACKBIRDSymLoadKernelModulesForProcess(_In_ HANDLE SymbolProcess, _Out_opt_ DWO
     }
     return ERROR_SUCCESS;
 }
+

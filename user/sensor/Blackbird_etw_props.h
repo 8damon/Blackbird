@@ -18,3 +18,4 @@ BOOL BLACKBIRDGetBinaryProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
                                   _Out_opt_ ULONG *ActualSize);
 
 #endif
+

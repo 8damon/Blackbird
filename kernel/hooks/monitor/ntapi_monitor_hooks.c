@@ -363,3 +363,4 @@ NTSTATUS NTAPI BLACKBIRDNtAllocateVirtualMemoryPreLog(_In_ HANDLE ProcessHandle,
 #endif
 
 
+

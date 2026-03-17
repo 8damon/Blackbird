@@ -74,11 +74,29 @@ static ULONG_PTR BLACKBIRDNtApiBroadcastWrite(_In_ ULONG_PTR Context)
     }
     if (InterlockedCompareExchange(&patchContext->Applied, 1, 0) == 0)
     {
-        for (i = 0; i < patchContext->Size; ++i)
+        // Commit bytes 1..Size-1 first, then byte 0 last ("commit-last" pattern).
+        // Byte 0 of our patch is 0xFF (the JMP opcode prefix).  Writing the tail bytes first
+        // means any concurrent observer that reads the hook site before we finish still sees
+        // the original byte 0, which is a valid instruction start; the site is therefore in a
+        // consistent (pre-hook) state until the final atomic store makes the jump live.
+        for (i = 1; i < patchContext->Size; ++i)
         {
             patchContext->Destination[i] = patchContext->Source[i];
         }
+        patchContext->Destination[0] = patchContext->Source[0];
+
+        // KeMemoryBarrier() issues an MFENCE (data store barrier) but is not a serialising
+        // instruction and does not flush the instruction cache on remote processors.  Self-
+        // modifying code on x86-64 requires a serialising instruction on the modifying CPU
+        // after the stores complete so that subsequent instruction fetches on ALL CPUs pick up
+        // the new bytes.  CPUID is the lightest serialising instruction available in ring 0 on
+        // both Intel and AMD.  The IPI delivery already forced a serialising interrupt on every
+        // remote CPU before they resumed, so the CPUID here covers only the writing CPU itself.
         KeMemoryBarrier();
+        {
+            int cpuInfo[4];
+            __cpuid(cpuInfo, 0);
+        }
     }
 
     return 0;
@@ -162,7 +180,13 @@ NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_byt
         return status;
     }
 
-    mappedAddress = MmMapLockedPagesSpecifyCache(mdl, KernelMode, MmNonCached, NULL, FALSE, NormalPagePriority);
+    // Use MmCached so the write alias shares the same cache type as the original WB mapping.
+    // Using MmNonCached would create overlapping UC/WB aliases to the same physical page, which
+    // Intel vol. 3A §11.12.4 describes as producing model-specific (undefined) behaviour and can
+    // cause the write to bypass the L1/L2 cache entirely, leaving remote CPU icaches stale in a
+    // way that MFENCE alone cannot resolve.  With MmCached the store goes through the normal WB
+    // cache hierarchy and the IPI-forced serialisation on each remote CPU is sufficient.
+    mappedAddress = MmMapLockedPagesSpecifyCache(mdl, KernelMode, MmCached, NULL, FALSE, NormalPagePriority);
     if (mappedAddress == NULL)
     {
         status = STATUS_INSUFFICIENT_RESOURCES;
@@ -501,5 +525,6 @@ PVOID BLACKBIRDNtApiResolveViaSsdtSignature(_In_ const BLACKBIRD_NTAPI_HOOK_DESC
 
 
 #endif
+
 
 

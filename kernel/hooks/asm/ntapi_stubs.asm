@@ -65,3 +65,4 @@ __bb_jump_to_original:
 BLACKBIRDNtAllocateVirtualMemoryHookStub ENDP
 
 END
+

@@ -129,3 +129,4 @@ NTSTATUS NTAPI BLACKBIRDNtAllocateVirtualMemoryPreLog(_In_ HANDLE ProcessHandle,
                                                       _In_ ULONG AllocationType, _In_ ULONG Protect);
 
 #endif
+

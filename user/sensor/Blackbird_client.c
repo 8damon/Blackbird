@@ -17,3 +17,4 @@ BOOL WINAPI ConsoleCtrlHandler(_In_ DWORD CtrlType)
     return TRUE;
 }
 
+

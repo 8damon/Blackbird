@@ -551,8 +551,8 @@ BLACKBIRDSCOpenControlDevice(VOID)
             BLACKBIRD_IPC_PACKET ringResponse;
 
             BLACKBIRDSCInitIpcRequest(&ringRequest, BlackbirdIpcCommandOpenSharedRing);
-            ringRequest.Payload.OpenSharedRingRequest.DesiredIoctlCapacity = 16384u;
-            ringRequest.Payload.OpenSharedRingRequest.DesiredEtwCapacity = 4096u;
+            ringRequest.Payload.OpenSharedRingRequest.DesiredIoctlCapacity = 262144u;
+            ringRequest.Payload.OpenSharedRingRequest.DesiredEtwCapacity = 65536u;
             if (BLACKBIRDSCIpcTransact(h, &ringRequest, &ringResponse))
             {
                 if (BLACKBIRDSCRegisterSharedChannel(h, &ringResponse.Payload.OpenSharedRingResponse))
@@ -840,6 +840,67 @@ BOOL BLACKBIRDSCGetEvent(_In_ HANDLE Device, _Out_ BLACKBIRD_EVENT_RECORD *Recor
     return ok;
 }
 
+BOOL BLACKBIRDSCGetEventWait(_In_ HANDLE Device, _Out_ BLACKBIRD_EVENT_RECORD *Record,
+                               _Out_opt_ DWORD *BytesReturned, _In_ DWORD TimeoutMs)
+{
+    PBLACKBIRDSC_SHARED_CHANNEL channel;
+
+    if (Record == NULL)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    ZeroMemory(Record, sizeof(*Record));
+    if (!BLACKBIRDSCIsClientProtocol())
+    {
+        SetLastError(ERROR_NOT_SUPPORTED);
+        return FALSE;
+    }
+
+    channel = BLACKBIRDSCRetainSharedChannel(Device);
+    if (channel != NULL && channel->IoctlHeader != NULL)
+    {
+        BOOL ok = BLACKBIRDSCPopSharedRing(channel->IoctlHeader, channel->IoctlRecords,
+                                             channel->IoctlDataReadyEvent, Record, sizeof(*Record));
+        if (!ok)
+        {
+            DWORD waitResult = WaitForSingleObject(channel->IoctlDataReadyEvent, TimeoutMs);
+            if (waitResult == WAIT_OBJECT_0)
+            {
+                ok = BLACKBIRDSCPopSharedRing(channel->IoctlHeader, channel->IoctlRecords,
+                                                channel->IoctlDataReadyEvent, Record, sizeof(*Record));
+            }
+            else if (waitResult == WAIT_TIMEOUT)
+            {
+                SetLastError(ERROR_NO_MORE_ITEMS);
+            }
+            else
+            {
+                SetLastError(GetLastError());
+            }
+        }
+
+        if (!ok && GetLastError() == ERROR_SUCCESS)
+        {
+            SetLastError(ERROR_NO_MORE_ITEMS);
+        }
+        if (ok && BytesReturned != NULL)
+        {
+            *BytesReturned = sizeof(*Record);
+        }
+        BLACKBIRDSCReleaseSharedChannelRef(channel);
+        return ok;
+    }
+    if (channel != NULL)
+    {
+        BLACKBIRDSCReleaseSharedChannelRef(channel);
+    }
+
+    SetLastError(ERROR_NOT_SUPPORTED);
+    return FALSE;
+}
+
 BOOL BLACKBIRDSCGetStats(_In_ HANDLE Device, _Out_ BLACKBIRD_STATS_RESPONSE *Stats, _Out_opt_ DWORD *BytesReturned)
 {
     DWORD bytes = 0;
@@ -1023,6 +1084,27 @@ BOOL BLACKBIRDSCSetShutdownMode(_In_ HANDLE Device)
     return DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_SET_SHUTDOWN_MODE, NULL, 0, NULL, 0, &bytes, NULL);
 }
 
+BOOL BLACKBIRDSCControlProcessExecution(_In_ HANDLE Device, _In_ DWORD ProcessId, _In_ BOOL Suspend)
+{
+    BLACKBIRD_IPC_PACKET request;
+    BLACKBIRD_IPC_PACKET response;
+    BLACKBIRD_CONTROL_EXECUTION_REQUEST req;
+    DWORD bytes = 0;
+
+    if (BLACKBIRDSCIsClientProtocol())
+    {
+        BLACKBIRDSCInitIpcRequest(&request, BlackbirdIpcCommandControlProcessExecution);
+        request.Payload.ControlProcessExecutionRequest.ProcessId = ProcessId;
+        request.Payload.ControlProcessExecutionRequest.Suspend = Suspend ? 1u : 0u;
+        return BLACKBIRDSCIpcTransact(Device, &request, &response);
+    }
+
+    req.ProcessId = ProcessId;
+    req.Suspend = Suspend ? 1u : 0u;
+    return DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_CONTROL_EXECUTION, &req, sizeof(req), NULL, 0, &bytes,
+                           NULL);
+}
+
 BOOL BLACKBIRDSCGetEtwEvent(_In_ HANDLE Device, _Out_ BLACKBIRD_IPC_ETW_EVENT *Event, _In_ DWORD TimeoutMs)
 {
     PBLACKBIRDSC_SHARED_CHANNEL channel;
@@ -1121,4 +1203,5 @@ BLACKBIRDSCParseStreamMaskA(_In_z_ const char *Text)
     free(copy);
     return mask;
 }
+
 

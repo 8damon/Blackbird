@@ -15,3 +15,4 @@ BOOL BLACKBIRDEtwSymbolsTryResolveViaModuleCache(_In_ DWORD ProcessId, _In_ ULON
                                                    _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars);
 
 #endif
+

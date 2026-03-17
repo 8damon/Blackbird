@@ -228,3 +228,4 @@ BOOL StartBrokerEtw(_Inout_ BLACKBIRD_BROKER_ETW_CONTEXT *Broker, _Out_ HANDLE *
     return TRUE;
 }
 
+

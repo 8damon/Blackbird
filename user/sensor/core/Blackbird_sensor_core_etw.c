@@ -486,3 +486,4 @@ VOID BLACKBIRDSCStopEtwSession(_In_opt_ BLACKBIRDSC_ETW_SESSION *Session)
 
     free(internal);
 }
+

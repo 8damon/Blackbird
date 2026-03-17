@@ -185,3 +185,4 @@ void LoggerEmitEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName)
 void LoggerEmitBrokerEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event);
 
 #endif
+

@@ -89,6 +89,8 @@ extern "C"
                                                          _In_ const BLACKBIRD_ARM_PENDING_LAUNCH_REQUEST *Request);
     BLACKBIRDSC_API BOOL BLACKBIRDSCGetEvent(_In_ HANDLE Device, _Out_ BLACKBIRD_EVENT_RECORD *Record,
                                                  _Out_opt_ DWORD *BytesReturned);
+    BLACKBIRDSC_API BOOL BLACKBIRDSCGetEventWait(_In_ HANDLE Device, _Out_ BLACKBIRD_EVENT_RECORD *Record,
+                                                     _Out_opt_ DWORD *BytesReturned, _In_ DWORD TimeoutMs);
     BLACKBIRDSC_API BOOL BLACKBIRDSCGetStats(_In_ HANDLE Device, _Out_ BLACKBIRD_STATS_RESPONSE *Stats,
                                                  _Out_opt_ DWORD *BytesReturned);
     BLACKBIRDSC_API BOOL BLACKBIRDSCGetHealth(_In_ HANDLE Device, _Out_ BLACKBIRD_HEALTH_RESPONSE *Health,
@@ -100,6 +102,8 @@ extern "C"
         _In_ HANDLE Device, _In_ DWORD Mode, _In_ DWORD ProcessId, _In_ DWORD Flags, _In_opt_z_ PCWSTR ImagePath,
         _In_opt_z_ PCWSTR HookDllPath, _Out_opt_ BLACKBIRD_IPC_SET_USER_HOOK_TARGET_RESPONSE *Response);
     BLACKBIRDSC_API BOOL BLACKBIRDSCSetShutdownMode(_In_ HANDLE Device);
+    BLACKBIRDSC_API BOOL BLACKBIRDSCControlProcessExecution(_In_ HANDLE Device, _In_ DWORD ProcessId,
+                                                                _In_ BOOL Suspend);
     BLACKBIRDSC_API BOOL BLACKBIRDSCGetEtwEvent(_In_ HANDLE Device, _Out_ BLACKBIRD_IPC_ETW_EVENT *Event,
                                                      _In_ DWORD TimeoutMs);
     BLACKBIRDSC_API DWORD BLACKBIRDSCParseStreamMaskA(_In_z_ const char *Text);
@@ -126,3 +130,4 @@ extern "C"
 #endif
 
 #endif
+

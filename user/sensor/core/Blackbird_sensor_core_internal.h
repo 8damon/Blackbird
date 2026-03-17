@@ -52,3 +52,4 @@ VOID WINAPI BLACKBIRDSCStgDetectionBridgeCallback(_In_ PEVENT_RECORD Record, _In
                                                     _In_opt_ PVOID Context);
 
 #endif
+

@@ -206,3 +206,4 @@ BLACKBIRDApcMonitorSelfCheck(VOID)
 {
     return (InterlockedCompareExchange(&g_ApcMonitorInitialized, 0, 0) != 0);
 }
+

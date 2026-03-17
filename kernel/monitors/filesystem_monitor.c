@@ -331,3 +331,4 @@ BLACKBIRDFileSystemMonitorSelfCheck(VOID)
 
     return (g_FileSystemFilter != NULL);
 }
+

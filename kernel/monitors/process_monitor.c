@@ -210,3 +210,4 @@ BLACKBIRDProcessMonitorSelfCheck(VOID)
 {
     return (InterlockedCompareExchange(&g_ProcessMonitorRegistered, 0, 0) != 0);
 }
+

@@ -11,3 +11,4 @@ VOID BLACKBIRDAntiTamperUninitialize(VOID);
 ULONG BLACKBIRDAntiTamperGetLastMask(VOID);
 
 #endif
+

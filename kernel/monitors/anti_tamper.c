@@ -253,3 +253,4 @@ ULONG BLACKBIRDAntiTamperGetLastMask(VOID)
 {
     return (ULONG)InterlockedCompareExchange(&g_LastTamperMask, 0, 0);
 }
+

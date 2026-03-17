@@ -184,3 +184,4 @@ BLACKBIRDImageMonitorSelfCheck(VOID)
 {
     return (InterlockedCompareExchange(&g_ImageMonitorRegistered, 0, 0) != 0);
 }
+

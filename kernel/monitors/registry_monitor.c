@@ -209,3 +209,4 @@ BLACKBIRDRegistryMonitorSelfCheck(VOID)
 
     return (g_RegistryCookie.QuadPart != 0);
 }
+

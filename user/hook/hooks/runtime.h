@@ -7,3 +7,4 @@ DWORD WINAPI BkRuntimeThreadProc(LPVOID);
 void BkRuntimePrimeHooks() noexcept;
 
 void BkRuntimeShutdown();
+

@@ -77,7 +77,7 @@ void UnlinkModule()
         if (!entry->BaseDllName.Buffer)
             continue;
 
-        if (_wcsicmp(entry->BaseDllName.Buffer, L"sr71.dll") != 0)
+        if (_wcsicmp(entry->BaseDllName.Buffer, L"SR71.dll") != 0)
             continue;
 
         UnlinkListEntry(&entry->InLoadOrderLinks);
@@ -86,3 +86,4 @@ void UnlinkModule()
         break;
     }
 }
+

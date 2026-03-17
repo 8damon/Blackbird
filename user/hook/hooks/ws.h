@@ -43,3 +43,4 @@ bool KeSetWinsockHook(WinsockHookCallback callback) noexcept;
 bool KeIsWinsockHookRequired() noexcept;
 void KeRemoveWinsockHook() noexcept;
 bool KeCheckWinsockHookIntegrity(std::uint32_t* mismatchCount) noexcept;
+

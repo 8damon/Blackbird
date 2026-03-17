@@ -21,3 +21,4 @@ bool KeIsKiHookSupported() noexcept;
 void KeRemoveKiHook() noexcept;
 
 bool KeCheckKiHookIntegrity(std::uint32_t* mismatchCount) noexcept;
+

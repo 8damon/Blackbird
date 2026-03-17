@@ -1403,3 +1403,4 @@ bool KeCheckNtHookIntegrity(std::uint32_t* mismatchCount) noexcept
     return mismatches == 0;
 #endif
 }
+

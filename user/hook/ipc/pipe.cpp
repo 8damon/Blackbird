@@ -305,3 +305,4 @@ namespace XIPC
         return PublishHookEvent(eventRecord);
     }
 }
+

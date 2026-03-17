@@ -47,3 +47,4 @@ bool KeSetNtHook(NtHookCallback callback) noexcept;
 void KeRemoveNtHook() noexcept;
 
 bool KeCheckNtHookIntegrity(std::uint32_t* mismatchCount) noexcept;
+

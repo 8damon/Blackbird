@@ -103,3 +103,4 @@ private:
     static std::mutex             s_QueueMutex;
     static std::vector<KiCapturedEvent> s_Queue;
 };
+

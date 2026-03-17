@@ -633,7 +633,7 @@ VOID BLACKBIRDThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Cre
     }
 
     PBLACKBIRD_THREAD_WORK w =
-        (PBLACKBIRD_THREAD_WORK)BLACKBIRDAllocatePoolCompat(POOL_FLAG_NON_PAGED | POOL_FLAG_UNINITIALIZED,
+        (PBLACKBIRD_THREAD_WORK)BLACKBIRDAllocatePoolCompat(POOL_FLAG_NON_PAGED,
                                                                 sizeof(*w), 'traT');
     if (!w)
     {
@@ -783,3 +783,4 @@ BLACKBIRDThreadMonitorSelfCheck(VOID)
 
     return TRUE;
 }
+

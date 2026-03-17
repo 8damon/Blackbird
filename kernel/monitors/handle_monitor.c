@@ -2138,7 +2138,7 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(
     }
 
     work =
-        (PBLACKBIRD_HANDLE_WORK)BLACKBIRDAllocatePoolCompat(POOL_FLAG_NON_PAGED | POOL_FLAG_UNINITIALIZED,
+        (PBLACKBIRD_HANDLE_WORK)BLACKBIRDAllocatePoolCompat(POOL_FLAG_NON_PAGED,
                                                                 sizeof(*work), 'hdtT');
     if (work == NULL)
     {
@@ -2352,3 +2352,4 @@ BLACKBIRDHandleMonitorSelfCheck(VOID)
 
     return TRUE;
 }
+

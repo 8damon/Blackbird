@@ -15,3 +15,4 @@ BOOLEAN
 BLACKBIRDApcMonitorSelfCheck(VOID);
 
 #endif
+

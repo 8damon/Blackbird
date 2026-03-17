@@ -65,3 +65,4 @@ VOID BLACKBIRDEtwLogNtApiEvent(_In_z_ PCSTR ApiName, _In_ HANDLE CallerPid, _In_
                                  _In_ UINT64 Arg5, _In_ UINT64 Arg6, _In_ UINT64 Arg7, _In_ NTSTATUS CallStatus);
 
 #endif
+

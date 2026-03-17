@@ -338,3 +338,4 @@ VOID BLACKBIRDEtwLogNtApiEvent(_In_z_ PCSTR ApiName, _In_ HANDLE CallerPid, _In_
                       TraceLoggingHexUInt64(Arg6, "arg6"), TraceLoggingHexUInt64(Arg7, "arg7"),
                       TraceLoggingHexInt32((LONG)CallStatus, "status"));
 }
+

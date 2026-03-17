@@ -12,3 +12,4 @@ BOOLEAN
 BLACKBIRDImageMonitorSelfCheck(VOID);
 
 #endif
+

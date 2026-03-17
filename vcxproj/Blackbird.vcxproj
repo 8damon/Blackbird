@@ -204,6 +204,7 @@
     <ClCompile Include="..\kernel\monitors\thread_monitor.c" />
     <ClCompile Include="..\kernel\monitors\filesystem_monitor.c" />
     <ClCompile Include="..\kernel\hooks\hook\ntapi_hook.c" />
+    <ClCompile Include="..\kernel\hooks\hook\ntapi_hook_ldasm.c" />
     <ClCompile Include="..\kernel\hooks\hook\ntapi_hook_resolve.c" />
     <ClCompile Include="..\kernel\hooks\monitor\ntapi_monitor.c" />
     <ClCompile Include="..\kernel\hooks\monitor\ntapi_monitor_hooks.c" />
@@ -230,6 +231,7 @@
     <ClInclude Include="..\kernel\monitors\thread_monitor.h" />
     <ClInclude Include="..\kernel\monitors\filesystem_monitor.h" />
     <ClInclude Include="..\kernel\hooks\hook\ntapi_hook.h" />
+    <ClInclude Include="..\kernel\hooks\hook\ntapi_hook_ldasm.h" />
     <ClInclude Include="..\kernel\hooks\monitor\ntapi_monitor.h" />
     <ClInclude Include="..\kernel\hooks\monitor\ntapi_monitor_private.h" />
   </ItemGroup>
@@ -240,3 +242,4 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>
+

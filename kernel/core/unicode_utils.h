@@ -73,3 +73,4 @@ static __forceinline VOID BLACKBIRDSafeCopyUnicode(_In_opt_ PCUNICODE_STRING Sou
 }
 
 #endif
+

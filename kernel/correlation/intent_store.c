@@ -53,7 +53,7 @@ BLACKBIRDCorrelationInitialize(VOID)
 {
     LARGE_INTEGER freq;
 
-    if (InterlockedCompareExchange(&g_CorrelationInitialized, 1, 0) != 0)
+    if (InterlockedCompareExchange(&g_CorrelationInitialized, 0, 0) != 0)
     {
         return STATUS_SUCCESS;
     }
@@ -63,6 +63,7 @@ BLACKBIRDCorrelationInitialize(VOID)
     KeInitializeSpinLock(&g_IntentLock);
     RtlZeroMemory(g_IntentRing, sizeof(g_IntentRing));
     InterlockedExchange(&g_IntentWriteIndex, -1);
+    InterlockedExchange(&g_CorrelationInitialized, 1);
     return STATUS_SUCCESS;
 }
 
@@ -365,3 +366,4 @@ BLACKBIRDCorrelationSelfCheck(VOID)
 {
     return (InterlockedCompareExchange(&g_CorrelationInitialized, 0, 0) != 0);
 }
+

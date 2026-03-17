@@ -5,9 +5,8 @@ BOOLEAN BLACKBIRDModeAllowed(_In_ WDFREQUEST Request)
     return (WdfRequestGetRequestorMode(Request) == UserMode);
 }
 
-ULONG BLACKBIRDGetRequestorPid(_In_ WDFREQUEST Request)
+ULONG BLACKBIRDGetRequestorPid(VOID)
 {
-    UNREFERENCED_PARAMETER(Request);
     return (ULONG)(ULONG_PTR)PsGetCurrentProcessId();
 }
 
@@ -33,6 +32,8 @@ PCSTR BLACKBIRDIoctlName(_In_ ULONG Ioctl)
         return "GET_HEALTH";
     case IOCTL_BLACKBIRD_ARM_PENDING_LAUNCH:
         return "ARM_PENDING_LAUNCH";
+    case IOCTL_BLACKBIRD_CONTROL_EXECUTION:
+        return "CONTROL_EXECUTION";
     default:
         return "UNKNOWN_IOCTL";
     }
@@ -66,6 +67,7 @@ VOID BLACKBIRDReleaseGlobalQueueSlot(VOID)
     LONG remaining;
 
     remaining = InterlockedDecrement(&g_ControlTotalQueuedEvents);
+    NT_ASSERT(remaining >= 0);
     if (remaining < 0)
     {
         InterlockedExchange(&g_ControlTotalQueuedEvents, 0);
@@ -117,6 +119,7 @@ VOID BLACKBIRDReleaseQueryInflightSlot(VOID)
     LONG remaining;
 
     remaining = InterlockedDecrement(&g_QueryImageInflight);
+    NT_ASSERT(remaining >= 0);
     if (remaining < 0)
     {
         InterlockedExchange(&g_QueryImageInflight, 0);
@@ -678,7 +681,7 @@ static NTSTATUS BLACKBIRDCompleteGetEventRequestWithRecord(_In_ WDFREQUEST Reque
     deliverCounter = InterlockedIncrement(&g_IoctlGetEventDeliverCounter);
     if (deliverCounter == 1 || ((deliverCounter & 0x1FF) == 0))
     {
-        requesterPid = BLACKBIRDGetRequestorPid(Request);
+        requesterPid = BLACKBIRDGetRequestorPid();
         DbgPrintEx(DPFLTR_IHVDRIVER_ID,
                    DPFLTR_INFO_LEVEL,
                    "BLACKBIRD: get-event delivered(pended) requesterPid=%lu deliveredCount=%ld eventType=%lu seq=%lu.\n",
@@ -829,7 +832,7 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtFileCreate(WDFDEVICE Device, WDFREQUEST 
     ctx = BLACKBIRDGetFileContext(FileObject);
     ctx->Client = client;
 
-    requesterPid = BLACKBIRDGetRequestorPid(Request);
+    requesterPid = BLACKBIRDGetRequestorPid();
     DbgPrintEx(DPFLTR_IHVDRIVER_ID,
                DPFLTR_INFO_LEVEL,
                "BLACKBIRD: client attached pid=%lu activeClients=%ld fileObj=0x%p.\n",
@@ -913,3 +916,4 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtFileCleanup(WDFFILEOBJECT FileObject)
     BLACKBIRDClientRelease(client);
     ctx->Client = NULL;
 }
+

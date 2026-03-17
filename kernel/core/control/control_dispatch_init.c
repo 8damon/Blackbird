@@ -12,7 +12,7 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUE
     UNREFERENCED_PARAMETER(Queue);
     UNREFERENCED_PARAMETER(OutputBufferLength);
     UNREFERENCED_PARAMETER(InputBufferLength);
-    requesterPid = BLACKBIRDGetRequestorPid(Request);
+    requesterPid = BLACKBIRDGetRequestorPid();
 
     if (KeGetCurrentIrql() != PASSIVE_LEVEL)
     {
@@ -105,6 +105,9 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUE
         break;
     case IOCTL_BLACKBIRD_SET_SHUTDOWN_MODE:
         status = BLACKBIRDHandleSetShutdownModeIoctl(ctx->Client, Request);
+        break;
+    case IOCTL_BLACKBIRD_CONTROL_EXECUTION:
+        status = BLACKBIRDHandleControlExecutionIoctl(ctx->Client, Request);
         break;
     default:
         status = STATUS_INVALID_DEVICE_REQUEST;
@@ -229,3 +232,4 @@ BLACKBIRDControlInitialize(_In_ WDFDRIVER Driver)
     WdfControlFinishInitializing(device);
     return STATUS_SUCCESS;
 }
+

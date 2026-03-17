@@ -24,3 +24,4 @@ VOID BLACKBIRDHollowingObserveThread(_In_ HANDLE ProcessId, _In_opt_ HANDLE Acto
                                        _In_ UINT32 CorrelationAccessMask, _In_ UINT32 CorrelationAgeMs);
 
 #endif
+

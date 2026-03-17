@@ -37,3 +37,4 @@ BOOLEAN
 BLACKBIRDControlHasPidInterest(_In_ UINT32 PrimaryProcessId, _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask);
 
 #endif
+

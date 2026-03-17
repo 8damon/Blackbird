@@ -80,6 +80,16 @@ PsLookupProcessByProcessId(_In_ HANDLE ProcessId, _Outptr_ PEPROCESS *Process);
 NTSYSAPI
 NTSTATUS
 NTAPI
+PsSuspendProcess(_In_ PEPROCESS Process);
+
+NTSYSAPI
+NTSTATUS
+NTAPI
+PsResumeProcess(_In_ PEPROCESS Process);
+
+NTSYSAPI
+NTSTATUS
+NTAPI
 SeLocateProcessImageName(_In_ PEPROCESS Process, _Out_ PUNICODE_STRING *pImageFileName);
 
 NTSYSAPI
@@ -100,7 +110,7 @@ MmCopyVirtualMemory(_In_ PEPROCESS FromProcess, _In_ const VOID *FromAddress, _I
                     _In_ KPROCESSOR_MODE PreviousMode, _Out_ PSIZE_T NumberOfBytesCopied);
 
 BOOLEAN BLACKBIRDModeAllowed(_In_ WDFREQUEST Request);
-ULONG BLACKBIRDGetRequestorPid(_In_ WDFREQUEST Request);
+ULONG BLACKBIRDGetRequestorPid(VOID);
 PCSTR BLACKBIRDIoctlName(_In_ ULONG Ioctl);
 BOOLEAN BLACKBIRDControlIsShutdown(VOID);
 VOID BLACKBIRDReleaseGlobalQueueSlot(VOID);
@@ -133,5 +143,7 @@ NTSTATUS BLACKBIRDHandleArmPendingLaunchIoctl(_In_ PBLACKBIRD_CLIENT Client, _In
 NTSTATUS BLACKBIRDHandleQueryProcessImageIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request,
                                                  _Out_ size_t *BytesOut);
 NTSTATUS BLACKBIRDHandleSetShutdownModeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
+NTSTATUS BLACKBIRDHandleControlExecutionIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
 
 #endif
+

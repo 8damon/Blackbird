@@ -6,7 +6,7 @@ typedef PVOID(NTAPI *BLACKBIRD_EX_ALLOCATE_POOL2_FN)(_In_ POOL_FLAGS Flags, _In_
 static __forceinline PVOID BLACKBIRDAllocatePoolCompat(_In_ POOL_FLAGS Flags, _In_ SIZE_T NumberOfBytes, _In_ ULONG Tag)
 {
     static volatile LONG resolved = 0;
-    static BLACKBIRD_EX_ALLOCATE_POOL2_FN allocatePool2 = NULL;
+    static volatile BLACKBIRD_EX_ALLOCATE_POOL2_FN allocatePool2 = NULL;
 
     if (InterlockedCompareExchange(&resolved, 0, 0) == 0)
     {
@@ -37,4 +37,5 @@ static __forceinline PVOID BLACKBIRDAllocatePoolCompat(_In_ POOL_FLAGS Flags, _I
 }
 
 #endif
+
 

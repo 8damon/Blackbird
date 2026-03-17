@@ -234,3 +234,4 @@ BLACKBIRDControlIsArmedFast(VOID)
 
     return (InterlockedCompareExchange(&g_ControlTelemetryArmed, 0, 0) != 0);
 }
+

@@ -132,7 +132,17 @@ function Assert-Removal {
     }
 }
 
-$totalStages = 5
+function Remove-FirewallRuleIfPresent {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DisplayName
+    )
+
+    Get-NetFirewallRule -DisplayName $DisplayName -ErrorAction SilentlyContinue |
+        Remove-NetFirewallRule -ErrorAction SilentlyContinue
+}
+
+$totalStages = 6
 $activity = "Blackbird removal"
 $driverDst = Join-Path $env:windir ("System32\drivers\" + $DriverName + ".sys")
 $controllerRoot = Join-Path -Path $env:ProgramFiles -ChildPath "Blackbird"
@@ -165,5 +175,14 @@ Write-Stage -Index 5 -Total $totalStages -Activity $activity -Status "Deleting c
 Remove-PathIfPresent -Path $controllerRoot -Label "controller directory"
 Assert-Removal -Condition (-not (Test-Path -LiteralPath $controllerRoot)) -FailureMessage "Controller directory still exists: $controllerRoot"
 
+Write-Stage -Index 6 -Total $totalStages -Activity $activity -Status "Removing firewall rules"
+Remove-FirewallRuleIfPresent -DisplayName "Blackbird Operator UDP Discovery"
+Remove-FirewallRuleIfPresent -DisplayName "Blackbird Operator TCP Status"
+Remove-FirewallRuleIfPresent -DisplayName "Blackbird Operator TCP Command"
+Remove-FirewallRuleIfPresent -DisplayName "Blackbird Operator ICMPv4"
+
 Write-Progress -Id 1 -Activity $activity -Completed
 Write-Host "[*] Removed services and binaries for driver '$DriverName' and controller '$ControllerName'"
+
+
+

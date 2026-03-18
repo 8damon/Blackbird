@@ -3,7 +3,7 @@ param(
     [string]$ControllerName = "BlackbirdController",
     [string]$DriverSys = "..\blackbird.sys",
     [string]$ControllerExe = "..\BlackbirdController.exe",
-    [string]$SensorCoreDll = "..\BlackbirdSensorCore.dll",
+    [string]$SensorCoreDll = "..\J58.dll",
     [string]$InstanceName = "Blackbird Default",
     [string]$InstanceAltitude = "385000.424244",
     [uint32]$InstanceFlags = 0
@@ -318,24 +318,90 @@ function Assert-ServiceRunning {
         [Parameter(Mandatory = $true)]
         [string]$ExpectedStatePattern,
         [Parameter(Mandatory = $true)]
-        [string]$FailureLabel
+        [string]$FailureLabel,
+        [int]$TimeoutSeconds = 45
     )
 
-    $output = & sc.exe query $ServiceName 2>&1
-    $text = (($output | ForEach-Object { "$_" }) -join [Environment]::NewLine)
-    if ($LASTEXITCODE -ne 0 -or $text -notmatch $ExpectedStatePattern) {
-        throw "$FailureLabel`n$text"
+    $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(5, $TimeoutSeconds))
+    $lastText = ""
+
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $output = & sc.exe query $ServiceName 2>&1
+        $text = (($output | ForEach-Object { "$_" }) -join [Environment]::NewLine)
+        $lastText = $text
+
+        if ($LASTEXITCODE -eq 0 -and $text -match $ExpectedStatePattern) {
+            return
+        }
+
+        $sleepMs = 500
+        $isPendingState = $LASTEXITCODE -eq 0 -and $text -match "STATE\s*:\s*\d+\s+(START_PENDING|STOP_PENDING|PAUSE_PENDING|CONTINUE_PENDING)"
+        if ($isPendingState) {
+            if ($text -match "WAIT_HINT\s*:\s*0x([0-9A-Fa-f]+)") {
+                $waitHintMs = [Convert]::ToInt32($matches[1], 16)
+                $sleepMs = [Math]::Min([Math]::Max([int]($waitHintMs / 4), 250), 2000)
+            }
+            elseif ($text -match "WAIT_HINT\s*:\s*(\d+)") {
+                $waitHintMs = [int]$matches[1]
+                $sleepMs = [Math]::Min([Math]::Max([int]($waitHintMs / 4), 250), 2000)
+            }
+        }
+
+        Start-Sleep -Milliseconds $sleepMs
     }
+
+    throw "$FailureLabel`n$lastText"
 }
 
-$totalStages = 6
+function Ensure-FirewallRulePresent {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DisplayName,
+        [Parameter(Mandatory = $true)]
+        [ValidateSet("TCP", "UDP", "ICMPv4")]
+        [string]$Protocol,
+        [string]$LocalPort = "",
+        [string]$IcmpType = ""
+    )
+
+    $existing = Get-NetFirewallRule -DisplayName $DisplayName -ErrorAction SilentlyContinue
+    if ($null -ne $existing) {
+        return
+    }
+
+    $params = @{
+        DisplayName = $DisplayName
+        Direction   = "Inbound"
+        Protocol    = $Protocol
+        Action      = "Allow"
+        Profile     = "Any"
+        RemoteAddress = "LocalSubnet"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($LocalPort)) {
+        $params.LocalPort = $LocalPort
+    }
+    if (-not [string]::IsNullOrWhiteSpace($IcmpType)) {
+        $params.IcmpType = $IcmpType
+    }
+
+    New-NetFirewallRule @params | Out-Null
+}
+
+$totalStages = 8
 $activity = "Blackbird installation"
 
 Write-Host ""
 Write-Host "Blackbird Installer"
 Write-Host "-------------------"
 
-Write-Stage -Index 1 -Total $totalStages -Activity $activity -Status "Resolving build artifacts"
+Write-Stage -Index 1 -Total $totalStages -Activity $activity -Status "Removing previous installation"
+$removerScript = Join-Path $scriptRoot "remover.ps1"
+if (Test-Path -LiteralPath $removerScript) {
+    & $removerScript -DriverName $DriverName -ControllerName $ControllerName
+}
+
+Write-Stage -Index 2 -Total $totalStages -Activity $activity -Status "Resolving build artifacts"
 $driverSrc = Resolve-ArtifactPath `
     -PreferredPath $DriverSys `
     -FallbackPaths @(
@@ -361,24 +427,24 @@ $controllerSrc = Resolve-ArtifactPath `
 $sensorCoreSrc = Resolve-ArtifactPath `
     -PreferredPath $SensorCoreDll `
     -FallbackPaths @(
-        "vcxproj\x64\Debug\BlackbirdSensorCore.dll",
-        "vcxproj\x64\Release\BlackbirdSensorCore.dll",
-        "x64\Debug\BlackbirdSensorCore.dll",
-        "x64\Release\BlackbirdSensorCore.dll",
-        "BlackbirdSensorCore.dll"
+        "vcxproj\x64\Debug\J58.dll",
+        "vcxproj\x64\Release\J58.dll",
+        "x64\Debug\J58.dll",
+        "x64\Release\J58.dll",
+        "J58.dll"
     ) `
     -Label "SensorCore .dll"
 
 $driverDst = Join-Path $env:windir "System32\drivers\blackbird.sys"
 $controllerDir = Join-Path $env:ProgramFiles "Blackbird"
 $controllerDst = Join-Path $controllerDir "BlackbirdController.exe"
-$sensorCoreDst = Join-Path $controllerDir "BlackbirdSensorCore.dll"
+$sensorCoreDst = Join-Path $controllerDir "J58.dll"
 
 Write-Host "[+] Driver: $driverSrc"
 Write-Host "[+] Controller: $controllerSrc"
 Write-Host "[+] SensorCore: $sensorCoreSrc"
 
-Write-Stage -Index 2 -Total $totalStages -Activity $activity -Status "Copying binaries"
+Write-Stage -Index 3 -Total $totalStages -Activity $activity -Status "Copying binaries"
 New-Item -ItemType Directory -Path $controllerDir -Force | Out-Null
 Copy-Item -LiteralPath $driverSrc -Destination $driverDst -Force
 Copy-Item -LiteralPath $controllerSrc -Destination $controllerDst -Force
@@ -388,7 +454,7 @@ Assert-PathExists -Path $driverDst -Label "Installed driver"
 Assert-PathExists -Path $controllerDst -Label "Installed controller"
 Assert-PathExists -Path $sensorCoreDst -Label "Installed SensorCore"
 
-Write-Stage -Index 3 -Total $totalStages -Activity $activity -Status "Checking minifilter altitude conflicts"
+Write-Stage -Index 4 -Total $totalStages -Activity $activity -Status "Checking minifilter altitude conflicts"
 $unknownPreCreateConflicts = Remove-ProjectAltitudeConflicts `
     -Altitude $InstanceAltitude `
     -CurrentServiceName $DriverName `
@@ -398,7 +464,7 @@ if ($unknownPreCreateConflicts.Count -gt 0) {
     throw "Altitude $InstanceAltitude is already used by non-project minifilter service(s): $list. Change -InstanceAltitude or remove the conflicting filter(s)."
 }
 
-Write-Stage -Index 4 -Total $totalStages -Activity $activity -Status "Registering services"
+Write-Stage -Index 5 -Total $totalStages -Activity $activity -Status "Registering services"
 Invoke-Sc -Arguments @("stop", $DriverName) -AllowedExitCodes @(0, 1060, 1062)
 Invoke-Sc -Arguments @("delete", $DriverName) -AllowedExitCodes @(0, 1060)
 Invoke-Sc -Arguments @(
@@ -426,7 +492,13 @@ if (-not (Test-ServiceExists -ServiceName $ControllerName)) {
     throw "Controller service '$ControllerName' was not created."
 }
 
-Write-Stage -Index 5 -Total $totalStages -Activity $activity -Status "Starting driver"
+Write-Stage -Index 6 -Total $totalStages -Activity $activity -Status "Configuring firewall rules"
+Ensure-FirewallRulePresent -DisplayName "Blackbird Operator UDP Discovery" -Protocol UDP -LocalPort "49371"
+Ensure-FirewallRulePresent -DisplayName "Blackbird Operator TCP Status" -Protocol TCP -LocalPort "49372"
+Ensure-FirewallRulePresent -DisplayName "Blackbird Operator TCP Command" -Protocol TCP -LocalPort "49373"
+Ensure-FirewallRulePresent -DisplayName "Blackbird Operator ICMPv4" -Protocol ICMPv4 -IcmpType "8"
+
+Write-Stage -Index 7 -Total $totalStages -Activity $activity -Status "Starting driver"
 $driverRecovered = $false
 try {
     Invoke-Sc -Arguments @("start", $DriverName)
@@ -500,7 +572,7 @@ catch {
 
 Assert-ServiceRunning -ServiceName $DriverName -ExpectedStatePattern "STATE\s*:\s*\d+\s+RUNNING" -FailureLabel "Driver service failed to reach RUNNING state."
 
-Write-Stage -Index 6 -Total $totalStages -Activity $activity -Status "Starting controller"
+Write-Stage -Index 8 -Total $totalStages -Activity $activity -Status "Starting controller"
 Invoke-Sc -Arguments @("start", $ControllerName)
 Assert-ServiceRunning -ServiceName $ControllerName -ExpectedStatePattern "STATE\s*:\s*\d+\s+RUNNING" -FailureLabel "Controller service failed to reach RUNNING state."
 
@@ -510,3 +582,8 @@ Write-Host "[*] Installed and started $DriverName + $ControllerName"
 Write-Host "    Driver:     $driverDst"
 Write-Host "    Controller: $controllerDst"
 Write-Host "    SensorCore: $sensorCoreDst"
+
+
+
+
+

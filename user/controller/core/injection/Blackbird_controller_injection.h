@@ -31,3 +31,4 @@ DWORD ControllerInjectionLaunchAndVerify(
     _Out_ DWORD *ProcessIdOut);
 
 #endif
+

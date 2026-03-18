@@ -772,3 +772,4 @@ VOID ControllerSymbolServiceEnrichEvent(_Inout_ BLACKBIRD_IPC_ETW_EVENT *Event)
         }
     }
 }
+

@@ -263,7 +263,7 @@ BOOL ControllerInjectionResolveHookDllPath(
     }
     slash[1] = L'\0';
 
-    if (FAILED(StringCchCatW(modulePath, RTL_NUMBER_OF(modulePath), L"sr71.dll")))
+    if (FAILED(StringCchCatW(modulePath, RTL_NUMBER_OF(modulePath), L"SR71.dll")))
     {
         SetLastError(ERROR_INSUFFICIENT_BUFFER);
         return FALSE;
@@ -521,7 +521,7 @@ static BOOL ControllerInjectionIsStealthHookModule(_In_z_ PCWSTR HookDllPath)
         return FALSE;
     }
 
-    return (_wcsicmp(fileName, L"sr71.dll") == 0);
+    return (_wcsicmp(fileName, L"SR71.dll") == 0);
 }
 
 BOOL ControllerInjectionVerifyHookLoaded(_In_ DWORD ProcessId, _In_z_ PCWSTR HookDllPath, _In_ DWORD TimeoutMs)
@@ -714,7 +714,7 @@ DWORD ControllerInjectionLaunchAndVerify(_In_ HANDLE ClientPipe, _In_z_ PCWSTR I
         return err;
     }
 
-    // Honor requested launch mode exactly, including sr71.dll.
+    // Honor requested launch mode exactly, including SR71.dll.
     useEarlyBirdApc = ((Flags & BLACKBIRD_IPC_USER_HOOK_FLAG_LAUNCH_EARLYBIRD_APC) != 0u);
 
     if (useEarlyBirdApc)
@@ -776,3 +776,4 @@ DWORD ControllerInjectionLaunchAndVerify(_In_ HANDLE ClientPipe, _In_z_ PCWSTR I
     (void)CloseHandle(processInfo.hProcess);
     return ERROR_SUCCESS;
 }
+

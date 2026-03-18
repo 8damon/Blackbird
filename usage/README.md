@@ -16,3 +16,4 @@ Notes
 
 - Prefer `BlackbirdSensorCore` for new integrations.
 - Keep examples focused and short; reference `USAGE.md` for high-level flow.
+

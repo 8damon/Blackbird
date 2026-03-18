@@ -37,3 +37,4 @@ sc.exe start $ServiceName | Out-Null
 
 Write-Host "[*] Installed and started '$ServiceName'."
 Write-Host "    Binary: $BinaryPath"
+

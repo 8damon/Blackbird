@@ -5,3 +5,4 @@
 #pragma comment(lib, "version.lib")
 
 ETW_CAPTURE *g_ActiveEtwCapture = NULL;
+

@@ -483,3 +483,4 @@ static BOOL WaitForEtwEventCoverage(_In_ ETW_CAPTURE *cap, _In_ DWORD maxMs, _In
 
 
 
+

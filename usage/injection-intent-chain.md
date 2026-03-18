@@ -187,3 +187,4 @@ To validate in lab:
 
 1. Run `BlackbirdTestSuite.exe` and confirm detection telemetry is observed.
 2. If you have a hollowing or manual-map lab sample, run it against a target and watch for the detection names above.
+

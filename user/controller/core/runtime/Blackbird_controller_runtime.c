@@ -1349,6 +1349,7 @@ static BOOL ControllerStartCore(VOID)
     }
 
     (void)ControllerStartEtwSession();
+    (void)ControllerNodeNetworkStart();
 
     g_DriverPumpThread = CreateThread(NULL, 0, ControllerDriverPumpThreadProc, NULL, 0, NULL);
     if (g_DriverPumpThread == NULL)
@@ -1463,6 +1464,7 @@ static VOID ControllerStopCore(VOID)
     }
 
     ControllerStopEtwSession();
+    ControllerNodeNetworkStop();
 
     EnterCriticalSection(&g_DriverLock);
     if (g_DriverHandle != INVALID_HANDLE_VALUE)
@@ -1544,6 +1546,11 @@ int __cdecl wmain(_In_ int argc, _In_reads_(argc) wchar_t **argv)
     BOOL runAsConsole = FALSE;
     int i;
 
+    // Open the log file before any other work so every log call, including early failures,
+    // is captured.  ControllerLogInit is idempotent.
+    ControllerLogInit();
+    ControllerLog("[*] BlackbirdController: wmain entered pid=%lu\n", GetCurrentProcessId());
+
     for (i = 1; i < argc; ++i)
     {
         if (_wcsicmp(argv[i], L"--console") == 0)
@@ -1559,21 +1566,26 @@ int __cdecl wmain(_In_ int argc, _In_reads_(argc) wchar_t **argv)
         if (!ControllerStartCore())
         {
             ControllerStopCore();
+            ControllerLogClose();
             return 1;
         }
 
         ControllerLog("[*] BlackbirdController: running. Press Enter to stop.\n");
         (void)getchar();
         ControllerStopCore();
+        ControllerLogClose();
         return 0;
     }
 
     if (!StartServiceCtrlDispatcherW(table))
     {
         ControllerLog("[-] BlackbirdController: StartServiceCtrlDispatcherW failed (%lu)\n", GetLastError());
+        ControllerLogClose();
         return 1;
     }
 
+    ControllerLogClose();
     return 0;
 }
+
 

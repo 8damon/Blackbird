@@ -44,6 +44,17 @@ static BOOL ControllerProxySetShutdownMode(VOID)
     return ok;
 }
 
+static BOOL ControllerProxyControlProcessExecution(_In_ DWORD ProcessId, _In_ BOOL Suspend)
+{
+    BOOL ok;
+
+    EnterCriticalSection(&g_DriverLock);
+    ok = (g_DriverHandle != INVALID_HANDLE_VALUE) &&
+         BLACKBIRDSCControlProcessExecution(g_DriverHandle, ProcessId, Suspend);
+    LeaveCriticalSection(&g_DriverLock);
+    return ok;
+}
+
 static VOID ControllerClientClearPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client)
 {
     if (Client == NULL)
@@ -376,7 +387,7 @@ DWORD ControllerWaitForHookReady(_In_ DWORD ProcessId)
     static const DWORD kSpinSleepMs = 1u;
     static const ULONGLONG kLogPeriodMs = 1000ull;
     static const ULONGLONG kTimeoutMs = (ULONGLONG)BLACKBIRD_CONTROLLER_HOOK_READY_TIMEOUT_MS;
-    static const DWORD kRequiredMask = BLACKBIRD_CONTROLLER_HOOK_READY_REQUIRED_MASK;
+    static const DWORD kRequiredMask = BLACKBIRD_CONTROLLER_HOOK_LAUNCH_REQUIRED_MASK;
     HANDLE processHandle = NULL;
     DWORD access = SYNCHRONIZE;
     ULONGLONG startTick;
@@ -602,9 +613,9 @@ static DWORD ControllerClientEnsureSharedRingsLocked(_Inout_ BLACKBIRD_CONTROLLE
     }
 
     ioctlCap = ControllerClampSharedRingCapacity(DesiredIoctlCapacity, BLACKBIRD_CONTROLLER_SHARED_IOCTL_RING_CAPACITY,
-                                                 65536);
+                                                 1048576);
     etwCap = ControllerClampSharedRingCapacity(DesiredEtwCapacity, BLACKBIRD_CONTROLLER_SHARED_ETW_RING_CAPACITY,
-                                               32768);
+                                               262144);
 
     if (!ControllerCreateSharedRing(ioctlCap, sizeof(BLACKBIRD_EVENT_RECORD), &Client->IoctlSharedMapping,
                                     &Client->IoctlSharedDataEvent, &Client->IoctlSharedHeader,
@@ -1790,7 +1801,7 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
                 (void)StringCchCopyW(mapped.EventName, RTL_NUMBER_OF(mapped.EventName), L"HookIntegrityOk");
             }
 
-            (void)StringCchCopyA(mapped.ClassName, RTL_NUMBER_OF(mapped.ClassName), "sr71");
+            (void)StringCchCopyA(mapped.ClassName, RTL_NUMBER_OF(mapped.ClassName), "SR71");
             (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
                                    L"hookIntegrity tampered=%u mask=0x%llX winsock=%llu nt=%llu ki=%llu",
                                    integrityTampered ? 1u : 0u, (unsigned long long)HookEvent->Context0,
@@ -2048,6 +2059,8 @@ static DWORD ControllerClientSetUserHookTarget(
     DWORD err = ERROR_SUCCESS;
     DWORD targetPid = 0;
     BOOL kernelAssured = FALSE;
+    BOOL pendingLaunchArmed = FALSE;
+    BLACKBIRD_ARM_PENDING_LAUNCH_REQUEST pendingLaunchRequest;
 
     if (Client == NULL || Request == NULL || Response == NULL)
     {
@@ -2116,6 +2129,33 @@ static DWORD ControllerClientSetUserHookTarget(
         EnterCriticalSection(&Client->Lock);
         ControllerClientArmPendingLaunchLocked(Client, Request->ImagePath);
         LeaveCriticalSection(&Client->Lock);
+
+        if (!ControllerBuildPendingLaunchRequest(Request->ImagePath, BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK,
+                                                 &pendingLaunchRequest))
+        {
+            EnterCriticalSection(&Client->Lock);
+            ControllerClientClearPendingLaunchLocked(Client);
+            LeaveCriticalSection(&Client->Lock);
+            return ERROR_INVALID_PARAMETER;
+        }
+
+        EnterCriticalSection(&g_DriverLock);
+        if (g_DriverHandle != INVALID_HANDLE_VALUE && BLACKBIRDSCArmPendingLaunch(g_DriverHandle, &pendingLaunchRequest))
+        {
+            pendingLaunchArmed = TRUE;
+        }
+        else
+        {
+            err = GetLastError();
+        }
+        LeaveCriticalSection(&g_DriverLock);
+        if (!pendingLaunchArmed)
+        {
+            EnterCriticalSection(&Client->Lock);
+            ControllerClientClearPendingLaunchLocked(Client);
+            LeaveCriticalSection(&Client->Lock);
+            return err == ERROR_SUCCESS ? ERROR_DEVICE_NOT_CONNECTED : err;
+        }
 
         err = ControllerInjectionLaunchAndVerify(Client->Pipe, Request->ImagePath, hookDllPath, Request->Flags,
                                                  BLACKBIRD_CONTROLLER_INJECTION_VERIFY_TIMEOUT_MS, &targetPid);
@@ -2295,6 +2335,22 @@ static DWORD ControllerHandleClientCommand(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *
         if (!ControllerProxySetShutdownMode())
         {
             err = GetLastError();
+        }
+        break;
+    case BlackbirdIpcCommandControlProcessExecution:
+        if (Request->Payload.ControlProcessExecutionRequest.ProcessId == 0)
+        {
+            err = ERROR_INVALID_PARAMETER;
+            break;
+        }
+        if (!ControllerProxyControlProcessExecution(Request->Payload.ControlProcessExecutionRequest.ProcessId,
+                                                    Request->Payload.ControlProcessExecutionRequest.Suspend != 0))
+        {
+            err = GetLastError();
+            if (err == ERROR_SUCCESS)
+            {
+                err = ERROR_GEN_FAILURE;
+            }
         }
         break;
     case BlackbirdIpcCommandGetEtwEvent:
@@ -2482,6 +2538,11 @@ BOOL ControllerCreatePipeSecurity(_Out_ PSECURITY_ATTRIBUTES SecurityAttributes,
     SecurityAttributes->bInheritHandle = FALSE;
     return TRUE;
 }
+
+
+
+
+
 
 
 

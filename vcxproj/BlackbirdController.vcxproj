@@ -81,6 +81,9 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>Ws2_32.lib;Bcrypt.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -103,6 +106,7 @@
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>Ws2_32.lib;Bcrypt.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
@@ -112,6 +116,9 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>Ws2_32.lib;Bcrypt.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
     <ClCompile>
@@ -134,6 +141,7 @@
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>Ws2_32.lib;Bcrypt.lib;Crypt32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -142,6 +150,7 @@
     <ClCompile Include="..\user\controller\core\monitoring\blackbird_controller_etw_monitor.c" />
     <ClCompile Include="..\user\controller\core\correlation\blackbird_controller_hollowing.c" />
     <ClCompile Include="..\user\controller\core\ipc\blackbird_controller_ipc.c" />
+    <ClCompile Include="..\user\controller\core\runtime\blackbird_controller_node_runtime.c" />
     <ClCompile Include="..\user\controller\core\runtime\blackbird_controller_symbol_service.c" />
     <ClCompile Include="..\user\controller\core\runtime\blackbird_controller_runtime.c" />
     <ClCompile Include="..\user\controller\blackbird_controller.c" />
@@ -165,3 +174,4 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>
+

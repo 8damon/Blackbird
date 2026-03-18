@@ -12,3 +12,4 @@ bu blackbird!DriverEntry
 bu blackbird!BLACKBIRDEvtIoDeviceControl
 
 .echo "BLACKBIRD KD INIT READY"
+

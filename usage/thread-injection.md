@@ -147,3 +147,4 @@ To validate in lab:
 1. Run `BlackbirdTestSuite.exe` and confirm detection telemetry is observed.
 2. If you have a lab injector, create a remote thread using `CreateRemoteThread` or `NtCreateThreadEx`.
 3. Observe the corresponding detection telemetry names.
+

@@ -10,3 +10,5 @@ Build output:
 - `x64\Release\BlackbirdExampleDirectSyscallNtQueryVm.exe`
 
 Add more examples by creating new `.cpp` files in this folder and adding a corresponding `vcxproj` entry (or a new example project) under `vcxproj/`.
+
+

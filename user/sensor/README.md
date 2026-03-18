@@ -4,7 +4,7 @@ Document revision: `2026-02-28`
 
 ## Shared Library: BlackbirdSensorCore
 
-`BlackbirdSensorCore.dll` is the common user-mode integration layer used by:
+`J58.dll` is the common user-mode integration layer used by:
 
 - `BlackbirdClient.exe`
 - `BlackbirdTestSuite.exe`
@@ -159,3 +159,5 @@ Result artifact:
 - IOCTL control path enforces user-mode origin (`WdfRequestGetRequestorMode == UserMode`).
 - IOCTL interface is telemetry/control-plane only (subscribe/unsubscribe/read/stats).
 - ETW is one-way kernel-to-user telemetry.
+
+

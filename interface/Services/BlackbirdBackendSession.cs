@@ -11,15 +11,13 @@ namespace BlackbirdInterface
         private readonly int _targetPid;
         private readonly uint _streamMask;
         private readonly bool _useUsermodeHooks;
-        private readonly IntPtr _seedIoctlHandle;
-        private readonly IntPtr _seedEtwHandle;
+        private readonly IntPtr _seedHandle;
         private readonly CancellationTokenSource _cts = new();
 
         private Task? _ioctlTask;
         private Task? _etwTask;
         private Task? _statsTask;
-        private IntPtr _ioctlHandle;
-        private IntPtr _etwHandle;
+        private IntPtr _controlHandle;
         private uint _brokerCapabilities;
         private bool _sharedRingEnabled;
         private uint _sharedRingError;
@@ -41,14 +39,22 @@ namespace BlackbirdInterface
 
         public int TargetPid => _targetPid;
 
-        private BlackbirdBackendSession(int targetPid, uint streamMask, bool useUsermodeHooks,
-            IntPtr seedIoctlHandle = default, IntPtr seedEtwHandle = default)
+        public bool ControlProcessExecution(uint processId, bool suspend)
+        {
+            IntPtr handle = _controlHandle;
+            if (handle == IntPtr.Zero || handle == new IntPtr(-1))
+            {
+                return false;
+            }
+            return BlackbirdNative.ControlProcessExecution(handle, processId, suspend);
+        }
+
+        private BlackbirdBackendSession(int targetPid, uint streamMask, bool useUsermodeHooks, IntPtr seedHandle = default)
         {
             _targetPid = targetPid;
             _streamMask = streamMask;
             _useUsermodeHooks = useUsermodeHooks;
-            _seedIoctlHandle = seedIoctlHandle;
-            _seedEtwHandle = seedEtwHandle;
+            _seedHandle = seedHandle;
         }
 
         public static BlackbirdBackendSession Start(int targetPid, uint streamMask, bool useUsermodeHooks)
@@ -63,27 +69,18 @@ namespace BlackbirdInterface
             return session;
         }
 
-        public static BlackbirdBackendSession StartFromHandles(
-            int targetPid,
-            uint streamMask,
-            bool useUsermodeHooks,
-            IntPtr ioctlHandle,
-            IntPtr etwHandle)
+        public static BlackbirdBackendSession StartFromHandle(int targetPid, uint streamMask, bool useUsermodeHooks, IntPtr controlHandle)
         {
             if (targetPid <= 0)
             {
                 throw new ArgumentOutOfRangeException(nameof(targetPid));
             }
-            if (ioctlHandle == IntPtr.Zero || ioctlHandle == new IntPtr(-1))
+            if (controlHandle == IntPtr.Zero || controlHandle == new IntPtr(-1))
             {
-                throw new ArgumentException("Invalid ioctl handle.", nameof(ioctlHandle));
-            }
-            if (etwHandle == IntPtr.Zero || etwHandle == new IntPtr(-1))
-            {
-                throw new ArgumentException("Invalid etw handle.", nameof(etwHandle));
+                throw new ArgumentException("Invalid control handle.", nameof(controlHandle));
             }
 
-            var session = new BlackbirdBackendSession(targetPid, streamMask, useUsermodeHooks, ioctlHandle, etwHandle);
+            var session = new BlackbirdBackendSession(targetPid, streamMask, useUsermodeHooks, controlHandle);
             session.StartInternal();
             return session;
         }
@@ -97,41 +94,23 @@ namespace BlackbirdInterface
                     throw BlackbirdNative.LastError("UseClientProtocol failed");
                 }
 
-                if (_seedIoctlHandle != IntPtr.Zero && _seedIoctlHandle != new IntPtr(-1))
+                if (_seedHandle != IntPtr.Zero && _seedHandle != new IntPtr(-1))
                 {
-                    _ioctlHandle = _seedIoctlHandle;
+                    _controlHandle = _seedHandle;
                 }
                 else
                 {
-                    _ioctlHandle = BlackbirdNative.OpenControlDevice();
-                    if (_ioctlHandle == IntPtr.Zero || _ioctlHandle == new IntPtr(-1))
+                    _controlHandle = BlackbirdNative.OpenControlDevice();
+                    if (_controlHandle == IntPtr.Zero || _controlHandle == new IntPtr(-1))
                     {
-                        throw BlackbirdNative.LastError("OpenControlDevice(ioctl) failed");
-                    }
-                }
-
-                if (_seedEtwHandle != IntPtr.Zero && _seedEtwHandle != new IntPtr(-1))
-                {
-                    _etwHandle = _seedEtwHandle;
-                }
-                else
-                {
-                    _etwHandle = BlackbirdNative.OpenControlDevice();
-                    if (_etwHandle == IntPtr.Zero || _etwHandle == new IntPtr(-1))
-                    {
-                        throw BlackbirdNative.LastError("OpenControlDevice(etw) failed");
+                        throw BlackbirdNative.LastError("OpenControlDevice failed");
                     }
                 }
 
                 var pids = new[] { (uint)_targetPid };
-                if (!BlackbirdNative.SetPids(_ioctlHandle, pids, 1, _streamMask))
+                if (!BlackbirdNative.SetPids(_controlHandle, pids, 1, _streamMask))
                 {
-                    throw BlackbirdNative.LastError("SetPids(ioctl) failed");
-                }
-
-                if (!BlackbirdNative.SetPids(_etwHandle, pids, 1, _streamMask))
-                {
-                    throw BlackbirdNative.LastError("SetPids(etw) failed");
+                    throw BlackbirdNative.LastError("SetPids failed");
                 }
 
                 if (BlackbirdNative.GetBrokerInfo(out uint capabilities, out _))
@@ -142,13 +121,10 @@ namespace BlackbirdInterface
 
                 bool hasIoctlRing = false;
                 bool hasEtwRing = false;
-                if (BlackbirdNative.HasSharedChannel(_ioctlHandle, out bool ioctlIoctlReady, out _))
+                if (BlackbirdNative.HasSharedChannel(_controlHandle, out bool ioctlReady, out bool etwReady))
                 {
-                    hasIoctlRing = ioctlIoctlReady;
-                }
-                if (BlackbirdNative.HasSharedChannel(_etwHandle, out _, out bool etwEtwReady))
-                {
-                    hasEtwRing = etwEtwReady;
+                    hasIoctlRing = ioctlReady;
+                    hasEtwRing = etwReady;
                 }
 
                 _sharedRingEnabled = hasIoctlRing && hasEtwRing;
@@ -160,10 +136,6 @@ namespace BlackbirdInterface
                 else
                 {
                     _brokerCapabilities &= ~BlackbirdNative.IpcCapSharedRing;
-                }
-
-                if (!_sharedRingEnabled)
-                {
                     int err = _sharedRingError == 0 ? BlackbirdNative.ErrorNotSupported : unchecked((int)_sharedRingError);
                     throw new Win32Exception(err, $"Shared-ring IPC required but unavailable (err={_sharedRingError})");
                 }
@@ -175,8 +147,8 @@ namespace BlackbirdInterface
                 }
                 DiagnosticsState.SetValue("Session", $"pid={_targetPid} stream=0x{_streamMask:X8}");
                 DiagnosticsState.SetValue("IPC Mode", "SharedRing+Event");
-                DiagnosticsState.SetValue("IPC Shared Ring",
-                    $"enabled={_sharedRingEnabled} ioctl={hasIoctlRing} etw={hasEtwRing} err={_sharedRingError}");
+                DiagnosticsState.SetValue("IPC Shared Ring", $"enabled={_sharedRingEnabled} ioctl={hasIoctlRing} etw={hasEtwRing} err={_sharedRingError}");
+                Console.WriteLine($"[Session] Started  pid={_targetPid} stream=0x{_streamMask:X8} caps=0x{_brokerCapabilities:X8} sharedRing={_sharedRingEnabled} hooks={_useUsermodeHooks}");
 
                 _ioctlTask = Task.Run(() => IoctlPump(_cts.Token));
                 _etwTask = Task.Run(() => EtwPump(_cts.Token));
@@ -184,7 +156,7 @@ namespace BlackbirdInterface
             }
             catch
             {
-                CleanupHandles();
+                CleanupHandle();
                 throw;
             }
         }
@@ -193,41 +165,53 @@ namespace BlackbirdInterface
         {
             IntPtr buffer = Marshal.AllocHGlobal(BlackbirdNative.EventReadBufferBytes);
             byte[] managed = new byte[BlackbirdNative.EventReadBufferBytes];
-            int idleBackoffMs = _sharedRingEnabled ? 2 : 12;
-            int idleBackoffMaxMs = _sharedRingEnabled ? 24 : 80;
             try
             {
                 while (!ct.IsCancellationRequested)
                 {
-                    bool ok = BlackbirdNative.GetEventRaw(_ioctlHandle, buffer, out uint bytes);
+                    // Block up to 100ms for data on the shared ring event handle.
+                    bool ok = BlackbirdNative.GetEventWait(_controlHandle, buffer, out uint bytes, 100);
                     if (ok)
                     {
-                        int len = (int)Math.Min(bytes, (uint)managed.Length);
-                        if (len <= 0)
+                        // Process this record, then drain any additional records without waiting.
+                        do
                         {
-                            ct.WaitHandle.WaitOne(idleBackoffMs);
-                            idleBackoffMs = Math.Min(idleBackoffMaxMs, idleBackoffMs + 2);
-                            continue;
+                            int len = (int)Math.Min(bytes, (uint)managed.Length);
+                            if (len > 0)
+                            {
+                                Marshal.Copy(buffer, managed, 0, len);
+                                if (BlackbirdNative.TryParseIoctlEvent(managed, len, out var parsed))
+                                {
+                                    Interlocked.Increment(ref _ioctlEvents);
+                                    DiagnosticsState.Increment("IOCTL Events");
+                                    IoctlEvent?.Invoke(parsed);
+                                }
+                            }
+                            ok = BlackbirdNative.GetEventRaw(_controlHandle, buffer, out bytes);
                         }
+                        while (ok && !ct.IsCancellationRequested);
 
-                        Marshal.Copy(buffer, managed, 0, len);
-                        if (BlackbirdNative.TryParseIoctlEvent(managed, len, out var parsed))
+                        int drainErr = Marshal.GetLastWin32Error();
+                        if (drainErr != BlackbirdNative.ErrorNoMoreEntries &&
+                            drainErr != BlackbirdNative.ErrorNoMoreItems &&
+                            (drainErr == BlackbirdNative.ErrorOperationAborted ||
+                             drainErr == BlackbirdNative.ErrorNotReady ||
+                             drainErr == BlackbirdNative.ErrorDeviceNotConnected ||
+                             drainErr == BlackbirdNative.ErrorBrokenPipe))
                         {
-                            Interlocked.Increment(ref _ioctlEvents);
-                            DiagnosticsState.Increment("IOCTL Events");
-                            IoctlEvent?.Invoke(parsed);
+                            Status?.Invoke($"IOCTL pump stopped (err={drainErr})");
+                            DiagnosticsState.SetValue("IOCTL Pump", $"Stopped err={drainErr}");
+                            Console.WriteLine($"[Session] IOCTL pump stopped  pid={_targetPid} err={drainErr}");
+                            break;
                         }
-                        idleBackoffMs = _sharedRingEnabled ? 2 : 12;
-
                         continue;
                     }
 
                     int err = Marshal.GetLastWin32Error();
-                    if (err == BlackbirdNative.ErrorNoMoreEntries)
+                    if (err == BlackbirdNative.ErrorNoMoreEntries || err == BlackbirdNative.ErrorNoMoreItems)
                     {
+                        // Timeout — no data in 100ms window; loop back to wait again.
                         Interlocked.Increment(ref _ioctlEmptyPolls);
-                        ct.WaitHandle.WaitOne(idleBackoffMs);
-                        idleBackoffMs = Math.Min(idleBackoffMaxMs, idleBackoffMs + 4);
                         continue;
                     }
 
@@ -236,14 +220,13 @@ namespace BlackbirdInterface
                     {
                         Status?.Invoke($"IOCTL pump stopped (err={err})");
                         DiagnosticsState.SetValue("IOCTL Pump", $"Stopped err={err}");
+                        Console.WriteLine($"[Session] IOCTL pump stopped  pid={_targetPid} err={err}");
                         break;
                     }
 
                     Interlocked.Increment(ref _ioctlErrors);
                     DiagnosticsState.Increment("IOCTL Errors");
                     DiagnosticsState.SetValue("IOCTL LastError", err.ToString());
-                    ct.WaitHandle.WaitOne(40);
-                    idleBackoffMs = _sharedRingEnabled ? 2 : 12;
                 }
             }
             finally
@@ -256,7 +239,7 @@ namespace BlackbirdInterface
         {
             while (!ct.IsCancellationRequested)
             {
-                bool ok = BlackbirdNative.GetEtwEvent(_etwHandle, out var etw, 500);
+                bool ok = BlackbirdNative.GetEtwEvent(_controlHandle, out var etw, 500);
                 if (ok)
                 {
                     Interlocked.Increment(ref _etwEvents);
@@ -281,6 +264,7 @@ namespace BlackbirdInterface
                 {
                     Status?.Invoke($"ETW pump stopped (err={err})");
                     DiagnosticsState.SetValue("ETW Pump", $"Stopped err={err}");
+                    Console.WriteLine($"[Session] ETW pump stopped  pid={_targetPid} err={err}");
                     return;
                 }
 
@@ -302,7 +286,7 @@ namespace BlackbirdInterface
         {
             while (!ct.IsCancellationRequested)
             {
-                if (BlackbirdNative.GetStats(_ioctlHandle, out var stats, out _))
+                if (BlackbirdNative.GetStats(_controlHandle, out var stats, out _))
                 {
                     DateTime now = DateTime.UtcNow;
                     double elapsed = (now - _lastStatsSnapshotUtc).TotalSeconds;
@@ -348,9 +332,7 @@ namespace BlackbirdInterface
                     _lastStatsIoctlEvents = ioctlTotal;
                     _lastStatsEtwEvents = etwTotal;
 
-                    DiagnosticsState.SetValue(
-                        "Driver Queue",
-                        $"subs={stats.SubscriptionCount} depth={stats.QueueDepth} dropped={stats.DroppedEvents}");
+                    DiagnosticsState.SetValue("Driver Queue", $"subs={stats.SubscriptionCount} depth={stats.QueueDepth} dropped={stats.DroppedEvents}");
                 }
 
                 ct.WaitHandle.WaitOne(2000);
@@ -361,9 +343,12 @@ namespace BlackbirdInterface
         {
             _cts.Cancel();
 
+            // Wait for pump tasks to observe cancellation before closing the handle.
+            // The event-driven IOCTL pump blocks in WaitForSingleObject with a 100ms timeout,
+            // so it will exit within one timeout interval after cancellation is set.
             try
             {
-                _ioctlTask?.Wait(1200);
+                _ioctlTask?.Wait(500);
             }
             catch
             {
@@ -371,7 +356,7 @@ namespace BlackbirdInterface
 
             try
             {
-                _etwTask?.Wait(1200);
+                _etwTask?.Wait(500);
             }
             catch
             {
@@ -379,30 +364,24 @@ namespace BlackbirdInterface
 
             try
             {
-                _statsTask?.Wait(1200);
+                _statsTask?.Wait(500);
             }
             catch
             {
             }
 
-            CleanupHandles();
-
+            CleanupHandle();
             _cts.Dispose();
             Status?.Invoke("Session disposed");
+            Console.WriteLine($"[Session] Disposed  pid={_targetPid} ioctlEvents={Interlocked.Read(ref _ioctlEvents)} etwEvents={Interlocked.Read(ref _etwEvents)} ioctlErrors={Interlocked.Read(ref _ioctlErrors)} etwErrors={Interlocked.Read(ref _etwErrors)}");
         }
 
-        private void CleanupHandles()
+        private void CleanupHandle()
         {
-            if (_ioctlHandle != IntPtr.Zero && _ioctlHandle != new IntPtr(-1))
+            if (_controlHandle != IntPtr.Zero && _controlHandle != new IntPtr(-1))
             {
-                _ = BlackbirdNative.CloseControlDevice(_ioctlHandle);
-                _ioctlHandle = IntPtr.Zero;
-            }
-
-            if (_etwHandle != IntPtr.Zero && _etwHandle != new IntPtr(-1))
-            {
-                _ = BlackbirdNative.CloseControlDevice(_etwHandle);
-                _etwHandle = IntPtr.Zero;
+                _ = BlackbirdNative.CloseControlDevice(_controlHandle);
+                _controlHandle = IntPtr.Zero;
             }
         }
     }

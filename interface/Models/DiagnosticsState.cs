@@ -4,6 +4,12 @@ using System.Linq;
 
 namespace BlackbirdInterface
 {
+    internal sealed class DiagnosticsStateEntry
+    {
+        public string Key { get; set; } = string.Empty;
+        public string Value { get; set; } = string.Empty;
+    }
+
     internal static class DiagnosticsState
     {
         private static readonly object Sync = new();
@@ -57,5 +63,26 @@ namespace BlackbirdInterface
                 return lines;
             }
         }
+
+        public static IReadOnlyList<DiagnosticsStateEntry> SnapshotEntries()
+        {
+            lock (Sync)
+            {
+                var entries = new List<DiagnosticsStateEntry>();
+                foreach (var pair in Values.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    entries.Add(new DiagnosticsStateEntry { Key = pair.Key, Value = pair.Value });
+                }
+
+                foreach (var pair in Counters.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    entries.Add(new DiagnosticsStateEntry { Key = pair.Key, Value = pair.Value.ToString() });
+                }
+
+                return entries;
+            }
+        }
     }
 }
+
+

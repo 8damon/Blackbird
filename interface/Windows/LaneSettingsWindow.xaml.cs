@@ -297,3 +297,4 @@ namespace BlackbirdInterface
         public Brush RowBackground { get; set; } = Brushes.Transparent;
     }
 }
+

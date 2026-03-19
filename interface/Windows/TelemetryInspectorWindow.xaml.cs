@@ -336,6 +336,10 @@ namespace BlackbirdInterface
             AddPair(selection, "Actor PID", actorPid == 0 ? "-" : actorPid.ToString(CultureInfo.InvariantCulture));
             AddPair(selection, "Target PID", targetPid == 0 ? "-" : targetPid.ToString(CultureInfo.InvariantCulture));
             AddPair(selection, "Argument Summary", detail.ArgumentSummary);
+            if (detail.HitCount > 1)
+            {
+                AddPair(selection, "Occurrences", detail.HitCount.ToString(CultureInfo.InvariantCulture));
+            }
             AddPair(selection, "Reason", EventDetailsParsing.FallbackText(detail.Reason));
             AddPair(selection, "Correlated Handle Evidence", hasHandleEvidence ? "Available" : "None");
 
@@ -783,3 +787,4 @@ namespace BlackbirdInterface
         }
     }
 }
+

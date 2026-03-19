@@ -187,6 +187,7 @@ namespace BlackbirdInterface
         public DateTime TimestampUtc { get; set; }
         public DateTime LastSeenUtc { get; set; }
         public string Source { get; set; } = "";
+        public uint SourceId { get; set; }
         public uint Family { get; set; }
         public string EventName { get; set; } = "";
         public ushort Task { get; set; }
@@ -277,6 +278,7 @@ namespace BlackbirdInterface
                 TimestampUtc = TimestampUtc,
                 LastSeenUtc = LastSeenUtc,
                 Source = Source,
+                SourceId = SourceId,
                 Family = Family,
                 EventName = EventName,
                 Task = Task,
@@ -346,6 +348,10 @@ namespace BlackbirdInterface
         {
             var sb = new StringBuilder(512);
             AppendToken(sb, $"source={Source}");
+            if (SourceId != 0)
+            {
+                AppendToken(sb, $"sourceId={SourceId}");
+            }
             AppendToken(sb, $"family={DescribeFamily(Family)}");
             AppendToken(sb, $"task={Task}");
             AppendToken(sb, $"opcode={Opcode}");
@@ -642,11 +648,16 @@ namespace BlackbirdInterface
         public string RelationType { get; set; } = "";
         public uint LastAccessMask { get; set; }
         public uint LastFlags { get; set; }
+        public string OriginSource { get; set; } = "";
+        public string DetailSignature { get; set; } = "";
+        public string DetailText { get; set; } = "";
         public int RepeatCount { get; set; } = 1;
 
         public string Summary => $"{RelationType} {SourcePid}->{TargetPid}";
         public string Details =>
-            $"hits={Math.Max(1, RepeatCount)} access=0x{LastAccessMask:X8} flags=0x{LastFlags:X8}";
+            !string.IsNullOrWhiteSpace(DetailText)
+                ? DetailText
+                : $"hits={Math.Max(1, RepeatCount)} access=0x{LastAccessMask:X8} flags=0x{LastFlags:X8}";
 
         public ProcessRelationView Clone()
         {
@@ -659,6 +670,9 @@ namespace BlackbirdInterface
                 RelationType = RelationType,
                 LastAccessMask = LastAccessMask,
                 LastFlags = LastFlags,
+                OriginSource = OriginSource,
+                DetailSignature = DetailSignature,
+                DetailText = DetailText,
                 RepeatCount = RepeatCount
             };
         }
@@ -711,6 +725,9 @@ namespace BlackbirdInterface
         public int PendingIoctlUiQueue { get; set; }
         public int PendingEtwUiQueue { get; set; }
         public int PendingStatusUiQueue { get; set; }
+        public long DroppedIoctlForPressure { get; set; }
+        public long DroppedEtwForPressure { get; set; }
+        public long DroppedUiWorkForPressure { get; set; }
     }
 
     internal sealed class GroupedEventDetailRow : INotifyPropertyChanged
@@ -728,6 +745,7 @@ namespace BlackbirdInterface
         private string _targetToolTip = "";
         private string _argumentSummary = "";
         private string _details = "";
+        private int _hitCount = 1;
         private Dictionary<string, string>? _detailFields;
 
         public DateTime TimestampUtc
@@ -802,6 +820,12 @@ namespace BlackbirdInterface
             set => SetField(ref _argumentSummary, value ?? string.Empty);
         }
 
+        public int HitCount
+        {
+            get => _hitCount;
+            set => SetField(ref _hitCount, value);
+        }
+
         public string Details
         {
             get => _details;
@@ -874,6 +898,7 @@ namespace BlackbirdInterface
                 ActorToolTip = ActorToolTip,
                 TargetToolTip = TargetToolTip,
                 ArgumentSummary = ArgumentSummary,
+                HitCount = HitCount,
                 Details = Details
             };
         }

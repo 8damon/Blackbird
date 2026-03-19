@@ -1,3 +1,4 @@
+using BlackbirdInterface.Capture;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -8,6 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 
 namespace BlackbirdInterface
@@ -16,6 +18,11 @@ namespace BlackbirdInterface
     {
         private BlackbirdBackendSession? _backendSession;
         private int _backendGeneration;
+        private Action<IoctlParsedEvent>? _sessionIoctlHandler;
+        private Action<BlackbirdNative.BkIpcEtwEvent>? _sessionEtwHandler;
+        private Action<BackendStatsView>? _sessionStatsHandler;
+        private Action<BackendIpcDiagnosticsView>? _sessionIpcDiagnosticsHandler;
+        private Action<string>? _sessionStatusHandler;
         private readonly Dictionary<int, List<GroupedEventRow>> _etwHistoryByPid = new();
         private readonly Dictionary<int, List<GroupedEventRow>> _heuristicsHistoryByPid = new();
         private readonly Dictionary<int, List<GroupedEventRow>> _filesystemHistoryByPid = new();
@@ -42,22 +49,32 @@ namespace BlackbirdInterface
         private long _pendingEtwCount;
         private long _pendingStatusCount;
         private long _pendingUiWorkCount;
+        private long _droppedIoctlForPressure;
+        private long _droppedEtwForPressure;
+        private long _droppedUiWorkForPressure;
         private int _backendUiFlushScheduled;
         private const int MaxBackendTransformItemsPerBatch = 1500;
         private const int MaxBackendUiItemsPerFlush = 220;
+        private const int MaxBackendUiItemsPerFlushUnderPressure = 1400;
         private const int MaxBackendStatusLinesPerTransformBatch = 64;
         private const int MaxBackendStatusLinesPerUiFlush = 32;
         private const int FilesystemTimelineClusterFlushCount = 600;
+        private const int MaxPendingIoctlEvents = 30000;
+        private const int MaxPendingEtwEvents = 18000;
+        private const int MaxPendingUiWorkItems = 20000;
         private const uint CorrelationIntentMask = 0x00000007u;
         private static readonly TimeSpan BackendUiFlushBudget = TimeSpan.FromMilliseconds(5);
-        private static readonly TimeSpan FilesystemTimelineClusterWindow = TimeSpan.FromMilliseconds(3000);
+        private static readonly TimeSpan BackendUiFlushBudgetUnderPressure = TimeSpan.FromMilliseconds(18);
+        private static readonly TimeSpan FilesystemTimelineClusterWindow = TimeSpan.FromMilliseconds(15000);
         private static readonly TimeSpan FilesystemTimelineClusterIdleFlush = TimeSpan.FromMilliseconds(1500);
         private string? _lastEtwTimelineSignature;
         private DateTime _lastEtwTimelineTimestampUtc;
         private readonly Dictionary<ulong, IoctlParsedEvent> _recentHandleEvidenceByPair = new();
         private DateTime _lastHandleEvidencePruneUtc = DateTime.MinValue;
-        private readonly Dictionary<uint, int> _filesystemClusterOperationCounts = new();
-        private readonly Dictionary<uint, (uint Pid, uint Tid, string Path)> _filesystemClusterSamplesByOperation = new();
+        private readonly Dictionary<string, int> _filesystemClusterOperationCounts = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, (uint Pid, uint Tid, string Path, uint Operation)> _filesystemClusterSamplesByOperation = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> _crossProcWriteCountByPair = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> _crossProcRwxAllocCountByPair = new(StringComparer.Ordinal);
         private int _filesystemClusterTotal;
         private DateTime _filesystemClusterWindowStartUtc = DateTime.MinValue;
         private DateTime _filesystemClusterLastSeenUtc = DateTime.MinValue;
@@ -74,22 +91,34 @@ namespace BlackbirdInterface
             _apiGraphDecodedByKey.Clear();
             _apiGraphSensorByKey.Clear();
             _apiMemorySignalsByPage.Clear();
+            _crossProcWriteCountByPair.Clear();
+            _crossProcRwxAllocCountByPair.Clear();
             PublishApiGraphSnapshot();
             IpcUplinkPaneHost.SetInactive("No IPC diagnostics yet", "Enable uplink and wait for stats sample.");
             ResetFilesystemTimelineCluster();
+            ProcessRelationsPaneHost.SetRootPid(0);
             RefreshExplorerDataBadges();
             DiagnosticsState.SetValue("UI", "Initialized");
+            DiagnosticsState.SetValue("Kernel Hooks", "Awaiting telemetry");
+            DiagnosticsState.SetValue("Usermode Hooks", "Inactive");
+            DiagnosticsState.SetValue("Operator Connection Established", "Disabled in analyst interface");
             DiagnosticsState.SetValue("Hook Integrity", "Unknown");
             DiagnosticsState.SetValue("AMSI Integrity", "Unknown");
             DiagnosticsState.SetValue("ETW Integrity", "Unknown");
         }
 
-        private void StartBackendForPid(int pid, bool useUsermodeHooks)
+        private void StartBackendForPid(int pid, bool useUsermodeHooks, bool stopExistingSession = true)
         {
             BlackbirdBackendSession? preparedSession = null;
 
-            StopBackendSession();
-            ClearPendingBackendUiQueues();
+            if (stopExistingSession)
+            {
+                StopBackendSession();
+            }
+            else
+            {
+                ClearPendingBackendUiQueues();
+            }
 
             if (pid <= 0)
             {
@@ -123,74 +152,82 @@ namespace BlackbirdInterface
                 var session = preparedSession ?? BlackbirdBackendSession.Start(pid, BlackbirdNative.StreamAll, useUsermodeHooks);
                 _backendSession = session;
 
-                session.IoctlEvent += record =>
+                _sessionIoctlHandler = record =>
                 {
-                    if (generation != _backendGeneration)
+                    if (generation != _backendGeneration) return;
+                    if (Interlocked.Read(ref _pendingIoctlCount) >= MaxPendingIoctlEvents)
                     {
+                        Interlocked.Increment(ref _droppedIoctlForPressure);
                         return;
                     }
-
                     _pendingIoctlEvents.Enqueue(record);
                     Interlocked.Increment(ref _pendingIoctlCount);
                     _backendTransformSignal.Set();
                 };
 
-                session.EtwEvent += etw =>
+                _sessionEtwHandler = etw =>
                 {
-                    if (generation != _backendGeneration)
+                    if (generation != _backendGeneration) return;
+                    if (Interlocked.Read(ref _pendingEtwCount) >= MaxPendingEtwEvents)
                     {
+                        Interlocked.Increment(ref _droppedEtwForPressure);
                         return;
                     }
-
                     _pendingEtwEvents.Enqueue(etw);
                     Interlocked.Increment(ref _pendingEtwCount);
                     _backendTransformSignal.Set();
                 };
 
-                session.Stats += stats => Dispatcher.BeginInvoke(new Action(() =>
+                _sessionStatsHandler = stats =>
                 {
-                    if (generation != _backendGeneration)
+                    if (Dispatcher.HasShutdownStarted) return;
+                    Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        return;
-                    }
+                        if (generation != _backendGeneration) return;
+                        DiagnosticsState.SetValue(
+                            "Session Stats",
+                            $"subs={stats.SubscriptionCount} depth={stats.QueueDepth} dropped={stats.DroppedEvents}");
+                    }));
+                };
 
-                    DiagnosticsState.SetValue(
-                        "Session Stats",
-                        $"subs={stats.SubscriptionCount} depth={stats.QueueDepth} dropped={stats.DroppedEvents}");
-                }));
-
-                session.IpcDiagnostics += diag => Dispatcher.BeginInvoke(new Action(() =>
+                _sessionIpcDiagnosticsHandler = diag =>
                 {
-                    if (generation != _backendGeneration)
+                    if (Dispatcher.HasShutdownStarted) return;
+                    Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        return;
-                    }
+                        if (generation != _backendGeneration) return;
+                        diag.PendingIoctlUiQueue = (int)Math.Min(int.MaxValue, Math.Max(0, Interlocked.Read(ref _pendingIoctlCount)));
+                        diag.PendingEtwUiQueue = (int)Math.Min(int.MaxValue, Math.Max(0, Interlocked.Read(ref _pendingEtwCount)));
+                        diag.PendingStatusUiQueue = (int)Math.Min(
+                            int.MaxValue,
+                            Math.Max(0, Interlocked.Read(ref _pendingStatusCount) + Interlocked.Read(ref _pendingUiWorkCount)));
+                        diag.DroppedIoctlForPressure = Interlocked.Read(ref _droppedIoctlForPressure);
+                        diag.DroppedEtwForPressure = Interlocked.Read(ref _droppedEtwForPressure);
+                        diag.DroppedUiWorkForPressure = Interlocked.Read(ref _droppedUiWorkForPressure);
+                        UpdateIpcUplinkExplorer(diag);
+                    }));
+                };
 
-                    diag.PendingIoctlUiQueue = (int)Math.Min(int.MaxValue, Math.Max(0, Interlocked.Read(ref _pendingIoctlCount)));
-                    diag.PendingEtwUiQueue = (int)Math.Min(int.MaxValue, Math.Max(0, Interlocked.Read(ref _pendingEtwCount)));
-                    diag.PendingStatusUiQueue = (int)Math.Min(
-                        int.MaxValue,
-                        Math.Max(0, Interlocked.Read(ref _pendingStatusCount) + Interlocked.Read(ref _pendingUiWorkCount)));
-                    UpdateIpcUplinkExplorer(diag);
-                }));
-
-                session.Status += text =>
+                _sessionStatusHandler = text =>
                 {
-                    if (generation != _backendGeneration)
-                    {
-                        return;
-                    }
-
+                    if (generation != _backendGeneration) return;
                     _pendingStatusLines.Enqueue($"[session pid={pid}] {text}");
                     Interlocked.Increment(ref _pendingStatusCount);
                     _backendTransformSignal.Set();
                 };
+
+                session.IoctlEvent += _sessionIoctlHandler;
+                session.EtwEvent += _sessionEtwHandler;
+                session.Stats += _sessionStatsHandler;
+                session.IpcDiagnostics += _sessionIpcDiagnosticsHandler;
+                session.Status += _sessionStatusHandler;
 
                 StartBackendTransformLoop(generation);
 
                 StatusBlock.Text = $"Status: Session active for PID {pid}";
                 OutputCapture.AppendLine($"Session started for PID {pid}");
                 DiagnosticsState.SetValue("Session", $"Active PID {pid}");
+                ProcessRelationsPaneHost.SetRootPid(pid);
             }
             catch (Exception ex)
             {
@@ -220,16 +257,25 @@ namespace BlackbirdInterface
         {
             if (ex is EntryPointNotFoundException)
             {
-                return "IPC runtime DLL is outdated (missing export). Rebuild/deploy BlackbirdSensorCore.dll and controller.";
+                return "IPC runtime DLL is outdated (missing export). Rebuild/deploy J58.dll and controller.";
             }
 
             if (ex is System.ComponentModel.Win32Exception wx &&
                 (wx.NativeErrorCode == 127 || wx.NativeErrorCode == BlackbirdNative.ErrorInvalidFunction))
             {
-                return "IPC runtime DLL/controller mismatch (missing function). Rebuild/deploy latest BlackbirdSensorCore.dll and controller.";
+                return "IPC runtime DLL/controller mismatch (missing function). Rebuild/deploy latest J58.dll and controller.";
             }
 
             return ex.Message;
+        }
+
+        private void DetachSessionHandlers(BlackbirdBackendSession session)
+        {
+            if (_sessionIoctlHandler != null) { session.IoctlEvent -= _sessionIoctlHandler; _sessionIoctlHandler = null; }
+            if (_sessionEtwHandler != null) { session.EtwEvent -= _sessionEtwHandler; _sessionEtwHandler = null; }
+            if (_sessionStatsHandler != null) { session.Stats -= _sessionStatsHandler; _sessionStatsHandler = null; }
+            if (_sessionIpcDiagnosticsHandler != null) { session.IpcDiagnostics -= _sessionIpcDiagnosticsHandler; _sessionIpcDiagnosticsHandler = null; }
+            if (_sessionStatusHandler != null) { session.Status -= _sessionStatusHandler; _sessionStatusHandler = null; }
         }
 
         private void StopBackendSession(bool preserveApiGraphSnapshot = false)
@@ -237,12 +283,14 @@ namespace BlackbirdInterface
             if (_backendSession == null)
             {
                 StopBackendTransformLoop();
+                DisposeLiveCaptureStore();
                 ClearPendingBackendUiQueues();
                 return;
             }
 
             try
             {
+                DetachSessionHandlers(_backendSession);
                 _backendSession.Dispose();
             }
             catch
@@ -251,9 +299,13 @@ namespace BlackbirdInterface
 
             _backendSession = null;
             StopBackendTransformLoop();
+            DisposeLiveCaptureStore();
             ClearPendingBackendUiQueues();
             _lastEtwTimelineSignature = null;
             _lastEtwTimelineTimestampUtc = DateTime.MinValue;
+            Interlocked.Exchange(ref _droppedIoctlForPressure, 0);
+            Interlocked.Exchange(ref _droppedEtwForPressure, 0);
+            Interlocked.Exchange(ref _droppedUiWorkForPressure, 0);
             ResetFilesystemTimelineCluster();
             _hasIpcUplinkData = false;
             if (!preserveApiGraphSnapshot)
@@ -264,10 +316,15 @@ namespace BlackbirdInterface
                 _apiGraphDecodedByKey.Clear();
                 _apiGraphSensorByKey.Clear();
                 _apiMemorySignalsByPage.Clear();
+                _crossProcWriteCountByPair.Clear();
+                _crossProcRwxAllocCountByPair.Clear();
                 PublishApiGraphSnapshot();
             }
             SetIpcUplinkExplorerDetails("Session stopped", "No live IPC diagnostics", hasData: false);
             DiagnosticsState.SetValue("Session", "Stopped");
+            DiagnosticsState.SetValue("Kernel Hooks", "Inactive");
+            DiagnosticsState.SetValue("Usermode Hooks", "Inactive");
+            DiagnosticsState.SetValue("Operator Connection Established", "Disabled in analyst interface");
             DiagnosticsState.SetValue("Hook Integrity", "Unknown");
             DiagnosticsState.SetValue("AMSI Integrity", "Unknown");
             DiagnosticsState.SetValue("ETW Integrity", "Unknown");
@@ -313,7 +370,7 @@ namespace BlackbirdInterface
             {
                 cts.Cancel();
                 _backendTransformSignal.Set();
-                task?.Wait(1200);
+                task?.Wait(300);
             }
             catch
             {
@@ -335,14 +392,16 @@ namespace BlackbirdInterface
                 {
                     Interlocked.Decrement(ref _pendingIoctlCount);
                     DateTime nowUtc = DateTime.UtcNow;
+                    AppendIoctlToCaptureStore(nowUtc, ioctl);
                     IReadOnlyList<TelemetryEvent> filesystemClusterEvents = AccumulateFilesystemTimelineCluster(ioctl, nowUtc);
                     if (filesystemClusterEvents.Count > 0)
                     {
                         for (int i = 0; i < filesystemClusterEvents.Count; i += 1)
                         {
-                            _pendingUiWork.Enqueue(
-                                BackendUiWorkItem.FromIoctl(filesystemClusterEvents[i], null, null, null, null));
-                            Interlocked.Increment(ref _pendingUiWorkCount);
+                            if (!TryEnqueueUiWork(BackendUiWorkItem.FromIoctl(filesystemClusterEvents[i], null, null, null, null)))
+                            {
+                                break;
+                            }
                         }
                         producedUiWork = true;
                     }
@@ -369,9 +428,8 @@ namespace BlackbirdInterface
                     if (telemetry != null || relation != null || heuristic != null || threadLifecycle != null ||
                         filesystem != null)
                     {
-                        _pendingUiWork.Enqueue(
+                        _ = TryEnqueueUiWork(
                             BackendUiWorkItem.FromIoctl(telemetry, relation, heuristic, threadLifecycle, filesystem));
-                        Interlocked.Increment(ref _pendingUiWorkCount);
                         producedUiWork = true;
                     }
 
@@ -383,11 +441,11 @@ namespace BlackbirdInterface
                     Interlocked.Decrement(ref _pendingEtwCount);
 
                     BrokerEtwEventView view = MapBrokerEtwEvent(etw);
+                    AppendEtwToCaptureStore(view);
                     _ = ProcessIdentityResolver.Resolve(view.ActorPid);
                     _ = ProcessIdentityResolver.Resolve(view.TargetPid);
 
-                    _pendingUiWork.Enqueue(BackendUiWorkItem.FromEtw(view));
-                    Interlocked.Increment(ref _pendingUiWorkCount);
+                    _ = TryEnqueueUiWork(BackendUiWorkItem.FromEtw(view));
                     producedUiWork = true;
                     transformed += 1;
                 }
@@ -397,8 +455,7 @@ namespace BlackbirdInterface
                        _pendingStatusLines.TryDequeue(out var statusLine))
                 {
                     Interlocked.Decrement(ref _pendingStatusCount);
-                    _pendingUiWork.Enqueue(BackendUiWorkItem.FromStatus(statusLine));
-                    Interlocked.Increment(ref _pendingUiWorkCount);
+                    _ = TryEnqueueUiWork(BackendUiWorkItem.FromStatus(statusLine));
                     producedUiWork = true;
                     statusLines += 1;
                 }
@@ -409,9 +466,10 @@ namespace BlackbirdInterface
                 {
                     for (int i = 0; i < idleFilesystemClusters.Count; i += 1)
                     {
-                        _pendingUiWork.Enqueue(
-                            BackendUiWorkItem.FromIoctl(idleFilesystemClusters[i], null, null, null, null));
-                        Interlocked.Increment(ref _pendingUiWorkCount);
+                        if (!TryEnqueueUiWork(BackendUiWorkItem.FromIoctl(idleFilesystemClusters[i], null, null, null, null)))
+                        {
+                            break;
+                        }
                     }
                     producedUiWork = true;
                 }
@@ -447,6 +505,11 @@ namespace BlackbirdInterface
 
             var stopwatch = Stopwatch.StartNew();
             int processed = 0;
+            bool underPressure = Interlocked.Read(ref _pendingUiWorkCount) > (MaxPendingUiWorkItems / 2) ||
+                                 Interlocked.Read(ref _pendingIoctlCount) > (MaxPendingIoctlEvents / 2) ||
+                                 Interlocked.Read(ref _pendingEtwCount) > (MaxPendingEtwEvents / 2);
+            int maxItemsThisFlush = underPressure ? MaxBackendUiItemsPerFlushUnderPressure : MaxBackendUiItemsPerFlush;
+            TimeSpan budget = underPressure ? BackendUiFlushBudgetUnderPressure : BackendUiFlushBudget;
             var telemetryBatch = new List<TelemetryEvent>(96);
             var relationBatch = new List<ProcessRelationView>(32);
             var heuristicBatch = new List<HeuristicEventView>(32);
@@ -454,8 +517,8 @@ namespace BlackbirdInterface
             var filesystemBatch = new List<IoctlParsedEvent>(32);
             var etwBatch = new List<BrokerEtwEventView>(96);
             var statusBatch = new List<string>(32);
-            while (processed < MaxBackendUiItemsPerFlush &&
-                   stopwatch.Elapsed < BackendUiFlushBudget &&
+            while (processed < maxItemsThisFlush &&
+                   stopwatch.Elapsed < budget &&
                    _pendingUiWork.TryDequeue(out var uiWork))
             {
                 Interlocked.Decrement(ref _pendingUiWorkCount);
@@ -534,11 +597,11 @@ namespace BlackbirdInterface
                         _currentSession.ThreadLifecycleHistory.Add(CloneThreadLifecycleEvent(threadLifecycleBatch[i]));
                     }
 
-                    if (_currentSession.ThreadLifecycleHistory.Count > 40_000)
+                    if (_currentSession.ThreadLifecycleHistory.Count > 12_000)
                     {
                         _currentSession.ThreadLifecycleHistory.RemoveRange(
                             0,
-                            _currentSession.ThreadLifecycleHistory.Count - 40_000);
+                            _currentSession.ThreadLifecycleHistory.Count - 12_000);
                     }
                 }
             }
@@ -602,6 +665,19 @@ namespace BlackbirdInterface
             ResetFilesystemTimelineCluster();
         }
 
+        private bool TryEnqueueUiWork(BackendUiWorkItem item)
+        {
+            if (Interlocked.Read(ref _pendingUiWorkCount) >= MaxPendingUiWorkItems)
+            {
+                Interlocked.Increment(ref _droppedUiWorkForPressure);
+                return false;
+            }
+
+            _pendingUiWork.Enqueue(item);
+            Interlocked.Increment(ref _pendingUiWorkCount);
+            return true;
+        }
+
         private void UpdateIpcUplinkExplorer(BackendIpcDiagnosticsView diag)
         {
             _hasIpcUplinkData = true;
@@ -627,13 +703,13 @@ namespace BlackbirdInterface
             string ringState = diag.SharedRingEnabled ? "ring:ready" : $"ring:missing(err={diag.SharedRingError})";
             string primary = $"{transport} | {ringState} | buf {FormatIpcBytes(diag.IoctlReadBufferBytes)} | caps 0x{diag.BrokerCapabilities:X8}";
             string secondary =
-                $"drvQ={diag.DriverQueueDepth} drop={diag.DriverDroppedEvents} uiQ i={diag.PendingIoctlUiQueue} e={diag.PendingEtwUiQueue} i/s={diag.IoctlEventsPerSec:0} e/s={diag.EtwEventsPerSec:0}";
+                $"drvQ={diag.DriverQueueDepth} drop={diag.DriverDroppedEvents} uiQ i={diag.PendingIoctlUiQueue} e={diag.PendingEtwUiQueue} i/s={diag.IoctlEventsPerSec:0} e/s={diag.EtwEventsPerSec:0} shed i={diag.DroppedIoctlForPressure} e={diag.DroppedEtwForPressure} ui={diag.DroppedUiWorkForPressure}";
 
             SetIpcUplinkExplorerDetails(primary, secondary, hasData: true);
 
             DiagnosticsState.SetValue(
                 "IPC Uplink",
-                $"mode={transport} ringErr={diag.SharedRingError} queueDepth={diag.DriverQueueDepth} dropped={diag.DriverDroppedEvents} pending(ioctl={diag.PendingIoctlUiQueue},etw={diag.PendingEtwUiQueue},status={diag.PendingStatusUiQueue}) rate(ioctl={diag.IoctlEventsPerSec:0.0}/s,etw={diag.EtwEventsPerSec:0.0}/s) errors(ioctl={diag.IoctlErrorsTotal},etw={diag.EtwErrorsTotal})");
+                $"mode={transport} ringErr={diag.SharedRingError} queueDepth={diag.DriverQueueDepth} dropped={diag.DriverDroppedEvents} pending(ioctl={diag.PendingIoctlUiQueue},etw={diag.PendingEtwUiQueue},status={diag.PendingStatusUiQueue}) rate(ioctl={diag.IoctlEventsPerSec:0.0}/s,etw={diag.EtwEventsPerSec:0.0}/s) shed(ioctl={diag.DroppedIoctlForPressure},etw={diag.DroppedEtwForPressure},ui={diag.DroppedUiWorkForPressure}) errors(ioctl={diag.IoctlErrorsTotal},etw={diag.EtwErrorsTotal})");
         }
 
         private void SetIpcUplinkExplorerDetails(string primary, string secondary, bool hasData)
@@ -652,6 +728,42 @@ namespace BlackbirdInterface
             if (!hasData)
             {
                 IpcUplinkPaneHost.SetInactive(primary, secondary);
+            }
+        }
+
+        private void AppendIoctlToCaptureStore(DateTime timestampUtc, IoctlParsedEvent record)
+        {
+            BlackbirdCaptureLiveStore? store = _liveCaptureStore;
+            if (store == null)
+            {
+                return;
+            }
+
+            try
+            {
+                store.AppendIoctl(timestampUtc, record);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsState.SetValue("Capture Store", $"IOCTL append failed: {ex.Message}");
+            }
+        }
+
+        private void AppendEtwToCaptureStore(BrokerEtwEventView view)
+        {
+            BlackbirdCaptureLiveStore? store = _liveCaptureStore;
+            if (store == null)
+            {
+                return;
+            }
+
+            try
+            {
+                store.AppendEtw(view);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsState.SetValue("Capture Store", $"ETW append failed: {ex.Message}");
             }
         }
 
@@ -730,7 +842,7 @@ namespace BlackbirdInterface
             }
 
             if (view.Family == BlackbirdNative.IpcEtwFamilySocket ||
-                view.Source.Equals("KernelNetwork", StringComparison.OrdinalIgnoreCase))
+                EventDetailFormatting.IsKernelNetworkEtwSource(view))
             {
                 return true;
             }
@@ -745,7 +857,7 @@ namespace BlackbirdInterface
                 return true;
             }
 
-            if (view.Source.Equals("ThreatIntel", StringComparison.OrdinalIgnoreCase))
+            if (EventDetailFormatting.IsThreatIntelEtwSource(view))
             {
                 return view.Task == 1 || view.Task == 2 || view.Task == 7;
             }
@@ -797,6 +909,91 @@ namespace BlackbirdInterface
             }
 
             return view.Severity >= 6;
+        }
+
+        private HeuristicEventView? EvaluateCrossProcessMemoryHeuristic(BrokerEtwEventView view)
+        {
+            string apiName = !string.IsNullOrWhiteSpace(view.EventName) ? view.EventName
+                : (!string.IsNullOrWhiteSpace(view.Operation) ? view.Operation : string.Empty);
+            if (string.IsNullOrEmpty(apiName))
+            {
+                return null;
+            }
+
+            uint actor = view.ActorPid != 0 ? view.ActorPid : view.ProcessPid;
+            uint target = view.TargetPid != 0 ? view.TargetPid : actor;
+            if (actor == 0 || actor == target)
+            {
+                return null;
+            }
+
+            string pairKey = $"{actor}|{target}";
+
+            if (apiName.Equals("NtWriteVirtualMemory", StringComparison.OrdinalIgnoreCase))
+            {
+                _crossProcWriteCountByPair.TryGetValue(pairKey, out int count);
+                count += 1;
+                _crossProcWriteCountByPair[pairKey] = count;
+
+                if (count != 5 && count != 25 && count != 100)
+                {
+                    return null;
+                }
+
+                uint severity = count >= 100 ? 8u : count >= 25 ? 7u : 6u;
+                return new HeuristicEventView
+                {
+                    TimestampUtc = view.TimestampUtc,
+                    LastSeenUtc = view.TimestampUtc,
+                    Severity = severity,
+                    DetectionName = "CROSS_PROCESS_WRITE_PATTERN",
+                    ActorPid = actor,
+                    TargetPid = target,
+                    Source = "Blackbird/MemoryPattern",
+                    EventName = "NtWriteVirtualMemory",
+                    Reason = $"reason=cross-process write accumulation; count={count}; actor={actor}; target={target}",
+                    Evidence = $"NtWriteVirtualMemory observed {count}x from pid {actor} into pid {target}",
+                    RepeatCount = 1
+                };
+            }
+
+            if (apiName.Equals("NtAllocateVirtualMemory", StringComparison.OrdinalIgnoreCase))
+            {
+                Dictionary<string, string> fields = ParseReasonFields(view.Reason ?? string.Empty);
+                uint protect = (uint)FirstU64(fields, "protect", "c3", "a5");
+                bool isRwx = protect != 0 && (protect & 0x40u) != 0;
+                if (!isRwx)
+                {
+                    return null;
+                }
+
+                _crossProcRwxAllocCountByPair.TryGetValue(pairKey, out int count);
+                count += 1;
+                _crossProcRwxAllocCountByPair[pairKey] = count;
+
+                if (count != 3 && count != 12 && count != 48)
+                {
+                    return null;
+                }
+
+                uint severity = count >= 48 ? 9u : count >= 12 ? 8u : 7u;
+                return new HeuristicEventView
+                {
+                    TimestampUtc = view.TimestampUtc,
+                    LastSeenUtc = view.TimestampUtc,
+                    Severity = severity,
+                    DetectionName = "CROSS_PROCESS_RWX_ALLOC_PATTERN",
+                    ActorPid = actor,
+                    TargetPid = target,
+                    Source = "Blackbird/MemoryPattern",
+                    EventName = "NtAllocateVirtualMemory",
+                    Reason = $"reason=repeated cross-process RWX allocation; count={count}; actor={actor}; target={target}",
+                    Evidence = $"NtAllocateVirtualMemory(PAGE_EXECUTE_READWRITE) observed {count}x from pid {actor} into pid {target}",
+                    RepeatCount = 1
+                };
+            }
+
+            return null;
         }
 
         private static bool IsDirectSyscallDetection(string detection)
@@ -989,6 +1186,12 @@ namespace BlackbirdInterface
             return "..." + path[^maxChars..];
         }
 
+        private static string BuildFilesystemClusterKey(IoctlParsedEvent record)
+        {
+            string path = string.IsNullOrWhiteSpace(record.FilePath) ? "<unknown>" : record.FilePath;
+            return $"{record.FileOperation}|{record.FileProcessPid}|{path}";
+        }
+
         private void ResetFilesystemTimelineCluster()
         {
             _filesystemClusterOperationCounts.Clear();
@@ -1019,12 +1222,11 @@ namespace BlackbirdInterface
                     continue;
                 }
 
-                uint operation = entry.Key;
                 int count = entry.Value;
-                string operationName = DescribeFileOperation(operation);
-                (uint Pid, uint Tid, string Path) sample = _filesystemClusterSamplesByOperation.TryGetValue(operation, out var found)
+                (uint Pid, uint Tid, string Path, uint Operation) sample = _filesystemClusterSamplesByOperation.TryGetValue(entry.Key, out var found)
                     ? found
-                    : (0u, 0u, "<unknown>");
+                    : (0u, 0u, "<unknown>", 0u);
+                string operationName = DescribeFileOperation(sample.Operation);
                 string samplePath = string.IsNullOrWhiteSpace(sample.Path) ? "<unknown>" : sample.Path;
                 string summaryPath = BuildFileSummaryPath(samplePath);
                 emitted.Add(new TelemetryEvent
@@ -1063,16 +1265,18 @@ namespace BlackbirdInterface
                 _filesystemClusterWindowStartUtc = nowUtc;
             }
 
+            string clusterKey = BuildFilesystemClusterKey(record);
             _filesystemClusterTotal += 1;
             _filesystemClusterLastSeenUtc = nowUtc;
-            _filesystemClusterOperationCounts.TryGetValue(record.FileOperation, out int count);
-            _filesystemClusterOperationCounts[record.FileOperation] = count + 1;
-            if (!_filesystemClusterSamplesByOperation.ContainsKey(record.FileOperation))
+            _filesystemClusterOperationCounts.TryGetValue(clusterKey, out int count);
+            _filesystemClusterOperationCounts[clusterKey] = count + 1;
+            if (!_filesystemClusterSamplesByOperation.ContainsKey(clusterKey))
             {
-                _filesystemClusterSamplesByOperation[record.FileOperation] =
+                _filesystemClusterSamplesByOperation[clusterKey] =
                     (record.FileProcessPid,
                      record.FileThreadId,
-                     string.IsNullOrWhiteSpace(record.FilePath) ? "<unknown>" : record.FilePath);
+                     string.IsNullOrWhiteSpace(record.FilePath) ? "<unknown>" : record.FilePath,
+                     record.FileOperation);
             }
 
             if (_filesystemClusterTotal >= FilesystemTimelineClusterFlushCount)
@@ -1242,6 +1446,46 @@ namespace BlackbirdInterface
             return null;
         }
 
+        private static ProcessRelationView? MapEtwRelation(BrokerEtwEventView view)
+        {
+            if (view.Family != BlackbirdNative.IpcEtwFamilyProcess ||
+                (view.Flags & BlackbirdNative.IpcEtwFlagProcessIsCreate) == 0)
+            {
+                return null;
+            }
+
+            uint source = view.CreatorPid != 0
+                ? view.CreatorPid
+                : (view.ParentPid != 0 ? view.ParentPid : view.ActorPid);
+            uint target = view.ProcessPid != 0 ? view.ProcessPid : view.TargetPid;
+            if (source == 0 || target == 0 || source == target)
+            {
+                return null;
+            }
+
+            uint createStatus = unchecked((uint)view.CreateStatus);
+            string detailSignature = $"create|{source}|{target}|0x{view.ProcessStartKey:X}|0x{createStatus:X8}";
+            string detailText =
+                $"sourcePid={source} targetPid={target} relationType=ProcessCreate creatorPid={view.CreatorPid} " +
+                $"parentPid={view.ParentPid} createStatus=0x{createStatus:X8} startKey=0x{view.ProcessStartKey:X} " +
+                $"imagePath={view.ImagePath}";
+
+            return new ProcessRelationView
+            {
+                FirstSeenUtc = view.TimestampUtc,
+                LastSeenUtc = view.TimestampUtc,
+                SourcePid = source,
+                TargetPid = target,
+                RelationType = "ProcessCreate",
+                LastAccessMask = 0,
+                LastFlags = view.Flags,
+                OriginSource = view.Source,
+                DetailSignature = detailSignature,
+                DetailText = detailText,
+                RepeatCount = 1
+            };
+        }
+
         private HeuristicEventView? MapIoctlHeuristic(IoctlParsedEvent record)
         {
             if (record.Type != BlackbirdNative.EventTypeHandle || record.CallerPid == 0 || record.TargetPid == 0)
@@ -1338,6 +1582,7 @@ namespace BlackbirdInterface
                 TimestampUtc = now,
                 LastSeenUtc = now,
                 Source = source,
+                SourceId = etw.Source,
                 Family = etw.Family,
                 EventName = eventName,
                 Task = etw.Task,
@@ -1464,29 +1709,25 @@ namespace BlackbirdInterface
 
             var etwRows = new List<BrokerEtwEventView>(views.Count);
             var heuristics = new List<HeuristicEventView>();
+            var relations = new List<ProcessRelationView>();
             var timelineEvents = new List<TelemetryEvent>(views.Count);
 
             for (int i = 0; i < views.Count; i += 1)
             {
                 BrokerEtwEventView view = views[i];
-                bool kernelNtApiEvent =
-                    view.Source.Equals("Blackbird", StringComparison.OrdinalIgnoreCase) &&
-                    view.Family != BlackbirdNative.IpcEtwFamilyUserHook &&
-                    ((!string.IsNullOrWhiteSpace(view.Operation) &&
-                      view.Operation.StartsWith("Nt", StringComparison.OrdinalIgnoreCase)) ||
-                     (!string.IsNullOrWhiteSpace(view.EventName) &&
-                      view.EventName.StartsWith("Nt", StringComparison.OrdinalIgnoreCase)));
-                bool usermodeHookEvent = view.Family == BlackbirdNative.IpcEtwFamilyUserHook &&
-                                         (string.Equals(view.DetectionName, "USERMODE_HOOK_API_CALL", StringComparison.OrdinalIgnoreCase) ||
-                                          string.Equals(view.DetectionName, "USERMODE_MEMORY_ACTIVITY", StringComparison.OrdinalIgnoreCase) ||
-                                          string.Equals(view.DetectionName, "USERMODE_PROCESS_RECON", StringComparison.OrdinalIgnoreCase));
-                bool isApiHookCall = usermodeHookEvent || kernelNtApiEvent;
-                if (isApiHookCall)
+                UpdateHookPipelineDiagnostics(view);
+                if (EventDetailFormatting.IsApiGraphCandidate(view))
                 {
                     TelemetryEvent? apiTimelineEvent = HandleApiHookEvent(view);
                     if (apiTimelineEvent != null)
                     {
                         timelineEvents.Add(apiTimelineEvent);
+                    }
+
+                    HeuristicEventView? memPatternHeuristic = EvaluateCrossProcessMemoryHeuristic(view);
+                    if (memPatternHeuristic != null)
+                    {
+                        heuristics.Add(memPatternHeuristic);
                     }
                 }
 
@@ -1494,6 +1735,12 @@ namespace BlackbirdInterface
                 if (keepEtw)
                 {
                     etwRows.Add(view);
+                }
+
+                ProcessRelationView? relation = MapEtwRelation(view);
+                if (relation != null)
+                {
+                    relations.Add(relation);
                 }
 
                 string detection = view.DetectionName;
@@ -1533,7 +1780,7 @@ namespace BlackbirdInterface
                 string source = view.Source;
                 uint actor = view.ActorPid;
                 bool isSocketEvent = view.Family == BlackbirdNative.IpcEtwFamilySocket ||
-                                     source.Equals("KernelNetwork", StringComparison.OrdinalIgnoreCase);
+                                     EventDetailFormatting.IsKernelNetworkEtwSource(view);
                 string socketOperation = string.IsNullOrWhiteSpace(view.Operation) ? eventName : view.Operation;
                 if (string.IsNullOrWhiteSpace(socketOperation))
                 {
@@ -1596,6 +1843,41 @@ namespace BlackbirdInterface
                     HeuristicsPaneHost.TotalRawCount);
                 SetExplorerHasData("Heuristics", HeuristicsPaneHost.ItemCount > 0);
                 DiagnosticsState.Increment("Heuristics", heuristics.Count);
+            }
+
+            if (relations.Count > 0)
+            {
+                ProcessRelationsPaneHost.PushRelations(relations);
+                _explorer.FirstOrDefault(x => x.Name == "Process Relations")?.PushPreviewValue(
+                    ProcessRelationsPaneHost.TotalRawCount);
+                SetExplorerHasData("Process Relations", ProcessRelationsPaneHost.ItemCount > 0);
+            }
+        }
+
+        private void UpdateHookPipelineDiagnostics(BrokerEtwEventView view)
+        {
+            if (EventDetailFormatting.IsKernelHookTelemetry(view))
+            {
+                string api = !string.IsNullOrWhiteSpace(view.Operation) ? view.Operation : view.EventName;
+                DiagnosticsState.SetValue(
+                    "Kernel Hooks",
+                    string.IsNullOrWhiteSpace(api) ? "Active" : $"Active ({api})");
+                return;
+            }
+
+            if (EventDetailFormatting.IsUsermodeSensorTelemetry(view))
+            {
+                string kind = view.NotifyClass switch
+                {
+                    BlackbirdNative.IpcHookEventNt => "NT",
+                    BlackbirdNative.IpcHookEventWinsock => "Winsock",
+                    BlackbirdNative.IpcHookEventKi => "KI",
+                    BlackbirdNative.IpcHookEventExceptionLowNoise => "ExceptionLowNoise",
+                    BlackbirdNative.IpcHookEventExceptionHighPriv => "ExceptionHighPriv",
+                    BlackbirdNative.IpcHookEventIntegrity => "Integrity",
+                    _ => "Hook"
+                };
+                DiagnosticsState.SetValue("Usermode Hooks", $"Active ({kind})");
             }
         }
 
@@ -1776,17 +2058,13 @@ namespace BlackbirdInterface
                 TID = unchecked((int)threadId),
                 Group = "API Hooks",
                 SubType = apiName,
-                Summary = $"{apiName} [{sourcePid}->{targetPid}]",
+                Summary = $"{apiName} [caller {sourcePid} target {targetPid}]",
                 Details = view.Details
             };
         }
 
         private void PublishApiGraphSnapshot()
         {
-            string? selectedKey = (ApiViewDataGrid?.SelectedItem as ApiCallGraphMainRowView)?.GraphKey;
-            bool apiViewVisible = _mainViewMode == MainInterfaceViewMode.Api &&
-                                  ApiViewBorder != null &&
-                                  ApiViewBorder.Visibility == Visibility.Visible;
             var snapshot = _apiGraphRowsByKey.Values
                 .Select(x => new ApiCallGraphRowSnapshot
                 {
@@ -1810,7 +2088,6 @@ namespace BlackbirdInterface
                 uint target = row.TargetPid != 0 ? row.TargetPid : row.SourcePid;
                 string sensor = string.IsNullOrWhiteSpace(row.SensorOrigin) ? "Unclassified" : row.SensorOrigin;
                 string key = BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName, sensor);
-                int flameWidth = Math.Clamp((int)Math.Round((row.Hits / (double)maxHits) * 24.0), 1, 24);
                 double heatPercent = Math.Clamp((row.Hits / (double)maxHits) * 100.0, 0.0, 100.0);
                 string rawReason = _apiGraphReasonByKey.TryGetValue(key, out string? reason) ? reason : string.Empty;
                 string decodedAction = _apiGraphActionByKey.TryGetValue(key, out string? action)
@@ -1820,47 +2097,75 @@ namespace BlackbirdInterface
                     ? detail
                     : rawReason;
                 sensor = _apiGraphSensorByKey.TryGetValue(key, out string? sensorLabel) ? sensorLabel : sensor;
+                ApiCallStructuredFields structured = BuildApiCallStructuredFields(row.ApiName, rawReason, decodedAction);
                 rows.Add(new ApiCallGraphMainRowView
                 {
                     GraphKey = key,
                     ApiName = string.IsNullOrWhiteSpace(row.ApiName) ? "unknown" : row.ApiName,
+                    ActionLabel = structured.Action,
                     SensorLabel = sensor,
                     SensorBackground = BuildApiSensorBackground(sensor),
                     SensorForeground = BuildApiSensorForeground(sensor),
                     HeatTrackBackground = BuildApiHeatTrackBackground(sensor),
                     HeatFillBackground = BuildApiHeatFillBackground(sensor),
-                    PathLabel = $"{row.SourcePid} -> {target}",
-                    ThreadLabel = row.ThreadId == 0 ? "-" : row.ThreadId.ToString(CultureInfo.InvariantCulture),
+                    RowBackground = BuildApiRowBackground(sensor),
+                    RowBorderBrush = BuildApiRowBorder(sensor),
+                    SourceLabel = row.SourcePid == 0 ? string.Empty : row.SourcePid.ToString(CultureInfo.InvariantCulture),
+                    TargetLabel = target == 0 ? string.Empty : target.ToString(CultureInfo.InvariantCulture),
+                    ThreadLabel = row.ThreadId == 0 ? string.Empty : row.ThreadId.ToString(CultureInfo.InvariantCulture),
+                    BaseLabel = structured.Base,
+                    SizeLabel = structured.Size,
+                    AllocTypeLabel = structured.AllocType,
+                    ProtectLabel = structured.Protect,
                     Hits = Math.Max(1, row.Hits),
-                    FlameBar = new string('|', flameWidth),
                     HeatPercent = heatPercent,
-                    HeatLabel = $"{Math.Round(heatPercent, MidpointRounding.AwayFromZero):F0}%",
-                    LastSeen = row.LastSeenUtc == default ? "-" : row.LastSeenUtc.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture),
-                    DecodedAction = SummarizeApiReason(decodedAction),
+                    ActivityFillWidth = Math.Round((heatPercent / 100.0) * 110.0),
+                    LastSeen = row.LastSeenUtc == default ? string.Empty : row.LastSeenUtc.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture),
                     DetailFull = decodedDetail
                 });
             }
 
-            _apiViewRows.ReplaceAll(rows);
+            _apiGraphSnapshotRows.Clear();
+            _apiGraphSnapshotRows.AddRange(snapshot);
+            _apiViewSnapshotRows.Clear();
+            _apiViewSnapshotRows.AddRange(rows);
+            RefreshApiViewPresentation();
+        }
+
+        private void RefreshApiViewPresentation()
+        {
+            string? selectedKey = (ApiViewDataGrid?.SelectedItem as ApiCallGraphMainRowView)?.GraphKey;
+            bool apiViewVisible = _mainViewMode == MainInterfaceViewMode.Api &&
+                                  ApiViewBorder != null &&
+                                  ApiViewBorder.Visibility == Visibility.Visible;
+            List<ApiCallGraphMainRowView> filteredRows = ApplyApiViewFilters(_apiViewSnapshotRows);
+            _apiViewRows.ReplaceAll(filteredRows);
+
+            var filteredKeys = new HashSet<string>(filteredRows.Select(x => x.GraphKey), StringComparer.Ordinal);
+            List<ApiCallGraphRowSnapshot> filteredSnapshot = _apiGraphSnapshotRows
+                .Where(row =>
+                {
+                    string sensor = string.IsNullOrWhiteSpace(row.SensorOrigin) ? "Unclassified" : row.SensorOrigin;
+                    string key = BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName, sensor);
+                    return filteredKeys.Contains(key);
+                })
+                .OrderByDescending(x => x.Hits)
+                .ThenByDescending(x => x.LastSeenUtc)
+                .ToList();
 
             if (ApiViewSummaryBlock != null)
             {
-                ApiViewSummaryBlock.Text = snapshot.Count == 0
+                ApiViewSummaryBlock.Text = _apiGraphSnapshotRows.Count == 0
                     ? "No API hook data yet"
-                    : $"Patterns: {_apiViewRows.Count} / Calls: {_apiViewRows.Sum(x => x.Hits)}";
+                    : filteredRows.Count == _apiViewSnapshotRows.Count
+                        ? $"Patterns: {filteredRows.Count} / Calls: {filteredRows.Sum(x => x.Hits)}"
+                        : $"Patterns: {filteredRows.Count}/{_apiViewSnapshotRows.Count} / Calls: {filteredRows.Sum(x => x.Hits)}";
             }
-            if (ApiViewSubSummaryBlock != null)
+            if (apiViewVisible && ApiViewGraphCanvas != null)
             {
-                ApiViewSubSummaryBlock.Text = snapshot.Count == 0
-                    ? "live call graph + memory telemetry"
-                    : $"last update: {snapshot.Max(x => x.LastSeenUtc):HH:mm:ss.fff}Z";
+                RenderApiGraphCanvas(filteredSnapshot, selectedKey);
             }
-            if (apiViewVisible && ApiViewDotGraphTextBox != null)
-            {
-                string dotGraph = BuildApiDotGraph(snapshot);
-                ApiViewDotGraphTextBox.Text = string.IsNullOrWhiteSpace(dotGraph) ? "digraph ApiCalls {\n}" : dotGraph;
-            }
-            DiagnosticsState.SetValue("API Graph", $"patterns={snapshot.Count} visible={apiViewVisible}");
+            DiagnosticsState.SetValue("API Graph", $"patterns={filteredRows.Count}/{_apiViewSnapshotRows.Count} visible={apiViewVisible}");
 
             if (ApiViewDataGrid != null)
             {
@@ -1880,41 +2185,358 @@ namespace BlackbirdInterface
             }
         }
 
-        private static string BuildApiDotGraph(IReadOnlyList<ApiCallGraphRowSnapshot> rows)
+        private List<ApiCallGraphMainRowView> ApplyApiViewFilters(IEnumerable<ApiCallGraphMainRowView> rows)
         {
-            var sb = new StringBuilder(1024);
-            sb.AppendLine("digraph ApiCalls {");
-            sb.AppendLine("  rankdir=LR;");
-            sb.AppendLine("  node [shape=box, style=rounded];");
-            int maxHits = Math.Max(1, rows.Count == 0 ? 1 : rows.Max(x => Math.Max(1, x.Hits)));
-            foreach (ApiCallGraphRowSnapshot row in rows.Take(180))
+            string callFilter = (ApiFilterCallBox?.Text ?? string.Empty).Trim();
+            string actionFilter = (ApiFilterActionBox?.Text ?? string.Empty).Trim();
+            string sensorFilter = ((ApiFilterSensorBox?.SelectedItem as ComboBoxItem)?.Content as string ?? "All Sensors").Trim();
+            string callerFilter = (ApiFilterCallerBox?.Text ?? string.Empty).Trim();
+            string targetFilter = (ApiFilterTargetBox?.Text ?? string.Empty).Trim();
+            string threadFilter = (ApiFilterThreadBox?.Text ?? string.Empty).Trim();
+            string regionFilter = (ApiFilterRegionBox?.Text ?? string.Empty).Trim();
+            string protectFilter = (ApiFilterProtectBox?.Text ?? string.Empty).Trim();
+            string minHitsFilter = (ApiFilterMinHitsBox?.Text ?? string.Empty).Trim();
+            int minHits = 0;
+            _ = int.TryParse(minHitsFilter, NumberStyles.Integer, CultureInfo.InvariantCulture, out minHits);
+
+            bool Matches(string candidate, string filter)
+                => string.IsNullOrWhiteSpace(filter) ||
+                   (!string.IsNullOrWhiteSpace(candidate) && candidate.Contains(filter, StringComparison.OrdinalIgnoreCase));
+
+            bool MatchesSensor(string candidate)
+                => string.IsNullOrWhiteSpace(sensorFilter) ||
+                   sensorFilter.Equals("All Sensors", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(candidate, sensorFilter, StringComparison.OrdinalIgnoreCase);
+
+            return rows
+                .Where(row =>
+                    Matches(row.ApiName, callFilter) &&
+                    Matches(row.ActionLabel, actionFilter) &&
+                    MatchesSensor(row.SensorLabel) &&
+                    Matches(row.SourceLabel, callerFilter) &&
+                    Matches(row.TargetLabel, targetFilter) &&
+                    Matches(row.ThreadLabel, threadFilter) &&
+                    (Matches(row.BaseLabel, regionFilter) || Matches(row.SizeLabel, regionFilter)) &&
+                    Matches(row.ProtectLabel, protectFilter) &&
+                    row.Hits >= Math.Max(0, minHits))
+                .OrderByDescending(x => x.Hits)
+                .ThenByDescending(x => x.LastSeen, StringComparer.Ordinal)
+                .ToList();
+        }
+
+        private static ApiCallStructuredFields BuildApiCallStructuredFields(string apiName, string rawReason, string decodedAction)
+        {
+            Dictionary<string, string> fields = ParseReasonFields(rawReason);
+            string action = SummarizeApiReason(decodedAction);
+            string baseLabel = string.Empty;
+            string sizeLabel = string.Empty;
+            string allocTypeLabel = string.Empty;
+            string protectLabel = string.Empty;
+
+            if (apiName.Equals("NtAllocateVirtualMemory", StringComparison.OrdinalIgnoreCase))
             {
-                uint source = row.SourcePid;
-                uint target = row.TargetPid != 0 ? row.TargetPid : row.SourcePid;
-                string api = string.IsNullOrWhiteSpace(row.ApiName) ? "unknown" : row.ApiName.Replace("\"", "'");
-                double heat = Math.Clamp(row.Hits / (double)maxHits, 0.0, 1.0);
-                int red = Math.Clamp((int)Math.Round(96 + (150 * heat)), 0, 255);
-                int green = Math.Clamp((int)Math.Round(188 - (125 * heat)), 0, 255);
-                int blue = Math.Clamp((int)Math.Round(238 - (175 * heat)), 0, 255);
-                double penWidth = 1.0 + (4.0 * heat);
-                sb.Append("  \"PID ");
-                sb.Append(source);
-                sb.Append("\" -> \"PID ");
-                sb.Append(target);
-                sb.Append("\" [label=\"");
-                sb.Append(api);
-                sb.Append(" x");
-                sb.Append(row.Hits);
-                sb.Append("\" color=\"#");
-                sb.Append(red.ToString("X2", CultureInfo.InvariantCulture));
-                sb.Append(green.ToString("X2", CultureInfo.InvariantCulture));
-                sb.Append(blue.ToString("X2", CultureInfo.InvariantCulture));
-                sb.Append("\" penwidth=\"");
-                sb.Append(penWidth.ToString("F2", CultureInfo.InvariantCulture));
-                sb.AppendLine("\"];");
+                ulong baseAddress = FirstU64(fields, "base", "c0", "a1");
+                ulong regionSize = FirstU64(fields, "size", "c1", "a3");
+                uint allocationType = (uint)FirstU64(fields, "allocType", "c2", "a4");
+                uint protect = (uint)FirstU64(fields, "protect", "c3", "a5");
+                baseLabel = baseAddress == 0 ? string.Empty : $"0x{baseAddress:X}";
+                sizeLabel = regionSize == 0 ? string.Empty : $"0x{regionSize:X}";
+                allocTypeLabel = allocationType == 0 ? string.Empty : $"0x{allocationType:X} {DescribeMemoryAllocationType(allocationType)}";
+                protectLabel = protect == 0 ? string.Empty : $"0x{protect:X} {DescribeMemoryProtect(protect)}";
             }
-            sb.AppendLine("}");
-            return sb.ToString();
+            else if (apiName.Equals("NtProtectVirtualMemory", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong baseAddress = FirstU64(fields, "base", "c0", "a1");
+                ulong regionSize = FirstU64(fields, "size", "c1", "a2");
+                uint protect = (uint)FirstU64(fields, "newProtect", "c2", "a3");
+                baseLabel = baseAddress == 0 ? string.Empty : $"0x{baseAddress:X}";
+                sizeLabel = regionSize == 0 ? string.Empty : $"0x{regionSize:X}";
+                protectLabel = protect == 0 ? string.Empty : $"0x{protect:X} {DescribeMemoryProtect(protect)}";
+            }
+            else if (apiName.Equals("NtWriteVirtualMemory", StringComparison.OrdinalIgnoreCase) ||
+                     apiName.Equals("NtReadVirtualMemory", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong baseAddress = FirstU64(fields, "base", "c0", "a1");
+                ulong regionSize = FirstU64(fields, "size", "c1", "a3");
+                baseLabel = baseAddress == 0 ? string.Empty : $"0x{baseAddress:X}";
+                sizeLabel = regionSize == 0 ? string.Empty : $"0x{regionSize:X}";
+            }
+
+            return new ApiCallStructuredFields
+            {
+                Action = string.IsNullOrWhiteSpace(action) ? apiName : action,
+                Base = baseLabel,
+                Size = sizeLabel,
+                AllocType = allocTypeLabel,
+                Protect = protectLabel
+            };
+        }
+
+        private void RenderApiGraphCanvas(IReadOnlyList<ApiCallGraphRowSnapshot> rows, string? selectedKey)
+        {
+            if (ApiViewGraphCanvas == null)
+            {
+                return;
+            }
+
+            ApiViewGraphCanvas.Children.Clear();
+
+            if (rows.Count == 0)
+            {
+                ApiViewGraphCanvas.Width = 540;
+                ApiViewGraphCanvas.Height = 240;
+                var empty = new System.Windows.Controls.TextBlock
+                {
+                    Text = "No live call graph yet",
+                    Foreground = (System.Windows.Media.Brush)FindResource("WinMutedTextBrush")
+                };
+                System.Windows.Controls.Canvas.SetLeft(empty, 16);
+                System.Windows.Controls.Canvas.SetTop(empty, 16);
+                ApiViewGraphCanvas.Children.Add(empty);
+                return;
+            }
+
+            ApiCallGraphRowSnapshot? selectedRow = rows.FirstOrDefault(row =>
+            {
+                string sensor = string.IsNullOrWhiteSpace(row.SensorOrigin) ? "Unclassified" : row.SensorOrigin;
+                string key = BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName, sensor);
+                return string.Equals(key, selectedKey, StringComparison.Ordinal);
+            });
+
+            List<ApiCallGraphRowSnapshot> visible = rows
+                .OrderByDescending(x => x.Hits)
+                .ThenByDescending(x => x.LastSeenUtc)
+                .Take(12)
+                .ToList();
+            if (selectedRow != null && !visible.Contains(selectedRow))
+            {
+                visible.Add(selectedRow);
+            }
+
+            var sourceNodes = visible
+                .GroupBy(x => x.SourcePid)
+                .Select(x => new
+                {
+                    Pid = x.Key,
+                    Hits = x.Sum(y => Math.Max(1, y.Hits)),
+                    Selected = selectedRow != null && x.Any(y => y.SourcePid == selectedRow.SourcePid)
+                })
+                .Where(x => x.Pid != 0)
+                .OrderByDescending(x => x.Hits)
+                .Take(6)
+                .ToList();
+            var apiNodes = visible
+                .GroupBy(x => string.IsNullOrWhiteSpace(x.ApiName) ? "unknown" : x.ApiName)
+                .Select(x => new
+                {
+                    Api = x.Key,
+                    Hits = x.Sum(y => Math.Max(1, y.Hits)),
+                    Selected = selectedRow != null && x.Any(y => string.Equals(y.ApiName, selectedRow.ApiName, StringComparison.OrdinalIgnoreCase))
+                })
+                .OrderByDescending(x => x.Hits)
+                .Take(8)
+                .ToList();
+            var targetNodes = visible
+                .GroupBy(x => x.TargetPid != 0 ? x.TargetPid : x.SourcePid)
+                .Select(x => new
+                {
+                    Pid = x.Key,
+                    Hits = x.Sum(y => Math.Max(1, y.Hits)),
+                    Selected = selectedRow != null && x.Any(y => (y.TargetPid != 0 ? y.TargetPid : y.SourcePid) == (selectedRow.TargetPid != 0 ? selectedRow.TargetPid : selectedRow.SourcePid))
+                })
+                .Where(x => x.Pid != 0)
+                .OrderByDescending(x => x.Hits)
+                .Take(6)
+                .ToList();
+
+            double canvasWidth = 920;
+            double nodeWidth = 170;
+            double apiNodeWidth = 188;
+            double nodeHeight = 40;
+            double leftX = 26;
+            double middleX = 364;
+            double rightX = canvasWidth - nodeWidth - 26;
+            double topY = 42;
+            double verticalSpacing = 56;
+            double canvasHeight = Math.Max(
+                264,
+                topY + Math.Max(sourceNodes.Count, Math.Max(apiNodes.Count, targetNodes.Count)) * verticalSpacing + 40);
+            ApiViewGraphCanvas.Width = canvasWidth;
+            ApiViewGraphCanvas.Height = canvasHeight;
+
+            var sourcePositions = new Dictionary<uint, System.Windows.Point>();
+            var apiPositions = new Dictionary<string, System.Windows.Point>(StringComparer.OrdinalIgnoreCase);
+            var targetPositions = new Dictionary<uint, System.Windows.Point>();
+
+            AddColumnLabel(leftX + (nodeWidth / 2.0), 14, "CALLERS");
+            AddColumnLabel(middleX + (apiNodeWidth / 2.0), 14, "APIS");
+            AddColumnLabel(rightX + (nodeWidth / 2.0), 14, "TARGETS");
+
+            for (int i = 0; i < sourceNodes.Count; i += 1)
+            {
+                double y = topY + (i * verticalSpacing);
+                sourcePositions[sourceNodes[i].Pid] = new System.Windows.Point(leftX + nodeWidth, y + (nodeHeight / 2.0));
+                AddApiGraphProcessNode(leftX, y, nodeWidth, nodeHeight, sourceNodes[i].Pid, true, sourceNodes[i].Selected);
+            }
+
+            for (int i = 0; i < apiNodes.Count; i += 1)
+            {
+                double y = topY + (i * verticalSpacing);
+                apiPositions[apiNodes[i].Api] = new System.Windows.Point(middleX + apiNodeWidth / 2.0, y + (nodeHeight / 2.0));
+                AddApiGraphApiNode(middleX, y, apiNodeWidth, nodeHeight, apiNodes[i].Api, apiNodes[i].Selected);
+            }
+
+            for (int i = 0; i < targetNodes.Count; i += 1)
+            {
+                double y = topY + (i * verticalSpacing);
+                targetPositions[targetNodes[i].Pid] = new System.Windows.Point(rightX, y + (nodeHeight / 2.0));
+                AddApiGraphProcessNode(rightX, y, nodeWidth, nodeHeight, targetNodes[i].Pid, false, targetNodes[i].Selected);
+            }
+
+            int maxHits = Math.Max(1, visible.Max(x => Math.Max(1, x.Hits)));
+            foreach (ApiCallGraphRowSnapshot row in visible)
+            {
+                uint sourcePid = row.SourcePid;
+                uint targetPid = row.TargetPid != 0 ? row.TargetPid : row.SourcePid;
+                string apiName = string.IsNullOrWhiteSpace(row.ApiName) ? "unknown" : row.ApiName;
+                string sensor = string.IsNullOrWhiteSpace(row.SensorOrigin) ? "Unclassified" : row.SensorOrigin;
+                string rowKey = BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName, sensor);
+                bool isSelected = !string.IsNullOrWhiteSpace(selectedKey) && string.Equals(rowKey, selectedKey, StringComparison.Ordinal);
+                if (!sourcePositions.TryGetValue(sourcePid, out System.Windows.Point sourcePoint) ||
+                    !apiPositions.TryGetValue(apiName, out System.Windows.Point apiPoint) ||
+                    !targetPositions.TryGetValue(targetPid, out System.Windows.Point end))
+                {
+                    continue;
+                }
+
+                double heat = Math.Clamp(row.Hits / (double)maxHits, 0.0, 1.0);
+                var lineBrush = BuildApiGraphEdgeBrush(sensor, heat);
+                DrawCurve(sourcePoint, new System.Windows.Point(middleX, apiPoint.Y), lineBrush, heat, isSelected);
+                DrawCurve(new System.Windows.Point(middleX + apiNodeWidth, apiPoint.Y), end, lineBrush, heat, isSelected);
+            }
+
+            void AddColumnLabel(double centerX, double y, string label)
+            {
+                var block = new System.Windows.Controls.TextBlock
+                {
+                    Text = label,
+                    FontSize = 10,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = (System.Windows.Media.Brush)FindResource("WinMutedTextBrush")
+                };
+                block.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                System.Windows.Controls.Canvas.SetLeft(block, centerX - (block.DesiredSize.Width / 2.0));
+                System.Windows.Controls.Canvas.SetTop(block, y);
+                ApiViewGraphCanvas.Children.Add(block);
+            }
+
+            void DrawCurve(System.Windows.Point start, System.Windows.Point end, System.Windows.Media.Brush stroke, double heat, bool selected)
+            {
+                double controlOffset = Math.Max(48, (end.X - start.X) * 0.32);
+                var figure = new System.Windows.Media.PathFigure { StartPoint = start };
+                figure.Segments.Add(new System.Windows.Media.BezierSegment(
+                    new System.Windows.Point(start.X + controlOffset, start.Y),
+                    new System.Windows.Point(end.X - controlOffset, end.Y),
+                    end,
+                    true));
+                var geometry = new System.Windows.Media.PathGeometry();
+                geometry.Figures.Add(figure);
+
+                ApiViewGraphCanvas.Children.Add(new System.Windows.Shapes.Path
+                {
+                    Data = geometry,
+                    Stroke = stroke,
+                    StrokeThickness = (selected ? 2.1 : 1.0) + (2.9 * heat),
+                    Opacity = selected ? 0.98 : 0.28
+                });
+            }
+
+            void AddApiGraphProcessNode(double x, double y, double width, double height, uint pid, bool sourceSide, bool selected)
+            {
+                string processName = GetApiGraphProcessName(pid);
+                string title = string.IsNullOrWhiteSpace(processName) ? "Process" : processName;
+                var border = new System.Windows.Controls.Border
+                {
+                    Width = width,
+                    Height = height,
+                    CornerRadius = new CornerRadius(8),
+                    Background = new System.Windows.Media.SolidColorBrush(sourceSide
+                        ? (selected ? System.Windows.Media.Color.FromArgb(235, 22, 86, 140) : System.Windows.Media.Color.FromArgb(220, 17, 63, 103))
+                        : (selected ? System.Windows.Media.Color.FromArgb(235, 140, 34, 38) : System.Windows.Media.Color.FromArgb(220, 110, 25, 28))),
+                    BorderBrush = new System.Windows.Media.SolidColorBrush(sourceSide
+                        ? (selected ? System.Windows.Media.Color.FromRgb(118, 203, 255) : System.Windows.Media.Color.FromRgb(80, 172, 255))
+                        : (selected ? System.Windows.Media.Color.FromRgb(255, 139, 139) : System.Windows.Media.Color.FromRgb(255, 109, 109))),
+                    BorderThickness = new Thickness(selected ? 2 : 1),
+                    Opacity = selected ? 1.0 : 0.78,
+                    Child = new System.Windows.Controls.StackPanel
+                    {
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Margin = new Thickness(10, 3, 10, 3),
+                        Children =
+                        {
+                            new System.Windows.Controls.TextBlock
+                            {
+                                Text = title,
+                                TextAlignment = TextAlignment.Center,
+                                TextTrimming = TextTrimming.CharacterEllipsis,
+                                FontWeight = FontWeights.SemiBold,
+                                Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.White)
+                            },
+                            new System.Windows.Controls.TextBlock
+                            {
+                                Text = $"PID {pid}",
+                                Margin = new Thickness(0, 1, 0, 0),
+                                TextAlignment = TextAlignment.Center,
+                                Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 225, 230))
+                            }
+                        }
+                    }
+                };
+                System.Windows.Controls.Canvas.SetLeft(border, x);
+                System.Windows.Controls.Canvas.SetTop(border, y);
+                ApiViewGraphCanvas.Children.Add(border);
+            }
+
+            void AddApiGraphApiNode(double x, double y, double width, double height, string label, bool selected)
+            {
+                var border = new System.Windows.Controls.Border
+                {
+                    Width = width,
+                    Height = height,
+                    CornerRadius = new CornerRadius(8),
+                    Background = new System.Windows.Media.SolidColorBrush(selected
+                        ? System.Windows.Media.Color.FromArgb(236, 42, 49, 58)
+                        : System.Windows.Media.Color.FromArgb(225, 32, 36, 43)),
+                    BorderBrush = new System.Windows.Media.SolidColorBrush(selected
+                        ? System.Windows.Media.Color.FromRgb(195, 205, 216)
+                        : System.Windows.Media.Color.FromRgb(128, 140, 154)),
+                    BorderThickness = new Thickness(selected ? 2 : 1),
+                    Opacity = selected ? 1.0 : 0.82,
+                    Child = new System.Windows.Controls.TextBlock
+                    {
+                        Text = label,
+                        Margin = new Thickness(10, 0, 10, 0),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        TextAlignment = TextAlignment.Center,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        FontWeight = FontWeights.SemiBold,
+                        Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Colors.White)
+                    },
+                    Cursor = System.Windows.Input.Cursors.Hand
+                };
+                border.MouseLeftButtonDown += (_, e) =>
+                {
+                    SelectApiViewRowByApiName(label);
+                    if (e.ClickCount >= 2)
+                    {
+                        OpenApiInspector(label);
+                    }
+                    e.Handled = true;
+                };
+                System.Windows.Controls.Canvas.SetLeft(border, x);
+                System.Windows.Controls.Canvas.SetTop(border, y);
+                ApiViewGraphCanvas.Children.Add(border);
+            }
         }
 
         private static string SummarizeApiReason(string? reason)
@@ -2000,13 +2622,15 @@ namespace BlackbirdInterface
                 }
 
                 string protectLabel = DescribeMemoryProtect(protect);
-                action = $"Allocates 0x{regionSize:X} bytes at 0x{baseAddress:X} ({protectLabel})";
+                (string contextActionSuffix, string contextDetail) = DescribeMemoryRegionContext(view, baseAddress, regionSize);
+                action = $"Allocates 0x{regionSize:X} bytes at 0x{baseAddress:X} ({protectLabel}){contextActionSuffix}";
                 detail = $"Action: memory.alloc\n" +
                          $"API: {apiName}\n" +
                          $"Base: 0x{baseAddress:X}\n" +
                          $"Size: 0x{regionSize:X}\n" +
                          $"AllocType: 0x{allocationType:X} ({DescribeMemoryAllocationType((uint)allocationType)})\n" +
                          $"Protect: 0x{protect:X} ({protectLabel})\n" +
+                         contextDetail +
                          $"Raw: {view.Reason}";
                 return true;
             }
@@ -2035,7 +2659,8 @@ namespace BlackbirdInterface
                 state.LastProtectChangeUtc = now;
 
                 string protectLabel = DescribeMemoryProtect(newProtect);
-                action = $"Changes protection to {protectLabel} at 0x{baseAddress:X}";
+                (string contextActionSuffix, string contextDetail) = DescribeMemoryRegionContext(view, baseAddress, regionSize);
+                action = $"Changes protection to {protectLabel} at 0x{baseAddress:X}{contextActionSuffix}";
                 detail = $"Action: memory.protect\n" +
                          $"API: {apiName}\n" +
                          $"Base: 0x{baseAddress:X}\n" +
@@ -2043,6 +2668,7 @@ namespace BlackbirdInterface
                          $"NewProtect: 0x{newProtect:X} ({protectLabel})\n" +
                          $"ProtectFlips: {state.ProtectFlipCount}\n" +
                          $"RapidFlip: {(rapidFlip ? "yes" : "no")}\n" +
+                         contextDetail +
                          $"Raw: {view.Reason}";
                 return true;
             }
@@ -2079,7 +2705,8 @@ namespace BlackbirdInterface
                 string entropyText = entropy >= 0
                     ? entropy.ToString("F2", CultureInfo.InvariantCulture)
                     : "n/a";
-                action = $"Writes 0x{size:X} bytes at 0x{baseAddress:X} (entropy {entropyText})";
+                (string contextActionSuffix, string contextDetail) = DescribeMemoryRegionContext(view, baseAddress, size);
+                action = $"Writes 0x{size:X} bytes at 0x{baseAddress:X} (entropy {entropyText}){contextActionSuffix}";
                 detail = $"Action: memory.write\n" +
                          $"API: {apiName}\n" +
                          $"Base: 0x{baseAddress:X}\n" +
@@ -2089,11 +2716,149 @@ namespace BlackbirdInterface
                          $"ProtectFlips: {state.ProtectFlipCount}\n" +
                          $"RapidEntropyFlip: {(rapidEntropyFlip ? "yes" : "no")}\n" +
                          $"SampleBytes: {sampleLen}\n" +
+                         contextDetail +
                          $"Raw: {view.Reason}";
                 return true;
             }
 
             return false;
+        }
+
+        private string GetApiGraphProcessName(uint pid)
+        {
+            if (pid == 0)
+            {
+                return string.Empty;
+            }
+
+            if (_currentSession != null && _currentSession.Pid == unchecked((int)pid))
+            {
+                return ExtractProcessName(_currentSession.Title);
+            }
+
+            ProcessSessionTab? knownTab = _processTabs.FirstOrDefault(x => x.Pid == unchecked((int)pid));
+            if (knownTab != null)
+            {
+                string knownName = ExtractProcessName(knownTab.Title);
+                if (!string.IsNullOrWhiteSpace(knownName))
+                {
+                    return knownName;
+                }
+            }
+
+            try
+            {
+                using Process process = Process.GetProcessById(unchecked((int)pid));
+                return process.ProcessName;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static string ExtractProcessName(string? title)
+        {
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                return string.Empty;
+            }
+
+            string trimmed = title.Trim();
+            int suffixIndex = trimmed.LastIndexOf(" (", StringComparison.Ordinal);
+            if (suffixIndex > 0 && trimmed.EndsWith(")", StringComparison.Ordinal))
+            {
+                return trimmed[..suffixIndex].Trim();
+            }
+
+            return trimmed;
+        }
+
+        private (string ActionSuffix, string DetailText) DescribeMemoryContextFromPages(ulong baseAddress)
+        {
+            PerformanceSample? latestSample = _currentSession?.PerformanceHistory.Count > 0
+                ? _currentSession.PerformanceHistory[^1]
+                : null;
+            MemoryPageSample? page = latestSample?.MemoryPages
+                .FirstOrDefault(x => baseAddress >= x.BaseAddress && baseAddress < (x.BaseAddress + x.RegionSize));
+            if (page == null)
+            {
+                return (string.Empty, string.Empty);
+            }
+
+            string suffix = string.IsNullOrWhiteSpace(page.Category)
+                ? string.Empty
+                : $" in {page.Category.ToLowerInvariant()} region";
+            string detail = $"Region: {page.Category} | Protect: {page.ProtectLabel} | Type: {page.TypeLabel}\n";
+            return (suffix, detail);
+        }
+
+        private string DescribeMemoryImageContext(BrokerEtwEventView view, ulong baseAddress)
+        {
+            if (view.ImageBase == 0 || view.ImageSize == 0)
+            {
+                return string.Empty;
+            }
+
+            ulong imageEnd = view.ImageBase + view.ImageSize;
+            if (baseAddress < view.ImageBase || baseAddress >= imageEnd)
+            {
+                return string.Empty;
+            }
+
+            string moduleName = EventDetailFormatting.ModuleNameFromPath(view.ImagePath);
+            if (string.IsNullOrWhiteSpace(moduleName))
+            {
+                moduleName = "image";
+            }
+
+            string imagePathLine = string.IsNullOrWhiteSpace(view.ImagePath)
+                ? string.Empty
+                : $"ImagePath: {view.ImagePath}\n";
+            return $"Image: {moduleName}\n" +
+                   imagePathLine +
+                   $"ImageBase: 0x{view.ImageBase:X}\n" +
+                   $"ImageSize: 0x{view.ImageSize:X}\n";
+        }
+
+        private (string ActionSuffix, string DetailText) DescribeMemoryRegionContext(BrokerEtwEventView view, ulong baseAddress, ulong regionSize)
+        {
+            if (baseAddress == 0)
+            {
+                return (string.Empty, string.Empty);
+            }
+
+            string imageContext = DescribeMemoryImageContext(view, baseAddress);
+            if (!string.IsNullOrWhiteSpace(imageContext))
+            {
+                string moduleName = EventDetailFormatting.ModuleNameFromPath(view.ImagePath);
+                string suffix = string.IsNullOrWhiteSpace(moduleName) ? string.Empty : $" in image {moduleName}";
+                return (suffix, imageContext);
+            }
+
+            (string pageActionSuffix, string pageContext) = DescribeMemoryContextFromPages(baseAddress);
+            if (!string.IsNullOrWhiteSpace(pageContext))
+            {
+                return (pageActionSuffix, pageContext);
+            }
+
+            if (view.DeepRegionType != 0 || view.DeepRegionProtect != 0 || regionSize != 0)
+            {
+                string typeLabel = EventDetailFormatting.DescribeMemoryType(view.DeepRegionType != 0 ? view.DeepRegionType : view.StartRegionType);
+                string protectLabel = EventDetailFormatting.DescribeMemoryProtection(view.DeepRegionProtect != 0 ? view.DeepRegionProtect : view.StartRegionProtect);
+                string detailText = string.Empty;
+                if (!string.IsNullOrWhiteSpace(typeLabel))
+                {
+                    detailText += $"RegionType: {typeLabel}\n";
+                }
+                if (!string.IsNullOrWhiteSpace(protectLabel))
+                {
+                    detailText += $"RegionProtect: {protectLabel}\n";
+                }
+                return (string.Empty, detailText);
+            }
+
+            return (string.Empty, string.Empty);
         }
 
         private ApiMemoryPageSignal GetOrCreateApiMemoryPageSignal(ulong page)
@@ -2303,6 +3068,15 @@ namespace BlackbirdInterface
             public DateTime LastEntropyChangeUtc { get; set; }
         }
 
+        private readonly struct ApiCallStructuredFields
+        {
+            internal string Action { get; init; }
+            internal string Base { get; init; }
+            internal string Size { get; init; }
+            internal string AllocType { get; init; }
+            internal string Protect { get; init; }
+        }
+
         private enum BackendUiWorkKind
         {
             Ioctl,
@@ -2402,6 +3176,7 @@ namespace BlackbirdInterface
             EtwPaneHost.LoadHistory(CompactGroupsForMemory(etw, 48));
             HeuristicsPaneHost.LoadHistory(CompactGroupsForMemory(heur, 48));
             FilesystemPaneHost.LoadHistory(CompactGroupsForMemory(fs, 48));
+            ProcessRelationsPaneHost.SetRootPid(pid);
             ProcessRelationsPaneHost.LoadHistory(CompactGroupsForMemory(rel, 48));
             _apiGraphRowsByKey.Clear();
             _apiGraphReasonByKey.Clear();
@@ -2409,6 +3184,8 @@ namespace BlackbirdInterface
             _apiGraphDecodedByKey.Clear();
             _apiGraphSensorByKey.Clear();
             _apiMemorySignalsByPage.Clear();
+            _crossProcWriteCountByPair.Clear();
+            _crossProcRwxAllocCountByPair.Clear();
             foreach (ApiCallGraphRowSnapshot row in apiGraph)
             {
                 string sensorOrigin = string.IsNullOrWhiteSpace(row.SensorOrigin)
@@ -2481,6 +3258,44 @@ namespace BlackbirdInterface
                 : sensor.StartsWith("Usermode", StringComparison.OrdinalIgnoreCase)
                     ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x3E, 0x84, 0xC6))
                     : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x5C, 0x66, 0x73));
+        }
+
+        private static System.Windows.Media.Brush BuildApiRowBackground(string sensor)
+        {
+            return sensor.StartsWith("Kernel", StringComparison.OrdinalIgnoreCase)
+                ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(0x44, 0x6E, 0x1D, 0x1D))
+                : sensor.StartsWith("Usermode", StringComparison.OrdinalIgnoreCase)
+                    ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(0x44, 0x16, 0x39, 0x59))
+                    : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(0x22, 0x36, 0x36, 0x36));
+        }
+
+        private static System.Windows.Media.Brush BuildApiRowBorder(string sensor)
+        {
+            _ = sensor;
+            return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0x44, 0x4C, 0x56));
+        }
+
+        private static System.Windows.Media.Brush BuildApiGraphEdgeBrush(string sensor, double heat)
+        {
+            heat = Math.Clamp(heat, 0.0, 1.0);
+            if (sensor.StartsWith("Kernel", StringComparison.OrdinalIgnoreCase))
+            {
+                byte red = (byte)Math.Clamp(150 + (int)Math.Round(80 * heat), 0, 255);
+                byte green = (byte)Math.Clamp(65 + (int)Math.Round(25 * heat), 0, 255);
+                byte blue = (byte)Math.Clamp(65 + (int)Math.Round(25 * heat), 0, 255);
+                return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(red, green, blue));
+            }
+
+            if (sensor.StartsWith("Usermode", StringComparison.OrdinalIgnoreCase))
+            {
+                byte red = (byte)Math.Clamp(70 + (int)Math.Round(25 * heat), 0, 255);
+                byte green = (byte)Math.Clamp(125 + (int)Math.Round(45 * heat), 0, 255);
+                byte blue = (byte)Math.Clamp(178 + (int)Math.Round(50 * heat), 0, 255);
+                return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(red, green, blue));
+            }
+
+            byte shade = (byte)Math.Clamp(110 + (int)Math.Round(70 * heat), 0, 255);
+            return new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(shade, shade, shade));
         }
 
         private async Task RunPreflightAsync(int pid, bool userInitiated = false)
@@ -2626,7 +3441,20 @@ namespace BlackbirdInterface
             }
 
             await RunPreflightAsync(TryGetPid(), userInitiated: true);
-            StartBackendForPid(TryGetPid(), _currentSession?.UseUsermodeHooks ?? false);
+            int pid = TryGetPid();
+            bool useUsermodeHooks = _currentSession?.UseUsermodeHooks ?? false;
+            if (_currentSession != null &&
+                !_currentSession.OfflineSnapshot &&
+                !_currentSession.TargetExited &&
+                _currentSession.Pid == pid)
+            {
+                EnsureLiveCaptureStoreForCurrentSession(pid);
+                StartBackendForPid(pid, useUsermodeHooks, stopExistingSession: false);
+            }
+            else
+            {
+                StartBackendForPid(pid, useUsermodeHooks);
+            }
             if (_lastConnectivityIssueSignature == null)
             {
                 StatusBlock.Text = "Status: Controller restarted";

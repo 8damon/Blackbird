@@ -40,7 +40,8 @@
                       Height="24"
                       Margin="2,4,6,4"
                       VerticalAlignment="Center"
-                      BorderBrush="{DynamicResource EtwHeaderBrush}"
+                      Background="{DynamicResource EtwHeaderBrush}"
+                      BorderBrush="{DynamicResource WinBorderBrush}"
                       Style="{StaticResource PaneFilterComboStyle}"
                       ItemContainerStyle="{StaticResource PaneFilterComboItemStyle}"
                       SelectionChanged="FeedFilter_SelectionChanged">
@@ -122,3 +123,4 @@
         </Border>
     </Grid>
 </UserControl>
+

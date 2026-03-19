@@ -29,3 +29,4 @@ namespace BlackbirdInterface
         public string Details { get; init; } = "";
     }
 }
+

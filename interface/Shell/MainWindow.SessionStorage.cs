@@ -10,6 +10,9 @@ namespace BlackbirdInterface
     public partial class MainWindow
     {
         private static readonly TimeSpan SessionSpillInterval = TimeSpan.FromSeconds(15);
+        private const string CaptureArchiveExtension = ".bkcap";
+        private const string CaptureArchiveSaveFilter = "Blackbird Capture Archive (*.bkcap)|*.bkcap|All files (*.*)|*.*";
+        private const string CaptureArchiveOpenFilter = "Blackbird Capture Archive (*.bkcap)|*.bkcap|Legacy Blackbird Session Archive (*.swlkr;*.blackbird)|*.swlkr;*.blackbird|All files (*.*)|*.*";
         private const int LiveGroupedDetailSpillThreshold = 24_000;
         private const int LiveThreadStackSpillThreshold = 512;
         private readonly string _sessionCacheDirectory =
@@ -25,10 +28,10 @@ namespace BlackbirdInterface
         private string AllocateSessionCachePath(int pid)
         {
             EnsureSessionCacheDirectory();
-            return Path.Combine(_sessionCacheDirectory, $"pid-{pid}-{Guid.NewGuid():N}.swlkr");
+            return Path.Combine(_sessionCacheDirectory, $"pid-{pid}-{Guid.NewGuid():N}");
         }
 
-        private SessionFileTab BuildTabSnapshot(ProcessSessionTab tab)
+        private SessionFileTab BuildTabSnapshot(ProcessSessionTab tab, bool preferExistingCaptureStore = true)
         {
             bool hasPersistedSnapshot = TryLoadTabSnapshot(tab, out SessionFileTab? persistedSnapshot) &&
                                         persistedSnapshot != null;
@@ -45,15 +48,15 @@ namespace BlackbirdInterface
                 persistedSnapshot.UseUsermodeHooks = tab.UseUsermodeHooks;
                 persistedSnapshot.TargetExited = tab.TargetExited;
                 persistedSnapshot.OfflineSnapshot = tab.OfflineSnapshot;
+                persistedSnapshot.CaptureStorePath = preferExistingCaptureStore ? tab.BackingStorePath : null;
                 return persistedSnapshot;
             }
 
             EnsureSessionMaterialized(tab);
 
-            IEnumerable<TelemetryEvent> sessionEvents = EnumerateSessionEvents(tab);
-            List<TelemetryEvent> events = sessionEvents.Any()
-                ? sessionEvents.Select(CloneTelemetryEvent).ToList()
-                : (persistedSnapshot?.Events.Select(CloneTelemetryEvent).ToList() ?? new List<TelemetryEvent>());
+            // Raw timeline events are intentionally excluded from saves to keep archive sizes manageable.
+            // Correlations and grouped intel data (EtwGroups, HeuristicsGroups, etc.) are the persistent record.
+            List<TelemetryEvent> events = new List<TelemetryEvent>();
             List<PerformanceSample> performanceHistory = tab.PerformanceHistory.Count > 0
                 ? tab.PerformanceHistory.Select(ClonePerformanceSample).ToList()
                 : (persistedSnapshot?.PerformanceHistory.Select(ClonePerformanceSample).ToList() ?? new List<PerformanceSample>());
@@ -108,6 +111,7 @@ namespace BlackbirdInterface
                 UseUsermodeHooks = tab.UseUsermodeHooks,
                 TargetExited = tab.TargetExited,
                 OfflineSnapshot = tab.OfflineSnapshot,
+                CaptureStorePath = preferExistingCaptureStore ? tab.BackingStorePath : null,
                 Events = events,
                 PerformanceHistory = performanceHistory,
                 ThreadLifecycleHistory = threadLifecycleHistory,
@@ -130,10 +134,11 @@ namespace BlackbirdInterface
             SessionFileTab snapshot = BuildTabSnapshot(tab);
             string path = tab.BackingStorePath ?? AllocateSessionCachePath(tab.Pid);
             tab.BackingStorePath = path;
+            snapshot.CaptureStorePath = path;
 
             var archive = new SessionFileArchive
             {
-                Version = 1,
+                Version = SessionFileStorage.CurrentVersion,
                 SavedUtc = DateTime.UtcNow,
                 ActivePid = tab.Pid,
                 Tabs = new List<SessionFileTab> { snapshot }
@@ -166,12 +171,12 @@ namespace BlackbirdInterface
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(tab.BackingStorePath) || !File.Exists(tab.BackingStorePath))
+            if (!SessionFileStorage.Exists(tab.BackingStorePath))
             {
                 return;
             }
 
-            SessionFileArchive archive = SessionFileStorage.LoadArchive(tab.BackingStorePath);
+            SessionFileArchive archive = SessionFileStorage.LoadArchive(tab.BackingStorePath!);
             SessionFileTab? snapshot = archive.Tabs.FirstOrDefault(x => x.Pid == tab.Pid) ??
                                        archive.Tabs.FirstOrDefault();
             if (snapshot == null)
@@ -186,6 +191,7 @@ namespace BlackbirdInterface
             tab.UseUsermodeHooks = snapshot.UseUsermodeHooks;
             tab.TargetExited = snapshot.TargetExited;
             tab.OfflineSnapshot = snapshot.OfflineSnapshot;
+            tab.BackingStorePath = snapshot.CaptureStorePath ?? tab.BackingStorePath;
 
             tab.Events.Clear();
             tab.Events.AddRange(snapshot.Events);
@@ -218,12 +224,12 @@ namespace BlackbirdInterface
         private bool TryLoadTabSnapshot(ProcessSessionTab tab, out SessionFileTab? snapshot)
         {
             snapshot = null;
-            if (tab.Pid <= 0 || string.IsNullOrWhiteSpace(tab.BackingStorePath) || !File.Exists(tab.BackingStorePath))
+            if (tab.Pid <= 0 || !SessionFileStorage.Exists(tab.BackingStorePath))
             {
                 return false;
             }
 
-            SessionFileArchive archive = SessionFileStorage.LoadArchive(tab.BackingStorePath);
+            SessionFileArchive archive = SessionFileStorage.LoadArchive(tab.BackingStorePath!);
             snapshot = archive.Tabs.FirstOrDefault(x => x.Pid == tab.Pid) ??
                        archive.Tabs.FirstOrDefault();
             return snapshot != null;
@@ -265,12 +271,12 @@ namespace BlackbirdInterface
             }
 
             ProcessSessionTab? tab = _processTabs.FirstOrDefault(x => x.Pid == pid);
-            if (tab == null || string.IsNullOrWhiteSpace(tab.BackingStorePath) || !File.Exists(tab.BackingStorePath))
+            if (tab == null || !SessionFileStorage.Exists(tab.BackingStorePath))
             {
                 return false;
             }
 
-            SessionFileArchive archive = SessionFileStorage.LoadArchive(tab.BackingStorePath);
+            SessionFileArchive archive = SessionFileStorage.LoadArchive(tab.BackingStorePath!);
             SessionFileTab? snapshot = archive.Tabs.FirstOrDefault(x => x.Pid == pid) ??
                                        archive.Tabs.FirstOrDefault();
             if (snapshot == null)
@@ -314,18 +320,20 @@ namespace BlackbirdInterface
 
         private SessionFileArchive BuildWorkspaceArchive()
         {
-            SaveCurrentSessionState();
+            _liveCaptureStore?.Flush();
+            SyncCurrentSessionStateToMemory();
 
             var archive = new SessionFileArchive
             {
-                Version = 1,
+                Version = SessionFileStorage.CurrentVersion,
                 SavedUtc = DateTime.UtcNow,
                 ActivePid = _currentSession?.Pid ?? 0
             };
 
             foreach (ProcessSessionTab tab in _processTabs)
             {
-                archive.Tabs.Add(BuildTabSnapshot(tab));
+                bool reuseExistingCaptureStore = !ReferenceEquals(tab, _currentSession) || tab.OfflineSnapshot || tab.TargetExited;
+                archive.Tabs.Add(BuildTabSnapshot(tab, reuseExistingCaptureStore));
             }
 
             foreach (ProcessSessionTab tab in _processTabs.Where(x => !ReferenceEquals(x, _currentSession)))
@@ -383,38 +391,47 @@ namespace BlackbirdInterface
                 tab.TargetExited = incoming.TargetExited;
                 tab.OfflineSnapshot = true;
 
-                string path = tab.BackingStorePath ?? AllocateSessionCachePath(tab.Pid);
-                tab.BackingStorePath = path;
-                SessionFileStorage.SaveArchive(path, new SessionFileArchive
+                if (SessionFileStorage.Exists(incoming.CaptureStorePath))
                 {
-                    Version = 1,
-                    SavedUtc = DateTime.UtcNow,
-                    ActivePid = incoming.Pid,
-                    Tabs = new List<SessionFileTab>
+                    tab.BackingStorePath = incoming.CaptureStorePath;
+                }
+                else
+                {
+                    string path = tab.BackingStorePath ?? AllocateSessionCachePath(tab.Pid);
+                    tab.BackingStorePath = path;
+                    incoming.CaptureStorePath = path;
+                    SessionFileStorage.SaveArchive(path, new SessionFileArchive
                     {
-                        new SessionFileTab
+                        Version = SessionFileStorage.CurrentVersion,
+                        SavedUtc = DateTime.UtcNow,
+                        ActivePid = incoming.Pid,
+                        Tabs = new List<SessionFileTab>
                         {
-                            Pid = incoming.Pid,
-                            Title = NormalizeSessionTitle(tab.Title),
-                            CaptureStartUtc = incoming.CaptureStartUtc,
-                            ViewDurationSeconds = incoming.ViewDurationSeconds,
-                            ViewStartSeconds = incoming.ViewStartSeconds,
-                            LaneFocusKey = incoming.LaneFocusKey,
-                            UseUsermodeHooks = incoming.UseUsermodeHooks,
-                            TargetExited = incoming.TargetExited,
-                            OfflineSnapshot = true,
-                            Events = incoming.Events,
-                            PerformanceHistory = incoming.PerformanceHistory,
-                            ThreadLifecycleHistory = incoming.ThreadLifecycleHistory,
-                            EtwGroups = incoming.EtwGroups,
-                            HeuristicsGroups = incoming.HeuristicsGroups,
-                            FilesystemGroups = incoming.FilesystemGroups,
-                            ProcessRelationsGroups = incoming.ProcessRelationsGroups,
-                            ApiGraphRows = incoming.ApiGraphRows,
-                            ThreadStackHistories = incoming.ThreadStackHistories
+                            new SessionFileTab
+                            {
+                                Pid = incoming.Pid,
+                                Title = NormalizeSessionTitle(tab.Title),
+                                CaptureStartUtc = incoming.CaptureStartUtc,
+                                ViewDurationSeconds = incoming.ViewDurationSeconds,
+                                ViewStartSeconds = incoming.ViewStartSeconds,
+                                LaneFocusKey = incoming.LaneFocusKey,
+                                UseUsermodeHooks = incoming.UseUsermodeHooks,
+                                TargetExited = incoming.TargetExited,
+                                OfflineSnapshot = true,
+                                CaptureStorePath = path,
+                                Events = incoming.Events,
+                                PerformanceHistory = incoming.PerformanceHistory,
+                                ThreadLifecycleHistory = incoming.ThreadLifecycleHistory,
+                                EtwGroups = incoming.EtwGroups,
+                                HeuristicsGroups = incoming.HeuristicsGroups,
+                                FilesystemGroups = incoming.FilesystemGroups,
+                                ProcessRelationsGroups = incoming.ProcessRelationsGroups,
+                                ApiGraphRows = incoming.ApiGraphRows,
+                                ThreadStackHistories = incoming.ThreadStackHistories
+                            }
                         }
-                    }
-                });
+                    });
+                }
 
                 tab.Events.Clear();
                 tab.PerformanceHistory.Clear();
@@ -450,16 +467,16 @@ namespace BlackbirdInterface
             var dialog = new SaveFileDialog
             {
                 Filter =
+                    "Blackbird Capture Archive (*.bkcap)|*.bkcap|" +
                     "SIEM JSON Lines (*.jsonl)|*.jsonl|" +
                     "SIEM CSV (*.csv)|*.csv|" +
                     "CEF (*.cef)|*.cef|" +
                     "ATT&CK-ready CSV (*.attack.csv)|*.attack.csv|" +
-                    "Blackbird Session Archive (*.swlkr;*.blackbird)|*.swlkr;*.blackbird|" +
                     "All files (*.*)|*.*",
-                DefaultExt = ".jsonl",
+                DefaultExt = CaptureArchiveExtension,
                 AddExtension = true,
                 OverwritePrompt = true,
-                FileName = $"blackbird-export-{DateTime.UtcNow:yyyyMMdd-HHmmss}.jsonl"
+                FileName = $"blackbird-export-{DateTime.UtcNow:yyyyMMdd-HHmmss}{CaptureArchiveExtension}"
             };
 
             if (dialog.ShowDialog(this) != true)
@@ -470,21 +487,14 @@ namespace BlackbirdInterface
             try
             {
                 SessionFileArchive archive = BuildWorkspaceArchive();
-                if (dialog.FilterIndex == 5)
+                if (IsCaptureArchivePath(dialog.FileName))
                 {
                     SessionFileStorage.SaveArchive(dialog.FileName, archive);
                     StatusBlock.Text = $"SESSION EXPORTED: {Path.GetFileName(dialog.FileName)}";
                     return;
                 }
 
-                SessionExportFormat format = dialog.FilterIndex switch
-                {
-                    1 => SessionExportFormat.JsonLines,
-                    2 => SessionExportFormat.Csv,
-                    3 => SessionExportFormat.Cef,
-                    4 => SessionExportFormat.AttackCsv,
-                    _ => SessionExportFormat.JsonLines
-                };
+                SessionExportFormat format = ResolveSessionExportFormat(dialog.FileName, dialog.FilterIndex);
                 SessionExportService.Export(dialog.FileName, archive, format);
                 StatusBlock.Text = $"SESSION EXPORTED: {Path.GetFileName(dialog.FileName)}";
             }
@@ -497,7 +507,7 @@ namespace BlackbirdInterface
         private bool TryOpenSessionArchivePath(string path, bool merge, out string error)
         {
             error = string.Empty;
-            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            if (string.IsNullOrWhiteSpace(path) || !SessionFileStorage.Exists(path))
             {
                 error = "Session file not found.";
                 return false;
@@ -518,7 +528,9 @@ namespace BlackbirdInterface
             }
             catch (Exception ex)
             {
-                error = ex.Message;
+                error = ex.Message.Contains("manifest not found", StringComparison.OrdinalIgnoreCase)
+                    ? "Capture archive is invalid or incomplete."
+                    : ex.Message;
                 return false;
             }
         }
@@ -527,7 +539,7 @@ namespace BlackbirdInterface
         {
             var dialog = new OpenFileDialog
             {
-                Filter = "Blackbird Session Archive (*.swlkr;*.blackbird)|*.swlkr;*.blackbird|All files (*.*)|*.*",
+                Filter = CaptureArchiveOpenFilter,
                 CheckFileExists = true,
                 Multiselect = false
             };
@@ -547,7 +559,7 @@ namespace BlackbirdInterface
         {
             var dialog = new OpenFileDialog
             {
-                Filter = "Blackbird Session Archive (*.swlkr;*.blackbird)|*.swlkr;*.blackbird|All files (*.*)|*.*",
+                Filter = CaptureArchiveOpenFilter,
                 CheckFileExists = true,
                 Multiselect = false
             };
@@ -588,11 +600,11 @@ namespace BlackbirdInterface
         {
             var dialog = new SaveFileDialog
             {
-                Filter = "Blackbird Session Archive (*.swlkr;*.blackbird)|*.swlkr;*.blackbird|All files (*.*)|*.*",
-                DefaultExt = ".swlkr",
+                Filter = CaptureArchiveSaveFilter,
+                DefaultExt = CaptureArchiveExtension,
                 AddExtension = true,
                 OverwritePrompt = true,
-                FileName = $"blackbird-{DateTime.UtcNow:yyyyMMdd-HHmmss}.swlkr"
+                FileName = $"blackbird-{DateTime.UtcNow:yyyyMMdd-HHmmss}{CaptureArchiveExtension}"
             };
 
             if (!string.IsNullOrWhiteSpace(_sessionFilePath))
@@ -620,6 +632,38 @@ namespace BlackbirdInterface
             }
         }
 
+        private static bool IsCaptureArchivePath(string path)
+        {
+            string extension = Path.GetExtension(path ?? string.Empty);
+            return extension.Equals(CaptureArchiveExtension, StringComparison.OrdinalIgnoreCase) ||
+                   extension.Equals(".swlkr", StringComparison.OrdinalIgnoreCase) ||
+                   extension.Equals(".blackbird", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static SessionExportFormat ResolveSessionExportFormat(string path, int filterIndex)
+        {
+            string fileName = Path.GetFileName(path ?? string.Empty);
+            if (fileName.EndsWith(".attack.csv", StringComparison.OrdinalIgnoreCase))
+            {
+                return SessionExportFormat.AttackCsv;
+            }
+
+            return Path.GetExtension(path ?? string.Empty).ToLowerInvariant() switch
+            {
+                ".jsonl" => SessionExportFormat.JsonLines,
+                ".csv" => SessionExportFormat.Csv,
+                ".cef" => SessionExportFormat.Cef,
+                _ => filterIndex switch
+                {
+                    2 => SessionExportFormat.JsonLines,
+                    3 => SessionExportFormat.Csv,
+                    4 => SessionExportFormat.Cef,
+                    5 => SessionExportFormat.AttackCsv,
+                    _ => SessionExportFormat.JsonLines
+                }
+            };
+        }
+
         private bool HasSessionCacheData()
         {
             if (_currentSession != null &&
@@ -631,21 +675,21 @@ namespace BlackbirdInterface
                 return true;
             }
 
-            return _processTabs.Any(x => HasInlineSessionData(x) || (!string.IsNullOrWhiteSpace(x.BackingStorePath) && File.Exists(x.BackingStorePath)));
+            return _processTabs.Any(x => HasInlineSessionData(x) || SessionFileStorage.Exists(x.BackingStorePath));
         }
 
         private void CleanupTemporarySessionBackingStores()
         {
             foreach (ProcessSessionTab tab in _processTabs)
             {
-                if (string.IsNullOrWhiteSpace(tab.BackingStorePath) || !File.Exists(tab.BackingStorePath))
+                if (!SessionFileStorage.Exists(tab.BackingStorePath))
                 {
                     continue;
                 }
 
                 try
                 {
-                    File.Delete(tab.BackingStorePath);
+                    SessionFileStorage.DeletePath(tab.BackingStorePath);
                 }
                 catch
                 {
@@ -660,19 +704,24 @@ namespace BlackbirdInterface
                 return;
             }
 
+            if (_liveCaptureStore != null)
+            {
+                return;
+            }
+
             DateTime now = DateTime.UtcNow;
             if (_currentSession.BackingStorePath != null &&
-                File.Exists(_currentSession.BackingStorePath) &&
-                now - File.GetLastWriteTimeUtc(_currentSession.BackingStorePath) < SessionSpillInterval)
+                SessionFileStorage.Exists(_currentSession.BackingStorePath) &&
+                now - SessionFileStorage.GetLastWriteTimeUtc(_currentSession.BackingStorePath) < SessionSpillInterval)
             {
                 return;
             }
 
             int totalGroupedDetails =
-                EtwPaneHost.SnapshotItems().Sum(x => x.Details.Count) +
-                HeuristicsPaneHost.SnapshotItems().Sum(x => x.Details.Count) +
-                FilesystemPaneHost.SnapshotItems().Sum(x => x.Details.Count) +
-                ProcessRelationsPaneHost.SnapshotItems().Sum(x => x.Details.Count);
+                EtwPaneHost.DetailRowCount +
+                HeuristicsPaneHost.DetailRowCount +
+                FilesystemPaneHost.DetailRowCount +
+                ProcessRelationsPaneHost.DetailRowCount;
             int threadStackSnapshots = _currentSession.ThreadStackHistories.Sum(x => x.Snapshots.Count);
             if (totalGroupedDetails < LiveGroupedDetailSpillThreshold &&
                 threadStackSnapshots < LiveThreadStackSpillThreshold)
@@ -689,6 +738,7 @@ namespace BlackbirdInterface
             SessionFileTab snapshot = BuildTabSnapshot(_currentSession);
             string path = _currentSession.BackingStorePath ?? AllocateSessionCachePath(_currentSession.Pid);
             _currentSession.BackingStorePath = path;
+            snapshot.CaptureStorePath = path;
             SessionFileStorage.SaveArchive(path, new SessionFileArchive
             {
                 Version = SessionFileStorage.CurrentVersion,

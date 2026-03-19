@@ -1,9 +1,11 @@
+using BlackbirdInterface.Capture;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
-using System.Threading;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading;
 
 namespace BlackbirdInterface
 {
@@ -26,6 +28,9 @@ namespace BlackbirdInterface
         public bool UseUsermodeHooks { get; set; }
         public bool TargetExited { get; set; }
         public bool OfflineSnapshot { get; set; } = true;
+
+        [JsonIgnore]
+        public string? CaptureStorePath { get; set; }
 
         public List<TelemetryEvent> Events { get; set; } = new();
         public List<PerformanceSample> PerformanceHistory { get; set; } = new();
@@ -57,6 +62,37 @@ namespace BlackbirdInterface
             WriteIndented = false
         };
 
+        internal static bool Exists(string? path)
+            => !string.IsNullOrWhiteSpace(path) && CaptureArchiveStorage.Exists(path);
+
+        internal static void DeletePath(string? path)
+        {
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                CaptureArchiveStorage.Delete(path);
+            }
+        }
+
+        internal static DateTime GetLastWriteTimeUtc(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return DateTime.MinValue;
+            }
+
+            if (File.Exists(path))
+            {
+                return File.GetLastWriteTimeUtc(path);
+            }
+
+            if (Directory.Exists(path))
+            {
+                return Directory.GetLastWriteTimeUtc(path);
+            }
+
+            return DateTime.MinValue;
+        }
+
         internal static void SaveArchive(string path, SessionFileArchive archive)
         {
             if (string.IsNullOrWhiteSpace(path))
@@ -70,41 +106,29 @@ namespace BlackbirdInterface
 
             NormalizeArchive(archive);
             ValidateArchiveShape(archive);
-
-            string? directory = Path.GetDirectoryName(path);
-            if (!string.IsNullOrWhiteSpace(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            string tempPath = path + ".tmp";
-            try
-            {
-                using (var stream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
-                using (var gzip = new GZipStream(stream, CompressionLevel.SmallestSize))
-                {
-                    JsonSerializer.Serialize(gzip, archive, JsonOptions);
-                }
-
-                if (File.Exists(path))
-                {
-                    File.Replace(tempPath, path, destinationBackupFileName: null, ignoreMetadataErrors: true);
-                }
-                else
-                {
-                    File.Move(tempPath, path);
-                }
-            }
-            finally
-            {
-                if (File.Exists(tempPath))
-                {
-                    File.Delete(tempPath);
-                }
-            }
+            CaptureArchiveStorage.SaveWorkspace(path, archive);
         }
 
         internal static SessionFileArchive LoadArchive(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                throw new ArgumentException("Session path is required.", nameof(path));
+            }
+
+            SessionFileArchive archive = CaptureArchiveStorage.LoadWorkspace(path).Archive;
+            if (archive.Version <= 0 || archive.Version > CurrentVersion)
+            {
+                throw new InvalidDataException(
+                    $"Unsupported session archive version ({archive.Version}).");
+            }
+
+            NormalizeArchive(archive);
+            ValidateArchiveShape(archive);
+            return archive;
+        }
+
+        internal static SessionFileArchive LoadLegacyArchive(string path)
         {
             if (string.IsNullOrWhiteSpace(path))
             {
@@ -136,15 +160,6 @@ namespace BlackbirdInterface
                 throw new InvalidDataException("Session archive is empty or invalid.");
             }
 
-            if (archive.Version <= 0 || archive.Version > CurrentVersion)
-            {
-                throw new InvalidDataException(
-                    $"Unsupported session archive version ({archive.Version}).");
-            }
-
-            NormalizeArchive(archive);
-            ValidateArchiveShape(archive);
-
             return archive;
         }
 
@@ -165,6 +180,7 @@ namespace BlackbirdInterface
                 tab.ProcessRelationsGroups ??= new List<GroupedEventRow>();
                 tab.ApiGraphRows ??= new List<ApiCallGraphRowSnapshot>();
                 tab.ThreadStackHistories ??= new List<ThreadStackHistoryArchiveEntry>();
+                tab.CaptureStorePath ??= null;
             }
         }
 
@@ -302,3 +318,4 @@ namespace BlackbirdInterface
         }
     }
 }
+

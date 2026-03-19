@@ -10,6 +10,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace BlackbirdInterface
 {
@@ -22,7 +23,8 @@ namespace BlackbirdInterface
 
     public partial class App : Application
     {
-        private const string GettingStartedUrl = "https://github.com/8damon/Blackbird-Platform/blob/stable/Getting%20Started.md";
+        private const string GettingStartedUrl = "https://titansoftwork.com/blackbird/intro";
+        private static Mutex? _singleInstanceMutex;
         internal static bool IsDarkTheme { get; private set; } = true;
         internal static UiThemeMode CurrentThemeMode { get; private set; } = UiThemeMode.Dark;
         internal static event Action<bool>? ThemeChanged;
@@ -33,13 +35,45 @@ namespace BlackbirdInterface
             public string? SessionPath { get; init; }
         }
 
+        private sealed class StartupOptions
+        {
+            public bool DebugConsole { get; init; }
+        }
+
         protected override void OnStartup(StartupEventArgs e)
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
             base.OnStartup(e);
+            StartupOptions options = ParseStartupOptions(e.Args);
+            if (options.DebugConsole)
+            {
+                DebugConsoleService.Start();
+                DebugConsoleService.WriteLocal($"startup args: {string.Join(" ", e.Args)}");
+            }
+            EnforceSingleInstance();
             ApplyTheme(UiThemeMode.Dark);
             ContinueStartupSafe();
+        }
+
+        protected override void OnExit(ExitEventArgs e)
+        {
+            try
+            {
+                _singleInstanceMutex?.ReleaseMutex();
+            }
+            catch
+            {
+            }
+            finally
+            {
+                _singleInstanceMutex?.Dispose();
+                _singleInstanceMutex = null;
+            }
+
+            DebugConsoleService.Stop();
+
+            base.OnExit(e);
         }
 
         private async void ContinueStartupSafe()
@@ -166,6 +200,7 @@ namespace BlackbirdInterface
             for (;;)
             {
                 BlackbirdPreflightReport report = await Task.Run(() => BlackbirdPreflight.Run(0, ensureServicesRunning: true));
+                DebugConsoleService.WriteLocal($"startup preflight ready={report.StartupReady}");
                 if (report.StartupReady)
                 {
                     return true;
@@ -200,6 +235,7 @@ namespace BlackbirdInterface
                 $"Root Stack:\n{root.StackTrace}";
             try
             {
+                DebugConsoleService.WriteLocal($"startup failure: {ex}");
                 ThemedMessageBox.Show(
                     Current?.MainWindow,
                     message,
@@ -214,6 +250,84 @@ namespace BlackbirdInterface
             if (Current != null)
             {
                 Current.Shutdown();
+            }
+        }
+
+        private static StartupOptions ParseStartupOptions(string[] args)
+        {
+            bool debugConsole = false;
+
+            foreach (string arg in args)
+            {
+                if (string.Equals(arg, "--debug", StringComparison.OrdinalIgnoreCase))
+                {
+                    debugConsole = true;
+                }
+            }
+
+            return new StartupOptions
+            {
+                DebugConsole = debugConsole
+            };
+        }
+
+        private static void EnforceSingleInstance()
+        {
+            string mutexName = $@"Local\BlackbirdInterface.{Environment.UserName}";
+            bool createdNew = false;
+            _singleInstanceMutex = new Mutex(initiallyOwned: true, mutexName, out createdNew);
+            if (createdNew)
+            {
+                return;
+            }
+
+            TerminatePreviousInstances();
+        }
+
+        private static void TerminatePreviousInstances()
+        {
+            Process current = Process.GetCurrentProcess();
+            string? currentPath = ResolveCurrentExecutablePath();
+            Process[] candidates = Process.GetProcessesByName(current.ProcessName);
+
+            foreach (Process candidate in candidates)
+            {
+                try
+                {
+                    if (candidate.Id == current.Id)
+                    {
+                        continue;
+                    }
+
+                    string? candidatePath = null;
+                    try
+                    {
+                        candidatePath = candidate.MainModule?.FileName;
+                    }
+                    catch
+                    {
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(currentPath) &&
+                        !string.IsNullOrWhiteSpace(candidatePath) &&
+                        !string.Equals(candidatePath, currentPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (!candidate.HasExited)
+                    {
+                        candidate.Kill(entireProcessTree: true);
+                        candidate.WaitForExit(3000);
+                    }
+                }
+                catch
+                {
+                }
+                finally
+                {
+                    candidate.Dispose();
+                }
             }
         }
 
@@ -282,7 +396,7 @@ namespace BlackbirdInterface
         {
             var dialog = new OpenFileDialog
             {
-                Filter = "Blackbird Session Archive (*.swlkr;*.blackbird)|*.swlkr;*.blackbird|All files (*.*)|*.*",
+                Filter = "Blackbird Capture Archive (*.bkcap)|*.bkcap|Legacy Blackbird Session Archive (*.swlkr;*.blackbird)|*.swlkr;*.blackbird|All files (*.*)|*.*",
                 CheckFileExists = true,
                 Multiselect = false
             };
@@ -393,11 +507,14 @@ namespace BlackbirdInterface
                 return mainModulePath;
             }
 
-            string? entryAssemblyPath = Assembly.GetEntryAssembly()?.Location;
-            if (!string.IsNullOrWhiteSpace(entryAssemblyPath) &&
-                string.Equals(Path.GetExtension(entryAssemblyPath), ".exe", StringComparison.OrdinalIgnoreCase))
+            string? entryAssemblyName = Assembly.GetEntryAssembly()?.GetName().Name;
+            if (!string.IsNullOrWhiteSpace(entryAssemblyName))
             {
-                return entryAssemblyPath;
+                string entryAssemblyPath = Path.Combine(AppContext.BaseDirectory, entryAssemblyName + ".exe");
+                if (File.Exists(entryAssemblyPath))
+                {
+                    return entryAssemblyPath;
+                }
             }
 
             return null;
@@ -544,3 +661,5 @@ namespace BlackbirdInterface
 
     }
 }
+
+

@@ -4,14 +4,14 @@
              Background="{DynamicResource WinPanelBrush}">
     <UserControl.Resources>
         <Style x:Key="FilesystemOperationFilterComboItemStyle" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
-            <Setter Property="Background" Value="#FF121212"/>
+            <Setter Property="Background" Value="{DynamicResource FilesystemHeaderBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
             <Setter Property="Padding" Value="6,2"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
         <Style x:Key="FilesystemOperationFilterStyle" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
-            <Setter Property="Background" Value="#FF121212"/>
+            <Setter Property="Background" Value="{DynamicResource FilesystemHeaderBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
@@ -43,7 +43,7 @@
                                                   ClickMode="Press"
                                                   BorderBrush="{DynamicResource WinBorderBrush}"
                                                   BorderThickness="1,0,0,0"
-                                                  Background="#FF0E0E0E"
+                                                  Background="{TemplateBinding Background}"
                                                   IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
                                         <Path Width="8"
                                               Height="5"
@@ -65,7 +65,7 @@
                                 <Border x:Name="DropDownBorder"
                                         MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
                                         MaxHeight="{TemplateBinding MaxDropDownHeight}"
-                                        Background="#FF121212"
+                                        Background="{TemplateBinding Background}"
                                         BorderBrush="{DynamicResource WinBorderBrush}"
                                         BorderThickness="1">
                                     <ScrollViewer Margin="0"
@@ -129,9 +129,9 @@
                       VerticalAlignment="Center"
                       IsEditable="False"
                       VerticalContentAlignment="Center"
-                      Background="{DynamicResource WinPanelBrush}"
+                      Background="{DynamicResource FilesystemHeaderBrush}"
                       Foreground="{DynamicResource WinTextBrush}"
-                      BorderBrush="{DynamicResource FilesystemHeaderBrush}"
+                      BorderBrush="{DynamicResource WinBorderBrush}"
                       Style="{StaticResource PaneFilterComboStyle}"
                       ItemContainerStyle="{StaticResource PaneFilterComboItemStyle}"
                       SelectionChanged="OperationFilter_SelectionChanged"/>
@@ -237,4 +237,5 @@
         </Border>
     </Grid>
 </UserControl>
+
 

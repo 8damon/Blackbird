@@ -113,6 +113,11 @@ namespace BlackbirdInterface
 
         internal static string RelationSeverity(ProcessRelationView view)
         {
+            if (string.Equals(view.RelationType, "ProcessCreate", StringComparison.OrdinalIgnoreCase))
+            {
+                return "Low";
+            }
+
             if (string.Equals(view.RelationType, "HandleOpen", StringComparison.OrdinalIgnoreCase))
             {
                 bool anomaly = (view.LastFlags & (HandleFlagStackSpoofSuspect | HandleFlagSyscallExportMismatch)) != 0;
@@ -698,14 +703,68 @@ namespace BlackbirdInterface
                 : $"{actorText} invokes {api} against {targetText} ({string.Join(", ", rawArgs)})";
         }
 
+        internal static bool IsBlackbirdEtwSource(BrokerEtwEventView view)
+            => view.SourceId == BlackbirdNative.IpcEtwSourceBlackbird ||
+               (view.SourceId == 0 &&
+                view.Source.Equals("Blackbird", StringComparison.OrdinalIgnoreCase));
+
+        internal static bool IsThreatIntelEtwSource(BrokerEtwEventView view)
+            => view.SourceId == BlackbirdNative.IpcEtwSourceThreatIntel ||
+               (view.SourceId == 0 &&
+                view.Source.Equals("ThreatIntel", StringComparison.OrdinalIgnoreCase));
+
+        internal static bool IsKernelNetworkEtwSource(BrokerEtwEventView view)
+            => view.SourceId == BlackbirdNative.IpcEtwSourceKernelNetwork ||
+               (view.SourceId == 0 &&
+                view.Source.Equals("KernelNetwork", StringComparison.OrdinalIgnoreCase));
+
+        internal static bool IsKernelHookTelemetry(BrokerEtwEventView view)
+            => IsBlackbirdEtwSource(view) &&
+               view.Family == BlackbirdNative.IpcEtwFamilyUserHook &&
+               view.Task != 0;
+
+        internal static bool IsUsermodeSensorTelemetry(BrokerEtwEventView view)
+        {
+            if (!IsBlackbirdEtwSource(view) || view.Task != 0)
+            {
+                return false;
+            }
+
+            return view.NotifyClass is BlackbirdNative.IpcHookEventNt or
+                BlackbirdNative.IpcHookEventWinsock or
+                BlackbirdNative.IpcHookEventKi or
+                BlackbirdNative.IpcHookEventExceptionLowNoise or
+                BlackbirdNative.IpcHookEventExceptionHighPriv or
+                BlackbirdNative.IpcHookEventIntegrity;
+        }
+
+        internal static bool IsApiGraphCandidate(BrokerEtwEventView view)
+        {
+            if (IsKernelHookTelemetry(view))
+            {
+                return true;
+            }
+
+            if (IsUsermodeSensorTelemetry(view))
+            {
+                return view.NotifyClass != BlackbirdNative.IpcHookEventIntegrity;
+            }
+
+            // Legacy fallback for older snapshots that may not carry structured source metadata yet.
+            if (ReasonContainsToken(view.Reason, "kind", "kernel_ntapi"))
+            {
+                return true;
+            }
+
+            return view.Family == BlackbirdNative.IpcEtwFamilyUserHook &&
+                   !string.Equals(view.DetectionName, "USERMODE_HOOK_INTEGRITY_OK", StringComparison.OrdinalIgnoreCase) &&
+                   !string.Equals(view.DetectionName, "AMSI_PATCH_OK", StringComparison.OrdinalIgnoreCase) &&
+                   !string.Equals(view.DetectionName, "ETW_PATCH_OK", StringComparison.OrdinalIgnoreCase);
+        }
+
         internal static string ClassifyHookSensorOrigin(BrokerEtwEventView view)
         {
-            bool blackbirdProducer = view.Source.Equals("Blackbird", StringComparison.OrdinalIgnoreCase);
-            bool userHookFamily = view.Family == BlackbirdNative.IpcEtwFamilyUserHook;
-
-            if (blackbirdProducer &&
-                userHookFamily &&
-                view.Task != 0)
+            if (IsKernelHookTelemetry(view))
             {
                 return "Kernel Hook";
             }
@@ -715,7 +774,8 @@ namespace BlackbirdInterface
                 return "Kernel Hook";
             }
 
-            if (userHookFamily ||
+            if (IsUsermodeSensorTelemetry(view) ||
+                view.Family == BlackbirdNative.IpcEtwFamilyUserHook ||
                 (!string.IsNullOrWhiteSpace(view.DetectionName) &&
                  view.DetectionName.StartsWith("USERMODE_", StringComparison.OrdinalIgnoreCase)))
             {

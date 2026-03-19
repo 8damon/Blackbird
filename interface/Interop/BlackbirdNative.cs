@@ -33,6 +33,7 @@ namespace BlackbirdInterface
         internal const uint IpcCapEtwTiUplink = 0x00000004;
         internal const uint IpcCapSharedRing = 0x00000008;
         internal const uint IpcCapUserHookIngest = 0x00000010;
+        internal const uint IpcCapUserHookReady = 0x00000020;
 
         internal const uint IpcEtwSourceUnknown = 0;
         internal const uint IpcEtwSourceBlackbird = 1;
@@ -54,6 +55,13 @@ namespace BlackbirdInterface
         internal const uint IpcUserHookTargetAttach = 1;
         internal const uint IpcUserHookTargetLaunch = 2;
         internal const uint IpcUserHookFlagLaunchEarlybirdApc = 0x00000001;
+        internal const uint IpcHookEventUnknown = 0;
+        internal const uint IpcHookEventNt = 1;
+        internal const uint IpcHookEventWinsock = 2;
+        internal const uint IpcHookEventKi = 3;
+        internal const uint IpcHookEventExceptionLowNoise = 4;
+        internal const uint IpcHookEventExceptionHighPriv = 5;
+        internal const uint IpcHookEventIntegrity = 6;
 
         private const int MaxIpcEventNameChars = 96;
         private const int MaxIpcDetectionNameChars = 128;
@@ -191,55 +199,63 @@ namespace BlackbirdInterface
             public ushort[] ImagePath;
         }
 
-        [DllImport("BlackbirdSensorCore.dll", EntryPoint = "BLACKBIRDSCUseClientProtocol", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode, SetLastError = true)]
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCUseClientProtocol", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool UseClientProtocol(string? pipeName, uint connectTimeoutMs);
 
-        [DllImport("BlackbirdSensorCore.dll", EntryPoint = "BLACKBIRDSCOpenControlDevice", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCOpenControlDevice", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         internal static extern IntPtr OpenControlDevice();
 
-        [DllImport("BlackbirdSensorCore.dll", EntryPoint = "BLACKBIRDSCCloseControlDevice", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCCloseControlDevice", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool CloseControlDevice(IntPtr device);
 
-        [DllImport("BlackbirdSensorCore.dll", EntryPoint = "BLACKBIRDSCGetBrokerInfo", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetBrokerInfo", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool GetBrokerInfo(out uint capabilities, [MarshalAs(UnmanagedType.Bool)] out bool threatIntelEnabled);
 
-        [DllImport("BlackbirdSensorCore.dll", EntryPoint = "BLACKBIRDSCHasSharedChannel", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCHasSharedChannel", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool HasSharedChannel(
             IntPtr device,
             [MarshalAs(UnmanagedType.Bool)] out bool hasIoctlChannel,
             [MarshalAs(UnmanagedType.Bool)] out bool hasEtwChannel);
 
-        [DllImport("BlackbirdSensorCore.dll", EntryPoint = "BLACKBIRDSCGetLastSharedRingError", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetLastSharedRingError", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         internal static extern uint GetLastSharedRingError();
 
-        [DllImport("BlackbirdSensorCore.dll", EntryPoint = "BLACKBIRDSCGetBrokerThreatIntelEnableError", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetBrokerThreatIntelEnableError", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         internal static extern uint GetBrokerThreatIntelEnableError();
 
-        [DllImport("BlackbirdSensorCore.dll", EntryPoint = "BLACKBIRDSCSetPids", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCSetPids", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool SetPids(IntPtr device, [In] uint[] processIds, uint processCount, uint streamMask);
 
-        [DllImport("BlackbirdSensorCore.dll", EntryPoint = "BLACKBIRDSCGetEvent", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetEvent", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool GetEventRaw(IntPtr device, IntPtr recordBuffer, out uint bytesReturned);
 
-        [DllImport("BlackbirdSensorCore.dll", EntryPoint = "BLACKBIRDSCGetEtwEvent", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetEventWait", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetEventWait(IntPtr device, IntPtr recordBuffer, out uint bytesReturned, uint timeoutMs);
+
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetEtwEvent", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool GetEtwEvent(IntPtr device, out BkIpcEtwEvent etwEvent, uint timeoutMs);
 
-        [DllImport("BlackbirdSensorCore.dll", EntryPoint = "BLACKBIRDSCGetStats", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetStats", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool GetStats(IntPtr device, out BkStatsResponse stats, out uint bytesReturned);
 
-        [DllImport("BlackbirdSensorCore.dll", EntryPoint = "BLACKBIRDSCSetShutdownMode", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCSetShutdownMode", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool SetShutdownMode(IntPtr device);
 
-        [DllImport("BlackbirdSensorCore.dll", EntryPoint = "BLACKBIRDSCSetUserHookTarget", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode, SetLastError = true)]
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCControlProcessExecution", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool ControlProcessExecution(IntPtr device, uint processId, [MarshalAs(UnmanagedType.Bool)] bool suspend);
+
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCSetUserHookTarget", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool SetUserHookTarget(
             IntPtr device,
@@ -551,7 +567,6 @@ namespace BlackbirdInterface
             {
                 return string.Empty;
             }
-
             return System.Text.Encoding.Unicode.GetString(buffer, offset, lenBytes);
         }
     }

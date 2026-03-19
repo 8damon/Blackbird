@@ -27,7 +27,6 @@
             <TextBlock x:Name="SummaryBlock"
                        Grid.Column="1"
                        VerticalAlignment="Center"
-                       Visibility="Collapsed"
                        Foreground="{DynamicResource WinMutedTextBrush}"
                        Text="No relations yet"/>
 
@@ -37,14 +36,16 @@
                       Height="24"
                       Margin="2,4,6,4"
                       VerticalAlignment="Center"
-                      BorderBrush="{DynamicResource ProcessRelationsHeaderBrush}"
+                      Background="{DynamicResource ProcessRelationsHeaderBrush}"
+                      BorderBrush="{DynamicResource WinBorderBrush}"
                       Style="{StaticResource PaneFilterComboStyle}"
                       ItemContainerStyle="{StaticResource PaneFilterComboItemStyle}"
                       SelectionChanged="RelationFilter_SelectionChanged">
                 <ComboBoxItem Content="ALL RELATIONS" IsSelected="True"/>
+                <ComboBoxItem Content="PROCESSCREATE"/>
                 <ComboBoxItem Content="THREADCREATE"/>
                 <ComboBoxItem Content="HANDLE"/>
-                <ComboBoxItem Content="HIGH+" />
+                <ComboBoxItem Content="HIGH+"/>
             </ComboBox>
 
             <Button Grid.Column="3"
@@ -112,9 +113,10 @@
                         </Style>
                     </DataGrid.CellStyle>
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Event" Width="260" Binding="{Binding Event}"/>
-                        <DataGridTextColumn Header="Severity" Width="92" Binding="{Binding Severity}"/>
-                        <DataGridTextColumn Header="Hits" Width="72" Binding="{Binding Hits}"/>
+                        <DataGridTextColumn Header="Event" Width="170" Binding="{Binding Event}"/>
+                        <DataGridTextColumn Header="Severity" Width="76" Binding="{Binding Severity}"/>
+                        <DataGridTextColumn Header="Hits" Width="60" Binding="{Binding Hits}"/>
+                        <DataGridTextColumn Header="Last Seen" Width="82" Binding="{Binding LastSeenUtc, StringFormat={}{0:HH:mm:ss}}"/>
                         <DataGridTextColumn Header="Detection" Width="*" Binding="{Binding Detection}"/>
                     </DataGrid.Columns>
                 </DataGrid>

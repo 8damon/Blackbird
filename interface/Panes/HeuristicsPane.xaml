@@ -40,7 +40,8 @@
                       Height="24"
                       Margin="2,4,6,4"
                       VerticalAlignment="Center"
-                      BorderBrush="{DynamicResource HeuristicsHeaderBrush}"
+                      Background="{DynamicResource HeuristicsHeaderBrush}"
+                      BorderBrush="{DynamicResource WinBorderBrush}"
                       Style="{StaticResource PaneFilterComboStyle}"
                       ItemContainerStyle="{StaticResource PaneFilterComboItemStyle}"
                       SelectionChanged="SeverityFilter_SelectionChanged">
@@ -148,3 +149,4 @@
         </Border>
     </Grid>
 </UserControl>
+

@@ -23,3 +23,4 @@ namespace BlackbirdInterface
         public IReadOnlyList<(DateTime t, double v)> Items => _items;
     }
 }
+

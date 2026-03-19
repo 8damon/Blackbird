@@ -151,12 +151,12 @@
                                 <Button x:Name="NetworkViewSwitchButton"
                                         DockPanel.Dock="Right"
                                         Content="Peers"
-                                        MinWidth="44"
-                                        MinHeight="20"
-                                        Height="20"
-                                        Padding="5,0"
+                                        MinWidth="0"
+                                        MinHeight="0"
+                                        Height="18"
+                                        Padding="6,0"
                                         Margin="6,0,0,0"
-                                        FontSize="11"
+                                        FontSize="10"
                                         VerticalAlignment="Center"
                                         ToolTip="Toggle traffic/peers view"
                                         Click="NetworkViewSwitchButton_Click"/>
@@ -226,7 +226,10 @@
                                 <ToggleButton x:Name="ThreadLifecycleToggle"
                                               DockPanel.Dock="Right"
                                               Margin="8,0,0,0"
-                                              Padding="8,2"
+                                              MinWidth="0"
+                                              Height="18"
+                                              Padding="6,1"
+                                              FontSize="10"
                                               VerticalAlignment="Center"
                                               Checked="ThreadLifecycleToggle_Checked"
                                               Unchecked="ThreadLifecycleToggle_Unchecked"
@@ -500,5 +503,6 @@
         </Grid>
     </Grid>
 </UserControl>
+
 
 

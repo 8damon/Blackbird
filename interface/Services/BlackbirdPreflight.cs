@@ -62,6 +62,7 @@ namespace BlackbirdInterface
     {
         public static BlackbirdPreflightReport Run(int targetPid, bool ensureServicesRunning = false, string? hookDllPath = null)
         {
+            Console.WriteLine($"[Preflight] Starting  pid={targetPid} ensureServices={ensureServicesRunning}");
             var report = new BlackbirdPreflightReport
             {
                 CheckedUtc = DateTime.UtcNow,
@@ -70,14 +71,18 @@ namespace BlackbirdInterface
                 HookDllPath = ResolveHookDllPath(hookDllPath)
             };
             report.HookDllExists = File.Exists(report.HookDllPath);
+            Console.WriteLine($"[Preflight] Services  driver={report.DriverState} controller={report.ControllerState} hookDll={report.HookDllPath} exists={report.HookDllExists}");
             DiagnosticsState.SetValue("HookDLL", report.HookDllExists ? "Found" : $"Missing ({report.HookDllPath})");
 
             if (ensureServicesRunning)
             {
+                Console.WriteLine("[Preflight] Ensuring services are running...");
                 report.DriverState = EnsureServiceRunning("blackbird", TimeSpan.FromSeconds(8), out string driverMsg);
                 report.DriverEnsureMessage = driverMsg;
+                Console.WriteLine($"[Preflight] Driver ensure: state={report.DriverState} msg={driverMsg}");
                 report.ControllerState = EnsureServiceRunning("BlackbirdController", TimeSpan.FromSeconds(10), out string controllerMsg);
                 report.ControllerEnsureMessage = controllerMsg;
+                Console.WriteLine($"[Preflight] Controller ensure: state={report.ControllerState} msg={controllerMsg}");
             }
 
             IntPtr h = IntPtr.Zero;
@@ -156,6 +161,7 @@ namespace BlackbirdInterface
             }
 
             DiagnosticsState.SetValue("Preflight", report.Summary);
+            Console.WriteLine($"[Preflight] Complete  {report.Summary}{(string.IsNullOrEmpty(report.Error) ? "" : $"  error={report.Error}")}");
             return report;
         }
 
@@ -172,7 +178,7 @@ namespace BlackbirdInterface
                 baseDirectory = Environment.CurrentDirectory;
             }
 
-            return Path.Combine(baseDirectory, "sr71.dll");
+            return Path.Combine(baseDirectory, "SR71.dll");
         }
 
         private static string EnsureServiceRunning(string serviceName, TimeSpan timeout, out string message)
@@ -203,3 +209,4 @@ namespace BlackbirdInterface
         }
     }
 }
+

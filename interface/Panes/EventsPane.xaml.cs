@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows;
@@ -33,6 +34,7 @@ namespace BlackbirdInterface
         public event EventHandler<PaneHeaderDragEventArgs>? HeaderDragStarted;
         public event EventHandler<PaneHeaderDragEventArgs>? HeaderDragDelta;
         public event EventHandler<PaneHeaderDragEventArgs>? HeaderDragCompleted;
+        public event EventHandler<string?>? LaneFilterSelectionChanged;
 
         private bool _headerMouseDown;
         private bool _headerDragging;
@@ -41,9 +43,13 @@ namespace BlackbirdInterface
         private bool _connectivityHealthy = true;
         private bool _eventLogDetached;
 
+        private bool _laneFilterSuppressChange;
+
         public EventsPane()
         {
             InitializeComponent();
+            LaneFilterBox.Items.Add(new ComboBoxItem { Content = "All Lanes", Tag = (string?)null });
+            LaneFilterBox.SelectedIndex = 0;
             EventTimeline.VerticalMetricsChanged += EventTimeline_VerticalMetricsChanged;
             EventTimeline.SizeChanged += (_, __) => SyncTimelineVerticalScroll();
             TimelineVerticalScroll.ValueChanged += TimelineVerticalScroll_ValueChanged;
@@ -91,6 +97,53 @@ namespace BlackbirdInterface
             HeaderStatsBlock.Text = string.IsNullOrWhiteSpace(statsText)
                 ? "View 0 | Total 0 | 0.0/s"
                 : statsText.Trim();
+        }
+
+        public void SetLaneFilterOptions(IEnumerable<string> keys)
+        {
+            if (LaneFilterBox == null) return;
+            _laneFilterSuppressChange = true;
+            string? current = (LaneFilterBox.SelectedItem as ComboBoxItem)?.Tag as string;
+            LaneFilterBox.Items.Clear();
+            LaneFilterBox.Items.Add(new ComboBoxItem { Content = "All Lanes", Tag = (string?)null });
+            foreach (string k in keys)
+                LaneFilterBox.Items.Add(new ComboBoxItem { Content = k, Tag = k });
+            int restored = 0;
+            if (current != null)
+            {
+                for (int i = 1; i < LaneFilterBox.Items.Count; i++)
+                {
+                    if ((LaneFilterBox.Items[i] as ComboBoxItem)?.Tag as string == current)
+                    {
+                        restored = i;
+                        break;
+                    }
+                }
+            }
+            LaneFilterBox.SelectedIndex = restored;
+            _laneFilterSuppressChange = false;
+        }
+
+        public void SetLaneFilterKey(string? key)
+        {
+            if (LaneFilterBox == null) return;
+            _laneFilterSuppressChange = true;
+            for (int i = 0; i < LaneFilterBox.Items.Count; i++)
+            {
+                if ((LaneFilterBox.Items[i] as ComboBoxItem)?.Tag as string == key)
+                {
+                    LaneFilterBox.SelectedIndex = i;
+                    break;
+                }
+            }
+            _laneFilterSuppressChange = false;
+        }
+
+        private void LaneFilterBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_laneFilterSuppressChange) return;
+            string? key = (LaneFilterBox.SelectedItem as ComboBoxItem)?.Tag as string;
+            LaneFilterSelectionChanged?.Invoke(this, key);
         }
 
         private void BtnClose_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, e);
@@ -240,3 +293,4 @@ namespace BlackbirdInterface
         }
     }
 }
+

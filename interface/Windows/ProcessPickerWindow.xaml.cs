@@ -18,6 +18,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using System.Windows.Controls.Primitives;
 
 namespace BlackbirdInterface
 {
@@ -1307,9 +1308,55 @@ namespace BlackbirdInterface
             Close();
         }
 
+        private void ProcessGrid_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            ProcessItem? item = GetProcessItemFromSource(e.OriginalSource as DependencyObject);
+            if (item == null)
+            {
+                return;
+            }
+
+            if (!ReferenceEquals(ProcessGrid.SelectedItem, item))
+            {
+                ProcessGrid.SelectedItem = item;
+            }
+        }
+
         private void ProcessGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
+            ProcessItem? item = GetProcessItemFromSource(e.OriginalSource as DependencyObject)
+                ?? ProcessGrid.SelectedItem as ProcessItem;
+            if (item == null)
+            {
+                return;
+            }
+
+            if (!ReferenceEquals(ProcessGrid.SelectedItem, item))
+            {
+                ProcessGrid.SelectedItem = item;
+            }
+
             Select_Click(sender, e);
+        }
+
+        private static ProcessItem? GetProcessItemFromSource(DependencyObject? source)
+        {
+            while (source != null)
+            {
+                if (source is DataGridRow row && row.Item is ProcessItem item)
+                {
+                    return item;
+                }
+
+                if (source is DataGridCell cell && cell.DataContext is ProcessItem cellItem)
+                {
+                    return cellItem;
+                }
+
+                source = VisualTreeHelper.GetParent(source);
+            }
+
+            return null;
         }
 
         private void ProcessGrid_Sorting(object sender, DataGridSortingEventArgs e)
@@ -1650,3 +1697,4 @@ namespace BlackbirdInterface
         Unsigned = 4
     }
 }
+

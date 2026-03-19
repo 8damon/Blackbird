@@ -220,3 +220,4 @@ namespace BlackbirdInterface
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
+

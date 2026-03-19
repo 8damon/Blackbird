@@ -21,6 +21,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="130"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
@@ -42,14 +43,21 @@
                        Text="View 0 | Total 0 | 0.0/s"
                        TextTrimming="CharacterEllipsis"/>
 
-            <Button Grid.Column="2"
+            <ComboBox x:Name="LaneFilterBox"
+                      Grid.Column="2"
+                      Margin="0,4"
+                      Style="{DynamicResource PaneFilterComboStyle}"
+                      ItemContainerStyle="{DynamicResource PaneFilterComboItemStyle}"
+                      SelectionChanged="LaneFilterBox_SelectionChanged"/>
+
+            <Button Grid.Column="3"
                     x:Name="BtnSettings"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="⚙"
                     Width="22"
                     Height="22"
                     Click="BtnSettings_Click"/>
-            <Button Grid.Column="3"
+            <Button Grid.Column="4"
                     x:Name="BtnLogPopout"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="⇱"
@@ -57,14 +65,14 @@
                     Height="22"
                     ToolTip="Detach event log"
                     Click="BtnLogPopout_Click"/>
-            <Button Grid.Column="4"
+            <Button Grid.Column="5"
                     x:Name="BtnFloat"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="⧉"
                     Width="22"
                     Height="22"
                     Click="BtnFloat_Click"/>
-            <Button Grid.Column="5"
+            <Button Grid.Column="6"
                     x:Name="BtnClose"
                     Style="{DynamicResource PaneIconButtonStyle}"
                     Content="✕"
@@ -77,6 +85,7 @@
         <Grid Grid.Row="1">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
+                <RowDefinition Height="28"/>
                 <RowDefinition Height="8"/>
             </Grid.RowDefinitions>
 
@@ -84,7 +93,7 @@
                     BorderBrush="{DynamicResource WinSubtleBorderBrush}"
                     BorderThickness="0,0,0,1">
                 <local:TimelineControl x:Name="EventTimeline"
-                                       AxisHeight="30"
+                                       AxisHeight="0"
                                        ViewDurationSeconds="120"
                                        ViewStartSeconds="0"/>
             </Border>
@@ -98,8 +107,17 @@
                        Visibility="Collapsed"
                        Width="0"/>
 
+            <local:TimelineControl x:Name="EventTimelineAxis"
+                                   Grid.Row="1"
+                                   IsAxisOnly="True"
+                                   AxisHeight="28"
+                                   ViewDurationSeconds="{Binding ViewDurationSeconds, ElementName=EventTimeline}"
+                                   ViewStartSeconds="{Binding ViewStartSeconds, ElementName=EventTimeline}"
+                                   CaptureStartUtc="{Binding CaptureStartUtc, ElementName=EventTimeline}"
+                                   IsHitTestVisible="False"/>
+
             <ScrollBar x:Name="TimelineScroll"
-                       Grid.Row="1"
+                       Grid.Row="2"
                        Orientation="Horizontal"
                        Minimum="0"
                        SmallChange="1"
@@ -130,10 +148,6 @@
                         Padding="8,0">
                     <DockPanel LastChildFill="False">
                         <TextBlock Text="Event Log" VerticalAlignment="Center" FontWeight="SemiBold"/>
-                        <TextBlock Text="Active viewport events"
-                                   Margin="10,0,0,0"
-                                   VerticalAlignment="Center"
-                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
                     </DockPanel>
                 </Border>
 
@@ -142,6 +156,11 @@
                           AutoGenerateColumns="False"
                           IsReadOnly="True"
                           BorderThickness="0"
+                          EnableRowVirtualization="True"
+                          EnableColumnVirtualization="True"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling"
+                          ScrollViewer.CanContentScroll="True"
                           SelectionMode="Single"
                           ColumnHeaderHeight="24"
                           RowHeight="22"
@@ -178,3 +197,4 @@
         </Border>
     </Grid>
 </UserControl>
+

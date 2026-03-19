@@ -413,6 +413,7 @@
                   CanUserResizeColumns="True"
                   RowStyle="{DynamicResource ProcessRowStyle}"
                   Sorting="ProcessGrid_Sorting"
+                  PreviewMouseLeftButtonDown="ProcessGrid_PreviewMouseLeftButtonDown"
                   MouseDoubleClick="ProcessGrid_MouseDoubleClick">
             <DataGrid.Resources>
                 <Style TargetType="ScrollBar" BasedOn="{StaticResource PickerSlimScrollBarStyle}"/>
@@ -607,3 +608,4 @@
         </DockPanel>
     </Grid>
 </Window>
+

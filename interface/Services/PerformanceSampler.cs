@@ -643,3 +643,4 @@ namespace BlackbirdInterface
             nuint dwLength);
     }
 }
+

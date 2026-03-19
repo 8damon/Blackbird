@@ -119,14 +119,14 @@
     <Style TargetType="Window">
         <Setter Property="Background" Value="{StaticResource WinBgBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource WinTextBrush}"/>
-        <Setter Property="FontFamily" Value="JetBrains Mono, JetBrainsMono Nerd Font, Cascadia Mono, Segoe UI"/>
+        <Setter Property="FontFamily" Value="Aptos, Segoe UI Variable Text, Segoe UI"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="UseLayoutRounding" Value="True"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
     </Style>
 
     <Style TargetType="Control">
-        <Setter Property="FontFamily" Value="JetBrains Mono, JetBrainsMono Nerd Font, Cascadia Mono, Segoe UI"/>
+        <Setter Property="FontFamily" Value="Aptos, Segoe UI Variable Text, Segoe UI"/>
     </Style>
 
     <Style TargetType="ToolTip">
@@ -269,15 +269,85 @@
     </Style>
 
     <Style x:Key="PaneFilterComboItemStyle" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
-        <Setter Property="Background" Value="#FF141414"/>
+        <Setter Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
         <Setter Property="Padding" Value="8,3"/>
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Style.Triggers>
+            <Trigger Property="IsHighlighted" Value="True">
+                <Setter Property="Background" Value="#FF1C2D3E"/>
+                <Setter Property="Foreground" Value="#FFF4F8FC"/>
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="#FF1A3A56"/>
+                <Setter Property="Foreground" Value="#FFF4F8FC"/>
+            </Trigger>
+            <MultiTrigger>
+                <MultiTrigger.Conditions>
+                    <Condition Property="IsSelected" Value="True"/>
+                    <Condition Property="IsHighlighted" Value="True"/>
+                </MultiTrigger.Conditions>
+                <Setter Property="Background" Value="#FF224868"/>
+                <Setter Property="Foreground" Value="#FFFFFFFF"/>
+            </MultiTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="FilterInputStyle" TargetType="TextBox">
+        <Setter Property="Background" Value="#FF151515"/>
+        <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CaretBrush" Value="{DynamicResource WinTextBrush}"/>
+        <Setter Property="SelectionBrush" Value="#66707070"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Border x:Name="Root"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            SnapsToDevicePixels="True">
+                        <Grid>
+                            <TextBlock x:Name="Hint"
+                                       Text="{TemplateBinding Tag}"
+                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                       Margin="7,0"
+                                       VerticalAlignment="Center"
+                                       IsHitTestVisible="False"
+                                       Opacity="0.5"
+                                       Visibility="Collapsed"/>
+                            <ScrollViewer x:Name="PART_ContentHost"
+                                          Margin="4,2"
+                                          VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="Text" Value=""/>
+                                <Condition Property="IsFocused" Value="False"/>
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="Hint" Property="Visibility" Value="Visible"/>
+                        </MultiTrigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource InputHoverBorderBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsFocused" Value="True">
+                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource WinAccentBrush}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style x:Key="PaneFilterComboStyle" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
-        <Setter Property="Background" Value="#FF161616"/>
+        <Setter Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource WinSubtleBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
@@ -309,7 +379,7 @@
                                               ClickMode="Press"
                                               BorderBrush="{TemplateBinding BorderBrush}"
                                               BorderThickness="1,0,0,0"
-                                              Background="#FF111111"
+                                              Background="{TemplateBinding Background}"
                                               IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
                                     <Path Width="8"
                                           Height="5"
@@ -1178,5 +1248,6 @@
         <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
     </Style>
 </ResourceDictionary>
+
 
 

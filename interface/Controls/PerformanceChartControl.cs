@@ -314,7 +314,7 @@ namespace BlackbirdInterface
 
                 var markerBrush = new SolidColorBrush(Color.FromArgb(220, UiPalette.Text.R, UiPalette.Text.G, UiPalette.Text.B));
                 markerBrush.Freeze();
-                dc.DrawEllipse(markerBrush, new Pen(hover.Value.ser.Stroke, 1.4), hover.Value.point, 3.6, 3.6);
+                dc.DrawEllipse(markerBrush, null, hover.Value.point, 3.6, 3.6);
 
                 _tip.Content =
                     $"{hover.Value.ser.Name}\n" +
@@ -496,3 +496,5 @@ namespace BlackbirdInterface
             => v < min ? min : (v > max ? max : v);
     }
 }
+
+

@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Windows;
 
 namespace BlackbirdInterface
@@ -72,6 +76,112 @@ namespace BlackbirdInterface
                 ResolveHandleEvidenceClone);
         }
 
+        private void SelectApiViewRowByApiName(string apiName)
+        {
+            if (ApiViewDataGrid == null || string.IsNullOrWhiteSpace(apiName))
+            {
+                return;
+            }
+
+            ApiCallGraphMainRowView? match = _apiViewRows
+                .Where(x => string.Equals(x.ApiName, apiName, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(x => x.Hits)
+                .ThenByDescending(x => x.LastSeen, StringComparer.Ordinal)
+                .FirstOrDefault();
+            if (match == null)
+            {
+                return;
+            }
+
+            ApiViewDataGrid.SelectedItem = match;
+            ApiViewDataGrid.ScrollIntoView(match);
+            UpdateApiViewSelection(match);
+        }
+
+        private void OpenApiInspector(string apiName)
+        {
+            if (string.IsNullOrWhiteSpace(apiName))
+            {
+                return;
+            }
+
+            List<GroupedEventRow> snapshot = BuildApiInspectorSnapshot(apiName);
+            if (snapshot.Count == 0)
+            {
+                return;
+            }
+
+            GroupedEventRow? selectedGroup = null;
+            if (ApiViewDataGrid?.SelectedItem is ApiCallGraphMainRowView selectedRow &&
+                string.Equals(selectedRow.ApiName, apiName, StringComparison.OrdinalIgnoreCase))
+            {
+                selectedGroup = snapshot.FirstOrDefault(x => string.Equals(x.GroupKey, selectedRow.GraphKey, StringComparison.Ordinal));
+            }
+
+            string subtitle = $"{apiName} grouped by caller, target, thread, and sensor";
+            TelemetryInspectorWindow.ShowForRows(
+                this,
+                $"{apiName} Inspector",
+                subtitle,
+                snapshot,
+                selectedGroup,
+                ResolveHandleEvidenceClone);
+        }
+
+        private List<GroupedEventRow> BuildApiInspectorSnapshot(string apiName)
+        {
+            var rows = new List<GroupedEventRow>();
+            foreach ((string graphKey, ApiCallGraphRowSnapshot row) in _apiGraphRowsByKey
+                         .Where(x => string.Equals(x.Value.ApiName, apiName, StringComparison.OrdinalIgnoreCase))
+                         .OrderByDescending(x => x.Value.Hits)
+                         .ThenByDescending(x => x.Value.LastSeenUtc))
+            {
+                uint targetPid = row.TargetPid != 0 ? row.TargetPid : row.SourcePid;
+                string sourceName = GetApiGraphProcessName(row.SourcePid);
+                string targetName = GetApiGraphProcessName(targetPid);
+                string sensor = _apiGraphSensorByKey.TryGetValue(graphKey, out string? sensorLabel) ? sensorLabel : row.SensorOrigin;
+                string decodedAction = _apiGraphActionByKey.TryGetValue(graphKey, out string? actionText) ? actionText : row.ApiName;
+                string detailText = _apiGraphDecodedByKey.TryGetValue(graphKey, out string? detail) ? detail : string.Empty;
+
+                var grouped = new GroupedEventRow
+                {
+                    GroupKey = graphKey,
+                    LastSeenUtc = row.LastSeenUtc,
+                    Event = row.ApiName,
+                    Severity = string.IsNullOrWhiteSpace(sensor) ? "API" : sensor,
+                    Detection = decodedAction,
+                    Hits = Math.Max(1, row.Hits)
+                };
+
+                grouped.Details.Add(new GroupedEventDetailRow
+                {
+                    TimestampUtc = row.LastSeenUtc,
+                    Event = row.ApiName,
+                    Severity = string.IsNullOrWhiteSpace(sensor) ? "API" : sensor,
+                    Detection = decodedAction,
+                    Source = string.IsNullOrWhiteSpace(sensor) ? "API Graph" : sensor,
+                    Actor = string.IsNullOrWhiteSpace(sourceName)
+                        ? $"pid:{row.SourcePid.ToString(CultureInfo.InvariantCulture)}"
+                        : sourceName,
+                    Target = string.IsNullOrWhiteSpace(targetName)
+                        ? (targetPid == 0 ? string.Empty : $"pid:{targetPid.ToString(CultureInfo.InvariantCulture)}")
+                        : targetName,
+                    ActorPid = row.SourcePid,
+                    TargetPid = targetPid,
+                    ActorToolTip = row.SourcePid == 0 ? string.Empty : $"PID {row.SourcePid.ToString(CultureInfo.InvariantCulture)}",
+                    TargetToolTip = targetPid == 0 ? string.Empty : $"PID {targetPid.ToString(CultureInfo.InvariantCulture)}",
+                    ArgumentSummary = row.ThreadId == 0
+                        ? string.Empty
+                        : $"thread={row.ThreadId.ToString(CultureInfo.InvariantCulture)} hits={Math.Max(1, row.Hits).ToString(CultureInfo.InvariantCulture)}",
+                    Details = detailText
+                });
+
+                rows.Add(grouped);
+            }
+
+            return rows;
+        }
+
         private IoctlParsedEvent? ResolveHandleEvidenceClone(uint actorPid, uint targetPid)
         {
             if (actorPid == 0 || targetPid == 0)
@@ -88,3 +198,4 @@ namespace BlackbirdInterface
         }
     }
 }
+

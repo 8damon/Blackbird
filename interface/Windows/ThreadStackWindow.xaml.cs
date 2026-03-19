@@ -552,3 +552,4 @@ namespace BlackbirdInterface
         public string FrameSpan => FrameSpanBytes > 0 ? $"0x{FrameSpanBytes:X}" : "N/A";
     }
 }
+

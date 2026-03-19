@@ -698,3 +698,4 @@ namespace BlackbirdInterface
         public uint EFlags { get; set; }
     }
 }
+

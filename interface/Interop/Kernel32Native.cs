@@ -44,3 +44,5 @@ namespace BlackbirdInterface
         private static extern int NtResumeProcessNative(IntPtr processHandle);
     }
 }
+
+

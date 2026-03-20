@@ -5,18 +5,18 @@ This document describes the current Blackbird control-plane and telemetry contra
 ## Telemetry Contract Visual
 
 <p align="center">
-  <img src="./diagram/Blackbird_DIA.png" width="900" />
+  <img src="./media/BLACKBIRD_DIAGRAM.png" width="900" />
 </p>
 
 ## IOCTL Record Example
 
 <p align="center">
-  <img src="./diagram/IOCTL_EVENT_HANDLE.png" width="900" />
+  <img src="./media/IOCTL_EVENT_HANDLE.png" width="900" />
 </p>
 
 ## Revision and Scope
 
-- Document revision: `2026-03-06`
+- Document revision: `2026-03-20`
 - ABI source of truth: `abi/blackbird_ioctl.h`
 - Compatibility note: no explicit in-band ABI version field is currently exposed; pin integration by commit/date and validate with `BlackbirdTestSuite`.
 
@@ -36,8 +36,9 @@ This document describes the current Blackbird control-plane and telemetry contra
 - IOCTL event families:
   - handle
   - thread
+  - filesystem
 - Shared user-mode SDK:
-  - `BlackbirdSensorCore.dll` / `user/sensor/blackbird_sensor_core.h`
+  - `J58.dll` / `user/sensor/blackbird_sensor_core.h`
   - exported `BLACKBIRDSC*` APIs for IOCTL and ETW session management
   - typed `Swk*` detection callback surface for ETW detection events
 - ETW provider:
@@ -49,7 +50,7 @@ This document describes the current Blackbird control-plane and telemetry contra
 The preferred integration surface for user-mode consumers is:
 
 - header: `user/sensor/blackbird_sensor_core.h`
-- binary: `BlackbirdSensorCore.dll`
+- binary: `J58.dll`
 
 Current exports:
 
@@ -116,6 +117,7 @@ Consumers currently using these exports:
 - `BLACKBIRD_STREAM_HANDLE`
 - `BLACKBIRD_STREAM_MEMORY`
 - `BLACKBIRD_STREAM_THREAD`
+- `BLACKBIRD_STREAM_FILESYSTEM`
 
 `StreamMask` is bitwise-composable.
 
@@ -424,3 +426,5 @@ Common NTSTATUS results mapped to Win32 errors on IOCTL calls:
   - `BLACKBIRD_TEST_REQUIRE_KERNEL_CORRELATION=1` to require kernel correlation-dependent checks.
   - `BLACKBIRD_TEST_REQUIRE_APC=1` to require APC ETW coverage.
 - Test output includes per-check elapsed timing (`ms`) and cycle deltas (`rdtsc` when available), plus suite total elapsed time.
+
+

@@ -3,11 +3,7 @@
 ## Deployment/Validation Visuals
 
 <p align="center">
-  <img src="./diagram/TEST_PASS.png" width="700" />
-</p>
-
-<p align="center">
-  <img src="./diagram/TEST_WEB_INTERFACE_PASS.png" width="900" />
+  <img src="./media/TEST_PASS.png" width="700" />
 </p>
 
 ## Prerequisites
@@ -66,6 +62,8 @@ Build one or more:
 - `vcxproj/BlackbirdClient.vcxproj`
 - `vcxproj/BlackbirdIoctlTest.vcxproj`
 - `vcxproj/BlackbirdSensorCore.vcxproj`
+- `interface/BlackbirdInterface.csproj`
+- `host/BlackbirdOperator/BlackbirdOperator.csproj`
 
 ## 5) Install/Run Controller Service (Recommended)
 
@@ -117,3 +115,6 @@ Use either `BlackbirdClient.exe` live ETW output mode or a custom consumer via `
 - Control plane endpoint: `\\.\BlackbirdCtl`
 - ACL policy: `SYSTEM` and `Administrators`
 - Driver project is kernel-only; user tooling is isolated under dedicated user-mode projects
+- Session archives produced by the analyst interface use the `.bkcap` extension
+
+

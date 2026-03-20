@@ -1,4 +1,4 @@
-<h1 align="center">BLACKBIRD Beta v1.2</h1>
+<h1 align="center">BLACKBIRD v1.5</h1>
 <p align="center"><b>DFIR Kernel Telemetry & Detection Platform for Windows</b></p>
 
 <p align="center">
@@ -17,7 +17,7 @@
 
 # BLACKBIRD
 
-Blackbird is a Malware Analysis platform for everyone from SOC's to Hobbyists. BK unifies many tools and concepts into one complete platform, and gives increased visibility and capability from traditional tools due to it leveraging its own kernel-driver. BK removes the complexities of other kernel mode tools by providing a simple install & a detailed interface to control and observe everything from.
+Blackbird is a malware-analysis platform for everyone from SOC teams to hobbyists. BK unifies kernel telemetry, user-mode hook data, grouped detections, and capture-backed drilldown into one platform. The analyst interface is summary-first, the raw event graph retains the full session timeline, and deeper evidence is exposed through dedicated inspectors, diagnostics, and relation views.
 
 ## OPERATOR PANEL
 
@@ -35,6 +35,8 @@ The main interface is the overseer of all operations, it brings these together;
 - Filesystem events
 - Process relations
 - Uplink performance
+- Diagnostics cockpit
+- Child process graph window
 
 ## EVIDENCE & ALTERNATE VIEWS
 
@@ -59,7 +61,7 @@ Key views include:
 
 ## API HOOKING VIEW
 
-BK provides an alternate view for seeing API hooks captured by the userland sensor in "View, Switch View"
+BK provides an alternate view for seeing API hooks captured by the userland sensor in `View > Switch View`.
 
 ## COVERAGE
 
@@ -98,3 +100,7 @@ See these docs for setup and usage:
 - [INSTALL.md](./INSTALL.md)
 - [USAGE.md](./USAGE.md)
 - [API.md](./API.md)
+
+Session archives are now written as `.bkcap`.
+
+

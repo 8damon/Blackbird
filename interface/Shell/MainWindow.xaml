@@ -372,16 +372,9 @@
                             <MenuItem Header="Controller Restart" Click="ControllerRestart_Click"/>
                         </MenuItem>
                         <MenuItem Header="View">
-                            <MenuItem Header="Docking: Events Float" Click="DockEventsToggle_Click"/>
-                            <MenuItem Header="Docking: Perf Float" Click="DockPerfToggle_Click"/>
-                            <MenuItem Header="Docking: ETW Float" Click="DockEtwToggle_Click"/>
-                            <MenuItem Header="Docking: Heur Float" Click="DockHeurToggle_Click"/>
-                            <Separator/>
-                            <MenuItem Header="Docking: Swap Main" Click="DockSwapMain_Click"/>
-                            <MenuItem Header="Docking: Swap Intel" Click="DockSwapIntel_Click"/>
-                            <MenuItem Header="Docking: Redock All" Click="ResetDock_Click"/>
-                            <Separator/>
                             <MenuItem x:Name="SwitchViewMenuItem" Header="Switch View (API)" Click="SwitchView_Click"/>
+                            <MenuItem Header="Diagnostics" Click="Diagnostics_Click"/>
+                            <MenuItem Header="Child Process View" Click="ChildProcessView_Click"/>
                         </MenuItem>
                     </Menu>
                 </Border>
@@ -542,6 +535,7 @@
                                             <ComboBoxItem Content="Filesystem Inspector" Tag="inspector-filesystem"/>
                                             <ComboBoxItem Content="Process Relations Inspector" Tag="inspector-relations"/>
                                             <ComboBoxItem Content="Diagnostics Window" Tag="diagnostics"/>
+                                            <ComboBoxItem Content="Child Process Graph" Tag="child-process-graph"/>
                                         </ComboBox>
                                         <ComboBox x:Name="LayoutsComboBox"
                                                   Width="130"
@@ -555,15 +549,6 @@
                                             <ComboBoxItem Content="Simple" Tag="layout-simple"/>
                                             <ComboBoxItem Content="Advanced" Tag="layout-advanced"/>
                                         </ComboBox>
-                                        <Border Style="{StaticResource CommandBarSectionDividerStyle}"/>
-                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Events Float" Click="DockEventsToggle_Click"/>
-                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Perf Float" Click="DockPerfToggle_Click"/>
-                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="ETW Float" Click="DockEtwToggle_Click"/>
-                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Heur Float" Click="DockHeurToggle_Click"/>
-                                        <Border Style="{StaticResource CommandBarSectionDividerStyle}"/>
-                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Swap Main" Click="DockSwapMain_Click"/>
-                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Swap Intel" Click="DockSwapIntel_Click"/>
-                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Redock All" Click="ResetDock_Click"/>
                                         <Border Style="{StaticResource CommandBarSectionDividerStyle}"/>
                                         <Button x:Name="SwitchViewButton"
                                                 Style="{DynamicResource CommandBarIconButtonStyle}"
@@ -581,8 +566,8 @@
                                                            Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                                             </StackPanel>
                                         </Button>
-                                        <Border Style="{StaticResource CommandBarSectionDividerStyle}"/>
                                         <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Diagnostics" Click="Diagnostics_Click"/>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Child Process View" Click="ChildProcessView_Click"/>
                                     </StackPanel>
                                 </ScrollViewer>
                             </TabItem>

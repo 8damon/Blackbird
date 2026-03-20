@@ -649,6 +649,7 @@ namespace BlackbirdInterface
         public uint LastAccessMask { get; set; }
         public uint LastFlags { get; set; }
         public string OriginSource { get; set; } = "";
+        public string OriginModule { get; set; } = "";
         public string DetailSignature { get; set; } = "";
         public string DetailText { get; set; } = "";
         public int RepeatCount { get; set; } = 1;
@@ -671,6 +672,7 @@ namespace BlackbirdInterface
                 LastAccessMask = LastAccessMask,
                 LastFlags = LastFlags,
                 OriginSource = OriginSource,
+                OriginModule = OriginModule,
                 DetailSignature = DetailSignature,
                 DetailText = DetailText,
                 RepeatCount = RepeatCount

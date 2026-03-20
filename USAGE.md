@@ -1,6 +1,6 @@
 # Usage
 
-This is the CLI and operator quick reference for Blackbird beta v1.2.
+This is the CLI and operator quick reference for Blackbird v1.5.
 
 ## Core Runtime Pieces
 
@@ -8,7 +8,7 @@ This is the CLI and operator quick reference for Blackbird beta v1.2.
   - KMDF driver
 - `BlackbirdController.exe`
   - broker/controller service
-- `BlackbirdSensorCore.dll`
+- `J58.dll`
   - shared user-mode SDK used by the client tools and interface
 - `BlackbirdClient.exe`
   - broker-backed operator CLI
@@ -138,11 +138,11 @@ BlackbirdInterface.exe
 
 Main workflow:
 
-1. `Select Target`
+1. `Target`
 2. confirm choices in `Launch Parameters`
-3. review timeline, events, ETW, heuristics, and relations
+3. review the timeline, events, ETW, heuristics, filesystem, and relations views
 4. scrub the time-travel slider when needed
-5. open `Detection Chain`, `ETW Inspector`, `Handle Evidence`, or `Thread Stack`
+5. open `Detection Chain`, `ETW Inspector`, `Handle Evidence`, `Thread Stack`, `Child Process Graph`, or `Diagnostics Cockpit`
 6. save/export the session
 
 Notes:
@@ -154,11 +154,13 @@ Notes:
 
 The interface can export session data to:
 
+- `.bkcap`
 - `.jsonl`
 - `.csv`
 - `.cef`
 - `.attack.csv`
-- `.swlkr` / `.blackbird`
+
+The interface can still open/import legacy `.swlkr` and `.blackbird` bundles.
 
 ## More Detail
 
@@ -167,3 +169,5 @@ The interface can export session data to:
 - [INSTALL.md](./INSTALL.md)
 - [API.md](./API.md)
 - [user/sensor/README.md](./user/sensor/README.md)
+
+

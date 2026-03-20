@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide is the shortest path to a working Blackbird beta v1.2 deployment in a lab or VM.
+This guide is the shortest path to a working Blackbird v1.5 deployment in a lab or VM.
 
 ## 1. Prerequisites
 
@@ -24,7 +24,7 @@ Typical artifacts:
 
 - `x64\<Configuration>\blackbird.sys`
 - `x64\<Configuration>\BlackbirdController.exe`
-- `x64\<Configuration>\BlackbirdSensorCore.dll`
+- `x64\<Configuration>\J58.dll`
 - `x64\<Configuration>\BlackbirdClient.exe`
 - `x64\<Configuration>\BlackbirdTestSuite.exe`
 - `interface\bin\<Configuration>\net9.0-windows\BlackbirdInterface.exe`
@@ -77,17 +77,17 @@ Start:
 .\interface\bin\Debug\net9.0-windows\BlackbirdInterface.exe
 ```
 
-If you deployed the interface output somewhere else, make sure `BlackbirdSensorCore.dll` beside the interface is from the same build as the controller.
+If you deployed the interface output somewhere else, make sure `J58.dll` beside the interface is from the same build as the controller.
 
 ## 7. First Operator Workflow
 
-1. Use `Select Target` to attach to a process or launch a new one.
+1. Use `Target` to attach to a process or launch a new one.
 2. Confirm options in the `Launch Parameters` dialog.
 3. Confirm uplink/backend status in the main shell.
-4. Watch the timeline, event log, heuristics, and ETW panes populate.
+4. Watch the timeline, event log, heuristics, ETW, filesystem, and process relations views populate.
 5. Open `Detection Chain` or an inspector by double-clicking grouped telemetry.
 6. Use the time-travel slider to move from live view into historical view.
-7. Open `Thread Stack` or `Handle Evidence` when you need capture-time context.
+7. Open `Thread Stack`, `Handle Evidence`, `Child Process Graph`, or the diagnostics cockpit when you need capture-time context.
 8. Save or export the session when the review is complete.
 
 ## 8. Session Files And Export
@@ -103,11 +103,13 @@ The interface supports:
   - CEF
   - ATT&CK-ready CSV
 
+Archive files use the `.bkcap` extension. Legacy `.swlkr` and `.blackbird` bundles can still be opened/imported.
+
 ## 9. Common Failure Modes
 
 ### `OpenControlDevice failed (win32=233)`
 
-Usually means the interface-side `BlackbirdSensorCore.dll` does not match the running controller ABI, or the broker dropped the pipe during handshake.
+Usually means the interface-side `J58.dll` does not match the running controller ABI, or the broker dropped the pipe during handshake.
 
 ### Interface connects but no live data appears
 
@@ -129,3 +131,5 @@ That is expected if you scrub to a point with no captured sample for memory or t
 - [USAGE.md](./USAGE.md) for CLI examples
 - [INSTALL.md](./INSTALL.md) for install/deployment details
 - [API.md](./API.md) for IOCTL/IPC/ETW contract details
+
+

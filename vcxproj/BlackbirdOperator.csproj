@@ -6,19 +6,21 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <EnableDefaultItems>false</EnableDefaultItems>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <UseSharedCompilation>false</UseSharedCompilation>
     <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
     <RestoreIgnoreFailedSources>true</RestoreIgnoreFailedSources>
     <NuGetAudit>false</NuGetAudit>
+    <BaseOutputPath>..\interface\host\bin\</BaseOutputPath>
     <AssemblyName>BlackbirdOperator</AssemblyName>
     <Product>Blackbird Operator</Product>
     <Company>TITAN Softwork Solutions</Company>
     <Version>1.5.0</Version>
     <AssemblyVersion>1.5.0.0</AssemblyVersion>
     <FileVersion>1.5.0.0</FileVersion>
-    <ApplicationIcon>..\..\interface\Resources\BK.ico</ApplicationIcon>
+    <ApplicationIcon>..\interface\analysis\Resources\BK.ico</ApplicationIcon>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
@@ -41,10 +43,19 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Page Include="..\..\interface\Themes\DarkTheme.xaml">
+    <ApplicationDefinition Include="..\interface\host\App.xaml">
+      <Link>App.xaml</Link>
+    </ApplicationDefinition>
+    <Page Include="..\interface\host\**\*.xaml" Exclude="..\interface\host\App.xaml;..\interface\host\bin\**;..\interface\host\obj\**">
+      <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Page>
+    <Compile Include="..\interface\host\**\*.cs" Exclude="..\interface\host\bin\**;..\interface\host\obj\**">
+      <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Compile>
+    <Page Include="..\interface\analysis\Themes\DarkTheme.xaml">
       <Link>Themes\DarkTheme.xaml</Link>
     </Page>
-    <Resource Include="..\..\interface\Resources\BK.ico">
+    <Resource Include="..\interface\analysis\Resources\BK.ico">
       <Link>Resources\BK.ico</Link>
     </Resource>
   </ItemGroup>

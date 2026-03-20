@@ -10,8 +10,8 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$interfaceProject = Join-Path $repoRoot "interface\BlackbirdInterface.csproj"
-$operatorProject = Join-Path $repoRoot "host\BlackbirdOperator\BlackbirdOperator.csproj"
+$interfaceProject = Join-Path $repoRoot "vcxproj\BlackbirdInterface.csproj"
+$operatorProject = Join-Path $repoRoot "vcxproj\BlackbirdOperator.csproj"
 $stageRoot = Join-Path $repoRoot ".publish\interfaces"
 $outputRoot = Join-Path $repoRoot "x64\$Configuration"
 $interfaceStage = Join-Path $stageRoot "BlackbirdInterface"

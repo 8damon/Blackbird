@@ -62,8 +62,8 @@ Build one or more:
 - `vcxproj/BlackbirdClient.vcxproj`
 - `vcxproj/BlackbirdIoctlTest.vcxproj`
 - `vcxproj/BlackbirdSensorCore.vcxproj`
-- `interface/BlackbirdInterface.csproj`
-- `host/BlackbirdOperator/BlackbirdOperator.csproj`
+- `vcxproj/BlackbirdInterface.csproj`
+- `vcxproj/BlackbirdOperator.csproj`
 
 ## 5) Install/Run Controller Service (Recommended)
 

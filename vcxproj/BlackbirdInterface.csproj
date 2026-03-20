@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <EnableDefaultItems>false</EnableDefaultItems>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
 
     <AssemblyName>BlackbirdInterface</AssemblyName>
@@ -23,7 +24,8 @@
     <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
     <RestoreIgnoreFailedSources>true</RestoreIgnoreFailedSources>
     <NuGetAudit>false</NuGetAudit>
-    <ApplicationIcon>Resources\BK.ico</ApplicationIcon>
+    <BaseOutputPath>..\interface\analysis\bin\</BaseOutputPath>
+    <ApplicationIcon>..\interface\analysis\Resources\BK.ico</ApplicationIcon>
     <BlackbirdSignEnabled Condition="'$(BlackbirdSignEnabled)'==''">false</BlackbirdSignEnabled>
     <BlackbirdSignSubjectName>TITAN Softwork Solutions</BlackbirdSignSubjectName>
     <BlackbirdSignStoreName>My</BlackbirdSignStoreName>
@@ -54,25 +56,28 @@
     <UseAppHost>true</UseAppHost>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
-    <!-- WPF/XAML publish trimming is not trim-safe by default in the .NET SDK. -->
     <PublishTrimmed>false</PublishTrimmed>
     <TrimMode Condition="'$(PublishTrimmed)' == 'true'">partial</TrimMode>
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="rs\**" />
-    <EmbeddedResource Remove="rs\**" />
-    <None Remove="rs\**" />
-    <Page Remove="rs\**" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Resource Include="Resources\BK.ico" />
-    <Resource Include="Resources\*.png" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="runtimeconfig.template.json">
+    <ApplicationDefinition Include="..\interface\analysis\App.xaml">
+      <Link>App.xaml</Link>
+    </ApplicationDefinition>
+    <Page Include="..\interface\analysis\**\*.xaml" Exclude="..\interface\analysis\App.xaml;..\interface\analysis\bin\**;..\interface\analysis\obj\**">
+      <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Page>
+    <Compile Include="..\interface\analysis\**\*.cs" Exclude="..\interface\analysis\bin\**;..\interface\analysis\obj\**">
+      <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Compile>
+    <Resource Include="..\interface\analysis\Resources\BK.ico">
+      <Link>Resources\BK.ico</Link>
+    </Resource>
+    <Resource Include="..\interface\analysis\Resources\*.png">
+      <Link>Resources\%(Filename)%(Extension)</Link>
+    </Resource>
+    <None Include="..\interface\analysis\runtimeconfig.template.json">
+      <Link>runtimeconfig.template.json</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
@@ -90,5 +95,3 @@
   </Target>
 
 </Project>
-
-

@@ -18,7 +18,7 @@ Build these projects:
 - `vcxproj/BlackbirdSensorCore.vcxproj`
 - `vcxproj/BlackbirdClient.vcxproj`
 - `vcxproj/BlackbirdIoctlTest.vcxproj`
-- `interface/BlackbirdInterface.csproj`
+- `vcxproj/BlackbirdInterface.csproj`
 
 Typical artifacts:
 
@@ -27,7 +27,7 @@ Typical artifacts:
 - `x64\<Configuration>\J58.dll`
 - `x64\<Configuration>\BlackbirdClient.exe`
 - `x64\<Configuration>\BlackbirdTestSuite.exe`
-- `interface\bin\<Configuration>\net9.0-windows\BlackbirdInterface.exe`
+- `interface\analysis\bin\<Configuration>\net9.0-windows\BlackbirdInterface.exe`
 
 ## 3. Install And Start The Driver
 
@@ -74,7 +74,7 @@ Expected outcome:
 Start:
 
 ```bat
-.\interface\bin\Debug\net9.0-windows\BlackbirdInterface.exe
+.\interface\analysis\bin\Debug\net9.0-windows\BlackbirdInterface.exe
 ```
 
 If you deployed the interface output somewhere else, make sure `J58.dll` beside the interface is from the same build as the controller.

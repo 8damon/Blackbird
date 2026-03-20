@@ -3,90 +3,327 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Child Process Graph"
         Height="860"
-        Width="760"
+        Width="1240"
         MinHeight="620"
-        MinWidth="540"
+        MinWidth="980"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None"
         ResizeMode="CanResize"
-        Background="{DynamicResource WinBgBrush}">
+        Background="{DynamicResource WinBgBrush}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
 
-    <Grid Margin="14,0,14,14">
+    <Grid>
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0"
                 Style="{StaticResource SecondaryWindowTitleBarBorderStyle}"
-                Margin="0,0,0,12"
                 MouseLeftButtonDown="Root_MouseLeftButtonDown">
-            <DockPanel LastChildFill="False">
-                <StackPanel DockPanel.Dock="Left">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
                     <TextBlock Text="Child Process Graph"
                                Style="{StaticResource SecondaryWindowTitleTextStyle}"/>
-                    <TextBlock x:Name="TargetBlock"
+                    <TextBlock x:Name="SummaryBlock"
                                Style="{StaticResource SecondaryWindowSubtitleTextStyle}"
-                               Text="PID 0"/>
+                               Text="No monitored descendants or pivots yet"/>
                 </StackPanel>
-                <TextBlock x:Name="SummaryBlock"
-                           DockPanel.Dock="Left"
-                           Margin="16,0,0,0"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource WinMutedTextBrush}"
-                           Text="No monitored descendants or pivots yet"/>
-                <Button DockPanel.Dock="Right"
-                        Content="✕"
-                        Tag="Close"
-                        Style="{StaticResource SecondaryWindowTitleGlyphButtonStyle}"
-                        Click="Close_Click"/>
-            </DockPanel>
+
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Top">
+                    <Button Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
+                            Content="&#xE921;"
+                            Click="WindowMinimize_Click"/>
+                    <Button Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
+                            Content="&#xE922;"
+                            Click="WindowMaximize_Click"/>
+                    <Button Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
+                            Tag="Close"
+                            Content="&#xE8BB;"
+                            Click="Close_Click"/>
+                </StackPanel>
+            </Grid>
         </Border>
 
         <Border Grid.Row="1"
+                Margin="8,8,8,0"
+                Style="{DynamicResource SecondaryWindowSurfaceBorderStyle}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="88"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="88"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="88"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0"
+                           Margin="0,0,8,0"
+                           FontSize="11"
+                           Foreground="{DynamicResource WinMutedTextBrush}"
+                           Text="Target"/>
+                <TextBlock x:Name="TargetBlock"
+                           Grid.Row="0"
+                           Grid.Column="1"
+                           FontWeight="SemiBold"
+                           Text="PID 0"/>
+                <TextBlock Grid.Row="0" Grid.Column="2"
+                           Margin="0,0,8,0"
+                           FontSize="11"
+                           Foreground="{DynamicResource WinMutedTextBrush}"
+                           Text="Launches"/>
+                <TextBlock x:Name="LaunchCountBlock"
+                           Grid.Row="0"
+                           Grid.Column="3"
+                           Text="0"/>
+                <TextBlock Grid.Row="0" Grid.Column="4"
+                           Margin="0,0,8,0"
+                           FontSize="11"
+                           Foreground="{DynamicResource WinMutedTextBrush}"
+                           Text="Pivots"/>
+                <TextBlock x:Name="PivotCountBlock"
+                           Grid.Row="0"
+                           Grid.Column="5"
+                           Text="0"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0"
+                           Margin="0,4,8,0"
+                           FontSize="11"
+                           Foreground="{DynamicResource WinMutedTextBrush}"
+                           Text="Scope"/>
+                <TextBlock x:Name="ScopeBlock"
+                           Grid.Row="1"
+                           Grid.Column="1"
+                           Grid.ColumnSpan="5"
+                           Margin="0,4,0,0"
+                           Text="Live descendant and pivot graph"/>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2"
+                Margin="8,8,8,8"
                 Style="{StaticResource SecondaryWindowSurfaceBorderStyle}"
                 Padding="0">
-            <Grid>
-                <TreeView x:Name="RelationsTree"
-                          BorderThickness="0"
-                          Background="Transparent"
-                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <TreeView.ItemTemplate>
-                        <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                            <StackPanel Margin="0,2,0,2">
-                                <DockPanel LastChildFill="True">
-                                    <Ellipse Width="8"
-                                             Height="8"
-                                             Margin="0,4,8,0"
-                                             VerticalAlignment="Top"
-                                             Fill="{Binding DotBrush}"/>
-                                    <StackPanel>
-                                        <TextBlock Text="{Binding Title}"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="{Binding TitleBrush}"
-                                                   TextWrapping="Wrap"/>
-                                        <TextBlock Text="{Binding Meta}"
-                                                   Margin="0,1,0,0"
-                                                   Foreground="{DynamicResource WinMutedTextBrush}"
-                                                   TextWrapping="Wrap"/>
-                                    </StackPanel>
-                                </DockPanel>
-                            </StackPanel>
-                        </HierarchicalDataTemplate>
-                    </TreeView.ItemTemplate>
-                </TreeView>
+            <Grid Margin="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2.2*"/>
+                    <ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="1.15*"/>
+                    <ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="1.15*"/>
+                </Grid.ColumnDefinitions>
 
-                <Border x:Name="NoDataOverlay"
-                        Background="{DynamicResource NoDataOverlayBrush}"
-                        IsHitTestVisible="False"
-                        Visibility="Collapsed">
-                    <TextBlock Text="NO GRAPH DATA"
-                               FontSize="34"
-                               FontWeight="Bold"
-                               Foreground="{DynamicResource WinTextBrush}"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center"
-                               Opacity="0.72"/>
+                <Border Grid.Column="0"
+                        Background="{DynamicResource ExplorerPreviewBackgroundBrush}"
+                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                        BorderThickness="1"
+                        Padding="8">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0"
+                                   Margin="0,0,0,8"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Text="Descendants And Thread Pivots"/>
+
+                        <Grid Grid.Row="1">
+                            <TreeView x:Name="RelationsTree"
+                                      BorderThickness="0"
+                                      Background="Transparent"
+                                      ScrollViewer.CanContentScroll="True"
+                                      VirtualizingPanel.IsVirtualizing="True"
+                                      VirtualizingPanel.VirtualizationMode="Recycling"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <TreeView.ItemContainerStyle>
+                                    <Style TargetType="TreeViewItem">
+                                        <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                                    </Style>
+                                </TreeView.ItemContainerStyle>
+                                <TreeView.ItemTemplate>
+                                    <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                                        <StackPanel Margin="0,2,0,2">
+                                            <DockPanel LastChildFill="True">
+                                                <Ellipse Width="8"
+                                                         Height="8"
+                                                         Margin="0,4,8,0"
+                                                         VerticalAlignment="Top"
+                                                         Fill="{Binding DotBrush}"/>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Title}"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{Binding TitleBrush}"
+                                                               TextWrapping="Wrap"/>
+                                                    <TextBlock Text="{Binding Meta}"
+                                                               Margin="0,1,0,0"
+                                                               Foreground="{DynamicResource WinMutedTextBrush}"
+                                                               TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </StackPanel>
+                                    </HierarchicalDataTemplate>
+                                </TreeView.ItemTemplate>
+                            </TreeView>
+
+                            <Border x:Name="NoDataOverlay"
+                                    Background="{DynamicResource NoDataOverlayBrush}"
+                                    IsHitTestVisible="False"
+                                    Visibility="Collapsed">
+                                <TextBlock Text="NO GRAPH DATA"
+                                           FontSize="34"
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource WinTextBrush}"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Opacity="0.72"/>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Column="2"
+                        Background="{DynamicResource ExplorerPreviewBackgroundBrush}"
+                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                        BorderThickness="1"
+                        Padding="8">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0"
+                                   Margin="0,0,0,8"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Text="Handles Opened To Target"/>
+
+                        <Grid Grid.Row="1">
+                            <ListView x:Name="InboundHandlesList"
+                                      BorderThickness="0"
+                                      Background="Transparent"
+                                      ScrollViewer.CanContentScroll="True"
+                                      VirtualizingPanel.IsVirtualizing="True"
+                                      VirtualizingPanel.VirtualizationMode="Recycling">
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <Setter Property="Padding" Value="0"/>
+                                        <Setter Property="Margin" Value="0,0,0,6"/>
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+                                <ListView.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="8,6"
+                                                Background="{DynamicResource WinHeaderBrush}"
+                                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                BorderThickness="1">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Title}"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{Binding TitleBrush}"
+                                                           TextWrapping="Wrap"/>
+                                                <TextBlock Text="{Binding Meta}"
+                                                           Margin="0,2,0,0"
+                                                           Foreground="{DynamicResource WinMutedTextBrush}"
+                                                           TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+
+                            <TextBlock x:Name="InboundHandlesEmptyBlock"
+                                       Text="NO INBOUND HANDLES"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Visibility="Collapsed"/>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Column="4"
+                        Background="{DynamicResource ExplorerPreviewBackgroundBrush}"
+                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                        BorderThickness="1"
+                        Padding="8">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0"
+                                   Margin="0,0,0,8"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Text="Handles Opened By Target"/>
+
+                        <Grid Grid.Row="1">
+                            <ListView x:Name="OutboundHandlesList"
+                                      BorderThickness="0"
+                                      Background="Transparent"
+                                      ScrollViewer.CanContentScroll="True"
+                                      VirtualizingPanel.IsVirtualizing="True"
+                                      VirtualizingPanel.VirtualizationMode="Recycling">
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <Setter Property="Padding" Value="0"/>
+                                        <Setter Property="Margin" Value="0,0,0,6"/>
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+                                <ListView.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="8,6"
+                                                Background="{DynamicResource WinHeaderBrush}"
+                                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                BorderThickness="1">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Title}"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{Binding TitleBrush}"
+                                                           TextWrapping="Wrap"/>
+                                                <TextBlock Text="{Binding Meta}"
+                                                           Margin="0,2,0,0"
+                                                           Foreground="{DynamicResource WinMutedTextBrush}"
+                                                           TextWrapping="Wrap"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+
+                            <TextBlock x:Name="OutboundHandlesEmptyBlock"
+                                       Text="NO OUTBOUND HANDLES"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Visibility="Collapsed"/>
+                        </Grid>
+                    </Grid>
                 </Border>
             </Grid>
         </Border>

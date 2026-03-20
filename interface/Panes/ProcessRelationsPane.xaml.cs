@@ -80,15 +80,18 @@ namespace BlackbirdInterface
             {
                 "ProcessCreate" => "Child process launch and descendant tracking",
                 "ThreadCreate" => "Cross-process thread creation activity",
+                _ when _rootPid != 0 && item.TargetPid == _rootPid => "Another process opens a handle into the target",
+                _ when _rootPid != 0 && item.SourcePid == _rootPid => "Target opens a handle into another process",
                 _ => "Cross-process handle activity"
             };
             string accessText = EventDetailFormatting.DescribeHandleAccess(item.LastAccessMask);
             string flagsText = string.Equals(item.RelationType, "ThreadCreate", StringComparison.OrdinalIgnoreCase)
                 ? EventDetailFormatting.DescribeThreadFlags(item.LastFlags)
                 : EventDetailFormatting.DescribeHandleFlags(item.LastFlags);
+            string originModule = string.IsNullOrWhiteSpace(item.OriginModule) ? "unknown" : item.OriginModule;
             string details = !string.IsNullOrWhiteSpace(item.DetailText)
                 ? item.DetailText
-                : $"sourcePid={item.SourcePid} targetPid={item.TargetPid} relationType={item.RelationType} access=0x{item.LastAccessMask:X8} ({accessText}) flags=0x{item.LastFlags:X8} ({flagsText})";
+                : $"sourcePid={item.SourcePid} targetPid={item.TargetPid} relationType={item.RelationType} access=0x{item.LastAccessMask:X8} ({accessText}) flags=0x{item.LastFlags:X8} ({flagsText}) originModule={originModule}";
             string detailSig = !string.IsNullOrWhiteSpace(item.DetailSignature)
                 ? item.DetailSignature
                 : $"{eventName}|{item.SourcePid}|{item.TargetPid}|{item.LastAccessMask:X8}|{item.LastFlags:X8}";

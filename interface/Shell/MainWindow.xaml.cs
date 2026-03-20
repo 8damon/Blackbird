@@ -78,6 +78,7 @@ namespace BlackbirdInterface
         private readonly DispatcherTimer _detachedEventLogRefreshTimer;
         private readonly DispatcherTimer _processStateRefreshTimer;
         private readonly DispatcherTimer _apiGraphRefreshTimer;
+        private readonly DispatcherTimer _childProcessGraphRefreshTimer;
         private bool _scrollSyncPending;
         private bool _topTimeTravelSyncing;
         private bool _toolbarViewMenuSyncing;
@@ -157,6 +158,11 @@ namespace BlackbirdInterface
                 Interval = TimeSpan.FromMilliseconds(180)
             };
             _apiGraphRefreshTimer.Tick += ApiGraphRefreshTimer_Tick;
+            _childProcessGraphRefreshTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(140)
+            };
+            _childProcessGraphRefreshTimer.Tick += ChildProcessGraphRefreshTimer_Tick;
             Loaded += OnLoaded;
             Closing += OnClosing;
             Closed += OnClosed;
@@ -223,7 +229,6 @@ namespace BlackbirdInterface
             ProcessRelationsPaneHost.InspectRequested += (_, __) => OpenProcessRelationsInspector();
             ProcessRelationsPaneHost.GraphStateChanged += ProcessRelationsPaneHost_GraphStateChanged;
             IpcUplinkPaneHost.CloseRequested += (_, __) => HideIpcUplinkPane();
-
             // Explorer setup
             SetupExplorer();
             SetupProcessTabs();
@@ -337,11 +342,13 @@ namespace BlackbirdInterface
             }
             if (_childProcessGraphWindow != null)
             {
+                SaveChildProcessGraphStateToSession();
                 _childProcessGraphWindow.Closed -= ChildProcessGraphWindow_Closed;
                 _childProcessGraphWindow.Close();
                 _childProcessGraphWindow = null;
             }
             ProcessRelationsPaneHost.GraphStateChanged -= ProcessRelationsPaneHost_GraphStateChanged;
+            _childProcessGraphRefreshTimer.Stop();
             SaveIntelSessionState(_currentSession?.Pid ?? 0);
             StopTargetExitWatcher();
             DisposePreparedLaunchBackendSession();
@@ -981,15 +988,20 @@ namespace BlackbirdInterface
             SetExplorerHasData("Performance", tab.PerformanceHistory.Count > 0);
             EventsPaneHost.SetHasData(_allEvents.Count > 0);
             RefreshExplorerDataBadges();
+            RefreshChildProcessGraphWindowIfOpen();
         }
 
         private void SwitchToSession(ProcessSessionTab tab)
         {
             if (_currentSession != null && !ReferenceEquals(_currentSession, tab))
+            {
+                SaveChildProcessGraphStateToSession(_currentSession);
                 SaveCurrentSessionState();
+            }
 
             _currentSession = tab;
             PidBox.Text = tab.Pid.ToString();
+            RestoreChildProcessGraphStateFromSession(tab);
 
             RestoreSessionState(tab);
 
@@ -2119,7 +2131,7 @@ namespace BlackbirdInterface
         {
             _ = sender;
             _ = e;
-            RefreshChildProcessGraphWindowIfOpen();
+            ScheduleChildProcessGraphWindowRefresh();
         }
 
         private void OpenOrActivateChildProcessGraphWindow()
@@ -2131,6 +2143,7 @@ namespace BlackbirdInterface
                     Owner = this
                 };
                 _childProcessGraphWindow.Closed += ChildProcessGraphWindow_Closed;
+                RestoreChildProcessGraphStateFromSession();
                 RefreshChildProcessGraphWindow();
                 _childProcessGraphWindow.Show();
                 RebuildToolbarViewMenuOptions();
@@ -2156,6 +2169,25 @@ namespace BlackbirdInterface
             RefreshChildProcessGraphWindow();
         }
 
+        private void ScheduleChildProcessGraphWindowRefresh()
+        {
+            if (_childProcessGraphWindow == null)
+            {
+                return;
+            }
+
+            _childProcessGraphRefreshTimer.Stop();
+            _childProcessGraphRefreshTimer.Start();
+        }
+
+        private void ChildProcessGraphRefreshTimer_Tick(object? sender, EventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            _childProcessGraphRefreshTimer.Stop();
+            RefreshChildProcessGraphWindowIfOpen();
+        }
+
         private void RefreshChildProcessGraphWindow()
         {
             _childProcessGraphWindow?.UpdateGraph(ProcessRelationsPaneHost.SnapshotItems(), ProcessRelationsPaneHost.CurrentRootPid);
@@ -2165,6 +2197,7 @@ namespace BlackbirdInterface
         {
             _ = sender;
             _ = e;
+            SaveChildProcessGraphStateToSession();
             if (_childProcessGraphWindow != null)
             {
                 _childProcessGraphWindow.Closed -= ChildProcessGraphWindow_Closed;
@@ -2172,6 +2205,36 @@ namespace BlackbirdInterface
 
             _childProcessGraphWindow = null;
             RebuildToolbarViewMenuOptions();
+        }
+
+        private void SaveChildProcessGraphStateToSession(ProcessSessionTab? tab = null)
+        {
+            ProcessSessionTab? session = tab ?? _currentSession;
+            if (session == null)
+            {
+                return;
+            }
+
+            session.ChildProcessExpandedKeys.Clear();
+            if (_childProcessGraphWindow == null)
+            {
+                return;
+            }
+
+            foreach (string key in _childProcessGraphWindow.GetExpandedKeysSnapshot())
+            {
+                session.ChildProcessExpandedKeys.Add(key);
+            }
+        }
+
+        private void RestoreChildProcessGraphStateFromSession(ProcessSessionTab? tab = null)
+        {
+            if (_childProcessGraphWindow == null)
+            {
+                return;
+            }
+
+            _childProcessGraphWindow.SetExpandedKeys((tab ?? _currentSession)?.ChildProcessExpandedKeys);
         }
 
         private void LayoutsComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -2666,6 +2729,13 @@ namespace BlackbirdInterface
         private void DockSwapIntel_Click(object sender, RoutedEventArgs e)
         {
             ToggleIntelPaneOrder();
+        }
+
+        private void ChildProcessView_Click(object sender, RoutedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            OpenOrActivateChildProcessGraphWindow();
         }
 
         // -------------------------------
@@ -4198,6 +4268,7 @@ namespace BlackbirdInterface
         public List<PerformanceSample> PerformanceHistory { get; } = new();
         public List<ThreadLifecycleEventSample> ThreadLifecycleHistory { get; } = new();
         public List<ThreadStackHistoryArchiveEntry> ThreadStackHistories { get; } = new();
+        internal HashSet<string> ChildProcessExpandedKeys { get; } = new(StringComparer.Ordinal);
         public DateTime CaptureStartUtc { get; set; } = DateTime.UtcNow;
         public double ViewDurationSeconds { get; set; } = 120;
         public double ViewStartSeconds { get; set; }

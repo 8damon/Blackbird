@@ -157,11 +157,17 @@ namespace BlackbirdInterface
 
         internal static string DescribeHandleAccess(uint access)
         {
-            var tokens = new List<string>();
             if ((access & ProcessAllAccess) == ProcessAllAccess)
             {
-                tokens.Add("PROCESS_ALL_ACCESS");
+                return "PROCESS_ALL_ACCESS";
             }
+
+            if ((access & ThreadAllAccess) == ThreadAllAccess)
+            {
+                return "THREAD_ALL_ACCESS";
+            }
+
+            var tokens = new List<string>();
             if ((access & ProcessCreateThread) != 0)
             {
                 tokens.Add("PROCESS_CREATE_THREAD");
@@ -218,11 +224,6 @@ namespace BlackbirdInterface
             {
                 tokens.Add("THREAD_SUSPEND_RESUME");
             }
-            if ((access & ThreadAllAccess) == ThreadAllAccess)
-            {
-                tokens.Add("THREAD_ALL_ACCESS");
-            }
-
             if (tokens.Count == 0)
             {
                 tokens.Add("NONE");
@@ -543,6 +544,10 @@ namespace BlackbirdInterface
             int slash = cleaned.LastIndexOf('\\');
             return slash >= 0 && slash + 1 < cleaned.Length ? cleaned[(slash + 1)..] : cleaned;
         }
+
+        internal static bool IsSr71Module(string? moduleName)
+            => !string.IsNullOrWhiteSpace(moduleName) &&
+               string.Equals(moduleName.Trim(), "SR71.dll", StringComparison.OrdinalIgnoreCase);
 
         internal static string FormatSampleHex(byte[]? sample, int sampleSize)
         {

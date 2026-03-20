@@ -1408,6 +1408,16 @@ namespace BlackbirdInterface
                     return null;
                 }
 
+                string accessDecoded = EventDetailFormatting.DescribeHandleAccess(record.DesiredAccess);
+                string flagsDecoded = EventDetailFormatting.DescribeHandleFlags(record.HandleFlags);
+                string originModule = EventDetailFormatting.ModuleNameFromPath(record.OriginPath);
+                bool isSr71Handle = EventDetailFormatting.IsSr71Module(originModule);
+                string detailSignature = $"handle|{source}|{target}|{record.DesiredAccess:X8}|{record.HandleFlags:X8}|{originModule}";
+                string detailText =
+                    $"sourcePid={source} targetPid={target} relationType=HandleOpen access=0x{record.DesiredAccess:X8} ({accessDecoded}) " +
+                    $"flags=0x{record.HandleFlags:X8} ({flagsDecoded}) originModule={originModule} " +
+                    $"handleOwner={(isSr71Handle ? "SR71" : "ActorProcess")}";
+
                 return new ProcessRelationView
                 {
                     FirstSeenUtc = now,
@@ -1417,6 +1427,10 @@ namespace BlackbirdInterface
                     RelationType = "HandleOpen",
                     LastAccessMask = record.DesiredAccess,
                     LastFlags = record.HandleFlags,
+                    OriginSource = "Kernel-IOCTL",
+                    OriginModule = originModule,
+                    DetailSignature = detailSignature,
+                    DetailText = detailText,
                     RepeatCount = 1
                 };
             }
@@ -1439,6 +1453,8 @@ namespace BlackbirdInterface
                     RelationType = "ThreadCreate",
                     LastAccessMask = 0,
                     LastFlags = record.ThreadFlags,
+                    OriginSource = "Kernel-IOCTL",
+                    OriginModule = EventDetailFormatting.ModuleNameFromPath(record.OriginPath),
                     RepeatCount = 1
                 };
             }
@@ -1480,6 +1496,7 @@ namespace BlackbirdInterface
                 LastAccessMask = 0,
                 LastFlags = view.Flags,
                 OriginSource = view.Source,
+                OriginModule = EventDetailFormatting.ModuleNameFromPath(view.ImagePath),
                 DetailSignature = detailSignature,
                 DetailText = detailText,
                 RepeatCount = 1

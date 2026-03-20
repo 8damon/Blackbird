@@ -97,7 +97,18 @@ namespace BlackbirdInterface.Capture
         {
             if (Directory.Exists(path))
             {
-                return LoadWorkspaceDirectory(ResolveWorkspaceRoot(path));
+                string resolvedPath = ResolveWorkspaceRoot(path);
+                if (File.Exists(Path.Combine(resolvedPath, WorkspaceManifestFileName)))
+                {
+                    return LoadWorkspaceDirectory(resolvedPath);
+                }
+
+                if (File.Exists(Path.Combine(path, MaterializedFileName)))
+                {
+                    return LoadSingleTabWorkspace(path);
+                }
+
+                throw new InvalidDataException("Capture workspace is invalid.");
             }
 
             if (!File.Exists(path))
@@ -296,6 +307,32 @@ namespace BlackbirdInterface.Capture
             }
 
             return new CaptureLoadedWorkspace { Archive = archive, TabPaths = tabPaths };
+        }
+
+        private static CaptureLoadedWorkspace LoadSingleTabWorkspace(string tabDirectory)
+        {
+            SessionFileTab? tab = JsonSerializer.Deserialize<SessionFileTab>(
+                File.ReadAllText(Path.Combine(tabDirectory, MaterializedFileName), Encoding.UTF8),
+                JsonOptions);
+            if (tab == null)
+            {
+                throw new InvalidDataException("Capture tab materialized snapshot is invalid.");
+            }
+
+            tab.CaptureStorePath = tabDirectory;
+            var archive = new SessionFileArchive
+            {
+                Version = SessionFileStorage.CurrentVersion,
+                SavedUtc = File.GetLastWriteTimeUtc(Path.Combine(tabDirectory, MaterializedFileName)),
+                ActivePid = tab.Pid
+            };
+            archive.Tabs.Add(tab);
+
+            return new CaptureLoadedWorkspace
+            {
+                Archive = archive,
+                TabPaths = new Dictionary<int, string> { [tab.Pid] = tabDirectory }
+            };
         }
 
         private static void WriteTabStore(string tabDirectory, SessionFileTab tab)

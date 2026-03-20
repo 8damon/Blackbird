@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO.MemoryMappedFiles;
 using System.Runtime.InteropServices;
@@ -8,11 +9,24 @@ using System.Threading.Tasks;
 
 namespace BlackbirdInterface
 {
+    internal sealed class DebugConsoleEntry
+    {
+        public DateTime TimestampLocal { get; init; }
+        public int ProcessId { get; init; }
+        public string Source { get; init; } = string.Empty;
+        public string Message { get; init; } = string.Empty;
+
+        public string FilterText => $"{TimestampLocal:O} {ProcessId} {Source} {Message}";
+    }
+
     internal static class DebugConsoleService
     {
         private const uint AttachParentProcess = 0xFFFFFFFF;
+        private const int MaxEntries = 4096;
         private static readonly object s_gate = new();
+        private static readonly Queue<DebugConsoleEntry> s_entries = new();
         private static bool s_started;
+        private static bool s_consoleAttached;
         private static bool s_outputCaptureSubscribed;
         private static CancellationTokenSource? s_listenerCts;
         private static Task? s_listenerTask;
@@ -29,23 +43,27 @@ namespace BlackbirdInterface
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
         private static extern bool SetConsoleTitleW(string lpConsoleTitle);
 
-        public static void Start()
+        public static event Action<DebugConsoleEntry>? EntryReceived;
+
+        public static void Start(bool attachConsole)
         {
             lock (s_gate)
             {
                 if (s_started)
                 {
+                    if (attachConsole && !s_consoleAttached)
+                    {
+                        AttachDebugConsole();
+                    }
+
                     return;
                 }
 
-                if (!AttachConsole(AttachParentProcess))
+                if (attachConsole)
                 {
-                    _ = AllocConsole();
+                    AttachDebugConsole();
                 }
 
-                Console.OutputEncoding = Encoding.UTF8;
-                Console.InputEncoding = Encoding.UTF8;
-                _ = SetConsoleTitleW("Blackbird Interface Debug Console");
                 s_started = true;
                 WriteLocal("debug console online");
 
@@ -95,34 +113,83 @@ namespace BlackbirdInterface
                 s_listenerCts?.Dispose();
                 s_listenerCts = null;
                 s_started = false;
-                _ = FreeConsole();
+                if (s_consoleAttached)
+                {
+                    _ = FreeConsole();
+                    s_consoleAttached = false;
+                }
+            }
+        }
+
+        public static IReadOnlyList<DebugConsoleEntry> Snapshot()
+        {
+            lock (s_gate)
+            {
+                return s_entries.ToArray();
             }
         }
 
         public static void WriteLocal(string message)
         {
-            WriteLine("INTERFACE", message);
+            WriteEntry("INTERFACE", Environment.ProcessId, message);
         }
 
         private static void OnOutputCaptureLineReceived(string line)
         {
-            WriteLine("INTERFACE", line);
+            WriteEntry("INTERFACE", Environment.ProcessId, line);
         }
 
-        private static void WriteLine(string source, string? message)
+        private static void AttachDebugConsole()
+        {
+            if (!AttachConsole(AttachParentProcess))
+            {
+                _ = AllocConsole();
+            }
+
+            Console.OutputEncoding = Encoding.UTF8;
+            Console.InputEncoding = Encoding.UTF8;
+            _ = SetConsoleTitleW("Blackbird Interface Debug Console");
+            s_consoleAttached = true;
+        }
+
+        private static void WriteEntry(string source, int processId, string? message)
         {
             if (!s_started || string.IsNullOrWhiteSpace(message))
             {
                 return;
             }
 
+            string trimmed = message.TrimEnd('\r', '\n');
+            var entry = new DebugConsoleEntry
+            {
+                TimestampLocal = DateTime.Now,
+                ProcessId = processId,
+                Source = source ?? string.Empty,
+                Message = trimmed
+            };
+
+            lock (s_gate)
+            {
+                if (s_entries.Count >= MaxEntries)
+                {
+                    s_entries.Dequeue();
+                }
+
+                s_entries.Enqueue(entry);
+            }
+
             try
             {
-                Console.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] [{source}] {message.TrimEnd('\r', '\n')}");
+                if (s_consoleAttached)
+                {
+                    Console.WriteLine($"[{entry.TimestampLocal:HH:mm:ss.fff}] [{source}] {trimmed}");
+                }
             }
             catch
             {
             }
+
+            EntryReceived?.Invoke(entry);
         }
 
         private static void RunOutputDebugStringListener(CancellationToken cancellationToken)
@@ -171,7 +238,7 @@ namespace BlackbirdInterface
                     }
 
                     string source = ResolveSourceLabel(pid);
-                    WriteLine(source, text);
+                    WriteEntry(source, pid, text);
                 }
             }
             catch (Exception ex)

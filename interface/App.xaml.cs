@@ -45,10 +45,11 @@ namespace BlackbirdInterface
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
             base.OnStartup(e);
+            EnsureBackgroundThreadPoolFloor();
             StartupOptions options = ParseStartupOptions(e.Args);
+            DebugConsoleService.Start(options.DebugConsole);
             if (options.DebugConsole)
             {
-                DebugConsoleService.Start();
                 DebugConsoleService.WriteLocal($"startup args: {string.Join(" ", e.Args)}");
             }
             EnforceSingleInstance();
@@ -74,6 +75,22 @@ namespace BlackbirdInterface
             DebugConsoleService.Stop();
 
             base.OnExit(e);
+        }
+
+        private static void EnsureBackgroundThreadPoolFloor()
+        {
+            ThreadPool.GetMinThreads(out int workerThreads, out int completionPortThreads);
+
+            int workerFloor = Math.Max(8, Environment.ProcessorCount * 2);
+            int ioFloor = Math.Max(8, Environment.ProcessorCount);
+            if (workerThreads >= workerFloor && completionPortThreads >= ioFloor)
+            {
+                return;
+            }
+
+            ThreadPool.SetMinThreads(
+                Math.Max(workerThreads, workerFloor),
+                Math.Max(completionPortThreads, ioFloor));
         }
 
         private async void ContinueStartupSafe()

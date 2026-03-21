@@ -30,6 +30,9 @@ test-results/
 *.tmp
 *.cache
 
+./$документы
+$документы
+
 # Binary artifacts
 *.exe
 *.dll

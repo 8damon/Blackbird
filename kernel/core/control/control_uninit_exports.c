@@ -52,14 +52,14 @@ VOID BLACKBIRDControlPublishHandleEvent(_In_ const BLACKBIRD_HANDLE_EVENT *Handl
 
     BLACKBIRDPublishRecordToSubscribers(
         (UINT32)HandleEvent->CallerPid,
-        ((UINT32)HandleEvent->TargetPid != (UINT32)HandleEvent->CallerPid) ? (UINT32)HandleEvent->TargetPid : 0,
-        stream, &record);
+        ((UINT32)HandleEvent->TargetPid != (UINT32)HandleEvent->CallerPid) ? (UINT32)HandleEvent->TargetPid : 0, stream,
+        &record);
 }
 
 VOID BLACKBIRDControlPublishThreadEvent(_In_ UINT64 ProcessId, _In_ UINT64 ThreadId, _In_ UINT64 CreatorPid,
-                                          _In_ UINT64 StartAddress, _In_ UINT64 ImageBase, _In_ UINT64 ImageSize,
-                                          _In_ UINT32 Flags, _In_ UINT32 FrameCount,
-                                          _In_reads_opt_(FrameCount) PVOID const *Frames)
+                                        _In_ UINT64 StartAddress, _In_ UINT64 ImageBase, _In_ UINT64 ImageSize,
+                                        _In_ UINT32 Flags, _In_ UINT32 FrameCount,
+                                        _In_reads_opt_(FrameCount) PVOID const *Frames)
 {
     BLACKBIRD_EVENT_RECORD record;
     UINT32 i;
@@ -95,8 +95,8 @@ VOID BLACKBIRDControlPublishThreadEvent(_In_ UINT64 ProcessId, _In_ UINT64 Threa
     }
 
     BLACKBIRDPublishRecordToSubscribers((UINT32)ProcessId,
-                                          ((UINT32)CreatorPid != (UINT32)ProcessId) ? (UINT32)CreatorPid : 0,
-                                          BLACKBIRD_STREAM_THREAD, &record);
+                                        ((UINT32)CreatorPid != (UINT32)ProcessId) ? (UINT32)CreatorPid : 0,
+                                        BLACKBIRD_STREAM_THREAD, &record);
 }
 
 VOID BLACKBIRDControlPublishFileEvent(_In_ const BLACKBIRD_FILE_EVENT *FileEvent)
@@ -234,4 +234,3 @@ BLACKBIRDControlIsArmedFast(VOID)
 
     return (InterlockedCompareExchange(&g_ControlTelemetryArmed, 0, 0) != 0);
 }
-

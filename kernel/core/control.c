@@ -14,5 +14,3 @@ volatile LONG g_QueryImageThrottleCounter = 0;
 volatile LONG g_IoctlGetEventDeliverCounter = 0;
 volatile LONG g_IoctlGetEventEmptyCounter = 0;
 volatile LONG g_IoctlGetStatsCounter = 0;
-
-

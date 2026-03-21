@@ -4,8 +4,8 @@
 #include <ntddk.h>
 
 static __forceinline BOOLEAN BLACKBIRDUnicodeContainsInsensitive(_In_ PCUNICODE_STRING Haystack,
-                                                                   _In_reads_(NeedleChars) PCWSTR Needle,
-                                                                   _In_ USHORT NeedleChars)
+                                                                 _In_reads_(NeedleChars) PCWSTR Needle,
+                                                                 _In_ USHORT NeedleChars)
 {
     USHORT hayChars;
     USHORT i;
@@ -42,8 +42,50 @@ static __forceinline BOOLEAN BLACKBIRDUnicodeContainsInsensitive(_In_ PCUNICODE_
     return FALSE;
 }
 
+static __forceinline BOOLEAN BLACKBIRDUnicodeEquals(_In_opt_ PCUNICODE_STRING Left, _In_opt_ PCUNICODE_STRING Right,
+                                                    _In_ BOOLEAN CaseInsensitive)
+{
+    USHORT charCount;
+    USHORT i;
+
+    if (Left == NULL || Right == NULL)
+    {
+        return FALSE;
+    }
+    if (Left->Length != Right->Length)
+    {
+        return FALSE;
+    }
+    if (Left->Length == 0)
+    {
+        return TRUE;
+    }
+    if (Left->Buffer == NULL || Right->Buffer == NULL)
+    {
+        return FALSE;
+    }
+
+    charCount = Left->Length / sizeof(WCHAR);
+    for (i = 0; i < charCount; ++i)
+    {
+        WCHAR leftChar = Left->Buffer[i];
+        WCHAR rightChar = Right->Buffer[i];
+        if (CaseInsensitive)
+        {
+            leftChar = RtlDowncaseUnicodeChar(leftChar);
+            rightChar = RtlDowncaseUnicodeChar(rightChar);
+        }
+        if (leftChar != rightChar)
+        {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
 static __forceinline VOID BLACKBIRDSafeCopyUnicode(_In_opt_ PCUNICODE_STRING Source,
-                                                     _Out_writes_z_(DestChars) PWSTR Dest, _In_ SIZE_T DestChars)
+                                                   _Out_writes_z_(DestChars) PWSTR Dest, _In_ SIZE_T DestChars)
 {
     SIZE_T copyChars;
 
@@ -73,4 +115,3 @@ static __forceinline VOID BLACKBIRDSafeCopyUnicode(_In_opt_ PCUNICODE_STRING Sou
 }
 
 #endif
-

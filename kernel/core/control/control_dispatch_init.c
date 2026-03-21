@@ -1,7 +1,7 @@
 #include "control_private.h"
 
 _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferLength,
-                                                          size_t InputBufferLength, ULONG IoControlCode)
+                                                        size_t InputBufferLength, ULONG IoControlCode)
 {
     WDFOBJECT fileObj;
     PBLACKBIRD_FILE_CONTEXT ctx;
@@ -16,24 +16,18 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUE
 
     if (KeGetCurrentIrql() != PASSIVE_LEVEL)
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
-                   DPFLTR_ERROR_LEVEL,
-                   "BLACKBIRD: ioctl rejected requesterPid=%lu ioctl=%s(0x%08X) reason=IRQL.\n",
-                   requesterPid,
-                   BLACKBIRDIoctlName(IoControlCode),
-                   IoControlCode);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
+                   "BLACKBIRD: ioctl rejected requesterPid=%lu ioctl=%s(0x%08X) reason=IRQL.\n", requesterPid,
+                   BLACKBIRDIoctlName(IoControlCode), IoControlCode);
         WdfRequestComplete(Request, STATUS_INVALID_DEVICE_STATE);
         return;
     }
 
     if (!BLACKBIRDModeAllowed(Request))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
-                   DPFLTR_WARNING_LEVEL,
-                   "BLACKBIRD: ioctl denied requesterPid=%lu ioctl=%s(0x%08X) reason=non-usermode.\n",
-                   requesterPid,
-                   BLACKBIRDIoctlName(IoControlCode),
-                   IoControlCode);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+                   "BLACKBIRD: ioctl denied requesterPid=%lu ioctl=%s(0x%08X) reason=non-usermode.\n", requesterPid,
+                   BLACKBIRDIoctlName(IoControlCode), IoControlCode);
         WdfRequestComplete(Request, STATUS_ACCESS_DENIED);
         return;
     }
@@ -41,12 +35,9 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUE
     fileObj = WdfRequestGetFileObject(Request);
     if (fileObj == NULL)
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
-                   DPFLTR_WARNING_LEVEL,
-                   "BLACKBIRD: ioctl invalid file-object requesterPid=%lu ioctl=%s(0x%08X).\n",
-                   requesterPid,
-                   BLACKBIRDIoctlName(IoControlCode),
-                   IoControlCode);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+                   "BLACKBIRD: ioctl invalid file-object requesterPid=%lu ioctl=%s(0x%08X).\n", requesterPid,
+                   BLACKBIRDIoctlName(IoControlCode), IoControlCode);
         WdfRequestComplete(Request, STATUS_INVALID_HANDLE);
         return;
     }
@@ -54,12 +45,9 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUE
     ctx = BLACKBIRDGetFileContext(fileObj);
     if (ctx->Client == NULL)
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
-                   DPFLTR_WARNING_LEVEL,
-                   "BLACKBIRD: ioctl invalid client context requesterPid=%lu ioctl=%s(0x%08X).\n",
-                   requesterPid,
-                   BLACKBIRDIoctlName(IoControlCode),
-                   IoControlCode);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+                   "BLACKBIRD: ioctl invalid client context requesterPid=%lu ioctl=%s(0x%08X).\n", requesterPid,
+                   BLACKBIRDIoctlName(IoControlCode), IoControlCode);
         WdfRequestComplete(Request, STATUS_INVALID_HANDLE);
         return;
     }
@@ -67,12 +55,9 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUE
     if (BLACKBIRDControlIsShutdown() && IoControlCode != IOCTL_BLACKBIRD_GET_STATS &&
         IoControlCode != IOCTL_BLACKBIRD_GET_HEALTH && IoControlCode != IOCTL_BLACKBIRD_SET_SHUTDOWN_MODE)
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
-                   DPFLTR_INFO_LEVEL,
-                   "BLACKBIRD: ioctl rejected during shutdown requesterPid=%lu ioctl=%s(0x%08X).\n",
-                   requesterPid,
-                   BLACKBIRDIoctlName(IoControlCode),
-                   IoControlCode);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
+                   "BLACKBIRD: ioctl rejected during shutdown requesterPid=%lu ioctl=%s(0x%08X).\n", requesterPid,
+                   BLACKBIRDIoctlName(IoControlCode), IoControlCode);
         WdfRequestComplete(Request, STATUS_DEVICE_NOT_READY);
         return;
     }
@@ -111,11 +96,8 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUE
         break;
     default:
         status = STATUS_INVALID_DEVICE_REQUEST;
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
-                   DPFLTR_WARNING_LEVEL,
-                   "BLACKBIRD: unsupported ioctl requesterPid=%lu ioctl=0x%08X.\n",
-                   requesterPid,
-                   IoControlCode);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+                   "BLACKBIRD: unsupported ioctl requesterPid=%lu ioctl=0x%08X.\n", requesterPid, IoControlCode);
         break;
     }
 
@@ -126,14 +108,9 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUE
 
     if (IoControlCode != IOCTL_BLACKBIRD_GET_EVENT || (!NT_SUCCESS(status) && status != STATUS_NO_MORE_ENTRIES))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
-                   NT_SUCCESS(status) ? DPFLTR_INFO_LEVEL : DPFLTR_WARNING_LEVEL,
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, NT_SUCCESS(status) ? DPFLTR_INFO_LEVEL : DPFLTR_WARNING_LEVEL,
                    "BLACKBIRD: ioctl complete requesterPid=%lu ioctl=%s(0x%08X) status=0x%08X bytes=%Iu.\n",
-                   requesterPid,
-                   BLACKBIRDIoctlName(IoControlCode),
-                   IoControlCode,
-                   status,
-                   bytesOut);
+                   requesterPid, BLACKBIRDIoctlName(IoControlCode), IoControlCode, status, bytesOut);
     }
 
     WdfRequestCompleteWithInformation(Request, status, bytesOut);
@@ -232,4 +209,3 @@ BLACKBIRDControlInitialize(_In_ WDFDRIVER Driver)
     WdfControlFinishInitializing(device);
     return STATUS_SUCCESS;
 }
-

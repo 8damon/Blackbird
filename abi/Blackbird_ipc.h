@@ -83,6 +83,7 @@ typedef enum _BLACKBIRD_IPC_HOOK_EVENT_KIND
 #define BLACKBIRD_IPC_MAX_HOOK_API_NAME 64
 #define BLACKBIRD_IPC_MAX_HOOK_MODULE_NAME 32
 #define BLACKBIRD_IPC_MAX_HOOK_DATA_SAMPLE 64
+#define BLACKBIRD_IPC_MAX_HOOK_STACK_FRAMES 8
 
 typedef struct _BLACKBIRD_IPC_HOOK_EVENT
 {
@@ -98,6 +99,9 @@ typedef struct _BLACKBIRD_IPC_HOOK_EVENT
     UINT32 ArgCount;
     UINT32 DataSize;
     UINT64 Args[8];
+    UINT32 StackCount;
+    UINT32 CallerFlags; /* BLACKBIRD_HOOK_CALLER_FLAG_* | (ImmediateCaller kind << 4) | (DeepestOrigin kind << 8) */
+    UINT64 Stack[BLACKBIRD_IPC_MAX_HOOK_STACK_FRAMES];
     CHAR ApiName[BLACKBIRD_IPC_MAX_HOOK_API_NAME];
     CHAR ModuleName[BLACKBIRD_IPC_MAX_HOOK_MODULE_NAME];
     UINT8 DataSample[BLACKBIRD_IPC_MAX_HOOK_DATA_SAMPLE];
@@ -111,13 +115,14 @@ typedef enum _BLACKBIRD_IPC_USER_HOOK_TARGET_MODE
 } BLACKBIRD_IPC_USER_HOOK_TARGET_MODE;
 
 #define BLACKBIRD_IPC_USER_HOOK_FLAG_LAUNCH_EARLYBIRD_APC 0x00000001u
+#define BLACKBIRD_IPC_MAX_LAUNCH_ENVIRONMENT_CHARS 4096
 
 #define BLACKBIRD_IPC_HOOK_READY_FLAG_IPC_CONNECTED 0x00000001u
-#define BLACKBIRD_IPC_HOOK_READY_FLAG_WINSOCK       0x00000002u
-#define BLACKBIRD_IPC_HOOK_READY_FLAG_NT            0x00000004u
-#define BLACKBIRD_IPC_HOOK_READY_FLAG_KI            0x00000008u
-#define BLACKBIRD_IPC_HOOK_READY_REQUIRED_MASK                                                   \
-    (BLACKBIRD_IPC_HOOK_READY_FLAG_IPC_CONNECTED | BLACKBIRD_IPC_HOOK_READY_FLAG_WINSOCK |      \
+#define BLACKBIRD_IPC_HOOK_READY_FLAG_WINSOCK 0x00000002u
+#define BLACKBIRD_IPC_HOOK_READY_FLAG_NT 0x00000004u
+#define BLACKBIRD_IPC_HOOK_READY_FLAG_KI 0x00000008u
+#define BLACKBIRD_IPC_HOOK_READY_REQUIRED_MASK                                             \
+    (BLACKBIRD_IPC_HOOK_READY_FLAG_IPC_CONNECTED | BLACKBIRD_IPC_HOOK_READY_FLAG_WINSOCK | \
      BLACKBIRD_IPC_HOOK_READY_FLAG_NT | BLACKBIRD_IPC_HOOK_READY_FLAG_KI)
 
 typedef struct _BLACKBIRD_IPC_SET_USER_HOOK_TARGET_REQUEST
@@ -125,9 +130,15 @@ typedef struct _BLACKBIRD_IPC_SET_USER_HOOK_TARGET_REQUEST
     UINT32 Mode;
     UINT32 ProcessId;
     UINT32 Flags;
+    UINT32 ParentProcessId;
+    UINT32 PriorityClass;
+    UINT32 InheritHandles;
     UINT32 Reserved;
+    UINT64 AffinityMask;
     WCHAR ImagePath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
     WCHAR HookDllPath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+    WCHAR WorkingDirectory[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+    WCHAR EnvironmentOverrides[BLACKBIRD_IPC_MAX_LAUNCH_ENVIRONMENT_CHARS];
 } BLACKBIRD_IPC_SET_USER_HOOK_TARGET_REQUEST, *PBLACKBIRD_IPC_SET_USER_HOOK_TARGET_REQUEST;
 
 typedef struct _BLACKBIRD_IPC_SET_USER_HOOK_TARGET_RESPONSE
@@ -185,6 +196,7 @@ typedef enum _BLACKBIRD_IPC_ETW_SOURCE
 #define BLACKBIRD_IPC_MAX_ETW_VALUE_NAME 256
 #define BLACKBIRD_IPC_MAX_ETW_STACK_FRAMES 8
 #define BLACKBIRD_IPC_MAX_ETW_DEEP_SAMPLE 64
+#define BLACKBIRD_IPC_MAX_HOOK_ARGS 8
 
 typedef enum _BLACKBIRD_IPC_ETW_FAMILY
 {
@@ -213,6 +225,51 @@ typedef enum _BLACKBIRD_IPC_ETW_FAMILY
 #define BLACKBIRD_IPC_ETW_FLAG_IMAGE_SIGNATURE_KNOWN 0x00000200u
 #define BLACKBIRD_IPC_ETW_FLAG_REGISTRY_HIGH_VALUE 0x00000400u
 #define BLACKBIRD_IPC_ETW_FLAG_APC_DUPLICATE_OPERATION 0x00000800u
+/* Syscall origin / stack-integrity signals — mirror BLACKBIRD_HANDLE_FLAG_* at the same bit positions
+   so a masked copy of BLACKBIRD_HANDLE_EVENT.Flags is a valid Flags value here. */
+#define BLACKBIRD_IPC_ETW_FLAG_SYSCALL_EXPORT_MATCH 0x00001000u
+#define BLACKBIRD_IPC_ETW_FLAG_SYSCALL_EXPORT_MISMATCH 0x00002000u
+#define BLACKBIRD_IPC_ETW_FLAG_MODULE_CHAIN_SANE 0x00004000u
+#define BLACKBIRD_IPC_ETW_FLAG_UNWIND_METADATA_VALID 0x00008000u
+#define BLACKBIRD_IPC_ETW_FLAG_TEB_STACK_BOUNDS_VALID 0x00010000u
+#define BLACKBIRD_IPC_ETW_FLAG_FRAMES_OUTSIDE_TEB_STACK 0x00020000u
+/* Hook-event caller origin — set by the controller when mapping a BLACKBIRD_IPC_HOOK_EVENT
+   to a BLACKBIRD_IPC_ETW_EVENT so the UI can classify / filter without separate ABI fields. */
+#define BLACKBIRD_IPC_ETW_FLAG_HOOK_CALLER_ALL_SYSTEM 0x00040000u
+#define BLACKBIRD_IPC_ETW_FLAG_HOOK_CALLER_HAS_UNMAPPED 0x00080000u
+#define BLACKBIRD_IPC_ETW_FLAG_HOOK_CALLER_HAS_PROCESS_IMAGE 0x00100000u
+#define BLACKBIRD_IPC_ETW_FLAG_HOOK_CALLER_HAS_NONSYSTEM_DLL 0x00200000u
+
+/* Hook integrity operation codes — shared between the hook DLL and the controller so
+   both sides agree without relying on matching magic numbers in separate translation units. */
+#define BLACKBIRD_HOOK_EVENT_OP_HOOK_INTEGRITY 1u
+#define BLACKBIRD_HOOK_EVENT_OP_AMSI_PATCH 2u
+#define BLACKBIRD_HOOK_EVENT_OP_ETW_PATCH 3u
+
+/* Caller-origin classification packed into BLACKBIRD_IPC_HOOK_EVENT.CallerFlags.
+   SR71 classifies the captured call stack and encodes the result here so the
+   controller and UI can filter noise without re-walking the frames.
+
+   Bits [3:0]  — classification flags (BLACKBIRD_HOOK_CALLER_FLAG_*)
+   Bits [7:4]  — ImmediateCaller kind (first non-own-module frame)
+   Bits [11:8] — DeepestOrigin kind  (deepest non-system, non-own frame)
+   CallerKind values used in both nibbles: BLACKBIRD_HOOK_CALLER_KIND_* */
+#define BLACKBIRD_HOOK_CALLER_FLAG_ALL_SYSTEM 0x00000001u        /* every resolved frame is a system DLL  */
+#define BLACKBIRD_HOOK_CALLER_FLAG_HAS_UNMAPPED 0x00000002u      /* at least one frame has no backing module */
+#define BLACKBIRD_HOOK_CALLER_FLAG_HAS_PROCESS_IMAGE 0x00000004u /* at least one frame is in the .exe      */
+#define BLACKBIRD_HOOK_CALLER_FLAG_HAS_NONSYSTEM_DLL 0x00000008u /* at least one frame is a non-system DLL */
+
+#define BLACKBIRD_HOOK_CALLER_IMMED_SHIFT 4u
+#define BLACKBIRD_HOOK_CALLER_IMMED_MASK 0x000000F0u
+#define BLACKBIRD_HOOK_CALLER_DEEP_SHIFT 8u
+#define BLACKBIRD_HOOK_CALLER_DEEP_MASK 0x00000F00u
+
+#define BLACKBIRD_HOOK_CALLER_KIND_UNKNOWN 0u
+#define BLACKBIRD_HOOK_CALLER_KIND_UNMAPPED 1u      /* IP has no backing module — shellcode / RWX region */
+#define BLACKBIRD_HOOK_CALLER_KIND_SYSTEM_DLL 2u    /* Windows system DLL (System32 / SysWOW64)         */
+#define BLACKBIRD_HOOK_CALLER_KIND_PROCESS_IMAGE 3u /* The monitored process .exe image                 */
+#define BLACKBIRD_HOOK_CALLER_KIND_OWN_MODULE 4u    /* SR71 / hook-DLL infrastructure (excluded)        */
+#define BLACKBIRD_HOOK_CALLER_KIND_NONSYSTEM_DLL 5u /* Loaded DLL that is not a Windows system DLL      */
 
 typedef struct _BLACKBIRD_IPC_ETW_EVENT
 {
@@ -275,6 +332,8 @@ typedef struct _BLACKBIRD_IPC_ETW_EVENT
     UINT32 NotifyClass;
     UINT32 DataType;
     UINT32 DataSize;
+    UINT32 HookArgCount;
+    UINT64 HookArgs[BLACKBIRD_IPC_MAX_HOOK_ARGS];
     WCHAR ImagePath[BLACKBIRD_IPC_MAX_ETW_IMAGE_PATH];
     WCHAR CommandLine[BLACKBIRD_IPC_MAX_ETW_COMMAND_LINE];
     WCHAR KeyPath[BLACKBIRD_IPC_MAX_ETW_KEY_PATH];
@@ -323,5 +382,3 @@ typedef struct _BLACKBIRD_IPC_PACKET
 #define BLACKBIRD_IPC_CAP_USER_HOOK_READY 0x00000020u
 
 #endif
-
-

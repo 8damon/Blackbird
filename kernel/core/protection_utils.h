@@ -10,4 +10,3 @@ static __forceinline BOOLEAN BLACKBIRDIsExecutableProtection(_In_ ULONG Protect)
 }
 
 #endif
-

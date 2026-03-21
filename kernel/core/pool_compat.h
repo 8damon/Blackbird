@@ -37,5 +37,3 @@ static __forceinline PVOID BLACKBIRDAllocatePoolCompat(_In_ POOL_FLAGS Flags, _I
 }
 
 #endif
-
-

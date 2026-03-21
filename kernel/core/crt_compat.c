@@ -40,4 +40,3 @@ size_t __cdecl wcslen(_In_z_ const wchar_t *s)
 
     return (size_t)(p - s);
 }
-

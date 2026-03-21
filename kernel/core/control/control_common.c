@@ -186,8 +186,7 @@ static PCWSTR BLACKBIRDSkipKnownPathPrefixes(_In_opt_z_ PCWSTR Input)
     return Input;
 }
 
-static VOID BLACKBIRDNormalizeWidePathForCompare(_In_opt_z_ PCWSTR Input,
-                                                 _Out_writes_z_(OutputChars) PWSTR Output,
+static VOID BLACKBIRDNormalizeWidePathForCompare(_In_opt_z_ PCWSTR Input, _Out_writes_z_(OutputChars) PWSTR Output,
                                                  _In_ SIZE_T OutputChars)
 {
     SIZE_T i;
@@ -223,8 +222,7 @@ static VOID BLACKBIRDNormalizeWidePathForCompare(_In_opt_z_ PCWSTR Input,
 }
 
 static VOID BLACKBIRDNormalizeUnicodePathForCompare(_In_opt_ PCUNICODE_STRING Input,
-                                                    _Out_writes_z_(OutputChars) PWSTR Output,
-                                                    _In_ SIZE_T OutputChars)
+                                                    _Out_writes_z_(OutputChars) PWSTR Output, _In_ SIZE_T OutputChars)
 {
     SIZE_T i;
     SIZE_T inputChars;
@@ -309,14 +307,12 @@ static BOOLEAN BLACKBIRDClientPathMatchesPendingLaunchLocked(_In_ const BLACKBIR
         return FALSE;
     }
 
-    if (Client->PendingLaunchPathNormNt[0] != L'\0' &&
-        _wcsicmp(Client->PendingLaunchPathNormNt, CandidateNorm) == 0)
+    if (Client->PendingLaunchPathNormNt[0] != L'\0' && _wcsicmp(Client->PendingLaunchPathNormNt, CandidateNorm) == 0)
     {
         return TRUE;
     }
 
-    if (Client->PendingLaunchPathNormDos[0] != L'\0' &&
-        _wcsicmp(Client->PendingLaunchPathNormDos, CandidateNorm) == 0)
+    if (Client->PendingLaunchPathNormDos[0] != L'\0' && _wcsicmp(Client->PendingLaunchPathNormDos, CandidateNorm) == 0)
     {
         return TRUE;
     }
@@ -330,8 +326,7 @@ static BOOLEAN BLACKBIRDClientPathMatchesPendingLaunchLocked(_In_ const BLACKBIR
     return FALSE;
 }
 
-static BOOLEAN BLACKBIRDClientAddOrUpdateSubscriptionLocked(_Inout_ PBLACKBIRD_CLIENT Client,
-                                                            _In_ UINT32 ProcessId,
+static BOOLEAN BLACKBIRDClientAddOrUpdateSubscriptionLocked(_Inout_ PBLACKBIRD_CLIENT Client, _In_ UINT32 ProcessId,
                                                             _In_ UINT32 StreamMask)
 {
     UINT32 i;
@@ -474,7 +469,7 @@ static PBLACKBIRD_CLIENT BLACKBIRDClientCreate(VOID)
 }
 
 BOOLEAN BLACKBIRDClientMatchSubscriptionEither(_In_ PBLACKBIRD_CLIENT Client, _In_ UINT32 PrimaryProcessId,
-                                                 _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask)
+                                               _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask)
 {
     UINT32 i;
 
@@ -551,20 +546,16 @@ BLACKBIRDControlBindPendingLaunchProcess(_In_ UINT32 ProcessId, _In_opt_ PCUNICO
             {
                 matchedAny = TRUE;
                 InterlockedExchange(&g_ControlTelemetryArmed, 1);
-                DbgPrintEx(DPFLTR_IHVDRIVER_ID,
-                           DPFLTR_INFO_LEVEL,
-                           "BLACKBIRD: pending launch bound targetPid=%lu streamMask=0x%08X image=%ws.\n",
-                           ProcessId,
-                           streamMask,
-                           candidateNorm);
+                DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
+                           "BLACKBIRD: pending launch bound targetPid=%lu streamMask=0x%08X image=%ws.\n", ProcessId,
+                           streamMask, candidateNorm);
             }
             else
             {
-                DbgPrintEx(DPFLTR_IHVDRIVER_ID,
-                           DPFLTR_WARNING_LEVEL,
-                           "BLACKBIRD: pending launch match could not bind targetPid=%lu image=%ws reason=subscription-capacity.\n",
-                           ProcessId,
-                           candidateNorm);
+                DbgPrintEx(
+                    DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+                    "BLACKBIRD: pending launch match could not bind targetPid=%lu image=%ws reason=subscription-capacity.\n",
+                    ProcessId, candidateNorm);
             }
         }
         ExReleaseFastMutex(&client->Lock);
@@ -574,8 +565,7 @@ BLACKBIRDControlBindPendingLaunchProcess(_In_ UINT32 ProcessId, _In_opt_ PCUNICO
     return matchedAny;
 }
 
-static VOID BLACKBIRDClientEnqueueEvent(_Inout_ PBLACKBIRD_CLIENT Client,
-                                          _In_ const BLACKBIRD_EVENT_RECORD *Source)
+static VOID BLACKBIRDClientEnqueueEvent(_Inout_ PBLACKBIRD_CLIENT Client, _In_ const BLACKBIRD_EVENT_RECORD *Source)
 {
     PBLACKBIRD_EVENT_NODE node;
     LONG dropLogCounter;
@@ -630,7 +620,7 @@ static VOID BLACKBIRDClientEnqueueEvent(_Inout_ PBLACKBIRD_CLIENT Client,
 }
 
 static BOOLEAN BLACKBIRDClientTryTakePendingGetEventRequestLocked(_In_ PBLACKBIRD_CLIENT Client,
-                                                                   _Out_ WDFREQUEST *Request)
+                                                                  _Out_ WDFREQUEST *Request)
 {
     NTSTATUS status;
 
@@ -682,20 +672,17 @@ static NTSTATUS BLACKBIRDCompleteGetEventRequestWithRecord(_In_ WDFREQUEST Reque
     if (deliverCounter == 1 || ((deliverCounter & 0x1FF) == 0))
     {
         requesterPid = BLACKBIRDGetRequestorPid();
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID,
-                   DPFLTR_INFO_LEVEL,
-                   "BLACKBIRD: get-event delivered(pended) requesterPid=%lu deliveredCount=%ld eventType=%lu seq=%lu.\n",
-                   requesterPid,
-                   deliverCounter,
-                   Record->Header.Type,
-                   Record->Header.Sequence);
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
+            "BLACKBIRD: get-event delivered(pended) requesterPid=%lu deliveredCount=%ld eventType=%lu seq=%lu.\n",
+            requesterPid, deliverCounter, Record->Header.Type, Record->Header.Sequence);
     }
 
     return STATUS_SUCCESS;
 }
 
 VOID BLACKBIRDPublishRecordToSubscribers(_In_ UINT32 PrimaryPid, _In_ UINT32 SecondaryPid, _In_ UINT32 StreamMask,
-                                           _In_ BLACKBIRD_EVENT_RECORD *Record)
+                                         _In_ BLACKBIRD_EVENT_RECORD *Record)
 {
     PBLACKBIRD_CLIENT snapshot[BLACKBIRD_MAX_TOTAL_CLIENTS];
     UINT32 snapshotCount = 0;
@@ -833,12 +820,9 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtFileCreate(WDFDEVICE Device, WDFREQUEST 
     ctx->Client = client;
 
     requesterPid = BLACKBIRDGetRequestorPid();
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID,
-               DPFLTR_INFO_LEVEL,
-               "BLACKBIRD: client attached pid=%lu activeClients=%ld fileObj=0x%p.\n",
-               requesterPid,
-               clientCountSnapshot,
-               FileObject);
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
+               "BLACKBIRD: client attached pid=%lu activeClients=%ld fileObj=0x%p.\n", requesterPid,
+               clientCountSnapshot, FileObject);
 
     WdfRequestComplete(Request, STATUS_SUCCESS);
 }
@@ -903,17 +887,11 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtFileCleanup(WDFFILEOBJECT FileObject)
     }
 
     requesterPid = (ULONG)(ULONG_PTR)PsGetCurrentProcessId();
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID,
-               DPFLTR_INFO_LEVEL,
-               "BLACKBIRD: client detached pid=%lu activeClients=%ld subscriptions=%lu queueDepth=%lu dropped=%lu fileObj=0x%p.\n",
-               requesterPid,
-               clientCountSnapshot,
-               subscriptionCountSnapshot,
-               queueDepthSnapshot,
-               droppedSnapshot,
-               FileObject);
+    DbgPrintEx(
+        DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
+        "BLACKBIRD: client detached pid=%lu activeClients=%ld subscriptions=%lu queueDepth=%lu dropped=%lu fileObj=0x%p.\n",
+        requesterPid, clientCountSnapshot, subscriptionCountSnapshot, queueDepthSnapshot, droppedSnapshot, FileObject);
 
     BLACKBIRDClientRelease(client);
     ctx->Client = NULL;
 }
-

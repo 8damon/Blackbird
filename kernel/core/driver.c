@@ -207,8 +207,7 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
     status = BLACKBIRDControlInitialize(WdfGetDriver());
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: control plane init failed (0x%08X).\n",
-                   status);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: control plane init failed (0x%08X).\n", status);
         goto ExitFailure;
     }
     InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_CONTROL);
@@ -250,8 +249,7 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
     status = BLACKBIRDImageMonitorInitialize();
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: image monitor init failed (0x%08X).\n",
-                   status);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: image monitor init failed (0x%08X).\n", status);
         goto ExitFailure;
     }
     InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_IMAGE_MONITOR);
@@ -295,8 +293,7 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
     status = BLACKBIRDNtApiMonitorInitialize();
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: ntapi monitor init failed (0x%08X).\n",
-                   status);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: ntapi monitor init failed (0x%08X).\n", status);
         goto ExitFailure;
     }
     InterlockedOr(&g_InitFlags, BLACKBIRD_INIT_NTAPI_MONITOR);
@@ -325,4 +322,3 @@ ExitFailure:
     InterlockedExchange(&g_DriverState, BLACKBIRDStateCold);
     return status;
 }
-

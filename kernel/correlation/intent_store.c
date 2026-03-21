@@ -79,7 +79,7 @@ VOID BLACKBIRDCorrelationUninitialize(VOID)
 }
 
 VOID BLACKBIRDCorrelationRecordHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ ACCESS_MASK AccessMask,
-                                              _In_ UINT32 IntentFlags)
+                                            _In_ UINT32 IntentFlags)
 {
     LONG idx;
     KIRQL oldIrql;
@@ -112,8 +112,8 @@ VOID BLACKBIRDCorrelationRecordHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE T
 
 BOOLEAN
 BLACKBIRDCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ UINT32 WindowMs,
-                                        _Out_opt_ UINT32 *IntentFlags, _Out_opt_ UINT32 *AccessMask,
-                                        _Out_opt_ UINT32 *AgeMs)
+                                      _Out_opt_ UINT32 *IntentFlags, _Out_opt_ UINT32 *AccessMask,
+                                      _Out_opt_ UINT32 *AgeMs)
 {
     UINT64 caller = (UINT64)(ULONG_PTR)CallerPid;
     UINT64 target = (UINT64)(ULONG_PTR)TargetPid;
@@ -202,9 +202,9 @@ BLACKBIRDCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetP
 
 BOOLEAN
 BLACKBIRDCorrelationQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UINT32 WindowMs,
-                                                 _In_ BOOLEAN PreferExternalCaller, _Out_opt_ HANDLE *CallerPid,
-                                                 _Out_opt_ UINT32 *IntentFlags, _Out_opt_ UINT32 *AccessMask,
-                                                 _Out_opt_ UINT32 *AgeMs)
+                                               _In_ BOOLEAN PreferExternalCaller, _Out_opt_ HANDLE *CallerPid,
+                                               _Out_opt_ UINT32 *IntentFlags, _Out_opt_ UINT32 *AccessMask,
+                                               _Out_opt_ UINT32 *AgeMs)
 {
     UINT64 target = (UINT64)(ULONG_PTR)TargetPid;
     INT64 nowQpc = KeQueryPerformanceCounter(NULL).QuadPart;
@@ -366,4 +366,3 @@ BLACKBIRDCorrelationSelfCheck(VOID)
 {
     return (InterlockedCompareExchange(&g_CorrelationInitialized, 0, 0) != 0);
 }
-

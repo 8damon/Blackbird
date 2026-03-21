@@ -1,4 +1,4 @@
-#include "ntapi_monitor_private.h"
+#include "..\hooks\monitor\ntapi_monitor_private.h"
 
 #if defined(_AMD64_)
 
@@ -91,9 +91,9 @@ static BOOLEAN BLACKBIRDNtApiFindSmbiosStringByIndex(_Inout_ PUCHAR StringsStart
     return FALSE;
 }
 
-static VOID BLACKBIRDNtApiPatchSmbiosString(_Inout_ PUCHAR Structure, _In_ UCHAR StructureLength, _In_ UCHAR StringOffset,
-                                            _Inout_ PUCHAR StringsStart, _In_ PUCHAR NextStructure,
-                                            _In_z_ PCSTR Replacement)
+static VOID BLACKBIRDNtApiPatchSmbiosString(_Inout_ PUCHAR Structure, _In_ UCHAR StructureLength,
+                                            _In_ UCHAR StringOffset, _Inout_ PUCHAR StringsStart,
+                                            _In_ PUCHAR NextStructure, _In_z_ PCSTR Replacement)
 {
     UCHAR stringIndex;
     PUCHAR stringStart;
@@ -236,17 +236,15 @@ static VOID BLACKBIRDNtApiSanitizeSmbiosBlob(_Inout_updates_bytes_(RawLength) PU
 
     if (sanitizedCount != 0 && InterlockedDecrement(&g_NtApiSmbiosSanitizeApplyBudget) >= 0)
     {
-        BLACKBIRD_NTAPI_LOG(DPFLTR_INFO_LEVEL,
-                            "BLACKBIRD: ntapi sanitized smbios structures count=%lu.\n",
+        BLACKBIRD_NTAPI_LOG(DPFLTR_INFO_LEVEL, "BLACKBIRD: ntapi sanitized smbios structures count=%lu.\n",
                             sanitizedCount);
     }
 }
 
 VOID BLACKBIRDNtApiSanitizeFirmwareTableInformation(_In_ ULONG SystemInformationClass,
-                                                           _Out_writes_bytes_opt_(SystemInformationLength)
-                                                               PVOID SystemInformation,
-                                                           _In_ ULONG SystemInformationLength,
-                                                           _In_ NTSTATUS Status)
+                                                    _Out_writes_bytes_opt_(SystemInformationLength)
+                                                        PVOID SystemInformation,
+                                                    _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status)
 {
     PSYSTEM_FIRMWARE_TABLE_INFORMATION firmwareInfo;
     PBLACKBIRD_RAW_SMBIOS_DATA rawSmbios;
@@ -276,7 +274,8 @@ VOID BLACKBIRDNtApiSanitizeFirmwareTableInformation(_In_ ULONG SystemInformation
         }
 
         rawSmbios = (PBLACKBIRD_RAW_SMBIOS_DATA)firmwareInfo->TableBuffer;
-        if (rawSmbios->Length > (firmwareInfo->TableBufferLength - FIELD_OFFSET(BLACKBIRD_RAW_SMBIOS_DATA, SMBIOSTableData)))
+        if (rawSmbios->Length >
+            (firmwareInfo->TableBufferLength - FIELD_OFFSET(BLACKBIRD_RAW_SMBIOS_DATA, SMBIOSTableData)))
         {
             return;
         }
@@ -293,14 +292,10 @@ VOID BLACKBIRDNtApiSanitizeFirmwareTableInformation(_In_ ULONG SystemInformation
         if (InterlockedDecrement(&g_NtApiSmbiosSanitizeBudget) >= 0)
         {
             BLACKBIRD_NTAPI_LOG(DPFLTR_WARNING_LEVEL,
-                                "BLACKBIRD: ntapi smbios sanitize failed status=0x%08X ex=0x%08X.\n",
-                                Status,
+                                "BLACKBIRD: ntapi smbios sanitize failed status=0x%08X ex=0x%08X.\n", Status,
                                 GetExceptionCode());
         }
     }
 }
 
 #endif
-
-
-

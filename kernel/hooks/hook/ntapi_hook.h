@@ -41,4 +41,3 @@ VOID BLACKBIRDNtApiHookFreeTrampoline(_Inout_ PBLACKBIRD_NTAPI_HOOK Hook);
 VOID BLACKBIRDNtApiHookRemove(_Inout_ PBLACKBIRD_NTAPI_HOOK Hook);
 
 #endif
-

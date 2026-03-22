@@ -29,7 +29,7 @@ NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_byt
                                            _In_ SIZE_T Size);
 
 VOID BLACKBIRDNtApiFormatBytes(_In_reads_bytes_(Length) const UCHAR *Bytes, _In_ ULONG Length,
-                                      _Out_writes_bytes_(OutputSize) PCHAR Output, _In_ SIZE_T OutputSize)
+                               _Out_writes_bytes_(OutputSize) PCHAR Output, _In_ SIZE_T OutputSize)
 {
     ULONG i;
     SIZE_T offset = 0;
@@ -129,20 +129,18 @@ VOID BLACKBIRDNtApiRollbackPatchOnInstallFailure(_Inout_ PBLACKBIRD_NTAPI_HOOK H
         BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
                            "BLACKBIRD: ntapi hook rollback failed api=%s routine=%p status=0x%08X.\n",
                            (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>",
-                           Hook->RoutineAddress,
-                           rollbackStatus);
+                           Hook->RoutineAddress, rollbackStatus);
     }
     else
     {
-        BLACKBIRD_HOOK_LOG(DPFLTR_INFO_LEVEL,
-                           "BLACKBIRD: ntapi hook rollback restored api=%s routine=%p.\n",
+        BLACKBIRD_HOOK_LOG(DPFLTR_INFO_LEVEL, "BLACKBIRD: ntapi hook rollback restored api=%s routine=%p.\n",
                            (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>",
                            Hook->RoutineAddress);
     }
 }
 
 NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_bytes_(Size) const VOID *Source,
-                                                  _In_ SIZE_T Size)
+                                           _In_ SIZE_T Size)
 {
     PMDL mdl;
     PVOID mappedAddress = NULL;
@@ -168,10 +166,8 @@ NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_byt
     {
         status = GetExceptionCode();
         BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
-                           "BLACKBIRD: ntapi hook probe/lock failed dst=%p size=%Iu status=0x%08X.\n",
-                           Destination,
-                           Size,
-                           status);
+                           "BLACKBIRD: ntapi hook probe/lock failed dst=%p size=%Iu status=0x%08X.\n", Destination,
+                           Size, status);
     }
 
     if (!NT_SUCCESS(status))
@@ -190,10 +186,8 @@ NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_byt
     if (mappedAddress == NULL)
     {
         status = STATUS_INSUFFICIENT_RESOURCES;
-        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
-                           "BLACKBIRD: ntapi hook map-locked-pages failed dst=%p size=%Iu.\n",
-                           Destination,
-                           Size);
+        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL, "BLACKBIRD: ntapi hook map-locked-pages failed dst=%p size=%Iu.\n",
+                           Destination, Size);
         goto Exit;
     }
 
@@ -201,10 +195,8 @@ NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_byt
     if (!NT_SUCCESS(status))
     {
         BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
-                           "BLACKBIRD: ntapi hook protect-mdl failed dst=%p size=%Iu status=0x%08X.\n",
-                           Destination,
-                           Size,
-                           status);
+                           "BLACKBIRD: ntapi hook protect-mdl failed dst=%p size=%Iu status=0x%08X.\n", Destination,
+                           Size, status);
         goto Exit;
     }
 
@@ -222,10 +214,7 @@ NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_byt
         status = GetExceptionCode();
         BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
                            "BLACKBIRD: ntapi hook broadcast copy failed dst=%p mapped=%p size=%Iu status=0x%08X.\n",
-                           Destination,
-                           mappedAddress,
-                           Size,
-                           status);
+                           Destination, mappedAddress, Size, status);
     }
     if (!NT_SUCCESS(status))
     {
@@ -235,10 +224,8 @@ NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_byt
     {
         status = STATUS_UNSUCCESSFUL;
         BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
-                           "BLACKBIRD: ntapi hook broadcast copy not applied dst=%p mapped=%p size=%Iu.\n",
-                           Destination,
-                           mappedAddress,
-                           Size);
+                           "BLACKBIRD: ntapi hook broadcast copy not applied dst=%p mapped=%p size=%Iu.\n", Destination,
+                           mappedAddress, Size);
         goto Exit;
     }
     KeMemoryBarrier();
@@ -427,9 +414,7 @@ static PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR BLACKBIRDNtApiResolveServiceDescript
 
         BLACKBIRD_HOOK_LOG(DPFLTR_INFO_LEVEL,
                            "BLACKBIRD: ntapi hook ssdt descriptor via lstar entry=%p candidate=%p scanOffset=0x%lX.\n",
-                           entry,
-                           candidate,
-                           i);
+                           entry, candidate, i);
         return candidate;
     }
 
@@ -458,24 +443,21 @@ PVOID BLACKBIRDNtApiResolveViaSsdtSignature(_In_ const BLACKBIRD_NTAPI_HOOK_DESC
     }
     if (descriptor == NULL)
     {
-        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
-                           "BLACKBIRD: ntapi hook ssdt descriptor not resolved api=%s.\n",
+        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL, "BLACKBIRD: ntapi hook ssdt descriptor not resolved api=%s.\n",
                            (Descriptor->ApiName != NULL) ? Descriptor->ApiName : "<null>");
         return NULL;
     }
     table = descriptor->ServiceTableBase;
     if (table == NULL || descriptor->NumberOfServices == 0)
     {
-        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
-                           "BLACKBIRD: ntapi hook ssdt invalid table api=%s table=%p count=%llu.\n",
-                           (Descriptor->ApiName != NULL) ? Descriptor->ApiName : "<null>",
-                           table,
+        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL, "BLACKBIRD: ntapi hook ssdt invalid table api=%s table=%p count=%llu.\n",
+                           (Descriptor->ApiName != NULL) ? Descriptor->ApiName : "<null>", table,
                            descriptor->NumberOfServices);
         return NULL;
     }
 
-    serviceCount =
-        (descriptor->NumberOfServices > BLACKBIRD_SSDT_MAX_SERVICES) ? BLACKBIRD_SSDT_MAX_SERVICES : (ULONG)descriptor->NumberOfServices;
+    serviceCount = (descriptor->NumberOfServices > BLACKBIRD_SSDT_MAX_SERVICES) ? BLACKBIRD_SSDT_MAX_SERVICES
+                                                                                : (ULONG)descriptor->NumberOfServices;
     for (i = 0; i < serviceCount; ++i)
     {
         LONG entry;
@@ -508,8 +490,7 @@ PVOID BLACKBIRDNtApiResolveViaSsdtSignature(_In_ const BLACKBIRD_NTAPI_HOOK_DESC
 
     if (firstMatch == NULL)
     {
-        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
-                           "BLACKBIRD: ntapi hook ssdt signature match failed api=%s siglen=%lu.\n",
+        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL, "BLACKBIRD: ntapi hook ssdt signature match failed api=%s siglen=%lu.\n",
                            (Descriptor->ApiName != NULL) ? Descriptor->ApiName : "<null>",
                            Descriptor->FallbackSignatureSize);
         return NULL;
@@ -517,14 +498,8 @@ PVOID BLACKBIRDNtApiResolveViaSsdtSignature(_In_ const BLACKBIRD_NTAPI_HOOK_DESC
 
     BLACKBIRD_HOOK_LOG((matchCount == 1) ? DPFLTR_INFO_LEVEL : DPFLTR_WARNING_LEVEL,
                        "BLACKBIRD: ntapi hook ssdt signature resolved api=%s address=%p matches=%lu.\n",
-                       (Descriptor->ApiName != NULL) ? Descriptor->ApiName : "<null>",
-                       firstMatch,
-                       matchCount);
+                       (Descriptor->ApiName != NULL) ? Descriptor->ApiName : "<null>", firstMatch, matchCount);
     return firstMatch;
 }
 
-
 #endif
-
-
-

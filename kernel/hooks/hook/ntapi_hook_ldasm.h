@@ -21,10 +21,7 @@
 // If it encounters an opcode it does not recognise it returns 0 so the caller can
 // fall back to its hardcoded OverwriteLength value safely.
 //
-_Success_(return != 0)
-ULONG BLACKBIRDx64MinCoverLength(
-    _In_reads_bytes_(MaxBytes) const UCHAR *Code,
-    _In_ ULONG MinBytes,
-    _In_ ULONG MaxBytes);
+_Success_(return != 0) ULONG
+    BLACKBIRDx64MinCoverLength(_In_reads_bytes_(MaxBytes) const UCHAR *Code, _In_ ULONG MinBytes, _In_ ULONG MaxBytes);
 
 #endif

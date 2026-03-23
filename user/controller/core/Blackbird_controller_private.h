@@ -48,9 +48,8 @@
 #define BLACKBIRD_OPERATOR_BEACON_KIND "blackbird.node.beacon"
 #define BLACKBIRD_OPERATOR_STATUS_KIND "blackbird.node.status"
 #define BLACKBIRD_CONTROLLER_VERSIONA "1.5.0"
-#define BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK                                                   \
-    (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD |           \
-     BLACKBIRD_STREAM_FILESYSTEM)
+#define BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK \
+    (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD | BLACKBIRD_STREAM_FILESYSTEM)
 
 typedef struct _BLACKBIRD_CONTROLLER_SUBSCRIPTION
 {
@@ -89,6 +88,13 @@ typedef struct _BLACKBIRD_CONTROLLER_CLIENT
     DWORD QueueDepth;
     DWORD DroppedEvents;
     HANDLE IoctlQueueDataEvent;
+    /* Pre-allocated IOCTL node slab: eliminates calloc/free in the hot enqueue path.
+     * IoctlNodeSlab owns the allocation; IoctlNodeFreeHead is the free-list head. */
+    PBLACKBIRD_CONTROLLER_EVENT_NODE IoctlNodeSlab;
+    PBLACKBIRD_CONTROLLER_EVENT_NODE IoctlNodeFreeHead;
+    /* Pre-allocated ETW node slab: same pattern as the IOCTL slab. */
+    PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE EtwNodeSlab;
+    PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE EtwNodeFreeHead;
     PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE EtwQueueHead;
     PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE EtwQueueTail;
     DWORD EtwQueueDepth;
@@ -193,7 +199,8 @@ VOID ControllerReleaseClientSlotLocked(_In_ DWORD SlotIndex);
 VOID ControllerRebuildPidIndexLocked(_Out_opt_ BOOL *DynamicPruned);
 VOID ControllerRemoveSubscriptionAtLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client, _In_ DWORD Index);
 BOOL ControllerDropDynamicDescendantsLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client, _In_ DWORD RootProcessId);
-VOID ControllerExpandMonitoringGraph(_In_ DWORD SourceProcessId, _In_ DWORD TargetProcessId, _In_ DWORD RelationStreamMask);
+VOID ControllerExpandMonitoringGraph(_In_ DWORD SourceProcessId, _In_ DWORD TargetProcessId,
+                                     _In_ DWORD RelationStreamMask);
 VOID ControllerClientDestroySharedRingsLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client);
 VOID ControllerClientFreeQueueLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client);
 VOID ControllerClientFreeEtwQueueLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client);
@@ -229,6 +236,10 @@ VOID ControllerResetHollowingState(VOID);
 BOOL ControllerSymbolServiceStart(VOID);
 VOID ControllerSymbolServiceStop(VOID);
 VOID ControllerSymbolServiceEnrichEvent(_Inout_ BLACKBIRD_IPC_ETW_EVENT *Event);
+BOOL ControllerSymbolServiceResolveHookAddress(_In_ DWORD ProcessId, _In_ UINT64 Address,
+                                               _Out_writes_z_(TextChars) PWSTR Text, _In_ size_t TextChars,
+                                               _Out_opt_ PWSTR Path, _In_ size_t PathChars);
+VOID ControllerSymbolServicePrimeHookAddress(_In_ DWORD ProcessId, _In_ UINT64 Address);
 BOOL ControllerNodeNetworkStart(VOID);
 VOID ControllerNodeNetworkStop(VOID);
 
@@ -239,7 +250,3 @@ VOID ControllerDetachClient(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client);
 DWORD WINAPI ControllerClientThreadProc(_In_ LPVOID Context);
 
 #endif
-
-
-
-

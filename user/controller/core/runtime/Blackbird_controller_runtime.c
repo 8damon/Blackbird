@@ -1,6 +1,6 @@
 #include "../blackbird_controller_private.h"
 
-static HANDLE g_ServerAcceptThreads[BLACKBIRD_CONTROLLER_SERVER_ACCEPT_THREADS] = { 0 };
+static HANDLE g_ServerAcceptThreads[BLACKBIRD_CONTROLLER_SERVER_ACCEPT_THREADS] = {0};
 
 static DWORD WINAPI ControllerServerThreadProc(_In_ LPVOID Context)
 {
@@ -25,14 +25,9 @@ static DWORD WINAPI ControllerServerThreadProc(_In_ LPVOID Context)
         HANDLE thread;
         DWORD slotIndex;
 
-        pipe = CreateNamedPipeW(BLACKBIRD_IPC_PIPE_NAME,
-                                PIPE_ACCESS_DUPLEX,
-                                PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
-                                PIPE_UNLIMITED_INSTANCES,
-                                sizeof(BLACKBIRD_IPC_PACKET),
-                                sizeof(BLACKBIRD_IPC_PACKET),
-                                3000,
-                                &sa);
+        pipe = CreateNamedPipeW(BLACKBIRD_IPC_PIPE_NAME, PIPE_ACCESS_DUPLEX,
+                                PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT, PIPE_UNLIMITED_INSTANCES,
+                                sizeof(BLACKBIRD_IPC_PACKET), sizeof(BLACKBIRD_IPC_PACKET), 3000, &sa);
         if (pipe == INVALID_HANDLE_VALUE)
         {
             pipeCreateFailures += 1;
@@ -76,7 +71,8 @@ static DWORD WINAPI ControllerServerThreadProc(_In_ LPVOID Context)
         client->IoctlQueueDataEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
         client->EtwQueueDataEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
         client->DispatchIdleEvent = CreateEventW(NULL, TRUE, TRUE, NULL);
-        if (client->IoctlQueueDataEvent == NULL || client->EtwQueueDataEvent == NULL || client->DispatchIdleEvent == NULL)
+        if (client->IoctlQueueDataEvent == NULL || client->EtwQueueDataEvent == NULL ||
+            client->DispatchIdleEvent == NULL)
         {
             if (client->IoctlQueueDataEvent != NULL)
             {
@@ -98,6 +94,46 @@ static DWORD WINAPI ControllerServerThreadProc(_In_ LPVOID Context)
             free(client);
             continue;
         }
+        /* Allocate the IOCTL node slab and build the free list.  This eliminates
+         * calloc/free in the hot enqueue path for the lifetime of the client. */
+        {
+            DWORD i;
+            client->IoctlNodeSlab = (PBLACKBIRD_CONTROLLER_EVENT_NODE)calloc(
+                BLACKBIRD_CONTROLLER_MAX_CLIENT_QUEUE_DEPTH, sizeof(BLACKBIRD_CONTROLLER_EVENT_NODE));
+            if (client->IoctlNodeSlab != NULL)
+            {
+                for (i = 0; i < BLACKBIRD_CONTROLLER_MAX_CLIENT_QUEUE_DEPTH - 1; i++)
+                {
+                    client->IoctlNodeSlab[i].Next = &client->IoctlNodeSlab[i + 1];
+                }
+                client->IoctlNodeSlab[BLACKBIRD_CONTROLLER_MAX_CLIENT_QUEUE_DEPTH - 1].Next = NULL;
+                client->IoctlNodeFreeHead = &client->IoctlNodeSlab[0];
+            }
+            else
+            {
+                client->IoctlNodeFreeHead = NULL;
+            }
+        }
+        /* Allocate the ETW node slab — same pattern, eliminates calloc/free per ETW event. */
+        {
+            DWORD i;
+            client->EtwNodeSlab = (PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE)calloc(
+                BLACKBIRD_CONTROLLER_MAX_CLIENT_ETW_QUEUE_DEPTH, sizeof(BLACKBIRD_CONTROLLER_ETW_EVENT_NODE));
+            if (client->EtwNodeSlab != NULL)
+            {
+                for (i = 0; i < BLACKBIRD_CONTROLLER_MAX_CLIENT_ETW_QUEUE_DEPTH - 1; i++)
+                {
+                    client->EtwNodeSlab[i].Next = &client->EtwNodeSlab[i + 1];
+                }
+                client->EtwNodeSlab[BLACKBIRD_CONTROLLER_MAX_CLIENT_ETW_QUEUE_DEPTH - 1].Next = NULL;
+                client->EtwNodeFreeHead = &client->EtwNodeSlab[0];
+            }
+            else
+            {
+                client->EtwNodeFreeHead = NULL;
+            }
+        }
+
         if (!GetNamedPipeClientProcessId(pipe, &client->ProcessId))
         {
             client->ProcessId = 0;
@@ -187,6 +223,18 @@ static DWORD WINAPI ControllerServerThreadProc(_In_ LPVOID Context)
                 (void)CloseHandle(client->DispatchIdleEvent);
                 client->DispatchIdleEvent = NULL;
             }
+            if (client->IoctlNodeSlab != NULL)
+            {
+                free(client->IoctlNodeSlab);
+                client->IoctlNodeSlab = NULL;
+                client->IoctlNodeFreeHead = NULL;
+            }
+            if (client->EtwNodeSlab != NULL)
+            {
+                free(client->EtwNodeSlab);
+                client->EtwNodeSlab = NULL;
+                client->EtwNodeFreeHead = NULL;
+            }
             CloseHandle(pipe);
             free(client);
             continue;
@@ -211,13 +259,15 @@ static DWORD WINAPI ControllerDriverPumpThreadProc(_In_ LPVOID Context)
         BLACKBIRD_EVENT_RECORD record;
         DWORD bytes = 0;
         BOOL ok;
+        HANDLE localHandle;
 
         EnterCriticalSection(&g_DriverLock);
         if (g_DriverHandle == INVALID_HANDLE_VALUE)
         {
             g_DriverHandle = BLACKBIRDSCOpenControlDevice();
+            localHandle = g_DriverHandle;
             LeaveCriticalSection(&g_DriverLock);
-            if (g_DriverHandle != INVALID_HANDLE_VALUE)
+            if (localHandle != INVALID_HANDLE_VALUE)
             {
                 BLACKBIRD_STATS_RESPONSE stats;
                 DWORD statsBytes = 0;
@@ -225,7 +275,7 @@ static DWORD WINAPI ControllerDriverPumpThreadProc(_In_ LPVOID Context)
                 (void)ControllerApplyDriverSubscriptions();
                 driverOpenFailures = 0;
                 ZeroMemory(&stats, sizeof(stats));
-                if (BLACKBIRDSCGetStats(g_DriverHandle, &stats, &statsBytes))
+                if (BLACKBIRDSCGetStats(localHandle, &stats, &statsBytes))
                 {
                     ControllerLog("[DRIVER] connected and verified. subscriptions=%lu queueDepth=%lu dropped=%lu\n",
                                   stats.SubscriptionCount, stats.QueueDepth, stats.DroppedEvents);
@@ -247,30 +297,36 @@ static DWORD WINAPI ControllerDriverPumpThreadProc(_In_ LPVOID Context)
             Sleep(250);
             continue;
         }
+        /* Copy the handle value and release the lock before calling into the driver.
+         * BLACKBIRDSCGetEvent can block until an event is ready; holding g_DriverLock
+         * across that call would serialize all other driver operations for the entire
+         * wait.  Safe because only this thread closes g_DriverHandle. */
+        localHandle = g_DriverHandle;
         LeaveCriticalSection(&g_DriverLock);
 
         (void)ControllerApplyDriverSubscriptionsIfDirty();
 
-        EnterCriticalSection(&g_DriverLock);
-        ok = BLACKBIRDSCGetEvent(g_DriverHandle, &record, &bytes);
+        ok = BLACKBIRDSCGetEvent(localHandle, &record, &bytes);
         if (!ok)
         {
             DWORD err = GetLastError();
             if (err == ERROR_NO_MORE_ITEMS)
             {
-                LeaveCriticalSection(&g_DriverLock);
                 Sleep(20);
                 continue;
             }
 
             ControllerLog("[DRIVER][WARN] event read failed (%lu), reconnecting\n", err);
-            CloseHandle(g_DriverHandle);
-            g_DriverHandle = INVALID_HANDLE_VALUE;
+            EnterCriticalSection(&g_DriverLock);
+            if (g_DriverHandle == localHandle)
+            {
+                CloseHandle(g_DriverHandle);
+                g_DriverHandle = INVALID_HANDLE_VALUE;
+            }
             LeaveCriticalSection(&g_DriverLock);
             Sleep(200);
             continue;
         }
-        LeaveCriticalSection(&g_DriverLock);
 
         if (bytes >= sizeof(record))
         {
@@ -295,12 +351,9 @@ static DWORD WINAPI ControllerDriverPumpThreadProc(_In_ LPVOID Context)
 
 static BOOL ControllerIsInterestingHandleAccessMask(_In_ ULONG DesiredAccess)
 {
-    return ((DesiredAccess & PROCESS_VM_OPERATION) != 0) ||
-           ((DesiredAccess & PROCESS_VM_WRITE) != 0) ||
-           ((DesiredAccess & PROCESS_CREATE_THREAD) != 0) ||
-           ((DesiredAccess & PROCESS_ALL_ACCESS) != 0) ||
-           ((DesiredAccess & THREAD_SET_CONTEXT) != 0) ||
-           ((DesiredAccess & THREAD_SUSPEND_RESUME) != 0) ||
+    return ((DesiredAccess & PROCESS_VM_OPERATION) != 0) || ((DesiredAccess & PROCESS_VM_WRITE) != 0) ||
+           ((DesiredAccess & PROCESS_CREATE_THREAD) != 0) || ((DesiredAccess & PROCESS_ALL_ACCESS) != 0) ||
+           ((DesiredAccess & THREAD_SET_CONTEXT) != 0) || ((DesiredAccess & THREAD_SUSPEND_RESUME) != 0) ||
            ((DesiredAccess & THREAD_ALL_ACCESS) != 0);
 }
 
@@ -424,6 +477,9 @@ static BOOL ControllerShouldForwardEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_
     {
         ZeroMemory(detectionName, sizeof(detectionName));
         (void)ControllerEtwGetAnsiProperty(Record, L"detectionName", detectionName, RTL_NUMBER_OF(detectionName));
+        /* Uppercase once so all substring searches below can use strstr (SIMD-capable)
+         * rather than repeated O(n*m) _strnicmp scans.  All needles are already uppercase. */
+        (void)_strupr_s(detectionName, sizeof(detectionName));
         (void)ControllerEtwGetU32Property(Record, L"severity", &severity);
         (void)ControllerEtwGetU64Property(Record, L"processId", &processId);
         (void)ControllerEtwGetU64Property(Record, L"targetPid", &targetPid);
@@ -439,30 +495,25 @@ static BOOL ControllerShouldForwardEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_
 
         (void)ControllerEtwGetU32Property(Record, L"correlationFlags", &correlationFlags);
 
-        handleNoiseDetection =
-            ControllerAnsiContainsInsensitive(detectionName, "DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION") ||
-            ControllerAnsiContainsInsensitive(detectionName, "STACK_INTEGRITY_ANOMALY_ON_HANDLE_OP") ||
-            ControllerAnsiContainsInsensitive(detectionName, "SUSPECT_HANDLE_OPERATION") ||
-            ControllerAnsiContainsInsensitive(detectionName, "ANOMALY_ON_HANDLE_OP");
+        handleNoiseDetection = (strstr(detectionName, "DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION") != NULL) ||
+                               (strstr(detectionName, "STACK_INTEGRITY_ANOMALY_ON_HANDLE_OP") != NULL) ||
+                               (strstr(detectionName, "SUSPECT_HANDLE_OPERATION") != NULL) ||
+                               (strstr(detectionName, "ANOMALY_ON_HANDLE_OP") != NULL);
 
-        if (!handleNoiseDetection &&
-            (ControllerAnsiContainsInsensitive(detectionName, "USPECT_HANDLE_OPERATION") ||
-             ControllerAnsiContainsInsensitive(detectionName, "NOMALY_ON_HANDLE_OP")))
+        if (!handleNoiseDetection && ((strstr(detectionName, "USPECT_HANDLE_OPERATION") != NULL) ||
+                                      (strstr(detectionName, "NOMALY_ON_HANDLE_OP") != NULL)))
         {
             handleNoiseDetection = TRUE;
         }
 
-        lowSignalDetection =
-            ControllerAnsiContainsInsensitive(detectionName, "REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT") ||
-            ControllerAnsiContainsInsensitive(detectionName, "THREAD_ACTIVITY_WITH_THREAD_CONTEXT_INTENT") ||
-            ControllerAnsiContainsInsensitive(detectionName, "REMOTE_THREAD_OUTSIDE_MAIN_IMAGE");
+        lowSignalDetection = (strstr(detectionName, "REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT") != NULL) ||
+                             (strstr(detectionName, "THREAD_ACTIVITY_WITH_THREAD_CONTEXT_INTENT") != NULL) ||
+                             (strstr(detectionName, "REMOTE_THREAD_OUTSIDE_MAIN_IMAGE") != NULL);
 
         strongDetection =
-            ControllerAnsiContainsInsensitive(detectionName, "PROCESS_HOLLOWING") ||
-            ControllerAnsiContainsInsensitive(detectionName, "INJECTION") ||
-            ControllerAnsiContainsInsensitive(detectionName, "THREAD_HIJACK") ||
-            ControllerAnsiContainsInsensitive(detectionName, "REMOTE_APC") ||
-            ControllerAnsiContainsInsensitive(detectionName, "NON_IMAGE_EXECUTABLE_REGION");
+            (strstr(detectionName, "PROCESS_HOLLOWING") != NULL) || (strstr(detectionName, "INJECTION") != NULL) ||
+            (strstr(detectionName, "THREAD_HIJACK") != NULL) || (strstr(detectionName, "REMOTE_APC") != NULL) ||
+            (strstr(detectionName, "NON_IMAGE_EXECUTABLE_REGION") != NULL);
 
         if (handleNoiseDetection)
         {
@@ -538,8 +589,8 @@ static BOOL ControllerShouldForwardEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_
             processId = Event->ProcessId;
         }
 
-        if ((correlationFlags & (BLACKBIRD_INTENT_PROCESS_MEMORY | BLACKBIRD_INTENT_THREAD_CONTEXT |
-                                 BLACKBIRD_INTENT_DUP_HANDLE)) != 0)
+        if ((correlationFlags &
+             (BLACKBIRD_INTENT_PROCESS_MEMORY | BLACKBIRD_INTENT_THREAD_CONTEXT | BLACKBIRD_INTENT_DUP_HANDLE)) != 0)
         {
             return TRUE;
         }
@@ -648,6 +699,11 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
         return;
     }
 
+    if (IsEqualGUID(&Record->EventHeader.ProviderId, &BLACKBIRDSC_PROVIDER_GUID_TI))
+    {
+        return;
+    }
+
     ZeroMemory(&event, sizeof(event));
     ZeroMemory(apiName, sizeof(apiName));
     event.EventId = Record->EventHeader.EventDescriptor.Id;
@@ -660,13 +716,7 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
         (void)StringCchCopyW(event.EventName, RTL_NUMBER_OF(event.EventName), EventName);
     }
 
-    if (IsEqualGUID(&Record->EventHeader.ProviderId, &BLACKBIRDSC_PROVIDER_GUID_TI))
-    {
-        event.Source = BlackbirdIpcEtwSourceThreatIntel;
-        event.Family = BlackbirdIpcEtwFamilyThreatIntel;
-        (void)InterlockedIncrement(&g_EtwTiEvents);
-    }
-    else if (IsEqualGUID(&Record->EventHeader.ProviderId, &BLACKBIRDSC_PROVIDER_GUID_BLACKBIRD))
+    if (IsEqualGUID(&Record->EventHeader.ProviderId, &BLACKBIRDSC_PROVIDER_GUID_BLACKBIRD))
     {
         event.Source = BlackbirdIpcEtwSourceBlackbird;
     }
@@ -770,13 +820,12 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
                                               &event.DeepSampleSize);
         if (event.DeepSampleSize == 0 && deepSampleSize != 0)
         {
-            event.DeepSampleSize = (deepSampleSize > RTL_NUMBER_OF(event.DeepSample))
-                                       ? RTL_NUMBER_OF(event.DeepSample)
-                                       : deepSampleSize;
+            event.DeepSampleSize =
+                (deepSampleSize > RTL_NUMBER_OF(event.DeepSample)) ? RTL_NUMBER_OF(event.DeepSample) : deepSampleSize;
         }
         (void)ControllerEtwGetU32Property(Record, L"frameCount", &frameCount);
-        event.StackCount = (frameCount > BLACKBIRD_IPC_MAX_ETW_STACK_FRAMES) ? BLACKBIRD_IPC_MAX_ETW_STACK_FRAMES
-                                                                                : frameCount;
+        event.StackCount =
+            (frameCount > BLACKBIRD_IPC_MAX_ETW_STACK_FRAMES) ? BLACKBIRD_IPC_MAX_ETW_STACK_FRAMES : frameCount;
         for (i = 0; i < RTL_NUMBER_OF(stackPropertyNames); ++i)
         {
             (void)ControllerEtwGetU64Property(Record, stackPropertyNames[i], &event.Stack[i]);
@@ -792,6 +841,19 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
         if (ControllerEtwGetBoolProperty(Record, L"fromExe", &boolValue) && boolValue)
         {
             event.Flags |= BLACKBIRD_IPC_ETW_FLAG_HANDLE_FROM_EXE;
+        }
+        {
+            ULONG handleFlags = 0;
+            if (ControllerEtwGetU32Property(Record, L"handleFlags", &handleFlags))
+            {
+                /* Mask to only the syscall/stack-integrity bits — the three boolean
+                   properties above already own the lower bits independently. */
+                event.Flags |=
+                    handleFlags &
+                    (BLACKBIRD_IPC_ETW_FLAG_SYSCALL_EXPORT_MATCH | BLACKBIRD_IPC_ETW_FLAG_SYSCALL_EXPORT_MISMATCH |
+                     BLACKBIRD_IPC_ETW_FLAG_MODULE_CHAIN_SANE | BLACKBIRD_IPC_ETW_FLAG_UNWIND_METADATA_VALID |
+                     BLACKBIRD_IPC_ETW_FLAG_TEB_STACK_BOUNDS_VALID | BLACKBIRD_IPC_ETW_FLAG_FRAMES_OUTSIDE_TEB_STACK);
+            }
         }
 
         event.DesiredAccess = desiredAccess;
@@ -817,8 +879,8 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
         (void)ControllerEtwGetU32Property(Record, L"startRegionType", &startRegionType);
         (void)ControllerEtwGetI32Property(Record, L"startRegionStatus", &startRegionStatus);
         (void)ControllerEtwGetU32Property(Record, L"workerFrameCount", &frameCount);
-        event.StackCount = (frameCount > BLACKBIRD_IPC_MAX_ETW_STACK_FRAMES) ? BLACKBIRD_IPC_MAX_ETW_STACK_FRAMES
-                                                                                : frameCount;
+        event.StackCount =
+            (frameCount > BLACKBIRD_IPC_MAX_ETW_STACK_FRAMES) ? BLACKBIRD_IPC_MAX_ETW_STACK_FRAMES : frameCount;
         for (i = 0; i < RTL_NUMBER_OF(stackPropertyNames); ++i)
         {
             (void)ControllerEtwGetU64Property(Record, stackPropertyNames[i], &event.Stack[i]);
@@ -950,6 +1012,15 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
         (void)ControllerEtwGetU64Property(Record, L"arg6", &arg6);
         (void)ControllerEtwGetU64Property(Record, L"arg7", &arg7);
         (void)ControllerEtwGetI32Property(Record, L"status", &callStatus);
+        event.HookArgCount = BLACKBIRD_IPC_MAX_HOOK_ARGS;
+        event.HookArgs[0] = arg0;
+        event.HookArgs[1] = arg1;
+        event.HookArgs[2] = arg2;
+        event.HookArgs[3] = arg3;
+        event.HookArgs[4] = arg4;
+        event.HookArgs[5] = arg5;
+        event.HookArgs[6] = arg6;
+        event.HookArgs[7] = arg7;
 
         if (callerPid != 0)
         {
@@ -965,19 +1036,21 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
         {
             event.Severity = 2u;
             (void)StringCchCopyA(event.DetectionName, RTL_NUMBER_OF(event.DetectionName), "USERMODE_MEMORY_ACTIVITY");
-            (void)StringCchPrintfW(event.Reason, RTL_NUMBER_OF(event.Reason),
-                                   L"memory.alloc base=0x%llX size=0x%llX allocType=0x%llX protect=0x%llX status=0x%08X",
-                                   (unsigned long long)arg1, (unsigned long long)arg2, (unsigned long long)arg4,
-                                   (unsigned long long)arg5, (unsigned int)callStatus);
+            (void)StringCchPrintfW(
+                event.Reason, RTL_NUMBER_OF(event.Reason),
+                L"memory.alloc base=0x%llX size=0x%llX allocType=0x%llX protect=0x%llX status=0x%08X",
+                (unsigned long long)arg1, (unsigned long long)arg2, (unsigned long long)arg4, (unsigned long long)arg5,
+                (unsigned int)callStatus);
         }
         else if (lstrcmpiA(apiName, "NtProtectVirtualMemory") == 0)
         {
             event.Severity = 3u;
             (void)StringCchCopyA(event.DetectionName, RTL_NUMBER_OF(event.DetectionName), "USERMODE_MEMORY_ACTIVITY");
-            (void)StringCchPrintfW(event.Reason, RTL_NUMBER_OF(event.Reason),
-                                   L"memory.protect base=0x%llX size=0x%llX newProtect=0x%llX oldProtect=0x%llX status=0x%08X",
-                                   (unsigned long long)arg1, (unsigned long long)arg2, (unsigned long long)arg3,
-                                   (unsigned long long)arg4, (unsigned int)callStatus);
+            (void)StringCchPrintfW(
+                event.Reason, RTL_NUMBER_OF(event.Reason),
+                L"memory.protect base=0x%llX size=0x%llX newProtect=0x%llX oldProtect=0x%llX status=0x%08X",
+                (unsigned long long)arg1, (unsigned long long)arg2, (unsigned long long)arg3, (unsigned long long)arg4,
+                (unsigned int)callStatus);
         }
         else if (lstrcmpiA(apiName, "NtWriteVirtualMemory") == 0)
         {
@@ -994,9 +1067,9 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
             event.Severity = 3u;
             (void)StringCchCopyA(event.DetectionName, RTL_NUMBER_OF(event.DetectionName), "USERMODE_PROCESS_RECON");
             (void)StringCchPrintfW(event.Reason, RTL_NUMBER_OF(event.Reason),
-                                   L"process.recon api=%S c0=0x%llX c1=0x%llX c2=0x%llX c3=0x%llX status=0x%08X", apiName,
-                                   (unsigned long long)arg0, (unsigned long long)arg1, (unsigned long long)arg2,
-                                   (unsigned long long)arg3, (unsigned int)callStatus);
+                                   L"process.recon api=%S c0=0x%llX c1=0x%llX c2=0x%llX c3=0x%llX status=0x%08X",
+                                   apiName, (unsigned long long)arg0, (unsigned long long)arg1,
+                                   (unsigned long long)arg2, (unsigned long long)arg3, (unsigned int)callStatus);
         }
         else
         {
@@ -1031,6 +1104,13 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
         (void)ControllerEtwGetU32Property(Record, L"systemInformationLength", &systemInformationLength);
         (void)ControllerEtwGetU32Property(Record, L"returnLength", &returnLength);
         (void)ControllerEtwGetI32Property(Record, L"queryStatus", &queryStatus);
+        event.HookArgCount = 6u;
+        event.HookArgs[0] = systemInformationClass;
+        event.HookArgs[1] = 0ull;
+        event.HookArgs[2] = systemInformationLength;
+        event.HookArgs[3] = 0ull;
+        event.HookArgs[4] = returnLength;
+        event.HookArgs[5] = (UINT32)queryStatus;
 
         (void)StringCchPrintfW(
             event.Reason, RTL_NUMBER_OF(event.Reason),
@@ -1104,15 +1184,15 @@ static BOOL ControllerIsThreatIntelRetryableError(_In_ DWORD ErrorCode)
     {
         return FALSE;
     }
-    if (ErrorCode == ERROR_ACCESS_DENIED || ErrorCode == ERROR_PRIVILEGE_NOT_HELD ||
-        ErrorCode == ERROR_NOT_SUPPORTED)
+    if (ErrorCode == ERROR_ACCESS_DENIED || ErrorCode == ERROR_PRIVILEGE_NOT_HELD || ErrorCode == ERROR_NOT_SUPPORTED)
     {
         return FALSE;
     }
     return TRUE;
 }
 
-static VOID WINAPI ControllerEtwWarmupCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName, _In_opt_ PVOID Context)
+static VOID WINAPI ControllerEtwWarmupCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName,
+                                               _In_opt_ PVOID Context)
 {
     UNREFERENCED_PARAMETER(Record);
     UNREFERENCED_PARAMETER(EventName);
@@ -1180,8 +1260,8 @@ static VOID ControllerTryRecoverThreatIntelSession(_In_ DWORD InitialTiError)
         DWORD warmErr = ERROR_SUCCESS;
         BOOL warmOk;
 
-        ControllerLog("[ETW][WARN] TI inactive after subscribe (err=%lu). warmup+restart attempt %lu/%lu\n",
-                      tiErr, attempt, maxAttempts);
+        ControllerLog("[ETW][WARN] TI inactive after subscribe (err=%lu). warmup+restart attempt %lu/%lu\n", tiErr,
+                      attempt, maxAttempts);
 
         warmOk = ControllerWarmupThreatIntelProvider(&warmErr);
         if (!warmOk)
@@ -1194,12 +1274,12 @@ static VOID ControllerTryRecoverThreatIntelSession(_In_ DWORD InitialTiError)
         g_ThreatIntelEnabled = FALSE;
 
         if (!BLACKBIRDSCStartBlackbirdEtwSession(BLACKBIRD_CONTROLLER_ETW_SESSION_NAMEW, TRUE, ControllerEtwCallback,
-                                                     NULL, &g_EtwSession, &g_ThreatIntelEnabled))
+                                                 NULL, &g_EtwSession, &g_ThreatIntelEnabled))
         {
             DWORD restartErr = GetLastError();
             tiErr = BLACKBIRDSCGetLastThreatIntelEnableError();
-            ControllerLog("[ETW][WARN] restart after TI warmup failed attempt=%lu startErr=%lu tiErr=%lu\n",
-                          attempt, restartErr, tiErr);
+            ControllerLog("[ETW][WARN] restart after TI warmup failed attempt=%lu startErr=%lu tiErr=%lu\n", attempt,
+                          restartErr, tiErr);
             if (attempt < maxAttempts)
             {
                 Sleep(180 * attempt);
@@ -1239,8 +1319,8 @@ static BOOL ControllerStartEtwSession(VOID)
     (void)InterlockedExchange(&g_EtwDetectionEvents, 0);
     g_ThreatIntelEnabled = FALSE;
     g_ThreatIntelEnableError = ERROR_SUCCESS;
-    if (!BLACKBIRDSCStartBlackbirdEtwSession(BLACKBIRD_CONTROLLER_ETW_SESSION_NAMEW, TRUE, ControllerEtwCallback,
-                                                 NULL, &g_EtwSession, &g_ThreatIntelEnabled))
+    if (!BLACKBIRDSCStartBlackbirdEtwSession(BLACKBIRD_CONTROLLER_ETW_SESSION_NAMEW, TRUE, ControllerEtwCallback, NULL,
+                                             &g_EtwSession, &g_ThreatIntelEnabled))
     {
         DWORD err = GetLastError();
         g_ThreatIntelEnableError = err;
@@ -1484,11 +1564,10 @@ static VOID ControllerStopCore(VOID)
     ControllerResetHollowingState();
 
     ControllerLog("[*] BlackbirdController: core stopped\n");
-
 }
 
-static DWORD WINAPI ControllerServiceControlHandlerEx(_In_ DWORD ControlCode, _In_ DWORD EventType, _In_ LPVOID EventData,
-                                                      _In_ LPVOID Context)
+static DWORD WINAPI ControllerServiceControlHandlerEx(_In_ DWORD ControlCode, _In_ DWORD EventType,
+                                                      _In_ LPVOID EventData, _In_ LPVOID Context)
 {
     UNREFERENCED_PARAMETER(EventType);
     UNREFERENCED_PARAMETER(EventData);
@@ -1514,8 +1593,8 @@ static VOID WINAPI ControllerServiceMain(_In_ DWORD Argc, _In_reads_(Argc) LPWST
     UNREFERENCED_PARAMETER(Argv);
 
     ZeroMemory(&g_ServiceStatus, sizeof(g_ServiceStatus));
-    g_ServiceStatusHandle = RegisterServiceCtrlHandlerExW(BLACKBIRD_CONTROLLER_SERVICE_NAMEW,
-                                                          ControllerServiceControlHandlerEx, NULL);
+    g_ServiceStatusHandle =
+        RegisterServiceCtrlHandlerExW(BLACKBIRD_CONTROLLER_SERVICE_NAMEW, ControllerServiceControlHandlerEx, NULL);
     if (g_ServiceStatusHandle == NULL)
     {
         return;
@@ -1541,8 +1620,7 @@ static VOID WINAPI ControllerServiceMain(_In_ DWORD Argc, _In_reads_(Argc) LPWST
 
 int __cdecl wmain(_In_ int argc, _In_reads_(argc) wchar_t **argv)
 {
-    SERVICE_TABLE_ENTRYW table[] = {{(LPWSTR)BLACKBIRD_CONTROLLER_SERVICE_NAMEW, ControllerServiceMain},
-                                    {NULL, NULL}};
+    SERVICE_TABLE_ENTRYW table[] = {{(LPWSTR)BLACKBIRD_CONTROLLER_SERVICE_NAMEW, ControllerServiceMain}, {NULL, NULL}};
     BOOL runAsConsole = FALSE;
     int i;
 
@@ -1587,5 +1665,3 @@ int __cdecl wmain(_In_ int argc, _In_reads_(argc) wchar_t **argv)
     ControllerLogClose();
     return 0;
 }
-
-

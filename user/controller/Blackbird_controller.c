@@ -7,9 +7,9 @@ SERVICE_STATUS_HANDLE g_ServiceStatusHandle = NULL;
 SERVICE_STATUS g_ServiceStatus;
 HANDLE g_StopEvent = NULL;
 
-static HANDLE             g_LogFile            = INVALID_HANDLE_VALUE;
-static CRITICAL_SECTION   g_LogLock;
-static BOOL               g_LogLockInitialized = FALSE;
+static HANDLE g_LogFile = INVALID_HANDLE_VALUE;
+static CRITICAL_SECTION g_LogLock;
+static BOOL g_LogLockInitialized = FALSE;
 HANDLE g_ServerThread = NULL;
 HANDLE g_DriverPumpThread = NULL;
 HANDLE g_EtwThread = NULL;
@@ -64,7 +64,8 @@ VOID ControllerLogInit(VOID)
         {
             CreateDirectoryA(intermediate, NULL);
         }
-        expanded = ExpandEnvironmentStringsA("%ProgramData%\\Blackbird\\Node", intermediate, RTL_NUMBER_OF(intermediate));
+        expanded =
+            ExpandEnvironmentStringsA("%ProgramData%\\Blackbird\\Node", intermediate, RTL_NUMBER_OF(intermediate));
         if (expanded > 0 && expanded <= RTL_NUMBER_OF(intermediate))
         {
             CreateDirectoryA(intermediate, NULL);
@@ -76,13 +77,12 @@ VOID ControllerLogInit(VOID)
         }
         CreateDirectoryA(logDir, NULL);
 
-        (void)StringCchPrintfA(logPath,    RTL_NUMBER_OF(logPath),    "%s\\controller.log",   logDir);
+        (void)StringCchPrintfA(logPath, RTL_NUMBER_OF(logPath), "%s\\controller.log", logDir);
         (void)StringCchPrintfA(rotatePath, RTL_NUMBER_OF(rotatePath), "%s\\controller.log.1", logDir);
 
         // Rotate if existing log exceeds 4 MB so the file stays small enough for the UI to tail.
-        probe = CreateFileA(logPath, GENERIC_READ,
-                            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                            NULL, OPEN_EXISTING, 0, NULL);
+        probe = CreateFileA(logPath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                            OPEN_EXISTING, 0, NULL);
         if (probe != INVALID_HANDLE_VALUE)
         {
             if (GetFileSizeEx(probe, &fileSize) && fileSize.QuadPart > (4LL * 1024 * 1024))
@@ -99,13 +99,8 @@ VOID ControllerLogInit(VOID)
         }
 
         // Open with FILE_APPEND_DATA and share-read so the interface can tail it concurrently.
-        g_LogFile = CreateFileA(logPath,
-                                FILE_APPEND_DATA,
-                                FILE_SHARE_READ | FILE_SHARE_WRITE,
-                                NULL,
-                                OPEN_ALWAYS,
-                                FILE_ATTRIBUTE_NORMAL,
-                                NULL);
+        g_LogFile = CreateFileA(logPath, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS,
+                                FILE_ATTRIBUTE_NORMAL, NULL);
     }
     __finally
     {
@@ -153,11 +148,8 @@ VOID ControllerLog(_In_z_ _Printf_format_string_ PCSTR Format, ...)
         {
             message[--msgLen] = '\0';
         }
-        (void)StringCchPrintfA(stamped, RTL_NUMBER_OF(stamped),
-                               "[%04u-%02u-%02u %02u:%02u:%02u] %s\r\n",
-                               st.wYear, st.wMonth, st.wDay,
-                               st.wHour, st.wMinute, st.wSecond,
-                               message);
+        (void)StringCchPrintfA(stamped, RTL_NUMBER_OF(stamped), "[%04u-%02u-%02u %02u:%02u:%02u] %s\r\n", st.wYear,
+                               st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, message);
         EnterCriticalSection(&g_LogLock);
         if (g_LogFile != INVALID_HANDLE_VALUE)
         {
@@ -225,4 +217,3 @@ VOID ControllerCleanupStaleEtwSessions(VOID)
 {
     ControllerStopEtwSessionByNameBestEffort(BLACKBIRD_CONTROLLER_ETW_SESSION_NAMEW, "pre-start");
 }
-

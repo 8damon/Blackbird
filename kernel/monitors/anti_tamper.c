@@ -147,13 +147,12 @@ static VOID BLACKBIRDAntiTamperWorkRoutine(_In_ PVOID Context)
         if (tamperMask != 0)
         {
             BLACKBIRDEtwLogDetectionEvent("DRIVER_DISPATCH_OR_OBJECT_TAMPER", 5, PsGetCurrentProcessId(), NULL,
-                                            tamperMask, 0, 0, L"driver dispatch/object integrity drift detected");
+                                          tamperMask, 0, 0, L"driver dispatch/object integrity drift detected");
         }
         else if (prevMask != 0)
         {
-            BLACKBIRDEtwLogDetectionEvent("DRIVER_DISPATCH_OR_OBJECT_TAMPER_CLEARED", 2, PsGetCurrentProcessId(),
-                                            NULL, 0, 0, 0,
-                                            L"driver dispatch/object integrity returned to expected state");
+            BLACKBIRDEtwLogDetectionEvent("DRIVER_DISPATCH_OR_OBJECT_TAMPER_CLEARED", 2, PsGetCurrentProcessId(), NULL,
+                                          0, 0, 0, L"driver dispatch/object integrity returned to expected state");
         }
     }
 
@@ -161,8 +160,8 @@ static VOID BLACKBIRDAntiTamperWorkRoutine(_In_ PVOID Context)
     KeSetEvent(&g_WorkDrainEvent, IO_NO_INCREMENT, FALSE);
 }
 
-static VOID BLACKBIRDAntiTamperTimerDpc(_In_ PKDPC Dpc, _In_opt_ PVOID DeferredContext,
-                                          _In_opt_ PVOID SystemArgument1, _In_opt_ PVOID SystemArgument2)
+static VOID BLACKBIRDAntiTamperTimerDpc(_In_ PKDPC Dpc, _In_opt_ PVOID DeferredContext, _In_opt_ PVOID SystemArgument1,
+                                        _In_opt_ PVOID SystemArgument2)
 {
     UNREFERENCED_PARAMETER(Dpc);
     UNREFERENCED_PARAMETER(DeferredContext);
@@ -253,4 +252,3 @@ ULONG BLACKBIRDAntiTamperGetLastMask(VOID)
 {
     return (ULONG)InterlockedCompareExchange(&g_LastTamperMask, 0, 0);
 }
-

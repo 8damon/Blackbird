@@ -60,8 +60,7 @@ static ULONGLONG BLACKBIRDApcMsToQpc(_In_ UINT32 Ms)
     return ticks;
 }
 
-static BOOLEAN BLACKBIRDApcShouldEmit(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
-                                        _In_ BLACKBIRD_APC_EVENT_KIND Kind)
+static BOOLEAN BLACKBIRDApcShouldEmit(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ BLACKBIRD_APC_EVENT_KIND Kind)
 {
     UINT64 caller = (UINT64)(ULONG_PTR)CallerPid;
     UINT64 target = (UINT64)(ULONG_PTR)TargetPid;
@@ -150,7 +149,7 @@ VOID BLACKBIRDApcMonitorUninitialize(VOID)
 }
 
 VOID BLACKBIRDApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
-                                                   _In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsDuplicateOperation)
+                                                 _In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsDuplicateOperation)
 {
     BOOLEAN hasSetContext;
     BOOLEAN hasSuspendResume;
@@ -177,27 +176,27 @@ VOID BLACKBIRDApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ HAN
         return;
     }
     hasRecentIntent = BLACKBIRDCorrelationQueryRecentIntent(CallerPid, TargetPid, BLACKBIRD_APC_INTENT_WINDOW_MS,
-                                                              &intentFlags, &intentAccessMask, &intentAgeMs);
+                                                            &intentFlags, &intentAccessMask, &intentAgeMs);
     hasMemoryIntent = hasRecentIntent && ((intentFlags & BLACKBIRD_INTENT_PROCESS_MEMORY) != 0);
 
     if (hasSetContext && hasSuspendResume && hasMemoryIntent &&
         BLACKBIRDApcShouldEmit(CallerPid, TargetPid, BLACKBIRDApcKindRemoteApc))
     {
         BLACKBIRDEtwLogApcEvent("REMOTE_APC_INTENT", CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation,
-                                  intentFlags, intentAccessMask, intentAgeMs);
+                                intentFlags, intentAccessMask, intentAgeMs);
         BLACKBIRDEtwLogDetectionEvent("REMOTE_APC_CREATION_SUSPECT", 5, CallerPid, TargetPid, intentFlags,
-                                        intentAccessMask, intentAgeMs,
-                                        L"set-context plus suspend/resume with recent process-memory intent");
+                                      intentAccessMask, intentAgeMs,
+                                      L"set-context plus suspend/resume with recent process-memory intent");
     }
 
     if (hasSetContext && hasSuspendResume && hasMemoryIntent &&
         BLACKBIRDApcShouldEmit(CallerPid, TargetPid, BLACKBIRDApcKindThreadHijack))
     {
         BLACKBIRDEtwLogApcEvent("THREAD_CONTEXT_INTENT", CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation,
-                                  intentFlags, intentAccessMask, intentAgeMs);
-        BLACKBIRDEtwLogDetectionEvent("THREAD_HIJACK_INTENT", 6, CallerPid, TargetPid, intentFlags,
-                                        intentAccessMask, intentAgeMs,
-                                        L"high-confidence hijack intent chain (thread context + memory intent)");
+                                intentFlags, intentAccessMask, intentAgeMs);
+        BLACKBIRDEtwLogDetectionEvent("THREAD_HIJACK_INTENT", 6, CallerPid, TargetPid, intentFlags, intentAccessMask,
+                                      intentAgeMs,
+                                      L"high-confidence hijack intent chain (thread context + memory intent)");
     }
 }
 
@@ -206,4 +205,3 @@ BLACKBIRDApcMonitorSelfCheck(VOID)
 {
     return (InterlockedCompareExchange(&g_ApcMonitorInitialized, 0, 0) != 0);
 }
-

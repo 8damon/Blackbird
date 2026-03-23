@@ -9,7 +9,7 @@ static volatile LONG g_ImageMonitorRegistered = 0;
 static volatile LONG g_ImageMonitorFailureCounter = 0;
 static KSPIN_LOCK g_NtdllTrackLock;
 typedef NTSTATUS(NTAPI *PBLACKBIRD_PS_SET_LOAD_IMAGE_NOTIFY_ROUTINE_EX)(_In_ PLOAD_IMAGE_NOTIFY_ROUTINE NotifyRoutine,
-                                                                          _In_ ULONG Flags);
+                                                                        _In_ ULONG Flags);
 static PBLACKBIRD_PS_SET_LOAD_IMAGE_NOTIFY_ROUTINE_EX g_SetLoadImageNotifyRoutineEx = NULL;
 
 typedef struct _BLACKBIRD_NTDLL_TRACK_ENTRY
@@ -50,7 +50,7 @@ static ULONG BLACKBIRDTrackNtdllLoad(_In_ HANDLE ProcessId)
 }
 
 static VOID BLACKBIRDImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImageName, _In_ HANDLE ProcessId,
-                                              _In_ PIMAGE_INFO ImageInfo)
+                                            _In_ PIMAGE_INFO ImageInfo)
 {
     WCHAR path[512];
     BOOLEAN isSignatureKnown = FALSE;
@@ -76,8 +76,8 @@ static VOID BLACKBIRDImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImageNa
 #endif
 
     BLACKBIRDEtwLogImageLoadEvent(ProcessId, ImageInfo->ImageBase, ImageInfo->ImageSize,
-                                    ImageInfo->SystemModeImage ? TRUE : FALSE, isSignatureKnown, signatureLevel,
-                                    signatureType, (path[0] != L'\0') ? path : NULL);
+                                  ImageInfo->SystemModeImage ? TRUE : FALSE, isSignatureKnown, signatureLevel,
+                                  signatureType, (path[0] != L'\0') ? path : NULL);
 
     if (path[0] == L'\0' || ImageInfo->SystemModeImage)
     {
@@ -104,7 +104,7 @@ static VOID BLACKBIRDImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImageNa
     if (ntdllLoadCount > 1)
     {
         BLACKBIRDEtwLogDetectionEvent("MULTIPLE_NTDLL_IMAGE_MAPPINGS", 3, ProcessId, ProcessId, 0, 0, 0,
-                                        L"multiple ntdll image-load events observed for process");
+                                      L"multiple ntdll image-load events observed for process");
     }
 }
 
@@ -184,4 +184,3 @@ BLACKBIRDImageMonitorSelfCheck(VOID)
 {
     return (InterlockedCompareExchange(&g_ImageMonitorRegistered, 0, 0) != 0);
 }
-

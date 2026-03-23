@@ -1,6 +1,7 @@
 #include <ntddk.h>
-#include "..\telemetry\etw.h"
 #include "..\core\unicode_utils.h"
+#include "..\telemetry\etw.h"
+#include "..\antivirt\registry_concealment.h"
 #include "registry_monitor.h"
 
 #define BLACKBIRD_REG_MON_ALTITUDE L"385000.424244"
@@ -11,25 +12,8 @@ static volatile LONG g_RegistryFailureCounter = 0;
 
 NTKERNELAPI ULONG PsGetProcessSessionIdEx(_In_ PEPROCESS Process);
 
-static BOOLEAN BLACKBIRDIsHighValueRegistryPath(_In_ PCUNICODE_STRING Path)
-{
-    if (Path == NULL || Path->Buffer == NULL)
-    {
-        return FALSE;
-    }
-
-    if (BLACKBIRDUnicodeContainsInsensitive(Path, L"\\currentversion\\run", 19) ||
-        BLACKBIRDUnicodeContainsInsensitive(Path, L"\\currentversion\\runonce", 23) ||
-        BLACKBIRDUnicodeContainsInsensitive(Path, L"\\image file execution options", 29) ||
-        BLACKBIRDUnicodeContainsInsensitive(Path, L"\\system\\currentcontrolset\\services\\", 35))
-    {
-        return TRUE;
-    }
-    return FALSE;
-}
-
 static NTSTATUS BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_opt_ PVOID Argument1,
-                                            _In_opt_ PVOID Argument2)
+                                          _In_opt_ PVOID Argument2)
 {
     REG_NOTIFY_CLASS notifyClass;
     UNICODE_STRING keyPathUs;
@@ -38,6 +22,7 @@ static NTSTATUS BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_op
     ULONG dataType = 0;
     ULONG dataSize = 0;
     BOOLEAN highValuePath = FALSE;
+    BOOLEAN blockOpen = FALSE;
     ULONG sessionId = 0;
     HANDLE pid;
     PCSTR operation = "OTHER";
@@ -75,7 +60,7 @@ static NTSTATUS BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_op
             {
                 keyPathUs = *keyNameUs;
                 BLACKBIRDSafeCopyUnicode(&keyPathUs, keyPath, RTL_NUMBER_OF(keyPath));
-                highValuePath = BLACKBIRDIsHighValueRegistryPath(&keyPathUs);
+                highValuePath = BLACKBIRDRegistryPathIsHighValue(&keyPathUs);
                 CmCallbackReleaseKeyObjectIDEx(keyNameUs);
             }
         }
@@ -86,20 +71,38 @@ static NTSTATUS BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_op
         operation = "CREATE_KEY";
         if (info != NULL && info->CompleteName != NULL)
         {
-            keyPathUs = *info->CompleteName;
-            BLACKBIRDSafeCopyUnicode(&keyPathUs, keyPath, RTL_NUMBER_OF(keyPath));
-            highValuePath = BLACKBIRDIsHighValueRegistryPath(&keyPathUs);
+            BLACKBIRDRegistryBuildPathForCompare(&g_RegistryCookie, info->RootObject, info->CompleteName, keyPath,
+                                                 RTL_NUMBER_OF(keyPath), &keyPathUs);
+            highValuePath = BLACKBIRDRegistryPathIsHighValue(&keyPathUs);
+            blockOpen = BLACKBIRDRegistryShouldBlockPath(&keyPathUs);
         }
     }
-    else if (notifyClass == RegNtPreOpenKeyEx)
+    else if (notifyClass == RegNtPreOpenKey || notifyClass == RegNtPreOpenKeyEx)
     {
         PREG_OPEN_KEY_INFORMATION info = (PREG_OPEN_KEY_INFORMATION)Argument2;
         operation = "OPEN_KEY";
         if (info != NULL && info->CompleteName != NULL)
         {
-            keyPathUs = *info->CompleteName;
-            BLACKBIRDSafeCopyUnicode(&keyPathUs, keyPath, RTL_NUMBER_OF(keyPath));
-            highValuePath = BLACKBIRDIsHighValueRegistryPath(&keyPathUs);
+            BLACKBIRDRegistryBuildPathForCompare(&g_RegistryCookie, info->RootObject, info->CompleteName, keyPath,
+                                                 RTL_NUMBER_OF(keyPath), &keyPathUs);
+            highValuePath = BLACKBIRDRegistryPathIsHighValue(&keyPathUs);
+            blockOpen = BLACKBIRDRegistryShouldBlockPath(&keyPathUs);
+        }
+    }
+    else if (notifyClass == RegNtPostQueryValueKey)
+    {
+        PREG_POST_OPERATION_INFORMATION postInfo = (PREG_POST_OPERATION_INFORMATION)Argument2;
+        PREG_QUERY_VALUE_KEY_INFORMATION preInfo;
+
+        if (postInfo == NULL || !NT_SUCCESS(postInfo->Status) || postInfo->PreInformation == NULL)
+        {
+            return STATUS_SUCCESS;
+        }
+
+        preInfo = (PREG_QUERY_VALUE_KEY_INFORMATION)postInfo->PreInformation;
+        if (BLACKBIRDRegistryTrySpoofBiosValue(&g_RegistryCookie, postInfo->Object, preInfo))
+        {
+            return STATUS_SUCCESS;
         }
     }
     else if (notifyClass == RegNtPreDeleteValueKey)
@@ -115,7 +118,7 @@ static NTSTATUS BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_op
             {
                 keyPathUs = *keyNameUs;
                 BLACKBIRDSafeCopyUnicode(&keyPathUs, keyPath, RTL_NUMBER_OF(keyPath));
-                highValuePath = BLACKBIRDIsHighValueRegistryPath(&keyPathUs);
+                highValuePath = BLACKBIRDRegistryPathIsHighValue(&keyPathUs);
                 CmCallbackReleaseKeyObjectIDEx(keyNameUs);
             }
         }
@@ -126,11 +129,16 @@ static NTSTATUS BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_op
     }
 
     BLACKBIRDEtwLogRegistryEvent(operation, pid, sessionId, (ULONG)notifyClass, dataType, dataSize, highValuePath,
-                                   (keyPath[0] != L'\0') ? keyPath : NULL, (valueName[0] != L'\0') ? valueName : NULL);
+                                 (keyPath[0] != L'\0') ? keyPath : NULL, (valueName[0] != L'\0') ? valueName : NULL);
 
     if (highValuePath)
     {
         BLACKBIRDEtwLogDetectionEvent("HIGH_VALUE_REGISTRY_ACTIVITY", 2, pid, NULL, 0, 0, 0, keyPath);
+    }
+
+    if (blockOpen)
+    {
+        return STATUS_OBJECT_NAME_NOT_FOUND;
     }
 
     return STATUS_SUCCESS;
@@ -187,10 +195,9 @@ VOID BLACKBIRDRegistryMonitorUninitialize(VOID)
     status = CmUnRegisterCallback(g_RegistryCookie);
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(
-            DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-            "BLACKBIRD: registry monitor callback removal failed; monitor remains registered (status=0x%08X).\n",
-            status);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
+                   "BLACKBIRD: registry monitor callback removal failed; monitor remains registered (status=0x%08X).\n",
+                   status);
         return;
     }
 
@@ -209,4 +216,3 @@ BLACKBIRDRegistryMonitorSelfCheck(VOID)
 
     return (g_RegistryCookie.QuadPart != 0);
 }
-

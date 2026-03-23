@@ -12,4 +12,3 @@ BOOLEAN
 BLACKBIRDProcessMonitorSelfCheck(VOID);
 
 #endif
-

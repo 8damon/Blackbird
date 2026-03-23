@@ -12,4 +12,3 @@ BOOLEAN
 BLACKBIRDRegistryMonitorSelfCheck(VOID);
 
 #endif
-

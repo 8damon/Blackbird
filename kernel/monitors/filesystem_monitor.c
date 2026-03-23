@@ -35,7 +35,7 @@ static UINT32 BLACKBIRDMapMajorToFileOperation(_In_ UCHAR MajorFunction)
 }
 
 static VOID BLACKBIRDCaptureFilePath(_In_ PFLT_CALLBACK_DATA Data, _In_ PCFLT_RELATED_OBJECTS FltObjects,
-                                       _Out_writes_z_(PathChars) PWSTR Path, _In_ size_t PathChars)
+                                     _Out_writes_z_(PathChars) PWSTR Path, _In_ size_t PathChars)
 {
     NTSTATUS status;
     PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
@@ -73,7 +73,7 @@ static VOID BLACKBIRDCaptureFilePath(_In_ PFLT_CALLBACK_DATA Data, _In_ PCFLT_RE
 }
 
 static VOID BLACKBIRDFillCommonFileEventFields(_In_ PFLT_CALLBACK_DATA Data, _In_ PCFLT_RELATED_OBJECTS FltObjects,
-                                                 _Out_ BLACKBIRD_FILE_EVENT *Event)
+                                               _Out_ BLACKBIRD_FILE_EVENT *Event)
 {
     const FLT_IO_PARAMETER_BLOCK *iopb;
     UINT32 flags = 0;
@@ -162,10 +162,9 @@ static VOID BLACKBIRDFillCommonFileEventFields(_In_ PFLT_CALLBACK_DATA Data, _In
     Event->Flags |= flags;
 }
 
-_Function_class_(FLT_PRE_OPERATION_CALLBACK)
-static FLT_PREOP_CALLBACK_STATUS BLACKBIRDFsPreOperation(_Inout_ PFLT_CALLBACK_DATA Data,
-                                                           _In_ PCFLT_RELATED_OBJECTS FltObjects,
-                                                           _Outptr_result_maybenull_ PVOID *CompletionContext)
+_Function_class_(FLT_PRE_OPERATION_CALLBACK) static FLT_PREOP_CALLBACK_STATUS
+    BLACKBIRDFsPreOperation(_Inout_ PFLT_CALLBACK_DATA Data, _In_ PCFLT_RELATED_OBJECTS FltObjects,
+                            _Outptr_result_maybenull_ PVOID *CompletionContext)
 {
     BLACKBIRD_FILE_EVENT event;
     UINT32 processPid32;
@@ -196,18 +195,16 @@ static FLT_PREOP_CALLBACK_STATUS BLACKBIRDFsPreOperation(_Inout_ PFLT_CALLBACK_D
     return FLT_PREOP_SUCCESS_NO_CALLBACK;
 }
 
-_Function_class_(PFLT_FILTER_UNLOAD_CALLBACK)
-static NTSTATUS BLACKBIRDFsFilterUnload(_In_ FLT_FILTER_UNLOAD_FLAGS Flags)
+_Function_class_(PFLT_FILTER_UNLOAD_CALLBACK) static NTSTATUS
+    BLACKBIRDFsFilterUnload(_In_ FLT_FILTER_UNLOAD_FLAGS Flags)
 {
     UNREFERENCED_PARAMETER(Flags);
     return STATUS_SUCCESS;
 }
 
-_Function_class_(PFLT_INSTANCE_SETUP_CALLBACK)
-static NTSTATUS BLACKBIRDFsInstanceSetup(_In_ PCFLT_RELATED_OBJECTS FltObjects,
-                                           _In_ FLT_INSTANCE_SETUP_FLAGS Flags,
-                                           _In_ DEVICE_TYPE VolumeDeviceType,
-                                           _In_ FLT_FILESYSTEM_TYPE VolumeFilesystemType)
+_Function_class_(PFLT_INSTANCE_SETUP_CALLBACK) static NTSTATUS
+    BLACKBIRDFsInstanceSetup(_In_ PCFLT_RELATED_OBJECTS FltObjects, _In_ FLT_INSTANCE_SETUP_FLAGS Flags,
+                             _In_ DEVICE_TYPE VolumeDeviceType, _In_ FLT_FILESYSTEM_TYPE VolumeFilesystemType)
 {
     UNREFERENCED_PARAMETER(FltObjects);
     UNREFERENCED_PARAMETER(Flags);
@@ -228,21 +225,20 @@ static const FLT_OPERATION_REGISTRATION g_BlackbirdFsCallbacks[] = {
     {IRP_MJ_FILE_SYSTEM_CONTROL, 0, BLACKBIRDFsPreOperation, NULL},
     {IRP_MJ_OPERATION_END}};
 
-static const FLT_REGISTRATION g_BlackbirdFsRegistration = {
-    sizeof(FLT_REGISTRATION),
-    FLT_REGISTRATION_VERSION,
-    0,
-    NULL,
-    g_BlackbirdFsCallbacks,
-    BLACKBIRDFsFilterUnload,
-    BLACKBIRDFsInstanceSetup,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL};
+static const FLT_REGISTRATION g_BlackbirdFsRegistration = {sizeof(FLT_REGISTRATION),
+                                                           FLT_REGISTRATION_VERSION,
+                                                           0,
+                                                           NULL,
+                                                           g_BlackbirdFsCallbacks,
+                                                           BLACKBIRDFsFilterUnload,
+                                                           BLACKBIRDFsInstanceSetup,
+                                                           NULL,
+                                                           NULL,
+                                                           NULL,
+                                                           NULL,
+                                                           NULL,
+                                                           NULL,
+                                                           NULL};
 
 NTSTATUS
 BLACKBIRDFileSystemMonitorInitialize(_In_ PDRIVER_OBJECT DriverObject)
@@ -270,8 +266,8 @@ BLACKBIRDFileSystemMonitorInitialize(_In_ PDRIVER_OBJECT DriverObject)
         if (failures == 1 || ((failures & 0xFF) == 0))
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                       "BLACKBIRD: filesystem monitor filter registration failed status=0x%08X total=%lu.\n",
-                       status, (ULONG)failures);
+                       "BLACKBIRD: filesystem monitor filter registration failed status=0x%08X total=%lu.\n", status,
+                       (ULONG)failures);
         }
         g_FileSystemFilter = NULL;
         return status;
@@ -331,4 +327,3 @@ BLACKBIRDFileSystemMonitorSelfCheck(VOID)
 
     return (g_FileSystemFilter != NULL);
 }
-

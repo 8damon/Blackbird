@@ -12,4 +12,3 @@ BOOLEAN
 BLACKBIRDThreadMonitorSelfCheck(VOID);
 
 #endif
-

@@ -1,18 +1,31 @@
 #include "../blackbird_controller_private.h"
 
+/* Stack-scratch size for ETW property extraction.  Most primitive properties
+ * (integers, GUIDs, short strings) are well under 512 bytes, so the fast path
+ * avoids all heap allocation.  Only oversized values fall back to calloc. */
+#define BLACKBIRD_ETW_PROP_SCRATCH_BYTES 512u
+
+/* Fills *OutBuffer with a pointer to the property data.  When the property fits
+ * in Scratch[0..ScratchCapacity-1], *OutBuffer == Scratch and *HeapAllocated is
+ * FALSE.  Otherwise a heap buffer is allocated and *HeapAllocated is TRUE.
+ * The caller must free(*OutBuffer) only when *HeapAllocated is TRUE. */
 static BOOL ControllerEtwGetPropertyRaw(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                                        _Outptr_result_bytebuffer_(*OutSize) PBYTE *OutBuffer, _Out_ ULONG *OutSize)
+                                        _Out_writes_bytes_(ScratchCapacity) PBYTE Scratch, _In_ ULONG ScratchCapacity,
+                                        _Outptr_result_bytebuffer_(*OutSize) PBYTE *OutBuffer, _Out_ ULONG *OutSize,
+                                        _Out_ BOOL *HeapAllocated)
 {
     TDHSTATUS status;
     PROPERTY_DATA_DESCRIPTOR descriptor;
 
-    if (Record == NULL || Name == NULL || OutBuffer == NULL || OutSize == NULL)
+    if (Record == NULL || Name == NULL || Scratch == NULL || OutBuffer == NULL || OutSize == NULL ||
+        HeapAllocated == NULL)
     {
         return FALSE;
     }
 
     *OutBuffer = NULL;
     *OutSize = 0;
+    *HeapAllocated = FALSE;
 
     ZeroMemory(&descriptor, sizeof(descriptor));
     descriptor.PropertyName = (ULONGLONG)(ULONG_PTR)Name;
@@ -24,19 +37,34 @@ static BOOL ControllerEtwGetPropertyRaw(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR
         return FALSE;
     }
 
-    *OutBuffer = (PBYTE)calloc(1, *OutSize + sizeof(WCHAR));
-    if (*OutBuffer == NULL)
+    if (*OutSize + sizeof(WCHAR) <= ScratchCapacity)
     {
-        *OutSize = 0;
-        return FALSE;
+        /* Fast path: property fits in caller-supplied scratch — no heap alloc. */
+        ZeroMemory(Scratch, *OutSize + sizeof(WCHAR));
+        *OutBuffer = Scratch;
+    }
+    else
+    {
+        /* Slow path: oversized property — fall back to heap. */
+        *OutBuffer = (PBYTE)calloc(1, *OutSize + sizeof(WCHAR));
+        if (*OutBuffer == NULL)
+        {
+            *OutSize = 0;
+            return FALSE;
+        }
+        *HeapAllocated = TRUE;
     }
 
     status = TdhGetProperty(Record, 0, NULL, 1, &descriptor, *OutSize, *OutBuffer);
     if (status != ERROR_SUCCESS)
     {
-        free(*OutBuffer);
+        if (*HeapAllocated)
+        {
+            free(*OutBuffer);
+        }
         *OutBuffer = NULL;
         *OutSize = 0;
+        *HeapAllocated = FALSE;
         return FALSE;
     }
 
@@ -44,8 +72,10 @@ static BOOL ControllerEtwGetPropertyRaw(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR
 }
 BOOL ControllerEtwGetU64Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ ULONGLONG *Value)
 {
+    BYTE scratch[BLACKBIRD_ETW_PROP_SCRATCH_BYTES];
     PBYTE raw = NULL;
     ULONG size = 0;
+    BOOL heapAllocated = FALSE;
 
     if (Value == NULL)
     {
@@ -53,7 +83,7 @@ BOOL ControllerEtwGetU64Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, 
     }
     *Value = 0;
 
-    if (!ControllerEtwGetPropertyRaw(Record, Name, &raw, &size))
+    if (!ControllerEtwGetPropertyRaw(Record, Name, scratch, sizeof(scratch), &raw, &size, &heapAllocated))
     {
         return FALSE;
     }
@@ -61,23 +91,28 @@ BOOL ControllerEtwGetU64Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, 
     if (size >= sizeof(ULONGLONG))
     {
         *Value = *(ULONGLONG *)raw;
-        free(raw);
+        if (heapAllocated)
+            free(raw);
         return TRUE;
     }
     if (size >= sizeof(ULONG))
     {
         *Value = *(ULONG *)raw;
-        free(raw);
+        if (heapAllocated)
+            free(raw);
         return TRUE;
     }
 
-    free(raw);
+    if (heapAllocated)
+        free(raw);
     return FALSE;
 }
 BOOL ControllerEtwGetU32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ ULONG *Value)
 {
+    BYTE scratch[BLACKBIRD_ETW_PROP_SCRATCH_BYTES];
     PBYTE raw = NULL;
     ULONG size = 0;
+    BOOL heapAllocated = FALSE;
 
     if (Value == NULL)
     {
@@ -85,24 +120,28 @@ BOOL ControllerEtwGetU32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, 
     }
     *Value = 0;
 
-    if (!ControllerEtwGetPropertyRaw(Record, Name, &raw, &size))
+    if (!ControllerEtwGetPropertyRaw(Record, Name, scratch, sizeof(scratch), &raw, &size, &heapAllocated))
     {
         return FALSE;
     }
     if (size >= sizeof(ULONG))
     {
         *Value = *(ULONG *)raw;
-        free(raw);
+        if (heapAllocated)
+            free(raw);
         return TRUE;
     }
 
-    free(raw);
+    if (heapAllocated)
+        free(raw);
     return FALSE;
 }
 BOOL ControllerEtwGetI32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ LONG *Value)
 {
+    BYTE scratch[BLACKBIRD_ETW_PROP_SCRATCH_BYTES];
     PBYTE raw = NULL;
     ULONG size = 0;
+    BOOL heapAllocated = FALSE;
 
     if (Value == NULL)
     {
@@ -110,24 +149,28 @@ BOOL ControllerEtwGetI32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, 
     }
     *Value = 0;
 
-    if (!ControllerEtwGetPropertyRaw(Record, Name, &raw, &size))
+    if (!ControllerEtwGetPropertyRaw(Record, Name, scratch, sizeof(scratch), &raw, &size, &heapAllocated))
     {
         return FALSE;
     }
     if (size >= sizeof(LONG))
     {
         *Value = *(LONG *)raw;
-        free(raw);
+        if (heapAllocated)
+            free(raw);
         return TRUE;
     }
 
-    free(raw);
+    if (heapAllocated)
+        free(raw);
     return FALSE;
 }
 BOOL ControllerEtwGetU8Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ UCHAR *Value)
 {
+    BYTE scratch[BLACKBIRD_ETW_PROP_SCRATCH_BYTES];
     PBYTE raw = NULL;
     ULONG size = 0;
+    BOOL heapAllocated = FALSE;
 
     if (Value == NULL)
     {
@@ -135,24 +178,28 @@ BOOL ControllerEtwGetU8Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _
     }
     *Value = 0;
 
-    if (!ControllerEtwGetPropertyRaw(Record, Name, &raw, &size))
+    if (!ControllerEtwGetPropertyRaw(Record, Name, scratch, sizeof(scratch), &raw, &size, &heapAllocated))
     {
         return FALSE;
     }
     if (size >= sizeof(UCHAR))
     {
         *Value = *raw;
-        free(raw);
+        if (heapAllocated)
+            free(raw);
         return TRUE;
     }
 
-    free(raw);
+    if (heapAllocated)
+        free(raw);
     return FALSE;
 }
 BOOL ControllerEtwGetBoolProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ BOOL *Value)
 {
+    BYTE scratch[BLACKBIRD_ETW_PROP_SCRATCH_BYTES];
     PBYTE raw = NULL;
     ULONG size = 0;
+    BOOL heapAllocated = FALSE;
 
     if (Value == NULL)
     {
@@ -160,31 +207,36 @@ BOOL ControllerEtwGetBoolProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
     }
     *Value = FALSE;
 
-    if (!ControllerEtwGetPropertyRaw(Record, Name, &raw, &size))
+    if (!ControllerEtwGetPropertyRaw(Record, Name, scratch, sizeof(scratch), &raw, &size, &heapAllocated))
     {
         return FALSE;
     }
     if (size >= sizeof(ULONG))
     {
         *Value = (*(ULONG *)raw != 0) ? TRUE : FALSE;
-        free(raw);
+        if (heapAllocated)
+            free(raw);
         return TRUE;
     }
     if (size >= sizeof(UCHAR))
     {
         *Value = (*raw != 0) ? TRUE : FALSE;
-        free(raw);
+        if (heapAllocated)
+            free(raw);
         return TRUE;
     }
 
-    free(raw);
+    if (heapAllocated)
+        free(raw);
     return FALSE;
 }
 BOOL ControllerEtwGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                                         _Out_writes_z_(OutputChars) PSTR Output, _In_ size_t OutputChars)
+                                  _Out_writes_z_(OutputChars) PSTR Output, _In_ size_t OutputChars)
 {
+    BYTE scratch[BLACKBIRD_ETW_PROP_SCRATCH_BYTES];
     PBYTE raw = NULL;
     ULONG size = 0;
+    BOOL heapAllocated = FALSE;
 
     if (Output == NULL || OutputChars == 0)
     {
@@ -192,7 +244,7 @@ BOOL ControllerEtwGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
     }
     Output[0] = '\0';
 
-    if (!ControllerEtwGetPropertyRaw(Record, Name, &raw, &size))
+    if (!ControllerEtwGetPropertyRaw(Record, Name, scratch, sizeof(scratch), &raw, &size, &heapAllocated))
     {
         return FALSE;
     }
@@ -200,18 +252,22 @@ BOOL ControllerEtwGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
     if (size > 0)
     {
         (void)StringCchCopyA(Output, OutputChars, (PCSTR)raw);
-        free(raw);
+        if (heapAllocated)
+            free(raw);
         return TRUE;
     }
 
-    free(raw);
+    if (heapAllocated)
+        free(raw);
     return FALSE;
 }
 BOOL ControllerEtwGetWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                                         _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
+                                  _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
 {
+    BYTE scratch[BLACKBIRD_ETW_PROP_SCRATCH_BYTES];
     PBYTE raw = NULL;
     ULONG size = 0;
+    BOOL heapAllocated = FALSE;
 
     if (Output == NULL || OutputChars == 0)
     {
@@ -219,7 +275,7 @@ BOOL ControllerEtwGetWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
     }
     Output[0] = L'\0';
 
-    if (!ControllerEtwGetPropertyRaw(Record, Name, &raw, &size))
+    if (!ControllerEtwGetPropertyRaw(Record, Name, scratch, sizeof(scratch), &raw, &size, &heapAllocated))
     {
         return FALSE;
     }
@@ -227,19 +283,24 @@ BOOL ControllerEtwGetWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
     if (size >= sizeof(WCHAR))
     {
         (void)StringCchCopyW(Output, OutputChars, (PCWSTR)raw);
-        free(raw);
+        if (heapAllocated)
+            free(raw);
         return TRUE;
     }
 
-    free(raw);
+    if (heapAllocated)
+        free(raw);
     return FALSE;
 }
-BOOL ControllerEtwCopyBinaryProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_bytes_(Capacity) PBYTE Output,
-                                            _In_ ULONG Capacity, _Out_opt_ UINT32 *BytesCopied)
+BOOL ControllerEtwCopyBinaryProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
+                                     _Out_writes_bytes_(Capacity) PBYTE Output, _In_ ULONG Capacity,
+                                     _Out_opt_ UINT32 *BytesCopied)
 {
+    BYTE scratch[BLACKBIRD_ETW_PROP_SCRATCH_BYTES];
     PBYTE raw = NULL;
     ULONG size = 0;
     ULONG copy = 0;
+    BOOL heapAllocated = FALSE;
 
     if (Output == NULL || Capacity == 0)
     {
@@ -252,7 +313,7 @@ BOOL ControllerEtwCopyBinaryProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Na
     }
     ZeroMemory(Output, Capacity);
 
-    if (!ControllerEtwGetPropertyRaw(Record, Name, &raw, &size))
+    if (!ControllerEtwGetPropertyRaw(Record, Name, scratch, sizeof(scratch), &raw, &size, &heapAllocated))
     {
         return FALSE;
     }
@@ -262,7 +323,8 @@ BOOL ControllerEtwCopyBinaryProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Na
     {
         CopyMemory(Output, raw, copy);
     }
-    free(raw);
+    if (heapAllocated)
+        free(raw);
 
     if (BytesCopied != NULL)
     {
@@ -494,8 +556,8 @@ static BOOL ControllerClientMatchPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLE
                     Client->Subscriptions[i].LastSeenTick = 0;
                 }
                 ControllerMarkDriverSubscriptionsDirty();
-                ControllerLog("[MON] pending launch matched clientPid=%lu targetPid=%lu image=%ws\n",
-                              Client->ProcessId, eventPid, eventImagePath);
+                ControllerLog("[MON] pending launch matched clientPid=%lu targetPid=%lu image=%ws\n", Client->ProcessId,
+                              eventPid, eventImagePath);
                 return TRUE;
             }
         }
@@ -510,8 +572,8 @@ static BOOL ControllerClientMatchPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLE
             Client->Subscriptions[Client->SubscriptionCount].LastSeenTick = 0;
             Client->SubscriptionCount += 1;
             ControllerMarkDriverSubscriptionsDirty();
-            ControllerLog("[MON] pending launch matched clientPid=%lu targetPid=%lu image=%ws\n",
-                          Client->ProcessId, eventPid, eventImagePath);
+            ControllerLog("[MON] pending launch matched clientPid=%lu targetPid=%lu image=%ws\n", Client->ProcessId,
+                          eventPid, eventImagePath);
         }
     }
 
@@ -588,9 +650,3 @@ VOID ControllerDispatchEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
         ControllerClientReleaseFromDispatch(client);
     }
 }
-
-
-
-
-
-

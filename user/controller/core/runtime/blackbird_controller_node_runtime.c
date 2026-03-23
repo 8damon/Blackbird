@@ -42,7 +42,7 @@ static BYTE g_NodeIdentityPrivateBlob[BLACKBIRD_NODE_IDENTITY_PRIVATE_BLOB_CAPAC
 static ULONG g_NodeIdentityPrivateBlobLength = 0;
 static BYTE g_NodeIdentityPublicBlob[BLACKBIRD_NODE_IDENTITY_PUBLIC_BLOB_CAPACITY];
 static ULONG g_NodeIdentityPublicBlobLength = 0;
-static CHAR g_NodeIdentityFingerprint[BLACKBIRD_NODE_FINGERPRINT_CHARS] = { 0 };
+static CHAR g_NodeIdentityFingerprint[BLACKBIRD_NODE_FINGERPRINT_CHARS] = {0};
 static const CHAR g_NodeStatusQuery[] = BLACKBIRD_NODE_STATUS_QUERY;
 
 static BOOL ControllerNodeIsSocketValid(_In_ SOCKET value)
@@ -185,8 +185,7 @@ static VOID ControllerNodeGetVersionString(_Out_writes_z_(destinationChars) PSTR
     (void)StringCchCopyA(destination, destinationChars, "unknown");
 }
 
-static VOID ControllerNodeFormatUtcNow(_Out_writes_z_(destinationChars) PSTR destination,
-                                       _In_ size_t destinationChars)
+static VOID ControllerNodeFormatUtcNow(_Out_writes_z_(destinationChars) PSTR destination, _In_ size_t destinationChars)
 {
     SYSTEMTIME systemTime;
 
@@ -212,8 +211,7 @@ static BOOL ControllerNodeEnsureIdentityLock(VOID)
 }
 
 static BOOL ControllerNodeBuildProgramDataPath(_Out_writes_z_(destinationChars) PWSTR destination,
-                                               _In_ size_t destinationChars,
-                                               _In_opt_z_ PCWSTR suffix)
+                                               _In_ size_t destinationChars, _In_opt_z_ PCWSTR suffix)
 {
     WCHAR programData[MAX_PATH];
     DWORD copied;
@@ -231,8 +229,8 @@ static BOOL ControllerNodeBuildProgramDataPath(_Out_writes_z_(destinationChars) 
 
     if (suffix != NULL && suffix[0] != L'\0')
     {
-        return SUCCEEDED(StringCchPrintfW(destination, destinationChars, L"%s\\Blackbird\\Node\\%s", programData,
-                                          suffix));
+        return SUCCEEDED(
+            StringCchPrintfW(destination, destinationChars, L"%s\\Blackbird\\Node\\%s", programData, suffix));
     }
 
     return SUCCEEDED(StringCchPrintfW(destination, destinationChars, L"%s\\Blackbird\\Node", programData));
@@ -277,8 +275,7 @@ static BOOL ControllerNodeEnsureStorageDirectories(VOID)
     {
         return FALSE;
     }
-    if (!ControllerNodeBuildProgramDataPath(path, RTL_NUMBER_OF(path), L"jobs") ||
-        !ControllerNodeEnsureDirectory(path))
+    if (!ControllerNodeBuildProgramDataPath(path, RTL_NUMBER_OF(path), L"jobs") || !ControllerNodeEnsureDirectory(path))
     {
         return FALSE;
     }
@@ -443,10 +440,9 @@ static BOOL ControllerNodeComputeFingerprint(_In_reads_bytes_(publicBlobLength) 
 
     return TRUE;
 }
-static BOOL ControllerNodeGenerateIdentity(_Out_writes_bytes_(BLACKBIRD_NODE_IDENTITY_PRIVATE_BLOB_CAPACITY) PBYTE privateBlob,
-                                           _Out_ PULONG privateBlobLength,
-                                           _Out_writes_bytes_(BLACKBIRD_NODE_IDENTITY_PUBLIC_BLOB_CAPACITY) PBYTE publicBlob,
-                                           _Out_ PULONG publicBlobLength)
+static BOOL ControllerNodeGenerateIdentity(
+    _Out_writes_bytes_(BLACKBIRD_NODE_IDENTITY_PRIVATE_BLOB_CAPACITY) PBYTE privateBlob, _Out_ PULONG privateBlobLength,
+    _Out_writes_bytes_(BLACKBIRD_NODE_IDENTITY_PUBLIC_BLOB_CAPACITY) PBYTE publicBlob, _Out_ PULONG publicBlobLength)
 {
     BCRYPT_ALG_HANDLE algorithm = NULL;
     BCRYPT_KEY_HANDLE keyHandle = NULL;
@@ -510,7 +506,7 @@ static BOOL ControllerNodeEnsureIdentityLoaded(VOID)
     DWORD publicBytes = 0;
     ULONG privateBlobLength = 0;
     ULONG publicBlobLength = 0;
-    CHAR fingerprint[BLACKBIRD_NODE_FINGERPRINT_CHARS] = { 0 };
+    CHAR fingerprint[BLACKBIRD_NODE_FINGERPRINT_CHARS] = {0};
     BOOL success = FALSE;
 
     if (!ControllerNodeEnsureIdentityLock() || !ControllerNodeEnsureStorageDirectories())
@@ -526,7 +522,8 @@ static BOOL ControllerNodeEnsureIdentityLoaded(VOID)
         return TRUE;
     }
 
-    if (!ControllerNodeBuildProgramDataPath(privatePath, RTL_NUMBER_OF(privatePath), L"identity\\node-identity.eccpriv") ||
+    if (!ControllerNodeBuildProgramDataPath(privatePath, RTL_NUMBER_OF(privatePath),
+                                            L"identity\\node-identity.eccpriv") ||
         !ControllerNodeBuildProgramDataPath(publicPath, RTL_NUMBER_OF(publicPath), L"identity\\node-identity.eccpub"))
     {
         LeaveCriticalSection(&g_NodeIdentityLock);
@@ -534,8 +531,8 @@ static BOOL ControllerNodeEnsureIdentityLoaded(VOID)
     }
 
     if (ControllerNodeReadSmallFile(privatePath, privateBlob, sizeof(privateBlob), &privateBytes) &&
-        ControllerNodeReadSmallFile(publicPath, publicBlob, sizeof(publicBlob), &publicBytes) &&
-        privateBytes != 0 && publicBytes != 0)
+        ControllerNodeReadSmallFile(publicPath, publicBlob, sizeof(publicBlob), &publicBytes) && privateBytes != 0 &&
+        publicBytes != 0)
     {
         privateBlobLength = privateBytes;
         publicBlobLength = publicBytes;
@@ -610,7 +607,7 @@ static BOOL ControllerNodePinTrustedOperatorFingerprint(_In_z_ PCSTR fingerprint
 
 static BOOL ControllerNodeEnsureTrustedOperator(_In_z_ PCSTR fingerprint)
 {
-    CHAR trusted[BLACKBIRD_NODE_FINGERPRINT_CHARS] = { 0 };
+    CHAR trusted[BLACKBIRD_NODE_FINGERPRINT_CHARS] = {0};
 
     if (fingerprint == NULL || fingerprint[0] == '\0')
     {
@@ -626,8 +623,7 @@ static BOOL ControllerNodeEnsureTrustedOperator(_In_z_ PCSTR fingerprint)
 }
 
 static BOOL ControllerNodeBase64Encode(_In_reads_bytes_(dataLength) const BYTE *data, _In_ DWORD dataLength,
-                                       _Out_writes_z_(destinationChars) PSTR destination,
-                                       _In_ DWORD destinationChars)
+                                       _Out_writes_z_(destinationChars) PSTR destination, _In_ DWORD destinationChars)
 {
     DWORD required = destinationChars;
 
@@ -699,7 +695,7 @@ static BOOL ControllerNodeJsonExtractUint64(_In_z_ PCSTR json, _In_z_ PCSTR key,
     PCSTR start;
 
     if (json == NULL || key == NULL || value == NULL ||
-        FAILED(StringCchPrintfA(pattern, RTL_NUMBER_OF(pattern), "\"%s\":" , key)))
+        FAILED(StringCchPrintfA(pattern, RTL_NUMBER_OF(pattern), "\"%s\":", key)))
     {
         return FALSE;
     }
@@ -853,7 +849,8 @@ static BOOL ControllerNodeBuildJobDirectoryPath(_In_z_ PCSTR jobId, _Out_writes_
     WCHAR safeJobIdWide[80];
     WCHAR suffix[160];
 
-    if (!ControllerNodeEnsureStorageDirectories() || !ControllerNodeSanitizeToken(jobId, safeJobId, RTL_NUMBER_OF(safeJobId)) ||
+    if (!ControllerNodeEnsureStorageDirectories() ||
+        !ControllerNodeSanitizeToken(jobId, safeJobId, RTL_NUMBER_OF(safeJobId)) ||
         MultiByteToWideChar(CP_UTF8, 0, safeJobId, -1, safeJobIdWide, RTL_NUMBER_OF(safeJobIdWide)) <= 0 ||
         FAILED(StringCchPrintfW(suffix, RTL_NUMBER_OF(suffix), L"jobs\\%s", safeJobIdWide)))
     {
@@ -1092,10 +1089,10 @@ static VOID ControllerNodeBuildNonce(_In_ ULONGLONG sequence, _In_ BOOL fromClie
 static BOOL ControllerNodeSocketSetTimeouts(_In_ SOCKET socketHandle, _In_ DWORD receiveTimeoutMs,
                                             _In_ DWORD sendTimeoutMs)
 {
-    return (setsockopt(socketHandle, SOL_SOCKET, SO_RCVTIMEO, (const CHAR *)&receiveTimeoutMs,
-                       sizeof(receiveTimeoutMs)) == 0 &&
-            setsockopt(socketHandle, SOL_SOCKET, SO_SNDTIMEO, (const CHAR *)&sendTimeoutMs,
-                       sizeof(sendTimeoutMs)) == 0);
+    return (
+        setsockopt(socketHandle, SOL_SOCKET, SO_RCVTIMEO, (const CHAR *)&receiveTimeoutMs, sizeof(receiveTimeoutMs)) ==
+            0 &&
+        setsockopt(socketHandle, SOL_SOCKET, SO_SNDTIMEO, (const CHAR *)&sendTimeoutMs, sizeof(sendTimeoutMs)) == 0);
 }
 
 static BOOL ControllerNodeCreateUdpListener(_In_ USHORT port, _Out_ SOCKET *socketHandle)
@@ -1202,11 +1199,10 @@ static BOOL ControllerNodeBuildWireMessage(_In_z_ PCSTR kind, _Out_writes_z_(buf
     return SUCCEEDED(StringCchPrintfA(
         buffer, bufferChars,
         "{\"kind\":\"%s\",\"protocol\":1,\"nodeId\":\"%s\",\"hostName\":\"%s\",\"displayName\":\"%s\",\"controllerVersion\":\"%s\",\"osVersion\":\"%s\",\"kernelVersion\":\"%s\",\"statusPort\":%u,\"commandPort\":%u,\"identityFingerprint\":\"%s\",\"busy\":%s,\"driverConnected\":%s,\"threatIntelEnabled\":%s,\"threatIntelEnableError\":%lu,\"activeClients\":%lu,\"timestampUtc\":\"%s\"}",
-        kind, g_NodeIdentityFingerprint, hostName, hostName, BLACKBIRD_CONTROLLER_VERSIONA, osVersion,
-        kernelVersion, (UINT)BLACKBIRD_OPERATOR_STATUS_PORT, (UINT)BLACKBIRD_OPERATOR_COMMAND_PORT,
-        g_NodeIdentityFingerprint, activeClients != 0 ? "true" : "false",
-        driverConnected ? "true" : "false", threatIntelEnabled ? "true" : "false",
-        threatIntelEnableError, activeClients, timestampUtc));
+        kind, g_NodeIdentityFingerprint, hostName, hostName, BLACKBIRD_CONTROLLER_VERSIONA, osVersion, kernelVersion,
+        (UINT)BLACKBIRD_OPERATOR_STATUS_PORT, (UINT)BLACKBIRD_OPERATOR_COMMAND_PORT, g_NodeIdentityFingerprint,
+        activeClients != 0 ? "true" : "false", driverConnected ? "true" : "false",
+        threatIntelEnabled ? "true" : "false", threatIntelEnableError, activeClients, timestampUtc));
 }
 
 static BOOL ControllerNodeComputeSessionKey(_In_reads_bytes_(secretLength) const BYTE *secretMaterial,
@@ -1241,10 +1237,9 @@ static BOOL ControllerNodeComputeSessionKey(_In_reads_bytes_(secretLength) const
 
 static BOOL ControllerNodeBuildTranscript(_In_z_ PCSTR operatorFingerprint, _In_z_ PCSTR nodeId,
                                           _In_z_ PCSTR clientNonceBase64, _In_z_ PCSTR serverNonceBase64,
-                                          _In_z_ PCSTR clientEcdhPublicBase64,
-                                          _In_z_ PCSTR serverEcdhPublicBase64,
-                                          _Out_writes_bytes_(bufferCapacity) PBYTE buffer,
-                                          _In_ DWORD bufferCapacity, _Out_ DWORD *bytesWritten)
+                                          _In_z_ PCSTR clientEcdhPublicBase64, _In_z_ PCSTR serverEcdhPublicBase64,
+                                          _Out_writes_bytes_(bufferCapacity) PBYTE buffer, _In_ DWORD bufferCapacity,
+                                          _Out_ DWORD *bytesWritten)
 {
     int written;
 
@@ -1264,9 +1259,8 @@ static BOOL ControllerNodeBuildTranscript(_In_z_ PCSTR operatorFingerprint, _In_
 }
 
 static BOOL ControllerNodeEcdsaSignData(_In_reads_bytes_(privateBlobLength) const BYTE *privateBlob,
-                                        _In_ ULONG privateBlobLength,
-                                        _In_reads_bytes_(dataLength) const BYTE *data, _In_ ULONG dataLength,
-                                        _Out_writes_bytes_(signatureCapacity) PBYTE signature,
+                                        _In_ ULONG privateBlobLength, _In_reads_bytes_(dataLength) const BYTE *data,
+                                        _In_ ULONG dataLength, _Out_writes_bytes_(signatureCapacity) PBYTE signature,
                                         _In_ ULONG signatureCapacity, _Out_ ULONG *signatureLength)
 {
     BCRYPT_ALG_HANDLE algorithm = NULL;
@@ -1316,8 +1310,8 @@ Cleanup:
 }
 
 static BOOL ControllerNodeEcdsaVerifyData(_In_reads_bytes_(publicBlobLength) const BYTE *publicBlob,
-                                          _In_ ULONG publicBlobLength,
-                                          _In_reads_bytes_(dataLength) const BYTE *data, _In_ ULONG dataLength,
+                                          _In_ ULONG publicBlobLength, _In_reads_bytes_(dataLength) const BYTE *data,
+                                          _In_ ULONG dataLength,
                                           _In_reads_bytes_(signatureLength) const BYTE *signature,
                                           _In_ ULONG signatureLength)
 {
@@ -1345,8 +1339,8 @@ static BOOL ControllerNodeEcdsaVerifyData(_In_reads_bytes_(publicBlobLength) con
         goto Cleanup;
     }
 
-    status = BCryptVerifySignature(keyHandle, NULL, digest, RTL_NUMBER_OF(digest), (PUCHAR)signature,
-                                   signatureLength, 0);
+    status =
+        BCryptVerifySignature(keyHandle, NULL, digest, RTL_NUMBER_OF(digest), (PUCHAR)signature, signatureLength, 0);
     success = BCRYPT_SUCCESS(status);
 
 Cleanup:
@@ -1404,8 +1398,7 @@ static BOOL ControllerNodeDeriveSecretMaterial(_In_ BCRYPT_KEY_HANDLE localPriva
     parameterDesc.cBuffers = 1;
     parameterDesc.pBuffers = &parameterBuffer;
 
-    status = BCryptDeriveKey(secret, BCRYPT_KDF_HASH, &parameterDesc, secretMaterial, secretCapacity,
-                             secretLength, 0);
+    status = BCryptDeriveKey(secret, BCRYPT_KDF_HASH, &parameterDesc, secretMaterial, secretCapacity, secretLength, 0);
     if (!BCRYPT_SUCCESS(status))
     {
         goto Cleanup;
@@ -1431,11 +1424,9 @@ Cleanup:
 }
 static BOOL ControllerNodeAesGcmTransform(_In_reads_bytes_(BLACKBIRD_NODE_SESSION_KEY_BYTES) const BYTE *sessionKey,
                                           _In_reads_bytes_(BLACKBIRD_NODE_NONCE_BYTES) const BYTE *nonce,
-                                          _In_reads_bytes_(inputLength) const BYTE *input,
-                                          _In_ ULONG inputLength,
+                                          _In_reads_bytes_(inputLength) const BYTE *input, _In_ ULONG inputLength,
                                           _Out_writes_bytes_(inputLength) PBYTE output,
-                                          _Inout_updates_bytes_(BLACKBIRD_NODE_TAG_BYTES) PBYTE tag,
-                                          _In_ BOOL encrypt)
+                                          _Inout_updates_bytes_(BLACKBIRD_NODE_TAG_BYTES) PBYTE tag, _In_ BOOL encrypt)
 {
     BCRYPT_ALG_HANDLE algorithm = NULL;
     BCRYPT_KEY_HANDLE keyHandle = NULL;
@@ -1518,8 +1509,8 @@ Cleanup:
 
 static BOOL ControllerNodeEncryptEnvelope(_Inout_ PBLACKBIRD_NODE_SECURE_SESSION session,
                                           _In_reads_bytes_(plaintextLength) const BYTE *plaintext,
-                                          _In_ DWORD plaintextLength,
-                                          _Out_writes_z_(bufferChars) PSTR buffer, _In_ size_t bufferChars)
+                                          _In_ DWORD plaintextLength, _Out_writes_z_(bufferChars) PSTR buffer,
+                                          _In_ size_t bufferChars)
 {
     BYTE nonce[BLACKBIRD_NODE_NONCE_BYTES];
     BYTE tag[BLACKBIRD_NODE_TAG_BYTES];
@@ -1544,10 +1535,9 @@ static BOOL ControllerNodeEncryptEnvelope(_Inout_ PBLACKBIRD_NODE_SECURE_SESSION
         return FALSE;
     }
 
-    return SUCCEEDED(StringCchPrintfA(buffer, bufferChars,
-                                      "{\"kind\":\"%s\",\"seq\":%llu,\"nonce\":\"%s\",\"tag\":\"%s\",\"ciphertext\":\"%s\"}",
-                                      BLACKBIRD_NODE_SECURE_KIND, session->OutboundSequence, nonceBase64,
-                                      tagBase64, ciphertextBase64));
+    return SUCCEEDED(StringCchPrintfA(
+        buffer, bufferChars, "{\"kind\":\"%s\",\"seq\":%llu,\"nonce\":\"%s\",\"tag\":\"%s\",\"ciphertext\":\"%s\"}",
+        BLACKBIRD_NODE_SECURE_KIND, session->OutboundSequence, nonceBase64, tagBase64, ciphertextBase64));
 }
 
 static BOOL ControllerNodeDecryptEnvelope(_Inout_ PBLACKBIRD_NODE_SECURE_SESSION session, _In_z_ PCSTR json,
@@ -1613,8 +1603,8 @@ static BOOL ControllerNodeBuildCommandResponse(_In_ BOOL ok, _In_opt_z_ PCSTR re
                                       ok ? "true" : "false", escapedReply, escapedError));
 }
 
-static BOOL ControllerNodeBuildCommandResponseWithPayload(_In_ BOOL ok, _In_opt_z_ PCSTR reply,
-                                                          _In_opt_z_ PCSTR error, _In_opt_z_ PCSTR payloadJson,
+static BOOL ControllerNodeBuildCommandResponseWithPayload(_In_ BOOL ok, _In_opt_z_ PCSTR reply, _In_opt_z_ PCSTR error,
+                                                          _In_opt_z_ PCSTR payloadJson,
                                                           _Out_writes_z_(bufferChars) PSTR buffer,
                                                           _In_ size_t bufferChars)
 {
@@ -1627,10 +1617,9 @@ static BOOL ControllerNodeBuildCommandResponseWithPayload(_In_ BOOL ok, _In_opt_
         return FALSE;
     }
 
-    return SUCCEEDED(StringCchPrintfA(buffer, bufferChars,
-                                      "{\"ok\":%s,\"reply\":\"%s\",\"error\":\"%s\",\"payload\":%s}",
-                                      ok ? "true" : "false", escapedReply, escapedError,
-                                      payloadJson != NULL ? payloadJson : "null"));
+    return SUCCEEDED(StringCchPrintfA(
+        buffer, bufferChars, "{\"ok\":%s,\"reply\":\"%s\",\"error\":\"%s\",\"payload\":%s}", ok ? "true" : "false",
+        escapedReply, escapedError, payloadJson != NULL ? payloadJson : "null"));
 }
 
 static BOOL ControllerNodeHandleUploadStart(_In_z_ PCSTR plaintext, _Out_writes_z_(responseChars) PSTR responseJson,
@@ -1658,8 +1647,8 @@ static BOOL ControllerNodeHandleUploadStart(_In_z_ PCSTR plaintext, _Out_writes_
         !ControllerNodeWriteSmallFile(namePath, (const BYTE *)safeFileName, (DWORD)strlen(safeFileName)) ||
         !ControllerNodeJsonEscapeString(safeFileName, escapedName, RTL_NUMBER_OF(escapedName)) ||
         FAILED(StringCchPrintfA(payloadJson, RTL_NUMBER_OF(payloadJson),
-                                "{\"jobId\":\"%s\",\"fileName\":\"%s\",\"totalBytes\":%llu}",
-                                jobId, escapedName, totalBytes)))
+                                "{\"jobId\":\"%s\",\"fileName\":\"%s\",\"totalBytes\":%llu}", jobId, escapedName,
+                                totalBytes)))
     {
         return ControllerNodeBuildCommandResponse(FALSE, "", "Upload start payload was invalid.", responseJson,
                                                   responseChars);
@@ -1696,10 +1685,12 @@ static BOOL ControllerNodeHandleUploadChunk(_In_z_ PCSTR plaintext, _Out_writes_
 
     fileHandle = CreateFileW(samplePath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
                              FILE_ATTRIBUTE_NORMAL, NULL);
-    ok = (fileHandle != INVALID_HANDLE_VALUE && GetFileSizeEx(fileHandle, &size) && size.QuadPart <= BLACKBIRD_NODE_MAX_UPLOAD_BYTES &&
-          SUCCEEDED(StringCchPrintfA(payloadJson, RTL_NUMBER_OF(payloadJson),
-                                     "{\"jobId\":\"%s\",\"chunkIndex\":%llu,\"receivedBytes\":%lu,\"storedBytes\":%llu}",
-                                     jobId, chunkIndex, (unsigned long)decoded, size.QuadPart)));
+    ok =
+        (fileHandle != INVALID_HANDLE_VALUE && GetFileSizeEx(fileHandle, &size) &&
+         size.QuadPart <= BLACKBIRD_NODE_MAX_UPLOAD_BYTES &&
+         SUCCEEDED(StringCchPrintfA(payloadJson, RTL_NUMBER_OF(payloadJson),
+                                    "{\"jobId\":\"%s\",\"chunkIndex\":%llu,\"receivedBytes\":%lu,\"storedBytes\":%llu}",
+                                    jobId, chunkIndex, (unsigned long)decoded, size.QuadPart)));
     if (fileHandle != INVALID_HANDLE_VALUE)
     {
         CloseHandle(fileHandle);
@@ -1749,37 +1740,38 @@ static BOOL ControllerNodeHandleAnalyzeFile(_In_z_ PCSTR plaintext, _Out_writes_
     }
 
     ControllerNodeFormatUtcNow(timestampUtc, RTL_NUMBER_OF(timestampUtc));
-    success = SUCCEEDED(StringCchPrintfA(
-                  analysisJson, RTL_NUMBER_OF(analysisJson),
-                  "{"
-                  "\"schema\":\"blackbird.operator.analysis.v1\","
-                  "\"jobId\":\"%s\","
-                  "\"nodeId\":\"%s\","
-                  "\"controllerVersion\":\"%s\","
-                  "\"timestampUtc\":\"%s\","
-                  "\"sample\":{"
-                  "\"fileName\":\"%s\","
-                  "\"path\":\"%s\","
-                  "\"size\":%lu,"
-                  "\"sha256\":\"%s\""
-                  "},"
-                  "\"blackbird\":{"
-                  "\"analysisMode\":\"node-local-file-triage\","
-                  "\"driverConnected\":%s,"
-                  "\"threatIntelEnabled\":%s"
-                  "},"
-                  "\"nextStage\":{"
-                  "\"recommendedHostAction\":\"send this JSON artifact into SVR on the operator host\","
-                  "\"artifactFileName\":\"analysis.json\""
-                  "}"
-                  "}",
-                  jobId, g_NodeIdentityFingerprint, BLACKBIRD_CONTROLLER_VERSIONA, timestampUtc, escapedDisplayName,
-                  escapedSamplePath, (unsigned long)fileBytesLength, sha256Hex, g_DriverHandle != INVALID_HANDLE_VALUE ? "true" : "false",
-                  g_ThreatIntelEnabled ? "true" : "false")) &&
-              ControllerNodeWriteSmallFile(analysisPath, (const BYTE *)analysisJson, (DWORD)strlen(analysisJson)) &&
-              SUCCEEDED(StringCchPrintfA(payloadJson, RTL_NUMBER_OF(payloadJson),
-                                         "{\"jobId\":\"%s\",\"artifact\":\"analysis.json\",\"size\":%u}",
-                                         jobId, (unsigned int)strlen(analysisJson)));
+    success =
+        SUCCEEDED(StringCchPrintfA(
+            analysisJson, RTL_NUMBER_OF(analysisJson),
+            "{"
+            "\"schema\":\"blackbird.operator.analysis.v1\","
+            "\"jobId\":\"%s\","
+            "\"nodeId\":\"%s\","
+            "\"controllerVersion\":\"%s\","
+            "\"timestampUtc\":\"%s\","
+            "\"sample\":{"
+            "\"fileName\":\"%s\","
+            "\"path\":\"%s\","
+            "\"size\":%lu,"
+            "\"sha256\":\"%s\""
+            "},"
+            "\"blackbird\":{"
+            "\"analysisMode\":\"node-local-file-triage\","
+            "\"driverConnected\":%s,"
+            "\"threatIntelEnabled\":%s"
+            "},"
+            "\"nextStage\":{"
+            "\"recommendedHostAction\":\"send this JSON artifact into SVR on the operator host\","
+            "\"artifactFileName\":\"analysis.json\""
+            "}"
+            "}",
+            jobId, g_NodeIdentityFingerprint, BLACKBIRD_CONTROLLER_VERSIONA, timestampUtc, escapedDisplayName,
+            escapedSamplePath, (unsigned long)fileBytesLength, sha256Hex,
+            g_DriverHandle != INVALID_HANDLE_VALUE ? "true" : "false", g_ThreatIntelEnabled ? "true" : "false")) &&
+        ControllerNodeWriteSmallFile(analysisPath, (const BYTE *)analysisJson, (DWORD)strlen(analysisJson)) &&
+        SUCCEEDED(StringCchPrintfA(payloadJson, RTL_NUMBER_OF(payloadJson),
+                                   "{\"jobId\":\"%s\",\"artifact\":\"analysis.json\",\"size\":%u}", jobId,
+                                   (unsigned int)strlen(analysisJson)));
 
 Cleanup:
     if (fileBytes != NULL)
@@ -2032,8 +2024,8 @@ static BOOL ControllerNodeHandleCommandClient(_In_ SOCKET clientSocket)
         !ControllerNodeJsonExtractString(line, "clientNonce", clientNonceBase64, RTL_NUMBER_OF(clientNonceBase64)) ||
         !ControllerNodeJsonExtractString(line, "clientEcdhPublic", clientEcdhPublicBase64,
                                          RTL_NUMBER_OF(clientEcdhPublicBase64)) ||
-        !ControllerNodeBase64Decode(operatorIdentityPublicBase64, operatorIdentityPublic, sizeof(operatorIdentityPublic),
-                                    &operatorIdentityPublicLength) ||
+        !ControllerNodeBase64Decode(operatorIdentityPublicBase64, operatorIdentityPublic,
+                                    sizeof(operatorIdentityPublic), &operatorIdentityPublicLength) ||
         !ControllerNodeBase64Decode(clientNonceBase64, clientNonce, sizeof(clientNonce), &clientNonceLength) ||
         !ControllerNodeBase64Decode(clientEcdhPublicBase64, clientEcdhPublic, sizeof(clientEcdhPublic),
                                     &clientEcdhPublicLength))
@@ -2062,8 +2054,8 @@ static BOOL ControllerNodeHandleCommandClient(_In_ SOCKET clientSocket)
         !ControllerNodeBase64Encode(serverEcdhPublic, serverEcdhPublicLength, serverEcdhPublicBase64,
                                     RTL_NUMBER_OF(serverEcdhPublicBase64)) ||
         !ControllerNodeBuildTranscript(operatorFingerprint, g_NodeIdentityFingerprint, clientNonceBase64,
-                                       serverNonceBase64, clientEcdhPublicBase64, serverEcdhPublicBase64,
-                                       transcript, sizeof(transcript), &transcriptLength) ||
+                                       serverNonceBase64, clientEcdhPublicBase64, serverEcdhPublicBase64, transcript,
+                                       sizeof(transcript), &transcriptLength) ||
         !ControllerNodeEcdsaSignData(g_NodeIdentityPrivateBlob, g_NodeIdentityPrivateBlobLength, transcript,
                                      transcriptLength, serverSignature, sizeof(serverSignature),
                                      &serverSignatureLength) ||
@@ -2077,11 +2069,11 @@ static BOOL ControllerNodeHandleCommandClient(_In_ SOCKET clientSocket)
         CHAR nodeIdentityPublicBase64[256];
         if (!ControllerNodeBase64Encode(g_NodeIdentityPublicBlob, g_NodeIdentityPublicBlobLength,
                                         nodeIdentityPublicBase64, RTL_NUMBER_OF(nodeIdentityPublicBase64)) ||
-            FAILED(StringCchPrintfA(serverHello, RTL_NUMBER_OF(serverHello),
-                                    "{\"kind\":\"%s\",\"protocol\":1,\"nodeId\":\"%s\",\"identityFingerprint\":\"%s\",\"identityPublic\":\"%s\",\"serverNonce\":\"%s\",\"serverEcdhPublic\":\"%s\",\"signature\":\"%s\"}",
-                                    BLACKBIRD_NODE_SERVER_HELLO_KIND, g_NodeIdentityFingerprint,
-                                    g_NodeIdentityFingerprint, nodeIdentityPublicBase64, serverNonceBase64,
-                                    serverEcdhPublicBase64, serverSignatureBase64)) ||
+            FAILED(StringCchPrintfA(
+                serverHello, RTL_NUMBER_OF(serverHello),
+                "{\"kind\":\"%s\",\"protocol\":1,\"nodeId\":\"%s\",\"identityFingerprint\":\"%s\",\"identityPublic\":\"%s\",\"serverNonce\":\"%s\",\"serverEcdhPublic\":\"%s\",\"signature\":\"%s\"}",
+                BLACKBIRD_NODE_SERVER_HELLO_KIND, g_NodeIdentityFingerprint, g_NodeIdentityFingerprint,
+                nodeIdentityPublicBase64, serverNonceBase64, serverEcdhPublicBase64, serverSignatureBase64)) ||
             !ControllerNodeSendLine(clientSocket, serverHello) ||
             !ControllerNodeReceiveLine(clientSocket, line, RTL_NUMBER_OF(line)) ||
             !ControllerNodeJsonExtractString(line, "kind", authKind, RTL_NUMBER_OF(authKind)) ||
@@ -2096,10 +2088,10 @@ static BOOL ControllerNodeHandleCommandClient(_In_ SOCKET clientSocket)
             !ControllerNodeEcdsaVerifyData(operatorIdentityPublic, operatorIdentityPublicLength, transcript,
                                            transcriptLength, authSignature, authSignatureLength) ||
             !ControllerNodeEnsureTrustedOperator(operatorFingerprint) ||
-            !ControllerNodeDeriveSecretMaterial(ecdhKeyHandle, clientEcdhPublic, clientEcdhPublicLength,
-                                                secretMaterial, sizeof(secretMaterial), &secretLength) ||
-            !ControllerNodeComputeSessionKey(secretMaterial, secretLength, clientNonce, clientNonceLength,
-                                             serverNonce, sizeof(serverNonce), session.SessionKey))
+            !ControllerNodeDeriveSecretMaterial(ecdhKeyHandle, clientEcdhPublic, clientEcdhPublicLength, secretMaterial,
+                                                sizeof(secretMaterial), &secretLength) ||
+            !ControllerNodeComputeSessionKey(secretMaterial, secretLength, clientNonce, clientNonceLength, serverNonce,
+                                             sizeof(serverNonce), session.SessionKey))
         {
             goto Cleanup;
         }
@@ -2141,8 +2133,8 @@ static DWORD WINAPI ControllerNodeBeaconThreadProc(_In_ LPVOID Context)
 
         if (select(0, &readSet, NULL, NULL, &timeout) > 0 && FD_ISSET(socketHandle, &readSet))
         {
-            int received = recvfrom(socketHandle, query, sizeof(query) - 1, 0, (struct sockaddr *)&remoteAddress,
-                                    &remoteLength);
+            int received =
+                recvfrom(socketHandle, query, sizeof(query) - 1, 0, (struct sockaddr *)&remoteAddress, &remoteLength);
             if (received > 0)
             {
                 query[received] = '\0';

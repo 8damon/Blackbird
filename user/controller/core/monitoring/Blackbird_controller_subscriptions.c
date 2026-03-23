@@ -1,13 +1,20 @@
 #include "../blackbird_controller_private.h"
+
+/* Tracks whether g_PidIndex is stale.  Set whenever subscriptions change.
+ * Cleared after ControllerRebuildPidIndexLocked completes. */
+static volatile LONG g_PidIndexDirty = 1;
+
 BOOL ControllerIsValidStreamMask(_In_ DWORD StreamMask)
 {
     return ((StreamMask & BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK) != 0);
 }
 BOOL ControllerApplyDriverSubscriptions(VOID);
-static BOOL ControllerPruneDynamicSubscriptionsLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client, _In_ ULONGLONG NowTick);
+static BOOL ControllerPruneDynamicSubscriptionsLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                      _In_ ULONGLONG NowTick);
 VOID ControllerMarkDriverSubscriptionsDirty(VOID)
 {
     (void)InterlockedExchange(&g_DriverSubscriptionsDirty, 1);
+    (void)InterlockedExchange(&g_PidIndexDirty, 1);
 }
 BOOL ControllerApplyDriverSubscriptionsIfDirty(VOID)
 {
@@ -78,7 +85,8 @@ VOID ControllerClientReleaseFromDispatch(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Cl
     }
 }
 
-static VOID ControllerPidMaskSetBit(_Inout_updates_(BLACKBIRD_CONTROLLER_CLIENT_MASK_DWORDS) DWORD *Mask, _In_ DWORD Bit)
+static VOID ControllerPidMaskSetBit(_Inout_updates_(BLACKBIRD_CONTROLLER_CLIENT_MASK_DWORDS) DWORD *Mask,
+                                    _In_ DWORD Bit)
 {
     DWORD wordIndex;
     DWORD bitIndex;
@@ -113,8 +121,8 @@ static LONG ControllerFindPidIndexEntryLocked(_In_ DWORD ProcessId)
     return -1;
 }
 
-static BOOL ControllerAddPidIndexSubscriptionLocked(_In_ const BLACKBIRD_CONTROLLER_CLIENT *Client, _In_ DWORD ProcessId,
-                                                    _In_ DWORD StreamMask)
+static BOOL ControllerAddPidIndexSubscriptionLocked(_In_ const BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                    _In_ DWORD ProcessId, _In_ DWORD StreamMask)
 {
     LONG entryIndex;
     PBLACKBIRD_CONTROLLER_PID_INDEX_ENTRY entry;
@@ -152,6 +160,31 @@ VOID ControllerRebuildPidIndexLocked(_Out_opt_ BOOL *DynamicPruned)
     ULONGLONG nowTick = GetTickCount64();
     BOOL prunedAny = FALSE;
     DWORD droppedPidCount = 0;
+
+    /* Periodically force a rebuild to prune expired dynamic subscriptions even
+     * when no explicit subscription changes have occurred.  Without this, a
+     * quiescent system could leave dynamic entries alive until the next
+     * subscription event triggers a dirty-flag rebuild. */
+    {
+        static volatile LONG s_LastPruneTickLow = 0;
+        DWORD nowLow = (DWORD)GetTickCount64();
+        DWORD lastLow = (DWORD)InterlockedCompareExchange(&s_LastPruneTickLow, 0, 0);
+        if ((DWORD)(nowLow - lastLow) >= (BLACKBIRD_CONTROLLER_DYNAMIC_SUBSCRIPTION_TTL_MS / 4))
+        {
+            (void)InterlockedExchange(&s_LastPruneTickLow, nowLow);
+            (void)InterlockedExchange(&g_PidIndexDirty, 1);
+        }
+    }
+
+    /* Skip the O(clients × subscriptions) rebuild if the index is current. */
+    if (InterlockedCompareExchange(&g_PidIndexDirty, 0, 1) == 0)
+    {
+        if (DynamicPruned != NULL)
+        {
+            *DynamicPruned = FALSE;
+        }
+        return;
+    }
 
     g_PidIndexCount = 0;
     ZeroMemory(g_PidIndex, sizeof(g_PidIndex));
@@ -229,7 +262,8 @@ VOID ControllerRemoveSubscriptionAtLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *C
     Client->SubscriptionCount -= 1;
 }
 
-static BOOL ControllerPruneDynamicSubscriptionsLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client, _In_ ULONGLONG NowTick)
+static BOOL ControllerPruneDynamicSubscriptionsLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                      _In_ ULONGLONG NowTick)
 {
     BOOL changed = FALSE;
     DWORD i = 0;
@@ -242,9 +276,8 @@ static BOOL ControllerPruneDynamicSubscriptionsLocked(_Inout_ BLACKBIRD_CONTROLL
     while (i < Client->SubscriptionCount)
     {
         const BLACKBIRD_CONTROLLER_SUBSCRIPTION *sub = &Client->Subscriptions[i];
-        if (sub->Dynamic &&
-            (sub->LastSeenTick == 0 ||
-             (NowTick - sub->LastSeenTick) > (ULONGLONG)BLACKBIRD_CONTROLLER_DYNAMIC_SUBSCRIPTION_TTL_MS))
+        if (sub->Dynamic && (sub->LastSeenTick == 0 || (NowTick - sub->LastSeenTick) >
+                                                           (ULONGLONG)BLACKBIRD_CONTROLLER_DYNAMIC_SUBSCRIPTION_TTL_MS))
         {
             DWORD expiredPid = sub->ProcessId;
             ControllerRemoveSubscriptionAtLocked(Client, i);
@@ -299,8 +332,9 @@ BOOL ControllerDropDynamicDescendantsLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT 
     return changed;
 }
 
-static BOOL ControllerTryExpandClientRelationLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client, _In_ DWORD SourceProcessId,
-                                                    _In_ DWORD TargetProcessId, _In_ DWORD RelationStreamMask)
+static BOOL ControllerTryExpandClientRelationLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                    _In_ DWORD SourceProcessId, _In_ DWORD TargetProcessId,
+                                                    _In_ DWORD RelationStreamMask)
 {
     ULONGLONG nowTick;
     LONG sourceIndex;
@@ -382,14 +416,18 @@ static BOOL ControllerTryExpandClientRelationLocked(_Inout_ BLACKBIRD_CONTROLLER
         Client->Subscriptions[slot].Depth = targetDepth;
         Client->Subscriptions[slot].LastSeenTick = nowTick;
         Client->SubscriptionCount += 1;
-        ControllerLog("[MON] dynamic subscription add clientPid=%lu sourcePid=%lu targetPid=%lu depth=%u mask=0x%08lX\n",
-                      Client->ProcessId, SourceProcessId, TargetProcessId, targetDepth, Client->Subscriptions[slot].StreamMask);
+        ControllerLog(
+            "[MON] dynamic subscription add clientPid=%lu sourcePid=%lu targetPid=%lu depth=%u mask=0x%08lX\n",
+            Client->ProcessId, SourceProcessId, TargetProcessId, targetDepth, Client->Subscriptions[slot].StreamMask);
         return TRUE;
     }
 }
 VOID ControllerExpandMonitoringGraph(_In_ DWORD SourceProcessId, _In_ DWORD TargetProcessId,
-                                            _In_ DWORD RelationStreamMask)
+                                     _In_ DWORD RelationStreamMask)
 {
+    PBLACKBIRD_CONTROLLER_CLIENT snapshot[BLACKBIRD_CONTROLLER_MAX_CLIENTS];
+    DWORD snapshotCount = 0;
+    DWORD i;
     PBLACKBIRD_CONTROLLER_CLIENT client;
     BOOL changed = FALSE;
 
@@ -398,17 +436,30 @@ VOID ControllerExpandMonitoringGraph(_In_ DWORD SourceProcessId, _In_ DWORD Targ
         return;
     }
 
+    /* Snapshot the client list under the global lock, then release it before
+     * acquiring per-client locks.  This breaks the three-level nesting that
+     * previously held g_ClientListLock across per-client Lock acquisitions. */
     EnterCriticalSection(&g_ClientListLock);
-    for (client = g_ClientList; client != NULL; client = client->Next)
+    for (client = g_ClientList; client != NULL && snapshotCount < RTL_NUMBER_OF(snapshot); client = client->Next)
     {
+        if (ControllerClientRetainForDispatchLocked(client))
+        {
+            snapshot[snapshotCount++] = client;
+        }
+    }
+    LeaveCriticalSection(&g_ClientListLock);
+
+    for (i = 0; i < snapshotCount; ++i)
+    {
+        client = snapshot[i];
         EnterCriticalSection(&client->Lock);
         if (ControllerTryExpandClientRelationLocked(client, SourceProcessId, TargetProcessId, RelationStreamMask))
         {
             changed = TRUE;
         }
         LeaveCriticalSection(&client->Lock);
+        ControllerClientReleaseFromDispatch(client);
     }
-    LeaveCriticalSection(&g_ClientListLock);
 
     if (changed)
     {
@@ -476,8 +527,7 @@ static BOOL ControllerClientHasMatchLocked(_In_ const BLACKBIRD_CONTROLLER_CLIEN
 
 static BOOL ControllerSharedRingPushLocked(_Inout_ volatile BLACKBIRD_IPC_SHARED_RING_HEADER *Header,
                                            _Inout_updates_bytes_(Header->Capacity * Header->RecordSize) PBYTE Records,
-                                           _In_ HANDLE DataEvent,
-                                           _In_reads_bytes_(RecordSize) const VOID *Record,
+                                           _In_ HANDLE DataEvent, _In_reads_bytes_(RecordSize) const VOID *Record,
                                            _In_ UINT32 RecordSize)
 {
     LONG writeIndex;
@@ -515,14 +565,20 @@ static BOOL ControllerSharedRingPushLocked(_Inout_ volatile BLACKBIRD_IPC_SHARED
     (void)CopyMemory(Records + ((SIZE_T)writeIndex * (SIZE_T)RecordSize), Record, RecordSize);
     MemoryBarrier();
     Header->WriteIndex = nextIndex;
-    (void)SetEvent(DataEvent);
+    /* Only signal the consumer when the ring transitions from empty to non-empty.
+     * The consumer (ControllerSharedRingPopLocked) re-signals if new items arrive
+     * after it resets the event, so skipping redundant SetEvent calls here is safe.
+     * Assumes DataEvent is a manual-reset event. */
+    if (writeIndex == readIndex)
+    {
+        (void)SetEvent(DataEvent);
+    }
     return TRUE;
 }
 
 static BOOL ControllerSharedRingPopLocked(_Inout_ volatile BLACKBIRD_IPC_SHARED_RING_HEADER *Header,
                                           _In_reads_bytes_(Header->Capacity * Header->RecordSize) const BYTE *Records,
-                                          _In_ HANDLE DataEvent,
-                                          _Out_writes_bytes_(RecordSize) VOID *Record,
+                                          _In_ HANDLE DataEvent, _Out_writes_bytes_(RecordSize) VOID *Record,
                                           _In_ UINT32 RecordSize)
 {
     LONG writeIndex;
@@ -618,7 +674,15 @@ VOID ControllerClientFreeQueueLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client
     while (node != NULL)
     {
         PBLACKBIRD_CONTROLLER_EVENT_NODE next = node->Next;
-        free(node);
+        if (Client->IoctlNodeSlab != NULL)
+        {
+            node->Next = Client->IoctlNodeFreeHead;
+            Client->IoctlNodeFreeHead = node;
+        }
+        else
+        {
+            free(node);
+        }
         node = next;
     }
 
@@ -632,13 +696,26 @@ VOID ControllerClientFreeQueueLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client
 }
 VOID ControllerClientFreeEtwQueueLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client)
 {
-    PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE node = Client->EtwQueueHead;
-
-    while (node != NULL)
+    if (Client->EtwNodeSlab != NULL)
     {
-        PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE next = node->Next;
-        free(node);
-        node = next;
+        /* Slab-owned nodes: skip individual frees, just rebuild the full free list. */
+        DWORD i;
+        for (i = 0; i < BLACKBIRD_CONTROLLER_MAX_CLIENT_ETW_QUEUE_DEPTH - 1; i++)
+        {
+            Client->EtwNodeSlab[i].Next = &Client->EtwNodeSlab[i + 1];
+        }
+        Client->EtwNodeSlab[BLACKBIRD_CONTROLLER_MAX_CLIENT_ETW_QUEUE_DEPTH - 1].Next = NULL;
+        Client->EtwNodeFreeHead = &Client->EtwNodeSlab[0];
+    }
+    else
+    {
+        PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE node = Client->EtwQueueHead;
+        while (node != NULL)
+        {
+            PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE next = node->Next;
+            free(node);
+            node = next;
+        }
     }
 
     Client->EtwQueueHead = NULL;
@@ -672,11 +749,24 @@ static BOOL ControllerClientEnqueueRecordLocked(_Inout_ BLACKBIRD_CONTROLLER_CLI
         return FALSE;
     }
 
-    node = (PBLACKBIRD_CONTROLLER_EVENT_NODE)calloc(1, sizeof(*node));
-    if (node == NULL)
+    if (Client->IoctlNodeSlab != NULL)
     {
-        Client->DroppedEvents += 1;
-        return FALSE;
+        node = Client->IoctlNodeFreeHead;
+        if (node == NULL)
+        {
+            Client->DroppedEvents += 1;
+            return FALSE;
+        }
+        Client->IoctlNodeFreeHead = node->Next;
+    }
+    else
+    {
+        node = (PBLACKBIRD_CONTROLLER_EVENT_NODE)calloc(1, sizeof(*node));
+        if (node == NULL)
+        {
+            Client->DroppedEvents += 1;
+            return FALSE;
+        }
     }
 
     (void)CopyMemory(&node->Record, Record, sizeof(node->Record));
@@ -699,7 +789,7 @@ static BOOL ControllerClientEnqueueRecordLocked(_Inout_ BLACKBIRD_CONTROLLER_CLI
     return TRUE;
 }
 BOOL ControllerClientDequeueRecordLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
-                                                _Out_ BLACKBIRD_EVENT_RECORD *Record)
+                                         _Out_ BLACKBIRD_EVENT_RECORD *Record)
 {
     PBLACKBIRD_CONTROLLER_EVENT_NODE node;
 
@@ -730,11 +820,19 @@ BOOL ControllerClientDequeueRecordLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Cl
     }
 
     (void)CopyMemory(Record, &node->Record, sizeof(*Record));
-    free(node);
+    if (Client->IoctlNodeSlab != NULL)
+    {
+        node->Next = Client->IoctlNodeFreeHead;
+        Client->IoctlNodeFreeHead = node;
+    }
+    else
+    {
+        free(node);
+    }
     return TRUE;
 }
 BOOL ControllerClientEnqueueEtwEventLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
-                                                  _In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
+                                           _In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
 {
     PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE node;
 
@@ -755,11 +853,24 @@ BOOL ControllerClientEnqueueEtwEventLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *
         return FALSE;
     }
 
-    node = (PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE)calloc(1, sizeof(*node));
-    if (node == NULL)
+    if (Client->EtwNodeSlab != NULL)
     {
-        Client->EtwDroppedEvents += 1;
-        return FALSE;
+        node = Client->EtwNodeFreeHead;
+        if (node == NULL)
+        {
+            Client->EtwDroppedEvents += 1;
+            return FALSE;
+        }
+        Client->EtwNodeFreeHead = node->Next;
+    }
+    else
+    {
+        node = (PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE)calloc(1, sizeof(*node));
+        if (node == NULL)
+        {
+            Client->EtwDroppedEvents += 1;
+            return FALSE;
+        }
     }
 
     (void)CopyMemory(&node->Event, Event, sizeof(node->Event));
@@ -782,7 +893,7 @@ BOOL ControllerClientEnqueueEtwEventLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *
     return TRUE;
 }
 BOOL ControllerClientDequeueEtwEventLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
-                                                  _Out_ BLACKBIRD_IPC_ETW_EVENT *Event)
+                                           _Out_ BLACKBIRD_IPC_ETW_EVENT *Event)
 {
     PBLACKBIRD_CONTROLLER_ETW_EVENT_NODE node;
 
@@ -813,7 +924,15 @@ BOOL ControllerClientDequeueEtwEventLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *
     }
 
     (void)CopyMemory(Event, &node->Event, sizeof(*Event));
-    free(node);
+    if (Client->EtwNodeSlab != NULL)
+    {
+        node->Next = Client->EtwNodeFreeHead;
+        Client->EtwNodeFreeHead = node;
+    }
+    else
+    {
+        free(node);
+    }
     return TRUE;
 }
 
@@ -942,7 +1061,8 @@ VOID ControllerDispatchDriverRecord(_In_ const BLACKBIRD_EVENT_RECORD *Record)
     EnterCriticalSection(&g_ClientListLock);
     if (useSlowPath)
     {
-        for (client = g_ClientList; client != NULL && dispatchCount < RTL_NUMBER_OF(dispatchClients); client = client->Next)
+        for (client = g_ClientList; client != NULL && dispatchCount < RTL_NUMBER_OF(dispatchClients);
+             client = client->Next)
         {
             if (ControllerClientRetainForDispatchLocked(client))
             {
@@ -1013,9 +1133,3 @@ VOID ControllerDispatchDriverRecord(_In_ const BLACKBIRD_EVENT_RECORD *Record)
         ControllerClientReleaseFromDispatch(client);
     }
 }
-
-
-
-
-
-

@@ -185,11 +185,12 @@ static BOOL ControllerProbePeHeaderAtBase(_In_ HANDLE ProcessHandle, _In_ ULONGL
     return (optionalMagic == IMAGE_NT_OPTIONAL_HDR32_MAGIC || optionalMagic == IMAGE_NT_OPTIONAL_HDR64_MAGIC);
 }
 
-static BOOL ControllerProbeManualMapRegion(_In_ DWORD TargetPid, _In_ ULONGLONG CandidateBase, _In_ ULONGLONG CandidateSize,
-                                           _In_ ULONGLONG ThreadStartAddress, _Out_ BOOL *PrivateExecutableRegion,
-                                           _Out_ BOOL *HasPeHeader, _Out_ BOOL *ThreadStartInsideRegion,
-                                           _Out_opt_ ULONGLONG *ResolvedBase, _Out_opt_ ULONGLONG *ResolvedSize,
-                                           _Out_opt_ ULONG *ResolvedProtect, _Out_opt_ ULONG *ResolvedType)
+static BOOL ControllerProbeManualMapRegion(_In_ DWORD TargetPid, _In_ ULONGLONG CandidateBase,
+                                           _In_ ULONGLONG CandidateSize, _In_ ULONGLONG ThreadStartAddress,
+                                           _Out_ BOOL *PrivateExecutableRegion, _Out_ BOOL *HasPeHeader,
+                                           _Out_ BOOL *ThreadStartInsideRegion, _Out_opt_ ULONGLONG *ResolvedBase,
+                                           _Out_opt_ ULONGLONG *ResolvedSize, _Out_opt_ ULONG *ResolvedProtect,
+                                           _Out_opt_ ULONG *ResolvedType)
 {
     HANDLE process = NULL;
     MEMORY_BASIC_INFORMATION mbi;
@@ -314,7 +315,7 @@ static PBLACKBIRD_CONTROLLER_HOLLOW_ENTRY ControllerFindHollowEntryLocked(_In_ D
 }
 
 static PBLACKBIRD_CONTROLLER_HOLLOW_ENTRY ControllerGetHollowEntryLocked(_In_ DWORD ActorPid, _In_ DWORD TargetPid,
-                                                                           _In_ ULONGLONG NowTick)
+                                                                         _In_ ULONGLONG NowTick)
 {
     DWORD i;
     DWORD candidate = BLACKBIRD_CONTROLLER_HOLLOW_MAX_ENTRIES;
@@ -405,8 +406,8 @@ static VOID ControllerEmitSyntheticDetectionEx(_In_ DWORD ActorPid, _In_ DWORD T
 
     (void)InterlockedIncrement(&g_EtwDetectionEvents);
     ControllerDispatchEtwEvent(&event);
-    ControllerLog("[ETW][SYNTH] detection=%s severity=%lu actor=%lu target=%lu marks=0x%llX\n", DetectionName,
-                  Severity, ActorPid, TargetPid, Marks);
+    ControllerLog("[ETW][SYNTH] detection=%s severity=%lu actor=%lu target=%lu marks=0x%llX\n", DetectionName, Severity,
+                  ActorPid, TargetPid, Marks);
 }
 
 static VOID ControllerEmitSyntheticDetection(_In_ DWORD ActorPid, _In_ DWORD TargetPid, _In_z_ PCSTR DetectionName,
@@ -415,15 +416,16 @@ static VOID ControllerEmitSyntheticDetection(_In_ DWORD ActorPid, _In_ DWORD Tar
     ControllerEmitSyntheticDetectionEx(ActorPid, TargetPid, DetectionName, Severity, Marks, NULL);
 }
 
-static VOID ControllerEvaluateHollowEntryLocked(_Inout_ PBLACKBIRD_CONTROLLER_HOLLOW_ENTRY Entry, _In_ ULONGLONG NowTick)
+static VOID ControllerEvaluateHollowEntryLocked(_Inout_ PBLACKBIRD_CONTROLLER_HOLLOW_ENTRY Entry,
+                                                _In_ ULONGLONG NowTick)
 {
     const UINT64 marks = Entry->Marks;
     const BOOL hasSuspended = ((marks & BLACKBIRD_HOLLOW_MARK_CREATE_SUSPENDED) != 0);
     const BOOL hasAlloc = ((marks & BLACKBIRD_HOLLOW_MARK_TI_ALLOC_RW_LARGE) != 0);
     const BOOL hasWrite = ((marks & BLACKBIRD_HOLLOW_MARK_TI_WRITE_VM) != 0);
     const BOOL hasProtect = ((marks & BLACKBIRD_HOLLOW_MARK_TI_PROTECT_RX) != 0);
-    const BOOL hasThreadSuspicious =
-        ((marks & (BLACKBIRD_HOLLOW_MARK_THREAD_START_NON_IMAGE_EXEC | BLACKBIRD_HOLLOW_MARK_THREAD_START_OUTSIDE_IMAGE)) != 0);
+    const BOOL hasThreadSuspicious = ((marks & (BLACKBIRD_HOLLOW_MARK_THREAD_START_NON_IMAGE_EXEC |
+                                                BLACKBIRD_HOLLOW_MARK_THREAD_START_OUTSIDE_IMAGE)) != 0);
     const BOOL hasThreadContext = ((marks & BLACKBIRD_HOLLOW_MARK_THREAD_CONTEXT_INTENT) != 0);
     const BOOL hasImageDrift = ((marks & BLACKBIRD_HOLLOW_MARK_IMAGE_DRIFT) != 0);
     const BOOL hasTxf = ((marks & BLACKBIRD_HOLLOW_MARK_TXF_SUSPECT) != 0);
@@ -437,7 +439,8 @@ static VOID ControllerEvaluateHollowEntryLocked(_Inout_ PBLACKBIRD_CONTROLLER_HO
         return;
     }
 
-    strong = hasSuspended && hasAlloc && hasWrite && hasProtect && hasThreadSuspicious && (hasThreadContext || hasImageDrift);
+    strong = hasSuspended && hasAlloc && hasWrite && hasProtect && hasThreadSuspicious &&
+             (hasThreadContext || hasImageDrift);
     medium = (hasAlloc && hasWrite && hasProtect && hasThreadSuspicious) ||
              (hasSuspended && hasThreadSuspicious && hasThreadContext);
 
@@ -548,8 +551,8 @@ static VOID ControllerTryEmitManualMapDetection(_In_ DWORD ActorPid, _In_ DWORD 
     hasAlloc = ((marks & BLACKBIRD_HOLLOW_MARK_TI_ALLOC_RW_LARGE) != 0);
     hasWrite = ((marks & BLACKBIRD_HOLLOW_MARK_TI_WRITE_VM) != 0) || (lastWriteTick != 0);
     hasProtect = ((marks & BLACKBIRD_HOLLOW_MARK_TI_PROTECT_RX) != 0) || (lastProtectTick != 0);
-    hasThreadSuspicious =
-        ((marks & (BLACKBIRD_HOLLOW_MARK_THREAD_START_NON_IMAGE_EXEC | BLACKBIRD_HOLLOW_MARK_THREAD_START_OUTSIDE_IMAGE)) != 0);
+    hasThreadSuspicious = ((marks & (BLACKBIRD_HOLLOW_MARK_THREAD_START_NON_IMAGE_EXEC |
+                                     BLACKBIRD_HOLLOW_MARK_THREAD_START_OUTSIDE_IMAGE)) != 0);
     remoteActor = (effectiveActor != 0 && effectiveActor != effectiveTarget);
 
     if (!remoteActor || !hasAlloc || !hasWrite || !hasProtect || !hasThreadSuspicious)
@@ -612,8 +615,7 @@ static VOID ControllerTryEmitManualMapDetection(_In_ DWORD ActorPid, _In_ DWORD 
             cooldownTick = &entry->LastManualMapLikelyEmitTick;
         }
 
-        if (cooldownTick != NULL &&
-            (nowTick - *cooldownTick) < BLACKBIRD_CONTROLLER_MANUAL_MAP_EMIT_COOLDOWN_MS)
+        if (cooldownTick != NULL && (nowTick - *cooldownTick) < BLACKBIRD_CONTROLLER_MANUAL_MAP_EMIT_COOLDOWN_MS)
         {
             entry = NULL;
         }
@@ -629,15 +631,16 @@ static VOID ControllerTryEmitManualMapDetection(_In_ DWORD ActorPid, _In_ DWORD 
         return;
     }
 
-    (void)StringCchPrintfW(reasonText, RTL_NUMBER_OF(reasonText),
-                           L"manual-map probe base=0x%llX size=0x%llX type=0x%lX protect=0x%lX pe=%u startInRegion=%u marks=0x%llX",
-                           resolvedBase, resolvedSize, resolvedType, resolvedProtect, hasPeHeader ? 1u : 0u,
-                           threadStartInsideRegion ? 1u : 0u, marks);
+    (void)StringCchPrintfW(
+        reasonText, RTL_NUMBER_OF(reasonText),
+        L"manual-map probe base=0x%llX size=0x%llX type=0x%lX protect=0x%lX pe=%u startInRegion=%u marks=0x%llX",
+        resolvedBase, resolvedSize, resolvedType, resolvedProtect, hasPeHeader ? 1u : 0u,
+        threadStartInsideRegion ? 1u : 0u, marks);
     ControllerEmitSyntheticDetectionEx(effectiveActor, effectiveTarget, detectionName, severity, marks, reasonText);
 }
 
-static VOID ControllerApplyHollowMark(_In_ DWORD ActorPid, _In_ DWORD TargetPid, _In_ UINT64 Mark, _In_ ULONGLONG AuxBase,
-                                      _In_ ULONGLONG AuxSize, _In_ ULONG AuxProtect)
+static VOID ControllerApplyHollowMark(_In_ DWORD ActorPid, _In_ DWORD TargetPid, _In_ UINT64 Mark,
+                                      _In_ ULONGLONG AuxBase, _In_ ULONGLONG AuxSize, _In_ ULONG AuxProtect)
 {
     PBLACKBIRD_CONTROLLER_HOLLOW_ENTRY entry;
     ULONGLONG nowTick = GetTickCount64();
@@ -697,7 +700,7 @@ static VOID ControllerApplyHollowMark(_In_ DWORD ActorPid, _In_ DWORD TargetPid,
 }
 
 static VOID ControllerHandleBlackbirdHollowRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName,
-                                                    _In_ const BLACKBIRD_IPC_ETW_EVENT *BrokerEvent)
+                                                  _In_ const BLACKBIRD_IPC_ETW_EVENT *BrokerEvent)
 {
     ULONGLONG processId = 0;
     ULONGLONG creatorPid = 0;
@@ -740,19 +743,17 @@ static VOID ControllerHandleBlackbirdHollowRecord(_In_ PEVENT_RECORD Record, _In
             ULONGLONG end = imageBase + imageSize;
             if (end < imageBase || startAddress < imageBase || startAddress >= end)
             {
-                ControllerApplyHollowMark((DWORD)creatorPid, (DWORD)processId,
-                                          BLACKBIRD_HOLLOW_MARK_THREAD_START_OUTSIDE_IMAGE |
-                                              BLACKBIRD_HOLLOW_MARK_IMAGE_DRIFT,
-                                          0, 0, 0);
+                ControllerApplyHollowMark(
+                    (DWORD)creatorPid, (DWORD)processId,
+                    BLACKBIRD_HOLLOW_MARK_THREAD_START_OUTSIDE_IMAGE | BLACKBIRD_HOLLOW_MARK_IMAGE_DRIFT, 0, 0, 0);
             }
         }
 
         if ((startRegionType != MEM_IMAGE) && ControllerIsExecutableProtect(startRegionProtect))
         {
-            ControllerApplyHollowMark((DWORD)creatorPid, (DWORD)processId,
-                                      BLACKBIRD_HOLLOW_MARK_THREAD_START_NON_IMAGE_EXEC |
-                                          BLACKBIRD_HOLLOW_MARK_IMAGE_DRIFT,
-                                      0, 0, 0);
+            ControllerApplyHollowMark(
+                (DWORD)creatorPid, (DWORD)processId,
+                BLACKBIRD_HOLLOW_MARK_THREAD_START_NON_IMAGE_EXEC | BLACKBIRD_HOLLOW_MARK_IMAGE_DRIFT, 0, 0, 0);
         }
 
         if ((correlationFlags & BLACKBIRD_INTENT_THREAD_CONTEXT) != 0)
@@ -912,7 +913,7 @@ static VOID ControllerHandleThreatIntelHollowRecord(_In_ PEVENT_RECORD Record, _
     }
 }
 VOID ControllerProcessHollowingEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName,
-                                                _In_ const BLACKBIRD_IPC_ETW_EVENT *BrokerEvent)
+                                         _In_ const BLACKBIRD_IPC_ETW_EVENT *BrokerEvent)
 {
     if (Record == NULL)
     {
@@ -934,9 +935,3 @@ VOID ControllerResetHollowingState(VOID)
     ZeroMemory(g_HollowEntries, sizeof(g_HollowEntries));
     ReleaseSRWLockExclusive(&g_HollowLock);
 }
-
-
-
-
-
-

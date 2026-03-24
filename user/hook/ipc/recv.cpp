@@ -2,7 +2,7 @@
 
 namespace XIPC
 {
-    bool RecvHello(HelloMessage& out)
+    bool RecvHello(HelloMessage &out)
     {
         if (!Initialize())
             return false;
@@ -14,5 +14,4 @@ namespace XIPC
 
         return true;
     }
-}
-
+} // namespace XIPC

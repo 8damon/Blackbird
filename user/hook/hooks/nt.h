@@ -33,18 +33,22 @@ enum class NtOperation : std::uint32_t
     NtSuspendThread,
     NtResumeThread,
     NtQueueApcThread,
+    NtAllocateVirtualMemoryEx,
+    NtMapViewOfSectionEx,
+    NtQueueApcThreadEx,
+    NtOpenProcessTokenEx,
+    NtOpenThreadTokenEx,
 };
 
 struct NtHookContext
 {
     NtOperation Operation;
-    const char* FunctionName;
-    void* Caller;
+    const char *FunctionName;
+    void *Caller;
     std::uint64_t Args[8];
 };
-using NtHookCallback = void(*)(const NtHookContext& context) noexcept;
+using NtHookCallback = void (*)(const NtHookContext &context) noexcept;
 bool KeSetNtHook(NtHookCallback callback) noexcept;
 void KeRemoveNtHook() noexcept;
 
-bool KeCheckNtHookIntegrity(std::uint32_t* mismatchCount) noexcept;
-
+bool KeCheckNtHookIntegrity(std::uint32_t *mismatchCount) noexcept;

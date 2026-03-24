@@ -51,9 +51,7 @@ static DWORD WINAPI BkRuntimeBootstrapThread(LPVOID)
     }
 }
 
-BOOL APIENTRY DllMain(HMODULE hModule,
-    DWORD   reason,
-    LPVOID  reserved)
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
 {
     UNREFERENCED_PARAMETER(hModule);
     UNREFERENCED_PARAMETER(reserved);
@@ -62,14 +60,7 @@ BOOL APIENTRY DllMain(HMODULE hModule,
     {
         DisableThreadLibraryCalls(hModule);
 
-        HANDLE hThread = CreateThread(
-            nullptr,
-            0,
-            BkRuntimeBootstrapThread,
-            nullptr,
-            0,
-            nullptr
-        );
+        HANDLE hThread = CreateThread(nullptr, 0, BkRuntimeBootstrapThread, nullptr, 0, nullptr);
 
         if (hThread)
         {
@@ -83,4 +74,3 @@ BOOL APIENTRY DllMain(HMODULE hModule,
 
     return TRUE;
 }
-

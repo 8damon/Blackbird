@@ -23,24 +23,23 @@ enum class WinsockOperation : std::uint32_t
 
 struct WinsockHookBuffer
 {
-    const void* Data;
+    const void *Data;
     std::size_t Length;
 };
 
 struct WinsockHookContext
 {
-    WinsockOperation         Operation;
-    SOCKET                   Socket;
-    const WinsockHookBuffer* Buffers;
-    std::uint32_t            BufferCount;
-    void* Caller;
-    std::uint64_t            Args[4];
+    WinsockOperation Operation;
+    SOCKET Socket;
+    const WinsockHookBuffer *Buffers;
+    std::uint32_t BufferCount;
+    void *Caller;
+    std::uint64_t Args[4];
 };
 
-using WinsockHookCallback = void(*)(const WinsockHookContext& context) noexcept;
+using WinsockHookCallback = void (*)(const WinsockHookContext &context) noexcept;
 
 bool KeSetWinsockHook(WinsockHookCallback callback) noexcept;
 bool KeIsWinsockHookRequired() noexcept;
 void KeRemoveWinsockHook() noexcept;
-bool KeCheckWinsockHookIntegrity(std::uint32_t* mismatchCount) noexcept;
-
+bool KeCheckWinsockHookIntegrity(std::uint32_t *mismatchCount) noexcept;

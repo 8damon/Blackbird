@@ -49,14 +49,12 @@ std::vector<WinsockCapturedEvent> WinsockHookController::ConsumeEvents()
     return events;
 }
 
-void WinsockHookController::KeWinsockHookCallback(
-    const WinsockHookContext& context) noexcept
+void WinsockHookController::KeWinsockHookCallback(const WinsockHookContext &context) noexcept
 {
     EnqueueEvent(context);
 }
 
-void WinsockHookController::EnqueueEvent(
-    const WinsockHookContext& context)
+void WinsockHookController::EnqueueEvent(const WinsockHookContext &context)
 {
     WinsockCapturedEvent evt{};
     evt.ThreadId = GetCurrentThreadId();
@@ -77,10 +75,10 @@ void WinsockHookController::EnqueueEvent(
         evt.Data.reserve(totalLen);
         for (std::uint32_t i = 0; i < context.BufferCount; ++i)
         {
-            const auto& buf = context.Buffers[i];
+            const auto &buf = context.Buffers[i];
             if (buf.Data && buf.Length)
             {
-                const auto* src = static_cast<const std::uint8_t*>(buf.Data);
+                const auto *src = static_cast<const std::uint8_t *>(buf.Data);
                 evt.Data.insert(evt.Data.end(), src, src + buf.Length);
             }
         }
@@ -141,14 +139,12 @@ std::vector<NtCapturedEvent> NtHookController::ConsumeEvents()
     return events;
 }
 
-void NtHookController::KeNtHookCallback(
-    const NtHookContext& context) noexcept
+void NtHookController::KeNtHookCallback(const NtHookContext &context) noexcept
 {
     EnqueueEvent(context);
 }
 
-void NtHookController::EnqueueEvent(
-    const NtHookContext& context)
+void NtHookController::EnqueueEvent(const NtHookContext &context)
 {
     NtCapturedEvent evt{};
     evt.ThreadId = GetCurrentThreadId();
@@ -161,10 +157,11 @@ void NtHookController::EnqueueEvent(
         evt.Args[i] = context.Args[i];
     }
 
+    IC_STACKTRACE::Capture(evt.Stack, 2);
+
     std::lock_guard<std::mutex> lock(s_QueueMutex);
     s_Queue.push_back(std::move(evt));
 }
-
 
 bool KiHookController::s_Initialized = false;
 std::mutex KiHookController::s_QueueMutex;
@@ -215,22 +212,20 @@ std::vector<KiCapturedEvent> KiHookController::ConsumeEvents()
     return events;
 }
 
-void KiHookController::KeKiHookCallback(
-    const KiHookContext& context) noexcept
+void KiHookController::KeKiHookCallback(const KiHookContext &context) noexcept
 {
     EnqueueEvent(context);
 }
 
-void KiHookController::EnqueueEvent(
-    const KiHookContext& context)
+void KiHookController::EnqueueEvent(const KiHookContext &context)
 {
     KiCapturedEvent evt{};
     evt.ThreadId = GetCurrentThreadId();
     evt.StubName = context.StubName;
     evt.Caller = context.Caller;
     evt.StackPointer = context.StackPointer;
+    IC_STACKTRACE::Capture(evt.Stack, 2);
 
     std::lock_guard<std::mutex> lock(s_QueueMutex);
     s_Queue.push_back(std::move(evt));
 }
-

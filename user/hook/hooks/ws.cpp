@@ -19,86 +19,45 @@
 
 namespace
 {
-    using WsasendFn = INT(WSAAPI*)(
-        SOCKET,
-        LPWSABUF,
-        DWORD,
-        LPDWORD,
-        DWORD,
-        LPWSAOVERLAPPED,
-        LPWSAOVERLAPPED_COMPLETION_ROUTINE
-        );
+    using WsasendFn = INT(WSAAPI *)(SOCKET, LPWSABUF, DWORD, LPDWORD, DWORD, LPWSAOVERLAPPED,
+                                    LPWSAOVERLAPPED_COMPLETION_ROUTINE);
 
-    using WsarecvFn = INT(WSAAPI*)(
-        SOCKET,
-        LPWSABUF,
-        DWORD,
-        LPDWORD,
-        LPDWORD,
-        LPWSAOVERLAPPED,
-        LPWSAOVERLAPPED_COMPLETION_ROUTINE
-        );
+    using WsarecvFn = INT(WSAAPI *)(SOCKET, LPWSABUF, DWORD, LPDWORD, LPDWORD, LPWSAOVERLAPPED,
+                                    LPWSAOVERLAPPED_COMPLETION_ROUTINE);
 
-    using SendFn = int (WSAAPI*)(
-        SOCKET,
-        const char*,
-        int,
-        int
-        );
+    using SendFn = int(WSAAPI *)(SOCKET, const char *, int, int);
 
-    using RecvFn = int (WSAAPI*)(
-        SOCKET,
-        char*,
-        int,
-        int
-        );
+    using RecvFn = int(WSAAPI *)(SOCKET, char *, int, int);
 
-    using ConnectFn = int (WSAAPI*)(
-        SOCKET,
-        const sockaddr*,
-        int
-        );
+    using ConnectFn = int(WSAAPI *)(SOCKET, const sockaddr *, int);
 
-    using WsaConnectFn = int (WSAAPI*)(
-        SOCKET,
-        const sockaddr*,
-        int,
-        LPWSABUF,
-        LPWSABUF,
-        LPQOS,
-        LPQOS
-        );
+    using WsaConnectFn = int(WSAAPI *)(SOCKET, const sockaddr *, int, LPWSABUF, LPWSABUF, LPQOS, LPQOS);
 
-    using GetAddrInfoWFn = INT (WSAAPI*)(
-        PCWSTR,
-        PCWSTR,
-        const ADDRINFOW*,
-        PADDRINFOW*
-        );
+    using GetAddrInfoWFn = INT(WSAAPI *)(PCWSTR, PCWSTR, const ADDRINFOW *, PADDRINFOW *);
 
     struct HookEntry
     {
-        const char* ModuleName;
-        const char* FunctionName;
-        void** OriginalFunction;
-        void* HookFunction;
+        const char *ModuleName;
+        const char *FunctionName;
+        void **OriginalFunction;
+        void *HookFunction;
     };
 
-    static WsasendFn           g_OriginalWsasend = nullptr;
-    static WsarecvFn           g_OriginalWsarecv = nullptr;
-    static SendFn              g_OriginalSend = nullptr;
-    static RecvFn              g_OriginalRecv = nullptr;
-    static ConnectFn           g_OriginalConnect = nullptr;
-    static WsaConnectFn        g_OriginalWsaConnect = nullptr;
-    static GetAddrInfoWFn      g_OriginalGetAddrInfoW = nullptr;
+    static WsasendFn g_OriginalWsasend = nullptr;
+    static WsarecvFn g_OriginalWsarecv = nullptr;
+    static SendFn g_OriginalSend = nullptr;
+    static RecvFn g_OriginalRecv = nullptr;
+    static ConnectFn g_OriginalConnect = nullptr;
+    static WsaConnectFn g_OriginalWsaConnect = nullptr;
+    static GetAddrInfoWFn g_OriginalGetAddrInfoW = nullptr;
     static WinsockHookCallback g_ActiveCallback = nullptr;
-    static bool                g_HooksInstalled = false;
+    static bool g_HooksInstalled = false;
     static __declspec(thread) bool g_InHook = false;
 
     struct PatchedIatSlot
     {
-        ULONG_PTR* Slot;
-        void* HookFunction;
+        ULONG_PTR *Slot;
+        void *HookFunction;
     };
 
     static PatchedIatSlot g_PatchedSlots[16]{};
@@ -111,35 +70,31 @@ namespace
             return false;
         }
 
-        auto* base = reinterpret_cast<std::uint8_t*>(moduleHandle);
-        auto* dosHeader = reinterpret_cast<PIMAGE_DOS_HEADER>(base);
+        auto *base = reinterpret_cast<std::uint8_t *>(moduleHandle);
+        auto *dosHeader = reinterpret_cast<PIMAGE_DOS_HEADER>(base);
         if (dosHeader == nullptr || dosHeader->e_magic != IMAGE_DOS_SIGNATURE)
         {
             return false;
         }
 
-        auto* ntHeaders = reinterpret_cast<PIMAGE_NT_HEADERS>(base + dosHeader->e_lfanew);
+        auto *ntHeaders = reinterpret_cast<PIMAGE_NT_HEADERS>(base + dosHeader->e_lfanew);
         if (ntHeaders == nullptr || ntHeaders->Signature != IMAGE_NT_SIGNATURE)
         {
             return false;
         }
 
-        IMAGE_DATA_DIRECTORY& importDirectory =
-            ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+        IMAGE_DATA_DIRECTORY &importDirectory = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
 
         if (importDirectory.VirtualAddress == 0 || importDirectory.Size == 0)
         {
             return false;
         }
 
-        auto* importDescriptor = reinterpret_cast<PIMAGE_IMPORT_DESCRIPTOR>(
-            base + importDirectory.VirtualAddress
-            );
+        auto *importDescriptor = reinterpret_cast<PIMAGE_IMPORT_DESCRIPTOR>(base + importDirectory.VirtualAddress);
 
         for (; importDescriptor->Name != 0; ++importDescriptor)
         {
-            const char* importedModuleName =
-                reinterpret_cast<const char*>(base + importDescriptor->Name);
+            const char *importedModuleName = reinterpret_cast<const char *>(base + importDescriptor->Name);
             if (importedModuleName != nullptr && _stricmp(importedModuleName, "WS2_32.dll") == 0)
             {
                 return true;
@@ -149,7 +104,7 @@ namespace
         return false;
     }
 
-    static void TrackPatchedSlot(ULONG_PTR* slot, void* hookFunction)
+    static void TrackPatchedSlot(ULONG_PTR *slot, void *hookFunction)
     {
         if (slot == nullptr || hookFunction == nullptr)
         {
@@ -173,19 +128,13 @@ namespace
         }
     }
 
-    INT WSAAPI WsasendHook(SOCKET socketHandle,
-        LPWSABUF buffers,
-        DWORD bufferCount,
-        LPDWORD bytesSent,
-        DWORD flags,
-        LPWSAOVERLAPPED overlapped,
-        LPWSAOVERLAPPED_COMPLETION_ROUTINE completionRoutine)
+    INT WSAAPI WsasendHook(SOCKET socketHandle, LPWSABUF buffers, DWORD bufferCount, LPDWORD bytesSent, DWORD flags,
+                           LPWSAOVERLAPPED overlapped, LPWSAOVERLAPPED_COMPLETION_ROUTINE completionRoutine)
     {
-        if (!g_InHook && g_ActiveCallback != nullptr &&
-            buffers != nullptr && bufferCount > 0)
+        if (!g_InHook && g_ActiveCallback != nullptr && buffers != nullptr && bufferCount > 0)
         {
             g_InHook = true;
-            void* caller = _ReturnAddress();
+            void *caller = _ReturnAddress();
 
             for (DWORD i = 0; i < bufferCount; ++i)
             {
@@ -216,47 +165,31 @@ namespace
             return SOCKET_ERROR;
         }
 
-        return g_OriginalWsasend(socketHandle,
-            buffers,
-            bufferCount,
-            bytesSent,
-            flags,
-            overlapped,
-            completionRoutine);
+        return g_OriginalWsasend(socketHandle, buffers, bufferCount, bytesSent, flags, overlapped, completionRoutine);
     }
 
-    INT WSAAPI WsarecvHook(SOCKET socketHandle,
-        LPWSABUF buffers,
-        DWORD bufferCount,
-        LPDWORD bytesReceived,
-        LPDWORD flags,
-        LPWSAOVERLAPPED overlapped,
-        LPWSAOVERLAPPED_COMPLETION_ROUTINE completionRoutine)
+    INT WSAAPI WsarecvHook(SOCKET socketHandle, LPWSABUF buffers, DWORD bufferCount, LPDWORD bytesReceived,
+                           LPDWORD flags, LPWSAOVERLAPPED overlapped,
+                           LPWSAOVERLAPPED_COMPLETION_ROUTINE completionRoutine)
     {
         if (g_OriginalWsarecv == nullptr)
         {
             return SOCKET_ERROR;
         }
 
-        const INT result = g_OriginalWsarecv(socketHandle,
-            buffers,
-            bufferCount,
-            bytesReceived,
-            flags,
-            overlapped,
-            completionRoutine);
+        const INT result =
+            g_OriginalWsarecv(socketHandle, buffers, bufferCount, bytesReceived, flags, overlapped, completionRoutine);
 
         if (result != 0)
         {
             return result;
         }
 
-        if (!g_InHook && g_ActiveCallback != nullptr &&
-            buffers != nullptr && bufferCount > 0 &&
+        if (!g_InHook && g_ActiveCallback != nullptr && buffers != nullptr && bufferCount > 0 &&
             bytesReceived != nullptr && *bytesReceived > 0)
         {
             g_InHook = true;
-            void* caller = _ReturnAddress();
+            void *caller = _ReturnAddress();
 
             std::size_t remaining = static_cast<std::size_t>(*bytesReceived);
 
@@ -268,9 +201,7 @@ namespace
                 }
 
                 const std::size_t bufLen =
-                    (remaining < buffers[i].len)
-                    ? remaining
-                    : static_cast<std::size_t>(buffers[i].len);
+                    (remaining < buffers[i].len) ? remaining : static_cast<std::size_t>(buffers[i].len);
 
                 WinsockHookBuffer bufferView{};
                 bufferView.Data = buffers[i].buf;
@@ -294,13 +225,9 @@ namespace
         return result;
     }
 
-    int WSAAPI SendHook(SOCKET socketHandle,
-        const char* buffer,
-        int length,
-        int flags)
+    int WSAAPI SendHook(SOCKET socketHandle, const char *buffer, int length, int flags)
     {
-        if (!g_InHook && g_ActiveCallback != nullptr &&
-            buffer != nullptr && length > 0)
+        if (!g_InHook && g_ActiveCallback != nullptr && buffer != nullptr && length > 0)
         {
             g_InHook = true;
 
@@ -328,10 +255,7 @@ namespace
         return g_OriginalSend(socketHandle, buffer, length, flags);
     }
 
-    int WSAAPI RecvHook(SOCKET socketHandle,
-        char* buffer,
-        int length,
-        int flags)
+    int WSAAPI RecvHook(SOCKET socketHandle, char *buffer, int length, int flags)
     {
         if (g_OriginalRecv == nullptr)
         {
@@ -340,8 +264,7 @@ namespace
 
         const int result = g_OriginalRecv(socketHandle, buffer, length, flags);
 
-        if (result > 0 && !g_InHook && g_ActiveCallback != nullptr &&
-            buffer != nullptr)
+        if (result > 0 && !g_InHook && g_ActiveCallback != nullptr && buffer != nullptr)
         {
             g_InHook = true;
 
@@ -364,13 +287,9 @@ namespace
         return result;
     }
 
-    int WSAAPI ConnectHook(
-        SOCKET socketHandle,
-        const sockaddr* name,
-        int nameLength)
+    int WSAAPI ConnectHook(SOCKET socketHandle, const sockaddr *name, int nameLength)
     {
-        if (!g_InHook && g_ActiveCallback != nullptr &&
-            name != nullptr && nameLength > 0)
+        if (!g_InHook && g_ActiveCallback != nullptr && name != nullptr && nameLength > 0)
         {
             g_InHook = true;
 
@@ -400,17 +319,10 @@ namespace
         return g_OriginalConnect(socketHandle, name, nameLength);
     }
 
-    int WSAAPI WsaConnectHook(
-        SOCKET socketHandle,
-        const sockaddr* name,
-        int nameLength,
-        LPWSABUF callerData,
-        LPWSABUF calleeData,
-        LPQOS sqos,
-        LPQOS gqos)
+    int WSAAPI WsaConnectHook(SOCKET socketHandle, const sockaddr *name, int nameLength, LPWSABUF callerData,
+                              LPWSABUF calleeData, LPQOS sqos, LPQOS gqos)
     {
-        if (!g_InHook && g_ActiveCallback != nullptr &&
-            name != nullptr && nameLength > 0)
+        if (!g_InHook && g_ActiveCallback != nullptr && name != nullptr && nameLength > 0)
         {
             g_InHook = true;
 
@@ -440,11 +352,7 @@ namespace
         return g_OriginalWsaConnect(socketHandle, name, nameLength, callerData, calleeData, sqos, gqos);
     }
 
-    INT WSAAPI GetAddrInfoWHook(
-        PCWSTR nodeName,
-        PCWSTR serviceName,
-        const ADDRINFOW* hints,
-        PADDRINFOW* result)
+    INT WSAAPI GetAddrInfoWHook(PCWSTR nodeName, PCWSTR serviceName, const ADDRINFOW *hints, PADDRINFOW *result)
     {
         if (!g_InHook && g_ActiveCallback != nullptr && nodeName != nullptr && nodeName[0] != L'\0')
         {
@@ -468,8 +376,8 @@ namespace
             context.Caller = _ReturnAddress();
             context.Args[0] = (hints != nullptr) ? static_cast<std::uint64_t>(hints->ai_family) : 0ull;
             context.Args[1] = (serviceName != nullptr && serviceName[0] != L'\0')
-                ? reinterpret_cast<std::uint64_t>(serviceName)
-                : 0ull;
+                                  ? reinterpret_cast<std::uint64_t>(serviceName)
+                                  : 0ull;
 
             g_ActiveCallback(context);
 
@@ -484,15 +392,19 @@ namespace
         return g_OriginalGetAddrInfoW(nodeName, serviceName, hints, result);
     }
 
-    static HookEntry g_HookEntries[] =
-    {
-        { "WS2_32.dll", "WSASend", reinterpret_cast<void**>(&g_OriginalWsasend), reinterpret_cast<void*>(&WsasendHook) },
-        { "WS2_32.dll", "WSARecv", reinterpret_cast<void**>(&g_OriginalWsarecv), reinterpret_cast<void*>(&WsarecvHook) },
-        { "WS2_32.dll", "send",    reinterpret_cast<void**>(&g_OriginalSend),    reinterpret_cast<void*>(&SendHook)    },
-        { "WS2_32.dll", "recv",    reinterpret_cast<void**>(&g_OriginalRecv),    reinterpret_cast<void*>(&RecvHook)    },
-        { "WS2_32.dll", "connect", reinterpret_cast<void**>(&g_OriginalConnect), reinterpret_cast<void*>(&ConnectHook) },
-        { "WS2_32.dll", "WSAConnect", reinterpret_cast<void**>(&g_OriginalWsaConnect), reinterpret_cast<void*>(&WsaConnectHook) },
-        { "WS2_32.dll", "GetAddrInfoW", reinterpret_cast<void**>(&g_OriginalGetAddrInfoW), reinterpret_cast<void*>(&GetAddrInfoWHook) },
+    static HookEntry g_HookEntries[] = {
+        {"WS2_32.dll", "WSASend", reinterpret_cast<void **>(&g_OriginalWsasend),
+         reinterpret_cast<void *>(&WsasendHook)},
+        {"WS2_32.dll", "WSARecv", reinterpret_cast<void **>(&g_OriginalWsarecv),
+         reinterpret_cast<void *>(&WsarecvHook)},
+        {"WS2_32.dll", "send", reinterpret_cast<void **>(&g_OriginalSend), reinterpret_cast<void *>(&SendHook)},
+        {"WS2_32.dll", "recv", reinterpret_cast<void **>(&g_OriginalRecv), reinterpret_cast<void *>(&RecvHook)},
+        {"WS2_32.dll", "connect", reinterpret_cast<void **>(&g_OriginalConnect),
+         reinterpret_cast<void *>(&ConnectHook)},
+        {"WS2_32.dll", "WSAConnect", reinterpret_cast<void **>(&g_OriginalWsaConnect),
+         reinterpret_cast<void *>(&WsaConnectHook)},
+        {"WS2_32.dll", "GetAddrInfoW", reinterpret_cast<void **>(&g_OriginalGetAddrInfoW),
+         reinterpret_cast<void *>(&GetAddrInfoWHook)},
     };
 
     bool PatchImportAddressTableForModule(HMODULE moduleHandle, bool install)
@@ -502,41 +414,37 @@ namespace
             return false;
         }
 
-        auto* base = reinterpret_cast<std::uint8_t*>(moduleHandle);
+        auto *base = reinterpret_cast<std::uint8_t *>(moduleHandle);
 
-        auto* dosHeader = reinterpret_cast<PIMAGE_DOS_HEADER>(base);
+        auto *dosHeader = reinterpret_cast<PIMAGE_DOS_HEADER>(base);
         if (dosHeader == nullptr || dosHeader->e_magic != IMAGE_DOS_SIGNATURE)
         {
             return false;
         }
 
-        auto* ntHeaders = reinterpret_cast<PIMAGE_NT_HEADERS>(base + dosHeader->e_lfanew);
+        auto *ntHeaders = reinterpret_cast<PIMAGE_NT_HEADERS>(base + dosHeader->e_lfanew);
         if (ntHeaders == nullptr || ntHeaders->Signature != IMAGE_NT_SIGNATURE)
         {
             return false;
         }
 
-        IMAGE_DATA_DIRECTORY& importDirectory =
-            ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+        IMAGE_DATA_DIRECTORY &importDirectory = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
 
         if (importDirectory.VirtualAddress == 0 || importDirectory.Size == 0)
         {
             return false;
         }
 
-        auto* importDescriptor = reinterpret_cast<PIMAGE_IMPORT_DESCRIPTOR>(
-            base + importDirectory.VirtualAddress
-            );
+        auto *importDescriptor = reinterpret_cast<PIMAGE_IMPORT_DESCRIPTOR>(base + importDirectory.VirtualAddress);
 
         bool anyPatched = false;
 
         for (; importDescriptor->Name != 0; ++importDescriptor)
         {
-            const char* importedModuleName =
-                reinterpret_cast<const char*>(base + importDescriptor->Name);
+            const char *importedModuleName = reinterpret_cast<const char *>(base + importDescriptor->Name);
 
             bool moduleMatches = false;
-            for (const auto& hookEntry : g_HookEntries)
+            for (const auto &hookEntry : g_HookEntries)
             {
                 if (_stricmp(importedModuleName, hookEntry.ModuleName) == 0)
                 {
@@ -550,21 +458,17 @@ namespace
                 continue;
             }
 
-            auto* thunkIat = reinterpret_cast<PIMAGE_THUNK_DATA>(
-                base + importDescriptor->FirstThunk
-                );
+            auto *thunkIat = reinterpret_cast<PIMAGE_THUNK_DATA>(base + importDescriptor->FirstThunk);
 
             PIMAGE_THUNK_DATA thunkOriginal = nullptr;
             if (importDescriptor->OriginalFirstThunk != 0)
             {
-                thunkOriginal = reinterpret_cast<PIMAGE_THUNK_DATA>(
-                    base + importDescriptor->OriginalFirstThunk
-                    );
+                thunkOriginal = reinterpret_cast<PIMAGE_THUNK_DATA>(base + importDescriptor->OriginalFirstThunk);
             }
 
             for (; thunkIat->u1.Function != 0; ++thunkIat)
             {
-                const char* functionName = nullptr;
+                const char *functionName = nullptr;
 
                 if (thunkOriginal != nullptr)
                 {
@@ -574,11 +478,10 @@ namespace
                         continue;
                     }
 
-                    auto* importByName = reinterpret_cast<PIMAGE_IMPORT_BY_NAME>(
-                        base + thunkOriginal->u1.AddressOfData
-                        );
+                    auto *importByName =
+                        reinterpret_cast<PIMAGE_IMPORT_BY_NAME>(base + thunkOriginal->u1.AddressOfData);
 
-                    functionName = reinterpret_cast<const char*>(importByName->Name);
+                    functionName = reinterpret_cast<const char *>(importByName->Name);
                     ++thunkOriginal;
                 }
 
@@ -587,7 +490,7 @@ namespace
                     continue;
                 }
 
-                for (auto& hookEntry : g_HookEntries)
+                for (auto &hookEntry : g_HookEntries)
                 {
                     if (_stricmp(importedModuleName, hookEntry.ModuleName) != 0)
                     {
@@ -599,14 +502,10 @@ namespace
                         continue;
                     }
 
-                    auto* functionSlot =
-                        reinterpret_cast<ULONG_PTR*>(&thunkIat->u1.Function);
+                    auto *functionSlot = reinterpret_cast<ULONG_PTR *>(&thunkIat->u1.Function);
 
                     DWORD oldProtection = 0;
-                    if (!VirtualProtect(functionSlot,
-                        sizeof(ULONG_PTR),
-                        PAGE_READWRITE,
-                        &oldProtection))
+                    if (!VirtualProtect(functionSlot, sizeof(ULONG_PTR), PAGE_READWRITE, &oldProtection))
                     {
                         continue;
                     }
@@ -615,8 +514,7 @@ namespace
                     {
                         if (*hookEntry.OriginalFunction == nullptr)
                         {
-                            *hookEntry.OriginalFunction =
-                                reinterpret_cast<void*>(*functionSlot);
+                            *hookEntry.OriginalFunction = reinterpret_cast<void *>(*functionSlot);
 
                             *functionSlot = reinterpret_cast<ULONG_PTR>(hookEntry.HookFunction);
                             TrackPatchedSlot(functionSlot, hookEntry.HookFunction);
@@ -633,17 +531,14 @@ namespace
                         }
                     }
 
-                    VirtualProtect(functionSlot,
-                        sizeof(ULONG_PTR),
-                        oldProtection,
-                        &oldProtection);
+                    VirtualProtect(functionSlot, sizeof(ULONG_PTR), oldProtection, &oldProtection);
                 }
             }
         }
 
         return anyPatched;
     }
-}
+} // namespace
 
 bool KeSetWinsockHook(WinsockHookCallback callback) noexcept
 {
@@ -709,7 +604,7 @@ void KeRemoveWinsockHook() noexcept
     g_PatchedSlotCount = 0;
 }
 
-bool KeCheckWinsockHookIntegrity(std::uint32_t* mismatchCount) noexcept
+bool KeCheckWinsockHookIntegrity(std::uint32_t *mismatchCount) noexcept
 {
     std::uint32_t mismatches = 0;
 
@@ -717,8 +612,8 @@ bool KeCheckWinsockHookIntegrity(std::uint32_t* mismatchCount) noexcept
     {
         for (std::size_t i = 0; i < g_PatchedSlotCount; ++i)
         {
-            ULONG_PTR* slot = g_PatchedSlots[i].Slot;
-            void* expectedHook = g_PatchedSlots[i].HookFunction;
+            ULONG_PTR *slot = g_PatchedSlots[i].Slot;
+            void *expectedHook = g_PatchedSlots[i].HookFunction;
             if (slot == nullptr || expectedHook == nullptr)
             {
                 ++mismatches;
@@ -739,4 +634,3 @@ bool KeCheckWinsockHookIntegrity(std::uint32_t* mismatchCount) noexcept
 
     return mismatches == 0;
 }
-

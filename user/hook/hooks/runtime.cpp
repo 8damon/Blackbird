@@ -30,30 +30,32 @@
 namespace
 {
     WinsockHookController g_WinsockController;
-    NtHookController      g_NtHookController;
-    KiHookController      g_KiHookController;
-    bool                  g_WinsockInitialized = false;
-    bool                  g_NtInitialized = false;
-    bool                  g_KiInitialized = false;
-    ULONGLONG             g_LastIntegrityCheckTick = 0;
-    ULONGLONG             g_LastIntegrityPublishTick = 0;
-    std::uint32_t         g_LastIntegrityMask = 0;
-    std::uint64_t         g_IntegrityCheckCount = 0;
-    std::uint8_t          g_AmsiBaseline[16]{};
-    std::uint8_t          g_EtwBaseline[16]{};
-    bool                  g_AmsiBaselineCaptured = false;
-    bool                  g_EtwBaselineCaptured = false;
-    bool                  g_LastAmsiTampered = false;
-    bool                  g_LastEtwTampered = false;
-    ULONGLONG             g_LastAmsiPublishTick = 0;
-    ULONGLONG             g_LastEtwPublishTick = 0;
-    std::atomic<bool>     g_RuntimePrimed{ false };
+    NtHookController g_NtHookController;
+    KiHookController g_KiHookController;
+    bool g_WinsockInitialized = false;
+    bool g_NtInitialized = false;
+    bool g_KiInitialized = false;
+    ULONGLONG g_LastIntegrityCheckTick = 0;
+    ULONGLONG g_LastIntegrityPublishTick = 0;
+    std::uint32_t g_LastIntegrityMask = UINT32_MAX; // sentinel: first poll always appears as state change
+    std::uint64_t g_IntegrityCheckCount = 0;
+    std::uint8_t g_AmsiBaseline[16]{};
+    std::uint8_t g_EtwBaseline[16]{};
+    bool g_AmsiBaselineCaptured = false;
+    bool g_EtwBaselineCaptured = false;
+    bool g_LastAmsiTampered = false;
+    bool g_LastEtwTampered = false;
+    bool g_AmsiFirstPoll = true; // force publish on first AMSI observation
+    bool g_EtwFirstPoll = true;  // force publish on first ETW observation
+    ULONGLONG g_LastAmsiPublishTick = 0;
+    ULONGLONG g_LastEtwPublishTick = 0;
+    std::atomic<bool> g_RuntimePrimed{false};
 
     inline constexpr std::uint32_t kIntegrityMaskWinsock = 0x00000001u;
     inline constexpr std::uint32_t kIntegrityMaskNt = 0x00000002u;
     inline constexpr std::uint32_t kIntegrityMaskKi = 0x00000004u;
-    inline constexpr std::uint32_t kIntegrityOperationAmsiPatch = 2u;
-    inline constexpr std::uint32_t kIntegrityOperationEtwPatch = 3u;
+    inline constexpr std::uint32_t kIntegrityOperationAmsiPatch = BLACKBIRD_HOOK_EVENT_OP_AMSI_PATCH;
+    inline constexpr std::uint32_t kIntegrityOperationEtwPatch = BLACKBIRD_HOOK_EVENT_OP_ETW_PATCH;
     inline constexpr ULONGLONG kIntegrityCheckPeriodMs = 2000ull;
     inline constexpr ULONGLONG kIntegrityRepublishPeriodMs = 10000ull;
     inline constexpr DWORD kIpcInitAttemptTimeoutMs = 64u;
@@ -61,11 +63,23 @@ namespace
     inline constexpr DWORD kHookReadyNotifyRetrySleepMs = 1u;
     inline constexpr ULONGLONG kIpcInitMaxWaitMs = 15000ull;
     inline constexpr ULONGLONG kHookReadyNotifyMaxWaitMs = 15000ull;
+
+    template <typename TTrace> void CopyHookStack(const TTrace &trace, BLACKBIRD_IPC_HOOK_EVENT &record) noexcept
+    {
+        const std::uint32_t safeCount = static_cast<std::uint32_t>(
+            (trace.Count > BLACKBIRD_IPC_MAX_HOOK_STACK_FRAMES) ? BLACKBIRD_IPC_MAX_HOOK_STACK_FRAMES : trace.Count);
+        record.StackCount = safeCount;
+        for (std::uint32_t i = 0; i < safeCount; ++i)
+        {
+            record.Stack[i] = reinterpret_cast<std::uint64_t>(trace.Frames[i].Ip);
+        }
+    }
+
     void ResetIntegrityWatchdogState() noexcept
     {
         g_LastIntegrityCheckTick = 0;
         g_LastIntegrityPublishTick = 0;
-        g_LastIntegrityMask = 0;
+        g_LastIntegrityMask = UINT32_MAX;
         g_IntegrityCheckCount = 0;
         g_AmsiBaselineCaptured = false;
         g_EtwBaselineCaptured = false;
@@ -75,6 +89,8 @@ namespace
         g_LastEtwTampered = false;
         g_LastAmsiPublishTick = 0;
         g_LastEtwPublishTick = 0;
+        g_AmsiFirstPoll = true;
+        g_EtwFirstPoll = true;
     }
 
     bool EnsureHookControllersReady() noexcept
@@ -194,7 +210,7 @@ namespace
         }
     }
 
-    const char* WinsockOperationName(WinsockOperation op) noexcept
+    const char *WinsockOperationName(WinsockOperation op) noexcept
     {
         switch (op)
         {
@@ -217,12 +233,28 @@ namespace
         }
     }
 
-    bool SendWinsockEvent(const WinsockCapturedEvent& evt) noexcept
+    // Encode a CallerClassification into the hook event's CallerFlags field.
+    static inline std::uint32_t BuildCallerFlags(const IC_STACKTRACE::CallerClassification &cls) noexcept
+    {
+        std::uint32_t flags = cls.Flags;
+        flags |= (static_cast<std::uint32_t>(cls.ImmediateCaller) << BLACKBIRD_HOOK_CALLER_IMMED_SHIFT);
+        flags |= (static_cast<std::uint32_t>(cls.DeepestOrigin) << BLACKBIRD_HOOK_CALLER_DEEP_SHIFT);
+        return flags;
+    }
+
+    bool SendWinsockEvent(const WinsockCapturedEvent &evt) noexcept
     {
         using namespace XIPC;
 
+        auto cls = IC_STACKTRACE::ClassifyTrace(evt.Stack);
+
+        // Drop events whose entire call chain is system-DLL code.  These are
+        // OS-internal Winsock operations, not target-initiated network activity.
+        if (cls.Flags & IC_STACKTRACE::kCallerFlagAllSystem)
+            return true;
+
         BLACKBIRD_IPC_HOOK_EVENT record{};
-        const char* opName = WinsockOperationName(evt.Operation);
+        const char *opName = WinsockOperationName(evt.Operation);
         std::size_t sampleSize = std::min<std::size_t>(evt.Data.size(), RTL_NUMBER_OF(record.DataSample));
 
         record.Kind = BlackbirdIpcHookEventWinsock;
@@ -240,21 +272,32 @@ namespace
             record.Args[i] = evt.Args[i];
         }
         record.DataSize = static_cast<std::uint32_t>(sampleSize);
+        record.CallerFlags = BuildCallerFlags(cls);
         (void)strncpy_s(record.ApiName, opName, _TRUNCATE);
         (void)strncpy_s(record.ModuleName, "WS2_32", _TRUNCATE);
         if (sampleSize != 0)
         {
             CopyMemory(record.DataSample, evt.Data.data(), sampleSize);
         }
+        CopyHookStack(evt.Stack, record);
         return PublishHookEvent(record);
     }
 
-    bool SendNtEvent(const NtCapturedEvent& evt) noexcept
+    bool SendNtEvent(const NtCapturedEvent &evt) noexcept
     {
         using namespace XIPC;
 
+        auto cls = IC_STACKTRACE::ClassifyTrace(evt.Stack);
+
+        // Drop events whose entire call chain is system-DLL code.  The monitored
+        // process itself — or an injected DLL — must appear somewhere in the stack
+        // for the event to be worth reporting.
+        if (cls.Flags & IC_STACKTRACE::kCallerFlagAllSystem)
+            return true;
+
         BLACKBIRD_IPC_HOOK_EVENT record{};
-        const char* functionName = (evt.FunctionName != nullptr && evt.FunctionName[0] != '\0') ? evt.FunctionName : "NtCall";
+        const char *functionName =
+            (evt.FunctionName != nullptr && evt.FunctionName[0] != '\0') ? evt.FunctionName : "NtCall";
 
         record.Kind = BlackbirdIpcHookEventNt;
         record.ProcessId = GetCurrentProcessId();
@@ -271,17 +314,26 @@ namespace
             record.Args[i] = evt.Args[i];
         }
         record.DataSize = 0;
+        record.CallerFlags = BuildCallerFlags(cls);
+        CopyHookStack(evt.Stack, record);
 
         (void)strncpy_s(record.ApiName, functionName, _TRUNCATE);
         (void)strncpy_s(record.ModuleName, "ntdll", _TRUNCATE);
         return PublishHookEvent(record);
     }
 
-    bool SendKiEvent(const KiCapturedEvent& evt) noexcept
+    bool SendKiEvent(const KiCapturedEvent &evt) noexcept
     {
         using namespace XIPC;
 
-        const char* stubName = evt.StubName ? evt.StubName : "";
+        auto cls = IC_STACKTRACE::ClassifyTrace(evt.Stack);
+
+        // Ki (APC dispatcher / syscall stub) events from pure system-DLL chains
+        // are OS-internal dispatch; drop them to avoid flooding with routine noise.
+        if (cls.Flags & IC_STACKTRACE::kCallerFlagAllSystem)
+            return true;
+
+        const char *stubName = evt.StubName ? evt.StubName : "";
 
         BLACKBIRD_IPC_HOOK_EVENT record{};
         record.Kind = BlackbirdIpcHookEventKi;
@@ -292,6 +344,8 @@ namespace
         record.Context0 = reinterpret_cast<std::uint64_t>(evt.StackPointer);
         record.ArgCount = 0;
         record.DataSize = 0;
+        record.CallerFlags = BuildCallerFlags(cls);
+        CopyHookStack(evt.Stack, record);
         (void)strncpy_s(record.ApiName, (stubName[0] != '\0') ? stubName : "KiUserApcDispatcher", _TRUNCATE);
         (void)strncpy_s(record.ModuleName, "ntdll", _TRUNCATE);
         return PublishHookEvent(record);
@@ -300,34 +354,31 @@ namespace
     void FlushHookEvents() noexcept
     {
         {
-            std::vector<WinsockCapturedEvent> events =
-                g_WinsockController.ConsumeEvents();
+            std::vector<WinsockCapturedEvent> events = g_WinsockController.ConsumeEvents();
 
-            for (const auto& evt : events)
+            for (const auto &evt : events)
             {
                 (void)SendWinsockEvent(evt);
             }
         }
 
         {
-            std::vector<NtCapturedEvent> events =
-                g_NtHookController.ConsumeEvents();
+            std::vector<NtCapturedEvent> events = g_NtHookController.ConsumeEvents();
 
-            for (const auto& evt : events)
+            for (const auto &evt : events)
                 (void)SendNtEvent(evt);
         }
 
         {
-            std::vector<KiCapturedEvent> events =
-                g_KiHookController.ConsumeEvents();
+            std::vector<KiCapturedEvent> events = g_KiHookController.ConsumeEvents();
 
-            for (const auto& evt : events)
+            for (const auto &evt : events)
                 (void)SendKiEvent(evt);
         }
     }
 
-    bool SendHookIntegrityEvent(std::uint32_t integrityMask, std::uint32_t winsockMismatches, std::uint32_t ntMismatches,
-                                std::uint32_t kiMismatches) noexcept
+    bool SendHookIntegrityEvent(std::uint32_t integrityMask, std::uint32_t winsockMismatches,
+                                std::uint32_t ntMismatches, std::uint32_t kiMismatches) noexcept
     {
         using namespace XIPC;
 
@@ -390,9 +441,9 @@ namespace
         return false;
     }
 
-    bool ProbeExportPatchState(const wchar_t* moduleName, const char* exportName, std::uint8_t baseline[16],
-                               bool& baselineCaptured, bool& present, bool& tampered, bool& suspicious,
-                               bool& baselineChanged, std::uint8_t sample[16]) noexcept
+    bool ProbeExportPatchState(const wchar_t *moduleName, const char *exportName, std::uint8_t baseline[16],
+                               bool &baselineCaptured, bool &present, bool &tampered, bool &suspicious,
+                               bool &baselineChanged, std::uint8_t sample[16]) noexcept
     {
         HMODULE moduleHandle = nullptr;
         FARPROC exportAddress = nullptr;
@@ -442,7 +493,7 @@ namespace
         return true;
     }
 
-    bool SendPatchTamperEvent(std::uint32_t operation, const char* apiName, const char* moduleName, bool tampered,
+    bool SendPatchTamperEvent(std::uint32_t operation, const char *apiName, const char *moduleName, bool tampered,
                               bool suspicious, bool baselineChanged, const std::uint8_t sample[16]) noexcept
     {
         using namespace XIPC;
@@ -479,11 +530,12 @@ namespace
         {
             if (present)
             {
-                bool stateChanged = tampered != g_LastAmsiTampered;
-                bool publish = stateChanged || (tampered && (now - g_LastAmsiPublishTick >= kIntegrityRepublishPeriodMs));
-                if (publish &&
-                    SendPatchTamperEvent(kIntegrityOperationAmsiPatch, "AmsiScanBuffer", "amsi", tampered, suspicious,
-                                         baselineChanged, sample))
+                bool stateChanged = g_AmsiFirstPoll || (tampered != g_LastAmsiTampered);
+                g_AmsiFirstPoll = false;
+                bool publish =
+                    stateChanged || (tampered && (now - g_LastAmsiPublishTick >= kIntegrityRepublishPeriodMs));
+                if (publish && SendPatchTamperEvent(kIntegrityOperationAmsiPatch, "AmsiScanBuffer", "amsi", tampered,
+                                                    suspicious, baselineChanged, sample))
                 {
                     g_LastAmsiPublishTick = now;
                 }
@@ -491,20 +543,22 @@ namespace
             }
             else
             {
+                g_AmsiFirstPoll = false;
                 g_LastAmsiTampered = false;
             }
         }
 
-        if (ProbeExportPatchState(L"ntdll.dll", "EtwEventWrite", g_EtwBaseline, g_EtwBaselineCaptured, present, tampered,
-                                  suspicious, baselineChanged, sample))
+        if (ProbeExportPatchState(L"ntdll.dll", "EtwEventWrite", g_EtwBaseline, g_EtwBaselineCaptured, present,
+                                  tampered, suspicious, baselineChanged, sample))
         {
             if (present)
             {
-                bool stateChanged = tampered != g_LastEtwTampered;
-                bool publish = stateChanged || (tampered && (now - g_LastEtwPublishTick >= kIntegrityRepublishPeriodMs));
-                if (publish &&
-                    SendPatchTamperEvent(kIntegrityOperationEtwPatch, "EtwEventWrite", "ntdll", tampered, suspicious,
-                                         baselineChanged, sample))
+                bool stateChanged = g_EtwFirstPoll || (tampered != g_LastEtwTampered);
+                g_EtwFirstPoll = false;
+                bool publish =
+                    stateChanged || (tampered && (now - g_LastEtwPublishTick >= kIntegrityRepublishPeriodMs));
+                if (publish && SendPatchTamperEvent(kIntegrityOperationEtwPatch, "EtwEventWrite", "ntdll", tampered,
+                                                    suspicious, baselineChanged, sample))
                 {
                     g_LastEtwPublishTick = now;
                 }
@@ -512,6 +566,7 @@ namespace
             }
             else
             {
+                g_EtwFirstPoll = false;
                 g_LastEtwTampered = false;
             }
         }
@@ -570,20 +625,20 @@ namespace
 
         PollAmsiEtwPatchWatchdog(now);
     }
-}
+} // namespace
 
-static void LowNoise(const bk::blackbird::Event& e, void* u) noexcept
+static void LowNoise(const bk::blackbird::Event &e, void *u) noexcept
 {
     UNREFERENCED_PARAMETER(e);
     UNREFERENCED_PARAMETER(u);
 }
-static void HighNoise(const bk::blackbird::Event& e, void* u) noexcept
+static void HighNoise(const bk::blackbird::Event &e, void *u) noexcept
 {
     UNREFERENCED_PARAMETER(e);
     UNREFERENCED_PARAMETER(u);
 }
 
-static bool MemFault(const bk::blackbird::Event& e, EXCEPTION_POINTERS*, void*) noexcept
+static bool MemFault(const bk::blackbird::Event &e, EXCEPTION_POINTERS *, void *) noexcept
 {
     return e.exception_code == STATUS_GUARD_PAGE_VIOLATION;
 }
@@ -595,6 +650,12 @@ void BkRuntimePrimeHooks() noexcept
     {
         return;
     }
+
+    // Register our own module so ClassifyTrace can exclude SR71 frames from the
+    // call-origin analysis.  Pass a pointer to a function that lives in this
+    // compilation unit (i.e. inside SR71.dll) so GetModuleHandleExA can resolve
+    // the HMODULE from its address.
+    IC_STACKTRACE::InitCallerClassifier(reinterpret_cast<void *>(&BkRuntimePrimeHooks));
 
     static BkBlackbirdTelemetryArguments g_sw{};
     g_sw.target_module_basename = L"SR71.dll";
@@ -614,12 +675,17 @@ DWORD WINAPI BkRuntimeThreadProc(LPVOID)
 
     ipcReady = InitializeIpcWithRetry();
 
+    // Install hooks before notifying the controller so the ready mask that we
+    // send reflects the hooks that are actually in place.  Sending the notify
+    // first (the old order) meant the mask always contained only IPC_CONNECTED
+    // because g_NtInitialized / g_WinsockInitialized / g_KiInitialized were
+    // still false, leaving the controller's HookReadyMask permanently incomplete.
+    (void)EnsureHookControllersReady();
+
     if (ipcReady)
     {
         (void)NotifyHookReadyWithRetry();
     }
-
-    (void)EnsureHookControllersReady();
 
     for (;;)
     {
@@ -652,4 +718,3 @@ void BkRuntimeShutdown()
 
     BkUnregisterVectoredExceptionHandler();
 }
-

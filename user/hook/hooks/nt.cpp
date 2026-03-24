@@ -18,7 +18,8 @@ namespace RYX_NT
     static bool ShouldEnableNtMemoryHooks() noexcept
     {
         char value[8]{};
-        DWORD read = GetEnvironmentVariableA("BLACKBIRD_NT_HOOK_MEMORY", value, static_cast<DWORD>(RTL_NUMBER_OF(value)));
+        DWORD read =
+            GetEnvironmentVariableA("BLACKBIRD_NT_HOOK_MEMORY", value, static_cast<DWORD>(RTL_NUMBER_OF(value)));
         if (read == 0 || read >= RTL_NUMBER_OF(value))
         {
             return false;
@@ -27,7 +28,7 @@ namespace RYX_NT
         return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
     }
 
-    static bool IsNtMemoryHookName(const char* name) noexcept
+    static bool IsNtMemoryHookName(const char *name) noexcept
     {
         if (name == nullptr)
         {
@@ -35,285 +36,203 @@ namespace RYX_NT
         }
 
         return (std::strcmp(name, "NtAllocateVirtualMemory") == 0) ||
-               (std::strcmp(name, "NtProtectVirtualMemory") == 0);
+               (std::strcmp(name, "NtProtectVirtualMemory") == 0) ||
+               (std::strcmp(name, "NtAllocateVirtualMemoryEx") == 0) ||
+               (std::strcmp(name, "NtMapViewOfSectionEx") == 0);
     }
 
     typedef struct _CLIENT_ID
     {
         HANDLE UniqueProcess;
         HANDLE UniqueThread;
-    } CLIENT_ID, * PCLIENT_ID;
+    } CLIENT_ID, *PCLIENT_ID;
 
     typedef struct _INITIAL_TEB
     {
         PVOID StackBase;
         PVOID StackLimit;
         PVOID StackAllocation;
-    } INITIAL_TEB, * PINITIAL_TEB;
+    } INITIAL_TEB, *PINITIAL_TEB;
 
-    using NtCreateThread_t = NTSTATUS(NTAPI*)(
-        PHANDLE            ThreadHandle,
-        ACCESS_MASK        DesiredAccess,
-        POBJECT_ATTRIBUTES ObjectAttributes,
-        HANDLE             ProcessHandle,
-        PCLIENT_ID         ClientId,
-        PCONTEXT           ThreadContext,
-        PINITIAL_TEB       InitialTeb,
-        BOOLEAN            CreateSuspended
-        );
+    using NtCreateThread_t = NTSTATUS(NTAPI *)(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                                               POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
+                                               PCLIENT_ID ClientId, PCONTEXT ThreadContext, PINITIAL_TEB InitialTeb,
+                                               BOOLEAN CreateSuspended);
 
-    using NtCreateThreadEx_t = NTSTATUS(NTAPI*)(
-        PHANDLE            ThreadHandle,
-        ACCESS_MASK        DesiredAccess,
-        POBJECT_ATTRIBUTES ObjectAttributes,
-        HANDLE             ProcessHandle,
-        PVOID              StartRoutine,
-        PVOID              Argument,
-        ULONG              CreateFlags,
-        SIZE_T             ZeroBits,
-        SIZE_T             StackSize,
-        SIZE_T             MaximumStackSize,
-        PVOID              AttributeList
-        );
+    using NtCreateThreadEx_t = NTSTATUS(NTAPI *)(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                                                 POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle,
+                                                 PVOID StartRoutine, PVOID Argument, ULONG CreateFlags, SIZE_T ZeroBits,
+                                                 SIZE_T StackSize, SIZE_T MaximumStackSize, PVOID AttributeList);
 
-    using NtWriteVirtualMemory_t = NTSTATUS(NTAPI*)(
-        HANDLE  ProcessHandle,
-        PVOID   BaseAddress,
-        PVOID   Buffer,
-        SIZE_T  BufferSize,
-        PSIZE_T NumberOfBytesWritten
-        );
+    using NtWriteVirtualMemory_t = NTSTATUS(NTAPI *)(HANDLE ProcessHandle, PVOID BaseAddress, PVOID Buffer,
+                                                     SIZE_T BufferSize, PSIZE_T NumberOfBytesWritten);
 
-    using NtAllocateVirtualMemory_t = NTSTATUS(NTAPI*)(
-        HANDLE    ProcessHandle,
-        PVOID*    BaseAddress,
-        ULONG_PTR ZeroBits,
-        PSIZE_T   RegionSize,
-        ULONG     AllocationType,
-        ULONG     Protect
-        );
+    using NtAllocateVirtualMemory_t = NTSTATUS(NTAPI *)(HANDLE ProcessHandle, PVOID *BaseAddress, ULONG_PTR ZeroBits,
+                                                        PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect);
 
-    using NtProtectVirtualMemory_t = NTSTATUS(NTAPI*)(
-        HANDLE  ProcessHandle,
-        PVOID*  BaseAddress,
-        PSIZE_T RegionSize,
-        ULONG   NewProtect,
-        PULONG  OldProtect
-        );
+    using NtProtectVirtualMemory_t = NTSTATUS(NTAPI *)(HANDLE ProcessHandle, PVOID *BaseAddress, PSIZE_T RegionSize,
+                                                       ULONG NewProtect, PULONG OldProtect);
 
-    using NtReadVirtualMemory_t = NTSTATUS(NTAPI*)(
-        HANDLE  ProcessHandle,
-        PVOID   BaseAddress,
-        PVOID   Buffer,
-        SIZE_T  BufferSize,
-        PSIZE_T NumberOfBytesRead
-        );
+    using NtReadVirtualMemory_t = NTSTATUS(NTAPI *)(HANDLE ProcessHandle, PVOID BaseAddress, PVOID Buffer,
+                                                    SIZE_T BufferSize, PSIZE_T NumberOfBytesRead);
 
-    using NtQueryVirtualMemory_t = NTSTATUS(NTAPI*)(
-        HANDLE  ProcessHandle,
-        PVOID   BaseAddress,
-        ULONG   MemoryInformationClass,
-        PVOID   MemoryInformation,
-        SIZE_T  MemoryInformationLength,
-        PSIZE_T ReturnLength
-        );
+    using NtQueryVirtualMemory_t = NTSTATUS(NTAPI *)(HANDLE ProcessHandle, PVOID BaseAddress,
+                                                     ULONG MemoryInformationClass, PVOID MemoryInformation,
+                                                     SIZE_T MemoryInformationLength, PSIZE_T ReturnLength);
 
-    using NtQuerySystemInformation_t = NTSTATUS(NTAPI*)(
-        ULONG  SystemInformationClass,
-        PVOID  SystemInformation,
-        ULONG  SystemInformationLength,
-        PULONG ReturnLength
-        );
+    using NtQuerySystemInformation_t = NTSTATUS(NTAPI *)(ULONG SystemInformationClass, PVOID SystemInformation,
+                                                         ULONG SystemInformationLength, PULONG ReturnLength);
 
-    using NtCreateSection_t = NTSTATUS(NTAPI*)(
-        PHANDLE            SectionHandle,
-        ACCESS_MASK        DesiredAccess,
-        POBJECT_ATTRIBUTES ObjectAttributes,
-        PLARGE_INTEGER     MaximumSize,
-        ULONG              SectionPageProtection,
-        ULONG              AllocationAttributes,
-        HANDLE             FileHandle
-        );
+    using NtCreateSection_t = NTSTATUS(NTAPI *)(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess,
+                                                POBJECT_ATTRIBUTES ObjectAttributes, PLARGE_INTEGER MaximumSize,
+                                                ULONG SectionPageProtection, ULONG AllocationAttributes,
+                                                HANDLE FileHandle);
 
-    using NtTerminateProcess_t = NTSTATUS(NTAPI*)(
-        HANDLE   ProcessHandle,
-        NTSTATUS ExitStatus
-        );
+    using NtTerminateProcess_t = NTSTATUS(NTAPI *)(HANDLE ProcessHandle, NTSTATUS ExitStatus);
 
-    using NtOpenProcessToken_t = NTSTATUS(NTAPI*)(
-        HANDLE  ProcessHandle,
-        ACCESS_MASK DesiredAccess,
-        PHANDLE TokenHandle
-        );
+    using NtOpenProcessToken_t = NTSTATUS(NTAPI *)(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
+                                                   PHANDLE TokenHandle);
 
-    using NtOpenThreadToken_t = NTSTATUS(NTAPI*)(
-        HANDLE  ThreadHandle,
-        ACCESS_MASK DesiredAccess,
-        BOOLEAN OpenAsSelf,
-        PHANDLE TokenHandle
-        );
+    using NtOpenThreadToken_t = NTSTATUS(NTAPI *)(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess, BOOLEAN OpenAsSelf,
+                                                  PHANDLE TokenHandle);
 
-    using NtOpenFile_t = NTSTATUS(NTAPI*)(
-        PHANDLE            FileHandle,
-        ACCESS_MASK        DesiredAccess,
-        POBJECT_ATTRIBUTES ObjectAttributes,
-        PIO_STATUS_BLOCK   IoStatusBlock,
-        ULONG              ShareAccess,
-        ULONG              OpenOptions
-        );
+    using NtOpenFile_t = NTSTATUS(NTAPI *)(PHANDLE FileHandle, ACCESS_MASK DesiredAccess,
+                                           POBJECT_ATTRIBUTES ObjectAttributes, PIO_STATUS_BLOCK IoStatusBlock,
+                                           ULONG ShareAccess, ULONG OpenOptions);
 
-    using NtQueryInformationProcess_t = NTSTATUS(NTAPI*)(
-        HANDLE ProcessHandle,
-        ULONG  ProcessInformationClass,
-        PVOID  ProcessInformation,
-        ULONG  ProcessInformationLength,
-        PULONG ReturnLength
-        );
+    using NtQueryInformationProcess_t = NTSTATUS(NTAPI *)(HANDLE ProcessHandle, ULONG ProcessInformationClass,
+                                                          PVOID ProcessInformation, ULONG ProcessInformationLength,
+                                                          PULONG ReturnLength);
 
-    using NtQueryInformationThread_t = NTSTATUS(NTAPI*)(
-        HANDLE ThreadHandle,
-        ULONG  ThreadInformationClass,
-        PVOID  ThreadInformation,
-        ULONG  ThreadInformationLength,
-        PULONG ReturnLength
-        );
+    using NtQueryInformationThread_t = NTSTATUS(NTAPI *)(HANDLE ThreadHandle, ULONG ThreadInformationClass,
+                                                         PVOID ThreadInformation, ULONG ThreadInformationLength,
+                                                         PULONG ReturnLength);
 
-    using NtSetContextThread_t = NTSTATUS(NTAPI*)(
-        HANDLE   ThreadHandle,
-        PCONTEXT ThreadContext
-        );
+    using NtSetContextThread_t = NTSTATUS(NTAPI *)(HANDLE ThreadHandle, PCONTEXT ThreadContext);
 
-    using NtQuerySection_t = NTSTATUS(NTAPI*)(
-        HANDLE SectionHandle,
-        ULONG  SectionInformationClass,
-        PVOID  InformationBuffer,
-        ULONG  InformationBufferSize,
-        PULONG ResultLength
-        );
+    using NtQuerySection_t = NTSTATUS(NTAPI *)(HANDLE SectionHandle, ULONG SectionInformationClass,
+                                               PVOID InformationBuffer, ULONG InformationBufferSize,
+                                               PULONG ResultLength);
 
-    using NtQueryBootOptions_t = NTSTATUS(NTAPI*)(
-        PVOID  BootOptions,
-        PULONG BootOptionsLength
-        );
+    using NtQueryBootOptions_t = NTSTATUS(NTAPI *)(PVOID BootOptions, PULONG BootOptionsLength);
 
-    using NtOpenProcess_t = NTSTATUS(NTAPI*)(
-        PHANDLE ProcessHandle,
-        ACCESS_MASK DesiredAccess,
-        POBJECT_ATTRIBUTES ObjectAttributes,
-        PCLIENT_ID ClientId
-        );
+    using NtOpenProcess_t = NTSTATUS(NTAPI *)(PHANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
+                                              POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId);
 
-    using NtOpenThread_t = NTSTATUS(NTAPI*)(
-        PHANDLE ThreadHandle,
-        ACCESS_MASK DesiredAccess,
-        POBJECT_ATTRIBUTES ObjectAttributes,
-        PCLIENT_ID ClientId
-        );
+    using NtOpenThread_t = NTSTATUS(NTAPI *)(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                                             POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId);
 
-    using NtDuplicateObject_t = NTSTATUS(NTAPI*)(
-        HANDLE SourceProcessHandle,
-        HANDLE SourceHandle,
-        HANDLE TargetProcessHandle,
-        PHANDLE TargetHandle,
-        ACCESS_MASK DesiredAccess,
-        ULONG Attributes,
-        ULONG Options
-        );
+    using NtDuplicateObject_t = NTSTATUS(NTAPI *)(HANDLE SourceProcessHandle, HANDLE SourceHandle,
+                                                  HANDLE TargetProcessHandle, PHANDLE TargetHandle,
+                                                  ACCESS_MASK DesiredAccess, ULONG Attributes, ULONG Options);
 
-    using NtGetContextThread_t = NTSTATUS(NTAPI*)(
-        HANDLE ThreadHandle,
-        PCONTEXT ThreadContext
-        );
+    using NtGetContextThread_t = NTSTATUS(NTAPI *)(HANDLE ThreadHandle, PCONTEXT ThreadContext);
 
-    using NtSuspendThread_t = NTSTATUS(NTAPI*)(
-        HANDLE ThreadHandle,
-        PULONG PreviousSuspendCount
-        );
+    using NtSuspendThread_t = NTSTATUS(NTAPI *)(HANDLE ThreadHandle, PULONG PreviousSuspendCount);
 
-    using NtResumeThread_t = NTSTATUS(NTAPI*)(
-        HANDLE ThreadHandle,
-        PULONG PreviousSuspendCount
-        );
+    using NtResumeThread_t = NTSTATUS(NTAPI *)(HANDLE ThreadHandle, PULONG PreviousSuspendCount);
 
-    using NtQueueApcThread_t = NTSTATUS(NTAPI*)(
-        HANDLE ThreadHandle,
-        PVOID ApcRoutine,
-        PVOID ApcArgument1,
-        PVOID ApcArgument2,
-        PVOID ApcArgument3
-        );
+    using NtQueueApcThread_t = NTSTATUS(NTAPI *)(HANDLE ThreadHandle, PVOID ApcRoutine, PVOID ApcArgument1,
+                                                 PVOID ApcArgument2, PVOID ApcArgument3);
 
-    static NtCreateThread_t            g_NtCreateThreadStub = nullptr;
-    static NtCreateThreadEx_t          g_NtCreateThreadExStub = nullptr;
-    static NtWriteVirtualMemory_t      g_NtWriteVirtualMemoryStub = nullptr;
-    static NtAllocateVirtualMemory_t   g_NtAllocateVirtualMemoryStub = nullptr;
-    static NtProtectVirtualMemory_t    g_NtProtectVirtualMemoryStub = nullptr;
-    static NtReadVirtualMemory_t       g_NtReadVirtualMemoryStub = nullptr;
-    static NtQueryVirtualMemory_t      g_NtQueryVirtualMemoryStub = nullptr;
-    static NtQuerySystemInformation_t  g_NtQuerySystemInformationStub = nullptr;
-    static NtCreateSection_t           g_NtCreateSectionStub = nullptr;
-    static NtTerminateProcess_t        g_NtTerminateProcessStub = nullptr;
-    static NtOpenProcessToken_t        g_NtOpenProcessTokenStub = nullptr;
-    static NtOpenThreadToken_t         g_NtOpenThreadTokenStub = nullptr;
-    static NtOpenFile_t                g_NtOpenFileStub = nullptr;
+    using NtAllocateVirtualMemoryEx_t = NTSTATUS(NTAPI *)(HANDLE ProcessHandle, PVOID *BaseAddress, ULONG_PTR ZeroBits,
+                                                          PSIZE_T RegionSize, ULONG AllocationType,
+                                                          PVOID ExtendedParameters, ULONG ExtendedParameterCount);
+
+    using NtMapViewOfSectionEx_t = NTSTATUS(NTAPI *)(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID *BaseAddress,
+                                                     PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize,
+                                                     ULONG AllocationType, ULONG Win32Protect, PVOID ExtendedParameters,
+                                                     ULONG ExtendedParameterCount);
+
+    using NtQueueApcThreadEx_t = NTSTATUS(NTAPI *)(HANDLE ThreadHandle, HANDLE UserApcReserveHandle, PVOID ApcRoutine,
+                                                   PVOID ApcArgument1, PVOID ApcArgument2, PVOID ApcArgument3);
+
+    using NtOpenProcessTokenEx_t = NTSTATUS(NTAPI *)(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
+                                                     ULONG HandleAttributes, PHANDLE TokenHandle);
+
+    using NtOpenThreadTokenEx_t = NTSTATUS(NTAPI *)(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess, BOOLEAN OpenAsSelf,
+                                                    ULONG HandleAttributes, PHANDLE TokenHandle);
+
+    static NtCreateThread_t g_NtCreateThreadStub = nullptr;
+    static NtCreateThreadEx_t g_NtCreateThreadExStub = nullptr;
+    static NtWriteVirtualMemory_t g_NtWriteVirtualMemoryStub = nullptr;
+    static NtAllocateVirtualMemory_t g_NtAllocateVirtualMemoryStub = nullptr;
+    static NtProtectVirtualMemory_t g_NtProtectVirtualMemoryStub = nullptr;
+    static NtReadVirtualMemory_t g_NtReadVirtualMemoryStub = nullptr;
+    static NtQueryVirtualMemory_t g_NtQueryVirtualMemoryStub = nullptr;
+    static NtQuerySystemInformation_t g_NtQuerySystemInformationStub = nullptr;
+    static NtCreateSection_t g_NtCreateSectionStub = nullptr;
+    static NtTerminateProcess_t g_NtTerminateProcessStub = nullptr;
+    static NtOpenProcessToken_t g_NtOpenProcessTokenStub = nullptr;
+    static NtOpenThreadToken_t g_NtOpenThreadTokenStub = nullptr;
+    static NtOpenFile_t g_NtOpenFileStub = nullptr;
     static NtQueryInformationProcess_t g_NtQueryInformationProcessStub = nullptr;
-    static NtQueryInformationThread_t  g_NtQueryInformationThreadStub = nullptr;
-    static NtSetContextThread_t        g_NtSetContextThreadStub = nullptr;
-    static NtQuerySection_t            g_NtQuerySectionStub = nullptr;
-    static NtQueryBootOptions_t        g_NtQueryBootOptionsStub = nullptr;
-    static NtOpenProcess_t             g_NtOpenProcessStub = nullptr;
-    static NtOpenThread_t              g_NtOpenThreadStub = nullptr;
-    static NtDuplicateObject_t         g_NtDuplicateObjectStub = nullptr;
-    static NtGetContextThread_t        g_NtGetContextThreadStub = nullptr;
-    static NtSuspendThread_t           g_NtSuspendThreadStub = nullptr;
-    static NtResumeThread_t            g_NtResumeThreadStub = nullptr;
-    static NtQueueApcThread_t          g_NtQueueApcThreadStub = nullptr;
+    static NtQueryInformationThread_t g_NtQueryInformationThreadStub = nullptr;
+    static NtSetContextThread_t g_NtSetContextThreadStub = nullptr;
+    static NtQuerySection_t g_NtQuerySectionStub = nullptr;
+    static NtQueryBootOptions_t g_NtQueryBootOptionsStub = nullptr;
+    static NtOpenProcess_t g_NtOpenProcessStub = nullptr;
+    static NtOpenThread_t g_NtOpenThreadStub = nullptr;
+    static NtDuplicateObject_t g_NtDuplicateObjectStub = nullptr;
+    static NtGetContextThread_t g_NtGetContextThreadStub = nullptr;
+    static NtSuspendThread_t g_NtSuspendThreadStub = nullptr;
+    static NtResumeThread_t g_NtResumeThreadStub = nullptr;
+    static NtQueueApcThread_t g_NtQueueApcThreadStub = nullptr;
+    static NtAllocateVirtualMemoryEx_t g_NtAllocateVirtualMemoryExStub = nullptr;
+    static NtMapViewOfSectionEx_t g_NtMapViewOfSectionExStub = nullptr;
+    static NtQueueApcThreadEx_t g_NtQueueApcThreadExStub = nullptr;
+    static NtOpenProcessTokenEx_t g_NtOpenProcessTokenExStub = nullptr;
+    static NtOpenThreadTokenEx_t g_NtOpenThreadTokenExStub = nullptr;
 
     struct NtTargetHook
     {
-        const char* Name;
-        NtOperation   Operation;
-        void* TargetAddress;
-        void* SyscallStubCode; 
+        const char *Name;
+        NtOperation Operation;
+        void *TargetAddress;
+        void *SyscallStubCode;
         std::uint32_t SyscallIndex;
-        std::uint8_t  OriginalBytes[16];
-        bool          Installed;
+        std::uint8_t OriginalBytes[16];
+        bool Installed;
     };
 
     static NtHookCallback g_ActiveNtCallback = nullptr;
 
-    static NtTargetHook g_NtHooks[] =
-    {
-        { "NtCreateThread",            NtOperation::NtCreateThread,            nullptr, nullptr, 0u, {}, false },
-        { "NtCreateThreadEx",          NtOperation::NtCreateThreadEx,          nullptr, nullptr, 0u, {}, false },
-        { "NtWriteVirtualMemory",      NtOperation::NtWriteVirtualMemory,      nullptr, nullptr, 0u, {}, false },
-        { "NtAllocateVirtualMemory",   NtOperation::NtAllocateVirtualMemory,   nullptr, nullptr, 0u, {}, false },
-        { "NtProtectVirtualMemory",    NtOperation::NtProtectVirtualMemory,    nullptr, nullptr, 0u, {}, false },
-        { "NtReadVirtualMemory",       NtOperation::NtReadVirtualMemory,       nullptr, nullptr, 0u, {}, false },
-        { "NtQueryVirtualMemory",      NtOperation::NtQueryVirtualMemory,      nullptr, nullptr, 0u, {}, false },
-        { "NtQuerySystemInformation",  NtOperation::NtQuerySystemInformation,  nullptr, nullptr, 0u, {}, false },
-        { "NtCreateSection",           NtOperation::NtCreateSection,           nullptr, nullptr, 0u, {}, false },
-        { "NtTerminateProcess",        NtOperation::NtTerminateProcess,        nullptr, nullptr, 0u, {}, false },
-        { "NtOpenProcessToken",        NtOperation::NtOpenProcessToken,        nullptr, nullptr, 0u, {}, false },
-        { "NtOpenThreadToken",         NtOperation::NtOpenThreadToken,         nullptr, nullptr, 0u, {}, false },
-        { "NtOpenFile",                NtOperation::NtOpenFile,                nullptr, nullptr, 0u, {}, false },
-        { "NtQueryInformationProcess", NtOperation::NtQueryInformationProcess, nullptr, nullptr, 0u, {}, false },
-        { "NtQueryInformationThread",  NtOperation::NtQueryInformationThread,  nullptr, nullptr, 0u, {}, false },
-        { "NtSetContextThread",        NtOperation::NtSetContextThread,        nullptr, nullptr, 0u, {}, false },
-        { "NtQuerySection",            NtOperation::NtQuerySection,            nullptr, nullptr, 0u, {}, false },
-        { "NtQueryBootOptions",        NtOperation::NtQueryBootOptions,        nullptr, nullptr, 0u, {}, false },
-        { "NtOpenProcess",             NtOperation::NtOpenProcess,             nullptr, nullptr, 0u, {}, false },
-        { "NtOpenThread",              NtOperation::NtOpenThread,              nullptr, nullptr, 0u, {}, false },
-        { "NtDuplicateObject",         NtOperation::NtDuplicateObject,         nullptr, nullptr, 0u, {}, false },
-        { "NtGetContextThread",        NtOperation::NtGetContextThread,        nullptr, nullptr, 0u, {}, false },
-        { "NtSuspendThread",           NtOperation::NtSuspendThread,           nullptr, nullptr, 0u, {}, false },
-        { "NtResumeThread",            NtOperation::NtResumeThread,            nullptr, nullptr, 0u, {}, false },
-        { "NtQueueApcThread",          NtOperation::NtQueueApcThread,          nullptr, nullptr, 0u, {}, false },
+    static NtTargetHook g_NtHooks[] = {
+        {"NtCreateThread", NtOperation::NtCreateThread, nullptr, nullptr, 0u, {}, false},
+        {"NtCreateThreadEx", NtOperation::NtCreateThreadEx, nullptr, nullptr, 0u, {}, false},
+        {"NtWriteVirtualMemory", NtOperation::NtWriteVirtualMemory, nullptr, nullptr, 0u, {}, false},
+        {"NtAllocateVirtualMemory", NtOperation::NtAllocateVirtualMemory, nullptr, nullptr, 0u, {}, false},
+        {"NtProtectVirtualMemory", NtOperation::NtProtectVirtualMemory, nullptr, nullptr, 0u, {}, false},
+        {"NtReadVirtualMemory", NtOperation::NtReadVirtualMemory, nullptr, nullptr, 0u, {}, false},
+        {"NtQueryVirtualMemory", NtOperation::NtQueryVirtualMemory, nullptr, nullptr, 0u, {}, false},
+        {"NtQuerySystemInformation", NtOperation::NtQuerySystemInformation, nullptr, nullptr, 0u, {}, false},
+        {"NtCreateSection", NtOperation::NtCreateSection, nullptr, nullptr, 0u, {}, false},
+        {"NtTerminateProcess", NtOperation::NtTerminateProcess, nullptr, nullptr, 0u, {}, false},
+        {"NtOpenProcessToken", NtOperation::NtOpenProcessToken, nullptr, nullptr, 0u, {}, false},
+        {"NtOpenThreadToken", NtOperation::NtOpenThreadToken, nullptr, nullptr, 0u, {}, false},
+        {"NtOpenFile", NtOperation::NtOpenFile, nullptr, nullptr, 0u, {}, false},
+        {"NtQueryInformationProcess", NtOperation::NtQueryInformationProcess, nullptr, nullptr, 0u, {}, false},
+        {"NtQueryInformationThread", NtOperation::NtQueryInformationThread, nullptr, nullptr, 0u, {}, false},
+        {"NtSetContextThread", NtOperation::NtSetContextThread, nullptr, nullptr, 0u, {}, false},
+        {"NtQuerySection", NtOperation::NtQuerySection, nullptr, nullptr, 0u, {}, false},
+        {"NtQueryBootOptions", NtOperation::NtQueryBootOptions, nullptr, nullptr, 0u, {}, false},
+        {"NtOpenProcess", NtOperation::NtOpenProcess, nullptr, nullptr, 0u, {}, false},
+        {"NtOpenThread", NtOperation::NtOpenThread, nullptr, nullptr, 0u, {}, false},
+        {"NtDuplicateObject", NtOperation::NtDuplicateObject, nullptr, nullptr, 0u, {}, false},
+        {"NtGetContextThread", NtOperation::NtGetContextThread, nullptr, nullptr, 0u, {}, false},
+        {"NtSuspendThread", NtOperation::NtSuspendThread, nullptr, nullptr, 0u, {}, false},
+        {"NtResumeThread", NtOperation::NtResumeThread, nullptr, nullptr, 0u, {}, false},
+        {"NtQueueApcThread", NtOperation::NtQueueApcThread, nullptr, nullptr, 0u, {}, false},
+        {"NtAllocateVirtualMemoryEx", NtOperation::NtAllocateVirtualMemoryEx, nullptr, nullptr, 0u, {}, false},
+        {"NtMapViewOfSectionEx", NtOperation::NtMapViewOfSectionEx, nullptr, nullptr, 0u, {}, false},
+        {"NtQueueApcThreadEx", NtOperation::NtQueueApcThreadEx, nullptr, nullptr, 0u, {}, false},
+        {"NtOpenProcessTokenEx", NtOperation::NtOpenProcessTokenEx, nullptr, nullptr, 0u, {}, false},
+        {"NtOpenThreadTokenEx", NtOperation::NtOpenThreadTokenEx, nullptr, nullptr, 0u, {}, false},
     };
 
-    static bool ExtractSyscallIndex(void* targetAddress, std::uint32_t& outIndex) noexcept
+    static bool ExtractSyscallIndex(void *targetAddress, std::uint32_t &outIndex) noexcept
     {
-        auto* bytes = static_cast<std::uint8_t*>(targetAddress);
+        auto *bytes = static_cast<std::uint8_t *>(targetAddress);
 
         if (bytes[0] != 0x4C || bytes[1] != 0x8B || bytes[2] != 0xD1)
             return false;
@@ -321,29 +240,25 @@ namespace RYX_NT
         if (bytes[3] != 0xB8)
             return false;
 
-        outIndex = *reinterpret_cast<std::uint32_t*>(&bytes[4]);
+        outIndex = *reinterpret_cast<std::uint32_t *>(&bytes[4]);
         return true;
     }
 
-    static void* BuildSyscallStub(std::uint32_t syscallIndex) noexcept
+    static void *BuildSyscallStub(std::uint32_t syscallIndex) noexcept
     {
         constexpr std::size_t StubSize = 16;
 
-        void* memory = VirtualAlloc(
-            nullptr,
-            StubSize,
-            MEM_COMMIT | MEM_RESERVE,
-            PAGE_EXECUTE_READWRITE);
+        void *memory = VirtualAlloc(nullptr, StubSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
 
         if (!memory)
             return nullptr;
 
-        auto* code = static_cast<std::uint8_t*>(memory);
+        auto *code = static_cast<std::uint8_t *>(memory);
         code[0] = 0x4C;
         code[1] = 0x8B;
         code[2] = 0xD1;
         code[3] = 0xB8;
-        *reinterpret_cast<std::uint32_t*>(&code[4]) = syscallIndex;
+        *reinterpret_cast<std::uint32_t *>(&code[4]) = syscallIndex;
         code[8] = 0x0F;
         code[9] = 0x05;
         code[10] = 0xC3;
@@ -353,9 +268,9 @@ namespace RYX_NT
         return memory;
     }
 
-    static bool InstallInlineHook(void* target, void* hook, std::uint8_t original[16]) noexcept
+    static bool InstallInlineHook(void *target, void *hook, std::uint8_t original[16]) noexcept
     {
-        auto* dst = static_cast<std::uint8_t*>(target);
+        auto *dst = static_cast<std::uint8_t *>(target);
 
         DWORD oldProtect = 0;
         if (!VirtualProtect(dst, 16, PAGE_EXECUTE_READWRITE, &oldProtect))
@@ -364,7 +279,7 @@ namespace RYX_NT
         std::memcpy(original, dst, 16);
         dst[0] = 0x48;
         dst[1] = 0xB8;
-        *reinterpret_cast<void**>(&dst[2]) = hook;
+        *reinterpret_cast<void **>(&dst[2]) = hook;
         dst[10] = 0xFF;
         dst[11] = 0xE0;
         dst[12] = 0xCC;
@@ -379,9 +294,9 @@ namespace RYX_NT
         return true;
     }
 
-    static void RemoveInlineHook(void* target, const std::uint8_t original[16]) noexcept
+    static void RemoveInlineHook(void *target, const std::uint8_t original[16]) noexcept
     {
-        auto* dst = static_cast<std::uint8_t*>(target);
+        auto *dst = static_cast<std::uint8_t *>(target);
 
         DWORD oldProtect = 0;
         if (!VirtualProtect(dst, 16, PAGE_EXECUTE_READWRITE, &oldProtect))
@@ -394,15 +309,9 @@ namespace RYX_NT
         FlushInstructionCache(GetCurrentProcess(), dst, 16);
     }
 
-    NTSTATUS NTAPI NtCreateThread_Hook(
-        PHANDLE            ThreadHandle,
-        ACCESS_MASK        DesiredAccess,
-        POBJECT_ATTRIBUTES ObjectAttributes,
-        HANDLE             ProcessHandle,
-        PCLIENT_ID         ClientId,
-        PCONTEXT           ThreadContext,
-        PINITIAL_TEB       InitialTeb,
-        BOOLEAN            CreateSuspended)
+    NTSTATUS NTAPI NtCreateThread_Hook(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                                       POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle, PCLIENT_ID ClientId,
+                                       PCONTEXT ThreadContext, PINITIAL_TEB InitialTeb, BOOLEAN CreateSuspended)
     {
         if (g_ActiveNtCallback)
         {
@@ -426,29 +335,14 @@ namespace RYX_NT
         if (!g_NtCreateThreadStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtCreateThreadStub(
-            ThreadHandle,
-            DesiredAccess,
-            ObjectAttributes,
-            ProcessHandle,
-            ClientId,
-            ThreadContext,
-            InitialTeb,
-            CreateSuspended);
+        return g_NtCreateThreadStub(ThreadHandle, DesiredAccess, ObjectAttributes, ProcessHandle, ClientId,
+                                    ThreadContext, InitialTeb, CreateSuspended);
     }
 
-    NTSTATUS NTAPI NtCreateThreadEx_Hook(
-        PHANDLE            ThreadHandle,
-        ACCESS_MASK        DesiredAccess,
-        POBJECT_ATTRIBUTES ObjectAttributes,
-        HANDLE             ProcessHandle,
-        PVOID              StartRoutine,
-        PVOID              Argument,
-        ULONG              CreateFlags,
-        SIZE_T             ZeroBits,
-        SIZE_T             StackSize,
-        SIZE_T             MaximumStackSize,
-        PVOID              AttributeList)
+    NTSTATUS NTAPI NtCreateThreadEx_Hook(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                                         POBJECT_ATTRIBUTES ObjectAttributes, HANDLE ProcessHandle, PVOID StartRoutine,
+                                         PVOID Argument, ULONG CreateFlags, SIZE_T ZeroBits, SIZE_T StackSize,
+                                         SIZE_T MaximumStackSize, PVOID AttributeList)
     {
         if (g_ActiveNtCallback)
         {
@@ -472,26 +366,12 @@ namespace RYX_NT
         if (!g_NtCreateThreadExStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtCreateThreadExStub(
-            ThreadHandle,
-            DesiredAccess,
-            ObjectAttributes,
-            ProcessHandle,
-            StartRoutine,
-            Argument,
-            CreateFlags,
-            ZeroBits,
-            StackSize,
-            MaximumStackSize,
-            AttributeList);
+        return g_NtCreateThreadExStub(ThreadHandle, DesiredAccess, ObjectAttributes, ProcessHandle, StartRoutine,
+                                      Argument, CreateFlags, ZeroBits, StackSize, MaximumStackSize, AttributeList);
     }
 
-    NTSTATUS NTAPI NtWriteVirtualMemory_Hook(
-        HANDLE  ProcessHandle,
-        PVOID   BaseAddress,
-        PVOID   Buffer,
-        SIZE_T  BufferSize,
-        PSIZE_T NumberOfBytesWritten)
+    NTSTATUS NTAPI NtWriteVirtualMemory_Hook(HANDLE ProcessHandle, PVOID BaseAddress, PVOID Buffer, SIZE_T BufferSize,
+                                             PSIZE_T NumberOfBytesWritten)
     {
         if (g_ActiveNtCallback)
         {
@@ -512,21 +392,11 @@ namespace RYX_NT
         if (!g_NtWriteVirtualMemoryStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtWriteVirtualMemoryStub(
-            ProcessHandle,
-            BaseAddress,
-            Buffer,
-            BufferSize,
-            NumberOfBytesWritten);
+        return g_NtWriteVirtualMemoryStub(ProcessHandle, BaseAddress, Buffer, BufferSize, NumberOfBytesWritten);
     }
 
-    NTSTATUS NTAPI NtAllocateVirtualMemory_Hook(
-        HANDLE    ProcessHandle,
-        PVOID*    BaseAddress,
-        ULONG_PTR ZeroBits,
-        PSIZE_T   RegionSize,
-        ULONG     AllocationType,
-        ULONG     Protect)
+    NTSTATUS NTAPI NtAllocateVirtualMemory_Hook(HANDLE ProcessHandle, PVOID *BaseAddress, ULONG_PTR ZeroBits,
+                                                PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect)
     {
         if (g_ActiveNtCallback)
         {
@@ -548,21 +418,11 @@ namespace RYX_NT
         if (!g_NtAllocateVirtualMemoryStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtAllocateVirtualMemoryStub(
-            ProcessHandle,
-            BaseAddress,
-            ZeroBits,
-            RegionSize,
-            AllocationType,
-            Protect);
+        return g_NtAllocateVirtualMemoryStub(ProcessHandle, BaseAddress, ZeroBits, RegionSize, AllocationType, Protect);
     }
 
-    NTSTATUS NTAPI NtProtectVirtualMemory_Hook(
-        HANDLE  ProcessHandle,
-        PVOID*  BaseAddress,
-        PSIZE_T RegionSize,
-        ULONG   NewProtect,
-        PULONG  OldProtect)
+    NTSTATUS NTAPI NtProtectVirtualMemory_Hook(HANDLE ProcessHandle, PVOID *BaseAddress, PSIZE_T RegionSize,
+                                               ULONG NewProtect, PULONG OldProtect)
     {
         if (g_ActiveNtCallback)
         {
@@ -583,20 +443,11 @@ namespace RYX_NT
         if (!g_NtProtectVirtualMemoryStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtProtectVirtualMemoryStub(
-            ProcessHandle,
-            BaseAddress,
-            RegionSize,
-            NewProtect,
-            OldProtect);
+        return g_NtProtectVirtualMemoryStub(ProcessHandle, BaseAddress, RegionSize, NewProtect, OldProtect);
     }
 
-    NTSTATUS NTAPI NtReadVirtualMemory_Hook(
-        HANDLE  ProcessHandle,
-        PVOID   BaseAddress,
-        PVOID   Buffer,
-        SIZE_T  BufferSize,
-        PSIZE_T NumberOfBytesRead)
+    NTSTATUS NTAPI NtReadVirtualMemory_Hook(HANDLE ProcessHandle, PVOID BaseAddress, PVOID Buffer, SIZE_T BufferSize,
+                                            PSIZE_T NumberOfBytesRead)
     {
         if (g_ActiveNtCallback)
         {
@@ -617,21 +468,12 @@ namespace RYX_NT
         if (!g_NtReadVirtualMemoryStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtReadVirtualMemoryStub(
-            ProcessHandle,
-            BaseAddress,
-            Buffer,
-            BufferSize,
-            NumberOfBytesRead);
+        return g_NtReadVirtualMemoryStub(ProcessHandle, BaseAddress, Buffer, BufferSize, NumberOfBytesRead);
     }
 
-    NTSTATUS NTAPI NtQueryVirtualMemory_Hook(
-        HANDLE  ProcessHandle,
-        PVOID   BaseAddress,
-        ULONG   MemoryInformationClass,
-        PVOID   MemoryInformation,
-        SIZE_T  MemoryInformationLength,
-        PSIZE_T ReturnLength)
+    NTSTATUS NTAPI NtQueryVirtualMemory_Hook(HANDLE ProcessHandle, PVOID BaseAddress, ULONG MemoryInformationClass,
+                                             PVOID MemoryInformation, SIZE_T MemoryInformationLength,
+                                             PSIZE_T ReturnLength)
     {
         if (g_ActiveNtCallback)
         {
@@ -653,20 +495,12 @@ namespace RYX_NT
         if (!g_NtQueryVirtualMemoryStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtQueryVirtualMemoryStub(
-            ProcessHandle,
-            BaseAddress,
-            MemoryInformationClass,
-            MemoryInformation,
-            MemoryInformationLength,
-            ReturnLength);
+        return g_NtQueryVirtualMemoryStub(ProcessHandle, BaseAddress, MemoryInformationClass, MemoryInformation,
+                                          MemoryInformationLength, ReturnLength);
     }
 
-    NTSTATUS NTAPI NtQuerySystemInformation_Hook(
-        ULONG  SystemInformationClass,
-        PVOID  SystemInformation,
-        ULONG  SystemInformationLength,
-        PULONG ReturnLength)
+    NTSTATUS NTAPI NtQuerySystemInformation_Hook(ULONG SystemInformationClass, PVOID SystemInformation,
+                                                 ULONG SystemInformationLength, PULONG ReturnLength)
     {
         if (g_ActiveNtCallback)
         {
@@ -686,21 +520,13 @@ namespace RYX_NT
         if (!g_NtQuerySystemInformationStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtQuerySystemInformationStub(
-            SystemInformationClass,
-            SystemInformation,
-            SystemInformationLength,
-            ReturnLength);
+        return g_NtQuerySystemInformationStub(SystemInformationClass, SystemInformation, SystemInformationLength,
+                                              ReturnLength);
     }
 
-    NTSTATUS NTAPI NtCreateSection_Hook(
-        PHANDLE            SectionHandle,
-        ACCESS_MASK        DesiredAccess,
-        POBJECT_ATTRIBUTES ObjectAttributes,
-        PLARGE_INTEGER     MaximumSize,
-        ULONG              SectionPageProtection,
-        ULONG              AllocationAttributes,
-        HANDLE             FileHandle)
+    NTSTATUS NTAPI NtCreateSection_Hook(PHANDLE SectionHandle, ACCESS_MASK DesiredAccess,
+                                        POBJECT_ATTRIBUTES ObjectAttributes, PLARGE_INTEGER MaximumSize,
+                                        ULONG SectionPageProtection, ULONG AllocationAttributes, HANDLE FileHandle)
     {
         if (g_ActiveNtCallback)
         {
@@ -723,19 +549,11 @@ namespace RYX_NT
         if (!g_NtCreateSectionStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtCreateSectionStub(
-            SectionHandle,
-            DesiredAccess,
-            ObjectAttributes,
-            MaximumSize,
-            SectionPageProtection,
-            AllocationAttributes,
-            FileHandle);
+        return g_NtCreateSectionStub(SectionHandle, DesiredAccess, ObjectAttributes, MaximumSize, SectionPageProtection,
+                                     AllocationAttributes, FileHandle);
     }
 
-    NTSTATUS NTAPI NtTerminateProcess_Hook(
-        HANDLE   ProcessHandle,
-        NTSTATUS ExitStatus)
+    NTSTATUS NTAPI NtTerminateProcess_Hook(HANDLE ProcessHandle, NTSTATUS ExitStatus)
     {
         if (g_ActiveNtCallback)
         {
@@ -753,15 +571,10 @@ namespace RYX_NT
         if (!g_NtTerminateProcessStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtTerminateProcessStub(
-            ProcessHandle,
-            ExitStatus);
+        return g_NtTerminateProcessStub(ProcessHandle, ExitStatus);
     }
 
-    NTSTATUS NTAPI NtOpenProcessToken_Hook(
-        HANDLE  ProcessHandle,
-        ACCESS_MASK DesiredAccess,
-        PHANDLE TokenHandle)
+    NTSTATUS NTAPI NtOpenProcessToken_Hook(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess, PHANDLE TokenHandle)
     {
         if (g_ActiveNtCallback)
         {
@@ -780,17 +593,11 @@ namespace RYX_NT
         if (!g_NtOpenProcessTokenStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtOpenProcessTokenStub(
-            ProcessHandle,
-            DesiredAccess,
-            TokenHandle);
+        return g_NtOpenProcessTokenStub(ProcessHandle, DesiredAccess, TokenHandle);
     }
 
-    NTSTATUS NTAPI NtOpenThreadToken_Hook(
-        HANDLE  ThreadHandle,
-        ACCESS_MASK DesiredAccess,
-        BOOLEAN OpenAsSelf,
-        PHANDLE TokenHandle)
+    NTSTATUS NTAPI NtOpenThreadToken_Hook(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess, BOOLEAN OpenAsSelf,
+                                          PHANDLE TokenHandle)
     {
         if (g_ActiveNtCallback)
         {
@@ -810,20 +617,11 @@ namespace RYX_NT
         if (!g_NtOpenThreadTokenStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtOpenThreadTokenStub(
-            ThreadHandle,
-            DesiredAccess,
-            OpenAsSelf,
-            TokenHandle);
+        return g_NtOpenThreadTokenStub(ThreadHandle, DesiredAccess, OpenAsSelf, TokenHandle);
     }
 
-    NTSTATUS NTAPI NtOpenFile_Hook(
-        PHANDLE            FileHandle,
-        ACCESS_MASK        DesiredAccess,
-        POBJECT_ATTRIBUTES ObjectAttributes,
-        PIO_STATUS_BLOCK   IoStatusBlock,
-        ULONG              ShareAccess,
-        ULONG              OpenOptions)
+    NTSTATUS NTAPI NtOpenFile_Hook(PHANDLE FileHandle, ACCESS_MASK DesiredAccess, POBJECT_ATTRIBUTES ObjectAttributes,
+                                   PIO_STATUS_BLOCK IoStatusBlock, ULONG ShareAccess, ULONG OpenOptions)
     {
         if (g_ActiveNtCallback)
         {
@@ -845,21 +643,12 @@ namespace RYX_NT
         if (!g_NtOpenFileStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtOpenFileStub(
-            FileHandle,
-            DesiredAccess,
-            ObjectAttributes,
-            IoStatusBlock,
-            ShareAccess,
-            OpenOptions);
+        return g_NtOpenFileStub(FileHandle, DesiredAccess, ObjectAttributes, IoStatusBlock, ShareAccess, OpenOptions);
     }
 
-    NTSTATUS NTAPI NtQueryInformationProcess_Hook(
-        HANDLE ProcessHandle,
-        ULONG  ProcessInformationClass,
-        PVOID  ProcessInformation,
-        ULONG  ProcessInformationLength,
-        PULONG ReturnLength)
+    NTSTATUS NTAPI NtQueryInformationProcess_Hook(HANDLE ProcessHandle, ULONG ProcessInformationClass,
+                                                  PVOID ProcessInformation, ULONG ProcessInformationLength,
+                                                  PULONG ReturnLength)
     {
         if (g_ActiveNtCallback)
         {
@@ -880,20 +669,13 @@ namespace RYX_NT
         if (!g_NtQueryInformationProcessStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtQueryInformationProcessStub(
-            ProcessHandle,
-            ProcessInformationClass,
-            ProcessInformation,
-            ProcessInformationLength,
-            ReturnLength);
+        return g_NtQueryInformationProcessStub(ProcessHandle, ProcessInformationClass, ProcessInformation,
+                                               ProcessInformationLength, ReturnLength);
     }
 
-    NTSTATUS NTAPI NtQueryInformationThread_Hook(
-        HANDLE ThreadHandle,
-        ULONG  ThreadInformationClass,
-        PVOID  ThreadInformation,
-        ULONG  ThreadInformationLength,
-        PULONG ReturnLength)
+    NTSTATUS NTAPI NtQueryInformationThread_Hook(HANDLE ThreadHandle, ULONG ThreadInformationClass,
+                                                 PVOID ThreadInformation, ULONG ThreadInformationLength,
+                                                 PULONG ReturnLength)
     {
         if (g_ActiveNtCallback)
         {
@@ -914,17 +696,11 @@ namespace RYX_NT
         if (!g_NtQueryInformationThreadStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtQueryInformationThreadStub(
-            ThreadHandle,
-            ThreadInformationClass,
-            ThreadInformation,
-            ThreadInformationLength,
-            ReturnLength);
+        return g_NtQueryInformationThreadStub(ThreadHandle, ThreadInformationClass, ThreadInformation,
+                                              ThreadInformationLength, ReturnLength);
     }
 
-    NTSTATUS NTAPI NtSetContextThread_Hook(
-        HANDLE   ThreadHandle,
-        PCONTEXT ThreadContext)
+    NTSTATUS NTAPI NtSetContextThread_Hook(HANDLE ThreadHandle, PCONTEXT ThreadContext)
     {
         if (g_ActiveNtCallback)
         {
@@ -942,17 +718,11 @@ namespace RYX_NT
         if (!g_NtSetContextThreadStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtSetContextThreadStub(
-            ThreadHandle,
-            ThreadContext);
+        return g_NtSetContextThreadStub(ThreadHandle, ThreadContext);
     }
 
-    NTSTATUS NTAPI NtQuerySection_Hook(
-        HANDLE SectionHandle,
-        ULONG  SectionInformationClass,
-        PVOID  InformationBuffer,
-        ULONG  InformationBufferSize,
-        PULONG ResultLength)
+    NTSTATUS NTAPI NtQuerySection_Hook(HANDLE SectionHandle, ULONG SectionInformationClass, PVOID InformationBuffer,
+                                       ULONG InformationBufferSize, PULONG ResultLength)
     {
         if (g_ActiveNtCallback)
         {
@@ -973,17 +743,11 @@ namespace RYX_NT
         if (!g_NtQuerySectionStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtQuerySectionStub(
-            SectionHandle,
-            SectionInformationClass,
-            InformationBuffer,
-            InformationBufferSize,
-            ResultLength);
+        return g_NtQuerySectionStub(SectionHandle, SectionInformationClass, InformationBuffer, InformationBufferSize,
+                                    ResultLength);
     }
 
-    NTSTATUS NTAPI NtQueryBootOptions_Hook(
-        PVOID  BootOptions,
-        PULONG BootOptionsLength)
+    NTSTATUS NTAPI NtQueryBootOptions_Hook(PVOID BootOptions, PULONG BootOptionsLength)
     {
         if (g_ActiveNtCallback)
         {
@@ -1001,24 +765,21 @@ namespace RYX_NT
         if (!g_NtQueryBootOptionsStub)
             return STATUS_NOT_IMPLEMENTED;
 
-        return g_NtQueryBootOptionsStub(
-            BootOptions,
-            BootOptionsLength);
+        return g_NtQueryBootOptionsStub(BootOptions, BootOptionsLength);
     }
 
-    NTSTATUS NTAPI NtOpenProcess_Hook(
-        PHANDLE ProcessHandle,
-        ACCESS_MASK DesiredAccess,
-        POBJECT_ATTRIBUTES ObjectAttributes,
-        PCLIENT_ID ClientId)
+    NTSTATUS NTAPI NtOpenProcess_Hook(PHANDLE ProcessHandle, ACCESS_MASK DesiredAccess,
+                                      POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId)
     {
         if (g_ActiveNtCallback)
         {
             NtHookContext ctx{};
             const std::uint64_t targetProcessId =
-                (ClientId != nullptr) ? static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(ClientId->UniqueProcess)) : 0ull;
+                (ClientId != nullptr) ? static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(ClientId->UniqueProcess))
+                                      : 0ull;
             const std::uint64_t targetThreadId =
-                (ClientId != nullptr) ? static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(ClientId->UniqueThread)) : 0ull;
+                (ClientId != nullptr) ? static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(ClientId->UniqueThread))
+                                      : 0ull;
             ctx.Operation = NtOperation::NtOpenProcess;
             ctx.FunctionName = "NtOpenProcess";
             ctx.Caller = _ReturnAddress();
@@ -1036,19 +797,18 @@ namespace RYX_NT
         return g_NtOpenProcessStub(ProcessHandle, DesiredAccess, ObjectAttributes, ClientId);
     }
 
-    NTSTATUS NTAPI NtOpenThread_Hook(
-        PHANDLE ThreadHandle,
-        ACCESS_MASK DesiredAccess,
-        POBJECT_ATTRIBUTES ObjectAttributes,
-        PCLIENT_ID ClientId)
+    NTSTATUS NTAPI NtOpenThread_Hook(PHANDLE ThreadHandle, ACCESS_MASK DesiredAccess,
+                                     POBJECT_ATTRIBUTES ObjectAttributes, PCLIENT_ID ClientId)
     {
         if (g_ActiveNtCallback)
         {
             NtHookContext ctx{};
             const std::uint64_t targetProcessId =
-                (ClientId != nullptr) ? static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(ClientId->UniqueProcess)) : 0ull;
+                (ClientId != nullptr) ? static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(ClientId->UniqueProcess))
+                                      : 0ull;
             const std::uint64_t targetThreadId =
-                (ClientId != nullptr) ? static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(ClientId->UniqueThread)) : 0ull;
+                (ClientId != nullptr) ? static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(ClientId->UniqueThread))
+                                      : 0ull;
             ctx.Operation = NtOperation::NtOpenThread;
             ctx.FunctionName = "NtOpenThread";
             ctx.Caller = _ReturnAddress();
@@ -1066,14 +826,9 @@ namespace RYX_NT
         return g_NtOpenThreadStub(ThreadHandle, DesiredAccess, ObjectAttributes, ClientId);
     }
 
-    NTSTATUS NTAPI NtDuplicateObject_Hook(
-        HANDLE SourceProcessHandle,
-        HANDLE SourceHandle,
-        HANDLE TargetProcessHandle,
-        PHANDLE TargetHandle,
-        ACCESS_MASK DesiredAccess,
-        ULONG Attributes,
-        ULONG Options)
+    NTSTATUS NTAPI NtDuplicateObject_Hook(HANDLE SourceProcessHandle, HANDLE SourceHandle, HANDLE TargetProcessHandle,
+                                          PHANDLE TargetHandle, ACCESS_MASK DesiredAccess, ULONG Attributes,
+                                          ULONG Options)
     {
         if (g_ActiveNtCallback)
         {
@@ -1098,9 +853,7 @@ namespace RYX_NT
                                        DesiredAccess, Attributes, Options);
     }
 
-    NTSTATUS NTAPI NtGetContextThread_Hook(
-        HANDLE ThreadHandle,
-        PCONTEXT ThreadContext)
+    NTSTATUS NTAPI NtGetContextThread_Hook(HANDLE ThreadHandle, PCONTEXT ThreadContext)
     {
         if (g_ActiveNtCallback)
         {
@@ -1119,9 +872,7 @@ namespace RYX_NT
         return g_NtGetContextThreadStub(ThreadHandle, ThreadContext);
     }
 
-    NTSTATUS NTAPI NtSuspendThread_Hook(
-        HANDLE ThreadHandle,
-        PULONG PreviousSuspendCount)
+    NTSTATUS NTAPI NtSuspendThread_Hook(HANDLE ThreadHandle, PULONG PreviousSuspendCount)
     {
         if (g_ActiveNtCallback)
         {
@@ -1140,9 +891,7 @@ namespace RYX_NT
         return g_NtSuspendThreadStub(ThreadHandle, PreviousSuspendCount);
     }
 
-    NTSTATUS NTAPI NtResumeThread_Hook(
-        HANDLE ThreadHandle,
-        PULONG PreviousSuspendCount)
+    NTSTATUS NTAPI NtResumeThread_Hook(HANDLE ThreadHandle, PULONG PreviousSuspendCount)
     {
         if (g_ActiveNtCallback)
         {
@@ -1161,12 +910,8 @@ namespace RYX_NT
         return g_NtResumeThreadStub(ThreadHandle, PreviousSuspendCount);
     }
 
-    NTSTATUS NTAPI NtQueueApcThread_Hook(
-        HANDLE ThreadHandle,
-        PVOID ApcRoutine,
-        PVOID ApcArgument1,
-        PVOID ApcArgument2,
-        PVOID ApcArgument3)
+    NTSTATUS NTAPI NtQueueApcThread_Hook(HANDLE ThreadHandle, PVOID ApcRoutine, PVOID ApcArgument1, PVOID ApcArgument2,
+                                         PVOID ApcArgument3)
     {
         if (g_ActiveNtCallback)
         {
@@ -1188,39 +933,207 @@ namespace RYX_NT
         return g_NtQueueApcThreadStub(ThreadHandle, ApcRoutine, ApcArgument1, ApcArgument2, ApcArgument3);
     }
 
-    static void* GetHookEntry(const char* name) noexcept
+    NTSTATUS NTAPI NtAllocateVirtualMemoryEx_Hook(HANDLE ProcessHandle, PVOID *BaseAddress, ULONG_PTR ZeroBits,
+                                                  PSIZE_T RegionSize, ULONG AllocationType, PVOID ExtendedParameters,
+                                                  ULONG ExtendedParameterCount)
     {
-        if (std::strcmp(name, "NtCreateThread") == 0)            return reinterpret_cast<void*>(&NtCreateThread_Hook);
-        if (std::strcmp(name, "NtCreateThreadEx") == 0)          return reinterpret_cast<void*>(&NtCreateThreadEx_Hook);
-        if (std::strcmp(name, "NtWriteVirtualMemory") == 0)      return reinterpret_cast<void*>(&NtWriteVirtualMemory_Hook);
-        if (std::strcmp(name, "NtAllocateVirtualMemory") == 0)   return reinterpret_cast<void*>(&NtAllocateVirtualMemory_Hook);
-        if (std::strcmp(name, "NtProtectVirtualMemory") == 0)    return reinterpret_cast<void*>(&NtProtectVirtualMemory_Hook);
-        if (std::strcmp(name, "NtReadVirtualMemory") == 0)       return reinterpret_cast<void*>(&NtReadVirtualMemory_Hook);
-        if (std::strcmp(name, "NtQueryVirtualMemory") == 0)      return reinterpret_cast<void*>(&NtQueryVirtualMemory_Hook);
-        if (std::strcmp(name, "NtQuerySystemInformation") == 0)  return reinterpret_cast<void*>(&NtQuerySystemInformation_Hook);
-        if (std::strcmp(name, "NtCreateSection") == 0)           return reinterpret_cast<void*>(&NtCreateSection_Hook);
-        if (std::strcmp(name, "NtTerminateProcess") == 0)        return reinterpret_cast<void*>(&NtTerminateProcess_Hook);
-        if (std::strcmp(name, "NtOpenProcessToken") == 0)        return reinterpret_cast<void*>(&NtOpenProcessToken_Hook);
-        if (std::strcmp(name, "NtOpenThreadToken") == 0)         return reinterpret_cast<void*>(&NtOpenThreadToken_Hook);
-        if (std::strcmp(name, "NtOpenFile") == 0)                return reinterpret_cast<void*>(&NtOpenFile_Hook);
-        if (std::strcmp(name, "NtQueryInformationProcess") == 0) return reinterpret_cast<void*>(&NtQueryInformationProcess_Hook);
-        if (std::strcmp(name, "NtQueryInformationThread") == 0)  return reinterpret_cast<void*>(&NtQueryInformationThread_Hook);
-        if (std::strcmp(name, "NtSetContextThread") == 0)        return reinterpret_cast<void*>(&NtSetContextThread_Hook);
-        if (std::strcmp(name, "NtQuerySection") == 0)            return reinterpret_cast<void*>(&NtQuerySection_Hook);
-        if (std::strcmp(name, "NtQueryBootOptions") == 0)        return reinterpret_cast<void*>(&NtQueryBootOptions_Hook);
-        if (std::strcmp(name, "NtOpenProcess") == 0)             return reinterpret_cast<void*>(&NtOpenProcess_Hook);
-        if (std::strcmp(name, "NtOpenThread") == 0)              return reinterpret_cast<void*>(&NtOpenThread_Hook);
-        if (std::strcmp(name, "NtDuplicateObject") == 0)         return reinterpret_cast<void*>(&NtDuplicateObject_Hook);
-        if (std::strcmp(name, "NtGetContextThread") == 0)        return reinterpret_cast<void*>(&NtGetContextThread_Hook);
-        if (std::strcmp(name, "NtSuspendThread") == 0)           return reinterpret_cast<void*>(&NtSuspendThread_Hook);
-        if (std::strcmp(name, "NtResumeThread") == 0)            return reinterpret_cast<void*>(&NtResumeThread_Hook);
-        if (std::strcmp(name, "NtQueueApcThread") == 0)          return reinterpret_cast<void*>(&NtQueueApcThread_Hook);
+        if (g_ActiveNtCallback)
+        {
+            NtHookContext ctx{};
+            ctx.Operation = NtOperation::NtAllocateVirtualMemoryEx;
+            ctx.FunctionName = "NtAllocateVirtualMemoryEx";
+            ctx.Caller = _ReturnAddress();
+
+            ctx.Args[0] = reinterpret_cast<std::uint64_t>(ProcessHandle);
+            ctx.Args[1] = reinterpret_cast<std::uint64_t>(BaseAddress);
+            ctx.Args[2] = static_cast<std::uint64_t>(ZeroBits);
+            ctx.Args[3] = reinterpret_cast<std::uint64_t>(RegionSize);
+            ctx.Args[4] = static_cast<std::uint64_t>(AllocationType);
+            ctx.Args[5] = reinterpret_cast<std::uint64_t>(ExtendedParameters);
+            ctx.Args[6] = static_cast<std::uint64_t>(ExtendedParameterCount);
+
+            g_ActiveNtCallback(ctx);
+        }
+
+        if (!g_NtAllocateVirtualMemoryExStub)
+            return STATUS_NOT_IMPLEMENTED;
+
+        return g_NtAllocateVirtualMemoryExStub(ProcessHandle, BaseAddress, ZeroBits, RegionSize, AllocationType,
+                                               ExtendedParameters, ExtendedParameterCount);
+    }
+
+    NTSTATUS NTAPI NtMapViewOfSectionEx_Hook(HANDLE SectionHandle, HANDLE ProcessHandle, PVOID *BaseAddress,
+                                             PLARGE_INTEGER SectionOffset, PSIZE_T ViewSize, ULONG AllocationType,
+                                             ULONG Win32Protect, PVOID ExtendedParameters, ULONG ExtendedParameterCount)
+    {
+        if (g_ActiveNtCallback)
+        {
+            NtHookContext ctx{};
+            ctx.Operation = NtOperation::NtMapViewOfSectionEx;
+            ctx.FunctionName = "NtMapViewOfSectionEx";
+            ctx.Caller = _ReturnAddress();
+
+            ctx.Args[0] = reinterpret_cast<std::uint64_t>(SectionHandle);
+            ctx.Args[1] = reinterpret_cast<std::uint64_t>(ProcessHandle);
+            ctx.Args[2] = reinterpret_cast<std::uint64_t>(BaseAddress);
+            ctx.Args[3] = reinterpret_cast<std::uint64_t>(SectionOffset);
+            ctx.Args[4] = reinterpret_cast<std::uint64_t>(ViewSize);
+            ctx.Args[5] = static_cast<std::uint64_t>(AllocationType);
+            ctx.Args[6] = static_cast<std::uint64_t>(Win32Protect);
+
+            g_ActiveNtCallback(ctx);
+        }
+
+        if (!g_NtMapViewOfSectionExStub)
+            return STATUS_NOT_IMPLEMENTED;
+
+        return g_NtMapViewOfSectionExStub(SectionHandle, ProcessHandle, BaseAddress, SectionOffset, ViewSize,
+                                          AllocationType, Win32Protect, ExtendedParameters, ExtendedParameterCount);
+    }
+
+    NTSTATUS NTAPI NtQueueApcThreadEx_Hook(HANDLE ThreadHandle, HANDLE UserApcReserveHandle, PVOID ApcRoutine,
+                                           PVOID ApcArgument1, PVOID ApcArgument2, PVOID ApcArgument3)
+    {
+        if (g_ActiveNtCallback)
+        {
+            NtHookContext ctx{};
+            ctx.Operation = NtOperation::NtQueueApcThreadEx;
+            ctx.FunctionName = "NtQueueApcThreadEx";
+            ctx.Caller = _ReturnAddress();
+
+            ctx.Args[0] = reinterpret_cast<std::uint64_t>(ThreadHandle);
+            ctx.Args[1] = reinterpret_cast<std::uint64_t>(UserApcReserveHandle);
+            ctx.Args[2] = reinterpret_cast<std::uint64_t>(ApcRoutine);
+            ctx.Args[3] = reinterpret_cast<std::uint64_t>(ApcArgument1);
+            ctx.Args[4] = reinterpret_cast<std::uint64_t>(ApcArgument2);
+            ctx.Args[5] = reinterpret_cast<std::uint64_t>(ApcArgument3);
+
+            g_ActiveNtCallback(ctx);
+        }
+
+        if (!g_NtQueueApcThreadExStub)
+            return STATUS_NOT_IMPLEMENTED;
+
+        return g_NtQueueApcThreadExStub(ThreadHandle, UserApcReserveHandle, ApcRoutine, ApcArgument1, ApcArgument2,
+                                        ApcArgument3);
+    }
+
+    NTSTATUS NTAPI NtOpenProcessTokenEx_Hook(HANDLE ProcessHandle, ACCESS_MASK DesiredAccess, ULONG HandleAttributes,
+                                             PHANDLE TokenHandle)
+    {
+        if (g_ActiveNtCallback)
+        {
+            NtHookContext ctx{};
+            ctx.Operation = NtOperation::NtOpenProcessTokenEx;
+            ctx.FunctionName = "NtOpenProcessTokenEx";
+            ctx.Caller = _ReturnAddress();
+
+            ctx.Args[0] = reinterpret_cast<std::uint64_t>(ProcessHandle);
+            ctx.Args[1] = static_cast<std::uint64_t>(DesiredAccess);
+            ctx.Args[2] = static_cast<std::uint64_t>(HandleAttributes);
+            ctx.Args[3] = reinterpret_cast<std::uint64_t>(TokenHandle);
+
+            g_ActiveNtCallback(ctx);
+        }
+
+        if (!g_NtOpenProcessTokenExStub)
+            return STATUS_NOT_IMPLEMENTED;
+
+        return g_NtOpenProcessTokenExStub(ProcessHandle, DesiredAccess, HandleAttributes, TokenHandle);
+    }
+
+    NTSTATUS NTAPI NtOpenThreadTokenEx_Hook(HANDLE ThreadHandle, ACCESS_MASK DesiredAccess, BOOLEAN OpenAsSelf,
+                                            ULONG HandleAttributes, PHANDLE TokenHandle)
+    {
+        if (g_ActiveNtCallback)
+        {
+            NtHookContext ctx{};
+            ctx.Operation = NtOperation::NtOpenThreadTokenEx;
+            ctx.FunctionName = "NtOpenThreadTokenEx";
+            ctx.Caller = _ReturnAddress();
+
+            ctx.Args[0] = reinterpret_cast<std::uint64_t>(ThreadHandle);
+            ctx.Args[1] = static_cast<std::uint64_t>(DesiredAccess);
+            ctx.Args[2] = static_cast<std::uint64_t>(OpenAsSelf);
+            ctx.Args[3] = static_cast<std::uint64_t>(HandleAttributes);
+            ctx.Args[4] = reinterpret_cast<std::uint64_t>(TokenHandle);
+
+            g_ActiveNtCallback(ctx);
+        }
+
+        if (!g_NtOpenThreadTokenExStub)
+            return STATUS_NOT_IMPLEMENTED;
+
+        return g_NtOpenThreadTokenExStub(ThreadHandle, DesiredAccess, OpenAsSelf, HandleAttributes, TokenHandle);
+    }
+
+    static void *GetHookEntry(const char *name) noexcept
+    {
+        if (std::strcmp(name, "NtCreateThread") == 0)
+            return reinterpret_cast<void *>(&NtCreateThread_Hook);
+        if (std::strcmp(name, "NtCreateThreadEx") == 0)
+            return reinterpret_cast<void *>(&NtCreateThreadEx_Hook);
+        if (std::strcmp(name, "NtWriteVirtualMemory") == 0)
+            return reinterpret_cast<void *>(&NtWriteVirtualMemory_Hook);
+        if (std::strcmp(name, "NtAllocateVirtualMemory") == 0)
+            return reinterpret_cast<void *>(&NtAllocateVirtualMemory_Hook);
+        if (std::strcmp(name, "NtProtectVirtualMemory") == 0)
+            return reinterpret_cast<void *>(&NtProtectVirtualMemory_Hook);
+        if (std::strcmp(name, "NtReadVirtualMemory") == 0)
+            return reinterpret_cast<void *>(&NtReadVirtualMemory_Hook);
+        if (std::strcmp(name, "NtQueryVirtualMemory") == 0)
+            return reinterpret_cast<void *>(&NtQueryVirtualMemory_Hook);
+        if (std::strcmp(name, "NtQuerySystemInformation") == 0)
+            return reinterpret_cast<void *>(&NtQuerySystemInformation_Hook);
+        if (std::strcmp(name, "NtCreateSection") == 0)
+            return reinterpret_cast<void *>(&NtCreateSection_Hook);
+        if (std::strcmp(name, "NtTerminateProcess") == 0)
+            return reinterpret_cast<void *>(&NtTerminateProcess_Hook);
+        if (std::strcmp(name, "NtOpenProcessToken") == 0)
+            return reinterpret_cast<void *>(&NtOpenProcessToken_Hook);
+        if (std::strcmp(name, "NtOpenThreadToken") == 0)
+            return reinterpret_cast<void *>(&NtOpenThreadToken_Hook);
+        if (std::strcmp(name, "NtOpenFile") == 0)
+            return reinterpret_cast<void *>(&NtOpenFile_Hook);
+        if (std::strcmp(name, "NtQueryInformationProcess") == 0)
+            return reinterpret_cast<void *>(&NtQueryInformationProcess_Hook);
+        if (std::strcmp(name, "NtQueryInformationThread") == 0)
+            return reinterpret_cast<void *>(&NtQueryInformationThread_Hook);
+        if (std::strcmp(name, "NtSetContextThread") == 0)
+            return reinterpret_cast<void *>(&NtSetContextThread_Hook);
+        if (std::strcmp(name, "NtQuerySection") == 0)
+            return reinterpret_cast<void *>(&NtQuerySection_Hook);
+        if (std::strcmp(name, "NtQueryBootOptions") == 0)
+            return reinterpret_cast<void *>(&NtQueryBootOptions_Hook);
+        if (std::strcmp(name, "NtOpenProcess") == 0)
+            return reinterpret_cast<void *>(&NtOpenProcess_Hook);
+        if (std::strcmp(name, "NtOpenThread") == 0)
+            return reinterpret_cast<void *>(&NtOpenThread_Hook);
+        if (std::strcmp(name, "NtDuplicateObject") == 0)
+            return reinterpret_cast<void *>(&NtDuplicateObject_Hook);
+        if (std::strcmp(name, "NtGetContextThread") == 0)
+            return reinterpret_cast<void *>(&NtGetContextThread_Hook);
+        if (std::strcmp(name, "NtSuspendThread") == 0)
+            return reinterpret_cast<void *>(&NtSuspendThread_Hook);
+        if (std::strcmp(name, "NtResumeThread") == 0)
+            return reinterpret_cast<void *>(&NtResumeThread_Hook);
+        if (std::strcmp(name, "NtQueueApcThread") == 0)
+            return reinterpret_cast<void *>(&NtQueueApcThread_Hook);
+        if (std::strcmp(name, "NtAllocateVirtualMemoryEx") == 0)
+            return reinterpret_cast<void *>(&NtAllocateVirtualMemoryEx_Hook);
+        if (std::strcmp(name, "NtMapViewOfSectionEx") == 0)
+            return reinterpret_cast<void *>(&NtMapViewOfSectionEx_Hook);
+        if (std::strcmp(name, "NtQueueApcThreadEx") == 0)
+            return reinterpret_cast<void *>(&NtQueueApcThreadEx_Hook);
+        if (std::strcmp(name, "NtOpenProcessTokenEx") == 0)
+            return reinterpret_cast<void *>(&NtOpenProcessTokenEx_Hook);
+        if (std::strcmp(name, "NtOpenThreadTokenEx") == 0)
+            return reinterpret_cast<void *>(&NtOpenThreadTokenEx_Hook);
         return nullptr;
     }
-}
+} // namespace RYX_NT
 
 #endif
-
 
 bool KeSetNtHook(NtHookCallback callback) noexcept
 {
@@ -1242,7 +1155,7 @@ bool KeSetNtHook(NtHookCallback callback) noexcept
     const bool enableNtMemoryHooks = ShouldEnableNtMemoryHooks();
     bool anyInstalled = false;
 
-    for (auto& hook : g_NtHooks)
+    for (auto &hook : g_NtHooks)
     {
         if (!enableNtMemoryHooks && IsNtMemoryHookName(hook.Name))
         {
@@ -1259,14 +1172,14 @@ bool KeSetNtHook(NtHookCallback callback) noexcept
         if (!addr)
             continue;
 
-        hook.TargetAddress = reinterpret_cast<void*>(addr);
+        hook.TargetAddress = reinterpret_cast<void *>(addr);
 
         std::uint32_t sysIndex = 0;
         if (!ExtractSyscallIndex(hook.TargetAddress, sysIndex))
             continue;
 
         hook.SyscallIndex = sysIndex;
-        void* stubCode = BuildSyscallStub(sysIndex);
+        void *stubCode = BuildSyscallStub(sysIndex);
         if (!stubCode)
             continue;
 
@@ -1321,8 +1234,18 @@ bool KeSetNtHook(NtHookCallback callback) noexcept
             g_NtResumeThreadStub = reinterpret_cast<NtResumeThread_t>(stubCode);
         else if (std::strcmp(hook.Name, "NtQueueApcThread") == 0)
             g_NtQueueApcThreadStub = reinterpret_cast<NtQueueApcThread_t>(stubCode);
+        else if (std::strcmp(hook.Name, "NtAllocateVirtualMemoryEx") == 0)
+            g_NtAllocateVirtualMemoryExStub = reinterpret_cast<NtAllocateVirtualMemoryEx_t>(stubCode);
+        else if (std::strcmp(hook.Name, "NtMapViewOfSectionEx") == 0)
+            g_NtMapViewOfSectionExStub = reinterpret_cast<NtMapViewOfSectionEx_t>(stubCode);
+        else if (std::strcmp(hook.Name, "NtQueueApcThreadEx") == 0)
+            g_NtQueueApcThreadExStub = reinterpret_cast<NtQueueApcThreadEx_t>(stubCode);
+        else if (std::strcmp(hook.Name, "NtOpenProcessTokenEx") == 0)
+            g_NtOpenProcessTokenExStub = reinterpret_cast<NtOpenProcessTokenEx_t>(stubCode);
+        else if (std::strcmp(hook.Name, "NtOpenThreadTokenEx") == 0)
+            g_NtOpenThreadTokenExStub = reinterpret_cast<NtOpenThreadTokenEx_t>(stubCode);
 
-        void* hookEntry = GetHookEntry(hook.Name);
+        void *hookEntry = GetHookEntry(hook.Name);
         if (!hookEntry)
             continue;
 
@@ -1342,7 +1265,7 @@ void KeRemoveNtHook() noexcept
 #ifdef _WIN64
     using namespace RYX_NT;
 
-    for (auto& hook : g_NtHooks)
+    for (auto &hook : g_NtHooks)
     {
         if (!hook.Installed || !hook.TargetAddress)
             continue;
@@ -1357,7 +1280,7 @@ void KeRemoveNtHook() noexcept
 #endif
 }
 
-bool KeCheckNtHookIntegrity(std::uint32_t* mismatchCount) noexcept
+bool KeCheckNtHookIntegrity(std::uint32_t *mismatchCount) noexcept
 {
 #ifndef _WIN64
     if (mismatchCount != nullptr)
@@ -1370,22 +1293,22 @@ bool KeCheckNtHookIntegrity(std::uint32_t* mismatchCount) noexcept
 
     std::uint32_t mismatches = 0;
 
-    for (const auto& hook : g_NtHooks)
+    for (const auto &hook : g_NtHooks)
     {
         if (!hook.Installed || hook.TargetAddress == nullptr)
         {
             continue;
         }
 
-        const auto* bytes = static_cast<const std::uint8_t*>(hook.TargetAddress);
-        void* expectedHook = GetHookEntry(hook.Name);
+        const auto *bytes = static_cast<const std::uint8_t *>(hook.TargetAddress);
+        void *expectedHook = GetHookEntry(hook.Name);
         if (expectedHook == nullptr)
         {
             ++mismatches;
             continue;
         }
 
-        void* patchedTarget = nullptr;
+        void *patchedTarget = nullptr;
         std::memcpy(&patchedTarget, &bytes[2], sizeof(patchedTarget));
         bool intact = bytes[0] == 0x48 && bytes[1] == 0xB8 && patchedTarget == expectedHook && bytes[10] == 0xFF &&
                       bytes[11] == 0xE0;
@@ -1403,4 +1326,3 @@ bool KeCheckNtHookIntegrity(std::uint32_t* mismatchCount) noexcept
     return mismatches == 0;
 #endif
 }
-

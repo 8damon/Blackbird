@@ -417,7 +417,3 @@ BOOL GenerateRegistryHighValueActivity(void)
 
     return (status == ERROR_SUCCESS);
 }
-
-
-
-

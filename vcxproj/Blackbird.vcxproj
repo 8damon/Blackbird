@@ -200,6 +200,7 @@
     <ClCompile Include="..\kernel\monitors\handle_monitor.c" />
     <ClCompile Include="..\kernel\monitors\image_monitor.c" />
     <ClCompile Include="..\kernel\monitors\process_monitor.c" />
+    <ClCompile Include="..\kernel\antivirt\registry_concealment.c" />
     <ClCompile Include="..\kernel\monitors\registry_monitor.c" />
     <ClCompile Include="..\kernel\monitors\thread_monitor.c" />
     <ClCompile Include="..\kernel\monitors\filesystem_monitor.c" />
@@ -208,7 +209,7 @@
     <ClCompile Include="..\kernel\hooks\hook\ntapi_hook_resolve.c" />
     <ClCompile Include="..\kernel\hooks\monitor\ntapi_monitor.c" />
     <ClCompile Include="..\kernel\hooks\monitor\ntapi_monitor_hooks.c" />
-    <ClCompile Include="..\kernel\hooks\monitor\ntapi_monitor_firmware.c" />
+    <ClCompile Include="..\kernel\antivirt\antivirt_ntapi_firmware.c" />
   </ItemGroup>
   <ItemGroup>
     <MASM Include="..\kernel\hooks\asm\ntapi_stubs.asm" />
@@ -227,6 +228,7 @@
     <ClInclude Include="..\kernel\monitors\handle_monitor.h" />
     <ClInclude Include="..\kernel\monitors\image_monitor.h" />
     <ClInclude Include="..\kernel\monitors\process_monitor.h" />
+    <ClInclude Include="..\kernel\antivirt\registry_concealment.h" />
     <ClInclude Include="..\kernel\monitors\registry_monitor.h" />
     <ClInclude Include="..\kernel\monitors\thread_monitor.h" />
     <ClInclude Include="..\kernel\monitors\filesystem_monitor.h" />
@@ -242,4 +244,3 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>
-

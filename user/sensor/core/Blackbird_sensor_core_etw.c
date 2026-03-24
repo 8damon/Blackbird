@@ -79,7 +79,7 @@ ULONG BLACKBIRDSCStopSessionByName(_In_z_ PCWSTR SessionName)
 }
 
 BOOL BLACKBIRDSCStartEtwSession(_In_ const BLACKBIRDSC_ETW_SESSION_CONFIG *Config,
-                                  _Outptr_ BLACKBIRDSC_ETW_SESSION **Session)
+                                _Outptr_ BLACKBIRDSC_ETW_SESSION **Session)
 {
     BLACKBIRDSC_ETW_SESSION_INTERNAL *internal = NULL;
     EVENT_TRACE_LOGFILEW log;
@@ -215,10 +215,8 @@ BOOL BLACKBIRDSCStartEtwSession(_In_ const BLACKBIRDSC_ETW_SESSION_CONFIG *Confi
 }
 
 BOOL BLACKBIRDSCStartBlackbirdEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL EnableThreatIntelProvider,
-                                             _In_ BLACKBIRDSC_ETW_EVENT_CALLBACK Callback,
-                                             _In_opt_ PVOID CallbackContext,
-                                             _Outptr_ BLACKBIRDSC_ETW_SESSION **Session,
-                                             _Out_opt_ BOOL *ThreatIntelEnabled)
+                                         _In_ BLACKBIRDSC_ETW_EVENT_CALLBACK Callback, _In_opt_ PVOID CallbackContext,
+                                         _Outptr_ BLACKBIRDSC_ETW_SESSION **Session, _Out_opt_ BOOL *ThreatIntelEnabled)
 {
     BLACKBIRDSC_ETW_PROVIDER_CONFIG providers[3];
     BLACKBIRDSC_ETW_PROVIDER_CONFIG providerAttempt[3];
@@ -403,8 +401,8 @@ BOOL SwkStartDetectionEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL EnableThre
     bridge->CallbackContext = CallbackContext;
 
     if (!BLACKBIRDSCStartBlackbirdEtwSession(SessionName, EnableThreatIntelProvider,
-                                                 BLACKBIRDSCStgDetectionBridgeCallback, bridge, Session,
-                                                 ThreatIntelEnabled))
+                                             BLACKBIRDSCStgDetectionBridgeCallback, bridge, Session,
+                                             ThreatIntelEnabled))
     {
         err = GetLastError();
         free(bridge);
@@ -486,4 +484,3 @@ VOID BLACKBIRDSCStopEtwSession(_In_opt_ BLACKBIRDSC_ETW_SESSION *Session)
 
     free(internal);
 }
-

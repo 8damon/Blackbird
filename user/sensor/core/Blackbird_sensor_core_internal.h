@@ -49,7 +49,6 @@ extern SRWLOCK g_BlackbirdProtocolLock;
 
 VOID WINAPI BLACKBIRDSCInternalRecordCallback(_In_ PEVENT_RECORD Record);
 VOID WINAPI BLACKBIRDSCStgDetectionBridgeCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName,
-                                                    _In_opt_ PVOID Context);
+                                                  _In_opt_ PVOID Context);
 
 #endif
-

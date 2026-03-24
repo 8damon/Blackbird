@@ -25,7 +25,7 @@ BOOL BLACKBIRDSymStartsWithInsensitive(_In_opt_z_ const char *Text, _In_opt_z_ c
 }
 
 BOOL BLACKBIRDSymNormalizeKernelImagePath(_In_z_ const char *RawPath, _Out_writes_z_(OutputChars) char *Output,
-                                            _In_ size_t OutputChars)
+                                          _In_ size_t OutputChars)
 {
     char windowsDir[MAX_PATH];
 
@@ -69,7 +69,7 @@ BOOL BLACKBIRDSymNormalizeKernelImagePath(_In_z_ const char *RawPath, _Out_write
 }
 
 BOOL BLACKBIRDSymBuildKernelGuessPath(_In_z_ const char *ModuleName, _Out_writes_z_(OutputChars) char *Output,
-                                        _In_ size_t OutputChars)
+                                      _In_ size_t OutputChars)
 {
     char windowsDir[MAX_PATH];
     const char *suffix;
@@ -99,7 +99,7 @@ BOOL BLACKBIRDSymBuildKernelGuessPath(_In_z_ const char *ModuleName, _Out_writes
 
 DWORD
 BLACKBIRDSymLoadKernelModulesForProcess(_In_ HANDLE SymbolProcess, _Out_opt_ DWORD *LoadedCount,
-                                          _Out_opt_ DWORD *TotalCount)
+                                        _Out_opt_ DWORD *TotalCount)
 {
     LPVOID drivers[2048];
     DWORD bytesNeeded = 0;
@@ -202,4 +202,3 @@ BLACKBIRDSymLoadKernelModulesForProcess(_In_ HANDLE SymbolProcess, _Out_opt_ DWO
     }
     return ERROR_SUCCESS;
 }
-

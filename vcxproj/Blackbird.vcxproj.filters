@@ -20,6 +20,9 @@
     <Filter Include="Source Files\Hooks">
       <UniqueIdentifier>{D1A775A4-BB84-4A26-A782-B43D267D11B2}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\AntiVirt">
+      <UniqueIdentifier>{2B3A2C17-7EE8-4E6A-A8A1-4D667F2CF4F2}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Header Files">
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
@@ -38,6 +41,9 @@
     </Filter>
     <Filter Include="Header Files\Hooks">
       <UniqueIdentifier>{A2C1E4B5-17D9-4A9D-8F12-7359C443C4C6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\AntiVirt">
+      <UniqueIdentifier>{72A6F6E8-5B7D-4B26-9A18-07F2B8B8C137}</UniqueIdentifier>
     </Filter>
     <Filter Include="Header Files\ABI">
       <UniqueIdentifier>{6F1BDA0C-CA16-4CF5-A322-C77F20EE6474}</UniqueIdentifier>
@@ -95,6 +101,9 @@
     <ClCompile Include="..\kernel\monitors\process_monitor.c">
       <Filter>Source Files\Monitors</Filter>
     </ClCompile>
+    <ClCompile Include="..\kernel\antivirt\registry_concealment.c">
+      <Filter>Source Files\AntiVirt</Filter>
+    </ClCompile>
     <ClCompile Include="..\kernel\monitors\registry_monitor.c">
       <Filter>Source Files\Monitors</Filter>
     </ClCompile>
@@ -122,8 +131,8 @@
     <ClCompile Include="..\kernel\hooks\monitor\ntapi_monitor_hooks.c">
       <Filter>Source Files\Hooks</Filter>
     </ClCompile>
-    <ClCompile Include="..\kernel\hooks\monitor\ntapi_monitor_firmware.c">
-      <Filter>Source Files\Hooks</Filter>
+    <ClCompile Include="..\kernel\antivirt\antivirt_ntapi_firmware.c">
+      <Filter>Source Files\AntiVirt</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -164,6 +173,9 @@
     </ClInclude>
     <ClInclude Include="..\kernel\monitors\process_monitor.h">
       <Filter>Header Files\Monitors</Filter>
+    </ClInclude>
+    <ClInclude Include="..\kernel\antivirt\registry_concealment.h">
+      <Filter>Header Files\AntiVirt</Filter>
     </ClInclude>
     <ClInclude Include="..\kernel\monitors\registry_monitor.h">
       <Filter>Header Files\Monitors</Filter>

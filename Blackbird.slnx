@@ -9,7 +9,6 @@
   <Project Path="vcxproj/BlackbirdSensorCore.vcxproj" Id="09d208cd-eeec-4b23-915d-d9f380f5cc9b" />
   <Project Path="vcxproj/BlackbirdController.vcxproj" Id="69d04453-3fd0-4f4e-a5d2-5dfed2f10e25" />
   <Project Path="user/hook/vcxproj/BlackbirdHook.vcxproj" Id="c26b1585-94d5-427a-b964-32d45bfdbbd8" />
-  <Project Path="vcxproj/BlackbirdClient.vcxproj" Id="4f018f92-d42d-4b95-a097-d810aa358507" />
   <Project Path="vcxproj/BlackbirdExamples.vcxproj" Id="c82b4a36-67a8-4a80-b53e-131db0fae96b" />
   <Project Path="vcxproj/BlackbirdIoctlTest.vcxproj" Id="6c70d45a-9d7a-4fa9-9736-6ed89c7671d0" />
   <Project Path="vcxproj/BlackbirdInterface.csproj" Id="c33cb9fd-c7c0-4f07-a9dd-2a56f10f7d9e" />

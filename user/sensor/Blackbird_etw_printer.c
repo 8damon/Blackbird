@@ -85,11 +85,11 @@ static BOOL BLACKBIRDRegistryIsSuppressible(_In_z_ const CHAR *Operation, _In_ B
 }
 
 static BOOL BLACKBIRDRegistrySuppressorMatches(_In_ const BLACKBIRD_REGISTRY_SUPPRESSOR *State,
-                                                 _In_z_ const CHAR *Operation, _In_ ULONGLONG ProcessId,
-                                                 _In_ ULONG SessionId, _In_ ULONG NotifyClass, _In_ ULONG DataType,
-                                                 _In_ ULONG DataSize, _In_ BOOL HighValue,
-                                                 _In_z_ const WCHAR *ProcessImage, _In_z_ const WCHAR *KeyPath,
-                                                 _In_z_ const WCHAR *ValueName)
+                                               _In_z_ const CHAR *Operation, _In_ ULONGLONG ProcessId,
+                                               _In_ ULONG SessionId, _In_ ULONG NotifyClass, _In_ ULONG DataType,
+                                               _In_ ULONG DataSize, _In_ BOOL HighValue,
+                                               _In_z_ const WCHAR *ProcessImage, _In_z_ const WCHAR *KeyPath,
+                                               _In_z_ const WCHAR *ValueName)
 {
     if (State == NULL || !State->Active)
     {
@@ -120,10 +120,10 @@ static VOID BLACKBIRDFlushRegistrySuppressor(VOID)
 }
 
 static VOID BLACKBIRDUpdateRegistrySuppressor(_In_z_ const CHAR *Operation, _In_ ULONGLONG ProcessId,
-                                                _In_ ULONG SessionId, _In_ ULONG NotifyClass, _In_ ULONG DataType,
-                                                _In_ ULONG DataSize, _In_ BOOL HighValue,
-                                                _In_z_ const WCHAR *ProcessImage, _In_z_ const WCHAR *KeyPath,
-                                                _In_z_ const WCHAR *ValueName)
+                                              _In_ ULONG SessionId, _In_ ULONG NotifyClass, _In_ ULONG DataType,
+                                              _In_ ULONG DataSize, _In_ BOOL HighValue,
+                                              _In_z_ const WCHAR *ProcessImage, _In_z_ const WCHAR *KeyPath,
+                                              _In_z_ const WCHAR *ValueName)
 {
     g_RegistrySuppressor.Active = TRUE;
     g_RegistrySuppressor.ProcessId = ProcessId;
@@ -171,7 +171,7 @@ static BOOL BLACKBIRDIsExecutableImagePath(_In_z_ PCWSTR Path)
 }
 
 static BOOL BLACKBIRDLookupCachedProcessImage(_In_ ULONGLONG Pid, _Out_writes_z_(OutputChars) PWSTR Output,
-                                                _In_ size_t OutputChars)
+                                              _In_ size_t OutputChars)
 {
     ULONG i;
 
@@ -224,7 +224,7 @@ static VOID BLACKBIRDCacheProcessImage(_In_ ULONGLONG Pid, _In_opt_z_ PCWSTR Pat
 }
 
 static BOOL BLACKBIRDQueryProcessImageFromKernel(_In_ ULONGLONG Pid, _Out_writes_z_(OutputChars) PWSTR Output,
-                                                   _In_ size_t OutputChars)
+                                                 _In_ size_t OutputChars)
 {
     HANDLE device;
     DWORD outputCharsDword;
@@ -1158,7 +1158,7 @@ static void PrintRegistryTelemetry(_In_ PEVENT_RECORD Record)
 
     if (suppressible &&
         BLACKBIRDRegistrySuppressorMatches(&g_RegistrySuppressor, operation, processId, sessionId, notifyClass,
-                                             dataType, dataSize, highValue, processImage, keyPath, valueName))
+                                           dataType, dataSize, highValue, processImage, keyPath, valueName))
     {
         g_RegistrySuppressor.SuppressedCount += 1;
         return;
@@ -1177,7 +1177,7 @@ static void PrintRegistryTelemetry(_In_ PEVENT_RECORD Record)
     if (suppressible)
     {
         BLACKBIRDUpdateRegistrySuppressor(operation, processId, sessionId, notifyClass, dataType, dataSize, highValue,
-                                            processImage, keyPath, valueName);
+                                          processImage, keyPath, valueName);
     }
     else
     {
@@ -1278,7 +1278,7 @@ void BLACKBIRDFlushEtwPrinterState(VOID)
 }
 
 static BOOL BLACKBIRDTryGetU64Any(_In_ PEVENT_RECORD Record, _In_reads_(NameCount) const PCWSTR *Names,
-                                    _In_ size_t NameCount, _Out_ ULONGLONG *Value)
+                                  _In_ size_t NameCount, _Out_ ULONGLONG *Value)
 {
     size_t i;
 
@@ -1300,7 +1300,7 @@ static BOOL BLACKBIRDTryGetU64Any(_In_ PEVENT_RECORD Record, _In_reads_(NameCoun
 }
 
 static BOOL BLACKBIRDTryGetU32Any(_In_ PEVENT_RECORD Record, _In_reads_(NameCount) const PCWSTR *Names,
-                                    _In_ size_t NameCount, _Out_ ULONG *Value)
+                                  _In_ size_t NameCount, _Out_ ULONG *Value)
 {
     size_t i;
 
@@ -1432,4 +1432,3 @@ void BLACKBIRDPrintThreatIntelRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWST
         wprintf(L"Signal APC queue/insertion TI event\n");
     }
 }
-

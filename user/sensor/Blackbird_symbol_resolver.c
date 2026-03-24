@@ -146,4 +146,3 @@ void BLACKBIRDSymbolResolverPrintAddress(UINT64 address)
         printf(" (%s:%lu)", lineInfo.FileName, lineInfo.LineNumber);
     }
 }
-

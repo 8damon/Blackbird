@@ -10,12 +10,11 @@ BOOL BLACKBIRDGetI32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out
 BOOL BLACKBIRDGetU64Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ ULONGLONG *Value);
 BOOL BLACKBIRDGetBoolProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ BOOL *Value);
 BOOL BLACKBIRDGetWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PWSTR Output,
-                                _In_ size_t OutputChars);
+                              _In_ size_t OutputChars);
 BOOL BLACKBIRDGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PSTR Output,
-                                _In_ size_t OutputChars);
+                              _In_ size_t OutputChars);
 BOOL BLACKBIRDGetBinaryProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                                  _Out_writes_bytes_(OutputBytes) PBYTE Output, _In_ ULONG OutputBytes,
-                                  _Out_opt_ ULONG *ActualSize);
+                                _Out_writes_bytes_(OutputBytes) PBYTE Output, _In_ ULONG OutputBytes,
+                                _Out_opt_ ULONG *ActualSize);
 
 #endif
-

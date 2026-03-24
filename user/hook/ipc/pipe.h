@@ -7,11 +7,11 @@
 
 namespace XIPC
 {
-    inline constexpr const wchar_t* PIPE_NAME = BLACKBIRD_IPC_PIPE_NAME;
-    inline constexpr DWORD   KHOK_MAGIC = 0x4B4F484B;
-    inline constexpr DWORD   KHOK_VERSION = 1;
-    inline constexpr DWORD   MAX_NAME_CHARS = 256;
-    inline constexpr DWORD   PIPE_DEFAULT_TIMEOUT_MS = 5000;
+    inline constexpr const wchar_t *PIPE_NAME = BLACKBIRD_IPC_PIPE_NAME;
+    inline constexpr DWORD KHOK_MAGIC = 0x4B4F484B;
+    inline constexpr DWORD KHOK_VERSION = 1;
+    inline constexpr DWORD MAX_NAME_CHARS = 256;
+    inline constexpr DWORD PIPE_DEFAULT_TIMEOUT_MS = 5000;
 
     enum class RequestKind : std::uint32_t
     {
@@ -57,7 +57,7 @@ namespace XIPC
 #pragma pack(push, 1)
     struct BkExceptionMessage
     {
-        RequestKind  Kind;
+        RequestKind Kind;
 
         std::uint32_t Pid;
         std::uint32_t Tid;
@@ -67,7 +67,7 @@ namespace XIPC
 
         std::uint64_t ExceptionAddress;
 
-        std::uint32_t ModuleNameChars; 
+        std::uint32_t ModuleNameChars;
         std::uint32_t ExceptionInfoCount;
         std::uint32_t StackFrameCount;
         std::uint32_t Reserved;
@@ -75,7 +75,7 @@ namespace XIPC
         std::uint64_t ExceptionInfo[4];
         std::uint64_t Stack[64];
 
-        wchar_t       ModuleName[MAX_NAME_CHARS];
+        wchar_t ModuleName[MAX_NAME_CHARS];
     };
 #pragma pack(pop)
 
@@ -84,19 +84,17 @@ namespace XIPC
     bool Initialize(DWORD timeoutMs = PIPE_DEFAULT_TIMEOUT_MS);
     void Shutdown();
 
-    bool WriteRaw(const void* data, DWORD size);
-    bool ReadRaw(void* buffer, DWORD size, DWORD& bytesRead);
-    bool PublishHookEvent(const BLACKBIRD_IPC_HOOK_EVENT& eventRecord);
-    bool NotifyHookReady(UINT32 readyMask, UINT32* observedMaskOut = nullptr);
+    bool WriteRaw(const void *data, DWORD size);
+    bool ReadRaw(void *buffer, DWORD size, DWORD &bytesRead);
+    bool PublishHookEvent(const BLACKBIRD_IPC_HOOK_EVENT &eventRecord);
+    bool NotifyHookReady(UINT32 readyMask, UINT32 *observedMaskOut = nullptr);
 
-    template<typename T>
-    bool SendMessage(const T& msg)
+    template <typename T> bool SendMessage(const T &msg)
     {
         return WriteRaw(&msg, static_cast<DWORD>(sizeof(T)));
     }
 
-    template<typename T>
-    bool ReceiveMessage(T& msg)
+    template <typename T> bool ReceiveMessage(T &msg)
     {
         DWORD bytesRead = 0;
         if (!ReadRaw(&msg, static_cast<DWORD>(sizeof(T)), bytesRead))
@@ -105,12 +103,11 @@ namespace XIPC
         return bytesRead == sizeof(T);
     }
 
-    bool SendSwException(const BkExceptionMessage& msg);
+    bool SendSwException(const BkExceptionMessage &msg);
 
     bool SendHello();
-    bool RecvHello(HelloMessage& out);
+    bool RecvHello(HelloMessage &out);
 
-    bool RequestNumberForName(const std::wstring& name, DWORD& outValue);
-    bool RequestNameForNumber(DWORD ssn, std::wstring& outName);
-}
-
+    bool RequestNumberForName(const std::wstring &name, DWORD &outValue);
+    bool RequestNameForNumber(DWORD ssn, std::wstring &outName);
+} // namespace XIPC

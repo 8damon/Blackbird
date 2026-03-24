@@ -3,10 +3,74 @@
 
 namespace XIPC
 {
-    static HANDLE  g_pipeHandle = INVALID_HANDLE_VALUE;
+    static HANDLE g_pipeHandle = INVALID_HANDLE_VALUE;
     static SRWLOCK g_pipeLock = SRWLOCK_INIT;
     static volatile LONG g_sequence = 1;
     static bool g_handshakeComplete = false;
+
+    // ---------------------------------------------------------------------------
+    // Async hook-event dispatch: SLIST-based MPSC queue + background thread.
+    // PublishHookEvent is now fire-and-forget; hook threads never block on pipe I/O.
+    // ---------------------------------------------------------------------------
+    static constexpr LONG kAsyncPoolSize = 4096;
+
+    struct alignas(MEMORY_ALLOCATION_ALIGNMENT) AsyncHookNode
+    {
+        SLIST_ENTRY FreeLink;
+        BLACKBIRD_IPC_HOOK_EVENT Event;
+    };
+
+    static SLIST_HEADER g_asyncFreeList;
+    static SLIST_HEADER g_asyncPendingList;
+    static AsyncHookNode *g_asyncNodePool = nullptr;
+    static HANDLE g_asyncSignal = nullptr;
+    static HANDLE g_asyncThread = nullptr;
+    static volatile LONG g_asyncRunning = 0;
+    static volatile LONG g_asyncDropped = 0;
+
+    static bool TransactCommandLocked(UINT32 command, const void *payload, size_t payloadSize,
+                                      BLACKBIRD_IPC_PACKET *outResponse);
+
+    static DWORD WINAPI AsyncDispatchThread(LPVOID) noexcept
+    {
+        while (InterlockedCompareExchange(&g_asyncRunning, 0, 0))
+        {
+            WaitForSingleObject(g_asyncSignal, 50);
+
+            // Atomically claim all pending nodes (LIFO — reverse for FIFO dispatch).
+            PSLIST_ENTRY head = InterlockedFlushSList(&g_asyncPendingList);
+            if (!head)
+                continue;
+
+            // Reverse to restore arrival order.
+            PSLIST_ENTRY prev = nullptr;
+            PSLIST_ENTRY cur = head;
+            while (cur)
+            {
+                PSLIST_ENTRY next = cur->Next;
+                cur->Next = prev;
+                prev = cur;
+                cur = next;
+            }
+            head = prev;
+
+            // Dispatch each event synchronously (we're off the hook thread now).
+            while (head)
+            {
+                PSLIST_ENTRY next = head->Next;
+                AsyncHookNode *node = CONTAINING_RECORD(head, AsyncHookNode, FreeLink);
+
+                AcquireSRWLockExclusive(&g_pipeLock);
+                (void)TransactCommandLocked(BlackbirdIpcCommandPublishHookEvent, &node->Event, sizeof(node->Event),
+                                            nullptr);
+                ReleaseSRWLockExclusive(&g_pipeLock);
+
+                InterlockedPushEntrySList(&g_asyncFreeList, &node->FreeLink);
+                head = next;
+            }
+        }
+        return 0;
+    }
 
     static void ClosePipeLocked()
     {
@@ -30,15 +94,8 @@ namespace XIPC
             return false;
         }
 
-        HANDLE hPipe = CreateFileW(
-            PIPE_NAME,
-            GENERIC_READ | GENERIC_WRITE,
-            0,
-            nullptr,
-            OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL,
-            nullptr
-        );
+        HANDLE hPipe = CreateFileW(PIPE_NAME, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+                                   FILE_ATTRIBUTE_NORMAL, nullptr);
 
         if (hPipe == INVALID_HANDLE_VALUE)
         {
@@ -52,7 +109,7 @@ namespace XIPC
         return true;
     }
 
-    static bool SendPacketLocked(const BLACKBIRD_IPC_PACKET& request, BLACKBIRD_IPC_PACKET& response)
+    static bool SendPacketLocked(const BLACKBIRD_IPC_PACKET &request, BLACKBIRD_IPC_PACKET &response)
     {
         DWORD bytesWritten = 0;
         DWORD bytesRead = 0;
@@ -115,7 +172,8 @@ namespace XIPC
         return true;
     }
 
-    static bool TransactCommandLocked(UINT32 command, const void* payload, size_t payloadSize, BLACKBIRD_IPC_PACKET* outResponse)
+    static bool TransactCommandLocked(UINT32 command, const void *payload, size_t payloadSize,
+                                      BLACKBIRD_IPC_PACKET *outResponse)
     {
         BLACKBIRD_IPC_PACKET request{};
         BLACKBIRD_IPC_PACKET response{};
@@ -161,6 +219,31 @@ namespace XIPC
 
     bool Initialize(DWORD timeoutMs)
     {
+        // Start async dispatch infrastructure on first call.
+        if (InterlockedCompareExchange(&g_asyncRunning, 0, 0) == 0)
+        {
+            InitializeSListHead(&g_asyncFreeList);
+            InitializeSListHead(&g_asyncPendingList);
+            g_asyncDropped = 0;
+
+            g_asyncNodePool = static_cast<AsyncHookNode *>(VirtualAlloc(nullptr, sizeof(AsyncHookNode) * kAsyncPoolSize,
+                                                                        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+            if (g_asyncNodePool)
+            {
+                for (LONG i = 0; i < kAsyncPoolSize; ++i)
+                    InterlockedPushEntrySList(&g_asyncFreeList, &g_asyncNodePool[i].FreeLink);
+            }
+
+            g_asyncSignal = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+            if (g_asyncSignal && g_asyncNodePool)
+            {
+                InterlockedExchange(&g_asyncRunning, 1);
+                g_asyncThread = CreateThread(nullptr, 0, AsyncDispatchThread, nullptr, 0, nullptr);
+                if (!g_asyncThread)
+                    InterlockedExchange(&g_asyncRunning, 0);
+            }
+        }
+
         bool ok;
         AcquireSRWLockExclusive(&g_pipeLock);
         ok = EnsurePipeOpenLocked(timeoutMs) && EnsureHandshakeLocked();
@@ -170,12 +253,35 @@ namespace XIPC
 
     void Shutdown()
     {
+        // Stop the async dispatcher before closing the pipe.
+        if (InterlockedExchange(&g_asyncRunning, 0) != 0)
+        {
+            if (g_asyncSignal)
+                SetEvent(g_asyncSignal);
+            if (g_asyncThread)
+            {
+                WaitForSingleObject(g_asyncThread, 2000);
+                CloseHandle(g_asyncThread);
+                g_asyncThread = nullptr;
+            }
+            if (g_asyncSignal)
+            {
+                CloseHandle(g_asyncSignal);
+                g_asyncSignal = nullptr;
+            }
+            if (g_asyncNodePool)
+            {
+                VirtualFree(g_asyncNodePool, 0, MEM_RELEASE);
+                g_asyncNodePool = nullptr;
+            }
+        }
+
         AcquireSRWLockExclusive(&g_pipeLock);
         ClosePipeLocked();
         ReleaseSRWLockExclusive(&g_pipeLock);
     }
 
-    bool WriteRaw(const void* data, DWORD size)
+    bool WriteRaw(const void *data, DWORD size)
     {
         if (!data || size == 0)
             return false;
@@ -194,7 +300,7 @@ namespace XIPC
         }
 
         DWORD bytesWritten = 0;
-        BOOL  ok = WriteFile(g_pipeHandle, data, size, &bytesWritten, nullptr);
+        BOOL ok = WriteFile(g_pipeHandle, data, size, &bytesWritten, nullptr);
         if (!ok || bytesWritten != size)
         {
             ClosePipeLocked();
@@ -207,7 +313,7 @@ namespace XIPC
         return true;
     }
 
-    bool ReadRaw(void* buffer, DWORD size, DWORD& bytesRead)
+    bool ReadRaw(void *buffer, DWORD size, DWORD &bytesRead)
     {
         bytesRead = 0;
 
@@ -239,8 +345,26 @@ namespace XIPC
         return true;
     }
 
-    bool PublishHookEvent(const BLACKBIRD_IPC_HOOK_EVENT& eventRecord)
+    bool PublishHookEvent(const BLACKBIRD_IPC_HOOK_EVENT &eventRecord)
     {
+        // Fast path: enqueue to the async ring and return immediately.
+        // Hook threads never block on pipe I/O.
+        if (InterlockedCompareExchange(&g_asyncRunning, 0, 0) && g_asyncSignal)
+        {
+            PSLIST_ENTRY entry = InterlockedPopEntrySList(&g_asyncFreeList);
+            if (entry)
+            {
+                AsyncHookNode *node = CONTAINING_RECORD(entry, AsyncHookNode, FreeLink);
+                node->Event = eventRecord;
+                InterlockedPushEntrySList(&g_asyncPendingList, &node->FreeLink);
+                SetEvent(g_asyncSignal);
+                return true;
+            }
+            // Free list empty — pool exhausted; fall through to synchronous send.
+            InterlockedIncrement(&g_asyncDropped);
+        }
+
+        // Synchronous fallback (async not yet started, or pool exhausted).
         bool ok;
         AcquireSRWLockExclusive(&g_pipeLock);
         ok = TransactCommandLocked(BlackbirdIpcCommandPublishHookEvent, &eventRecord, sizeof(eventRecord), nullptr);
@@ -248,7 +372,7 @@ namespace XIPC
         return ok;
     }
 
-    bool NotifyHookReady(UINT32 readyMask, UINT32* observedMaskOut)
+    bool NotifyHookReady(UINT32 readyMask, UINT32 *observedMaskOut)
     {
         bool ok;
         BLACKBIRD_IPC_NOTIFY_HOOK_READY_REQUEST request{};
@@ -278,11 +402,11 @@ namespace XIPC
         return true;
     }
 
-    bool SendSwException(const BkExceptionMessage& msg)
+    bool SendSwException(const BkExceptionMessage &msg)
     {
         BLACKBIRD_IPC_HOOK_EVENT eventRecord{};
         eventRecord.Kind = (msg.Kind == RequestKind::BkExceptionHighPriv) ? BlackbirdIpcHookEventExceptionHighPriv
-                                                                           : BlackbirdIpcHookEventExceptionLowNoise;
+                                                                          : BlackbirdIpcHookEventExceptionLowNoise;
         eventRecord.ProcessId = msg.Pid;
         eventRecord.ThreadId = msg.Tid;
         eventRecord.Operation = msg.ExceptionCode;
@@ -304,5 +428,4 @@ namespace XIPC
         }
         return PublishHookEvent(eventRecord);
     }
-}
-
+} // namespace XIPC

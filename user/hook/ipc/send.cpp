@@ -9,18 +9,17 @@ namespace XIPC
         return Initialize();
     }
 
-    bool RequestNumberForName(const std::wstring& name, DWORD& outValue)
+    bool RequestNumberForName(const std::wstring &name, DWORD &outValue)
     {
         (void)name;
         outValue = 0;
         return false;
     }
 
-    bool RequestNameForNumber(DWORD ssn, std::wstring& outName)
+    bool RequestNameForNumber(DWORD ssn, std::wstring &outName)
     {
         (void)ssn;
         outName.clear();
         return false;
     }
-}
-
+} // namespace XIPC

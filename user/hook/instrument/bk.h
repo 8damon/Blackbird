@@ -13,13 +13,13 @@
 #include <cstdint>
 #include <cstddef>
 #ifndef BK_BLACKBIRD_API
-#  ifdef BK_BLACKBIRD_EXPORTS
-#    define BK_BLACKBIRD_API extern "C" __declspec(dllexport)
-#  elif defined(BK_BLACKBIRD_IMPORTS)
-#    define BK_BLACKBIRD_API extern "C" __declspec(dllimport)
-#  else
-#    define BK_BLACKBIRD_API extern "C"
-#  endif
+#ifdef BK_BLACKBIRD_EXPORTS
+#define BK_BLACKBIRD_API extern "C" __declspec(dllexport)
+#elif defined(BK_BLACKBIRD_IMPORTS)
+#define BK_BLACKBIRD_API extern "C" __declspec(dllimport)
+#else
+#define BK_BLACKBIRD_API extern "C"
+#endif
 #endif
 
 namespace bk::blackbird
@@ -30,39 +30,39 @@ namespace bk::blackbird
 
     struct Event final
     {
-        DWORD   exception_code{};
-        DWORD   exception_flags{};
-        void* exception_address{};
+        DWORD exception_code{};
+        DWORD exception_flags{};
+        void *exception_address{};
 
-        DWORD   pid{};
-        DWORD   tid{};
+        DWORD pid{};
+        DWORD tid{};
 
         wchar_t module_basename_lower[kMaxModuleName]{};
 
-        ULONG   exception_info_count{};
+        ULONG exception_info_count{};
         ULONG_PTR exception_info[kMaxExInfo]{};
 
-        USHORT  stack_frame_count{};
-        void* stack[kMaxStackFrames]{};
+        USHORT stack_frame_count{};
+        void *stack[kMaxStackFrames]{};
 
-        bool    is_target_module{};
-        bool    is_memory_fault{};
-        bool    is_noncontinuable{};
+        bool is_target_module{};
+        bool is_memory_fault{};
+        bool is_noncontinuable{};
     };
 
-    using TelemetryFn = void(*)(const Event& evt, void* user) noexcept;
-    using MemoryFaultHandlerFn = bool(*)(const Event& evt, EXCEPTION_POINTERS* ep, void* user) noexcept;
+    using TelemetryFn = void (*)(const Event &evt, void *user) noexcept;
+    using MemoryFaultHandlerFn = bool (*)(const Event &evt, EXCEPTION_POINTERS *ep, void *user) noexcept;
 
     struct TelemetryArguments final
     {
-        const wchar_t* target_module_basename = L"SR71.dll";
+        const wchar_t *target_module_basename = L"SR71.dll";
 
         TelemetryFn low_noise_telemetry = nullptr;
         TelemetryFn high_noise_telemetry = nullptr;
 
         MemoryFaultHandlerFn memory_fault_handler = nullptr;
 
-        void* user = nullptr;
+        void *user = nullptr;
 
         bool install_first = true;
         bool auto_promote = true;
@@ -73,15 +73,15 @@ namespace bk::blackbird
 
         bool swallow_non_target_exceptions = false;
     };
-}
+} // namespace bk::blackbird
 using BkBlackbirdEvent = bk::blackbird::Event;
 using BkBlackbirdTelemetryArguments = bk::blackbird::TelemetryArguments;
 using BkBlackbirdTelemetryFn = bk::blackbird::TelemetryFn;
 using BkBlackbirdMemoryFaultHandlerFn = bk::blackbird::MemoryFaultHandlerFn;
-BK_BLACKBIRD_API PVOID BkRegisterVectoredExceptionHandler(BkBlackbirdTelemetryArguments* args) noexcept;
-BK_BLACKBIRD_API BOOL  BkPromoteVectoredExceptionHandlerToFront() noexcept;
-BK_BLACKBIRD_API void  BkUnregisterVectoredExceptionHandler() noexcept;
-inline PVOID BkRegisterVectordExceptionHandler(BkBlackbirdTelemetryArguments* args) noexcept
+BK_BLACKBIRD_API PVOID BkRegisterVectoredExceptionHandler(BkBlackbirdTelemetryArguments *args) noexcept;
+BK_BLACKBIRD_API BOOL BkPromoteVectoredExceptionHandlerToFront() noexcept;
+BK_BLACKBIRD_API void BkUnregisterVectoredExceptionHandler() noexcept;
+inline PVOID BkRegisterVectordExceptionHandler(BkBlackbirdTelemetryArguments *args) noexcept
 {
     return BkRegisterVectoredExceptionHandler(args);
 }
@@ -92,4 +92,3 @@ inline void BkUnregisterVectordExceptionHandler() noexcept
 }
 
 #endif
-

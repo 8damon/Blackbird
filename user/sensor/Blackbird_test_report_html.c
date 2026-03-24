@@ -70,8 +70,8 @@ static const char *BLACKBIRDHtmlStatusClass(_In_ BLACKBIRD_REPORT_CHECK_STATUS S
 }
 
 BOOL BLACKBIRDWriteHtmlReport(_In_z_ const char *OutputPath, _In_z_ const char *Title,
-                                _In_reads_(MetaCount) const BLACKBIRD_REPORT_META *Metadata, _In_ size_t MetaCount,
-                                _In_reads_(CheckCount) const BLACKBIRD_REPORT_CHECK *Checks, _In_ size_t CheckCount)
+                              _In_reads_(MetaCount) const BLACKBIRD_REPORT_META *Metadata, _In_ size_t MetaCount,
+                              _In_reads_(CheckCount) const BLACKBIRD_REPORT_CHECK *Checks, _In_ size_t CheckCount)
 {
     FILE *f;
     size_t i;
@@ -170,4 +170,3 @@ BOOL BLACKBIRDWriteHtmlReport(_In_z_ const char *OutputPath, _In_z_ const char *
     fclose(f);
     return TRUE;
 }
-

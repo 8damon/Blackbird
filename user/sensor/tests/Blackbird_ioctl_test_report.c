@@ -13,10 +13,11 @@ static unsigned __int64 SuiteReadCycles(_In_ const SUITE_RESULTS *Results)
     return 0;
 }
 
-typedef NTSTATUS(NTAPI *BLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_FN)(
-    _In_ SYSTEM_INFORMATION_CLASS SystemInformationClass,
-    _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation, _In_ ULONG SystemInformationLength,
-    _Out_opt_ PULONG ReturnLength);
+typedef NTSTATUS(NTAPI *BLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_FN)(_In_ SYSTEM_INFORMATION_CLASS SystemInformationClass,
+                                                                  _Out_writes_bytes_opt_(SystemInformationLength)
+                                                                      PVOID SystemInformation,
+                                                                  _In_ ULONG SystemInformationLength,
+                                                                  _Out_opt_ PULONG ReturnLength);
 
 typedef NTSTATUS(NTAPI *BLACKBIRD_RTL_GET_VERSION_FN)(_Inout_ PRTL_OSVERSIONINFOW VersionInformation);
 
@@ -32,7 +33,7 @@ typedef struct _BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION
     BOOLEAN KernelDebuggerNotPresent;
 } BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION;
 BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PSTR Output,
-                               _In_ size_t OutputChars)
+                        _In_ size_t OutputChars)
 {
     TDHSTATUS status;
     PROPERTY_DATA_DESCRIPTOR descriptor;
@@ -629,9 +630,8 @@ VOID LogEnvironmentBaseline(_Inout_ SUITE_RESULTS *Results)
             SuiteLogMetaLine(Results, "environmentCiOptions", line);
         }
 
-        status =
-            ntQuerySystemInformation((SYSTEM_INFORMATION_CLASS)BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION_CLASS,
-                                     &kdInfo, sizeof(kdInfo), NULL);
+        status = ntQuerySystemInformation((SYSTEM_INFORMATION_CLASS)BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION_CLASS,
+                                          &kdInfo, sizeof(kdInfo), NULL);
         if (NT_SUCCESS(status))
         {
             (void)sprintf_s(line, RTL_NUMBER_OF(line), "%s present %s", kdInfo.KernelDebuggerEnabled ? "yes" : "no",
@@ -691,16 +691,14 @@ BOOL SuiteInitReport(_Inout_ SUITE_RESULTS *Results)
     }
 
     GetSystemTime(&stUtc);
-    if (sprintf_s(fileName, RTL_NUMBER_OF(fileName),
-                  "test-results\\BlackbirdTestSuite-%04u%02u%02u-%02u%02u%02uZ.txt", stUtc.wYear, stUtc.wMonth,
-                  stUtc.wDay, stUtc.wHour, stUtc.wMinute, stUtc.wSecond) <= 0)
+    if (sprintf_s(fileName, RTL_NUMBER_OF(fileName), "test-results\\BlackbirdTestSuite-%04u%02u%02u-%02u%02u%02uZ.txt",
+                  stUtc.wYear, stUtc.wMonth, stUtc.wDay, stUtc.wHour, stUtc.wMinute, stUtc.wSecond) <= 0)
     {
         return FALSE;
     }
 
-    if (sprintf_s(htmlName, RTL_NUMBER_OF(htmlName),
-                  "test-results\\BlackbirdTestSuite-%04u%02u%02u-%02u%02u%02uZ.html", stUtc.wYear, stUtc.wMonth,
-                  stUtc.wDay, stUtc.wHour, stUtc.wMinute, stUtc.wSecond) <= 0)
+    if (sprintf_s(htmlName, RTL_NUMBER_OF(htmlName), "test-results\\BlackbirdTestSuite-%04u%02u%02u-%02u%02u%02uZ.html",
+                  stUtc.wYear, stUtc.wMonth, stUtc.wDay, stUtc.wHour, stUtc.wMinute, stUtc.wSecond) <= 0)
     {
         return FALSE;
     }
@@ -812,7 +810,7 @@ VOID SuiteCloseReport(_Inout_ SUITE_RESULTS *Results, _In_ DWORD Polls)
     if (Results->HtmlReportPath[0] != '\0')
     {
         htmlWritten = BLACKBIRDWriteHtmlReport(Results->HtmlReportPath, "BlackbirdTestSuite Report", Results->Meta,
-                                                 Results->MetaCount, checksForOutput, checksForOutputCount);
+                                               Results->MetaCount, checksForOutput, checksForOutputCount);
         if (!htmlWritten)
         {
             printf("reportHtmlStatus=failed\n");
@@ -827,7 +825,7 @@ VOID SuiteCloseReport(_Inout_ SUITE_RESULTS *Results, _In_ DWORD Polls)
     SuiteFreeCollectedData(Results);
 }
 VOID RecordResult(_Inout_ SUITE_RESULTS *Results, _In_ BOOL Passed, _In_z_ const char *PassText,
-                         _In_z_ const char *FailText)
+                  _In_z_ const char *FailText)
 {
     if (Results == NULL)
     {
@@ -855,8 +853,3 @@ VOID RecordSkip(_Inout_ SUITE_RESULTS *Results, _In_z_ const char *SkipText)
     Results->Skipped += 1;
     SuiteRecordCheck(Results, BlackbirdReportCheckSkip, SkipText);
 }
-
-
-
-
-

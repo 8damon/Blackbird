@@ -99,9 +99,8 @@ int __cdecl main(int argc, char **argv)
     if (brokerMode)
     {
         DWORD brokerSeedPid = selfPid;
-        brokerEtwStarted = StartBrokerEtwCapture(&brokerEtw, &brokerSeedPid, 1,
-                                                 BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY |
-                                                     BLACKBIRD_STREAM_THREAD);
+        brokerEtwStarted = StartBrokerEtwCapture(
+            &brokerEtw, &brokerSeedPid, 1, BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD);
         RecordResult(&results, brokerEtwStarted, "started broker ETW/TI uplink capture",
                      "failed to start broker ETW/TI uplink capture");
         if (brokerEtwStarted && !brokerEtw.TiProviderEnabled)
@@ -150,8 +149,8 @@ int __cdecl main(int argc, char **argv)
         DWORD pidCount = 1u;
         pidList[0] = selfPid;
 
-        setPidsApplied = SetPids(h, pidList, pidCount,
-                                 BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD);
+        setPidsApplied =
+            SetPids(h, pidList, pidCount, BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD);
         RecordResult(&results, setPidsApplied, "applied PID list subscription via IOCTL_BLACKBIRD_SET_PIDS",
                      "failed to apply PID list subscription via IOCTL_BLACKBIRD_SET_PIDS");
         if (setPidsApplied)
@@ -309,13 +308,11 @@ int __cdecl main(int argc, char **argv)
     }
     if (requireKernelCorrelationSignals && generatedRemoteAfterThread)
     {
-        expected.RequiredThreadFlags |=
-            BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT | BLACKBIRD_THREAD_FLAG_CORR_THREAD_CTX;
+        expected.RequiredThreadFlags |= BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT | BLACKBIRD_THREAD_FLAG_CORR_THREAD_CTX;
     }
     if (requireKernelCorrelationSignals && generatedRemoteAfterDup)
     {
-        expected.RequiredThreadFlags |=
-            BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT | BLACKBIRD_THREAD_FLAG_CORR_DUP_HANDLE;
+        expected.RequiredThreadFlags |= BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT | BLACKBIRD_THREAD_FLAG_CORR_DUP_HANDLE;
     }
 
     PumpIoctlEvents(h, &state, &expected, 14000);
@@ -418,8 +415,7 @@ int __cdecl main(int argc, char **argv)
                                          : "broker ETW uplink missing one or more core event families (APC optional)");
 
         RecordResult(&results, (InterlockedCompareExchange(&brokerEtw.DetectionEvents, 0, 0) > 0),
-                     "broker ETW uplink DetectionTelemetry observed",
-                     "broker ETW uplink DetectionTelemetry missing");
+                     "broker ETW uplink DetectionTelemetry observed", "broker ETW uplink DetectionTelemetry missing");
 
         if (generatedVmApiCalls)
         {
@@ -456,26 +452,27 @@ int __cdecl main(int argc, char **argv)
             }
         }
 
-        printf("[INFO] broker ETW counts handle=%ld thread=%ld process=%ld image=%ld registry=%ld apc=%ld detection=%ld "
-               "ti=%ld unknown=%ld det{hollowMedium=%ld hollowStrong=%ld hollowTxf=%ld} tiTask{alloc=%ld protect=%ld write=%ld "
-               "syscallUsage=%ld tiUnknown=%ld}\n",
-               InterlockedCompareExchange(&brokerEtw.HandleEvents, 0, 0),
-               InterlockedCompareExchange(&brokerEtw.ThreadEvents, 0, 0),
-               InterlockedCompareExchange(&brokerEtw.ProcessEvents, 0, 0),
-               InterlockedCompareExchange(&brokerEtw.ImageEvents, 0, 0),
-               InterlockedCompareExchange(&brokerEtw.RegistryEvents, 0, 0),
-               InterlockedCompareExchange(&brokerEtw.ApcEvents, 0, 0),
-               InterlockedCompareExchange(&brokerEtw.DetectionEvents, 0, 0),
-               InterlockedCompareExchange(&brokerEtw.TiEvents, 0, 0),
-               InterlockedCompareExchange(&brokerEtw.UnknownEvents, 0, 0),
-               InterlockedCompareExchange(&brokerEtw.DetectHollowingMarkMedium, 0, 0),
-               InterlockedCompareExchange(&brokerEtw.DetectHollowingMarkStrong, 0, 0),
-               InterlockedCompareExchange(&brokerEtw.DetectHollowingTxfChain, 0, 0),
-               InterlockedCompareExchange(&brokerEtw.TiAllocVmEvents, 0, 0),
-               InterlockedCompareExchange(&brokerEtw.TiProtectVmEvents, 0, 0),
-               InterlockedCompareExchange(&brokerEtw.TiWriteVmEvents, 0, 0),
-               InterlockedCompareExchange(&brokerEtw.TiSyscallUsageEvents, 0, 0),
-               InterlockedCompareExchange(&brokerEtw.TiUnknownTaskEvents, 0, 0));
+        printf(
+            "[INFO] broker ETW counts handle=%ld thread=%ld process=%ld image=%ld registry=%ld apc=%ld detection=%ld "
+            "ti=%ld unknown=%ld det{hollowMedium=%ld hollowStrong=%ld hollowTxf=%ld} tiTask{alloc=%ld protect=%ld write=%ld "
+            "syscallUsage=%ld tiUnknown=%ld}\n",
+            InterlockedCompareExchange(&brokerEtw.HandleEvents, 0, 0),
+            InterlockedCompareExchange(&brokerEtw.ThreadEvents, 0, 0),
+            InterlockedCompareExchange(&brokerEtw.ProcessEvents, 0, 0),
+            InterlockedCompareExchange(&brokerEtw.ImageEvents, 0, 0),
+            InterlockedCompareExchange(&brokerEtw.RegistryEvents, 0, 0),
+            InterlockedCompareExchange(&brokerEtw.ApcEvents, 0, 0),
+            InterlockedCompareExchange(&brokerEtw.DetectionEvents, 0, 0),
+            InterlockedCompareExchange(&brokerEtw.TiEvents, 0, 0),
+            InterlockedCompareExchange(&brokerEtw.UnknownEvents, 0, 0),
+            InterlockedCompareExchange(&brokerEtw.DetectHollowingMarkMedium, 0, 0),
+            InterlockedCompareExchange(&brokerEtw.DetectHollowingMarkStrong, 0, 0),
+            InterlockedCompareExchange(&brokerEtw.DetectHollowingTxfChain, 0, 0),
+            InterlockedCompareExchange(&brokerEtw.TiAllocVmEvents, 0, 0),
+            InterlockedCompareExchange(&brokerEtw.TiProtectVmEvents, 0, 0),
+            InterlockedCompareExchange(&brokerEtw.TiWriteVmEvents, 0, 0),
+            InterlockedCompareExchange(&brokerEtw.TiSyscallUsageEvents, 0, 0),
+            InterlockedCompareExchange(&brokerEtw.TiUnknownTaskEvents, 0, 0));
     }
 
 Cleanup:
@@ -507,5 +504,3 @@ Cleanup:
     SuiteCloseReport(&results, state.Polls);
     return 1;
 }
-
-

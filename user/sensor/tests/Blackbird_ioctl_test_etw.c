@@ -1,7 +1,7 @@
 #include "blackbird_ioctl_test_internal.h"
 
 static VOID WINAPI BlackbirdEtwRecordCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName,
-                                                _In_opt_ PVOID Context)
+                                              _In_opt_ PVOID Context)
 {
     ETW_CAPTURE *cap = (ETW_CAPTURE *)Context;
     CHAR detectionName[128];
@@ -169,8 +169,8 @@ static BOOL StartEtwCapture(_Out_ ETW_CAPTURE *cap)
     (void)BLACKBIRDSCStopSessionByName(L"BlackbirdSensorSession");
     Sleep(80);
 
-    if (!BLACKBIRDSCStartBlackbirdEtwSession(cap->SessionName, TRUE, BlackbirdEtwRecordCallback, cap,
-                                                 &cap->Session, &cap->TiProviderEnabled))
+    if (!BLACKBIRDSCStartBlackbirdEtwSession(cap->SessionName, TRUE, BlackbirdEtwRecordCallback, cap, &cap->Session,
+                                             &cap->TiProviderEnabled))
     {
         err = GetLastError();
         printf("[INFO] ETW start failed err=%lu session=%ws\n", err, cap->SessionName);
@@ -181,7 +181,7 @@ static BOOL StartEtwCapture(_Out_ ETW_CAPTURE *cap)
             {
                 (void)StringCchCopyW(cap->SessionName, RTL_NUMBER_OF(cap->SessionName), fallbackName);
                 if (!BLACKBIRDSCStartBlackbirdEtwSession(cap->SessionName, TRUE, BlackbirdEtwRecordCallback, cap,
-                                                             &cap->Session, &cap->TiProviderEnabled))
+                                                         &cap->Session, &cap->TiProviderEnabled))
                 {
                     err = GetLastError();
                     printf("[INFO] ETW fallback start failed err=%lu session=%ws\n", err, cap->SessionName);
@@ -365,7 +365,7 @@ static DWORD WINAPI BrokerEtwConsumerThreadProc(_In_ LPVOID Context)
     return 0;
 }
 BOOL StartBrokerEtwCapture(_Out_ BROKER_ETW_CAPTURE *cap, _In_reads_opt_(SeedCount) const DWORD *SeedPids,
-                                  _In_ DWORD SeedCount, _In_ DWORD StreamMask)
+                           _In_ DWORD SeedCount, _In_ DWORD StreamMask)
 {
     UINT32 capabilities = 0;
     BOOL tiEnabled = FALSE;
@@ -480,7 +480,3 @@ static BOOL WaitForEtwEventCoverage(_In_ ETW_CAPTURE *cap, _In_ DWORD maxMs, _In
     }
     return FALSE;
 }
-
-
-
-

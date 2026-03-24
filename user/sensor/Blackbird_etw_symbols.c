@@ -60,7 +60,7 @@ static VOID BLACKBIRDLeaveSymbolLock(VOID)
 }
 
 static VOID BLACKBIRDFormatWin32Error(_In_ DWORD ErrorCode, _Out_writes_z_(OutputChars) PWSTR Output,
-                                        _In_ size_t OutputChars)
+                                      _In_ size_t OutputChars)
 {
     WCHAR message[256];
     DWORD chars;
@@ -130,8 +130,8 @@ static VOID BLACKBIRDResetModuleCache(VOID)
 }
 
 static VOID BLACKBIRDCommitModuleSnapshot(_In_ DWORD ProcessId,
-                                            _In_reads_(ModuleCount) const BLACKBIRD_MODULE_CACHE_ENTRY *Modules,
-                                            _In_ DWORD ModuleCount)
+                                          _In_reads_(ModuleCount) const BLACKBIRD_MODULE_CACHE_ENTRY *Modules,
+                                          _In_ DWORD ModuleCount)
 {
     DWORD i;
     DWORD slot = 0;
@@ -202,7 +202,7 @@ static BLACKBIRD_MODULE_CACHE_PID_ENTRY *BLACKBIRDGetOrCreateModuleCacheSlot(_In
 }
 
 static VOID BLACKBIRDCacheSingleModuleRange(_In_ DWORD ProcessId, _In_ ULONGLONG ImageBase, _In_ ULONGLONG ImageSize,
-                                              _In_opt_z_ PCWSTR ImagePath)
+                                            _In_opt_z_ PCWSTR ImagePath)
 {
     BLACKBIRD_MODULE_CACHE_PID_ENTRY *slot;
     DWORD i;
@@ -255,7 +255,7 @@ static VOID BLACKBIRDCacheSingleModuleRange(_In_ DWORD ProcessId, _In_ ULONGLONG
 }
 
 static BOOL BLACKBIRDTryResolveViaModuleCache(_In_ DWORD ProcessId, _In_ ULONGLONG Address,
-                                                _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
+                                              _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
 {
     DWORD i;
     DWORD j;
@@ -320,7 +320,7 @@ static VOID BLACKBIRDCacheUserPid(_In_ DWORD ProcessId)
 }
 
 static VOID BLACKBIRDLoadUserModulesForProcess(_In_ DWORD ProcessId, _In_ BOOL ForceReload,
-                                                 _Out_opt_ DWORD *OpenProcessErrorCode)
+                                               _Out_opt_ DWORD *OpenProcessErrorCode)
 {
     HANDLE process;
     HMODULE mods[1024];
@@ -503,8 +503,8 @@ static PCWSTR BLACKBIRDGetPathBaseName(_In_z_ PCWSTR Path)
 }
 
 static BOOL BLACKBIRDTryResolveViaModuleEnum(_In_ HANDLE ProcessHandle, _In_ ULONGLONG Address,
-                                               _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars,
-                                               _Out_opt_ DWORD *ErrorCode)
+                                             _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars,
+                                             _Out_opt_ DWORD *ErrorCode)
 {
     HMODULE mods[1024];
     DWORD bytesNeeded = 0;
@@ -581,8 +581,8 @@ static BOOL BLACKBIRDTryResolveViaModuleEnum(_In_ HANDLE ProcessHandle, _In_ ULO
 }
 
 static BOOL BLACKBIRDTryResolveViaMappedFile(_In_ HANDLE ProcessHandle, _In_ ULONGLONG Address,
-                                               _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars,
-                                               _Out_opt_ DWORD *ErrorCode)
+                                             _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars,
+                                             _Out_opt_ DWORD *ErrorCode)
 {
     MEMORY_BASIC_INFORMATION mbi;
     WCHAR mappedPath[1024];
@@ -631,10 +631,10 @@ static BOOL BLACKBIRDTryResolveViaMappedFile(_In_ HANDLE ProcessHandle, _In_ ULO
 }
 
 static BOOL BLACKBIRDTryResolveAddressViaProcess(_In_ DWORD ProcessId, _In_ ULONGLONG Address,
-                                                   _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars,
-                                                   _Out_opt_ DWORD *OpenProcessErrorCode,
-                                                   _Out_opt_ DWORD *ModuleEnumErrorCode,
-                                                   _Out_opt_ DWORD *MappedFileErrorCode)
+                                                 _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars,
+                                                 _Out_opt_ DWORD *OpenProcessErrorCode,
+                                                 _Out_opt_ DWORD *ModuleEnumErrorCode,
+                                                 _Out_opt_ DWORD *MappedFileErrorCode)
 {
     HANDLE process;
     BOOL resolved = FALSE;
@@ -679,8 +679,8 @@ static BOOL BLACKBIRDTryResolveAddressViaProcess(_In_ DWORD ProcessId, _In_ ULON
 }
 
 static BOOL BLACKBIRDTryResolveViaToolhelpSnapshot(_In_ DWORD ProcessId, _In_ ULONGLONG Address,
-                                                     _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars,
-                                                     _Out_opt_ DWORD *ErrorCode)
+                                                   _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars,
+                                                   _Out_opt_ DWORD *ErrorCode)
 {
     HANDLE snap;
     MODULEENTRY32W me;
@@ -741,9 +741,9 @@ static BOOL BLACKBIRDTryResolveViaToolhelpSnapshot(_In_ DWORD ProcessId, _In_ UL
 }
 
 static VOID BLACKBIRDFormatAddressInternal(_In_ ULONGLONG Address, _Out_writes_z_(OutputChars) PWSTR Output,
-                                             _In_ size_t OutputChars, _Out_opt_ DWORD *SymFromAddrErrorCode,
-                                             _Out_opt_ DWORD *GetModuleInfoErrorCode,
-                                             _Out_opt_ DWORD *GetLineInfoErrorCode)
+                                           _In_ size_t OutputChars, _Out_opt_ DWORD *SymFromAddrErrorCode,
+                                           _Out_opt_ DWORD *GetModuleInfoErrorCode,
+                                           _Out_opt_ DWORD *GetLineInfoErrorCode)
 {
     BYTE buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME];
     PSYMBOL_INFO symbol = (PSYMBOL_INFO)buffer;
@@ -1044,8 +1044,8 @@ void BLACKBIRDEtwSymbolsCleanup(void)
     }
 }
 
-void BLACKBIRDEtwSymbolsCacheModuleForProcess(_In_ DWORD ProcessId, _In_ ULONGLONG ImageBase,
-                                                _In_ ULONGLONG ImageSize, _In_opt_z_ PCWSTR ImagePath)
+void BLACKBIRDEtwSymbolsCacheModuleForProcess(_In_ DWORD ProcessId, _In_ ULONGLONG ImageBase, _In_ ULONGLONG ImageSize,
+                                              _In_opt_z_ PCWSTR ImagePath)
 {
     BLACKBIRDEnterSymbolLock();
     BLACKBIRDCacheSingleModuleRange(ProcessId, ImageBase, ImageSize, ImagePath);
@@ -1053,7 +1053,7 @@ void BLACKBIRDEtwSymbolsCacheModuleForProcess(_In_ DWORD ProcessId, _In_ ULONGLO
 }
 
 BOOL BLACKBIRDEtwSymbolsTryResolveViaModuleCache(_In_ DWORD ProcessId, _In_ ULONGLONG Address,
-                                                   _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
+                                                 _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
 {
     BOOL resolved;
 
@@ -1064,7 +1064,7 @@ BOOL BLACKBIRDEtwSymbolsTryResolveViaModuleCache(_In_ DWORD ProcessId, _In_ ULON
 }
 
 void BLACKBIRDEtwSymbolsFormatAddress(_In_ ULONGLONG Address, _Out_writes_z_(OutputChars) PWSTR Output,
-                                        _In_ size_t OutputChars)
+                                      _In_ size_t OutputChars)
 {
     BLACKBIRDEnterSymbolLock();
     BLACKBIRDFormatAddressInternal(Address, Output, OutputChars, NULL, NULL, NULL);
@@ -1072,7 +1072,7 @@ void BLACKBIRDEtwSymbolsFormatAddress(_In_ ULONGLONG Address, _Out_writes_z_(Out
 }
 
 void BLACKBIRDEtwSymbolsFormatAddressForProcess(_In_ DWORD ProcessId, _In_ ULONGLONG Address,
-                                                  _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
+                                                _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
 {
     BLACKBIRDEnterSymbolLock();
     BLACKBIRDFormatAddressInternal(Address, Output, OutputChars, NULL, NULL, NULL);
@@ -1082,4 +1082,3 @@ void BLACKBIRDEtwSymbolsFormatAddressForProcess(_In_ DWORD ProcessId, _In_ ULONG
     }
     BLACKBIRDLeaveSymbolLock();
 }
-

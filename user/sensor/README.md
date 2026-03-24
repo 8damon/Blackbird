@@ -6,7 +6,6 @@ Document revision: `2026-02-28`
 
 `J58.dll` is the common user-mode integration layer used by:
 
-- `BlackbirdClient.exe`
 - `BlackbirdTestSuite.exe`
 
 What it provides:
@@ -44,61 +43,6 @@ Typed detection callback surface:
 - `SwkDetectionCallback`
 
 Build project `vcxproj/BlackbirdSensorCore.vcxproj`.
-
-## BlackbirdClient (IOCTL Consumer)
-
-`BlackbirdClient.exe` is broker-only: it uses `BlackbirdController` over named-pipe IPC and does not open the driver directly.
-
-Build project `vcxproj/BlackbirdClient.vcxproj` (depends on `BlackbirdSensorCore`), then run elevated:
-
-```bat
-BlackbirdClient.exe 4242 handle,memory,thread
-```
-
-`<streams>` accepts `handle,memory,thread` with optional `,etw`:
-
-- `handle,memory,thread` prints IOCTL telemetry only.
-- `handle,memory,thread,etw` prints IOCTL telemetry plus broker ETW uplink events.
-
-Optional scope argument:
-
-```bat
-BlackbirdClient.exe 4242 handle,memory,thread local
-BlackbirdClient.exe 4242 handle,memory,thread remote
-BlackbirdClient.exe 4242 handle,memory,thread both
-```
-
-Path-launch watch mode is also supported:
-
-```bat
-BlackbirdClient.exe path:<full-path-to-target.exe> handle,memory,thread
-```
-
-Deterministic launch/attach mode (start suspended, attach, then resume):
-
-```bat
-BlackbirdClient.exe launch:<full-path-to-target.exe> handle,memory,thread
-```
-
-When a `path:` target is not currently running, the client listens for Blackbird `ProcessTelemetry` / `ImageTelemetry`, resolves the first matching PID, and subscribes automatically.
-
-`BlackbirdClient` runs in strict target mode: it programs `IOCTL_BLACKBIRD_SET_PIDS` with the resolved target PID and filters printed IOCTL/ETW output by scope (`local`, `remote`, `both`).
-
-Policy/config mode (flat YAML-like keys, `key: value` or `key=value`) is supported:
-
-```bat
-BlackbirdClient.exe --config user\sensor\blackbird_client.policy.example.yaml
-```
-
-Structured logging for SIEM/ELK ingestion:
-
-```bat
-BlackbirdClient.exe --log-format jsonl --log-file events.swk.jsonl --high-priority-file high_priority.swk.jsonl --high-priority-min-severity 4 <target> <streams> [scope]
-```
-
-Example policy file:
-
-- `user/sensor/blackbird_client.policy.example.yaml`
 
 ## BlackbirdTestSuite (IOCTL + ETW Validation)
 

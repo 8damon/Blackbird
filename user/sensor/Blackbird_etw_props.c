@@ -6,7 +6,7 @@
 #include "blackbird_etw_props.h"
 
 static BOOL BLACKBIRDGetPropertyRaw(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                                      _Outptr_result_bytebuffer_(*OutSize) PBYTE *OutBuffer, _Out_ ULONG *OutSize)
+                                    _Outptr_result_bytebuffer_(*OutSize) PBYTE *OutBuffer, _Out_ ULONG *OutSize)
 {
     TDHSTATUS status;
     PROPERTY_DATA_DESCRIPTOR descriptor;
@@ -149,7 +149,7 @@ BOOL BLACKBIRDGetBoolProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Ou
 }
 
 BOOL BLACKBIRDGetWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PWSTR Output,
-                                _In_ size_t OutputChars)
+                              _In_ size_t OutputChars)
 {
     PBYTE raw = NULL;
     ULONG size = 0;
@@ -178,7 +178,7 @@ BOOL BLACKBIRDGetWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Ou
 }
 
 BOOL BLACKBIRDGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PSTR Output,
-                                _In_ size_t OutputChars)
+                              _In_ size_t OutputChars)
 {
     PBYTE raw = NULL;
     ULONG size = 0;
@@ -206,8 +206,8 @@ BOOL BLACKBIRDGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Ou
 }
 
 BOOL BLACKBIRDGetBinaryProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
-                                  _Out_writes_bytes_(OutputBytes) PBYTE Output, _In_ ULONG OutputBytes,
-                                  _Out_opt_ ULONG *ActualSize)
+                                _Out_writes_bytes_(OutputBytes) PBYTE Output, _In_ ULONG OutputBytes,
+                                _Out_opt_ ULONG *ActualSize)
 {
     PBYTE raw = NULL;
     ULONG size = 0;
@@ -243,4 +243,3 @@ BOOL BLACKBIRDGetBinaryProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
     free(raw);
     return TRUE;
 }
-

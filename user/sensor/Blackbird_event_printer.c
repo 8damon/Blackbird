@@ -340,4 +340,3 @@ void BLACKBIRDEventPrinterPrintRecord(const BLACKBIRD_EVENT_RECORD *rec)
         printf("[IOCTL][UNKNOWN] event type=%u\n", rec->Header.Type);
     }
 }
-

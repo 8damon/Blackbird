@@ -264,7 +264,3 @@ void GenerateLocalThreadEvent(void)
         CloseHandle(t);
     }
 }
-
-
-
-

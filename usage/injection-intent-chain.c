@@ -157,4 +157,3 @@ int __cdecl wmain(void)
     BLACKBIRDSCStopEtwSession(session);
     return 0;
 }
-

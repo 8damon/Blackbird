@@ -82,7 +82,6 @@ Current exports:
 
 Consumers currently using these exports:
 
-- `BlackbirdClient`
 - `BlackbirdTestSuite`
 - `BlackbirdController`
 

@@ -59,7 +59,6 @@ sc stop blackbird
 Build one or more:
 
 - `vcxproj/BlackbirdController.vcxproj`
-- `vcxproj/BlackbirdClient.vcxproj`
 - `vcxproj/BlackbirdIoctlTest.vcxproj`
 - `vcxproj/BlackbirdSensorCore.vcxproj`
 - `vcxproj/BlackbirdInterface.csproj`
@@ -93,22 +92,16 @@ cd /d "<REPO_ROOT>"
 .\x64\Debug\BlackbirdTestSuite.exe
 ```
 
-## 7) Run Targeted Operator Client
+## 7) Run The Interface
 
 ```bat
 cd /d "<REPO_ROOT>"
-.\x64\Debug\BlackbirdClient.exe 4242 handle,memory,thread
-```
-
-Use `--direct` to bypass broker and speak to the driver directly:
-
-```bat
-.\x64\Debug\BlackbirdClient.exe --direct 4242 handle,memory,thread
+.\interface\analysis\bin\Debug\net9.0-windows\BlackbirdInterface.exe
 ```
 
 ## 8) Run ETW Capture (Optional)
 
-Use either `BlackbirdClient.exe` live ETW output mode or a custom consumer via `BlackbirdSensorCore` (`BLACKBIRDSCStartBlackbirdEtwSession` / `SwkStartDetectionEtwSession`).
+Use the analyst interface inspectors or a custom consumer via `BlackbirdSensorCore` (`BLACKBIRDSCStartBlackbirdEtwSession` / `SwkStartDetectionEtwSession`).
 
 ## Notes
 

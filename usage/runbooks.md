@@ -3,16 +3,16 @@
 ## IOCTL Capture (Targeted Pull)
 
 1. Build and install the driver.
-2. Build `BlackbirdSensorCore` and `BlackbirdClient`.
-3. Run: `BlackbirdClient.exe <pid> handle,memory,thread`
-4. Stop with Ctrl+C.
+2. Build `BlackbirdSensorCore` and `BlackbirdInterface`.
+3. Run the interface and attach to the target PID.
+4. Review the Events and API views.
 
 ## ETW Capture (Real-Time)
 
-1. Build `BlackbirdSensorCore` and `BlackbirdClient`.
-2. Run: `BlackbirdClient.exe <pid|path|launch> handle,memory,thread`.
+1. Build `BlackbirdSensorCore` and `BlackbirdInterface`.
+2. Run the interface and inspect the ETW pane or ETW inspector.
 3. If you only need typed detections, use `SwkStartDetectionEtwSession` in your own consumer.
-4. Stop with Ctrl+C.
+4. Stop capture from the interface or close the session.
 
 ## Validation Suite
 

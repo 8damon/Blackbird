@@ -11,7 +11,7 @@ Signal sources:
 Prerequisites:
 
 - Driver installed and running.
-- Build `BlackbirdSensorCore` and `BlackbirdClient` (or consume ETW via your own tool).
+- Build `BlackbirdSensorCore` (or consume ETW via your own tool).
 
 Minimal flow (ETW consumer using `BlackbirdSensorCore`):
 

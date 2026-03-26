@@ -16,7 +16,6 @@ Build these projects:
 - `vcxproj/Blackbird.vcxproj`
 - `vcxproj/BlackbirdController.vcxproj`
 - `vcxproj/BlackbirdSensorCore.vcxproj`
-- `vcxproj/BlackbirdClient.vcxproj`
 - `vcxproj/BlackbirdIoctlTest.vcxproj`
 - `vcxproj/BlackbirdInterface.csproj`
 
@@ -25,7 +24,6 @@ Typical artifacts:
 - `x64\<Configuration>\blackbird.sys`
 - `x64\<Configuration>\BlackbirdController.exe`
 - `x64\<Configuration>\J58.dll`
-- `x64\<Configuration>\BlackbirdClient.exe`
 - `x64\<Configuration>\BlackbirdTestSuite.exe`
 - `interface\analysis\bin\<Configuration>\net9.0-windows\BlackbirdInterface.exe`
 
@@ -128,7 +126,7 @@ That is expected if you scrub to a point with no captured sample for memory or t
 ## 10. Where To Go Next
 
 - [README.md](./README.md) for architecture and UI tour
-- [USAGE.md](./USAGE.md) for CLI examples
+- [USAGE.md](./USAGE.md) for operator workflow and test-suite usage
 - [INSTALL.md](./INSTALL.md) for install/deployment details
 - [API.md](./API.md) for IOCTL/IPC/ETW contract details
 

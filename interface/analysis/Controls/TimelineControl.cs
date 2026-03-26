@@ -541,7 +541,7 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
                     }
                     var rect = new Rect(x - radius, centerY - radius, radius * 2, radius * 2);
 
-                    var fill = BrushForKey(lane.Key);
+                    var fill = CreateEventFillBrush(BrushForKey(lane.Key), cluster.ContainsSelected);
                     var diamond = CreateDiamondGeometry(x, centerY, radius);
                     dc.DrawGeometry(fill, null, diamond);
 
@@ -555,13 +555,17 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
                     // Selection / hover outline
                     if (cluster.ContainsSelected)
                     {
-                        var pen = new Pen(UiPalette.AccentBrush, 1.5);
+                        var selectionFill = new SolidColorBrush(Color.FromArgb(90, 0x72, 0xD2, 0xFF));
+                        selectionFill.Freeze();
+                        dc.DrawGeometry(selectionFill, null, CreateDiamondGeometry(x, centerY, radius + 3.2));
+
+                        var pen = new Pen(new SolidColorBrush(Color.FromRgb(0x8C, 0xE2, 0xFF)), 2.2);
                         pen.Freeze();
-                        dc.DrawGeometry(null, pen, CreateDiamondGeometry(x, centerY, radius + 2));
+                        dc.DrawGeometry(null, pen, CreateDiamondGeometry(x, centerY, radius + 3.6));
                     }
                     else if (ReferenceEquals(cluster, _hoveredCluster))
                     {
-                        var pen = new Pen(UiPalette.GridStrongBrush, 1);
+                        var pen = new Pen(UiPalette.GridStrongBrush, 1.3);
                         pen.Freeze();
                         dc.DrawGeometry(null, pen, CreateDiamondGeometry(x, centerY, radius + 1));
                     }
@@ -623,6 +627,26 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
             }
             diamond.Freeze();
             return diamond;
+        }
+
+        private static Brush CreateEventFillBrush(Brush source, bool selected)
+        {
+            if (source is SolidColorBrush solid)
+            {
+                byte alpha = selected ? (byte)0xE0 : (byte)0x9E;
+                var brush = new SolidColorBrush(Color.FromArgb(alpha, solid.Color.R, solid.Color.G, solid.Color.B));
+                brush.Freeze();
+                return brush;
+            }
+
+            Brush clone = source.Clone();
+            clone.Opacity = selected ? 0.88 : 0.62;
+            if (clone.CanFreeze)
+            {
+                clone.Freeze();
+            }
+
+            return clone;
         }
 
         private static void DrawHoverEventCard(

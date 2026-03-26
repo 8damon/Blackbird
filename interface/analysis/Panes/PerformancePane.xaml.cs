@@ -21,6 +21,7 @@ namespace BlackbirdInterface
         public event RoutedEventHandler? CloseRequested;
         public event RoutedEventHandler? FloatRequested;
         public event EventHandler<ThreadUsageRow>? ThreadDoubleClicked;
+        public event RoutedEventHandler? ParallelStacksRequested;
         public event EventHandler<PaneHeaderDragEventArgs>? HeaderDragStarted;
         public event EventHandler<PaneHeaderDragEventArgs>? HeaderDragDelta;
         public event EventHandler<PaneHeaderDragEventArgs>? HeaderDragCompleted;
@@ -53,6 +54,7 @@ namespace BlackbirdInterface
         private bool _memoryTreemapEnabled;
         private bool _showNetworkPeers;
         private bool _processLiveDataAvailable = true;
+        private bool _targetSuspended;
         private readonly Dictionary<string, string> _reverseDnsCache = new(StringComparer.OrdinalIgnoreCase);
 
         public ObservableCollection<ThreadUsageRow> TopThreads { get; } = new();
@@ -278,6 +280,35 @@ namespace BlackbirdInterface
 
             UpdateLiveDataOverlays();
         }
+
+        public void SetTargetSuspended(bool suspended)
+        {
+            _targetSuspended = suspended;
+            if (_selectedSampleIndex >= 0 && _selectedSampleIndex < _historySamples.Count)
+            {
+                ApplySampleIndex(_selectedSampleIndex, updateSlider: false);
+            }
+            else if (_historySamples.Count > 0)
+            {
+                ApplySampleIndex(_historySamples.Count - 1, updateSlider: false);
+            }
+            else
+            {
+                UpdateLiveDataOverlays();
+            }
+        }
+
+        public IReadOnlyList<ThreadUsageRow> SnapshotTopThreads()
+            => TopThreads.Select(row => new ThreadUsageRow(new ThreadUsageSample
+            {
+                Tid = row.Tid,
+                CpuMsDelta = row.CpuMs,
+                State = row.State,
+                WaitReason = row.IsSuspended ? "Suspended" : string.Empty,
+                Kind = row.ThreadKind,
+                StartTimeUtc = row.StartTimeUtc,
+                TargetSuspended = row.IsSuspended
+            })).ToList();
 
         public void SetViewWindow(DateTime viewStartUtc, DateTime viewEndUtc)
         {
@@ -507,7 +538,7 @@ namespace BlackbirdInterface
 
             var rebuiltThreads = sample.TopThreads
                 .Take(14)
-                .Select(thread => new ThreadUsageRow(thread))
+                .Select(thread => new ThreadUsageRow(thread, _targetSuspended))
                 .ToList();
             if (selectedThreadTid > 0 && selectedThreadIndex >= 0 && selectedThreadIndex < rebuiltThreads.Count)
             {
@@ -622,7 +653,8 @@ namespace BlackbirdInterface
                     State = t.State,
                     WaitReason = t.WaitReason,
                     Kind = t.Kind,
-                    StartTimeUtc = t.StartTimeUtc
+                    StartTimeUtc = t.StartTimeUtc,
+                    TargetSuspended = t.TargetSuspended
                 }).ToList(),
                 MemoryMetrics = src.MemoryMetrics.Select(m => new MemoryMetricSample
                 {
@@ -727,6 +759,9 @@ namespace BlackbirdInterface
             if (ThreadsGrid.SelectedItem is ThreadUsageRow row)
                 ThreadDoubleClicked?.Invoke(this, row);
         }
+
+        private void ParallelStacksButton_Click(object sender, RoutedEventArgs e)
+            => ParallelStacksRequested?.Invoke(this, e);
 
         private void ModulesGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
@@ -1343,6 +1378,7 @@ namespace BlackbirdInterface
         {
             string threadMessage = "No thread data in the selected range.";
             string memoryMessage = "No memory data in the selected range.";
+            string networkMessage = "No attributable network data for the selected range.";
             bool historicalDataVisible = HasHistoricalDataForObservedTime();
 
             if (!_processLiveDataAvailable)
@@ -1351,16 +1387,19 @@ namespace BlackbirdInterface
                 {
                     threadMessage = "Live capture unavailable.";
                     memoryMessage = "Live capture unavailable.";
+                    networkMessage = "Live capture unavailable.";
                 }
                 else if (!historicalDataVisible)
                 {
                     threadMessage = "No captured thread data at the selected time.";
                     memoryMessage = "No captured memory data at the selected time.";
+                    networkMessage = "No captured network data at the selected time.";
                 }
                 else
                 {
                     threadMessage = "Live capture unavailable.";
                     memoryMessage = "Live capture unavailable.";
+                    networkMessage = "Live capture unavailable.";
                 }
             }
 
@@ -1387,6 +1426,23 @@ namespace BlackbirdInterface
                 if (MemoryNoDataMessageBlock != null)
                 {
                     MemoryNoDataMessageBlock.Text = memoryMessage;
+                }
+            }
+
+            if (NetworkNoDataOverlay != null)
+            {
+                bool hasTrafficData = _historySamples.Any(sample =>
+                    sample.NetInBytesPerSec > 0.01 ||
+                    sample.NetOutBytesPerSec > 0.01 ||
+                    sample.NetPacketsPerSec > 0.01);
+                bool hasPeerData = NetworkPeers.Count > 0;
+                bool showNetworkNoData = _showNetworkPeers ? !hasPeerData : !hasTrafficData;
+                NetworkNoDataOverlay.Visibility = showNetworkNoData ? Visibility.Visible : Visibility.Collapsed;
+                if (NetworkNoDataMessageBlock != null)
+                {
+                    NetworkNoDataMessageBlock.Text = _showNetworkPeers
+                        ? "No active remote peers for this process."
+                        : networkMessage;
                 }
             }
         }
@@ -1953,22 +2009,29 @@ namespace BlackbirdInterface
         public string State { get; }
         public string ThreadKind { get; }
         public string StartTime { get; }
+        public DateTime? StartTimeUtc { get; }
         public bool IsSuspended { get; }
         public bool IsWaiting { get; }
 
-        public ThreadUsageRow(ThreadUsageSample s)
+        public ThreadUsageRow(ThreadUsageSample s, bool targetSuspendedOverride = false)
         {
             Tid = s.Tid;
             CpuMs = Math.Round(s.CpuMsDelta, 2);
-            State = BuildDisplayState(s);
+            State = BuildDisplayState(s, targetSuspendedOverride);
             ThreadKind = string.IsNullOrWhiteSpace(s.Kind) ? "Normal" : s.Kind.Trim();
+            StartTimeUtc = s.StartTimeUtc;
             IsSuspended = State.Contains("Suspended", StringComparison.OrdinalIgnoreCase);
             IsWaiting = State.Contains("Waiting", StringComparison.OrdinalIgnoreCase);
             StartTime = s.StartTimeUtc.HasValue ? s.StartTimeUtc.Value.ToString("HH:mm:ss") : "-";
         }
 
-        private static string BuildDisplayState(ThreadUsageSample s)
+        private static string BuildDisplayState(ThreadUsageSample s, bool targetSuspendedOverride)
         {
+            if (targetSuspendedOverride || s.TargetSuspended)
+            {
+                return "Suspended (controller)";
+            }
+
             string state = string.IsNullOrWhiteSpace(s.State) ? "Unknown" : s.State.Trim();
             string wait = string.IsNullOrWhiteSpace(s.WaitReason) ? string.Empty : s.WaitReason.Trim();
             if (wait.Equals("Suspended", StringComparison.OrdinalIgnoreCase) ||

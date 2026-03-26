@@ -14,6 +14,7 @@
 
         <!-- Pane header -->
         <Grid Grid.Row="0"
+              Panel.ZIndex="10"
               Background="{DynamicResource EventsHeaderBrush}"
               MouseLeftButtonDown="Header_MouseLeftButtonDown"
               MouseMove="Header_MouseMove"
@@ -90,6 +91,7 @@
             </Grid.RowDefinitions>
 
             <Border Grid.Row="0"
+                    ClipToBounds="True"
                     BorderBrush="{DynamicResource WinSubtleBorderBrush}"
                     BorderThickness="0,0,0,1">
                 <local:TimelineControl x:Name="EventTimeline"
@@ -165,7 +167,30 @@
                           ColumnHeaderHeight="24"
                           RowHeight="22"
                           CanUserResizeRows="False"
+                          PreviewMouseDoubleClick="EventGrid_MouseDoubleClick"
                           MouseDoubleClick="EventGrid_MouseDoubleClick">
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
+                            <Setter Property="BorderThickness" Value="1"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="#5E1E5F8C"/>
+                                    <Setter Property="BorderBrush" Value="#FF72D2FF"/>
+                                    <Setter Property="Foreground" Value="#FFFFFFFF"/>
+                                </Trigger>
+                                <MultiTrigger>
+                                    <MultiTrigger.Conditions>
+                                        <Condition Property="IsSelected" Value="True"/>
+                                        <Condition Property="Selector.IsSelectionActive" Value="False"/>
+                                    </MultiTrigger.Conditions>
+                                    <Setter Property="Background" Value="#4A194B6B"/>
+                                    <Setter Property="BorderBrush" Value="#FF5CB7F0"/>
+                                </MultiTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.RowStyle>
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Timestamp"
                                             Binding="{Binding TimestampUtc, StringFormat=HH:mm:ss.fff}"

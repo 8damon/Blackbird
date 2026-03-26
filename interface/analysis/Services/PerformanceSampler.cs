@@ -219,15 +219,11 @@ namespace BlackbirdInterface
                     {
                         var readDelta = io.ReadTransferCount - _lastIoRead;
                         var writeDelta = io.WriteTransferCount - _lastIoWrite;
-                        var otherDelta = io.OtherTransferCount - _lastIoOther;
-
                         s.DiskReadBytesPerSec = Math.Max(0, readDelta / sec2);
                         s.DiskWriteBytesPerSec = Math.Max(0, writeDelta / sec2);
-
-                        var otherPerSec = Math.Max(0, otherDelta / sec2);
-                        s.NetInBytesPerSec = otherPerSec * 0.5;
-                        s.NetOutBytesPerSec = otherPerSec * 0.5;
-                        s.NetPacketsPerSec = otherPerSec / 512.0;
+                        s.NetInBytesPerSec = 0;
+                        s.NetOutBytesPerSec = 0;
+                        s.NetPacketsPerSec = 0;
 
                         _lastIoRead = io.ReadTransferCount;
                         _lastIoWrite = io.WriteTransferCount;
@@ -286,7 +282,8 @@ namespace BlackbirdInterface
                         State = state,
                         WaitReason = waitReason,
                         Kind = InferThreadKind(state, waitReason),
-                        StartTimeUtc = SafeThreadStart(t)
+                        StartTimeUtc = SafeThreadStart(t),
+                        TargetSuspended = false
                     });
                 }
             }

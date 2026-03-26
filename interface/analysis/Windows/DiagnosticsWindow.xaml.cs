@@ -20,10 +20,10 @@ namespace BlackbirdInterface
         private readonly int _targetPid;
         private readonly DispatcherTimer _stateTimer;
         private readonly DispatcherTimer _controllerLogTimer;
-        private readonly ObservableCollection<DiagnosticsEntryView> _subsystemEntries = new();
-        private readonly ObservableCollection<DiagnosticsEntryView> _integrityEntries = new();
-        private readonly ObservableCollection<DiagnosticsEntryView> _dataEntries = new();
-        private readonly ObservableCollection<DiagnosticsEntryView> _otherEntries = new();
+        private readonly ObservableCollection<DiagnosticsEntryView> _problemEntries = new();
+        private readonly ObservableCollection<DiagnosticsEntryView> _disabledEntries = new();
+        private readonly ObservableCollection<DiagnosticsEntryView> _waitingEntries = new();
+        private readonly ObservableCollection<DiagnosticsEntryView> _healthyEntries = new();
         private long _controllerLogOffset;
 
         public DiagnosticsWindow(int pid)
@@ -33,10 +33,10 @@ namespace BlackbirdInterface
 
             _targetPid = pid > 0 ? pid : Environment.ProcessId;
             TargetBlock.Text = $"PID {_targetPid}";
-            SubsystemItemsControl.ItemsSource = _subsystemEntries;
-            IntegrityItemsControl.ItemsSource = _integrityEntries;
-            DataItemsControl.ItemsSource = _dataEntries;
-            OtherItemsControl.ItemsSource = _otherEntries;
+            ProblemItemsControl.ItemsSource = _problemEntries;
+            DisabledItemsControl.ItemsSource = _disabledEntries;
+            WaitingItemsControl.ItemsSource = _waitingEntries;
+            HealthyItemsControl.ItemsSource = _healthyEntries;
 
             LoadSnapshot();
             RefreshState();
@@ -80,25 +80,19 @@ namespace BlackbirdInterface
 
             List<DiagnosticsEntryView> views = entries
                 .Select(DiagnosticsEntryView.From)
-                .OrderBy(x => CategorySortKey(x.Category))
+                .OrderBy(x => StateSortKey(x.StateGroup))
                 .ThenBy(x => x.SortOrder)
                 .ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-            ReplaceCollection(_subsystemEntries, views.Where(x => x.Category == DiagnosticsCategory.Subsystems));
-            ReplaceCollection(_integrityEntries, views.Where(x => x.Category == DiagnosticsCategory.Integrity));
-            ReplaceCollection(_dataEntries, views.Where(x => x.Category == DiagnosticsCategory.Transport));
-            ReplaceCollection(_otherEntries, views.Where(x => x.Category == DiagnosticsCategory.Other));
+            ReplaceCollection(_problemEntries, views.Where(x => x.StateGroup == DiagnosticsStateGroup.Problem));
+            ReplaceCollection(_disabledEntries, views.Where(x => x.StateGroup == DiagnosticsStateGroup.Disabled));
+            ReplaceCollection(_waitingEntries, views.Where(x => x.StateGroup == DiagnosticsStateGroup.Waiting));
+            ReplaceCollection(_healthyEntries, views.Where(x => x.StateGroup == DiagnosticsStateGroup.Healthy));
 
-            int goodCount = views.Count(x => x.StatusKind == DiagnosticsStatusKind.Good);
-            int disabledCount = views.Count(x => x.StatusKind == DiagnosticsStatusKind.Disabled || x.StatusKind == DiagnosticsStatusKind.Neutral);
-            int warningCount = views.Count(x => x.StatusKind == DiagnosticsStatusKind.Warning);
-            int badCount = views.Count(x => x.StatusKind == DiagnosticsStatusKind.Bad);
-
-            GoodCountBlock.Text = $"{goodCount} running";
-            DisabledCountBlock.Text = $"{disabledCount} disabled";
-            WarningCountBlock.Text = $"{warningCount} warning";
-            BadCountBlock.Text = $"{badCount} failed";
+            SummaryBlock.Text =
+                $"Problems {_problemEntries.Count}  |  Disabled {_disabledEntries.Count}  |  Waiting {_waitingEntries.Count}  |  Healthy {_healthyEntries.Count}";
+            UpdatedBlock.Text = $"Updated {DateTime.Now:HH:mm:ss}";
         }
 
         private static void ReplaceCollection(ObservableCollection<DiagnosticsEntryView> target, IEnumerable<DiagnosticsEntryView> values)
@@ -209,12 +203,22 @@ namespace BlackbirdInterface
                     ControllerLogBox.Clear();
                 }
 
+                bool autoScroll = IsNearBottom(ControllerLogBox);
                 ControllerLogBox.AppendText(newText);
-                ControllerLogBox.ScrollToEnd();
+                if (autoScroll)
+                {
+                    ControllerLogBox.ScrollToEnd();
+                }
             }
             catch
             {
             }
+        }
+
+        private static bool IsNearBottom(System.Windows.Controls.TextBox box)
+        {
+            double remaining = box.ExtentHeight - (box.VerticalOffset + box.ViewportHeight);
+            return remaining <= 4.0;
         }
 
         private void Clear_Click(object sender, RoutedEventArgs e)
@@ -232,23 +236,31 @@ namespace BlackbirdInterface
             Close();
         }
 
-        private static int CategorySortKey(DiagnosticsCategory category)
+        private static int StateSortKey(DiagnosticsStateGroup state)
         {
-            return category switch
+            return state switch
             {
-                DiagnosticsCategory.Subsystems => 0,
-                DiagnosticsCategory.Integrity => 1,
-                DiagnosticsCategory.Transport => 2,
+                DiagnosticsStateGroup.Problem => 0,
+                DiagnosticsStateGroup.Disabled => 1,
+                DiagnosticsStateGroup.Waiting => 2,
                 _ => 3
             };
         }
 
-        private enum DiagnosticsCategory
+        private enum DiagnosticsDomain
         {
             Subsystems,
             Integrity,
             Transport,
             Other
+        }
+
+        private enum DiagnosticsStateGroup
+        {
+            Problem,
+            Disabled,
+            Waiting,
+            Healthy
         }
 
         private enum DiagnosticsStatusKind
@@ -269,29 +281,42 @@ namespace BlackbirdInterface
             public Brush Foreground { get; init; } = Brushes.White;
             public Brush StatusDotBrush { get; init; } = Brushes.Gray;
             public string StatusLabel { get; init; } = string.Empty;
+            public string DomainLabel { get; init; } = string.Empty;
+            public string Guidance { get; init; } = string.Empty;
             public DiagnosticsStatusKind StatusKind { get; init; }
-            public DiagnosticsCategory Category { get; init; }
+            public DiagnosticsDomain Domain { get; init; }
+            public DiagnosticsStateGroup StateGroup { get; init; }
             public int SortOrder { get; init; }
 
             internal static DiagnosticsEntryView From(DiagnosticsStateEntry entry)
             {
                 DiagnosticsStatusKind kind = Classify(entry.Value);
-                DiagnosticsCategory category = Categorize(entry.Key);
+                DiagnosticsDomain domain = Categorize(entry.Key);
+                DiagnosticsStateGroup stateGroup = Group(kind);
                 return new DiagnosticsEntryView
                 {
                     Key = entry.Key,
                     Value = entry.Value,
-                    Category = category,
+                    Domain = domain,
+                    StateGroup = stateGroup,
                     SortOrder = Sort(entry.Key),
                     StatusKind = kind,
                     StatusLabel = kind switch
                     {
-                        DiagnosticsStatusKind.Good => "Running",
+                        DiagnosticsStatusKind.Good => "Healthy",
                         DiagnosticsStatusKind.Disabled => "Disabled",
-                        DiagnosticsStatusKind.Warning => "Warning",
-                        DiagnosticsStatusKind.Bad => "Failed",
-                        _ => "Unknown"
+                        DiagnosticsStatusKind.Warning => "Waiting / no data",
+                        DiagnosticsStatusKind.Bad => "Problem",
+                        _ => "Needs review"
                     },
+                    DomainLabel = domain switch
+                    {
+                        DiagnosticsDomain.Subsystems => "Subsystem",
+                        DiagnosticsDomain.Integrity => "Integrity",
+                        DiagnosticsDomain.Transport => "Transport / capture",
+                        _ => "Other"
+                    },
+                    Guidance = BuildGuidance(kind, domain, entry.Value),
                     Background = kind switch
                     {
                         DiagnosticsStatusKind.Good => new SolidColorBrush(Color.FromArgb(0x56, 0x13, 0x4A, 0x24)),
@@ -327,6 +352,33 @@ namespace BlackbirdInterface
                 };
             }
 
+            private static DiagnosticsStateGroup Group(DiagnosticsStatusKind kind)
+            {
+                return kind switch
+                {
+                    DiagnosticsStatusKind.Bad => DiagnosticsStateGroup.Problem,
+                    DiagnosticsStatusKind.Disabled => DiagnosticsStateGroup.Disabled,
+                    DiagnosticsStatusKind.Warning or DiagnosticsStatusKind.Neutral => DiagnosticsStateGroup.Waiting,
+                    _ => DiagnosticsStateGroup.Healthy
+                };
+            }
+
+            private static string BuildGuidance(DiagnosticsStatusKind kind, DiagnosticsDomain domain, string? value)
+            {
+                string text = value?.Trim() ?? string.Empty;
+                return kind switch
+                {
+                    DiagnosticsStatusKind.Bad => "Investigate this path first. The component is failing or returning an error state.",
+                    DiagnosticsStatusKind.Disabled => "This path is intentionally off or unavailable. It should not be treated as a break unless you expected it to be active.",
+                    DiagnosticsStatusKind.Warning when domain == DiagnosticsDomain.Transport =>
+                        "The pipeline is up but incomplete. This usually means no samples yet, upstream lag, or unsupported telemetry for the current target.",
+                    DiagnosticsStatusKind.Warning => "The component is present, but the interface does not have enough signal yet to mark it healthy.",
+                    DiagnosticsStatusKind.Neutral when text.Length == 0 => "No status has been reported yet.",
+                    DiagnosticsStatusKind.Neutral => "Status is unclassified. Review the raw value before treating it as healthy or failed.",
+                    _ => "Working and reporting data."
+                };
+            }
+
             private static DiagnosticsStatusKind Classify(string? value)
             {
                 string text = value?.Trim() ?? string.Empty;
@@ -356,6 +408,8 @@ namespace BlackbirdInterface
                 if (text.Contains("WARNING", StringComparison.OrdinalIgnoreCase) ||
                     text.Contains("UNKNOWN", StringComparison.OrdinalIgnoreCase) ||
                     text.Contains("AWAITING", StringComparison.OrdinalIgnoreCase) ||
+                    text.Contains("NO DATA", StringComparison.OrdinalIgnoreCase) ||
+                    text.Contains("NOT YET", StringComparison.OrdinalIgnoreCase) ||
                     text.Contains("STOPPED", StringComparison.OrdinalIgnoreCase) ||
                     text.Contains("UNSUPPORTED", StringComparison.OrdinalIgnoreCase))
                 {
@@ -379,7 +433,7 @@ namespace BlackbirdInterface
                 return DiagnosticsStatusKind.Neutral;
             }
 
-            private static DiagnosticsCategory Categorize(string key)
+            private static DiagnosticsDomain Categorize(string key)
             {
                 return key.Trim() switch
                 {
@@ -390,13 +444,13 @@ namespace BlackbirdInterface
                     "Driver Service" or
                     "Controller Service" or
                     "Operator Connection Established" or
-                    "Connectivity" => DiagnosticsCategory.Subsystems,
+                    "Connectivity" => DiagnosticsDomain.Subsystems,
 
                     "Hook Integrity" or
                     "AMSI Integrity" or
                     "ETW Integrity" or
                     "Hook DLL" or
-                    "HookDLL" => DiagnosticsCategory.Integrity,
+                    "HookDLL" => DiagnosticsDomain.Integrity,
 
                     "Capture Store" or
                     "IPC Uplink" or
@@ -412,9 +466,9 @@ namespace BlackbirdInterface
                     "Session Stats" or
                     "UI Flush" or
                     "IOCTL Pump" or
-                    "ETW Pump" => DiagnosticsCategory.Transport,
+                    "ETW Pump" => DiagnosticsDomain.Transport,
 
-                    _ => DiagnosticsCategory.Other
+                    _ => DiagnosticsDomain.Other
                 };
             }
 

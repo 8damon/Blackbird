@@ -43,6 +43,7 @@ namespace BlackbirdInterface
         public string WaitReason { get; set; } = "";
         public string Kind { get; set; } = "";
         public DateTime? StartTimeUtc { get; set; }
+        public bool TargetSuspended { get; set; }
     }
 
     public sealed class MemoryMetricSample

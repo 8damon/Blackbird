@@ -728,6 +728,27 @@ namespace BlackbirdInterface
                view.Family == BlackbirdNative.IpcEtwFamilyUserHook &&
                view.Task != 0;
 
+        // Returns a short human-readable label describing where a hooked syscall / API
+        // call originated in the process address space, based on the caller-origin flags
+        // set by SR71 and forwarded through the controller.
+        //   "process-image"   — the .exe itself made the call
+        //   "non-system-dll"  — an injected or third-party DLL is in the call chain
+        //   "unbacked"        — at least one frame has no backing module (shellcode / RWX stub)
+        //   "system"          — every frame resolves to a Windows system DLL (noise)
+        //   ""                — flag not set / not a hook event
+        internal static string HookCallerOriginLabel(uint flags)
+        {
+            if ((flags & BlackbirdNative.IpcEtwFlagHookCallerHasUnmapped) != 0)
+                return "unbacked";
+            if ((flags & BlackbirdNative.IpcEtwFlagHookCallerHasNonSystemDll) != 0)
+                return "non-system-dll";
+            if ((flags & BlackbirdNative.IpcEtwFlagHookCallerHasProcessImage) != 0)
+                return "process-image";
+            if ((flags & BlackbirdNative.IpcEtwFlagHookCallerAllSystem) != 0)
+                return "system";
+            return string.Empty;
+        }
+
         internal static bool IsUsermodeSensorTelemetry(BrokerEtwEventView view)
         {
             if (!IsBlackbirdEtwSource(view) || view.Task != 0)

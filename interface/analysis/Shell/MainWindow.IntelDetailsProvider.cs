@@ -64,6 +64,11 @@ namespace BlackbirdInterface
                 return IntelScopeStatus.Exited;
             }
 
+            if (_targetExecutionSuspended)
+            {
+                return CacheScopeStatus(_currentSession.Pid, IntelScopeStatus.Waiting);
+            }
+
             int pid = _currentSession.Pid;
             DateTime now = DateTime.UtcNow;
             if (_scopeStatusCachePid == pid &&

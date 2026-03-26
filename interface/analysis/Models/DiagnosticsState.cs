@@ -24,6 +24,14 @@ namespace BlackbirdInterface
             }
         }
 
+        public static string? GetValue(string key)
+        {
+            lock (Sync)
+            {
+                return Values.TryGetValue(key, out string? v) ? v : null;
+            }
+        }
+
         public static void Increment(string key, long amount = 1)
         {
             lock (Sync)

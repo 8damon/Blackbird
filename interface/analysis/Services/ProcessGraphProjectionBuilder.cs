@@ -53,7 +53,8 @@ namespace BlackbirdInterface
             string meta,
             Brush dotBrush,
             Brush titleBrush,
-            IReadOnlyList<ProcessGraphNodeView>? children = null)
+            IReadOnlyList<ProcessGraphNodeView>? children = null,
+            bool isBlackbirdInternal = false)
         {
             Key = key ?? string.Empty;
             Pid = pid;
@@ -63,6 +64,7 @@ namespace BlackbirdInterface
             DotBrush = dotBrush ?? Brushes.Gray;
             TitleBrush = titleBrush ?? Brushes.White;
             Children = children ?? Array.Empty<ProcessGraphNodeView>();
+            IsBlackbirdInternal = isBlackbirdInternal;
         }
 
         public string Key { get; }
@@ -73,6 +75,7 @@ namespace BlackbirdInterface
         public Brush DotBrush { get; }
         public Brush TitleBrush { get; }
         public IReadOnlyList<ProcessGraphNodeView> Children { get; }
+        public bool IsBlackbirdInternal { get; }
         public bool IsExpanded
         {
             get => _isExpanded;
@@ -341,11 +344,17 @@ namespace BlackbirdInterface
             return $"{FormatRange(edge.FirstSeenUtc, edge.LastSeenUtc)}  hits={edge.Hits}  {qualifier}";
         }
 
+        private static bool IsBlackbirdInternalProcess(string name)
+            => !string.IsNullOrWhiteSpace(name) &&
+               (name.IndexOf("BlackbirdController", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                name.IndexOf("BlackbirdInterface", StringComparison.OrdinalIgnoreCase) >= 0);
+
         private static ProcessGraphNodeView BuildHandleNode(ProcessGraphEdge edge, uint rootPid, bool inbound)
         {
             uint otherPid = inbound ? edge.ActorPid : edge.TargetPid;
             string otherName = inbound ? edge.ActorName : edge.TargetName;
             string other = DecorateIdentity(otherName, otherPid);
+            bool isInternal = inbound && IsBlackbirdInternalProcess(edge.ActorName);
             string title = inbound
                 ? $"Inbound handle from {other}"
                 : $"{(edge.IsSr71Handle ? "SR71" : "Target")} opens handle to {other}";
@@ -367,7 +376,8 @@ namespace BlackbirdInterface
                 title,
                 meta,
                 BrushForSeverity(edge.Severity),
-                ActionHandleBrush);
+                ActionHandleBrush,
+                isBlackbirdInternal: isInternal);
         }
 
         private static string BuildProcessKey(uint pid)

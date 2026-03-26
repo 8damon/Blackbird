@@ -171,6 +171,11 @@ namespace BlackbirdInterface
                     return ev;
                 }
 
+                if (source is DataGridCell cell && cell.DataContext is TelemetryEvent cellEvent)
+                {
+                    return cellEvent;
+                }
+
                 source = VisualTreeHelper.GetParent(source);
             }
 

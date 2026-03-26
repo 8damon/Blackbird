@@ -24,13 +24,14 @@ namespace BlackbirdInterface
         };
 
         private readonly ObservableCollection<GroupedEventRow> _groups = new();
-        private readonly ObservableCollection<GroupedEventDetailRow> _details = new();
+        private readonly ObservableCollection<InspectorEventTreeNode> _eventNodes = new();
         private readonly ObservableCollection<InspectorFieldNode> _fieldNodes = new();
-        private readonly ICollectionView _groupView;
         private readonly Func<uint, uint, IoctlParsedEvent?>? _handleEvidenceResolver;
         private IoctlParsedEvent? _selectedHandleEvidence;
+        private GroupedEventDetailRow? _selectedDetail;
         private int _severityFilterIndex;
         private string _selectedRawText = string.Empty;
+        private string? _preferredGroupKey;
 
         private TelemetryInspectorWindow(
             string title,
@@ -47,12 +48,8 @@ namespace BlackbirdInterface
             SummaryBlock.Text = string.IsNullOrWhiteSpace(subtitle) ? "No telemetry available" : subtitle.Trim();
             _handleEvidenceResolver = handleEvidenceResolver;
 
-            GroupsGrid.ItemsSource = _groups;
-            DetailsGrid.ItemsSource = _details;
+            EventTreeView.ItemsSource = _eventNodes;
             FieldsTreeView.ItemsSource = _fieldNodes;
-
-            _groupView = CollectionViewSource.GetDefaultView(_groups);
-            _groupView.Filter = FilterGroup;
 
             foreach (GroupedEventRow row in groups
                          .Select(x => x.Clone())
@@ -63,8 +60,8 @@ namespace BlackbirdInterface
             }
 
             UpdateSeverityFilterLabel();
-            RefreshWindowSummary();
-            SelectInitialGroup(selectedGroup?.GroupKey);
+            _preferredGroupKey = selectedGroup?.GroupKey;
+            ApplyGroupFilter();
         }
 
         internal static void ShowForRows(
@@ -87,7 +84,7 @@ namespace BlackbirdInterface
 
         private void RefreshWindowSummary()
         {
-            List<GroupedEventRow> visibleGroups = _groupView.Cast<GroupedEventRow>().ToList();
+            List<GroupedEventRow> visibleGroups = GetVisibleGroups().ToList();
             GroupCountBlock.Text = visibleGroups.Count.ToString(CultureInfo.InvariantCulture);
             OccurrenceCountBlock.Text = visibleGroups
                 .Sum(x => x.Details.Count == 0 ? Math.Max(1, x.Hits) : x.Details.Count)
@@ -112,56 +109,87 @@ namespace BlackbirdInterface
             WindowRangeBlock.Text = $"{first:HH:mm:ss.fff} - {last:HH:mm:ss.fff}";
         }
 
-        private bool FilterGroup(object obj)
+        private IEnumerable<GroupedEventRow> GetVisibleGroups()
         {
-            if (obj is not GroupedEventRow row)
-            {
-                return false;
-            }
-
             string selectedSeverity = SeverityFilters[_severityFilterIndex];
-            if (!selectedSeverity.Equals("All", StringComparison.OrdinalIgnoreCase) &&
-                !row.Severity.Equals(selectedSeverity, StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-
             string query = (SearchBox.Text ?? string.Empty).Trim();
-            if (query.Length == 0)
-            {
-                return true;
-            }
 
-            if (row.Event.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                row.Detection.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                row.Severity.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                row.GroupKey.Contains(query, StringComparison.OrdinalIgnoreCase))
+            foreach (GroupedEventRow row in _groups)
             {
-                return true;
-            }
+                if (!selectedSeverity.Equals("All", StringComparison.OrdinalIgnoreCase) &&
+                    !row.Severity.Equals(selectedSeverity, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
 
-            return row.Details.Any(x => x.FilterText.Contains(query, StringComparison.OrdinalIgnoreCase));
+                if (query.Length == 0 ||
+                    row.Event.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    row.Detection.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    row.Severity.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    row.GroupKey.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                    row.Details.Any(x => x.FilterText.Contains(query, StringComparison.OrdinalIgnoreCase)))
+                {
+                    yield return row;
+                }
+            }
         }
 
-        private void SelectInitialGroup(string? preferredGroupKey)
+        private void RebuildEventTree()
         {
-            _groupView.Refresh();
+            _eventNodes.Clear();
 
-            GroupedEventRow? match = null;
-            if (!string.IsNullOrWhiteSpace(preferredGroupKey))
+            foreach (GroupedEventRow group in GetVisibleGroups())
             {
-                match = _groups.FirstOrDefault(x => string.Equals(x.GroupKey, preferredGroupKey, StringComparison.Ordinal));
+                var groupNode = new InspectorEventTreeNode
+                {
+                    Group = group,
+                    Title = group.Event,
+                    Subtitle = string.IsNullOrWhiteSpace(group.Detection) ? group.Severity : $"{group.Detection} | {group.Severity}",
+                    RightLabel = $"{Math.Max(1, group.Details.Count == 0 ? group.Hits : group.Details.Count)}x",
+                    IsExpanded = string.Equals(group.GroupKey, _preferredGroupKey, StringComparison.Ordinal)
+                };
+
+                foreach (GroupedEventDetailRow detail in group.Details
+                             .Select(x => x.Clone())
+                             .OrderByDescending(x => x.TimestampUtc))
+                {
+                    groupNode.Children.Add(new InspectorEventTreeNode
+                    {
+                        Group = group,
+                        Detail = detail,
+                        Title = $"{detail.Actor} -> {detail.Target}",
+                        Subtitle = string.IsNullOrWhiteSpace(detail.ArgumentSummary)
+                            ? detail.Detection
+                            : $"{detail.Detection} | {detail.ArgumentSummary}",
+                        RightLabel = detail.TimestampUtc == default ? "-" : detail.TimestampUtc.ToString("HH:mm:ss.fff"),
+                        IsLeaf = true
+                    });
+                }
+
+                _eventNodes.Add(groupNode);
+            }
+        }
+
+        private void SelectInitialNode()
+        {
+            InspectorEventTreeNode? selectedNode = null;
+
+            if (!string.IsNullOrWhiteSpace(_preferredGroupKey))
+            {
+                selectedNode = _eventNodes.FirstOrDefault(x => string.Equals(x.Group?.GroupKey, _preferredGroupKey, StringComparison.Ordinal));
             }
 
-            match ??= _groupView.Cast<GroupedEventRow>().FirstOrDefault();
-            if (match != null)
+            selectedNode ??= _eventNodes.FirstOrDefault();
+            if (selectedNode == null)
             {
-                GroupsGrid.SelectedItem = match;
-                GroupsGrid.ScrollIntoView(match);
+                UpdateSelectedDetail(null);
+                SelectionBlock.Text = "-";
+                SelectionTimeBlock.Text = "-";
+                DetailCountBlock.Text = "0 frames shown";
                 return;
             }
 
-            UpdateDetails(null);
+            UpdateSelectedNode(selectedNode.Detail != null ? selectedNode : selectedNode.Children.FirstOrDefault() ?? selectedNode);
         }
 
         private void SearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
@@ -187,70 +215,60 @@ namespace BlackbirdInterface
 
         private void ApplyGroupFilter()
         {
-            _groupView.Refresh();
+            RebuildEventTree();
             RefreshWindowSummary();
-
-            if (GroupsGrid.SelectedItem is not GroupedEventRow selected ||
-                !_groupView.Cast<GroupedEventRow>().Contains(selected))
-            {
-                GroupsGrid.SelectedItem = _groupView.Cast<GroupedEventRow>().FirstOrDefault();
-            }
-
-            if (GroupsGrid.SelectedItem == null)
-            {
-                UpdateDetails(null);
-            }
+            SelectInitialNode();
         }
 
-        private void GroupsGrid_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        private void EventTreeView_SelectedItemChanged(object sender, RoutedPropertyChangedEventArgs<object> e)
         {
             _ = sender;
-            _ = e;
-            UpdateDetails(GroupsGrid.SelectedItem as GroupedEventRow);
+            UpdateSelectedNode(e.NewValue as InspectorEventTreeNode);
         }
 
-        private void DetailsGrid_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        private void UpdateSelectedNode(InspectorEventTreeNode? node)
         {
-            _ = sender;
-            _ = e;
-            UpdateSelectedDetail(DetailsGrid.SelectedItem as GroupedEventDetailRow);
-        }
-
-        private void UpdateDetails(GroupedEventRow? group)
-        {
-            _details.Clear();
-
-            if (group == null)
+            if (node == null)
             {
                 SelectionBlock.Text = "-";
-                DetailCountBlock.Text = "0 detail rows";
                 SelectionTimeBlock.Text = "-";
+                DetailCountBlock.Text = "0 frames shown";
                 UpdateSelectedDetail(null);
                 return;
             }
 
-            SelectionBlock.Text = $"{group.Event} / {group.Detection}";
-            SelectionTimeBlock.Text = group.LastSeenUtc == default ? "-" : group.LastSeenUtc.ToString("HH:mm:ss.fff");
-
-            foreach (GroupedEventDetailRow detail in group.Details
-                         .Select(x => x.Clone())
-                         .OrderByDescending(x => x.TimestampUtc))
+            GroupedEventRow? group = node.Group;
+            GroupedEventDetailRow? detail = node.Detail;
+            if (detail == null && group != null)
             {
-                _details.Add(detail);
+                detail = group.Details
+                    .Select(x => x.Clone())
+                    .OrderByDescending(x => x.TimestampUtc)
+                    .FirstOrDefault();
             }
 
-            DetailCountBlock.Text = $"{_details.Count.ToString(CultureInfo.InvariantCulture)} detail row{(_details.Count == 1 ? string.Empty : "s")}";
-            DetailsGrid.SelectedIndex = _details.Count == 0 ? -1 : 0;
-            if (_details.Count == 0)
+            if (group != null)
             {
-                UpdateSelectedDetail(null);
+                _preferredGroupKey = group.GroupKey;
+                SelectionBlock.Text = $"{group.Event} / {group.Detection}";
+                SelectionTimeBlock.Text = group.LastSeenUtc == default ? "-" : group.LastSeenUtc.ToString("HH:mm:ss.fff");
+                DetailCountBlock.Text = $"{Math.Max(1, group.Details.Count == 0 ? group.Hits : group.Details.Count)} frame{(Math.Max(1, group.Details.Count == 0 ? group.Hits : group.Details.Count) == 1 ? string.Empty : "s")} shown";
             }
+            else
+            {
+                SelectionBlock.Text = "-";
+                SelectionTimeBlock.Text = "-";
+                DetailCountBlock.Text = "0 frames shown";
+            }
+
+            UpdateSelectedDetail(detail);
         }
 
         private void UpdateSelectedDetail(GroupedEventDetailRow? detail)
         {
             _fieldNodes.Clear();
             _selectedHandleEvidence = null;
+            _selectedDetail = detail;
             _selectedRawText = string.Empty;
 
             if (detail == null)
@@ -340,7 +358,6 @@ namespace BlackbirdInterface
             {
                 AddPair(selection, "Occurrences", detail.HitCount.ToString(CultureInfo.InvariantCulture));
             }
-            AddPair(selection, "Reason", EventDetailsParsing.FallbackText(detail.Reason));
             AddPair(selection, "Correlated Handle Evidence", hasHandleEvidence ? "Available" : "None");
 
             foreach (string category in parsed.Keys
@@ -377,7 +394,7 @@ namespace BlackbirdInterface
                 AddLine(disassemblySection, line, line.StartsWith("summary:", StringComparison.OrdinalIgnoreCase) ? "note" : "line");
             }
 
-            InspectorFieldNode rawSection = AddSection("Raw", false);
+            InspectorFieldNode rawSection = AddSection("Details", false);
             foreach (string line in WrapRawForTree(rawText))
             {
                 AddLine(rawSection, line);
@@ -701,7 +718,7 @@ namespace BlackbirdInterface
                 return;
             }
 
-            string context = DetailsGrid.SelectedItem is GroupedEventDetailRow detail
+            string context = _selectedDetail is GroupedEventDetailRow detail
                 ? $"{detail.Detection} / {detail.Actor} -> {detail.Target}"
                 : "Correlated handle evidence";
             HandleEvidenceWindow.ShowForEvidence(this, context, _selectedHandleEvidence.Clone());
@@ -785,6 +802,18 @@ namespace BlackbirdInterface
                 remaining = remaining[take..].TrimStart();
             }
         }
+    }
+
+    internal sealed class InspectorEventTreeNode
+    {
+        public GroupedEventRow? Group { get; set; }
+        public GroupedEventDetailRow? Detail { get; set; }
+        public ObservableCollection<InspectorEventTreeNode> Children { get; } = new();
+        public string Title { get; set; } = string.Empty;
+        public string Subtitle { get; set; } = string.Empty;
+        public string RightLabel { get; set; } = string.Empty;
+        public bool IsLeaf { get; set; }
+        public bool IsExpanded { get; set; }
     }
 }
 

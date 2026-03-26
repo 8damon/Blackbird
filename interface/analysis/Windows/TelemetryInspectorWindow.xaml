@@ -4,9 +4,9 @@
         xmlns:local="clr-namespace:BlackbirdInterface"
         Title="Telemetry Inspector"
         Height="920"
-        Width="1420"
+        Width="1440"
         MinHeight="720"
-        MinWidth="1100"
+        MinWidth="1180"
         WindowStartupLocation="CenterOwner"
         WindowStyle="SingleBorderWindow"
         ResizeMode="CanResize"
@@ -27,20 +27,91 @@
             <Setter Property="TextWrapping" Value="NoWrap"/>
         </Style>
 
-        <Style x:Key="InspectorIdentityCellStyle" TargetType="TextBlock">
-            <Setter Property="ToolTip" Value="{Binding ActorToolTip}"/>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding RelativeSource={RelativeSource Self}, Path=Tag}" Value="Target">
-                    <Setter Property="ToolTip" Value="{Binding TargetToolTip}"/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-
         <Style x:Key="InspectorTreeItemStyle"
                TargetType="TreeViewItem"
                BasedOn="{StaticResource {x:Type TreeViewItem}}">
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+            <Setter Property="Padding" Value="0"/>
         </Style>
+
+        <Style x:Key="ThinHorizontalScrollBarStyle" TargetType="{x:Type ScrollBar}">
+            <Setter Property="Height" Value="7"/>
+            <Setter Property="Background" Value="#FF111111"/>
+            <Setter Property="Foreground" Value="#FF6A6A6A"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ScrollBar}">
+                        <Grid Background="{TemplateBinding Background}">
+                            <Track x:Name="PART_Track"
+                                   Orientation="Horizontal"
+                                   IsDirectionReversed="False">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static ScrollBar.PageLeftCommand}"
+                                                  Background="Transparent"
+                                                  BorderThickness="0"/>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Background="#FF5C5C5C"
+                                           BorderThickness="0"/>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="{x:Static ScrollBar.PageRightCommand}"
+                                                  Background="Transparent"
+                                                  BorderThickness="0"/>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Vertical">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="FrameTreeViewStyle" TargetType="{x:Type TreeView}" BasedOn="{StaticResource {x:Type TreeView}}">
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Hidden"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="ScrollViewer.CanContentScroll" Value="False"/>
+            <Setter Property="ScrollViewer.PanningMode" Value="HorizontalOnly"/>
+        </Style>
+
+        <HierarchicalDataTemplate DataType="{x:Type local:InspectorEventTreeNode}" ItemsSource="{Binding Children}">
+            <Border x:Name="EventNodeBorder"
+                    Margin="0,0,0,1"
+                    Padding="8,6"
+                    Background="#FF151515"
+                    BorderBrush="#FF232323"
+                    BorderThickness="0,0,0,1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{Binding Title}"
+                                   FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Margin="0,2,0,0"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"
+                                   Text="{Binding Subtitle}"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <TextBlock Grid.Column="1"
+                               Margin="14,0,0,0"
+                               VerticalAlignment="Top"
+                               Foreground="{DynamicResource WinMutedTextBrush}"
+                               Text="{Binding RightLabel}"/>
+                </Grid>
+            </Border>
+            <HierarchicalDataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsLeaf}" Value="True">
+                    <Setter TargetName="EventNodeBorder" Property="Background" Value="#FF111111"/>
+                </DataTrigger>
+            </HierarchicalDataTemplate.Triggers>
+        </HierarchicalDataTemplate>
 
         <HierarchicalDataTemplate DataType="{x:Type local:InspectorFieldNode}" ItemsSource="{Binding Children}">
             <Border x:Name="NodeBorder" Padding="2,1">
@@ -97,181 +168,147 @@
                 Background="{DynamicResource WinHeaderBrush}"
                 BorderBrush="{DynamicResource WinSubtleBorderBrush}"
                 BorderThickness="0,0,0,1"
-                Padding="6,4">
+                Padding="10,8">
             <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-
-                <StackPanel Grid.Row="0" Grid.Column="0">
+                <StackPanel>
                     <TextBlock x:Name="HeaderBlock"
                                FontSize="13"
                                FontWeight="SemiBold"
                                Text="Telemetry Inspector"/>
                     <TextBlock x:Name="SummaryBlock"
-                               Margin="0,2,0,0"
+                               Margin="0,3,0,0"
                                FontSize="11"
                                Foreground="{DynamicResource WinMutedTextBrush}"
                                Text="No telemetry available"/>
                 </StackPanel>
-
-                <WrapPanel Grid.Row="0"
-                           Grid.Column="1"
-                           HorizontalAlignment="Right"
-                           VerticalAlignment="Top">
-                    <TextBlock Style="{StaticResource InspectorLabelStyle}" Text="Groups"/>
+                <WrapPanel Grid.Column="1"
+                           VerticalAlignment="Center"
+                           HorizontalAlignment="Right">
+                    <TextBlock Style="{StaticResource InspectorLabelStyle}" Text="Visible"/>
                     <TextBlock x:Name="GroupCountBlock" Style="{StaticResource InspectorValueStyle}" Margin="0,0,16,0"/>
-                    <TextBlock Style="{StaticResource InspectorLabelStyle}" Text="Rows"/>
+                    <TextBlock Style="{StaticResource InspectorLabelStyle}" Text="Frames"/>
                     <TextBlock x:Name="OccurrenceCountBlock" Style="{StaticResource InspectorValueStyle}" Margin="0,0,16,0"/>
                     <TextBlock Style="{StaticResource InspectorLabelStyle}" Text="Window"/>
                     <TextBlock x:Name="WindowRangeBlock" Style="{StaticResource InspectorValueStyle}"/>
                 </WrapPanel>
-
-                <Grid Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="72"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="72"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-
-                    <TextBlock Grid.Column="0" Style="{StaticResource InspectorLabelStyle}" Text="Selection"/>
-                    <TextBlock x:Name="SelectionBlock" Grid.Column="1" Style="{StaticResource InspectorValueStyle}" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Grid.Column="2" Style="{StaticResource InspectorLabelStyle}" Text="When"/>
-                    <TextBlock x:Name="SelectionTimeBlock" Grid.Column="3" Style="{StaticResource InspectorValueStyle}" TextAlignment="Right"/>
-                </Grid>
             </Grid>
         </Border>
 
-        <Grid Grid.Row="1" Margin="0,8,0,8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-
-            <TextBox x:Name="SearchBox"
-                     Grid.Column="0"
-                     Width="260"
-                     Height="26"
-                     Margin="0,0,8,0"
-                     VerticalContentAlignment="Center"
-                     ToolTip="Search event, detection, actor, target, raw details"
-                     TextChanged="SearchBox_TextChanged"/>
-
-            <Button x:Name="SeverityFilterButton"
-                    Grid.Column="1"
-                    Content="Severity: All"
-                    MinWidth="110"
-                    Click="SeverityFilterButton_Click"/>
-
-            <TextBlock x:Name="DetailCountBlock"
-                       Grid.Column="3"
-                       Margin="12,0,0,0"
-                       VerticalAlignment="Center"
-                       Foreground="{DynamicResource WinMutedTextBrush}"
-                       Text="0 detail rows"/>
-        </Grid>
+        <Border Grid.Row="1"
+                Margin="0,8,0,8"
+                Background="{DynamicResource WinHeaderBrush}"
+                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                BorderThickness="1"
+                Padding="8,6">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="260"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="SearchBox"
+                         Grid.Column="0"
+                         Height="26"
+                         VerticalContentAlignment="Center"
+                         ToolTip="Search event, detection, actor, target, and decoded details"
+                         TextChanged="SearchBox_TextChanged"/>
+                <Button x:Name="SeverityFilterButton"
+                        Grid.Column="1"
+                        Margin="8,0,8,0"
+                        Content="Severity: All"
+                        MinWidth="112"
+                        Click="SeverityFilterButton_Click"/>
+                <TextBlock Grid.Column="2"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource WinMutedTextBrush}"
+                           Text="Selection"/>
+                <TextBlock x:Name="SelectionBlock"
+                           Grid.Column="3"
+                           Margin="10,0,10,0"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock x:Name="SelectionTimeBlock"
+                           Grid.Column="4"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource WinMutedTextBrush}"/>
+            </Grid>
+        </Border>
 
         <Grid Grid.Row="2">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="1.2*"/>
-                <RowDefinition Height="6"/>
-                <RowDefinition Height="1.4*"/>
-            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.05*"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="1.75*"/>
+            </Grid.ColumnDefinitions>
 
-            <DataGrid Grid.Row="0"
-                      x:Name="GroupsGrid"
-                      Style="{DynamicResource SecondaryDenseDataGridStyle}"
-                      AutoGenerateColumns="False"
-                      IsReadOnly="True"
-                      CanUserAddRows="False"
-                      CanUserDeleteRows="False"
-                      CanUserResizeRows="False"
-                      RowHeaderWidth="0"
-                      BorderThickness="0"
-                      SelectionChanged="GroupsGrid_SelectionChanged">
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="Last Seen" Width="132" Binding="{Binding LastSeenUtc, StringFormat=HH:mm:ss.fff}"/>
-                    <DataGridTextColumn Header="Event" Width="220" Binding="{Binding Event}"/>
-                    <DataGridTextColumn Header="Severity" Width="90" Binding="{Binding Severity}"/>
-                    <DataGridTextColumn Header="Hits" Width="70" Binding="{Binding Hits}"/>
-                    <DataGridTextColumn Header="Detection" Width="*" Binding="{Binding Detection}"/>
-                </DataGrid.Columns>
-            </DataGrid>
+            <Border Grid.Column="0"
+                    Background="{DynamicResource WinPanelBrush}"
+                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                    BorderThickness="1">
+                <DockPanel LastChildFill="True">
+                    <Border DockPanel.Dock="Top"
+                            Background="#FF141414"
+                            BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                            BorderThickness="0,0,0,1"
+                            Padding="8,6">
+                        <TextBlock x:Name="DetailCountBlock"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"
+                                   Text="0 detail rows"/>
+                    </Border>
+                    <TreeView x:Name="EventTreeView"
+                              Background="Transparent"
+                              BorderThickness="0"
+                              ItemContainerStyle="{StaticResource InspectorTreeItemStyle}"
+                              SelectedItemChanged="EventTreeView_SelectedItemChanged"/>
+                </DockPanel>
+            </Border>
 
-            <GridSplitter Grid.Row="1"
-                          Height="6"
+            <GridSplitter Grid.Column="1"
+                          Width="8"
                           HorizontalAlignment="Stretch"
                           VerticalAlignment="Stretch"/>
 
-            <Grid Grid.Row="2">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="1.05*"/>
-                    <ColumnDefinition Width="6"/>
-                    <ColumnDefinition Width="1.2*"/>
-                </Grid.ColumnDefinitions>
-
-                <DataGrid Grid.Column="0"
-                          x:Name="DetailsGrid"
-                          Style="{DynamicResource SecondaryDenseDataGridStyle}"
-                          AutoGenerateColumns="False"
-                          IsReadOnly="True"
-                          CanUserAddRows="False"
-                          CanUserDeleteRows="False"
-                          CanUserResizeRows="False"
-                          RowHeaderWidth="0"
-                          BorderThickness="0"
-                          SelectionChanged="DetailsGrid_SelectionChanged">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Time" Width="124" Binding="{Binding TimestampUtc, StringFormat=HH:mm:ss.fff}"/>
-                        <DataGridTextColumn Header="Actor" Width="170" Binding="{Binding Actor}">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock" BasedOn="{StaticResource InspectorIdentityCellStyle}"/>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Target" Width="170" Binding="{Binding Target}">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock" BasedOn="{StaticResource InspectorIdentityCellStyle}">
-                                    <Setter Property="Tag" Value="Target"/>
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Source" Width="110" Binding="{Binding Source}"/>
-                        <DataGridTextColumn Header="Detection" Width="*" Binding="{Binding Detection}"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-
-                <GridSplitter Grid.Column="1"
-                              Width="6"
-                              HorizontalAlignment="Stretch"
-                              VerticalAlignment="Stretch"/>
-
-                <TreeView Grid.Column="2"
-                          x:Name="FieldsTreeView"
-                          Background="{DynamicResource WinPanelBrush}"
-                          BorderThickness="0"
-                          ItemContainerStyle="{StaticResource InspectorTreeItemStyle}">
-                    <TreeView.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="Expand All" Click="ExpandAll_Click"/>
-                            <MenuItem Header="Collapse All" Click="CollapseAll_Click"/>
-                            <Separator/>
-                            <MenuItem Header="Copy Visible" Click="CopyVisible_Click"/>
-                            <MenuItem Header="Copy Raw" Click="CopyRaw_Click"/>
-                            <Separator/>
-                            <MenuItem Header="Open Correlated Handle Evidence" Click="OpenHandleWindowButton_Click"/>
-                        </ContextMenu>
-                    </TreeView.ContextMenu>
-                </TreeView>
-            </Grid>
+            <Border Grid.Column="2"
+                    Background="{DynamicResource WinPanelBrush}"
+                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                    BorderThickness="1">
+                <DockPanel LastChildFill="True">
+                    <Border DockPanel.Dock="Top"
+                            Background="#FF141414"
+                            BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                            BorderThickness="0,0,0,1"
+                            Padding="8,6">
+                        <TextBlock Text="Frame Inspector"
+                                   FontWeight="SemiBold"/>
+                    </Border>
+                    <TreeView x:Name="FieldsTreeView"
+                              Style="{StaticResource FrameTreeViewStyle}"
+                              Background="Transparent"
+                              BorderThickness="0"
+                              ItemContainerStyle="{StaticResource InspectorTreeItemStyle}">
+                        <TreeView.Resources>
+                            <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource ThinHorizontalScrollBarStyle}"/>
+                        </TreeView.Resources>
+                        <TreeView.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Expand All" Click="ExpandAll_Click"/>
+                                <MenuItem Header="Collapse All" Click="CollapseAll_Click"/>
+                                <Separator/>
+                                <MenuItem Header="Copy Visible" Click="CopyVisible_Click"/>
+                                <MenuItem Header="Copy Details" Click="CopyRaw_Click"/>
+                                <Separator/>
+                                <MenuItem Header="Open Correlated Handle Evidence" Click="OpenHandleWindowButton_Click"/>
+                            </ContextMenu>
+                        </TreeView.ContextMenu>
+                    </TreeView>
+                </DockPanel>
+            </Border>
         </Grid>
     </Grid>
 </Window>
-

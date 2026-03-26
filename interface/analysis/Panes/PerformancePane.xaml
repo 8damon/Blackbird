@@ -184,6 +184,27 @@
                                     <DataGridTextColumn Header="Hits" Width="70" Binding="{Binding ConnectionCount}"/>
                                 </DataGrid.Columns>
                             </DataGrid>
+
+                            <Border x:Name="NetworkNoDataOverlay"
+                                    Background="{DynamicResource NoDataOverlayBrush}"
+                                    Visibility="Collapsed"
+                                    IsHitTestVisible="False">
+                                <StackPanel HorizontalAlignment="Center"
+                                            VerticalAlignment="Center">
+                                    <TextBlock Text="NO DATA"
+                                               FontSize="28"
+                                               FontWeight="Bold"
+                                               Opacity="0.72"
+                                               Foreground="{DynamicResource WinTextBrush}"
+                                               HorizontalAlignment="Center"/>
+                                    <TextBlock x:Name="NetworkNoDataMessageBlock"
+                                               Margin="0,6,0,0"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource WinMutedTextBrush}"
+                                               HorizontalAlignment="Center"
+                                               Text="No attributable network data for the selected range."/>
+                                </StackPanel>
+                            </Border>
                         </Grid>
                     </Grid>
                 </Border>
@@ -223,6 +244,16 @@
                                 Padding="8,0">
                             <DockPanel LastChildFill="True" VerticalAlignment="Center">
                                 <TextBlock Text="Top Threads" FontWeight="SemiBold"/>
+                                <Button x:Name="ParallelStacksButton"
+                                        DockPanel.Dock="Right"
+                                        Margin="8,0,0,0"
+                                        MinWidth="0"
+                                        Height="18"
+                                        Padding="6,1"
+                                        FontSize="10"
+                                        VerticalAlignment="Center"
+                                        Click="ParallelStacksButton_Click"
+                                        Content="Parallel Stacks"/>
                                 <ToggleButton x:Name="ThreadLifecycleToggle"
                                               DockPanel.Dock="Right"
                                               Margin="8,0,0,0"

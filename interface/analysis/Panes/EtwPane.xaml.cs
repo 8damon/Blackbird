@@ -86,6 +86,10 @@ namespace BlackbirdInterface
             {
                 existing.LastSeenUtc = now;
                 existing.Hits = Math.Max(1, existing.Hits + 1);
+                if (!string.IsNullOrWhiteSpace(argSig))
+                {
+                    existing.ArgumentPreview = argSig;
+                }
 
                 // Aggregate by argument signature: identical arg patterns increment the existing
                 // detail row's HitCount rather than adding a duplicate row.
@@ -175,6 +179,7 @@ namespace BlackbirdInterface
                     Severity = severity,
                     Detection = detection,
                     Hits = 1,
+                    ArgumentPreview = argSig,
                     Details = { firstDetail }
                 };
                 _allItems.Add(row);

@@ -15,6 +15,15 @@
         TextOptions.TextFormattingMode="Display"
         TextOptions.TextRenderingMode="ClearType">
 
+    <Window.Resources>
+        <Style x:Key="PanelHeaderBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource WinSubtleBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="Padding" Value="10,8"/>
+        </Style>
+    </Window.Resources>
+
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -120,33 +129,23 @@
                 Margin="8,8,8,8"
                 Style="{StaticResource SecondaryWindowSurfaceBorderStyle}"
                 Padding="0">
-            <Grid Margin="8">
+            <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="2.2*"/>
-                    <ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="1"/>
                     <ColumnDefinition Width="1.15*"/>
-                    <ColumnDefinition Width="10"/>
+                    <ColumnDefinition Width="1"/>
                     <ColumnDefinition Width="1.15*"/>
                 </Grid.ColumnDefinitions>
 
+                <!-- Descendants And Thread Pivots -->
                 <Border Grid.Column="0"
-                        Background="{DynamicResource ExplorerPreviewBackgroundBrush}"
-                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
-                        BorderThickness="1"
-                        Padding="8">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <TextBlock Grid.Row="0"
-                                   Margin="0,0,0,8"
-                                   FontSize="12"
-                                   FontWeight="SemiBold"
-                                   Text="Descendants And Thread Pivots"/>
-
-                        <Grid Grid.Row="1">
+                        Background="{DynamicResource ExplorerPreviewBackgroundBrush}">
+                    <DockPanel LastChildFill="True">
+                        <Border DockPanel.Dock="Top" Style="{StaticResource PanelHeaderBorderStyle}">
+                            <TextBlock FontSize="12" FontWeight="SemiBold" Text="Descendants And Thread Pivots"/>
+                        </Border>
+                        <Grid Margin="8">
                             <TreeView x:Name="RelationsTree"
                                       BorderThickness="0"
                                       Background="Transparent"
@@ -197,27 +196,20 @@
                                            Opacity="0.72"/>
                             </Border>
                         </Grid>
-                    </Grid>
+                    </DockPanel>
                 </Border>
 
+                <Border Grid.Column="1"
+                        Background="{DynamicResource WinSubtleBorderBrush}"/>
+
+                <!-- Handles Opened To Target -->
                 <Border Grid.Column="2"
-                        Background="{DynamicResource ExplorerPreviewBackgroundBrush}"
-                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
-                        BorderThickness="1"
-                        Padding="8">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <TextBlock Grid.Row="0"
-                                   Margin="0,0,0,8"
-                                   FontSize="12"
-                                   FontWeight="SemiBold"
-                                   Text="Handles Opened To Target"/>
-
-                        <Grid Grid.Row="1">
+                        Background="{DynamicResource ExplorerPreviewBackgroundBrush}">
+                    <DockPanel LastChildFill="True">
+                        <Border DockPanel.Dock="Top" Style="{StaticResource PanelHeaderBorderStyle}">
+                            <TextBlock FontSize="12" FontWeight="SemiBold" Text="Handles Opened To Target"/>
+                        </Border>
+                        <Grid Margin="8">
                             <ListView x:Name="InboundHandlesList"
                                       BorderThickness="0"
                                       Background="Transparent"
@@ -232,11 +224,37 @@
                                 </ListView.ItemContainerStyle>
                                 <ListView.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Padding="8,6"
-                                                Background="{DynamicResource WinHeaderBrush}"
-                                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
-                                                BorderThickness="1">
+                                        <Border Padding="8,6" BorderThickness="1">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
+                                                    <Setter Property="BorderBrush" Value="{DynamicResource WinSubtleBorderBrush}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsBlackbirdInternal}" Value="True">
+                                                            <Setter Property="Background" Value="#08101A"/>
+                                                            <Setter Property="BorderBrush" Value="#1A2A38"/>
+                                                            <Setter Property="Opacity" Value="0.55"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
                                             <StackPanel>
+                                                <TextBlock Margin="0,0,0,3"
+                                                           FontSize="9"
+                                                           FontWeight="Bold"
+                                                           Foreground="#3F7099"
+                                                           Text="BLACKBIRD INTERNAL — EXPECTED">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsBlackbirdInternal}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
                                                 <TextBlock Text="{Binding Title}"
                                                            FontWeight="SemiBold"
                                                            Foreground="{Binding TitleBrush}"
@@ -260,27 +278,20 @@
                                        VerticalAlignment="Center"
                                        Visibility="Collapsed"/>
                         </Grid>
-                    </Grid>
+                    </DockPanel>
                 </Border>
 
+                <Border Grid.Column="3"
+                        Background="{DynamicResource WinSubtleBorderBrush}"/>
+
+                <!-- Handles Opened By Target -->
                 <Border Grid.Column="4"
-                        Background="{DynamicResource ExplorerPreviewBackgroundBrush}"
-                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
-                        BorderThickness="1"
-                        Padding="8">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <TextBlock Grid.Row="0"
-                                   Margin="0,0,0,8"
-                                   FontSize="12"
-                                   FontWeight="SemiBold"
-                                   Text="Handles Opened By Target"/>
-
-                        <Grid Grid.Row="1">
+                        Background="{DynamicResource ExplorerPreviewBackgroundBrush}">
+                    <DockPanel LastChildFill="True">
+                        <Border DockPanel.Dock="Top" Style="{StaticResource PanelHeaderBorderStyle}">
+                            <TextBlock FontSize="12" FontWeight="SemiBold" Text="Handles Opened By Target"/>
+                        </Border>
+                        <Grid Margin="8">
                             <ListView x:Name="OutboundHandlesList"
                                       BorderThickness="0"
                                       Background="Transparent"
@@ -323,7 +334,7 @@
                                        VerticalAlignment="Center"
                                        Visibility="Collapsed"/>
                         </Grid>
-                    </Grid>
+                    </DockPanel>
                 </Border>
             </Grid>
         </Border>

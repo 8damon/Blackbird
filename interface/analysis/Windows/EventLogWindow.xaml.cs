@@ -266,6 +266,15 @@ namespace BlackbirdInterface
 
         private EventLogCardItem? GetCardFromEventSource(DependencyObject? source)
         {
+            if (source != null)
+            {
+                if (ItemsControl.ContainerFromElement(EventCardList, source) is ListViewItem container &&
+                    container.DataContext is EventLogCardItem containedCard)
+                {
+                    return containedCard;
+                }
+            }
+
             while (source != null)
             {
                 if (source is ListViewItem item && item.DataContext is EventLogCardItem card)

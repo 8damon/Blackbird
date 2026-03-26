@@ -104,6 +104,7 @@
                         <DataGridTextColumn Header="Severity" Width="92" Binding="{Binding Severity}"/>
                         <DataGridTextColumn Header="Hits" Width="72" Binding="{Binding Hits}"/>
                         <DataGridTextColumn Header="Detection" Width="*" Binding="{Binding Detection}"/>
+                        <DataGridTextColumn Header="Arguments" Width="280" Binding="{Binding ArgumentPreview}"/>
                     </DataGrid.Columns>
                 </DataGrid>
 

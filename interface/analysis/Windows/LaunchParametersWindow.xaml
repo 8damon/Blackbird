@@ -2,14 +2,109 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Launch Parameters"
-        Width="520"
-        Height="308"
-        MinWidth="520"
-        MinHeight="308"
+        Width="720"
+        Height="660"
+        MinWidth="720"
+        MinHeight="660"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None"
-        ResizeMode="NoResize"
+        ResizeMode="CanResize"
         Background="{DynamicResource WinBgBrush}">
+    <Window.Resources>
+        <Style x:Key="LaunchComboStyle" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="MinHeight" Value="26"/>
+            <Setter Property="IsEditable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <Border x:Name="SelectorBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"/>
+                            <ContentPresenter Margin="8,1,26,1"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Left"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                              IsHitTestVisible="False"/>
+                            <Path HorizontalAlignment="Right"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,8,0"
+                                  Data="M 0 0 L 8 0 L 4 4 Z"
+                                  Fill="{DynamicResource WinTextBrush}"
+                                  IsHitTestVisible="False"/>
+                            <ToggleButton Background="Transparent"
+                                          BorderThickness="0"
+                                          Focusable="False"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                          ClickMode="Press">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="Transparent"
+                                                BorderBrush="Transparent"
+                                                BorderThickness="0"/>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   Focusable="False"
+                                   AllowsTransparency="True"
+                                   PopupAnimation="Fade">
+                                <Border Margin="0,2,0,0"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        Background="{DynamicResource WinPanelBrush}"
+                                        BorderBrush="{DynamicResource WinBorderBrush}"
+                                        BorderThickness="1">
+                                    <ScrollViewer MaxHeight="240"
+                                                  CanContentScroll="True"
+                                                  Background="{DynamicResource WinPanelBrush}"
+                                                  Foreground="{DynamicResource WinTextBrush}"
+                                                  BorderThickness="0">
+                                        <StackPanel IsItemsHost="True"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="SelectorBorder" Property="BorderBrush" Value="{DynamicResource WinAccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsDropDownOpen" Value="True">
+                                <Setter TargetName="SelectorBorder" Property="BorderBrush" Value="{DynamicResource WinAccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="LaunchComboItemStyle" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+            <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+            <Setter Property="Padding" Value="8,3"/>
+            <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter Property="Background" Value="#FF2A2A2A"/>
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#33323232"/>
+                    <Setter Property="Foreground" Value="#FFF1F1F1"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
 
     <Border BorderBrush="{DynamicResource WinBorderBrush}"
             BorderThickness="1"
@@ -43,11 +138,9 @@
                         Click="Cancel_Click"/>
             </Grid>
 
-            <Grid Grid.Row="1" Margin="14">
+            <Grid Grid.Row="1"
+                  Margin="14">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
@@ -71,40 +164,151 @@
                     </StackPanel>
                 </Border>
 
-                <CheckBox x:Name="UseUsermodeHooksCheckBox"
-                          Grid.Row="1"
-                          Margin="2,14,0,0"
-                          Content="Enable usermode hooks"
-                          IsChecked="True"
-                          Checked="UseUsermodeHooksCheckBox_Changed"
-                          Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                <ScrollViewer Grid.Row="1"
+                              Margin="0,14,0,0"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Border BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                BorderThickness="1"
+                                Background="{DynamicResource WinPanelBrush}"
+                                Padding="10,10">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="Instrumentation"/>
+                                <CheckBox x:Name="UseUsermodeHooksCheckBox"
+                                          Margin="0,10,0,0"
+                                          Content="Enable usermode hooks"
+                                          IsChecked="True"
+                                          Checked="UseUsermodeHooksCheckBox_Changed"
+                                          Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                <CheckBox x:Name="AutoOpenApiGraphCheckBox"
+                                          Margin="0,8,0,0"
+                                          Content="Auto-switch to API view"
+                                          IsChecked="True"/>
+                                <CheckBox x:Name="EarlyBirdApcCheckBox"
+                                          Margin="0,8,0,0"
+                                          Content="Use EarlyBird APC for launch"
+                                          Checked="UseUsermodeHooksCheckBox_Changed"
+                                          Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                            </StackPanel>
+                        </Border>
 
-                <CheckBox x:Name="AutoOpenApiGraphCheckBox"
-                          Grid.Row="2"
-                          Margin="2,8,0,0"
-                          Content="Auto-switch to API view"
-                          IsChecked="True"/>
+                        <Border x:Name="LaunchPhaseOnePanel"
+                                Margin="0,12,0,0"
+                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                BorderThickness="1"
+                                Background="{DynamicResource WinPanelBrush}"
+                                Padding="10,10">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="Phase 1 Launch Context"/>
+                                <TextBlock Margin="0,4,0,0"
+                                           Foreground="{DynamicResource WinMutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Working directory, environment overrides, staged resume, parent/inherited handles, and scheduler placement."/>
 
-                <CheckBox x:Name="EarlyBirdApcCheckBox"
-                          Grid.Row="3"
-                          Margin="2,8,0,0"
-                          Content="Use EarlyBird APC for launch"
-                          Checked="UseUsermodeHooksCheckBox_Changed"
-                          Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Working directory"/>
+                                    <TextBox x:Name="WorkingDirectoryTextBox"
+                                             Grid.Column="1"
+                                             MinWidth="240"
+                                             HorizontalAlignment="Stretch"/>
+                                </Grid>
 
-                <Border Grid.Row="4"
-                        Margin="0,14,0,0"
-                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
-                        BorderThickness="1"
-                        Background="{DynamicResource WinPanelBrush}"
-                        Padding="10,8">
-                    <TextBlock x:Name="CompatibilityNoteBlock"
-                               Foreground="{DynamicResource WinMutedTextBrush}"
-                               TextWrapping="Wrap"
-                               Text="Attaching to a running process cannot use EarlyBird APC. That option is available only when launching a new process with hooks enabled."/>
-                </Border>
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Top"
+                                               Margin="0,4,0,0"
+                                               Text="Environment overrides"/>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBox x:Name="EnvironmentOverridesTextBox"
+                                                 AcceptsReturn="True"
+                                                 Height="110"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 TextWrapping="NoWrap"
+                                                 FontFamily="Consolas"/>
+                                        <TextBlock Margin="0,4,0,0"
+                                                   Foreground="{DynamicResource WinMutedTextBrush}"
+                                                   Text="One per line: NAME=VALUE"/>
+                                    </StackPanel>
+                                </Grid>
 
-                <DockPanel Grid.Row="5"
+                                <CheckBox x:Name="LeaveSuspendedCheckBox"
+                                          Margin="0,10,0,0"
+                                          Content="Keep target suspended after Blackbird is ready"/>
+
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="150"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Parent process PID"/>
+                                    <TextBox x:Name="ParentPidTextBox"
+                                             Grid.Column="1"
+                                             Margin="0,0,10,0"/>
+                                    <CheckBox x:Name="InheritHandlesCheckBox"
+                                              Grid.Column="2"
+                                              VerticalAlignment="Center"
+                                              Content="Inherit handles"/>
+                                </Grid>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Priority"/>
+                                    <ComboBox x:Name="PriorityComboBox"
+                                              Grid.Column="1"
+                                              Style="{StaticResource LaunchComboStyle}"
+                                              ItemContainerStyle="{StaticResource LaunchComboItemStyle}"
+                                              SelectedIndex="0">
+                                        <ComboBoxItem Content="Inherit"/>
+                                        <ComboBoxItem Content="Idle"/>
+                                        <ComboBoxItem Content="Below normal"/>
+                                        <ComboBoxItem Content="Normal"/>
+                                        <ComboBoxItem Content="Above normal"/>
+                                        <ComboBoxItem Content="High"/>
+                                        <ComboBoxItem Content="Realtime"/>
+                                    </ComboBox>
+                                    <TextBlock Grid.Column="2"
+                                               Margin="14,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Text="Affinity mask"/>
+                                    <TextBox x:Name="AffinityMaskTextBox"
+                                             Grid.Column="3"
+                                             Margin="10,0,0,0"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Margin="0,12,0,0"
+                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                BorderThickness="1"
+                                Background="{DynamicResource WinPanelBrush}"
+                                Padding="10,8">
+                            <TextBlock x:Name="CompatibilityNoteBlock"
+                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Text="Attaching to a running process cannot use launch-only controls. Those options are disabled automatically outside of launch mode."/>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <DockPanel Grid.Row="2"
                            Margin="0,14,0,0"
                            LastChildFill="False">
                     <Button DockPanel.Dock="Right"
@@ -121,4 +325,3 @@
         </Grid>
     </Border>
 </Window>
-

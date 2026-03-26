@@ -75,6 +75,8 @@ namespace BlackbirdInterface
         private readonly Dictionary<string, (uint Pid, uint Tid, string Path, uint Operation)> _filesystemClusterSamplesByOperation = new(StringComparer.Ordinal);
         private readonly Dictionary<string, int> _crossProcWriteCountByPair = new(StringComparer.Ordinal);
         private readonly Dictionary<string, int> _crossProcRwxAllocCountByPair = new(StringComparer.Ordinal);
+        private volatile int _filterRootPid;
+        private readonly ConcurrentDictionary<uint, byte> _filterTrackedPids = new();
         private int _filesystemClusterTotal;
         private DateTime _filesystemClusterWindowStartUtc = DateTime.MinValue;
         private DateTime _filesystemClusterLastSeenUtc = DateTime.MinValue;
@@ -149,6 +151,10 @@ namespace BlackbirdInterface
             int generation = ++_backendGeneration;
             try
             {
+                _filterRootPid = pid;
+                _filterTrackedPids.Clear();
+                _filterTrackedPids.TryAdd((uint)pid, 0);
+
                 var session = preparedSession ?? BlackbirdBackendSession.Start(pid, BlackbirdNative.StreamAll, useUsermodeHooks);
                 _backendSession = session;
 
@@ -298,6 +304,8 @@ namespace BlackbirdInterface
             }
 
             _backendSession = null;
+            _filterRootPid = 0;
+            _filterTrackedPids.Clear();
             StopBackendTransformLoop();
             DisposeLiveCaptureStore();
             ClearPendingBackendUiQueues();
@@ -406,6 +414,17 @@ namespace BlackbirdInterface
                         producedUiWork = true;
                     }
 
+                    // Track child process PIDs so the target-tree filter stays current.
+                    // A thread-start event whose process differs from its creator indicates the
+                    // creator spawned that process; if the creator is already tracked, track the child.
+                    if (ioctl.Type == BlackbirdNative.EventTypeThread &&
+                        ioctl.ProcessPid != 0 && ioctl.CreatorPid != 0 &&
+                        ioctl.ProcessPid != ioctl.CreatorPid &&
+                        _filterTrackedPids.ContainsKey(ioctl.CreatorPid))
+                    {
+                        _filterTrackedPids.TryAdd(ioctl.ProcessPid, 0);
+                    }
+
                     TelemetryEvent? telemetry = MapIoctlRecord(ioctl);
                     ProcessRelationView? relation = MapIoctlRelation(ioctl);
                     HeuristicEventView? heuristic = MapIoctlHeuristic(ioctl);
@@ -444,6 +463,19 @@ namespace BlackbirdInterface
                     AppendEtwToCaptureStore(view);
                     _ = ProcessIdentityResolver.Resolve(view.ActorPid);
                     _ = ProcessIdentityResolver.Resolve(view.TargetPid);
+
+                    // Track child processes discovered via ETW process-create events.
+                    if (view.Family == BlackbirdNative.IpcEtwFamilyProcess &&
+                        (view.Flags & BlackbirdNative.IpcEtwFlagProcessIsCreate) != 0)
+                    {
+                        uint etwCreator = view.CreatorPid != 0 ? view.CreatorPid : view.ActorPid;
+                        uint etwChild = view.ProcessPid != 0 ? view.ProcessPid : view.TargetPid;
+                        if (etwCreator != 0 && etwChild != 0 && etwCreator != etwChild &&
+                            _filterTrackedPids.ContainsKey(etwCreator))
+                        {
+                            _filterTrackedPids.TryAdd(etwChild, 0);
+                        }
+                    }
 
                     _ = TryEnqueueUiWork(BackendUiWorkItem.FromEtw(view));
                     producedUiWork = true;
@@ -1295,6 +1327,20 @@ namespace BlackbirdInterface
                 RememberHandleEvidence(record);
                 uint caller = record.CallerPid;
                 uint target = record.TargetPid;
+
+                // Drop events from external processes acting on the target tree — we only
+                // observe what the target and its children do, not what external actors do to them.
+                if (caller != 0 && !_filterTrackedPids.IsEmpty && !_filterTrackedPids.ContainsKey(caller))
+                {
+                    return null;
+                }
+                // Drop events originating from SR71 (our sensor DLL) to keep the dataset clean.
+                string originModuleForFilter = EventDetailFormatting.ModuleNameFromPath(record.OriginPath);
+                if (EventDetailFormatting.IsSr71Module(originModuleForFilter))
+                {
+                    return null;
+                }
+
                 string className = record.HandleClass switch
                 {
                     1 => "LEGITIMATE-SYSCALL",
@@ -1323,6 +1369,14 @@ namespace BlackbirdInterface
             {
                 uint process = record.ProcessPid;
                 uint creator = record.CreatorPid;
+
+                // Drop cross-process thread events from external creators (thread injection into target).
+                if (creator != 0 && process != 0 && creator != process &&
+                    !_filterTrackedPids.IsEmpty && !_filterTrackedPids.ContainsKey(creator))
+                {
+                    return null;
+                }
+
                 string eventKind = DetermineThreadLifecycleKind(record.ThreadFlags, record.StartAddress, record.ImageSize);
                 string threadFlags = EventDetailFormatting.DescribeThreadFlags(record.ThreadFlags);
                 return new TelemetryEvent
@@ -1408,10 +1462,19 @@ namespace BlackbirdInterface
                     return null;
                 }
 
+                // Drop relation records from external processes and from SR71.
+                if (!_filterTrackedPids.IsEmpty && !_filterTrackedPids.ContainsKey(source))
+                {
+                    return null;
+                }
                 string accessDecoded = EventDetailFormatting.DescribeHandleAccess(record.DesiredAccess);
                 string flagsDecoded = EventDetailFormatting.DescribeHandleFlags(record.HandleFlags);
                 string originModule = EventDetailFormatting.ModuleNameFromPath(record.OriginPath);
                 bool isSr71Handle = EventDetailFormatting.IsSr71Module(originModule);
+                if (isSr71Handle)
+                {
+                    return null;
+                }
                 string detailSignature = $"handle|{source}|{target}|{record.DesiredAccess:X8}|{record.HandleFlags:X8}|{originModule}";
                 string detailText =
                     $"sourcePid={source} targetPid={target} relationType=HandleOpen access=0x{record.DesiredAccess:X8} ({accessDecoded}) " +
@@ -1440,6 +1503,12 @@ namespace BlackbirdInterface
                 uint source = record.CreatorPid;
                 uint target = record.ProcessPid;
                 if (source == 0 || target == 0 || source == target)
+                {
+                    return null;
+                }
+
+                // Drop cross-process thread relations from external creators.
+                if (!_filterTrackedPids.IsEmpty && !_filterTrackedPids.ContainsKey(source))
                 {
                     return null;
                 }
@@ -1588,9 +1657,11 @@ namespace BlackbirdInterface
             string operation = BlackbirdNative.AnsiBufferToString(etw.Operation);
             string actorDisplay = ProcessIdentityResolver.Resolve(actor);
             string targetDisplay = ProcessIdentityResolver.Resolve(target);
+            Dictionary<string, string> hookFields =
+                BuildHookFieldMap(reason, etw.HookArgs ?? Array.Empty<ulong>(), etw.HookArgCount);
             string argumentSummary = EventDetailFormatting.BuildNtApiArgumentSummary(
                 !string.IsNullOrWhiteSpace(operation) ? operation : eventName,
-                ParseReasonFields(reason),
+                hookFields,
                 actorDisplay,
                 targetDisplay);
 
@@ -1656,6 +1727,8 @@ namespace BlackbirdInterface
                 NotifyClass = etw.NotifyClass,
                 DataType = etw.DataType,
                 DataSize = etw.DataSize,
+                HookArgCount = etw.HookArgCount,
+                HookArgs = etw.HookArgs ?? Array.Empty<ulong>(),
                 ImagePath = BlackbirdNative.WideBufferToString(etw.ImagePath),
                 CommandLine = BlackbirdNative.WideBufferToString(etw.CommandLine),
                 KeyPath = BlackbirdNative.WideBufferToString(etw.KeyPath),
@@ -1732,6 +1805,7 @@ namespace BlackbirdInterface
             for (int i = 0; i < views.Count; i += 1)
             {
                 BrokerEtwEventView view = views[i];
+                view.DisplayDetails = BuildEtwDisplayDetail(view);
                 UpdateHookPipelineDiagnostics(view);
                 if (EventDetailFormatting.IsApiGraphCandidate(view))
                 {
@@ -1761,6 +1835,16 @@ namespace BlackbirdInterface
                 }
 
                 string detection = view.DetectionName;
+                if (detection.Equals("KERNEL_HOOK_STATUS", StringComparison.OrdinalIgnoreCase))
+                {
+                    uint installed = view.CorrelationFlags;
+                    uint total = view.CorrelationAccessMask;
+                    uint requiredMiss = view.CorrelationAgeMs;
+                    string hookStatus = requiredMiss == 0
+                        ? $"OK ({installed}/{total})"
+                        : $"DEGRADED ({installed}/{total}, {requiredMiss} required miss)";
+                    DiagnosticsState.SetValue("Kernel Hooks", hookStatus);
+                }
                 if (IsHookTamperDetection(detection))
                 {
                     DiagnosticsState.SetValue("Hook Integrity", "TAMPERED");
@@ -1827,7 +1911,7 @@ namespace BlackbirdInterface
                         Group = timelineGroup,
                         SubType = timelineSubtype,
                         Summary = summary,
-                        Details = view.Details
+                        Details = view.DisplayDetails
                     });
                     _lastEtwTimelineSignature = timelineSignature;
                     _lastEtwTimelineTimestampUtc = view.TimestampUtc;
@@ -2076,7 +2160,7 @@ namespace BlackbirdInterface
                 Group = "API Hooks",
                 SubType = apiName,
                 Summary = $"{apiName} [caller {sourcePid} target {targetPid}]",
-                Details = view.Details
+                Details = decodedDetail
             };
         }
 
@@ -2112,7 +2196,7 @@ namespace BlackbirdInterface
                     : BuildGenericApiActionLabel(row.ApiName, ParseReasonFields(rawReason));
                 string decodedDetail = _apiGraphDecodedByKey.TryGetValue(key, out string? detail)
                     ? detail
-                    : rawReason;
+                    : BuildFallbackApiDetail(row.ApiName, rawReason, decodedAction);
                 sensor = _apiGraphSensorByKey.TryGetValue(key, out string? sensorLabel) ? sensorLabel : sensor;
                 ApiCallStructuredFields structured = BuildApiCallStructuredFields(row.ApiName, rawReason, decodedAction);
                 rows.Add(new ApiCallGraphMainRowView
@@ -2583,26 +2667,30 @@ namespace BlackbirdInterface
                 apiName = "unknown";
             }
 
-            Dictionary<string, string> fields = ParseReasonFields(rawReason);
+            Dictionary<string, string> fields = BuildHookFieldMap(view);
             string action = BuildGenericApiActionLabel(apiName, fields);
             string detail;
+            string argumentText = BuildResolvedHookArgumentsText(apiName, fields);
 
             if (TryBuildMemoryAction(apiName, view, fields, out string memoryAction, out string memoryDetail))
             {
                 action = memoryAction;
-                detail = memoryDetail;
+                detail = string.IsNullOrWhiteSpace(argumentText)
+                    ? memoryDetail
+                    : memoryDetail + Environment.NewLine + argumentText;
             }
             else
             {
                 var sb = new StringBuilder(512);
                 sb.AppendLine(action);
-                if (!string.IsNullOrWhiteSpace(rawReason))
+                if (!string.IsNullOrWhiteSpace(argumentText))
                 {
-                    sb.Append("Raw: ").AppendLine(rawReason);
+                    sb.AppendLine().AppendLine(argumentText);
                 }
-                if (!string.IsNullOrWhiteSpace(view.Details))
+                string contextText = BuildGenericEtwDisplayDetail(view, fields, includeHeadline: false);
+                if (!string.IsNullOrWhiteSpace(contextText))
                 {
-                    sb.Append("Event: ").Append(view.Details);
+                    sb.AppendLine().Append(contextText);
                 }
                 detail = sb.ToString().Trim();
             }
@@ -2647,8 +2735,7 @@ namespace BlackbirdInterface
                          $"Size: 0x{regionSize:X}\n" +
                          $"AllocType: 0x{allocationType:X} ({DescribeMemoryAllocationType((uint)allocationType)})\n" +
                          $"Protect: 0x{protect:X} ({protectLabel})\n" +
-                         contextDetail +
-                         $"Raw: {view.Reason}";
+                         contextDetail.TrimEnd();
                 return true;
             }
 
@@ -2685,8 +2772,7 @@ namespace BlackbirdInterface
                          $"NewProtect: 0x{newProtect:X} ({protectLabel})\n" +
                          $"ProtectFlips: {state.ProtectFlipCount}\n" +
                          $"RapidFlip: {(rapidFlip ? "yes" : "no")}\n" +
-                         contextDetail +
-                         $"Raw: {view.Reason}";
+                         contextDetail.TrimEnd();
                 return true;
             }
 
@@ -2733,12 +2819,146 @@ namespace BlackbirdInterface
                          $"ProtectFlips: {state.ProtectFlipCount}\n" +
                          $"RapidEntropyFlip: {(rapidEntropyFlip ? "yes" : "no")}\n" +
                          $"SampleBytes: {sampleLen}\n" +
-                         contextDetail +
-                         $"Raw: {view.Reason}";
+                         contextDetail.TrimEnd();
                 return true;
             }
 
             return false;
+        }
+
+        private string BuildEtwDisplayDetail(BrokerEtwEventView view)
+        {
+            string rawReason = view.Reason ?? string.Empty;
+            if (EventDetailFormatting.IsApiGraphCandidate(view))
+            {
+                return BuildApiDecodedAction(view, rawReason).Detail;
+            }
+
+            return BuildGenericEtwDisplayDetail(view, BuildHookFieldMap(view), includeHeadline: true);
+        }
+
+        private string BuildFallbackApiDetail(string apiName, string rawReason, string action)
+        {
+            Dictionary<string, string> fields = BuildHookFieldMap(rawReason, Array.Empty<ulong>(), 0);
+            string argumentText = BuildResolvedHookArgumentsText(apiName, fields);
+            if (string.IsNullOrWhiteSpace(argumentText))
+            {
+                return action;
+            }
+
+            return $"{action}{Environment.NewLine}{Environment.NewLine}{argumentText}";
+        }
+
+        private string BuildGenericEtwDisplayDetail(
+            BrokerEtwEventView view,
+            IReadOnlyDictionary<string, string> fields,
+            bool includeHeadline)
+        {
+            var sb = new StringBuilder(512);
+            string eventName = string.IsNullOrWhiteSpace(view.EventName) ? "unknown" : view.EventName.Trim();
+            string detection = view.DetectionName?.Trim() ?? string.Empty;
+            string operation = view.Operation?.Trim() ?? string.Empty;
+            string actor = ProcessIdentityResolver.Describe(view.ActorPid);
+            string target = ProcessIdentityResolver.Describe(view.TargetPid);
+
+            if (includeHeadline)
+            {
+                sb.AppendLine(!string.IsNullOrWhiteSpace(detection) ? detection : eventName);
+            }
+
+            if (!string.IsNullOrWhiteSpace(view.Source))
+            {
+                sb.Append("Source: ").AppendLine(view.Source);
+            }
+
+            sb.Append("Event: ").AppendLine(eventName);
+            if (!string.IsNullOrWhiteSpace(operation) &&
+                !operation.Equals(eventName, StringComparison.OrdinalIgnoreCase))
+            {
+                sb.Append("Operation: ").AppendLine(operation);
+            }
+
+            if (!string.IsNullOrWhiteSpace(detection))
+            {
+                sb.Append("Detection: ").AppendLine(detection);
+            }
+
+            if (view.ActorPid != 0)
+            {
+                sb.Append("Actor: ").AppendLine(actor);
+            }
+
+            if (view.TargetPid != 0)
+            {
+                sb.Append("Target: ").AppendLine(target);
+            }
+
+            if (!string.IsNullOrWhiteSpace(view.ArgumentSummary))
+            {
+                sb.Append("Arguments: ").AppendLine(view.ArgumentSummary);
+            }
+
+            if (!string.IsNullOrWhiteSpace(view.ClassName))
+            {
+                sb.Append("Class: ").AppendLine(view.ClassName);
+            }
+
+            if (view.DesiredAccess != 0)
+            {
+                sb.Append("DesiredAccess: 0x").Append(view.DesiredAccess.ToString("X8", CultureInfo.InvariantCulture)).AppendLine();
+            }
+
+            if (view.CorrelationFlags != 0)
+            {
+                sb.Append("CorrelationFlags: ")
+                  .Append(EventDetailFormatting.DescribeCorrelationFlags(view.CorrelationFlags))
+                  .Append(" (0x")
+                  .Append(view.CorrelationFlags.ToString("X8", CultureInfo.InvariantCulture))
+                  .AppendLine(")");
+            }
+
+            if (view.CorrelationAccessMask != 0)
+            {
+                sb.Append("CorrelationAccess: ")
+                  .Append(EventDetailFormatting.DescribeHandleAccess(view.CorrelationAccessMask))
+                  .Append(" (0x")
+                  .Append(view.CorrelationAccessMask.ToString("X8", CultureInfo.InvariantCulture))
+                  .AppendLine(")");
+            }
+
+            if (view.CorrelationAgeMs != 0)
+            {
+                sb.Append("CorrelationAgeMs: ")
+                  .Append(view.CorrelationAgeMs.ToString(CultureInfo.InvariantCulture))
+                  .AppendLine();
+            }
+
+            if (!string.IsNullOrWhiteSpace(view.ImagePath))
+            {
+                sb.Append("ImagePath: ").AppendLine(view.ImagePath);
+            }
+
+            if (!string.IsNullOrWhiteSpace(view.OriginPath))
+            {
+                sb.Append("OriginPath: ").AppendLine(view.OriginPath);
+            }
+
+            if (!string.IsNullOrWhiteSpace(view.KeyPath))
+            {
+                sb.Append("KeyPath: ").AppendLine(view.KeyPath);
+            }
+
+            if (!string.IsNullOrWhiteSpace(view.ValueName))
+            {
+                sb.Append("ValueName: ").AppendLine(view.ValueName);
+            }
+
+            if (fields.TryGetValue("status", out string? status) && !string.IsNullOrWhiteSpace(status))
+            {
+                sb.Append("Status: ").AppendLine(status);
+            }
+
+            return sb.ToString().Trim();
         }
 
         private string GetApiGraphProcessName(uint pid)
@@ -2916,6 +3136,231 @@ namespace BlackbirdInterface
             }
 
             return fields;
+        }
+
+        private static Dictionary<string, string> BuildHookFieldMap(string rawReason, IReadOnlyList<ulong>? hookArgs, uint hookArgCount)
+        {
+            Dictionary<string, string> fields = ParseReasonFields(rawReason);
+            int count = Math.Min((int)hookArgCount, hookArgs?.Count ?? 0);
+            for (int i = 0; i < count; i += 1)
+            {
+                string key = $"a{i}";
+                if (!fields.ContainsKey(key))
+                {
+                    fields[key] = $"0x{hookArgs![i]:X}";
+                }
+            }
+
+            return fields;
+        }
+
+        private static Dictionary<string, string> BuildHookFieldMap(BrokerEtwEventView view)
+            => BuildHookFieldMap(view.Reason ?? string.Empty, view.HookArgs, view.HookArgCount);
+
+        private static string BuildResolvedHookArgumentsText(string apiName, IReadOnlyDictionary<string, string> fields)
+        {
+            List<(string Name, string Value)> args = ResolveHookArguments(apiName, fields);
+            if (args.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var sb = new StringBuilder(256);
+            sb.AppendLine("Arguments:");
+            for (int i = 0; i < args.Count; i += 1)
+            {
+                sb.Append("  ").Append(args[i].Name).Append(": ").AppendLine(args[i].Value);
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+
+        private static List<(string Name, string Value)> ResolveHookArguments(string apiName, IReadOnlyDictionary<string, string> fields)
+        {
+            string name = apiName?.Trim() ?? string.Empty;
+            var args = new List<(string Name, string Value)>(8);
+
+            switch (name)
+            {
+                case "NtWriteVirtualMemory":
+                    AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a0", "c0"));
+                    AddResolvedArg(args, "BaseAddress", ResolvePointer(fields, "a1", "c1", "base"));
+                    AddResolvedArg(args, "Buffer", ResolvePointer(fields, "a2", "c2"));
+                    AddResolvedArg(args, "BufferSize", ResolveSize(fields, "a3", "c3", "size"));
+                    AddResolvedArg(args, "BytesWritten", ResolveSize(fields, "a4", "c4"));
+                    break;
+                case "NtReadVirtualMemory":
+                    AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a0", "c0"));
+                    AddResolvedArg(args, "BaseAddress", ResolvePointer(fields, "a1", "c1", "base"));
+                    AddResolvedArg(args, "Buffer", ResolvePointer(fields, "a2", "c2"));
+                    AddResolvedArg(args, "BufferSize", ResolveSize(fields, "a3", "c3", "size"));
+                    AddResolvedArg(args, "BytesRead", ResolveSize(fields, "a4", "c4"));
+                    break;
+                case "NtAllocateVirtualMemory":
+                    AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a0", "c0"));
+                    AddResolvedArg(args, "BaseAddress*", ResolvePointer(fields, "a1", "c1", "base"));
+                    AddResolvedArg(args, "ZeroBits", ResolveHex(fields, "a2", "c2"));
+                    AddResolvedArg(args, "RegionSize*", ResolveSize(fields, "a3", "c3", "size"));
+                    AddResolvedArg(args, "AllocationType", ResolveAllocationType(fields, "a4", "c4", "allocType"));
+                    AddResolvedArg(args, "Protect", ResolveProtect(fields, "a5", "c5", "protect"));
+                    break;
+                case "NtAllocateVirtualMemoryEx":
+                    AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a0", "c0"));
+                    AddResolvedArg(args, "BaseAddress*", ResolvePointer(fields, "a1", "c1", "base"));
+                    AddResolvedArg(args, "ZeroBits", ResolveHex(fields, "a2", "c2"));
+                    AddResolvedArg(args, "RegionSize*", ResolveSize(fields, "a3", "c3", "size"));
+                    AddResolvedArg(args, "AllocationType", ResolveAllocationType(fields, "a4", "c4", "allocType"));
+                    AddResolvedArg(args, "ExtendedParameters", ResolvePointer(fields, "a5", "c5"));
+                    AddResolvedArg(args, "ExtendedParameterCount", ResolveHex(fields, "a6", "c6"));
+                    break;
+                case "NtProtectVirtualMemory":
+                    AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a0", "c0"));
+                    AddResolvedArg(args, "BaseAddress*", ResolvePointer(fields, "a1", "c1", "base"));
+                    AddResolvedArg(args, "RegionSize*", ResolveSize(fields, "a2", "c2", "size"));
+                    AddResolvedArg(args, "NewProtect", ResolveProtect(fields, "a3", "c3", "newProtect"));
+                    AddResolvedArg(args, "OldProtect*", ResolvePointer(fields, "a4", "c4"));
+                    break;
+                case "NtCreateSection":
+                    AddResolvedArg(args, "SectionHandle*", ResolvePointer(fields, "a0", "c0"));
+                    AddResolvedArg(args, "DesiredAccess", ResolveHex(fields, "a1", "c1"));
+                    AddResolvedArg(args, "ObjectAttributes", ResolvePointer(fields, "a2", "c2"));
+                    AddResolvedArg(args, "MaximumSize", ResolveSize(fields, "a3", "c3"));
+                    AddResolvedArg(args, "SectionPageProtection", ResolveProtect(fields, "a4", "c4"));
+                    AddResolvedArg(args, "AllocationAttributes", ResolveHex(fields, "a5", "c5"));
+                    AddResolvedArg(args, "FileHandle", ResolvePointer(fields, "a6", "c6"));
+                    break;
+                case "NtMapViewOfSection":
+                    AddResolvedArg(args, "SectionHandle", ResolvePointer(fields, "a0", "c0"));
+                    AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a1", "c1"));
+                    AddResolvedArg(args, "BaseAddress*", ResolvePointer(fields, "a2", "c2", "base"));
+                    AddResolvedArg(args, "ViewSize*", ResolveSize(fields, "a6", "c3", "size"));
+                    AddResolvedArg(args, "InheritDisposition", ResolveHex(fields, "a7", "c4"));
+                    AddResolvedArg(args, "AllocationType", ResolveAllocationType(fields, "c5"));
+                    AddResolvedArg(args, "Win32Protect", ResolveProtect(fields, "c6"));
+                    break;
+                case "NtMapViewOfSectionEx":
+                    AddResolvedArg(args, "SectionHandle", ResolvePointer(fields, "a0", "c0"));
+                    AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a1", "c1"));
+                    AddResolvedArg(args, "BaseAddress*", ResolvePointer(fields, "a2", "c2", "base"));
+                    AddResolvedArg(args, "SectionOffset*", ResolvePointer(fields, "a3", "c7"));
+                    AddResolvedArg(args, "ViewSize*", ResolveSize(fields, "a4", "c3", "size"));
+                    AddResolvedArg(args, "AllocationType", ResolveAllocationType(fields, "a5", "c4"));
+                    AddResolvedArg(args, "Win32Protect", ResolveProtect(fields, "a6", "c5"));
+                    AddResolvedArg(args, "ExtendedParameters", ResolvePointer(fields, "a7", "c6"));
+                    break;
+                case "NtQueryInformationProcess":
+                    AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a0", "c0"));
+                    AddResolvedArg(args, "ProcessInformationClass", ResolveProcessInformationClass(fields, "a1", "c1"));
+                    AddResolvedArg(args, "ProcessInformation", ResolvePointer(fields, "a2", "c2"));
+                    AddResolvedArg(args, "ProcessInformationLength", ResolveSize(fields, "a3", "c3"));
+                    AddResolvedArg(args, "ReturnLength", ResolvePointer(fields, "a4", "c4"));
+                    break;
+                case "NtQuerySystemInformation":
+                case "NtQuerySystemInformationEx":
+                    AddResolvedArg(args, "SystemInformationClass", ResolveSystemInformationClass(fields, "a0", "c0"));
+                    AddResolvedArg(args, "InputBuffer", ResolvePointer(fields, "a1", "c1"));
+                    AddResolvedArg(args, "InputBufferLength", ResolveSize(fields, "a2", "c2"));
+                    AddResolvedArg(args, "SystemInformation", ResolvePointer(fields, "a3", "c3"));
+                    AddResolvedArg(args, "SystemInformationLength", ResolveSize(fields, "a4", "c4"));
+                    AddResolvedArg(args, "ReturnLength", ResolvePointer(fields, "a5", "c5"));
+                    break;
+                case "NtCreateThreadEx":
+                    AddResolvedArg(args, "ThreadHandle*", ResolvePointer(fields, "a0", "c0"));
+                    AddResolvedArg(args, "DesiredAccess", ResolveHex(fields, "a1", "c1"));
+                    AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a2", "c2"));
+                    AddResolvedArg(args, "StartRoutine", ResolvePointer(fields, "a3", "c3"));
+                    AddResolvedArg(args, "Argument", ResolvePointer(fields, "a4", "c4"));
+                    AddResolvedArg(args, "CreateFlags", ResolveHex(fields, "a5", "c5"));
+                    AddResolvedArg(args, "StackSize", ResolveSize(fields, "a6", "c6"));
+                    AddResolvedArg(args, "MaximumStackSize", ResolveSize(fields, "a7", "c7"));
+                    break;
+                default:
+                    for (int i = 0; i < 8; i += 1)
+                    {
+                        string value = ResolveHex(fields, $"a{i}", $"c{i}");
+                        AddResolvedArg(args, $"Arg{i}", value);
+                    }
+                    break;
+            }
+
+            return args;
+        }
+
+        private static void AddResolvedArg(List<(string Name, string Value)> args, string name, string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                args.Add((name, value));
+            }
+        }
+
+        private static string ResolvePointer(IReadOnlyDictionary<string, string> fields, params string[] keys)
+            => ResolveHex(fields, keys);
+
+        private static string ResolveSize(IReadOnlyDictionary<string, string> fields, params string[] keys)
+        {
+            ulong value = FirstU64(fields, keys);
+            return value == 0 ? string.Empty : $"0x{value:X}";
+        }
+
+        private static string ResolveHex(IReadOnlyDictionary<string, string> fields, params string[] keys)
+        {
+            ulong value = FirstU64(fields, keys);
+            return value == 0 ? string.Empty : $"0x{value:X}";
+        }
+
+        private static string ResolveProtect(IReadOnlyDictionary<string, string> fields, params string[] keys)
+        {
+            uint value = (uint)FirstU64(fields, keys);
+            return value == 0 ? string.Empty : $"0x{value:X} ({DescribeMemoryProtect(value)})";
+        }
+
+        private static string ResolveAllocationType(IReadOnlyDictionary<string, string> fields, params string[] keys)
+        {
+            uint value = (uint)FirstU64(fields, keys);
+            return value == 0 ? string.Empty : $"0x{value:X} ({DescribeMemoryAllocationType(value)})";
+        }
+
+        private static string ResolveProcessInformationClass(IReadOnlyDictionary<string, string> fields, params string[] keys)
+        {
+            uint value = (uint)FirstU64(fields, keys);
+            if (value == 0)
+            {
+                return string.Empty;
+            }
+
+            string label = value switch
+            {
+                0 => "ProcessBasicInformation",
+                7 => "ProcessDebugPort",
+                26 => "ProcessWow64Information",
+                27 => "ProcessImageFileName",
+                29 => "ProcessBreakOnTermination",
+                43 => "ProcessImageFileNameWin32",
+                _ => "Unknown"
+            };
+
+            return $"0x{value:X} ({label})";
+        }
+
+        private static string ResolveSystemInformationClass(IReadOnlyDictionary<string, string> fields, params string[] keys)
+        {
+            uint value = (uint)FirstU64(fields, keys);
+            if (value == 0)
+            {
+                return string.Empty;
+            }
+
+            string label = value switch
+            {
+                5 => "SystemProcessInformation",
+                11 => "SystemModuleInformation",
+                35 => "SystemKernelDebuggerInformation",
+                76 => "SystemFirmwareTableInformation",
+                _ => "Unknown"
+            };
+
+            return $"0x{value:X} ({label})";
         }
 
         private static string BuildGenericApiActionLabel(string apiName, IReadOnlyDictionary<string, string> fields)

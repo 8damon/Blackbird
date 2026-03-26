@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 
 namespace BlackbirdInterface
@@ -10,6 +11,7 @@ namespace BlackbirdInterface
         public bool UseUsermodeHooks { get; private set; } = true;
         public bool AutoOpenApiGraphWindow { get; private set; } = true;
         public bool UseEarlyBirdApcLaunch { get; private set; }
+        public LaunchProfile LaunchProfile { get; } = new();
 
         public LaunchParametersWindow(bool isLaunchTarget)
         {
@@ -23,6 +25,7 @@ namespace BlackbirdInterface
         {
             bool hooksEnabled = UseUsermodeHooksCheckBox?.IsChecked == true;
             bool canUseEarlyBird = hooksEnabled && _isLaunchTarget;
+            bool launchControlsEnabled = _isLaunchTarget;
 
             if (ModeTitleBlock != null)
             {
@@ -32,8 +35,8 @@ namespace BlackbirdInterface
             if (ModeDescriptionBlock != null)
             {
                 ModeDescriptionBlock.Text = _isLaunchTarget
-                    ? "Choose launch-time instrumentation and whether the interface should switch into API graph mode after hook start."
-                    : "Choose attach-time instrumentation for the running target. EarlyBird APC is unavailable for this mode.";
+                    ? "Phase 1 extends the existing launch path with execution context controls while keeping the ready-to-resume gate intact."
+                    : "Attach mode keeps the instrumentation controls, but launch-only options stay disabled because the process already exists.";
             }
 
             if (AutoOpenApiGraphCheckBox != null)
@@ -54,11 +57,17 @@ namespace BlackbirdInterface
                 }
             }
 
+            if (LaunchPhaseOnePanel != null)
+            {
+                LaunchPhaseOnePanel.IsEnabled = launchControlsEnabled;
+                LaunchPhaseOnePanel.Opacity = launchControlsEnabled ? 1.0 : 0.55;
+            }
+
             if (CompatibilityNoteBlock != null)
             {
                 CompatibilityNoteBlock.Text = _isLaunchTarget
-                    ? "EarlyBird APC is only used when launching a new process with usermode hooks enabled. If hooks are disabled, launch falls back to normal process start."
-                    : "Attaching to a running process cannot use EarlyBird APC. That option is disabled automatically for attach mode.";
+                    ? "Parent PID and inherited handles only apply when creating a new process."
+                    : "Launch-only controls are disabled for attach mode. EarlyBird APC is also unavailable because the process is already running.";
             }
         }
 
@@ -69,11 +78,68 @@ namespace BlackbirdInterface
 
         private void Apply_Click(object sender, RoutedEventArgs e)
         {
+            if (!TryPopulateLaunchProfile(out string error))
+            {
+                ThemedMessageBox.Show(this, error, "Invalid launch options", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             UseUsermodeHooks = UseUsermodeHooksCheckBox?.IsChecked == true;
             AutoOpenApiGraphWindow = UseUsermodeHooks && (AutoOpenApiGraphCheckBox?.IsChecked != false);
             UseEarlyBirdApcLaunch = UseUsermodeHooks && _isLaunchTarget && (EarlyBirdApcCheckBox?.IsChecked == true);
             DialogResult = true;
             Close();
+        }
+
+        private bool TryPopulateLaunchProfile(out string error)
+        {
+            error = string.Empty;
+
+            LaunchProfile.WorkingDirectory = _isLaunchTarget ? (WorkingDirectoryTextBox?.Text?.Trim() ?? string.Empty) : string.Empty;
+            LaunchProfile.EnvironmentOverridesText = _isLaunchTarget ? (EnvironmentOverridesTextBox?.Text ?? string.Empty) : string.Empty;
+            LaunchProfile.LeaveSuspendedAfterReady = _isLaunchTarget && (LeaveSuspendedCheckBox?.IsChecked == true);
+            LaunchProfile.InheritHandles = _isLaunchTarget && (InheritHandlesCheckBox?.IsChecked == true);
+            LaunchProfile.ParentProcessId = 0;
+            LaunchProfile.AffinityMask = 0;
+            LaunchProfile.Priority = PriorityComboBox?.SelectedIndex switch
+            {
+                1 => LaunchPriorityPreset.Idle,
+                2 => LaunchPriorityPreset.BelowNormal,
+                3 => LaunchPriorityPreset.Normal,
+                4 => LaunchPriorityPreset.AboveNormal,
+                5 => LaunchPriorityPreset.High,
+                6 => LaunchPriorityPreset.Realtime,
+                _ => LaunchPriorityPreset.Inherit
+            };
+
+            if (!_isLaunchTarget)
+            {
+                return true;
+            }
+
+            string parentPidText = ParentPidTextBox?.Text?.Trim() ?? string.Empty;
+            if (parentPidText.Length > 0 && (!uint.TryParse(parentPidText, out uint parentPid) || parentPid == 0))
+            {
+                error = "Parent process PID must be a valid positive integer.";
+                return false;
+            }
+            LaunchProfile.ParentProcessId = parentPidText.Length == 0 ? 0u : uint.Parse(parentPidText);
+
+            string affinityText = AffinityMaskTextBox?.Text?.Trim() ?? string.Empty;
+            if (!LaunchProfile.TryParseAffinityMask(affinityText, out ulong affinityMask))
+            {
+                error = "Affinity mask must be decimal or hex, for example 15 or 0x0F.";
+                return false;
+            }
+            LaunchProfile.AffinityMask = affinityMask;
+
+            if (!LaunchProfile.TryParseEnvironmentOverrides(out _, out string envError))
+            {
+                error = envError;
+                return false;
+            }
+
+            return true;
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
@@ -88,4 +154,3 @@ namespace BlackbirdInterface
         }
     }
 }
-

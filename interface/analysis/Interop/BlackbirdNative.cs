@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 
 namespace BlackbirdInterface
 {
-    internal static class BlackbirdNative
+    internal static partial class BlackbirdNative
     {
         internal const uint StreamHandle = 0x00000001;
         internal const uint StreamMemory = 0x00000002;
@@ -51,6 +51,7 @@ namespace BlackbirdInterface
 
         internal const int EventReadBufferBytes = 8192;
         internal const int MaxIpcHookImagePathChars = 1024;
+        internal const int MaxIpcLaunchEnvironmentChars = 4096;
         internal const uint IpcUserHookTargetNone = 0;
         internal const uint IpcUserHookTargetAttach = 1;
         internal const uint IpcUserHookTargetLaunch = 2;
@@ -73,6 +74,7 @@ namespace BlackbirdInterface
         private const int MaxIpcValueNameChars = 256;
         private const int MaxIpcStackFrames = 8;
         private const int MaxIpcDeepSampleBytes = 64;
+        private const int MaxIpcHookArgs = 8;
 
         internal const uint IpcEtwFamilyUnknown = 0;
         internal const uint IpcEtwFamilyHandle = 1;
@@ -98,6 +100,18 @@ namespace BlackbirdInterface
         internal const uint IpcEtwFlagImageSignatureKnown = 0x00000200;
         internal const uint IpcEtwFlagRegistryHighValue = 0x00000400;
         internal const uint IpcEtwFlagApcDuplicateOperation = 0x00000800;
+        // Syscall / stack-integrity signals (kernel-side, 0x1000–0x20000)
+        internal const uint IpcEtwFlagSyscallExportMatch         = 0x00001000;
+        internal const uint IpcEtwFlagSyscallExportMismatch      = 0x00002000;
+        internal const uint IpcEtwFlagModuleChainSane            = 0x00004000;
+        internal const uint IpcEtwFlagUnwindMetadataValid        = 0x00008000;
+        internal const uint IpcEtwFlagTebStackBoundsValid        = 0x00010000;
+        internal const uint IpcEtwFlagFramesOutsideTebStack      = 0x00020000;
+        // Hook-event caller origin (usermode SR71 classification, 0x40000–0x200000)
+        internal const uint IpcEtwFlagHookCallerAllSystem        = 0x00040000;
+        internal const uint IpcEtwFlagHookCallerHasUnmapped      = 0x00080000;
+        internal const uint IpcEtwFlagHookCallerHasProcessImage  = 0x00100000;
+        internal const uint IpcEtwFlagHookCallerHasNonSystemDll  = 0x00200000;
 
         [StructLayout(LayoutKind.Sequential, Pack = 8)]
         internal struct BkStatsResponse
@@ -178,6 +192,9 @@ namespace BlackbirdInterface
             public uint NotifyClass;
             public uint DataType;
             public uint DataSize;
+            public uint HookArgCount;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcHookArgs)]
+            public ulong[] HookArgs;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcImagePathChars)]
             public ushort[] ImagePath;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcCommandLineChars)]
@@ -264,6 +281,12 @@ namespace BlackbirdInterface
             uint flags,
             string? imagePath,
             string? hookDllPath,
+            string? workingDirectory,
+            string? environmentOverrides,
+            uint parentProcessId,
+            uint priorityClass,
+            ulong affinityMask,
+            [MarshalAs(UnmanagedType.Bool)] bool inheritHandles,
             out BkSetUserHookTargetResponse response);
 
         internal static string WideBufferToString(ushort[]? buffer)

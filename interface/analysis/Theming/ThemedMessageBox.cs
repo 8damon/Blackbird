@@ -19,10 +19,12 @@ namespace BlackbirdInterface
             var dialog = new Window
             {
                 Title = title,
-                Width = 540,
-                Height = 300,
-                MinWidth = 460,
-                MinHeight = 220,
+                Width = 432,
+                SizeToContent = SizeToContent.Height,
+                MinWidth = 360,
+                MinHeight = 0,
+                MaxWidth = 560,
+                MaxHeight = 320,
                 WindowStartupLocation = owner == null ? WindowStartupLocation.CenterScreen : WindowStartupLocation.CenterOwner,
                 Owner = owner,
                 Background = GetBrush("MessageBoxBgBrush", Color.FromRgb(0x08, 0x08, 0x08)),
@@ -56,7 +58,7 @@ namespace BlackbirdInterface
             string iconGlyph = GetMessageIconGlyph(image);
             var contentGrid = new Grid
             {
-                Margin = new Thickness(10, 8, 10, 8)
+                Margin = new Thickness(12, 10, 12, 8)
             };
             contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = string.IsNullOrEmpty(iconGlyph) ? new GridLength(0) : GridLength.Auto });
             contentGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -66,8 +68,8 @@ namespace BlackbirdInterface
                 var iconBlock = new TextBlock
                 {
                     Text = iconGlyph,
-                    FontSize = 18,
-                    Margin = new Thickness(2, 0, 10, 0),
+                    FontSize = 16,
+                    Margin = new Thickness(1, 0, 8, 0),
                     VerticalAlignment = VerticalAlignment.Top,
                     Foreground = GetMessageIconBrush(image)
                 };
@@ -80,11 +82,13 @@ namespace BlackbirdInterface
                 Text = message,
                 TextWrapping = TextWrapping.Wrap,
                 VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 1, 0, 0),
                 Foreground = GetBrush("MessageBoxMutedTextBrush", Color.FromRgb(0xB0, 0xB0, 0xB0))
             };
 
             var messageScroll = new ScrollViewer
             {
+                MaxHeight = 150,
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 CanContentScroll = false,
@@ -100,7 +104,7 @@ namespace BlackbirdInterface
             {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(8, 0, 10, 10)
+                Margin = new Thickness(8, 0, 12, 12)
             };
             Grid.SetRow(buttonPanel, 2);
             layout.Children.Add(buttonPanel);
@@ -112,7 +116,7 @@ namespace BlackbirdInterface
                 var button = new Button
                 {
                     Content = content,
-                    MinWidth = 88,
+                    MinWidth = 76,
                     Margin = new Thickness(6, 0, 0, 0),
                     IsDefault = isDefault,
                     IsCancel = isCancel
@@ -167,11 +171,12 @@ namespace BlackbirdInterface
             var toast = new Window
             {
                 Title = title,
-                Width = 460,
-                Height = 152,
-                MinWidth = 420,
-                MinHeight = 132,
-                MaxHeight = 260,
+                Width = 380,
+                SizeToContent = SizeToContent.Height,
+                MinWidth = 320,
+                MinHeight = 0,
+                MaxWidth = 460,
+                MaxHeight = 220,
                 WindowStyle = WindowStyle.None,
                 ResizeMode = ResizeMode.NoResize,
                 ShowInTaskbar = false,
@@ -208,7 +213,7 @@ namespace BlackbirdInterface
             string iconGlyph = GetMessageIconGlyph(image);
             var messagePanel = new Grid
             {
-                Margin = new Thickness(14, 12, 14, 12)
+                Margin = new Thickness(12, 10, 12, 10)
             };
             messagePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = string.IsNullOrEmpty(iconGlyph) ? new GridLength(0) : GridLength.Auto });
             messagePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -218,8 +223,8 @@ namespace BlackbirdInterface
                 var iconBlock = new TextBlock
                 {
                     Text = iconGlyph,
-                    FontSize = 18,
-                    Margin = new Thickness(2, 0, 10, 0),
+                    FontSize = 16,
+                    Margin = new Thickness(1, 0, 8, 0),
                     VerticalAlignment = VerticalAlignment.Top,
                     Foreground = GetMessageIconBrush(image)
                 };
@@ -231,6 +236,7 @@ namespace BlackbirdInterface
             {
                 Text = message,
                 TextWrapping = TextWrapping.Wrap,
+                MaxWidth = 320,
                 Foreground = GetBrush("MessageBoxMutedTextBrush", Color.FromRgb(0xB0, 0xB0, 0xB0))
             };
             Grid.SetColumn(messageBlock, 1);
@@ -300,10 +306,10 @@ namespace BlackbirdInterface
                 Content = "\uE8BB",
                 FontFamily = new FontFamily("Segoe MDL2 Assets"),
                 FontSize = 10,
-                Width = 30,
-                Height = 24,
-                MinWidth = 30,
-                MinHeight = 24,
+                Width = 26,
+                Height = 22,
+                MinWidth = 26,
+                MinHeight = 22,
                 Padding = new Thickness(0),
                 Margin = new Thickness(6, 0, 0, 0),
                 Background = Brushes.Transparent,
@@ -431,7 +437,7 @@ namespace BlackbirdInterface
             style.Setters.Add(new Setter(Control.BorderBrushProperty, new SolidColorBrush(Color.FromRgb(0x2B, 0x2B, 0x2B))));
             style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(1)));
             style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(10, 4, 10, 4)));
-            style.Setters.Add(new Setter(FrameworkElement.MinWidthProperty, 88d));
+            style.Setters.Add(new Setter(FrameworkElement.MinWidthProperty, 76d));
             style.Setters.Add(new Setter(FrameworkElement.MinHeightProperty, 24d));
             return style;
         }

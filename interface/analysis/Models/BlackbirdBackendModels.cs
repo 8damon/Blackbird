@@ -244,12 +244,19 @@ namespace BlackbirdInterface
         public uint NotifyClass { get; set; }
         public uint DataType { get; set; }
         public uint DataSize { get; set; }
+        public uint HookArgCount { get; set; }
+        public ulong[] HookArgs { get; set; } = Array.Empty<ulong>();
         public string ImagePath { get; set; } = "";
         public string CommandLine { get; set; } = "";
         public string KeyPath { get; set; } = "";
         public string ValueName { get; set; } = "";
         public int RepeatCount { get; set; } = 1;
         public string ArgumentSummary { get; set; } = string.Empty;
+        public string DisplayDetails { get; set; } = string.Empty;
+
+        // Human-readable caller-origin label for UserHook family events.
+        // Empty for non-hook events or when origin flags are absent.
+        public string CallerOriginLabel => EventDetailFormatting.HookCallerOriginLabel(Flags);
 
         public string Summary
         {
@@ -269,7 +276,7 @@ namespace BlackbirdInterface
             }
         }
 
-        public string Details => BuildDetails();
+        public string Details => string.IsNullOrWhiteSpace(DisplayDetails) ? BuildDetails() : DisplayDetails;
 
         public BrokerEtwEventView Clone()
         {
@@ -335,12 +342,15 @@ namespace BlackbirdInterface
                 NotifyClass = NotifyClass,
                 DataType = DataType,
                 DataSize = DataSize,
+                HookArgCount = HookArgCount,
+                HookArgs = HookArgs.ToArray(),
                 ImagePath = ImagePath,
                 CommandLine = CommandLine,
                 KeyPath = KeyPath,
                 ValueName = ValueName,
                 RepeatCount = RepeatCount,
-                ArgumentSummary = ArgumentSummary
+                ArgumentSummary = ArgumentSummary,
+                DisplayDetails = DisplayDetails
             };
         }
 
@@ -553,6 +563,14 @@ namespace BlackbirdInterface
             if (DataSize != 0)
             {
                 AppendToken(sb, $"dataSize={DataSize}");
+            }
+            if (HookArgCount != 0 && HookArgs.Length != 0)
+            {
+                int safeCount = Math.Min(HookArgs.Length, (int)HookArgCount);
+                for (int i = 0; i < safeCount; i += 1)
+                {
+                    AppendToken(sb, $"a{i}=0x{HookArgs[i]:X}");
+                }
             }
             if (!string.IsNullOrWhiteSpace(Reason))
             {
@@ -1047,6 +1065,7 @@ namespace BlackbirdInterface
         private string _detection = "";
         private int _hits;
         private string _groupKey = "";
+        private string _argumentPreview = "";
 
         public DateTime LastSeenUtc
         {
@@ -1084,6 +1103,12 @@ namespace BlackbirdInterface
             set => SetField(ref _groupKey, value ?? string.Empty);
         }
 
+        public string ArgumentPreview
+        {
+            get => _argumentPreview;
+            set => SetField(ref _argumentPreview, value ?? string.Empty);
+        }
+
         public List<GroupedEventDetailRow> Details { get; set; } = new();
 
         public GroupedEventRow Clone()
@@ -1096,6 +1121,7 @@ namespace BlackbirdInterface
                 Detection = Detection,
                 Hits = Hits,
                 GroupKey = GroupKey,
+                ArgumentPreview = ArgumentPreview,
                 Details = Details.Select(x => x.Clone()).ToList()
             };
         }

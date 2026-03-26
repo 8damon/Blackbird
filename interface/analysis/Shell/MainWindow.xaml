@@ -1393,6 +1393,7 @@
                                                 <Grid.RowDefinitions>
                                                     <RowDefinition Height="Auto"/>
                                                     <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
                                                 </Grid.RowDefinitions>
                                                 <Grid Grid.Row="0">
                                                     <Grid.ColumnDefinitions>
@@ -1474,6 +1475,28 @@
                                                         </StackPanel>
                                                     </Border>
                                                 </UniformGrid>
+
+                                                <Border Grid.Row="2"
+                                                        Margin="0,10,0,0"
+                                                        Padding="8,6"
+                                                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                        BorderThickness="1"
+                                                        Background="{DynamicResource WinHeaderBrush}">
+                                                    <StackPanel>
+                                                        <TextBlock Text="Decoded Detail / Arguments"
+                                                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                        <TextBox x:Name="ApiViewSelectedDetailValue"
+                                                                 Margin="0,6,0,0"
+                                                                 MinHeight="96"
+                                                                 BorderThickness="0"
+                                                                 Background="Transparent"
+                                                                 Foreground="{DynamicResource WinTextBrush}"
+                                                                 IsReadOnly="True"
+                                                                 TextWrapping="Wrap"
+                                                                 AcceptsReturn="True"
+                                                                 VerticalScrollBarVisibility="Auto"/>
+                                                    </StackPanel>
+                                                </Border>
                                             </Grid>
                                         </Border>
                                     </Grid>

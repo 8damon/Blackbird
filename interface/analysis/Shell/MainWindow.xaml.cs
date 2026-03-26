@@ -67,6 +67,8 @@ namespace BlackbirdInterface
         private bool _pendingUseUsermodeHooks;
         private bool _pendingAutoOpenApiGraph;
         private bool _pendingHookPreconfigured;
+        private bool _pendingLaunchStartsSuspended;
+        private bool _pendingLeaveSuspendedAfterReady;
         private bool _isMainWindowShuttingDown;
         private BlackbirdBackendSession? _preparedLaunchBackendSession;
         private int _preparedLaunchBackendPid;
@@ -79,6 +81,7 @@ namespace BlackbirdInterface
         private readonly DispatcherTimer _processStateRefreshTimer;
         private readonly DispatcherTimer _apiGraphRefreshTimer;
         private readonly DispatcherTimer _childProcessGraphRefreshTimer;
+        private readonly DispatcherTimer _timelineLiveTickTimer;
         private bool _scrollSyncPending;
         private bool _topTimeTravelSyncing;
         private bool _toolbarViewMenuSyncing;
@@ -163,6 +166,19 @@ namespace BlackbirdInterface
                 Interval = TimeSpan.FromMilliseconds(140)
             };
             _childProcessGraphRefreshTimer.Tick += ChildProcessGraphRefreshTimer_Tick;
+            _timelineLiveTickTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(250)
+            };
+            _timelineLiveTickTimer.Tick += (_, __) =>
+            {
+                if (_followLiveTimeline && _allEvents.Count > 0 && !_viewportRefreshPending)
+                {
+                    UpdateScrollBar();
+                    double viewport = Math.Max(1, EventsPaneHost?.Scroll?.ViewportSize ?? 1);
+                    ApplyTimelineViewport(ComputeTimelineMaxStart(viewport), syncScroll: true, updateFollowState: false);
+                }
+            };
             Loaded += OnLoaded;
             Closing += OnClosing;
             Closed += OnClosed;
@@ -175,7 +191,7 @@ namespace BlackbirdInterface
             _samplerPid = 0;
 
             _captureStartUtc = AnchorCaptureStartUtc(DefaultTimelineViewDurationSeconds);
-            _latestEventTimestampUtc = DateTime.UtcNow;
+            _latestEventTimestampUtc = _captureStartUtc;
 
             // Bind grid to focused items
             EventsPaneHost.Grid.ItemsSource = _focusedEvents;
@@ -212,6 +228,7 @@ namespace BlackbirdInterface
             PerformancePaneHost.ReorderRequested += (_, __) => TogglePaneOrder();
             PerformancePaneHost.FloatRequested += (_, __) => TogglePerformanceFloatDock();
             PerformancePaneHost.ThreadDoubleClicked += PerformancePaneHost_ThreadDoubleClicked;
+            PerformancePaneHost.ParallelStacksRequested += (_, __) => OpenParallelStacksWindow();
             PerformancePaneHost.HeaderDragStarted += (_, a) => BeginPaneHeaderDrag(isEventsPane: false, a.ScreenPosition);
             PerformancePaneHost.HeaderDragDelta += (_, a) => ContinuePaneHeaderDrag(isEventsPane: false, a.ScreenPosition);
             PerformancePaneHost.HeaderDragCompleted += (_, a) => EndPaneHeaderDrag(isEventsPane: false, a.ScreenPosition);
@@ -252,12 +269,14 @@ namespace BlackbirdInterface
             PerformancePaneHost.SetCaptureStart(_captureStartUtc);
             PerformancePaneHost.SetPid(TryGetPid());
             PerformancePaneHost.SetProcessLiveDataAvailable(false);
+            PerformancePaneHost.SetTargetSuspended(false);
             SyncPerformanceViewToTimeline();
             StatusBlock.Text = "NO TARGET SELECTED";
             ApplyPaneOrder();
             ApplyIntelPaneOrder();
             _processStateRefreshTimer.Start();
             _apiGraphRefreshTimer.Start();
+            _timelineLiveTickTimer.Start();
             RefreshProcessStateBadge();
         }
 
@@ -282,6 +301,7 @@ namespace BlackbirdInterface
             _detachedEventLogRefreshTimer.Stop();
             _processStateRefreshTimer.Stop();
             _apiGraphRefreshTimer.Stop();
+            _timelineLiveTickTimer.Stop();
 
             if (_perf != null)
             {
@@ -545,12 +565,12 @@ namespace BlackbirdInterface
             SyncPerformanceViewToTimeline();
         }
 
-        private void StartLiveCaptureForPid(int pid, bool useUsermodeHooks)
+        private void StartLiveCaptureForPid(int pid, bool useUsermodeHooks, bool launchStartsSuspended = false)
         {
             if (pid <= 0 || _perf == null)
                 return;
 
-            _targetExecutionSuspended = false;
+            _targetExecutionSuspended = launchStartsSuspended;
 
             if (_currentSession != null &&
                 _currentSession.Pid == pid &&
@@ -560,7 +580,7 @@ namespace BlackbirdInterface
             {
                 double viewDuration = Math.Max(1, EventsPaneHost.Timeline.ViewDurationSeconds);
                 _captureStartUtc = AnchorCaptureStartUtc(viewDuration);
-                _latestEventTimestampUtc = DateTime.UtcNow;
+                _latestEventTimestampUtc = _captureStartUtc;
                 _currentSession.CaptureStartUtc = _captureStartUtc;
                 _currentSession.ViewDurationSeconds = viewDuration;
                 _currentSession.ViewStartSeconds = 0;
@@ -579,6 +599,7 @@ namespace BlackbirdInterface
             _perf.Start();
             _samplerPid = pid;
             PerformancePaneHost.SetProcessLiveDataAvailable(true);
+            PerformancePaneHost.SetTargetSuspended(launchStartsSuspended);
             StartTargetExitWatcher(pid);
             EnsureLiveCaptureStoreForCurrentSession(pid);
             StartBackendForPid(pid, useUsermodeHooks);
@@ -716,6 +737,7 @@ namespace BlackbirdInterface
             _perf?.Stop();
             _samplerPid = 0;
             PerformancePaneHost.SetProcessLiveDataAvailable(false);
+            PerformancePaneHost.SetTargetSuspended(false);
             _targetExecutionSuspended = false;
             if (exitedTab.ActivePauseStartUtc.HasValue)
             {
@@ -1012,6 +1034,7 @@ namespace BlackbirdInterface
                 _perf?.Stop();
                 _samplerPid = 0;
                 PerformancePaneHost.SetProcessLiveDataAvailable(false);
+                PerformancePaneHost.SetTargetSuspended(false);
                 StatusBlock.Text = $"OFFLINE SESSION: {tab.Title}";
                 RefreshProcessStateBadge();
                 return;
@@ -1024,6 +1047,7 @@ namespace BlackbirdInterface
                 _perf?.Stop();
                 _samplerPid = 0;
                 PerformancePaneHost.SetProcessLiveDataAvailable(false);
+                PerformancePaneHost.SetTargetSuspended(false);
                 StatusBlock.Text = $"Target {tab.Pid} exited. Capture stopped.";
                 RefreshProcessStateBadge();
                 return;
@@ -1036,6 +1060,7 @@ namespace BlackbirdInterface
                 _perf?.Stop();
                 _samplerPid = 0;
                 PerformancePaneHost.SetProcessLiveDataAvailable(false);
+                PerformancePaneHost.SetTargetSuspended(false);
                 if (!accessDenied)
                 {
                     tab.TargetExited = true;
@@ -1050,7 +1075,9 @@ namespace BlackbirdInterface
                 return;
             }
 
-            StartLiveCaptureForPid(tab.Pid, tab.UseUsermodeHooks);
+            bool launchStartsSuspended = tab.LaunchStartsSuspendedPending;
+            tab.LaunchStartsSuspendedPending = false;
+            StartLiveCaptureForPid(tab.Pid, tab.UseUsermodeHooks, launchStartsSuspended);
         }
 
         private void SyncPerformanceViewToTimeline()
@@ -1059,6 +1086,33 @@ namespace BlackbirdInterface
             var viewEnd = viewStart + TimeSpan.FromSeconds(EventsPaneHost.Timeline.ViewDurationSeconds);
 
             PerformancePaneHost.SetViewWindow(viewStart, viewEnd);
+        }
+
+        private void ApplyTimelineViewport(double targetStart, bool syncScroll, bool updateFollowState)
+        {
+            if (EventsPaneHost?.Scroll == null || EventsPaneHost?.Timeline == null)
+            {
+                return;
+            }
+
+            double viewport = Math.Max(1, EventsPaneHost.Scroll.ViewportSize);
+            double maxStart = ComputeTimelineMaxStart(viewport);
+            double clamped = Math.Max(0, Math.Min(maxStart, targetStart));
+            if (updateFollowState)
+            {
+                _followLiveTimeline = maxStart <= 0.001 || Math.Abs(clamped - maxStart) < 0.25;
+            }
+
+            _pendingScrollStartSeconds = clamped;
+            EventsPaneHost.Timeline.ViewStartSeconds = clamped;
+            if (syncScroll && Math.Abs(EventsPaneHost.Scroll.Value - clamped) > 0.001)
+            {
+                EventsPaneHost.Scroll.Value = clamped;
+            }
+
+            FocusViewport();
+            UpdateTopTimeTravelBar();
+            SyncPerformanceViewToTimeline();
         }
 
         // -------------------------------
@@ -1273,9 +1327,9 @@ namespace BlackbirdInterface
             double viewport = Math.Max(1, EventsPaneHost.Scroll.ViewportSize);
             double maxStart = ComputeTimelineMaxStart(viewport);
             double clamped = Math.Max(0, Math.Min(maxStart, EventsPaneHost.Scroll.Value));
-            _followLiveTimeline = maxStart <= 0.001 || Math.Abs(clamped - maxStart) < 0.25;
             _pendingScrollStartSeconds = clamped;
             EventsPaneHost.Timeline.ViewStartSeconds = clamped;
+            _followLiveTimeline = maxStart <= 0.001 || Math.Abs(clamped - maxStart) < 0.25;
 
             if (_scrollSyncPending)
             {
@@ -1286,13 +1340,7 @@ namespace BlackbirdInterface
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 _scrollSyncPending = false;
-                double replayViewport = Math.Max(1, EventsPaneHost.Scroll.ViewportSize);
-                double replayMaxStart = ComputeTimelineMaxStart(replayViewport);
-                double replayStart = Math.Max(0, Math.Min(replayMaxStart, _pendingScrollStartSeconds));
-                EventsPaneHost.Timeline.ViewStartSeconds = replayStart;
-                FocusViewport();
-                UpdateTopTimeTravelBar();
-                SyncPerformanceViewToTimeline();
+                ApplyTimelineViewport(_pendingScrollStartSeconds, syncScroll: false, updateFollowState: false);
             }), DispatcherPriority.Render);
         }
 
@@ -1311,7 +1359,8 @@ namespace BlackbirdInterface
                 return;
             }
 
-            var totalSeconds = (_latestEventTimestampUtc - _captureStartUtc).TotalSeconds;
+            DateTime horizonUtc = GetTimelineHorizonUtc();
+            var totalSeconds = (horizonUtc - _captureStartUtc).TotalSeconds;
             if (totalSeconds < 0)
             {
                 totalSeconds = 0;
@@ -1565,14 +1614,7 @@ namespace BlackbirdInterface
                 return;
             }
 
-            double viewport = Math.Max(1, EventsPaneHost.Scroll.ViewportSize);
-            double maxStart = ComputeTimelineMaxStart(viewport);
-            double targetStart = Math.Max(0, Math.Min(maxStart, e.NewValue));
-            _followLiveTimeline = maxStart <= 0.001 || Math.Abs(targetStart - maxStart) < 0.25;
-            EventsPaneHost.Scroll.Value = targetStart;
-            EventsPaneHost.Timeline.ViewStartSeconds = targetStart;
-            FocusViewport();
-            SyncPerformanceViewToTimeline();
+            ApplyTimelineViewport(e.NewValue, syncScroll: true, updateFollowState: true);
         }
 
         private void NudgeTopTimeTravel(double secondsDelta)
@@ -1582,15 +1624,7 @@ namespace BlackbirdInterface
                 return;
             }
 
-            double viewport = Math.Max(1, EventsPaneHost.Scroll.ViewportSize);
-            double maxStart = ComputeTimelineMaxStart(viewport);
-            double current = EventsPaneHost.Scroll.Value;
-            double target = Math.Max(0, Math.Min(maxStart, current + secondsDelta));
-            _followLiveTimeline = maxStart <= 0.001 || Math.Abs(target - maxStart) < 0.25;
-            EventsPaneHost.Scroll.Value = target;
-            EventsPaneHost.Timeline.ViewStartSeconds = target;
-            FocusViewport();
-            SyncPerformanceViewToTimeline();
+            ApplyTimelineViewport(EventsPaneHost.Scroll.Value + secondsDelta, syncScroll: true, updateFollowState: true);
         }
 
         private void TopTimeTravelBack10_Click(object sender, RoutedEventArgs e) => NudgeTopTimeTravel(-10);
@@ -1612,12 +1646,14 @@ namespace BlackbirdInterface
                 UpdateScrollBar();
                 if (_followLiveTimeline && EventsPaneHost?.Scroll != null)
                 {
-                    double viewport = Math.Max(1, EventsPaneHost.Scroll.ViewportSize);
-                    double maxStart = ComputeTimelineMaxStart(viewport);
-                    EventsPaneHost.Timeline.ViewStartSeconds = maxStart;
-                    EventsPaneHost.Scroll.Value = maxStart;
+                    ApplyTimelineViewport(ComputeTimelineMaxStart(Math.Max(1, EventsPaneHost.Scroll.ViewportSize)), syncScroll: true, updateFollowState: false);
                 }
-                FocusViewport();
+                else
+                {
+                    FocusViewport();
+                    UpdateTopTimeTravelBar();
+                    SyncPerformanceViewToTimeline();
+                }
                 double viewStartSeconds = EventsPaneHost?.Timeline?.ViewStartSeconds ?? 0;
                 DiagnosticsState.SetValue(
                     "UI Viewport",
@@ -1628,10 +1664,14 @@ namespace BlackbirdInterface
         private double ComputeTimelineMaxStart(double viewportSeconds)
         {
             double viewport = Math.Max(1, viewportSeconds);
-            double lastEventSeconds = _allEvents.Count > 0
-                ? Math.Max(0, (_allEvents[^1].TimestampUtc - _captureStartUtc).TotalSeconds)
-                : 0;
-            return Math.Max(0, lastEventSeconds - viewport);
+            double totalSeconds = Math.Max(0, (GetTimelineHorizonUtc() - _captureStartUtc).TotalSeconds);
+            return Math.Max(0, totalSeconds - viewport);
+        }
+
+        private DateTime GetTimelineHorizonUtc()
+        {
+            DateTime eventHorizon = _latestEventTimestampUtc > _captureStartUtc ? _latestEventTimestampUtc : _captureStartUtc;
+            return eventHorizon;
         }
 
         private static DateTime AnchorCaptureStartUtc(double viewDurationSeconds)
@@ -2776,6 +2816,23 @@ namespace BlackbirdInterface
             w.Show();
         }
 
+        private void OpenParallelStacksWindow()
+        {
+            int pid = _currentSession?.Pid ?? TryGetPid();
+            IReadOnlyList<ThreadUsageRow> rows = PerformancePaneHost.SnapshotTopThreads();
+            if (pid <= 0 || rows.Count == 0)
+            {
+                ThemedMessageBox.Show(this, "No thread rows are available for stack comparison.", "Parallel Stacks", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var window = new ParallelStacksWindow(pid, rows)
+            {
+                Owner = this
+            };
+            window.Show();
+        }
+
         private async void FindProcess_Click(object sender, RoutedEventArgs e) => await OpenProcessPickerAndConnectAsync(showLaunchOptions: true);
 
         private async void NewProcessTab_Click(object sender, RoutedEventArgs e) => await OpenProcessPickerAndConnectAsync(showLaunchOptions: true);
@@ -2798,6 +2855,7 @@ namespace BlackbirdInterface
             {
                 _currentSession = null;
                 PerformancePaneHost.SetProcessLiveDataAvailable(false);
+                PerformancePaneHost.SetTargetSuspended(false);
                 StatusBlock.Text = "NO TARGET SELECTED";
                 RefreshProcessStateBadge();
                 return;
@@ -2879,6 +2937,12 @@ namespace BlackbirdInterface
                         flags,
                         imagePath,
                         hookPath,
+                        null,
+                        null,
+                        0,
+                        0,
+                        0,
+                        false,
                         out response))
                 {
                     error = BlackbirdNative.LastError("SetUserHookTarget failed").Message;
@@ -2923,6 +2987,7 @@ namespace BlackbirdInterface
         private bool TryLaunchWithUsermodeHooksAndPrepareSession(
             string imagePath,
             bool useEarlyBirdApc,
+            LaunchProfile launchProfile,
             out int pid,
             out BlackbirdBackendSession? preparedSession,
             out string error)
@@ -2958,6 +3023,7 @@ namespace BlackbirdInterface
             try
             {
                 string hookPath = ResolveHookDllPathFromInterfaceDirectory();
+                string environmentOverrides = launchProfile.ToIpcEnvironmentOverrideBlock();
                 if (!BlackbirdNative.SetUserHookTarget(
                         controlHandle,
                         BlackbirdNative.IpcUserHookTargetLaunch,
@@ -2965,6 +3031,12 @@ namespace BlackbirdInterface
                         flags,
                         imagePath,
                         hookPath,
+                        launchProfile.HasWorkingDirectory ? launchProfile.WorkingDirectory : null,
+                        string.IsNullOrWhiteSpace(environmentOverrides) ? null : environmentOverrides,
+                        launchProfile.ParentProcessId,
+                        MapLaunchPriorityClass(launchProfile.Priority),
+                        launchProfile.AffinityMask,
+                        launchProfile.InheritHandles,
                         out BlackbirdNative.BkSetUserHookTargetResponse response))
                 {
                     error = BlackbirdNative.LastError("SetUserHookTarget(launch) failed").Message;
@@ -3056,11 +3128,14 @@ namespace BlackbirdInterface
             StatusBlock.Text = $"CONNECTED TO {processName} ({pid})";
             var tab = AddOrSelectProcessTab(pid, $"{processName} ({pid})", select: true);
             bool hookPreconfigured = _pendingHookPreconfigured;
+            bool launchStartsSuspended = _pendingLaunchStartsSuspended;
+            bool leaveSuspendedAfterReady = _pendingLeaveSuspendedAfterReady;
             if (_pendingLaunchOptions)
             {
                 tab.UseUsermodeHooks = _pendingUseUsermodeHooks;
                 tab.AutoOpenApiGraphOnNextStart = _pendingAutoOpenApiGraph;
             }
+            tab.LaunchStartsSuspendedPending = launchStartsSuspended;
             ClearPendingLaunchOptions();
 
             if (tab.UseUsermodeHooks && !hookPreconfigured)
@@ -3119,7 +3194,36 @@ namespace BlackbirdInterface
             }
             else
             {
-                StartLiveCaptureForPid(pid, tab.UseUsermodeHooks);
+                StartLiveCaptureForPid(pid, tab.UseUsermodeHooks, launchStartsSuspended);
+            }
+
+            if (hookPreconfigured && !leaveSuspendedAfterReady)
+            {
+                if (!TryControlTargetExecution(suspend: false, out string resumeError))
+                {
+                    _targetExecutionSuspended = true;
+                    PerformancePaneHost.SetTargetSuspended(true);
+                    StatusBlock.Text = $"SESSION READY, TARGET STILL SUSPENDED: PID {pid}";
+                    ThemedMessageBox.Show(
+                        this,
+                        $"Blackbird attached successfully, but the target could not be resumed automatically.\n\n{resumeError}",
+                        "Launch Resume Failed",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    RefreshProcessStateBadge();
+                    RefreshToolbarCommandState();
+                    return;
+                }
+
+                _targetExecutionSuspended = false;
+                PerformancePaneHost.SetTargetSuspended(false);
+                StatusBlock.Text = $"LIVE CAPTURE READY: {NormalizeSessionTitle(_currentSession?.Title ?? $"PID {pid}")}";
+            }
+            else if (launchStartsSuspended)
+            {
+                _targetExecutionSuspended = true;
+                PerformancePaneHost.SetTargetSuspended(true);
+                StatusBlock.Text = $"LIVE CAPTURE READY, TARGET SUSPENDED: {NormalizeSessionTitle(_currentSession?.Title ?? $"PID {pid}")}";
             }
 
             _ = RunPreflightAsync(pid);
@@ -3173,6 +3277,7 @@ namespace BlackbirdInterface
                 bool useUsermodeHooks = false;
                 bool autoOpenApiGraph = false;
                 bool useEarlyBirdApcLaunch = false;
+                LaunchProfile launchProfile = new();
                 if (showLaunchOptions && (picker.LaunchSelectedImage || selectedPid > 0))
                 {
                     var parametersWindow = new LaunchParametersWindow(isLaunchTarget: picker.LaunchSelectedImage)
@@ -3188,6 +3293,7 @@ namespace BlackbirdInterface
                     useUsermodeHooks = parametersWindow.UseUsermodeHooks;
                     autoOpenApiGraph = parametersWindow.AutoOpenApiGraphWindow;
                     useEarlyBirdApcLaunch = parametersWindow.UseEarlyBirdApcLaunch;
+                    launchProfile = parametersWindow.LaunchProfile;
                 }
 
                 if (showLaunchOptions && picker.LaunchSelectedImage)
@@ -3220,6 +3326,7 @@ namespace BlackbirdInterface
                                 TryLaunchWithUsermodeHooksAndPrepareSession(
                                     launchImagePath,
                                     useEarlyBirdApcLaunch,
+                                    launchProfile,
                                     out launchedPid,
                                     out preparedSession,
                                     out launchError));
@@ -3256,17 +3363,13 @@ namespace BlackbirdInterface
                     }
                     else
                     {
-                        Process? started = Process.Start(new ProcessStartInfo(launchImagePath)
+                        if (!BlackbirdNative.TryLaunchProcess(launchImagePath, launchProfile, out selectedPid,
+                                                              out string launchError))
                         {
-                            UseShellExecute = true
-                        });
-                        if (started == null)
-                        {
-                            ThemedMessageBox.Show(this, "Process launch returned no handle.", "Launch failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                            ThemedMessageBox.Show(this, launchError, "Launch failed", MessageBoxButton.OK,
+                                                  MessageBoxImage.Error);
                             return;
                         }
-
-                        selectedPid = started.Id;
                     }
                 }
 
@@ -3279,6 +3382,10 @@ namespace BlackbirdInterface
                 _pendingUseUsermodeHooks = showLaunchOptions && useUsermodeHooks;
                 _pendingAutoOpenApiGraph = showLaunchOptions && autoOpenApiGraph;
                 _pendingHookPreconfigured = hookPreconfigured;
+                _pendingLaunchStartsSuspended = showLaunchOptions && picker.LaunchSelectedImage &&
+                                                (hookPreconfigured || launchProfile.LeaveSuspendedAfterReady);
+                _pendingLeaveSuspendedAfterReady = showLaunchOptions && picker.LaunchSelectedImage &&
+                                                   launchProfile.LeaveSuspendedAfterReady;
                 PidBox.Text = selectedPid.ToString();
                 Connect_Click(this, new RoutedEventArgs());
             }
@@ -3365,7 +3472,20 @@ namespace BlackbirdInterface
             _pendingUseUsermodeHooks = false;
             _pendingAutoOpenApiGraph = false;
             _pendingHookPreconfigured = false;
+            _pendingLaunchStartsSuspended = false;
+            _pendingLeaveSuspendedAfterReady = false;
         }
+
+        private static uint MapLaunchPriorityClass(LaunchPriorityPreset priority) => priority switch
+        {
+            LaunchPriorityPreset.Idle => 0x00000040,
+            LaunchPriorityPreset.BelowNormal => 0x00004000,
+            LaunchPriorityPreset.Normal => 0x00000020,
+            LaunchPriorityPreset.AboveNormal => 0x00008000,
+            LaunchPriorityPreset.High => 0x00000080,
+            LaunchPriorityPreset.Realtime => 0x00000100,
+            _ => 0u
+        };
 
         internal bool TryOpenSessionFromStartupPath(string path, out string error)
         {
@@ -3387,7 +3507,10 @@ namespace BlackbirdInterface
                 _currentSession.ActivePauseStartUtc = DateTime.UtcNow;
             }
             _perf?.Stop();
+            PerformancePaneHost.SetProcessLiveDataAvailable(false);
+            PerformancePaneHost.SetTargetSuspended(true);
             ApplyPausedTimelineRanges();
+            SetIntegrityDiagnosticsForSuspension();
             StatusBlock.Text = $"TARGET PAUSED: PID {TryGetPid()}";
             RefreshProcessStateBadge();
             RefreshToolbarCommandState();
@@ -3402,6 +3525,8 @@ namespace BlackbirdInterface
             }
 
             _targetExecutionSuspended = false;
+            ClearIntegrityDiagnosticsForSuspension();
+            PerformancePaneHost.SetTargetSuspended(false);
             if (_currentSession != null && _currentSession.ActivePauseStartUtc.HasValue)
             {
                 DateTime resumeUtc = DateTime.UtcNow;
@@ -3426,9 +3551,41 @@ namespace BlackbirdInterface
                 _perf.SetTargetPid(_currentSession.Pid);
                 _perf.Start();
             }
+            PerformancePaneHost.SetProcessLiveDataAvailable(true);
             StatusBlock.Text = $"TARGET RESUMED: PID {TryGetPid()}";
             RefreshProcessStateBadge();
             RefreshToolbarCommandState();
+        }
+
+        private static readonly string[] _integrityDiagnosticKeys = ["Hook Integrity", "AMSI Integrity", "ETW Integrity"];
+
+        private static void SetIntegrityDiagnosticsForSuspension()
+        {
+            foreach (string key in _integrityDiagnosticKeys)
+            {
+                string? current = DiagnosticsState.GetValue(key);
+                if (current == null || !current.Contains("TAMPERED", StringComparison.OrdinalIgnoreCase))
+                {
+                    DiagnosticsState.SetValue(key, "INACTIVE (target suspended)");
+                }
+            }
+            DiagnosticsState.SetValue("Usermode Hooks", "INACTIVE (target suspended)");
+        }
+
+        private static void ClearIntegrityDiagnosticsForSuspension()
+        {
+            foreach (string key in _integrityDiagnosticKeys)
+            {
+                string? current = DiagnosticsState.GetValue(key);
+                if (current != null && current.Contains("INACTIVE", StringComparison.OrdinalIgnoreCase))
+                {
+                    DiagnosticsState.SetValue(key, "INACTIVE (resuming)");
+                }
+            }
+            if (DiagnosticsState.GetValue("Usermode Hooks")?.Contains("INACTIVE", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                DiagnosticsState.SetValue("Usermode Hooks", "INACTIVE (resuming)");
+            }
         }
 
         private void TerminateTarget_Click(object sender, RoutedEventArgs e)
@@ -3882,7 +4039,8 @@ namespace BlackbirdInterface
                 ApiViewSelectedBaseValue == null ||
                 ApiViewSelectedSizeValue == null ||
                 ApiViewSelectedAllocTypeValue == null ||
-                ApiViewSelectedProtectValue == null)
+                ApiViewSelectedProtectValue == null ||
+                ApiViewSelectedDetailValue == null)
             {
                 return;
             }
@@ -3901,6 +4059,7 @@ namespace BlackbirdInterface
                 ApiViewSelectedSizeValue.Text = string.Empty;
                 ApiViewSelectedAllocTypeValue.Text = string.Empty;
                 ApiViewSelectedProtectValue.Text = string.Empty;
+                ApiViewSelectedDetailValue.Text = string.Empty;
                 return;
             }
 
@@ -3917,6 +4076,7 @@ namespace BlackbirdInterface
             ApiViewSelectedSizeValue.Text = selected.SizeLabel;
             ApiViewSelectedAllocTypeValue.Text = selected.AllocTypeLabel;
             ApiViewSelectedProtectValue.Text = selected.ProtectLabel;
+            ApiViewSelectedDetailValue.Text = selected.DetailFull;
         }
 
         private void TogglePaneOrder()
@@ -4275,6 +4435,7 @@ namespace BlackbirdInterface
         public string? LaneFocusKey { get; set; }
         public bool UseUsermodeHooks { get; set; }
         public bool AutoOpenApiGraphOnNextStart { get; set; }
+        public bool LaunchStartsSuspendedPending { get; set; }
         public bool TargetExited { get; set; }
         public bool OfflineSnapshot { get; set; }
         public string? BackingStorePath { get; set; }

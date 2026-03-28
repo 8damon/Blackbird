@@ -1,4 +1,4 @@
-<h1 align="center">BLACKBIRD v1.7</h1>
+<h1 align="center">BLACKBIRD v1.5</h1>
 <p align="center"><b>DFIR Kernel Telemetry & Detection Platform for Windows</b></p>
 
 <p align="center">
@@ -18,56 +18,90 @@
 
 # [BLACKBIRD](https://titansoftwork.com/blackbird/)
 
-Blackbird is a malware-analysis platform that combines kernel telemetry, controller-brokered user-mode collection, hook-side telemetry, grouped detections, and capture-backed drilldown into one workflow.
+Blackbird is a malware-analysis platform for everyone from SOC teams to hobbyists. BK unifies kernel telemetry, user-mode hook data, grouped detections, and capture-backed drilldown into one platform. The analyst interface is summary-first, the raw event graph retains the full session timeline, and deeper evidence is exposed through dedicated inspectors, diagnostics, and relation views.
 
-## Main Surfaces
+## OPERATOR PANEL
 
-- `blackbird.sys`: kernel telemetry, concealment, and control plane
-- `BlackbirdController.exe`: broker/service for the interface, ETW, node status, and hook ingest
-- `J58.dll`: shared user-mode SDK used by the controller, interface, and tests
-- `SR71.dll`: in-target hook/instrumentation client with ingest-only broker access
-- `BlackbirdInterface.exe`: primary analyst UI
-- `DetectionExamples.exe`: curated detection and benign scenario runner
-- `BlackbirdTestSuite.exe`: smoke and compatibility validation harness
+The main interface is the overseer of all operations, it brings these together;
 
-## Operator Views
+- Events & Event log
+- Performance counters
+- Network observation
+- Thread observation
+- Memory observation, inspector & treemap
+- Module information
+- PE information
+- ETW feed
+- Heuristics
+- Filesystem events
+- Process relations
+- Uplink performance
+- Diagnostics cockpit
+- Child process graph window
 
-The analysis interface exposes:
+## EVIDENCE & ALTERNATE VIEWS
 
-- event log and grouped detections
-- performance counters and diagnostics
-- ETW view and inspectors
-- memory, thread, PE, and module views
-- filesystem and process relation views
-- heuristics and timeline/travel capture
-- alternate API hooking view
+For deeper inspection, BK provides inspector views when double clicking collections, this will open a window showcasing the details behind the event, and raw data if asked for.
 
-## Coverage
+Key views include:
+
+- **ETW Inspector**  
+  Review grouped ETW occurrences and inspect enriched event details.
+
+- **Handle Evidence**  
+  Inspect suspicious handle activity, access masks, origin context, captured frames, memory region details, and related payload data.
+
+- **Thread Stack**  
+  Review stack snapshots during live capture or while moving through historical samples.
+
+- **Process Relations**  
+  See actor-to-target relationships such as suspicious opens, remote thread activity, and linked intent chains.
+
+- **File Inpsector**
+  See files accessed and created by the target.
+
+## API HOOKING VIEW
+
+BK provides an alternate view for seeing API hooks captured by the userland sensor in `View > Switch View`.
+
+## COVERAGE
 
 Representative detections include:
 
 - direct syscalls
-- suspicious handle opens
-- memory query/read/write/protect flows
-- manual mapping and image tamper patterns
-- AMSI / ETW / hook patching
-- thread hijack, remote thread, and remote APC activity
-- process hollowing and injection-intent chains
-- suspicious `ntdll` mapping behavior
-- registry persistence and security-bypass writes
-- filesystem drop and open activity
+- handle open
+- memory queries
+- read & write memory
+- manual mapping
+- AMSI & ETW patching
+- hook patching
+- file dropping
+- file opens, reads, creations, special attributes
+- stack integrity anomalies
+- thread creation
+- remote thread activity outside the main image
+- thread hijack and thread-context abuse
+- remote APCs
+- process hollowing and injection intent chains
+- suspicious `ntdll` image path or mapping behavior
+- multiple `ntdll` image mappings
+- registry activity
 
-For contract-level details see [API.md](./API.md).
+For the full contract and field-level details, see [API.md](./API.md).
 
 <p align="center">
   <img src="./media/BLACKBIRD_DIAGRAM.png" width="980" alt="Blackbird platform diagram" />
 </p>
 
-## Quick Start
+## QUICK START
+
+See these docs for setup and usage:
 
 - [Getting Started.md](./Getting%20Started.md)
 - [INSTALL.md](./INSTALL.md)
 - [USAGE.md](./USAGE.md)
 - [API.md](./API.md)
 
-Session archives use `.bkcap`.
+Session archives are now written as `.bkcap`.
+
+

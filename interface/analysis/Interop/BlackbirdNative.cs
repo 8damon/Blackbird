@@ -63,6 +63,13 @@ namespace BlackbirdInterface
         internal const uint IpcHookEventExceptionLowNoise = 4;
         internal const uint IpcHookEventExceptionHighPriv = 5;
         internal const uint IpcHookEventIntegrity = 6;
+        internal const uint RuntimeFlagAntiVirtualization = 0x00000001;
+        internal const uint RuntimeFlagSelfHide = 0x00000002;
+        internal const uint RuntimeFlagInterfaceProtectedAccess = 0x00000004;
+        internal const uint RuntimeFlagControllerProtectedAccess = 0x00000008;
+        internal const uint RuntimeFlagProtectedAccess = RuntimeFlagInterfaceProtectedAccess | RuntimeFlagControllerProtectedAccess;
+        internal const uint RuntimeModeLoiter = 0;
+        internal const uint RuntimeModeGuided = 1;
 
         private const int MaxIpcEventNameChars = 96;
         private const int MaxIpcDetectionNameChars = 128;
@@ -206,6 +213,14 @@ namespace BlackbirdInterface
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 8)]
+        internal struct BkRuntimeConfigResponse
+        {
+            public uint PersistentFlags;
+            public uint RuntimeFlags;
+            public uint EffectiveFlags;
+            public uint Mode;
+        }
+        [StructLayout(LayoutKind.Sequential, Pack = 8)]
         internal struct BkSetUserHookTargetResponse
         {
             public uint ProcessId;
@@ -271,6 +286,17 @@ namespace BlackbirdInterface
         [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCControlProcessExecution", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool ControlProcessExecution(IntPtr device, uint processId, [MarshalAs(UnmanagedType.Bool)] bool suspend);
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCSetRuntimeConfig", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool SetRuntimeConfig(IntPtr device, uint flags, uint mask);
+
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetRuntimeConfig", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetRuntimeConfig(IntPtr device, out BkRuntimeConfigResponse response);
+
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCMarkInterfaceReady", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool MarkInterfaceReady(IntPtr device, uint processId);
 
         [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCSetUserHookTarget", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]

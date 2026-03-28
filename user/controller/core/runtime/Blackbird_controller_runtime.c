@@ -1,18 +1,72 @@
 #include "../blackbird_controller_private.h"
 
 static HANDLE g_ServerAcceptThreads[BLACKBIRD_CONTROLLER_SERVER_ACCEPT_THREADS] = {0};
+static HANDLE g_HookAcceptThreads[BLACKBIRD_CONTROLLER_HOOK_ACCEPT_THREADS] = {0};
+
+typedef struct _BLACKBIRD_SERVER_ENDPOINT_CONTEXT
+{
+    PCWSTR PipeName;
+    DWORD ClientRole;
+} BLACKBIRD_SERVER_ENDPOINT_CONTEXT, *PBLACKBIRD_SERVER_ENDPOINT_CONTEXT;
+
+static const BLACKBIRD_SERVER_ENDPOINT_CONTEXT g_ControlEndpointContext = {BLACKBIRD_IPC_PIPE_NAME,
+                                                                           BlackbirdControllerClientRoleControl};
+static const BLACKBIRD_SERVER_ENDPOINT_CONTEXT g_HookEndpointContext = {BLACKBIRD_IPC_HOOK_PIPE_NAME,
+                                                                        BlackbirdControllerClientRoleHook};
+
+static volatile LONG g_ControllerProtectionReady = 0;
+static volatile LONG g_ControllerProtectionArmed = 0;
+
+static VOID ControllerTryMarkProtectedReady(_In_ HANDLE DriverHandle, _In_ BOOL LogFailure)
+{
+    if (DriverHandle == NULL || DriverHandle == INVALID_HANDLE_VALUE)
+    {
+        return;
+    }
+    if (InterlockedCompareExchange(&g_ControllerProtectionReady, 0, 0) == 0 ||
+        InterlockedCompareExchange(&g_ControllerProtectionArmed, 0, 0) != 0)
+    {
+        return;
+    }
+
+    if (BLACKBIRDSCMarkControllerReady(DriverHandle, GetCurrentProcessId()))
+    {
+        if (InterlockedExchange(&g_ControllerProtectionArmed, 1) == 0)
+        {
+            ControllerLog("[DRIVER] controller protection readiness acknowledged\n");
+        }
+    }
+    else if (LogFailure)
+    {
+        ControllerLog("[DRIVER][WARN] controller protection readiness failed (%lu)\n", GetLastError());
+    }
+}
 
 static DWORD WINAPI ControllerServerThreadProc(_In_ LPVOID Context)
 {
     SECURITY_ATTRIBUTES sa;
     PSECURITY_DESCRIPTOR sd = NULL;
     DWORD pipeCreateFailures = 0;
+    const BLACKBIRD_SERVER_ENDPOINT_CONTEXT *endpoint = (const BLACKBIRD_SERVER_ENDPOINT_CONTEXT *)Context;
+    PCWSTR pipeName = BLACKBIRD_IPC_PIPE_NAME;
+    DWORD clientRole = BlackbirdControllerClientRoleControl;
 
-    UNREFERENCED_PARAMETER(Context);
-
-    if (!ControllerCreatePipeSecurity(&sa, &sd))
+    if (endpoint != NULL)
     {
-        ControllerLog("[-] BlackbirdController: failed to create pipe security (%lu)\n", GetLastError());
+        if (endpoint->PipeName != NULL && endpoint->PipeName[0] != L'\0')
+        {
+            pipeName = endpoint->PipeName;
+        }
+        if (endpoint->ClientRole != BlackbirdControllerClientRoleUnknown)
+        {
+            clientRole = endpoint->ClientRole;
+        }
+    }
+
+    if (!ControllerCreatePipeSecurity(clientRole, &sa, &sd))
+    {
+        ControllerLog("[-] BlackbirdController: failed to create pipe security role=%lu (%lu)\n", clientRole,
+                      GetLastError());
         return 1;
     }
 
@@ -25,7 +79,7 @@ static DWORD WINAPI ControllerServerThreadProc(_In_ LPVOID Context)
         HANDLE thread;
         DWORD slotIndex;
 
-        pipe = CreateNamedPipeW(BLACKBIRD_IPC_PIPE_NAME, PIPE_ACCESS_DUPLEX,
+        pipe = CreateNamedPipeW(pipeName, PIPE_ACCESS_DUPLEX,
                                 PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT, PIPE_UNLIMITED_INSTANCES,
                                 sizeof(BLACKBIRD_IPC_PACKET), sizeof(BLACKBIRD_IPC_PACKET), 3000, &sa);
         if (pipe == INVALID_HANDLE_VALUE)
@@ -59,6 +113,7 @@ static DWORD WINAPI ControllerServerThreadProc(_In_ LPVOID Context)
         }
 
         client->Pipe = pipe;
+        client->Role = clientRole;
         client->QueueHead = NULL;
         client->QueueTail = NULL;
         client->QueueDepth = 0;
@@ -143,7 +198,8 @@ static DWORD WINAPI ControllerServerThreadProc(_In_ LPVOID Context)
             client->SessionId = 0;
         }
 
-        ControllerLog("[IPC] client connected pid=%lu session=%lu\n", client->ProcessId, client->SessionId);
+        ControllerLog("[IPC] client connected role=%lu pid=%lu session=%lu pipe=%ls\n", client->Role,
+                      client->ProcessId, client->SessionId, pipeName);
 
         EnterCriticalSection(&g_ClientListLock);
         if (g_ClientCount >= BLACKBIRD_CONTROLLER_MAX_CLIENTS)
@@ -273,6 +329,7 @@ static DWORD WINAPI ControllerDriverPumpThreadProc(_In_ LPVOID Context)
                 DWORD statsBytes = 0;
                 ControllerMarkDriverSubscriptionsDirty();
                 (void)ControllerApplyDriverSubscriptions();
+                ControllerTryMarkProtectedReady(localHandle, TRUE);
                 driverOpenFailures = 0;
                 ZeroMemory(&stats, sizeof(stats));
                 if (BLACKBIRDSCGetStats(localHandle, &stats, &statsBytes))
@@ -322,6 +379,7 @@ static DWORD WINAPI ControllerDriverPumpThreadProc(_In_ LPVOID Context)
             {
                 CloseHandle(g_DriverHandle);
                 g_DriverHandle = INVALID_HANDLE_VALUE;
+                InterlockedExchange(&g_ControllerProtectionArmed, 0);
             }
             LeaveCriticalSection(&g_DriverLock);
             Sleep(200);
@@ -459,7 +517,6 @@ static BOOL ControllerShouldForwardEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_
     BOOL handleNoiseDetection = FALSE;
     BOOL lowSignalDetection = FALSE;
     BOOL strongDetection = FALSE;
-
     if (Record == NULL || Event == NULL)
     {
         return FALSE;
@@ -480,17 +537,11 @@ static BOOL ControllerShouldForwardEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_
         /* Uppercase once so all substring searches below can use strstr (SIMD-capable)
          * rather than repeated O(n*m) _strnicmp scans.  All needles are already uppercase. */
         (void)_strupr_s(detectionName, sizeof(detectionName));
-        (void)ControllerEtwGetU32Property(Record, L"severity", &severity);
-        (void)ControllerEtwGetU64Property(Record, L"processId", &processId);
-        (void)ControllerEtwGetU64Property(Record, L"targetPid", &targetPid);
-        if (targetPid == 0)
-        {
-            targetPid = Event->TargetPid;
-        }
-        if (processId == 0)
-        {
-            processId = (Event->ProcessId != 0) ? Event->ProcessId : Event->EventProcessId;
-        }
+        severity = Event->Severity;
+        targetPid = Event->TargetPid;
+        processId = (Event->ProcessId != 0) ? Event->ProcessId : Event->EventProcessId;
+        selfTarget = (processId != 0 && targetPid != 0 && processId == targetPid);
+        correlationFlags = Event->CorrelationFlags;
         selfTarget = (processId != 0 && targetPid != 0 && processId == targetPid);
 
         (void)ControllerEtwGetU32Property(Record, L"correlationFlags", &correlationFlags);
@@ -513,7 +564,13 @@ static BOOL ControllerShouldForwardEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_
         strongDetection =
             (strstr(detectionName, "PROCESS_HOLLOWING") != NULL) || (strstr(detectionName, "INJECTION") != NULL) ||
             (strstr(detectionName, "THREAD_HIJACK") != NULL) || (strstr(detectionName, "REMOTE_APC") != NULL) ||
-            (strstr(detectionName, "NON_IMAGE_EXECUTABLE_REGION") != NULL);
+            (strstr(detectionName, "NON_IMAGE_EXECUTABLE_REGION") != NULL) ||
+            (strstr(detectionName, "CREDENTIAL_ACCESS_LSASS_HANDLE") != NULL) ||
+            (strstr(detectionName, "REGISTRY_LSA_PACKAGE_WRITE") != NULL) ||
+            (strstr(detectionName, "AGGREGATE_THREAT_SIGNAL") != NULL) ||
+            (strstr(detectionName, "SHELLCODE_STAGE_PATTERN") != NULL) ||
+            (strstr(detectionName, "PROCESS_IMAGE_TAMPER") != NULL) ||
+            (strstr(detectionName, "PROCESS_IMAGE_GHOSTING") != NULL);
 
         if (handleNoiseDetection)
         {
@@ -1152,6 +1209,52 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
         }
     }
 
+    /* Feed heuristics engine before the forward check so even suppressed events
+     * contribute to aggregate scoring and shellcode-stage flag tracking. */
+    if (event.ProcessId != 0 && event.Severity >= 2u)
+    {
+        UINT32 heurFlags = 0;
+        const CHAR *heurDetName = event.DetectionName;
+
+        if (strstr(heurDetName, "MEMORY_ACTIVITY") != NULL)
+        {
+            /* Map memory-activity detections to shellcode-stage flags based on operation */
+            if (strstr(heurDetName, "ALLOC") != NULL)
+                heurFlags |= BLACKBIRD_HEUR_FLAG_ALLOC_RW;
+            else if (strstr(heurDetName, "WRITE") != NULL)
+                heurFlags |= BLACKBIRD_HEUR_FLAG_WRITE_VM;
+            else if (strstr(heurDetName, "PROTECT") != NULL)
+                heurFlags |= BLACKBIRD_HEUR_FLAG_PROTECT_RX;
+        }
+        if (strstr(heurDetName, "NETWORK_CONNECT") != NULL || strstr(heurDetName, "DOMAIN_RESOLUTION") != NULL)
+            heurFlags |= BLACKBIRD_HEUR_FLAG_NETWORK;
+        if (strstr(heurDetName, "CREDENTIAL_ACCESS") != NULL || strstr(heurDetName, "CREDENTIAL_HIVE") != NULL)
+            heurFlags |= BLACKBIRD_HEUR_FLAG_CRED_ACCS;
+        if (strstr(heurDetName, "PROCESS_IMAGE_TAMPER") != NULL || strstr(heurDetName, "PROCESS_IMAGE_GHOSTING") != NULL ||
+            strstr(heurDetName, "HERPADERP") != NULL || strstr(heurDetName, "DOPPELGANG") != NULL)
+            heurFlags |= BLACKBIRD_HEUR_FLAG_IMG_TAMPER;
+        if (strstr(heurDetName, "REMOTE_THREAD") != NULL)
+            heurFlags |= BLACKBIRD_HEUR_FLAG_REMOTE_TH;
+        if (event.Severity >= 4u)
+            heurFlags |= BLACKBIRD_HEUR_FLAG_DETECTION;
+
+        /* Also classify ETW-sourced events that map to shellcode-stage operations */
+        if (EventName != NULL && wcscmp(EventName, L"NtApiTelemetry") == 0)
+        {
+            CHAR ntApiName[64];
+            ntApiName[0] = '\0';
+            (void)ControllerEtwGetAnsiProperty(Record, L"apiName", ntApiName, RTL_NUMBER_OF(ntApiName));
+            if (_stricmp(ntApiName, "NtAllocateVirtualMemory") == 0)
+                heurFlags |= BLACKBIRD_HEUR_FLAG_ALLOC_RW;
+            else if (_stricmp(ntApiName, "NtWriteVirtualMemory") == 0)
+                heurFlags |= BLACKBIRD_HEUR_FLAG_WRITE_VM;
+            else if (_stricmp(ntApiName, "NtProtectVirtualMemory") == 0)
+                heurFlags |= BLACKBIRD_HEUR_FLAG_PROTECT_RX;
+        }
+
+        ControllerHeuristicsObserveEvent((DWORD)event.ProcessId, event.Severity, heurFlags);
+    }
+
     if (!ControllerShouldForwardEtwRecord(Record, EventName, &event))
     {
         return;
@@ -1395,6 +1498,8 @@ static BOOL ControllerStartCore(VOID)
     InitializeCriticalSection(&g_DriverLock);
     InitializeCriticalSection(&g_DriverConfigLock);
     g_LocksInitialized = TRUE;
+    InterlockedExchange(&g_ControllerProtectionReady, 0);
+    InterlockedExchange(&g_ControllerProtectionArmed, 0);
     g_ClientList = NULL;
     g_ClientCount = 0;
     g_PidIndexCount = 0;
@@ -1403,6 +1508,7 @@ static BOOL ControllerStartCore(VOID)
 
     ControllerLog("[*] BlackbirdController: core start requested\n");
     ControllerResetHollowingState();
+    ControllerHeuristicsInitialize();
 
     g_StopEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
     if (g_StopEvent == NULL)
@@ -1427,6 +1533,7 @@ static BOOL ControllerStartCore(VOID)
     {
         ControllerLog("[DRIVER] initial open succeeded\n");
     }
+    InterlockedExchange(&g_ControllerProtectionArmed, 0);
 
     (void)ControllerStartEtwSession();
     (void)ControllerNodeNetworkStart();
@@ -1439,12 +1546,13 @@ static BOOL ControllerStartCore(VOID)
     }
 
     ZeroMemory(g_ServerAcceptThreads, sizeof(g_ServerAcceptThreads));
+    ZeroMemory(g_HookAcceptThreads, sizeof(g_HookAcceptThreads));
     for (serverThreadIndex = 0; serverThreadIndex < BLACKBIRD_CONTROLLER_SERVER_ACCEPT_THREADS; serverThreadIndex += 1)
     {
-        HANDLE thread = CreateThread(NULL, 0, ControllerServerThreadProc, NULL, 0, NULL);
+        HANDLE thread = CreateThread(NULL, 0, ControllerServerThreadProc, (LPVOID)&g_ControlEndpointContext, 0, NULL);
         if (thread == NULL)
         {
-            ControllerLog("[WARN] BlackbirdController: failed to start server accept thread %lu (%lu)\n",
+            ControllerLog("[WARN] BlackbirdController: failed to start control accept thread %lu (%lu)\n",
                           serverThreadIndex, GetLastError());
             break;
         }
@@ -1453,28 +1561,47 @@ static BOOL ControllerStartCore(VOID)
     }
     if (serverThreadsStarted == 0)
     {
-        ControllerLog("[-] BlackbirdController: failed to start any server accept thread\n");
+        ControllerLog("[-] BlackbirdController: failed to start any control accept thread\n");
         return FALSE;
     }
     g_ServerThread = g_ServerAcceptThreads[0];
     if (serverThreadsStarted < BLACKBIRD_CONTROLLER_SERVER_ACCEPT_THREADS)
     {
-        ControllerLog("[WARN] BlackbirdController: server accept thread pool reduced to %lu/%lu\n",
+        ControllerLog("[WARN] BlackbirdController: control accept thread pool reduced to %lu/%lu\n",
                       serverThreadsStarted, (DWORD)BLACKBIRD_CONTROLLER_SERVER_ACCEPT_THREADS);
     }
 
-    ControllerLog("[*] BlackbirdController: IPC endpoint online at %ls\n", BLACKBIRD_IPC_PIPE_NAME);
+    for (serverThreadIndex = 0; serverThreadIndex < BLACKBIRD_CONTROLLER_HOOK_ACCEPT_THREADS; serverThreadIndex += 1)
+    {
+        HANDLE thread = CreateThread(NULL, 0, ControllerServerThreadProc, (LPVOID)&g_HookEndpointContext, 0, NULL);
+        if (thread == NULL)
+        {
+            ControllerLog("[WARN] BlackbirdController: failed to start hook accept thread %lu (%lu)\n",
+                          serverThreadIndex, GetLastError());
+            break;
+        }
+        g_HookAcceptThreads[serverThreadIndex] = thread;
+    }
+
+    ControllerLog("[*] BlackbirdController: IPC endpoints online control=%ls hook=%ls\n", BLACKBIRD_IPC_PIPE_NAME,
+                  BLACKBIRD_IPC_HOOK_PIPE_NAME);
+    InterlockedExchange(&g_ControllerProtectionReady, 1);
+    ControllerTryMarkProtectedReady(g_DriverHandle, TRUE);
     return TRUE;
 }
 
-static VOID ControllerWakeServerPipe(_In_ DWORD Attempts)
+static VOID ControllerWakeServerPipe(_In_z_ PCWSTR PipeName, _In_ DWORD Attempts)
 {
     DWORD index;
 
+    if (PipeName == NULL || PipeName[0] == L'\0')
+    {
+        return;
+    }
+
     for (index = 0; index < Attempts; index += 1)
     {
-        HANDLE pipe =
-            CreateFileW(BLACKBIRD_IPC_PIPE_NAME, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
+        HANDLE pipe = CreateFileW(PipeName, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
         if (pipe != INVALID_HANDLE_VALUE)
         {
             CloseHandle(pipe);
@@ -1494,7 +1621,8 @@ static VOID ControllerStopCore(VOID)
         (void)SetEvent(g_StopEvent);
     }
 
-    ControllerWakeServerPipe((DWORD)BLACKBIRD_CONTROLLER_SERVER_ACCEPT_THREADS);
+    ControllerWakeServerPipe(BLACKBIRD_IPC_PIPE_NAME, (DWORD)BLACKBIRD_CONTROLLER_SERVER_ACCEPT_THREADS);
+    ControllerWakeServerPipe(BLACKBIRD_IPC_HOOK_PIPE_NAME, (DWORD)BLACKBIRD_CONTROLLER_HOOK_ACCEPT_THREADS);
 
     for (threadIndex = 0; threadIndex < BLACKBIRD_CONTROLLER_SERVER_ACCEPT_THREADS; threadIndex += 1)
     {
@@ -1504,6 +1632,16 @@ static VOID ControllerStopCore(VOID)
             (void)WaitForSingleObject(thread, 3000);
             CloseHandle(thread);
             g_ServerAcceptThreads[threadIndex] = NULL;
+        }
+    }
+    for (threadIndex = 0; threadIndex < BLACKBIRD_CONTROLLER_HOOK_ACCEPT_THREADS; threadIndex += 1)
+    {
+        HANDLE thread = g_HookAcceptThreads[threadIndex];
+        if (thread != NULL)
+        {
+            (void)WaitForSingleObject(thread, 3000);
+            CloseHandle(thread);
+            g_HookAcceptThreads[threadIndex] = NULL;
         }
     }
     g_ServerThread = NULL;
@@ -1553,6 +1691,8 @@ static VOID ControllerStopCore(VOID)
         g_DriverHandle = INVALID_HANDLE_VALUE;
     }
     LeaveCriticalSection(&g_DriverLock);
+    InterlockedExchange(&g_ControllerProtectionReady, 0);
+    InterlockedExchange(&g_ControllerProtectionArmed, 0);
 
     if (g_StopEvent != NULL)
     {
@@ -1562,6 +1702,7 @@ static VOID ControllerStopCore(VOID)
 
     ControllerSymbolServiceStop();
     ControllerResetHollowingState();
+    ControllerHeuristicsUninitialize();
 
     ControllerLog("[*] BlackbirdController: core stopped\n");
 }
@@ -1665,3 +1806,7 @@ int __cdecl wmain(_In_ int argc, _In_reads_(argc) wchar_t **argv)
     ControllerLogClose();
     return 0;
 }
+
+
+
+

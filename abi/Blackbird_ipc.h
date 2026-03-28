@@ -4,6 +4,7 @@
 #include "blackbird_ioctl.h"
 
 #define BLACKBIRD_IPC_PIPE_NAME L"\\\\.\\pipe\\BlackbirdController"
+#define BLACKBIRD_IPC_HOOK_PIPE_NAME L"\\\\.\\pipe\\BlackbirdHookIngest"
 #define BLACKBIRD_IPC_MAGIC 0x53574B52u
 #define BLACKBIRD_IPC_VERSION 2u
 
@@ -30,7 +31,10 @@ typedef enum _BLACKBIRD_IPC_COMMAND
     BlackbirdIpcCommandPublishHookEvent = 11,
     BlackbirdIpcCommandSetUserHookTarget = 12,
     BlackbirdIpcCommandNotifyHookReady = 13,
-    BlackbirdIpcCommandControlProcessExecution = 14
+    BlackbirdIpcCommandControlProcessExecution = 14,
+    BlackbirdIpcCommandSetRuntimeConfig = 15,
+    BlackbirdIpcCommandGetRuntimeConfig = 16,
+    BlackbirdIpcCommandMarkInterfaceReady = 17
 } BLACKBIRD_IPC_COMMAND;
 
 typedef struct _BLACKBIRD_IPC_HANDSHAKE_REQUEST
@@ -361,6 +365,9 @@ typedef union _BLACKBIRD_IPC_PAYLOAD
     BLACKBIRD_QUERY_PROCESS_IMAGE_REQUEST QueryProcessImageRequest;
     BLACKBIRD_QUERY_PROCESS_IMAGE_RESPONSE QueryProcessImageResponse;
     BLACKBIRD_CONTROL_EXECUTION_REQUEST ControlProcessExecutionRequest;
+    BLACKBIRD_SET_RUNTIME_CONFIG_REQUEST SetRuntimeConfigRequest;
+    BLACKBIRD_RUNTIME_CONFIG_RESPONSE RuntimeConfigResponse;
+    BLACKBIRD_MARK_INTERFACE_READY_REQUEST MarkInterfaceReadyRequest;
 } BLACKBIRD_IPC_PAYLOAD, *PBLACKBIRD_IPC_PAYLOAD;
 
 typedef struct _BLACKBIRD_IPC_PACKET
@@ -382,3 +389,4 @@ typedef struct _BLACKBIRD_IPC_PACKET
 #define BLACKBIRD_IPC_CAP_USER_HOOK_READY 0x00000020u
 
 #endif
+

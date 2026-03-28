@@ -55,6 +55,40 @@ static BOOL ControllerProxyControlProcessExecution(_In_ DWORD ProcessId, _In_ BO
     return ok;
 }
 
+static BOOL ControllerProxySetRuntimeConfig(_In_ DWORD Flags, _In_ DWORD Mask)
+{
+    BOOL ok;
+
+    EnterCriticalSection(&g_DriverLock);
+    ok = (g_DriverHandle != INVALID_HANDLE_VALUE) && BLACKBIRDSCSetRuntimeConfig(g_DriverHandle, Flags, Mask);
+    LeaveCriticalSection(&g_DriverLock);
+    return ok;
+}
+
+static BOOL ControllerProxyGetRuntimeConfig(_Out_ BLACKBIRD_RUNTIME_CONFIG_RESPONSE *Response)
+{
+    BOOL ok;
+
+    if (Response == NULL)
+    {
+        return FALSE;
+    }
+
+    EnterCriticalSection(&g_DriverLock);
+    ok = (g_DriverHandle != INVALID_HANDLE_VALUE) && BLACKBIRDSCGetRuntimeConfig(g_DriverHandle, Response);
+    LeaveCriticalSection(&g_DriverLock);
+    return ok;
+}
+
+static BOOL ControllerProxyMarkInterfaceReady(_In_ DWORD ProcessId)
+{
+    BOOL ok;
+
+    EnterCriticalSection(&g_DriverLock);
+    ok = (g_DriverHandle != INVALID_HANDLE_VALUE) && BLACKBIRDSCMarkInterfaceReady(g_DriverHandle, ProcessId);
+    LeaveCriticalSection(&g_DriverLock);
+    return ok;
+}
 static VOID ControllerClientClearPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client)
 {
     if (Client == NULL)
@@ -840,6 +874,103 @@ static BOOL ControllerClientIsPrivileged(_In_ const BLACKBIRD_CONTROLLER_CLIENT 
     return TRUE;
 }
 
+static PCWSTR ControllerBaseNameFromPath(_In_opt_z_ PCWSTR Path)
+{
+    PCWSTR cursor;
+
+    if (Path == NULL)
+    {
+        return L"";
+    }
+
+    cursor = wcsrchr(Path, L'\\');
+    if (cursor != NULL && cursor[1] != L'\0')
+    {
+        return cursor + 1;
+    }
+
+    cursor = wcsrchr(Path, L'/');
+    if (cursor != NULL && cursor[1] != L'\0')
+    {
+        return cursor + 1;
+    }
+
+    return Path;
+}
+
+static BOOL ControllerClientQueryImagePath(_In_ const BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                           _Out_writes_z_(PathChars) PWSTR Path, _In_ DWORD PathChars)
+{
+    HANDLE process = NULL;
+    DWORD chars = PathChars;
+
+    if (Client == NULL || Client->ProcessId == 0 || Path == NULL || PathChars == 0)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    Path[0] = L'\0';
+    process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, Client->ProcessId);
+    if (process == NULL)
+    {
+        return FALSE;
+    }
+
+    if (!QueryFullProcessImageNameW(process, 0, Path, &chars))
+    {
+        DWORD err = GetLastError();
+        CloseHandle(process);
+        SetLastError(err);
+        return FALSE;
+    }
+
+    CloseHandle(process);
+    return TRUE;
+}
+
+static BOOL ControllerClientIsTrustedControlClient(_In_ const BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                   _Out_ BOOL *IsTrusted)
+{
+    WCHAR imagePath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+    PCWSTR baseName;
+
+    if (Client == NULL || IsTrusted == NULL)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    *IsTrusted = FALSE;
+    if (Client->Role != BlackbirdControllerClientRoleControl)
+    {
+        return TRUE;
+    }
+
+    if (!ControllerClientQueryImagePath(Client, imagePath, RTL_NUMBER_OF(imagePath)))
+    {
+        return FALSE;
+    }
+
+    baseName = ControllerBaseNameFromPath(imagePath);
+    *IsTrusted = (_wcsicmp(baseName, L"BlackbirdInterface.exe") == 0);
+    return TRUE;
+}
+
+static BOOL ControllerCommandAllowedForRole(_In_ DWORD ClientRole, _In_ UINT32 Command)
+{
+    switch (ClientRole)
+    {
+    case BlackbirdControllerClientRoleHook:
+        return (Command == BlackbirdIpcCommandHandshake || Command == BlackbirdIpcCommandPublishHookEvent ||
+                Command == BlackbirdIpcCommandNotifyHookReady);
+    case BlackbirdControllerClientRoleControl:
+        return (Command != BlackbirdIpcCommandPublishHookEvent && Command != BlackbirdIpcCommandNotifyHookReady);
+    default:
+        return FALSE;
+    }
+}
+
 static BOOL ControllerQueryProcessTokenUser(_In_ DWORD ProcessId, _Outptr_ PTOKEN_USER *TokenUserOut)
 {
     HANDLE process = NULL;
@@ -1538,6 +1669,22 @@ static UINT32 ControllerHookSeverityForThreadAccess(_In_ ULONG DesiredAccess)
     return 2u;
 }
 
+/* Translate CallerFlags bits into a severity addend.  An unmapped-region caller
+ * (shellcode) is a strong signal (+2); a non-system DLL caller is a softer one (+1).
+ * The two are mutually exclusive from the sensor's perspective — unmapped takes priority. */
+static UINT32 ControllerCallerOriginSeverityBoost(_In_ UINT32 CallerFlags)
+{
+    if (CallerFlags & BLACKBIRD_HOOK_CALLER_FLAG_HAS_UNMAPPED)
+    {
+        return 2u;
+    }
+    if (CallerFlags & BLACKBIRD_HOOK_CALLER_FLAG_HAS_NONSYSTEM_DLL)
+    {
+        return 1u;
+    }
+    return 0u;
+}
+
 static BOOL ControllerHookDecodeSockaddr(_In_reads_bytes_(SampleSize) const UINT8 *Sample, _In_ UINT32 SampleSize,
                                          _Out_ UINT16 *FamilyOut, _Out_ UINT16 *PortOut)
 {
@@ -1719,7 +1866,6 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
     BLACKBIRD_IPC_ETW_EVENT mapped;
     DWORD eventPid = 0;
     DWORD threadId = 0;
-    BOOL privileged = FALSE;
     CHAR apiName[BLACKBIRD_IPC_MAX_HOOK_API_NAME];
     CHAR moduleName[BLACKBIRD_IPC_MAX_HOOK_MODULE_NAME];
     PCSTR kindName;
@@ -1750,10 +1896,7 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
 
     if (eventPid != Client->ProcessId)
     {
-        if (!ControllerClientIsPrivileged(Client, &privileged) || !privileged)
-        {
-            return ERROR_ACCESS_DENIED;
-        }
+        return ERROR_ACCESS_DENIED;
     }
 
     threadId = HookEvent->ThreadId;
@@ -2018,6 +2161,110 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
                                    (unsigned long long)HookEvent->Context2, (unsigned long long)HookEvent->Context3,
                                    (unsigned long long)HookEvent->Args[4]);
         }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventNt && lstrcmpiA(apiName, "NtCreateThreadEx") == 0)
+        {
+            /* Context0=ProcessHandle, Context1=StartRoutine, Context2=CreateFlags, Context3=Argument.
+             * A handle that is not the self-pseudo-handle (-1) means cross-process thread creation.
+             * CreateFlags 0x4 = THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER — always high-severity. */
+            UINT64 processHandle = HookEvent->Context0;
+            UINT64 startRoutine  = HookEvent->Context1;
+            UINT32 createFlags   = (UINT32)(HookEvent->Context2 & 0xFFFFFFFFull);
+            BOOL remoteThread    = (processHandle != (UINT64)(ULONG_PTR)-1) && (processHandle != 0);
+            BOOL hiddenThread    = (createFlags & 0x4u) != 0;
+
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
+                                 remoteThread ? "USERMODE_REMOTE_THREAD_CREATE" : "USERMODE_THREAD_CREATE");
+            mapped.Severity = remoteThread ? (hiddenThread ? 7u : 5u) : (hiddenThread ? 6u : 2u);
+            specializedEvent = TRUE;
+            (void)StringCchPrintfW(
+                mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                L"thread.create processHandle=0x%llX startRoutine=0x%llX createFlags=0x%X remote=%u hidden=%u",
+                (unsigned long long)processHandle, (unsigned long long)startRoutine,
+                (unsigned int)createFlags, (unsigned int)remoteThread, (unsigned int)hiddenThread);
+        }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventNt &&
+                 (lstrcmpiA(apiName, "NtQueueApcThreadEx") == 0 || lstrcmpiA(apiName, "NtQueueApcThreadEx2") == 0))
+        {
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
+                                 "USERMODE_APC_QUEUE_ACTIVITY");
+            mapped.Severity = 6u;
+            specializedEvent = TRUE;
+            (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                   L"thread.apcEx threadHandle=0x%llX routine=0x%llX arg1=0x%llX arg2=0x%llX",
+                                   (unsigned long long)HookEvent->Context0, (unsigned long long)HookEvent->Context1,
+                                   (unsigned long long)HookEvent->Context2, (unsigned long long)HookEvent->Context3);
+        }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventNt &&
+                 (lstrcmpiA(apiName, "NtCreateSection") == 0 || lstrcmpiA(apiName, "NtCreateSectionEx") == 0))
+        {
+            /* Context1=SectionPageProtection, Context2=AllocationAttributes, Context3=FileHandle.
+             * SEC_IMAGE (0x1000000) means the section is backed by a PE image file.
+             * PAGE_EXECUTE_* protections occupy the 0x10–0x80 range. */
+            UINT32 sectionPageProtect = (UINT32)(HookEvent->Context1 & 0xFFFFFFFFull);
+            UINT32 allocAttribs       = (UINT32)(HookEvent->Context2 & 0xFFFFFFFFull);
+            BOOL isImage = (allocAttribs & 0x1000000u) != 0;
+            BOOL isExec  = (sectionPageProtect & 0xF0u) != 0;
+            UINT32 sev   = isImage ? 5u : (isExec ? 4u : 3u);
+
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
+                                 "USERMODE_IMAGE_SECTION_ACTIVITY");
+            mapped.Severity = sev;
+            specializedEvent = TRUE;
+            (void)StringCchPrintfW(
+                mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                L"section.create sectionPageProtect=0x%X allocAttribs=0x%X isImage=%u isExec=%u fileHandle=0x%llX",
+                (unsigned int)sectionPageProtect, (unsigned int)allocAttribs,
+                (unsigned int)isImage, (unsigned int)isExec, (unsigned long long)HookEvent->Context3);
+        }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventNt &&
+                 (lstrcmpiA(apiName, "NtMapViewOfSection") == 0 || lstrcmpiA(apiName, "NtMapViewOfSectionEx") == 0))
+        {
+            /* Context0=SectionHandle, Context1=ProcessHandle, Context2=BaseAddress, Context3=ViewSize.
+             * Args[6]=Win32Protect (per syscall parameter order).
+             * Cross-process + executable map is the classic DLL injection / manual-map final step. */
+            UINT64 processHandle = HookEvent->Context1;
+            UINT32 win32Protect  = (argCount > 6u) ? (UINT32)(HookEvent->Args[6] & 0xFFFFFFFFull) : 0u;
+            BOOL remoteMap = (processHandle != (UINT64)(ULONG_PTR)-1) && (processHandle != 0);
+            BOOL execMap   = (win32Protect & 0xF0u) != 0;
+            UINT32 sev;
+
+            if (remoteMap && execMap)
+                sev = 5u;
+            else if (remoteMap)
+                sev = 4u;
+            else if (execMap)
+                sev = 3u;
+            else
+                sev = 2u;
+
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
+                                 "USERMODE_SECTION_MAP_ACTIVITY");
+            mapped.Severity = sev;
+            specializedEvent = TRUE;
+            (void)StringCchPrintfW(
+                mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                L"section.map sectionHandle=0x%llX processHandle=0x%llX baseAddress=0x%llX viewSize=0x%llX win32Protect=0x%X remote=%u exec=%u",
+                (unsigned long long)HookEvent->Context0, (unsigned long long)processHandle,
+                (unsigned long long)HookEvent->Context2, (unsigned long long)HookEvent->Context3,
+                (unsigned int)win32Protect, (unsigned int)remoteMap, (unsigned int)execMap);
+        }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventNt &&
+                 (lstrcmpiA(apiName, "NtCreateUserProcess") == 0 || lstrcmpiA(apiName, "NtCreateProcessEx") == 0))
+        {
+            /* Context2=CreateFlags.  Bit 0x1 = PROCESS_CREATE_FLAGS_SUSPENDED — the hallmark of
+             * process-hollowing and doppelgänging launch patterns. */
+            UINT32 createFlags = (UINT32)(HookEvent->Context2 & 0xFFFFFFFFull);
+            BOOL suspended     = (createFlags & 0x1u) != 0;
+
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
+                                 "USERMODE_PROCESS_CREATE_ACTIVITY");
+            mapped.Severity = suspended ? 4u : 2u;
+            specializedEvent = TRUE;
+            (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                   L"process.create processHandle=0x%llX flags=0x%X suspended=%u",
+                                   (unsigned long long)HookEvent->Context0, (unsigned int)createFlags,
+                                   (unsigned int)suspended);
+        }
         else if (HookEvent->Kind == BlackbirdIpcHookEventWinsock &&
                  (lstrcmpiA(apiName, "connect") == 0 || lstrcmpiA(apiName, "WSAConnect") == 0))
         {
@@ -2089,6 +2336,49 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
     if (sampleSize != 0)
     {
         CopyMemory(mapped.DeepSample, HookEvent->DataSample, sampleSize);
+    }
+
+    /* Feed the per-PID heuristics ledger for memory and critical events that originate
+     * from the usermode hook path.  This is separate from the ETW observation in the
+     * runtime callback, which covers kernel-side telemetry. */
+    if (HookEvent->Kind != BlackbirdIpcHookEventIntegrity && mapped.Severity >= 2u && mapped.ProcessId != 0u)
+    {
+        UINT32 heurFlags = 0;
+        if (memoryEvent)
+        {
+            if (lstrcmpiA(apiName, "NtAllocateVirtualMemory") == 0)
+                heurFlags |= BLACKBIRD_HEUR_FLAG_ALLOC_RW;
+            else if (lstrcmpiA(apiName, "NtWriteVirtualMemory") == 0)
+                heurFlags |= BLACKBIRD_HEUR_FLAG_WRITE_VM;
+            else if (lstrcmpiA(apiName, "NtProtectVirtualMemory") == 0)
+                heurFlags |= BLACKBIRD_HEUR_FLAG_PROTECT_RX;
+        }
+        if (HookEvent->Kind == BlackbirdIpcHookEventWinsock &&
+            (lstrcmpiA(apiName, "connect") == 0 || lstrcmpiA(apiName, "WSAConnect") == 0))
+        {
+            heurFlags |= BLACKBIRD_HEUR_FLAG_NETWORK;
+        }
+        if (lstrcmpiA(apiName, "NtCreateThreadEx") == 0 && specializedEvent)
+        {
+            heurFlags |= BLACKBIRD_HEUR_FLAG_REMOTE_TH;
+        }
+        if (mapped.Severity >= 4u)
+        {
+            heurFlags |= BLACKBIRD_HEUR_FLAG_DETECTION;
+        }
+        if (heurFlags != 0u)
+        {
+            ControllerHeuristicsObserveEvent((DWORD)mapped.ProcessId, mapped.Severity, heurFlags);
+        }
+    }
+
+    /* Boost severity when the syscall originates from a suspicious call site.
+     * Applied after all specialized handlers so their base severities are comparable.
+     * Integrity events are excluded — they already reflect tamper state directly. */
+    if (HookEvent->Kind != BlackbirdIpcHookEventIntegrity && mapped.Severity > 0u && mapped.Severity < 8u)
+    {
+        UINT32 boost = ControllerCallerOriginSeverityBoost(HookEvent->CallerFlags);
+        mapped.Severity = (mapped.Severity + boost > 8u) ? 8u : (mapped.Severity + boost);
     }
 
     ControllerDispatchEtwEvent(&mapped);
@@ -2369,6 +2659,12 @@ static PCSTR ControllerCommandName(_In_ UINT32 Command)
         return "notify-hook-ready";
     case BlackbirdIpcCommandControlProcessExecution:
         return "control-process-execution";
+    case BlackbirdIpcCommandSetRuntimeConfig:
+        return "set-runtime-config";
+    case BlackbirdIpcCommandGetRuntimeConfig:
+        return "get-runtime-config";
+    case BlackbirdIpcCommandMarkInterfaceReady:
+        return "mark-interface-ready";
     default:
         return "unknown";
     }
@@ -2379,8 +2675,33 @@ static DWORD ControllerHandleClientCommand(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *
                                            _Out_ BLACKBIRD_IPC_PACKET *Response)
 {
     DWORD err = ERROR_SUCCESS;
+    BOOL trustedControlClient = FALSE;
 
     ControllerPrepareResponse(Request, Response);
+
+    if (!ControllerCommandAllowedForRole(Client->Role, Request->Command))
+    {
+        err = ERROR_ACCESS_DENIED;
+        goto Complete;
+    }
+
+    if (Client->Role == BlackbirdControllerClientRoleControl && Request->Command != BlackbirdIpcCommandHandshake)
+    {
+        if (!ControllerClientIsTrustedControlClient(Client, &trustedControlClient))
+        {
+            err = GetLastError();
+            if (err == ERROR_SUCCESS)
+            {
+                err = ERROR_ACCESS_DENIED;
+            }
+            goto Complete;
+        }
+        if (!trustedControlClient)
+        {
+            err = ERROR_ACCESS_DENIED;
+            goto Complete;
+        }
+    }
 
     switch (Request->Command)
     {
@@ -2455,6 +2776,35 @@ static DWORD ControllerHandleClientCommand(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *
             }
         }
         break;
+    case BlackbirdIpcCommandSetRuntimeConfig:
+        if (!ControllerProxySetRuntimeConfig(Request->Payload.SetRuntimeConfigRequest.Flags,
+                                             Request->Payload.SetRuntimeConfigRequest.Mask))
+        {
+            err = GetLastError();
+        }
+        break;
+    case BlackbirdIpcCommandGetRuntimeConfig:
+        if (!ControllerProxyGetRuntimeConfig(&Response->Payload.RuntimeConfigResponse))
+        {
+            err = GetLastError();
+        }
+        break;
+    case BlackbirdIpcCommandMarkInterfaceReady:
+        if (Request->Payload.MarkInterfaceReadyRequest.ProcessId == 0 ||
+            Request->Payload.MarkInterfaceReadyRequest.ProcessId != Client->ProcessId)
+        {
+            err = ERROR_ACCESS_DENIED;
+            break;
+        }
+        if (!ControllerProxyMarkInterfaceReady(Request->Payload.MarkInterfaceReadyRequest.ProcessId))
+        {
+            err = GetLastError();
+            if (err == ERROR_SUCCESS)
+            {
+                err = ERROR_GEN_FAILURE;
+            }
+        }
+        break;
     case BlackbirdIpcCommandGetEtwEvent:
         err = ControllerClientGetEtwEvent(Client, Request->Payload.GetEventRequest.TimeoutMs,
                                           &Response->Payload.EtwEvent);
@@ -2479,19 +2829,20 @@ static DWORD ControllerHandleClientCommand(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *
         break;
     }
 
+Complete:
     Response->Status = err;
     if (Request->Command != BlackbirdIpcCommandGetEvent && Request->Command != BlackbirdIpcCommandGetEtwEvent &&
         Request->Command != BlackbirdIpcCommandPublishHookEvent)
     {
-        ControllerLog("[IPC] cmd=%s seq=%lu clientPid=%lu session=%lu status=%lu\n",
-                      ControllerCommandName(Request->Command), Request->Sequence, Client->ProcessId, Client->SessionId,
-                      err);
+        ControllerLog("[IPC] cmd=%s seq=%lu role=%lu clientPid=%lu session=%lu status=%lu\n",
+                      ControllerCommandName(Request->Command), Request->Sequence, Client->Role, Client->ProcessId,
+                      Client->SessionId, err);
     }
     else if (err != ERROR_SUCCESS && err != ERROR_NO_MORE_ITEMS)
     {
-        ControllerLog("[IPC][WARN] cmd=%s seq=%lu clientPid=%lu session=%lu status=%lu\n",
-                      ControllerCommandName(Request->Command), Request->Sequence, Client->ProcessId, Client->SessionId,
-                      err);
+        ControllerLog("[IPC][WARN] cmd=%s seq=%lu role=%lu clientPid=%lu session=%lu status=%lu\n",
+                      ControllerCommandName(Request->Command), Request->Sequence, Client->Role, Client->ProcessId,
+                      Client->SessionId, err);
     }
     return err;
 }
@@ -2628,10 +2979,11 @@ DWORD WINAPI ControllerClientThreadProc(_In_ LPVOID Context)
     free(client);
     return 0;
 }
-BOOL ControllerCreatePipeSecurity(_Out_ PSECURITY_ATTRIBUTES SecurityAttributes,
+BOOL ControllerCreatePipeSecurity(_In_ DWORD ClientRole, _Out_ PSECURITY_ATTRIBUTES SecurityAttributes,
                                   _Outptr_ PSECURITY_DESCRIPTOR *SecurityDescriptor)
 {
     BOOL ok;
+    PCWSTR sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)";
 
     if (SecurityAttributes == NULL || SecurityDescriptor == NULL)
     {
@@ -2641,8 +2993,9 @@ BOOL ControllerCreatePipeSecurity(_Out_ PSECURITY_ATTRIBUTES SecurityAttributes,
     *SecurityDescriptor = NULL;
     ZeroMemory(SecurityAttributes, sizeof(*SecurityAttributes));
 
-    ok = ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)",
-                                                              SDDL_REVISION_1, SecurityDescriptor, NULL);
+    UNREFERENCED_PARAMETER(ClientRole);
+
+    ok = ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, SDDL_REVISION_1, SecurityDescriptor, NULL);
     if (!ok || *SecurityDescriptor == NULL)
     {
         return FALSE;

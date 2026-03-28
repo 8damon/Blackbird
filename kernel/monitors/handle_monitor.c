@@ -8,6 +8,7 @@
 #include "..\core\unicode_utils.h"
 #include "..\telemetry\etw.h"
 #include "apc_monitor.h"
+#include "process_monitor.h"
 #include "..\correlation\intent_store.h"
 #include "handle_monitor.h"
 
@@ -54,6 +55,9 @@
 #ifndef THREAD_ALL_ACCESS
 #define THREAD_ALL_ACCESS (STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFFF)
 #endif
+
+#define BLACKBIRD_PROTECTED_PROCESS_ALLOWED_ACCESS (PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE)
+#define BLACKBIRD_PROTECTED_THREAD_ALLOWED_ACCESS (THREAD_QUERY_LIMITED_INFORMATION | SYNCHRONIZE)
 
 #ifndef MEM_COMMIT
 #define MEM_COMMIT 0x00001000
@@ -132,6 +136,7 @@ NTSYSAPI VOID NTAPI RtlCaptureContext(_Out_ PCONTEXT ContextRecord);
 
 NTKERNELAPI HANDLE PsGetThreadProcessId(_In_ PETHREAD Thread);
 NTKERNELAPI NTSTATUS PsLookupProcessByProcessId(_In_ HANDLE ProcessId, _Outptr_ PEPROCESS *Process);
+NTKERNELAPI PCHAR PsGetProcessImageFileName(_In_ PEPROCESS Process);
 NTKERNELAPI NTSTATUS MmCopyVirtualMemory(_In_ PEPROCESS FromProcess, _In_ const VOID *FromAddress,
                                          _In_ PEPROCESS ToProcess, _Out_writes_bytes_(BufferSize) PVOID ToAddress,
                                          _In_ SIZE_T BufferSize, _In_ KPROCESSOR_MODE PreviousMode,
@@ -1627,6 +1632,59 @@ static VOID BLACKBIRDLogHandleTelemetry(_In_ BLACKBIRD_HANDLE_CLASSIFICATION Cla
                                       L"high-confidence stack integrity anomaly on high-risk handle operation");
     }
 
+    /* Credential-access: process-memory handle to lsass.exe */
+    if (!IsThreadObject &&
+        (DesiredAccess & (PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD)) != 0 &&
+        CallerPid != TargetPid)
+    {
+        PEPROCESS targetProc = NULL;
+        NTSTATUS  lookupSt   = PsLookupProcessByProcessId(TargetPid, &targetProc);
+        if (NT_SUCCESS(lookupSt))
+        {
+            PCHAR imageName = PsGetProcessImageFileName(targetProc);
+            if (imageName != NULL)
+            {
+                /* Case-insensitive byte compare against "lsass.exe" */
+                static const CHAR kLsass[] = "lsass.exe";
+                BOOLEAN isLsass = TRUE;
+                ULONG   ci;
+                for (ci = 0; ci < sizeof(kLsass) - 1u; ++ci)
+                {
+                    CHAR c = imageName[ci];
+                    if (c >= 'A' && c <= 'Z') c = (CHAR)(c + 32);
+                    if (c != kLsass[ci]) { isLsass = FALSE; break; }
+                }
+                if (isLsass && imageName[sizeof(kLsass) - 1u] == '\0')
+                {
+                    ULONG sev = (Class == BLACKBIRDHandleDirectSyscallSuspect) ? 8u : 7u;
+                    BLACKBIRDEtwLogDetectionEvent("CREDENTIAL_ACCESS_LSASS_HANDLE", sev,
+                                                  CallerPid, TargetPid, 0, (UINT32)DesiredAccess, 0,
+                                                  L"cross-process memory handle to lsass.exe — credential access attempt");
+                }
+
+                /* Winlogon memory access is also high-value — holds logon tokens */
+                {
+                    static const CHAR kWinlogon[] = "winlogon.exe";
+                    BOOLEAN isWinlogon = TRUE;
+                    for (ci = 0; ci < sizeof(kWinlogon) - 1u; ++ci)
+                    {
+                        CHAR c = imageName[ci];
+                        if (c >= 'A' && c <= 'Z') c = (CHAR)(c + 32);
+                        if (c != kWinlogon[ci]) { isWinlogon = FALSE; break; }
+                    }
+                    if (isWinlogon && imageName[sizeof(kWinlogon) - 1u] == '\0' &&
+                        (DesiredAccess & (PROCESS_VM_READ | PROCESS_VM_WRITE)) != 0)
+                    {
+                        BLACKBIRDEtwLogDetectionEvent("CREDENTIAL_ACCESS_WINLOGON_HANDLE", 6,
+                                                      CallerPid, TargetPid, 0, (UINT32)DesiredAccess, 0,
+                                                      L"cross-process memory handle to winlogon.exe");
+                    }
+                }
+            }
+            ObDereferenceObject(targetProc);
+        }
+    }
+
     if (BLACKBIRDControlHasClientsFast())
     {
         RtlZeroMemory(&handleEvent, sizeof(handleEvent));
@@ -2056,6 +2114,8 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
                                                              _Inout_ POB_PRE_OPERATION_INFORMATION OperationInformation)
 {
     ACCESS_MASK desiredAccess;
+    ACCESS_MASK originalDesiredAccess;
+    ACCESS_MASK sanitizedAccess;
     HANDLE callerPid;
     HANDLE callerTid;
     HANDLE targetPid;
@@ -2076,6 +2136,8 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
     BOOLEAN shouldCaptureStack;
     BOOLEAN isThreadObject = FALSE;
     BOOLEAN isDuplicateOperation = FALSE;
+    BOOLEAN isProtectedTarget;
+    BOOLEAN trustedProtectedCaller;
     LONG failureCounter;
 
     UNREFERENCED_PARAMETER(RegistrationContext);
@@ -2104,6 +2166,8 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
         return OB_PREOP_SUCCESS;
     }
 
+    originalDesiredAccess = desiredAccess;
+    sanitizedAccess = desiredAccess;
     hasVmWriteOrFull = FALSE;
     hasThreadContextAccess = FALSE;
     if (OperationInformation->ObjectType == *PsProcessType)
@@ -2111,9 +2175,10 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
         targetProcess = (PEPROCESS)OperationInformation->Object;
         targetPid = PsGetProcessId(targetProcess);
 
-        hasVmWriteOrFull = ((desiredAccess & PROCESS_VM_OPERATION) != 0) || ((desiredAccess & PROCESS_VM_WRITE) != 0) ||
-                           ((desiredAccess & PROCESS_CREATE_THREAD) != 0) ||
-                           ((desiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS);
+        hasVmWriteOrFull = ((originalDesiredAccess & PROCESS_VM_OPERATION) != 0) ||
+                           ((originalDesiredAccess & PROCESS_VM_WRITE) != 0) ||
+                           ((originalDesiredAccess & PROCESS_CREATE_THREAD) != 0) ||
+                           ((originalDesiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS);
     }
     else if (OperationInformation->ObjectType == *PsThreadType)
     {
@@ -2121,13 +2186,38 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
         targetThread = (PETHREAD)OperationInformation->Object;
         targetPid = PsGetThreadProcessId(targetThread);
 
-        hasThreadContextAccess = ((desiredAccess & THREAD_SET_CONTEXT) != 0) ||
-                                 ((desiredAccess & THREAD_GET_CONTEXT) != 0) ||
-                                 ((desiredAccess & THREAD_SUSPEND_RESUME) != 0);
+        hasThreadContextAccess = ((originalDesiredAccess & THREAD_SET_CONTEXT) != 0) ||
+                                 ((originalDesiredAccess & THREAD_GET_CONTEXT) != 0) ||
+                                 ((originalDesiredAccess & THREAD_SUSPEND_RESUME) != 0) ||
+                                 ((originalDesiredAccess & THREAD_ALL_ACCESS) == THREAD_ALL_ACCESS);
     }
     else
     {
         return OB_PREOP_SUCCESS;
+    }
+
+    callerPid = PsGetCurrentProcessId();
+    callerTid = PsGetCurrentThreadId();
+    callerPid32 = (UINT32)(ULONG_PTR)callerPid;
+    targetPid32 = (UINT32)(ULONG_PTR)targetPid;
+    isProtectedTarget = BLACKBIRDProcessMonitorIsProtectedPid(targetPid32);
+    trustedProtectedCaller = BLACKBIRDProcessMonitorIsTrustedProtectedCaller(callerPid32, targetPid32);
+    if (isProtectedTarget && !trustedProtectedCaller)
+    {
+        sanitizedAccess &= isThreadObject ? BLACKBIRD_PROTECTED_THREAD_ALLOWED_ACCESS
+                                          : BLACKBIRD_PROTECTED_PROCESS_ALLOWED_ACCESS;
+        if (sanitizedAccess != desiredAccess)
+        {
+            if (OperationInformation->Operation == OB_OPERATION_HANDLE_CREATE)
+            {
+                OperationInformation->Parameters->CreateHandleInformation.DesiredAccess = sanitizedAccess;
+            }
+            else
+            {
+                OperationInformation->Parameters->DuplicateHandleInformation.DesiredAccess = sanitizedAccess;
+            }
+            desiredAccess = sanitizedAccess;
+        }
     }
 
     if (!hasVmWriteOrFull && !hasThreadContextAccess)
@@ -2139,10 +2229,6 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
         return OB_PREOP_SUCCESS;
     }
 
-    callerPid = PsGetCurrentProcessId();
-    callerTid = PsGetCurrentThreadId();
-    callerPid32 = (UINT32)(ULONG_PTR)callerPid;
-    targetPid32 = (UINT32)(ULONG_PTR)targetPid;
     secondaryPid32 = (targetPid32 != callerPid32) ? targetPid32 : 0;
     streamMask = BLACKBIRD_STREAM_HANDLE;
     if (hasVmWriteOrFull)
@@ -2171,11 +2257,11 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
 
     if (intentFlags != 0)
     {
-        BLACKBIRDCorrelationRecordHandleIntent(callerPid, targetPid, desiredAccess, intentFlags);
+        BLACKBIRDCorrelationRecordHandleIntent(callerPid, targetPid, originalDesiredAccess, intentFlags);
     }
     if (isThreadObject)
     {
-        BLACKBIRDApcMonitorRecordThreadHandleIntent(callerPid, targetPid, desiredAccess, isDuplicateOperation);
+        BLACKBIRDApcMonitorRecordThreadHandleIntent(callerPid, targetPid, originalDesiredAccess, isDuplicateOperation);
     }
 
     if (!BLACKBIRDHandleTryAcquireWorkSlot())
@@ -2185,12 +2271,12 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
                        "BLACKBIRD: handle callback drop caller=%p target=%p access=0x%08X total=%lu.\n", callerPid,
-                       targetPid, desiredAccess, (ULONG)failureCounter);
+                       targetPid, originalDesiredAccess, (ULONG)failureCounter);
         }
         BLACKBIRD_DBG_PRINT(
             DPFLTR_WARNING_LEVEL,
             "BLACKBIRD[DBG]: dropping handle preop caller=%p target=%p access=0x%08X (work slot unavailable).\n",
-            callerPid, targetPid, desiredAccess);
+            callerPid, targetPid, originalDesiredAccess);
         return OB_PREOP_SUCCESS;
     }
 
@@ -2202,7 +2288,7 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
                        "BLACKBIRD: handle callback alloc failure caller=%p target=%p access=0x%08X total=%lu.\n",
-                       callerPid, targetPid, desiredAccess, (ULONG)failureCounter);
+                       callerPid, targetPid, originalDesiredAccess, (ULONG)failureCounter);
         }
         BLACKBIRD_DBG_PRINT(DPFLTR_ERROR_LEVEL, "BLACKBIRD[DBG]: ExAllocatePool2 failed for handle work item.\n");
         BLACKBIRDHandleReleaseWorkSlot();
@@ -2213,7 +2299,7 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
     work->CallerPid = callerPid;
     work->CallerTid = callerTid;
     work->TargetPid = targetPid;
-    work->DesiredAccess = desiredAccess;
+    work->DesiredAccess = originalDesiredAccess;
     work->IsThreadObject = isThreadObject;
     work->IsDuplicateOperation = isDuplicateOperation;
 
@@ -2222,10 +2308,10 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
     fullCopyCount = 0;
     BLACKBIRDCaptureRegisterSnapshot(work);
     shouldCaptureStack = isDuplicateOperation ||
-                         ((desiredAccess & (PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD |
-                                            THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME)) != 0) ||
-                         ((desiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS) ||
-                         ((desiredAccess & THREAD_ALL_ACCESS) == THREAD_ALL_ACCESS);
+                         ((originalDesiredAccess & (PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD |
+                                                    THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME)) != 0) ||
+                         ((originalDesiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS) ||
+                         ((originalDesiredAccess & THREAD_ALL_ACCESS) == THREAD_ALL_ACCESS);
     if (shouldCaptureStack)
     {
         __try
@@ -2412,3 +2498,6 @@ BLACKBIRDHandleMonitorSelfCheck(VOID)
 
     return TRUE;
 }
+
+
+

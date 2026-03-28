@@ -1,4 +1,11 @@
 #include "control_private.h"
+#include "..\..\monitors\process_monitor.h"
+
+static BOOLEAN BLACKBIRDControlRequestorAllowed(_In_ ULONG RequesterPid)
+{
+    return (BLACKBIRDProcessMonitorIsControllerPid(RequesterPid) ||
+            BLACKBIRDProcessMonitorIsInterfacePid(RequesterPid));
+}
 
 _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST Request, size_t OutputBufferLength,
                                                         size_t InputBufferLength, ULONG IoControlCode)
@@ -53,12 +60,21 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUE
     }
 
     if (BLACKBIRDControlIsShutdown() && IoControlCode != IOCTL_BLACKBIRD_GET_STATS &&
-        IoControlCode != IOCTL_BLACKBIRD_GET_HEALTH && IoControlCode != IOCTL_BLACKBIRD_SET_SHUTDOWN_MODE)
+        IoControlCode != IOCTL_BLACKBIRD_GET_HEALTH && IoControlCode != IOCTL_BLACKBIRD_SET_SHUTDOWN_MODE &&
+        IoControlCode != IOCTL_BLACKBIRD_GET_RUNTIME_CONFIG)
     {
         DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
                    "BLACKBIRD: ioctl rejected during shutdown requesterPid=%lu ioctl=%s(0x%08X).\n", requesterPid,
                    BLACKBIRDIoctlName(IoControlCode), IoControlCode);
         WdfRequestComplete(Request, STATUS_DEVICE_NOT_READY);
+        return;
+    }
+    if (!BLACKBIRDControlRequestorAllowed(requesterPid))
+    {
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+                   "BLACKBIRD: ioctl denied requesterPid=%lu ioctl=%s(0x%08X) reason=untrusted-requestor.\n",
+                   requesterPid, BLACKBIRDIoctlName(IoControlCode), IoControlCode);
+        WdfRequestComplete(Request, STATUS_ACCESS_DENIED);
         return;
     }
 
@@ -93,6 +109,18 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUE
         break;
     case IOCTL_BLACKBIRD_CONTROL_EXECUTION:
         status = BLACKBIRDHandleControlExecutionIoctl(ctx->Client, Request);
+        break;
+    case IOCTL_BLACKBIRD_SET_RUNTIME_CONFIG:
+        status = BLACKBIRDHandleSetRuntimeConfigIoctl(ctx->Client, Request);
+        break;
+    case IOCTL_BLACKBIRD_GET_RUNTIME_CONFIG:
+        status = BLACKBIRDHandleGetRuntimeConfigIoctl(ctx->Client, Request, &bytesOut);
+        break;
+    case IOCTL_BLACKBIRD_MARK_INTERFACE_READY:
+        status = BLACKBIRDHandleMarkInterfaceReadyIoctl(ctx->Client, Request);
+        break;
+    case IOCTL_BLACKBIRD_MARK_CONTROLLER_READY:
+        status = BLACKBIRDHandleMarkControllerReadyIoctl(ctx->Client, Request);
         break;
     default:
         status = STATUS_INVALID_DEVICE_REQUEST;

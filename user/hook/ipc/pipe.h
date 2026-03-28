@@ -7,7 +7,7 @@
 
 namespace XIPC
 {
-    inline constexpr const wchar_t *PIPE_NAME = BLACKBIRD_IPC_PIPE_NAME;
+    inline constexpr const wchar_t *PIPE_NAME = BLACKBIRD_IPC_HOOK_PIPE_NAME;
     inline constexpr DWORD KHOK_MAGIC = 0x4B4F484B;
     inline constexpr DWORD KHOK_VERSION = 1;
     inline constexpr DWORD MAX_NAME_CHARS = 256;

@@ -97,6 +97,11 @@ extern "C"
     BLACKBIRDSC_API BOOL BLACKBIRDSCQueryProcessImagePath(_In_ HANDLE Device, _In_ DWORD ProcessId,
                                                           _Out_writes_z_(OutputChars) PWSTR Output,
                                                           _In_ DWORD OutputChars);
+    BLACKBIRDSC_API BOOL BLACKBIRDSCSetRuntimeConfig(_In_ HANDLE Device, _In_ DWORD Flags, _In_ DWORD Mask);
+    BLACKBIRDSC_API BOOL BLACKBIRDSCGetRuntimeConfig(_In_ HANDLE Device,
+                                                     _Out_ BLACKBIRD_RUNTIME_CONFIG_RESPONSE *Response);
+    BLACKBIRDSC_API BOOL BLACKBIRDSCMarkInterfaceReady(_In_ HANDLE Device, _In_ DWORD ProcessId);
+    BLACKBIRDSC_API BOOL BLACKBIRDSCMarkControllerReady(_In_ HANDLE Device, _In_ DWORD ProcessId);
     BLACKBIRDSC_API BOOL BLACKBIRDSCSetUserHookTarget(_In_ HANDLE Device, _In_ DWORD Mode, _In_ DWORD ProcessId,
                                                       _In_ DWORD Flags, _In_opt_z_ PCWSTR ImagePath,
                                                       _In_opt_z_ PCWSTR HookDllPath, _In_opt_z_ PCWSTR WorkingDirectory,
@@ -129,3 +134,5 @@ extern "C"
 #endif
 
 #endif
+
+

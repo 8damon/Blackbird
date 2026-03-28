@@ -149,6 +149,7 @@
     <ClCompile Include="..\user\controller\core\monitoring\blackbird_controller_subscriptions.c" />
     <ClCompile Include="..\user\controller\core\monitoring\blackbird_controller_etw_monitor.c" />
     <ClCompile Include="..\user\controller\core\correlation\blackbird_controller_hollowing.c" />
+    <ClCompile Include="..\user\controller\core\heuristics\Blackbird_controller_heuristics.c" />
     <ClCompile Include="..\user\controller\core\ipc\blackbird_controller_ipc.c" />
     <ClCompile Include="..\user\controller\core\runtime\blackbird_controller_node_runtime.c" />
     <ClCompile Include="..\user\controller\core\runtime\blackbird_controller_symbol_service.c" />
@@ -160,6 +161,7 @@
     <ClInclude Include="..\abi\blackbird_ioctl.h" />
     <ClInclude Include="..\user\controller\core\blackbird_controller_private.h" />
     <ClInclude Include="..\user\controller\core\injection\blackbird_controller_injection.h" />
+    <ClInclude Include="..\user\controller\core\heuristics\Blackbird_controller_heuristics.h" />
     <ClInclude Include="..\user\sensor\blackbird_sensor_core.h" />
   </ItemGroup>
   <ItemGroup>

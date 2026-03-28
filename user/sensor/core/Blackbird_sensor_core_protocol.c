@@ -1019,6 +1019,113 @@ BOOL BLACKBIRDSCQueryProcessImagePath(_In_ HANDLE Device, _In_ DWORD ProcessId,
     return TRUE;
 }
 
+BOOL BLACKBIRDSCSetRuntimeConfig(_In_ HANDLE Device, _In_ DWORD Flags, _In_ DWORD Mask)
+{
+    BLACKBIRD_IPC_PACKET request;
+    BLACKBIRD_IPC_PACKET response;
+    BLACKBIRD_SET_RUNTIME_CONFIG_REQUEST req;
+    DWORD bytes = 0;
+
+    if (Device == NULL || Device == INVALID_HANDLE_VALUE)
+    {
+        SetLastError(ERROR_INVALID_HANDLE);
+        return FALSE;
+    }
+
+    ZeroMemory(&req, sizeof(req));
+    req.Flags = Flags;
+    req.Mask = Mask;
+
+    if (BLACKBIRDSCIsClientProtocol())
+    {
+        BLACKBIRDSCInitIpcRequest(&request, BlackbirdIpcCommandSetRuntimeConfig);
+        request.Payload.SetRuntimeConfigRequest = req;
+        return BLACKBIRDSCIpcTransact(Device, &request, &response);
+    }
+
+    return DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_SET_RUNTIME_CONFIG, &req, sizeof(req), NULL, 0, &bytes, NULL);
+}
+
+BOOL BLACKBIRDSCGetRuntimeConfig(_In_ HANDLE Device, _Out_ BLACKBIRD_RUNTIME_CONFIG_RESPONSE *Response)
+{
+    BLACKBIRD_IPC_PACKET request;
+    BLACKBIRD_IPC_PACKET response;
+    DWORD bytes = 0;
+    BOOL ok;
+
+    if (Device == NULL || Device == INVALID_HANDLE_VALUE || Response == NULL)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    ZeroMemory(Response, sizeof(*Response));
+
+    if (BLACKBIRDSCIsClientProtocol())
+    {
+        BLACKBIRDSCInitIpcRequest(&request, BlackbirdIpcCommandGetRuntimeConfig);
+        ok = BLACKBIRDSCIpcTransact(Device, &request, &response);
+        if (ok)
+        {
+            *Response = response.Payload.RuntimeConfigResponse;
+        }
+        return ok;
+    }
+
+    return DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_GET_RUNTIME_CONFIG, NULL, 0, Response, sizeof(*Response),
+                           &bytes, NULL);
+}
+
+BOOL BLACKBIRDSCMarkInterfaceReady(_In_ HANDLE Device, _In_ DWORD ProcessId)
+{
+    BLACKBIRD_IPC_PACKET request;
+    BLACKBIRD_IPC_PACKET response;
+    BLACKBIRD_MARK_INTERFACE_READY_REQUEST req;
+    DWORD bytes = 0;
+
+    if (Device == NULL || Device == INVALID_HANDLE_VALUE || ProcessId == 0)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    ZeroMemory(&req, sizeof(req));
+    req.ProcessId = ProcessId;
+
+    if (BLACKBIRDSCIsClientProtocol())
+    {
+        BLACKBIRDSCInitIpcRequest(&request, BlackbirdIpcCommandMarkInterfaceReady);
+        request.Payload.MarkInterfaceReadyRequest = req;
+        return BLACKBIRDSCIpcTransact(Device, &request, &response);
+    }
+
+    return DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_MARK_INTERFACE_READY, &req, sizeof(req), NULL, 0, &bytes,
+                           NULL);
+}
+
+BOOL BLACKBIRDSCMarkControllerReady(_In_ HANDLE Device, _In_ DWORD ProcessId)
+{
+    BLACKBIRD_MARK_CONTROLLER_READY_REQUEST req;
+    DWORD bytes = 0;
+
+    if (Device == NULL || Device == INVALID_HANDLE_VALUE || ProcessId == 0)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    ZeroMemory(&req, sizeof(req));
+    req.ProcessId = ProcessId;
+
+    if (BLACKBIRDSCIsClientProtocol())
+    {
+        SetLastError(ERROR_NOT_SUPPORTED);
+        return FALSE;
+    }
+
+    return DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_MARK_CONTROLLER_READY, &req, sizeof(req), NULL, 0, &bytes,
+                           NULL);
+}
 BOOL BLACKBIRDSCSetUserHookTarget(_In_ HANDLE Device, _In_ DWORD Mode, _In_ DWORD ProcessId, _In_ DWORD Flags,
                                   _In_opt_z_ PCWSTR ImagePath, _In_opt_z_ PCWSTR HookDllPath,
                                   _In_opt_z_ PCWSTR WorkingDirectory, _In_opt_z_ PCWSTR EnvironmentOverrides,
@@ -1214,3 +1321,4 @@ BLACKBIRDSCParseStreamMaskA(_In_z_ const char *Text)
     free(copy);
     return mask;
 }
+

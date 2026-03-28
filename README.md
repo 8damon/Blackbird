@@ -13,7 +13,6 @@
 
 <p align="center">
   <img src="./media/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
-  <img src="./media/MAIN_ALT.png" width="980" alt="Blackbird main interface" />
 </p>
 
 # [BLACKBIRD](https://titansoftwork.com/blackbird/)

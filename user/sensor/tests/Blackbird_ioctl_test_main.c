@@ -103,8 +103,7 @@ static VOID RunDetectionExamplesSmoke(_Inout_ SUITE_RESULTS *Results)
     }
 
     completed = RunChildProcessAndWait(imagePath, "--list", 5000, &exitCode);
-    RecordResult(Results, completed, "DetectionExamples --list completed",
-                 "DetectionExamples --list did not complete");
+    RecordResult(Results, completed, "DetectionExamples --list completed", "DetectionExamples --list did not complete");
     if (!completed)
     {
         return;
@@ -200,8 +199,7 @@ int __cdecl main(int argc, char **argv)
     RunDetectionExamplesSmoke(&results);
 
     haveKernelDebuggerState = QueryKernelDebuggerState(&kdEnabled, &kdNotPresent);
-    RecordResult(&results, haveKernelDebuggerState,
-                 "queried SystemKernelDebuggerInformation environment baseline",
+    RecordResult(&results, haveKernelDebuggerState, "queried SystemKernelDebuggerInformation environment baseline",
                  "failed to query SystemKernelDebuggerInformation environment baseline");
     if (haveKernelDebuggerState)
     {
@@ -211,8 +209,7 @@ int __cdecl main(int argc, char **argv)
     }
 
     haveSharedKdByte = QuerySharedUserDataKernelDebuggerByte(&sharedKdByte);
-    RecordResult(&results, haveSharedKdByte,
-                 "read KUSER_SHARED_DATA kernel debugger byte",
+    RecordResult(&results, haveSharedKdByte, "read KUSER_SHARED_DATA kernel debugger byte",
                  "failed to read KUSER_SHARED_DATA kernel debugger byte");
     if (haveSharedKdByte)
     {

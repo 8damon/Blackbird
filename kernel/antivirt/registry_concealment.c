@@ -136,7 +136,7 @@ VOID BLACKBIRDRegistryBuildPathForCompare(_In_ PLARGE_INTEGER Cookie, _In_opt_ P
 }
 
 static VOID BLACKBIRDBlindWideString(_Inout_updates_bytes_(DataLength) PUCHAR DataBytes, _In_ ULONG DataLength,
-                                             _In_z_ PCWSTR Replacement)
+                                     _In_z_ PCWSTR Replacement)
 {
     ULONG i = 0;
     ULONG maxChars;
@@ -164,8 +164,7 @@ static VOID BLACKBIRDBlindWideString(_Inout_updates_bytes_(DataLength) PUCHAR Da
 
 /* Replace the first 3 bytes (OUI) of a binary MAC address with the Intel Corporate
  * OUI 8C:8D:28, leaving the device-specific last 3 bytes intact. */
-static VOID BLACKBIRDBlindOuiBinary(_Inout_updates_bytes_(DataLength) PUCHAR DataBytes,
-                                           _In_ ULONG DataLength)
+static VOID BLACKBIRDBlindOuiBinary(_Inout_updates_bytes_(DataLength) PUCHAR DataBytes, _In_ ULONG DataLength)
 {
     if (DataBytes == NULL || DataLength < 6)
     {
@@ -178,20 +177,19 @@ static VOID BLACKBIRDBlindOuiBinary(_Inout_updates_bytes_(DataLength) PUCHAR Dat
 
 /* Replace the OUI portion of a REG_SZ MAC string ("XXXXXXXXXXXX", 12 wide chars minimum)
  * with the hex digits for Intel OUI 8C8D28. */
-static VOID BLACKBIRDBlindOuiString(_Inout_updates_bytes_(DataLength) PUCHAR DataBytes,
-                                           _In_ ULONG DataLength)
+static VOID BLACKBIRDBlindOuiString(_Inout_updates_bytes_(DataLength) PUCHAR DataBytes, _In_ ULONG DataLength)
 {
     static const WCHAR kOuiHex[] = L"8C8D28";
     PWCHAR dest;
-    ULONG  maxChars;
-    ULONG  i;
+    ULONG maxChars;
+    ULONG i;
 
     if (DataBytes == NULL || DataLength < 6 * sizeof(WCHAR))
     {
         return;
     }
 
-    dest     = (PWCHAR)(PVOID)DataBytes;
+    dest = (PWCHAR)(PVOID)DataBytes;
     maxChars = DataLength / sizeof(WCHAR);
 
     for (i = 0; i < 6 && i < maxChars; ++i)
@@ -210,23 +208,22 @@ BOOLEAN BLACKBIRDRegistryBlindNicValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOI
 
     PKEY_VALUE_PARTIAL_INFORMATION partialInfo;
     PUNICODE_STRING keyNamePtr = NULL;
-    UNICODE_STRING  nicKeyPath;
-    NTSTATUS        nameStatus;
-    BOOLEAN         isNicPath;
+    UNICODE_STRING nicKeyPath;
+    NTSTATUS nameStatus;
+    BOOLEAN isNicPath;
 
     /* Value names we spoof */
-    UNICODE_STRING usDriverDesc    = RTL_CONSTANT_STRING(L"DriverDesc");
-    UNICODE_STRING usProviderName  = RTL_CONSTANT_STRING(L"ProviderName");
-    UNICODE_STRING usHwAddr        = RTL_CONSTANT_STRING(L"AdapterHardwareAddress");
-    UNICODE_STRING usNetAddr       = RTL_CONSTANT_STRING(L"NetworkAddress");
+    UNICODE_STRING usDriverDesc = RTL_CONSTANT_STRING(L"DriverDesc");
+    UNICODE_STRING usProviderName = RTL_CONSTANT_STRING(L"ProviderName");
+    UNICODE_STRING usHwAddr = RTL_CONSTANT_STRING(L"AdapterHardwareAddress");
+    UNICODE_STRING usNetAddr = RTL_CONSTANT_STRING(L"NetworkAddress");
 
-    BOOLEAN isDriverDesc   = FALSE;
+    BOOLEAN isDriverDesc = FALSE;
     BOOLEAN isProviderName = FALSE;
-    BOOLEAN isHwAddr       = FALSE;
-    BOOLEAN isNetAddr      = FALSE;
+    BOOLEAN isHwAddr = FALSE;
+    BOOLEAN isNetAddr = FALSE;
 
-    if (Cookie == NULL || PreInfo == NULL || PreInfo->ValueName == NULL ||
-        PreInfo->KeyValueInformation == NULL)
+    if (Cookie == NULL || PreInfo == NULL || PreInfo->ValueName == NULL || PreInfo->KeyValueInformation == NULL)
     {
         return FALSE;
     }
@@ -239,10 +236,10 @@ BOOLEAN BLACKBIRDRegistryBlindNicValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOI
         return FALSE;
     }
 
-    isDriverDesc   = BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usDriverDesc,   TRUE);
+    isDriverDesc = BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usDriverDesc, TRUE);
     isProviderName = BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usProviderName, TRUE);
-    isHwAddr       = BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usHwAddr,       TRUE);
-    isNetAddr      = BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usNetAddr,      TRUE);
+    isHwAddr = BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usHwAddr, TRUE);
+    isNetAddr = BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usNetAddr, TRUE);
 
     if (!isDriverDesc && !isProviderName && !isHwAddr && !isNetAddr)
     {
@@ -256,7 +253,7 @@ BOOLEAN BLACKBIRDRegistryBlindNicValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOI
     }
 
     nicKeyPath = *keyNamePtr;
-    isNicPath  = BLACKBIRDUnicodeContainsInsensitive(&nicKeyPath, kNicClassGuid, kNicClassGuidLen);
+    isNicPath = BLACKBIRDUnicodeContainsInsensitive(&nicKeyPath, kNicClassGuid, kNicClassGuidLen);
     CmCallbackReleaseKeyObjectIDEx(keyNamePtr);
 
     if (!isNicPath)
@@ -268,12 +265,9 @@ BOOLEAN BLACKBIRDRegistryBlindNicValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOI
     {
         partialInfo = (PKEY_VALUE_PARTIAL_INFORMATION)PreInfo->KeyValueInformation;
 
-        if ((isDriverDesc || isProviderName) &&
-            partialInfo->Type == REG_SZ && partialInfo->DataLength >= sizeof(WCHAR))
+        if ((isDriverDesc || isProviderName) && partialInfo->Type == REG_SZ && partialInfo->DataLength >= sizeof(WCHAR))
         {
-            PCWSTR replacement = isDriverDesc
-                ? L"Intel(R) Ethernet Connection (7) I219-V"
-                : L"Intel";
+            PCWSTR replacement = isDriverDesc ? L"Intel(R) Ethernet Connection (7) I219-V" : L"Intel";
             BLACKBIRDBlindWideString(partialInfo->Data, partialInfo->DataLength, replacement);
             return TRUE;
         }
@@ -284,8 +278,7 @@ BOOLEAN BLACKBIRDRegistryBlindNicValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOI
             return TRUE;
         }
 
-        if (isNetAddr && partialInfo->Type == REG_SZ &&
-            partialInfo->DataLength >= 6 * sizeof(WCHAR))
+        if (isNetAddr && partialInfo->Type == REG_SZ && partialInfo->DataLength >= 6 * sizeof(WCHAR))
         {
             BLACKBIRDBlindOuiString(partialInfo->Data, partialInfo->DataLength);
             return TRUE;
@@ -524,10 +517,3 @@ BOOLEAN BLACKBIRDRegistryBlindBiosValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVO
 
     return FALSE;
 }
-
-
-
-
-
-
-

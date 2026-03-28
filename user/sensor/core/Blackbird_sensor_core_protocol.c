@@ -1321,4 +1321,3 @@ BLACKBIRDSCParseStreamMaskA(_In_z_ const char *Text)
     free(copy);
     return mask;
 }
-

@@ -148,4 +148,3 @@ NTSTATUS BLACKBIRDHandleMarkInterfaceReadyIoctl(_In_ PBLACKBIRD_CLIENT Client, _
 NTSTATUS BLACKBIRDHandleMarkControllerReadyIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
 
 #endif
-

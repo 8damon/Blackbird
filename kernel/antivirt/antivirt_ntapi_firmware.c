@@ -44,11 +44,9 @@ static VOID BLACKBIRDNtApiPatchBoundedString(_Inout_updates_bytes_(CurrentLength
     }
 }
 
-_Success_(return != FALSE)
-static BOOLEAN BLACKBIRDNtApiFindSmbiosStringByIndex(_Inout_ PUCHAR StringsStart, _In_ PUCHAR NextStructure,
-                                                     _In_ UCHAR StringIndex,
-                                                     _Out_ PUCHAR *StringStart,
-                                                     _Out_ PUCHAR *StringEnd)
+_Success_(return != FALSE) static BOOLEAN
+    BLACKBIRDNtApiFindSmbiosStringByIndex(_Inout_ PUCHAR StringsStart, _In_ PUCHAR NextStructure,
+                                          _In_ UCHAR StringIndex, _Out_ PUCHAR *StringStart, _Out_ PUCHAR *StringEnd)
 {
     PUCHAR cursor;
     UCHAR currentIndex;

@@ -58,7 +58,8 @@ BOOL QueryKernelDebuggerState(_Out_opt_ BOOLEAN *Enabled, _Out_opt_ BOOLEAN *Not
         return FALSE;
     }
 
-    ntQuerySystemInformation = (BLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_FN)GetProcAddress(ntdll, "NtQuerySystemInformation");
+    ntQuerySystemInformation =
+        (BLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_FN)GetProcAddress(ntdll, "NtQuerySystemInformation");
     if (ntQuerySystemInformation == NULL)
     {
         return FALSE;
@@ -718,8 +719,7 @@ VOID LogEnvironmentBaseline(_Inout_ SUITE_RESULTS *Results)
     if (QuerySharedUserDataKernelDebuggerByte(&sharedKdByte))
     {
         (void)sprintf_s(line, RTL_NUMBER_OF(line), "0x%02X enabled %s notPresent %s", sharedKdByte,
-                        (sharedKdByte & 0x01u) ? "yes" : "no",
-                        (sharedKdByte & 0x02u) ? "yes" : "no");
+                        (sharedKdByte & 0x01u) ? "yes" : "no", (sharedKdByte & 0x02u) ? "yes" : "no");
         SuiteLogMetaLine(Results, "environmentKernelDebuggerSharedData", line);
     }
     else

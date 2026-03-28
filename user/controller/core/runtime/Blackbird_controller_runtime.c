@@ -79,9 +79,9 @@ static DWORD WINAPI ControllerServerThreadProc(_In_ LPVOID Context)
         HANDLE thread;
         DWORD slotIndex;
 
-        pipe = CreateNamedPipeW(pipeName, PIPE_ACCESS_DUPLEX,
-                                PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT, PIPE_UNLIMITED_INSTANCES,
-                                sizeof(BLACKBIRD_IPC_PACKET), sizeof(BLACKBIRD_IPC_PACKET), 3000, &sa);
+        pipe = CreateNamedPipeW(pipeName, PIPE_ACCESS_DUPLEX, PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_WAIT,
+                                PIPE_UNLIMITED_INSTANCES, sizeof(BLACKBIRD_IPC_PACKET), sizeof(BLACKBIRD_IPC_PACKET),
+                                3000, &sa);
         if (pipe == INVALID_HANDLE_VALUE)
         {
             pipeCreateFailures += 1;
@@ -198,8 +198,8 @@ static DWORD WINAPI ControllerServerThreadProc(_In_ LPVOID Context)
             client->SessionId = 0;
         }
 
-        ControllerLog("[IPC] client connected role=%lu pid=%lu session=%lu pipe=%ls\n", client->Role,
-                      client->ProcessId, client->SessionId, pipeName);
+        ControllerLog("[IPC] client connected role=%lu pid=%lu session=%lu pipe=%ls\n", client->Role, client->ProcessId,
+                      client->SessionId, pipeName);
 
         EnterCriticalSection(&g_ClientListLock);
         if (g_ClientCount >= BLACKBIRD_CONTROLLER_MAX_CLIENTS)
@@ -1230,8 +1230,9 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
             heurFlags |= BLACKBIRD_HEUR_FLAG_NETWORK;
         if (strstr(heurDetName, "CREDENTIAL_ACCESS") != NULL || strstr(heurDetName, "CREDENTIAL_HIVE") != NULL)
             heurFlags |= BLACKBIRD_HEUR_FLAG_CRED_ACCS;
-        if (strstr(heurDetName, "PROCESS_IMAGE_TAMPER") != NULL || strstr(heurDetName, "PROCESS_IMAGE_GHOSTING") != NULL ||
-            strstr(heurDetName, "HERPADERP") != NULL || strstr(heurDetName, "DOPPELGANG") != NULL)
+        if (strstr(heurDetName, "PROCESS_IMAGE_TAMPER") != NULL ||
+            strstr(heurDetName, "PROCESS_IMAGE_GHOSTING") != NULL || strstr(heurDetName, "HERPADERP") != NULL ||
+            strstr(heurDetName, "DOPPELGANG") != NULL)
             heurFlags |= BLACKBIRD_HEUR_FLAG_IMG_TAMPER;
         if (strstr(heurDetName, "REMOTE_THREAD") != NULL)
             heurFlags |= BLACKBIRD_HEUR_FLAG_REMOTE_TH;
@@ -1806,7 +1807,3 @@ int __cdecl wmain(_In_ int argc, _In_reads_(argc) wchar_t **argv)
     ControllerLogClose();
     return 0;
 }
-
-
-
-

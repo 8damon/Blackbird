@@ -1638,7 +1638,7 @@ static VOID BLACKBIRDLogHandleTelemetry(_In_ BLACKBIRD_HANDLE_CLASSIFICATION Cla
         CallerPid != TargetPid)
     {
         PEPROCESS targetProc = NULL;
-        NTSTATUS  lookupSt   = PsLookupProcessByProcessId(TargetPid, &targetProc);
+        NTSTATUS lookupSt = PsLookupProcessByProcessId(TargetPid, &targetProc);
         if (NT_SUCCESS(lookupSt))
         {
             PCHAR imageName = PsGetProcessImageFileName(targetProc);
@@ -1647,19 +1647,24 @@ static VOID BLACKBIRDLogHandleTelemetry(_In_ BLACKBIRD_HANDLE_CLASSIFICATION Cla
                 /* Case-insensitive byte compare against "lsass.exe" */
                 static const CHAR kLsass[] = "lsass.exe";
                 BOOLEAN isLsass = TRUE;
-                ULONG   ci;
+                ULONG ci;
                 for (ci = 0; ci < sizeof(kLsass) - 1u; ++ci)
                 {
                     CHAR c = imageName[ci];
-                    if (c >= 'A' && c <= 'Z') c = (CHAR)(c + 32);
-                    if (c != kLsass[ci]) { isLsass = FALSE; break; }
+                    if (c >= 'A' && c <= 'Z')
+                        c = (CHAR)(c + 32);
+                    if (c != kLsass[ci])
+                    {
+                        isLsass = FALSE;
+                        break;
+                    }
                 }
                 if (isLsass && imageName[sizeof(kLsass) - 1u] == '\0')
                 {
                     ULONG sev = (Class == BLACKBIRDHandleDirectSyscallSuspect) ? 8u : 7u;
-                    BLACKBIRDEtwLogDetectionEvent("CREDENTIAL_ACCESS_LSASS_HANDLE", sev,
-                                                  CallerPid, TargetPid, 0, (UINT32)DesiredAccess, 0,
-                                                  L"cross-process memory handle to lsass.exe — credential access attempt");
+                    BLACKBIRDEtwLogDetectionEvent(
+                        "CREDENTIAL_ACCESS_LSASS_HANDLE", sev, CallerPid, TargetPid, 0, (UINT32)DesiredAccess, 0,
+                        L"cross-process memory handle to lsass.exe — credential access attempt");
                 }
 
                 /* Winlogon memory access is also high-value — holds logon tokens */
@@ -1669,14 +1674,19 @@ static VOID BLACKBIRDLogHandleTelemetry(_In_ BLACKBIRD_HANDLE_CLASSIFICATION Cla
                     for (ci = 0; ci < sizeof(kWinlogon) - 1u; ++ci)
                     {
                         CHAR c = imageName[ci];
-                        if (c >= 'A' && c <= 'Z') c = (CHAR)(c + 32);
-                        if (c != kWinlogon[ci]) { isWinlogon = FALSE; break; }
+                        if (c >= 'A' && c <= 'Z')
+                            c = (CHAR)(c + 32);
+                        if (c != kWinlogon[ci])
+                        {
+                            isWinlogon = FALSE;
+                            break;
+                        }
                     }
                     if (isWinlogon && imageName[sizeof(kWinlogon) - 1u] == '\0' &&
                         (DesiredAccess & (PROCESS_VM_READ | PROCESS_VM_WRITE)) != 0)
                     {
-                        BLACKBIRDEtwLogDetectionEvent("CREDENTIAL_ACCESS_WINLOGON_HANDLE", 6,
-                                                      CallerPid, TargetPid, 0, (UINT32)DesiredAccess, 0,
+                        BLACKBIRDEtwLogDetectionEvent("CREDENTIAL_ACCESS_WINLOGON_HANDLE", 6, CallerPid, TargetPid, 0,
+                                                      (UINT32)DesiredAccess, 0,
                                                       L"cross-process memory handle to winlogon.exe");
                     }
                 }
@@ -2204,8 +2214,8 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
     trustedProtectedCaller = BLACKBIRDProcessMonitorIsTrustedProtectedCaller(callerPid32, targetPid32);
     if (isProtectedTarget && !trustedProtectedCaller)
     {
-        sanitizedAccess &= isThreadObject ? BLACKBIRD_PROTECTED_THREAD_ALLOWED_ACCESS
-                                          : BLACKBIRD_PROTECTED_PROCESS_ALLOWED_ACCESS;
+        sanitizedAccess &=
+            isThreadObject ? BLACKBIRD_PROTECTED_THREAD_ALLOWED_ACCESS : BLACKBIRD_PROTECTED_PROCESS_ALLOWED_ACCESS;
         if (sanitizedAccess != desiredAccess)
         {
             if (OperationInformation->Operation == OB_OPERATION_HANDLE_CREATE)
@@ -2498,6 +2508,3 @@ BLACKBIRDHandleMonitorSelfCheck(VOID)
 
     return TRUE;
 }
-
-
-

@@ -22,4 +22,3 @@ BOOLEAN BLACKBIRDProcessMonitorMarkControllerReady(_In_ UINT32 ProcessId);
 BOOLEAN BLACKBIRDProcessMonitorIsTrustedProtectedCaller(_In_ UINT32 CallerPid, _In_ UINT32 TargetPid);
 
 #endif
-

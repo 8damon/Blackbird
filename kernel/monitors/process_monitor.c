@@ -22,8 +22,7 @@ NTSYSAPI NTSTATUS NTAPI ObQueryNameString(_In_ PVOID Object,
                                           _Out_writes_bytes_opt_(Length) POBJECT_NAME_INFORMATION ObjectNameInfo,
                                           _In_ ULONG Length, _Out_ PULONG ReturnLength);
 
-static BOOLEAN BLACKBIRDProcessPathMatchesImage(_In_z_ PCWSTR ImageName,
-                                                _In_opt_ PCUNICODE_STRING Candidate)
+static BOOLEAN BLACKBIRDProcessPathMatchesImage(_In_z_ PCWSTR ImageName, _In_opt_ PCUNICODE_STRING Candidate)
 {
     UNICODE_STRING expected;
     UNICODE_STRING baseName;
@@ -212,13 +211,13 @@ static VOID BLACKBIRDProcessMonitorDetectImageTampering(_In_ HANDLE ProcessId,
 
     if ((indicators & 0x1u) != 0u)
     {
-        BLACKBIRDEtwLogDetectionEvent("PROCESS_IMAGE_GHOSTING_SUSPECT", severity, ProcessId, ProcessId, 0,
-                                      indicators, 0, reason);
+        BLACKBIRDEtwLogDetectionEvent("PROCESS_IMAGE_GHOSTING_SUSPECT", severity, ProcessId, ProcessId, 0, indicators,
+                                      0, reason);
     }
     else
     {
-        BLACKBIRDEtwLogDetectionEvent("PROCESS_IMAGE_TAMPER_SUSPECT", severity, ProcessId, ProcessId, 0,
-                                      indicators, 0, reason);
+        BLACKBIRDEtwLogDetectionEvent("PROCESS_IMAGE_TAMPER_SUSPECT", severity, ProcessId, ProcessId, 0, indicators, 0,
+                                      reason);
     }
 }
 static VOID BLACKBIRDProcessNotifyRoutineEx(_Inout_ PEPROCESS Process, _In_ HANDLE ProcessId,
@@ -263,7 +262,7 @@ static VOID BLACKBIRDProcessNotifyRoutineEx(_Inout_ PEPROCESS Process, _In_ HAND
                 launchBound =
                     BLACKBIRDControlBindPendingLaunchProcess((UINT32)(ULONG_PTR)ProcessId, &fileObjectImagePath);
                 BLACKBIRDProcessMonitorTrackProtectedPid((UINT32)(ULONG_PTR)ProcessId, imagePath,
-                                                        (USHORT)wcslen(imagePath));
+                                                         (USHORT)wcslen(imagePath));
             }
         }
 
@@ -290,7 +289,8 @@ static VOID BLACKBIRDProcessNotifyRoutineEx(_Inout_ PEPROCESS Process, _In_ HAND
         }
         if (ProcessId != NULL && imagePath[0] != L'\0')
         {
-            BLACKBIRDProcessMonitorTrackProtectedPid((UINT32)(ULONG_PTR)ProcessId, imagePath, (USHORT)wcslen(imagePath));
+            BLACKBIRDProcessMonitorTrackProtectedPid((UINT32)(ULONG_PTR)ProcessId, imagePath,
+                                                     (USHORT)wcslen(imagePath));
         }
     }
     else if (ProcessId != NULL)
@@ -312,13 +312,12 @@ static VOID BLACKBIRDProcessNotifyRoutineEx(_Inout_ PEPROCESS Process, _In_ HAND
      * CreatingThreadId.UniqueProcess field.  Normal CreateProcess always has them equal.
      * Only flag in user sessions (sessionId > 0) to suppress noise from SCM/WMI patterns
      * and skip the System process (PID 4). */
-    if (isCreate && NT_SUCCESS(createStatus) && ProcessId != NULL &&
-        sessionId > 0 && parentPid != NULL && creatorPid != NULL &&
-        parentPid != creatorPid &&
-        (ULONG_PTR)parentPid > 4 && (ULONG_PTR)creatorPid > 4)
+    if (isCreate && NT_SUCCESS(createStatus) && ProcessId != NULL && sessionId > 0 && parentPid != NULL &&
+        creatorPid != NULL && parentPid != creatorPid && (ULONG_PTR)parentPid > 4 && (ULONG_PTR)creatorPid > 4)
     {
-        BLACKBIRDEtwLogDetectionEvent("PARENT_PID_SPOOF_SUSPECT", 5, ProcessId, ProcessId, 0, 0, 0,
-                                      L"process has explicit parent-process override — ParentPid differs from CreatorPid");
+        BLACKBIRDEtwLogDetectionEvent(
+            "PARENT_PID_SPOOF_SUSPECT", 5, ProcessId, ProcessId, 0, 0, 0,
+            L"process has explicit parent-process override — ParentPid differs from CreatorPid");
     }
 }
 
@@ -424,8 +423,7 @@ BOOLEAN BLACKBIRDProcessMonitorIsProtectedPid(_In_ UINT32 ProcessId)
         return FALSE;
     }
 
-    if (BLACKBIRDProcessMonitorIsInterfacePid(ProcessId) &&
-        BLACKBIRDRuntimeConfigIsInterfaceProtectedAccessEnabled() &&
+    if (BLACKBIRDProcessMonitorIsInterfacePid(ProcessId) && BLACKBIRDRuntimeConfigIsInterfaceProtectedAccessEnabled() &&
         (InterlockedCompareExchange(&g_BlackbirdInterfaceReady, 0, 0) != 0))
     {
         return TRUE;
@@ -454,7 +452,6 @@ BOOLEAN BLACKBIRDProcessMonitorMarkInterfaceReady(_In_ UINT32 ProcessId)
     InterlockedExchange(&g_BlackbirdInterfaceReady, 1);
     return TRUE;
 }
-
 
 BOOLEAN BLACKBIRDProcessMonitorMarkControllerReady(_In_ UINT32 ProcessId)
 {
@@ -509,7 +506,3 @@ BOOLEAN BLACKBIRDProcessMonitorIsTrustedProtectedCaller(_In_ UINT32 CallerPid, _
 
     return FALSE;
 }
-
-
-
-

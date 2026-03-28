@@ -168,7 +168,8 @@ NTSTATUS BLACKBIRDRuntimeConfigSetRuntimeFlags(_In_ UINT32 Flags, _In_ UINT32 Ma
     {
         currentFlags = InterlockedCompareExchange((volatile LONG *)&g_RuntimeRequestedFlags, 0, 0);
         nextFlags = (currentFlags & ~(LONG)Mask) | (LONG)(Flags & Mask);
-        if (InterlockedCompareExchange((volatile LONG *)&g_RuntimeRequestedFlags, nextFlags, currentFlags) == currentFlags)
+        if (InterlockedCompareExchange((volatile LONG *)&g_RuntimeRequestedFlags, nextFlags, currentFlags) ==
+            currentFlags)
         {
             return STATUS_SUCCESS;
         }
@@ -188,6 +189,3 @@ VOID BLACKBIRDRuntimeConfigFillResponse(_Out_ PBLACKBIRD_RUNTIME_CONFIG_RESPONSE
     Response->EffectiveFlags = BLACKBIRDRuntimeConfigGetEffectiveFlags();
     Response->Mode = BLACKBIRDRuntimeConfigGetCurrentMode();
 }
-
-
-

@@ -39,13 +39,15 @@ bool ExampleLaunchInternalChild(const wchar_t *mode, PROCESS_INFORMATION *pi, DW
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
 
-    if (FAILED(StringCchPrintfW(commandLine, ARRAYSIZE(commandLine), L"\"%ls\" --internal %ls", selfPath.c_str(), mode)))
+    if (FAILED(
+            StringCchPrintfW(commandLine, ARRAYSIZE(commandLine), L"\"%ls\" --internal %ls", selfPath.c_str(), mode)))
     {
         SetLastError(ERROR_INSUFFICIENT_BUFFER);
         return false;
     }
 
-    return CreateProcessW(nullptr, commandLine, nullptr, nullptr, FALSE, creationFlags, nullptr, nullptr, &si, pi) == TRUE;
+    return CreateProcessW(nullptr, commandLine, nullptr, nullptr, FALSE, creationFlags, nullptr, nullptr, &si, pi) ==
+           TRUE;
 }
 
 void ExampleCleanupProcess(PROCESS_INFORMATION *pi, bool terminate, DWORD waitMs)

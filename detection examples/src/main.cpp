@@ -4,15 +4,28 @@ int DetectionExamplesInternalBenignMain(const wchar_t *mode);
 int DetectionExamplesInternalDetectionMain(const wchar_t *mode);
 
 static const DetectionExampleDef g_Examples[] = {
-    { "direct-syscall-ntqueryvm", "detection", "Direct syscalls for NtQueryVirtualMemory and NtOpenProcess against a remote child.", "Direct-syscall handle / process recon style detection.", false, ExampleRunDirectSyscallNtQueryVm },
-    { "remote-thread-rwx", "detection", "Allocates RWX memory in a remote child, writes a stub, and starts a remote thread.", "Injection, non-image executable region, remote thread, shellcode-stage style detections.", false, ExampleRunRemoteThread },
-    { "ppid-spoof", "detection", "Creates a child with an overridden parent process attribute.", "PARENT_PID_SPOOF_SUSPECT / process telemetry anomaly.", false, ExampleRunPpidSpoof },
-    { "nt-system-recon", "detection", "Queries system process/module information via NtQuerySystemInformation.", "USERMODE_PROCESS_RECON / recon-oriented telemetry.", false, ExampleRunNtSystemRecon },
-    { "anti-virt-vm-check", "detection", "Runs classic VM artifact checks against adapter MAC prefixes and BIOS manufacturer strings.", "Anti-virtualization masking validation / environment artifact checks.", false, ExampleRunVmCheck },
-    { "benign-launch", "benign", "Launches a child and terminates it without suspicious cross-process behavior.", "No high-confidence detection expected.", true, ExampleRunBenignLaunch },
-    { "benign-file-io", "benign", "Creates, writes, reads, and deletes a temporary file.", "No high-confidence detection expected.", true, ExampleRunBenignFileIo },
-    { "benign-memory", "benign", "Allocates and protects memory in the current process only.", "No cross-process memory detection expected.", true, ExampleRunBenignMemory },
-    { "benign-process-enum", "benign", "Enumerates processes through Toolhelp snapshot APIs.", "No high-confidence detection expected.", true, ExampleRunBenignProcessEnum },
+    {"direct-syscall-ntqueryvm", "detection",
+     "Direct syscalls for NtQueryVirtualMemory and NtOpenProcess against a remote child.",
+     "Direct-syscall handle / process recon style detection.", false, ExampleRunDirectSyscallNtQueryVm},
+    {"remote-thread-rwx", "detection",
+     "Allocates RWX memory in a remote child, writes a stub, and starts a remote thread.",
+     "Injection, non-image executable region, remote thread, shellcode-stage style detections.", false,
+     ExampleRunRemoteThread},
+    {"ppid-spoof", "detection", "Creates a child with an overridden parent process attribute.",
+     "PARENT_PID_SPOOF_SUSPECT / process telemetry anomaly.", false, ExampleRunPpidSpoof},
+    {"nt-system-recon", "detection", "Queries system process/module information via NtQuerySystemInformation.",
+     "USERMODE_PROCESS_RECON / recon-oriented telemetry.", false, ExampleRunNtSystemRecon},
+    {"anti-virt-vm-check", "detection",
+     "Runs classic VM artifact checks against adapter MAC prefixes and BIOS manufacturer strings.",
+     "Anti-virtualization masking validation / environment artifact checks.", false, ExampleRunVmCheck},
+    {"benign-launch", "benign", "Launches a child and terminates it without suspicious cross-process behavior.",
+     "No high-confidence detection expected.", true, ExampleRunBenignLaunch},
+    {"benign-file-io", "benign", "Creates, writes, reads, and deletes a temporary file.",
+     "No high-confidence detection expected.", true, ExampleRunBenignFileIo},
+    {"benign-memory", "benign", "Allocates and protects memory in the current process only.",
+     "No cross-process memory detection expected.", true, ExampleRunBenignMemory},
+    {"benign-process-enum", "benign", "Enumerates processes through Toolhelp snapshot APIs.",
+     "No high-confidence detection expected.", true, ExampleRunBenignProcessEnum},
 };
 
 static void PrintUsage()

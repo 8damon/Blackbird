@@ -124,8 +124,8 @@ static BOOLEAN BLACKBIRDImagePathContains(_In_z_ PCWSTR Path, _In_z_ PCWSTR Need
     UNICODE_STRING pathUs;
     UNICODE_STRING needleUs;
     RtlInitUnicodeString(&pathUs, Path);
-    needleUs.Buffer        = (PWSTR)Needle;
-    needleUs.Length        = (USHORT)(NeedleLen * sizeof(WCHAR));
+    needleUs.Buffer = (PWSTR)Needle;
+    needleUs.Length = (USHORT)(NeedleLen * sizeof(WCHAR));
     needleUs.MaximumLength = needleUs.Length;
     return BLACKBIRDUnicodeContainsInsensitive(&pathUs, Needle, NeedleLen);
 }
@@ -134,14 +134,12 @@ static BOOLEAN BLACKBIRDImagePathContains(_In_z_ PCWSTR Path, _In_z_ PCWSTR Need
  * a double-extension pattern — e.g. "invoice.pdf.exe", "readme.doc.exe". */
 static BOOLEAN BLACKBIRDImageHasDoubleExtension(_In_z_ PCWSTR Path)
 {
-    static const PCWSTR kInnerExts[] = {
-        L".pdf", L".doc", L".docx", L".xls", L".xlsx", L".txt",
-        L".jpg", L".jpeg", L".png", L".zip", L".rar", L".mp3", L".mp4"
-    };
+    static const PCWSTR kInnerExts[] = {L".pdf",  L".doc", L".docx", L".xls", L".xlsx", L".txt", L".jpg",
+                                        L".jpeg", L".png", L".zip",  L".rar", L".mp3",  L".mp4"};
     static const ULONG kInnerCount = 13;
-    ULONG  i;
+    ULONG i;
     PCWSTR base = Path;
-    PCWSTR p    = Path;
+    PCWSTR p = Path;
     PCWSTR dotPos;
 
     /* Find the last backslash to isolate the filename */
@@ -169,8 +167,8 @@ static BOOLEAN BLACKBIRDImageHasDoubleExtension(_In_z_ PCWSTR Path)
     {
         return FALSE;
     }
-    if (_wcsicmp(dotPos, L".exe") != 0 && _wcsicmp(dotPos, L".dll") != 0 &&
-        _wcsicmp(dotPos, L".scr") != 0 && _wcsicmp(dotPos, L".com") != 0)
+    if (_wcsicmp(dotPos, L".exe") != 0 && _wcsicmp(dotPos, L".dll") != 0 && _wcsicmp(dotPos, L".scr") != 0 &&
+        _wcsicmp(dotPos, L".com") != 0)
     {
         return FALSE;
     }
@@ -179,13 +177,11 @@ static BOOLEAN BLACKBIRDImageHasDoubleExtension(_In_z_ PCWSTR Path)
     for (i = 0; i < kInnerCount; ++i)
     {
         SIZE_T needleLen = wcslen(kInnerExts[i]);
-        PCWSTR scan     = base;
+        PCWSTR scan = base;
         while (scan < dotPos)
         {
             SIZE_T remaining = (SIZE_T)(dotPos - scan);
-            if (remaining >= needleLen &&
-                _wcsnicmp(scan, kInnerExts[i], needleLen) == 0 &&
-                scan + needleLen == dotPos)
+            if (remaining >= needleLen && _wcsnicmp(scan, kInnerExts[i], needleLen) == 0 && scan + needleLen == dotPos)
             {
                 return TRUE;
             }
@@ -215,16 +211,15 @@ static VOID BLACKBIRDImageLoadNotifyRoutineHeuristics(_In_ HANDLE ProcessId, _In
     /* Classify path as system or user-writable */
     isSystemPath = BLACKBIRDImagePathContains(Path, L"\\Windows\\System32\\", 18) ||
                    BLACKBIRDImagePathContains(Path, L"\\Windows\\SysWOW64\\", 18) ||
-                   BLACKBIRDImagePathContains(Path, L"\\Windows\\WinSxS\\", 16)    ||
+                   BLACKBIRDImagePathContains(Path, L"\\Windows\\WinSxS\\", 16) ||
                    BLACKBIRDImagePathContains(Path, L"\\KnownDlls\\", 11);
 
-    isUserWritable = BLACKBIRDImagePathContains(Path, L"\\Temp\\",          6)  ||
-                     BLACKBIRDImagePathContains(Path, L"\\AppData\\",        9)  ||
-                     BLACKBIRDImagePathContains(Path, L"\\Downloads\\",     11)  ||
-                     BLACKBIRDImagePathContains(Path, L"\\Desktop\\",        9)  ||
-                     BLACKBIRDImagePathContains(Path, L"\\Public\\",         8)  ||
-                     BLACKBIRDImagePathContains(Path, L"\\$Recycle.Bin\\",  14)  ||
-                     BLACKBIRDImagePathContains(Path, L"\\ProgramData\\Temp\\", 19);
+    isUserWritable =
+        BLACKBIRDImagePathContains(Path, L"\\Temp\\", 6) || BLACKBIRDImagePathContains(Path, L"\\AppData\\", 9) ||
+        BLACKBIRDImagePathContains(Path, L"\\Downloads\\", 11) || BLACKBIRDImagePathContains(Path, L"\\Desktop\\", 9) ||
+        BLACKBIRDImagePathContains(Path, L"\\Public\\", 8) ||
+        BLACKBIRDImagePathContains(Path, L"\\$Recycle.Bin\\", 14) ||
+        BLACKBIRDImagePathContains(Path, L"\\ProgramData\\Temp\\", 19);
 
     doubleExt = BLACKBIRDImageHasDoubleExtension(Path);
     unsigned_ = IsSignatureLevelKnown && (SignatureLevel == 0);

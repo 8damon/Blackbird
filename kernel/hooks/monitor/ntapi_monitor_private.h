@@ -82,11 +82,11 @@ VOID BLACKBIRDNtApiSanitizeFirmwareTableInformation(_In_ ULONG SystemInformation
                                                         PVOID SystemInformation,
                                                     _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status);
 VOID BLACKBIRDNtApiSanitizeProcessInformation(_In_ ULONG SystemInformationClass,
+                                              _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
+                                              _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status);
+VOID BLACKBIRDNtApiSanitizeModuleInformation(_In_ ULONG SystemInformationClass,
                                              _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
                                              _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status);
-VOID BLACKBIRDNtApiSanitizeModuleInformation(_In_ ULONG SystemInformationClass,
-                                            _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
-                                            _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status);
 
 ULONG BLACKBIRDNtApiReadUlongSafe(_In_opt_ PULONG Value);
 SIZE_T BLACKBIRDNtApiReadSizeTSafe(_In_opt_ PSIZE_T Value);

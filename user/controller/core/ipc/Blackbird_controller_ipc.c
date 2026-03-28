@@ -2167,10 +2167,10 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
              * A handle that is not the self-pseudo-handle (-1) means cross-process thread creation.
              * CreateFlags 0x4 = THREAD_CREATE_FLAGS_HIDE_FROM_DEBUGGER — always high-severity. */
             UINT64 processHandle = HookEvent->Context0;
-            UINT64 startRoutine  = HookEvent->Context1;
-            UINT32 createFlags   = (UINT32)(HookEvent->Context2 & 0xFFFFFFFFull);
-            BOOL remoteThread    = (processHandle != (UINT64)(ULONG_PTR)-1) && (processHandle != 0);
-            BOOL hiddenThread    = (createFlags & 0x4u) != 0;
+            UINT64 startRoutine = HookEvent->Context1;
+            UINT32 createFlags = (UINT32)(HookEvent->Context2 & 0xFFFFFFFFull);
+            BOOL remoteThread = (processHandle != (UINT64)(ULONG_PTR)-1) && (processHandle != 0);
+            BOOL hiddenThread = (createFlags & 0x4u) != 0;
 
             (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
                                  remoteThread ? "USERMODE_REMOTE_THREAD_CREATE" : "USERMODE_THREAD_CREATE");
@@ -2179,8 +2179,8 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
             (void)StringCchPrintfW(
                 mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
                 L"thread.create processHandle=0x%llX startRoutine=0x%llX createFlags=0x%X remote=%u hidden=%u",
-                (unsigned long long)processHandle, (unsigned long long)startRoutine,
-                (unsigned int)createFlags, (unsigned int)remoteThread, (unsigned int)hiddenThread);
+                (unsigned long long)processHandle, (unsigned long long)startRoutine, (unsigned int)createFlags,
+                (unsigned int)remoteThread, (unsigned int)hiddenThread);
         }
         else if (HookEvent->Kind == BlackbirdIpcHookEventNt &&
                  (lstrcmpiA(apiName, "NtQueueApcThreadEx") == 0 || lstrcmpiA(apiName, "NtQueueApcThreadEx2") == 0))
@@ -2201,10 +2201,10 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
              * SEC_IMAGE (0x1000000) means the section is backed by a PE image file.
              * PAGE_EXECUTE_* protections occupy the 0x10–0x80 range. */
             UINT32 sectionPageProtect = (UINT32)(HookEvent->Context1 & 0xFFFFFFFFull);
-            UINT32 allocAttribs       = (UINT32)(HookEvent->Context2 & 0xFFFFFFFFull);
+            UINT32 allocAttribs = (UINT32)(HookEvent->Context2 & 0xFFFFFFFFull);
             BOOL isImage = (allocAttribs & 0x1000000u) != 0;
-            BOOL isExec  = (sectionPageProtect & 0xF0u) != 0;
-            UINT32 sev   = isImage ? 5u : (isExec ? 4u : 3u);
+            BOOL isExec = (sectionPageProtect & 0xF0u) != 0;
+            UINT32 sev = isImage ? 5u : (isExec ? 4u : 3u);
 
             (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
                                  "USERMODE_IMAGE_SECTION_ACTIVITY");
@@ -2213,8 +2213,8 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
             (void)StringCchPrintfW(
                 mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
                 L"section.create sectionPageProtect=0x%X allocAttribs=0x%X isImage=%u isExec=%u fileHandle=0x%llX",
-                (unsigned int)sectionPageProtect, (unsigned int)allocAttribs,
-                (unsigned int)isImage, (unsigned int)isExec, (unsigned long long)HookEvent->Context3);
+                (unsigned int)sectionPageProtect, (unsigned int)allocAttribs, (unsigned int)isImage,
+                (unsigned int)isExec, (unsigned long long)HookEvent->Context3);
         }
         else if (HookEvent->Kind == BlackbirdIpcHookEventNt &&
                  (lstrcmpiA(apiName, "NtMapViewOfSection") == 0 || lstrcmpiA(apiName, "NtMapViewOfSectionEx") == 0))
@@ -2223,9 +2223,9 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
              * Args[6]=Win32Protect (per syscall parameter order).
              * Cross-process + executable map is the classic DLL injection / manual-map final step. */
             UINT64 processHandle = HookEvent->Context1;
-            UINT32 win32Protect  = (argCount > 6u) ? (UINT32)(HookEvent->Args[6] & 0xFFFFFFFFull) : 0u;
+            UINT32 win32Protect = (argCount > 6u) ? (UINT32)(HookEvent->Args[6] & 0xFFFFFFFFull) : 0u;
             BOOL remoteMap = (processHandle != (UINT64)(ULONG_PTR)-1) && (processHandle != 0);
-            BOOL execMap   = (win32Protect & 0xF0u) != 0;
+            BOOL execMap = (win32Protect & 0xF0u) != 0;
             UINT32 sev;
 
             if (remoteMap && execMap)
@@ -2254,7 +2254,7 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
             /* Context2=CreateFlags.  Bit 0x1 = PROCESS_CREATE_FLAGS_SUSPENDED — the hallmark of
              * process-hollowing and doppelgänging launch patterns. */
             UINT32 createFlags = (UINT32)(HookEvent->Context2 & 0xFFFFFFFFull);
-            BOOL suspended     = (createFlags & 0x1u) != 0;
+            BOOL suspended = (createFlags & 0x1u) != 0;
 
             (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
                                  "USERMODE_PROCESS_CREATE_ACTIVITY");

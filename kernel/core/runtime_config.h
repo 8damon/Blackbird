@@ -21,4 +21,3 @@ NTSTATUS BLACKBIRDRuntimeConfigSetRuntimeFlags(_In_ UINT32 Flags, _In_ UINT32 Ma
 VOID BLACKBIRDRuntimeConfigFillResponse(_Out_ PBLACKBIRD_RUNTIME_CONFIG_RESPONSE Response);
 
 #endif
-

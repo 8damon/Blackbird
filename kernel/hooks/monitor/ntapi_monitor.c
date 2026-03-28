@@ -458,8 +458,8 @@ static BOOLEAN BLACKBIRDNtApiAnsiEqualsInsensitive(_In_z_ const UCHAR *Value, _I
 }
 
 VOID BLACKBIRDNtApiSanitizeProcessInformation(_In_ ULONG SystemInformationClass,
-                                             _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
-                                             _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status)
+                                              _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
+                                              _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status)
 {
     static const UNICODE_STRING selfHiddenNames[] = {
         RTL_CONSTANT_STRING(L"BlackbirdController.exe"),
@@ -523,12 +523,12 @@ VOID BLACKBIRDNtApiSanitizeProcessInformation(_In_ ULONG SystemInformationClass,
                 }
             }
 
-
             if (!shouldHide && BLACKBIRDRuntimeConfigIsAntiVirtualizationEnabled())
             {
                 for (nameIndex = 0; nameIndex < RTL_NUMBER_OF(antiVirtualizationNames); ++nameIndex)
                 {
-                    if (BLACKBIRDNtApiUnicodeEqualsInsensitive(&current->ImageName, &antiVirtualizationNames[nameIndex]))
+                    if (BLACKBIRDNtApiUnicodeEqualsInsensitive(&current->ImageName,
+                                                               &antiVirtualizationNames[nameIndex]))
                     {
                         shouldHide = TRUE;
                         break;
@@ -588,8 +588,8 @@ VOID BLACKBIRDNtApiSanitizeProcessInformation(_In_ ULONG SystemInformationClass,
 }
 
 VOID BLACKBIRDNtApiSanitizeModuleInformation(_In_ ULONG SystemInformationClass,
-                                            _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
-                                            _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status)
+                                             _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
+                                             _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status)
 {
     PBLACKBIRD_SYSTEM_MODULE_INFORMATION modules;
     ULONG index;
@@ -985,10 +985,3 @@ BLACKBIRDNtApiMonitorSelfCheck(VOID)
 }
 
 #endif
-
-
-
-
-
-
-

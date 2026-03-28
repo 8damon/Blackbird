@@ -333,5 +333,3 @@ ExitFailure:
     InterlockedExchange(&g_DriverState, BLACKBIRDStateCold);
     return status;
 }
-
-

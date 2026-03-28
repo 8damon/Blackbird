@@ -7,17 +7,17 @@
  * Configuration
  * ============================================================ */
 
-#define HEUR_LEDGER_SLOTS       128u    /* number of PID slots in the table              */
-#define HEUR_EVENT_SLOTS        64u     /* ring-buffer depth per PID                     */
-#define HEUR_WINDOW_MS          60000u  /* rolling scoring window (ms)                   */
-#define HEUR_SHELLCODE_WIN_MS   30000u  /* shellcode-stage observation window (ms)       */
-#define HEUR_BEACON_MIN_OBS     4u      /* minimum connects to attempt beacon analysis   */
-#define HEUR_BEACON_MAX_SLOTS   16u     /* max stored connect timestamps per PID         */
+#define HEUR_LEDGER_SLOTS 128u          /* number of PID slots in the table              */
+#define HEUR_EVENT_SLOTS 64u            /* ring-buffer depth per PID                     */
+#define HEUR_WINDOW_MS 60000u           /* rolling scoring window (ms)                   */
+#define HEUR_SHELLCODE_WIN_MS 30000u    /* shellcode-stage observation window (ms)       */
+#define HEUR_BEACON_MIN_OBS 4u          /* minimum connects to attempt beacon analysis   */
+#define HEUR_BEACON_MAX_SLOTS 16u       /* max stored connect timestamps per PID         */
 #define HEUR_BEACON_MIN_ITVL_MS 1000u   /* ignore sub-second intervals (burst filter)   */
 #define HEUR_BEACON_MAX_ITVL_MS 300000u /* 5-minute ceiling                             */
-#define HEUR_BEACON_VAR_THRESH  0.30    /* CV (stddev/mean) threshold for regularity    */
-#define HEUR_COOLDOWN_AGG_MS    30000u  /* aggregate detection cooldown per PID          */
-#define HEUR_COOLDOWN_SHELL_MS  20000u  /* shellcode detection cooldown per PID          */
+#define HEUR_BEACON_VAR_THRESH 0.30     /* CV (stddev/mean) threshold for regularity    */
+#define HEUR_COOLDOWN_AGG_MS 30000u     /* aggregate detection cooldown per PID          */
+#define HEUR_COOLDOWN_SHELL_MS 20000u   /* shellcode detection cooldown per PID          */
 #define HEUR_COOLDOWN_BEACON_MS 60000u  /* beacon detection cooldown per PID             */
 
 /* ============================================================
@@ -27,14 +27,14 @@
 typedef struct _BLACKBIRD_HEURISTIC_EVENT
 {
     ULONGLONG Tick;
-    UINT32    Severity;
-    UINT32    Flags;
+    UINT32 Severity;
+    UINT32 Flags;
 } BLACKBIRD_HEURISTIC_EVENT;
 
 typedef struct _BLACKBIRD_CONTROLLER_PID_LEDGER
 {
-    BOOL      Active;
-    DWORD     Pid;
+    BOOL Active;
+    DWORD Pid;
     ULONGLONG LastSeenTick;
 
     /* Event ring — severity scoring */
@@ -44,8 +44,8 @@ typedef struct _BLACKBIRD_CONTROLLER_PID_LEDGER
 
     /* Network connect timestamps for beacon detection */
     ULONGLONG BeaconTicks[HEUR_BEACON_MAX_SLOTS];
-    UINT32    BeaconHead;
-    UINT32    BeaconCount;
+    UINT32 BeaconHead;
+    UINT32 BeaconCount;
 
     /* Per-detection emit cooldowns */
     ULONGLONG LastAggrHighTick;
@@ -58,9 +58,9 @@ typedef struct _BLACKBIRD_CONTROLLER_PID_LEDGER
  * Globals
  * ============================================================ */
 
-static SRWLOCK                       g_HeurLock;
+static SRWLOCK g_HeurLock;
 static BLACKBIRD_CONTROLLER_PID_LEDGER g_Ledger[HEUR_LEDGER_SLOTS];
-static volatile LONG                 g_HeurInitialized = 0;
+static volatile LONG g_HeurInitialized = 0;
 
 /* ============================================================
  * Internal helpers
@@ -99,30 +99,28 @@ static BLACKBIRD_CONTROLLER_PID_LEDGER *HeurFindOrCreateLedger(_In_ DWORD Pid, _
         {
             if (g_Ledger[i].LastSeenTick < oldest)
             {
-                oldest    = g_Ledger[i].LastSeenTick;
+                oldest = g_Ledger[i].LastSeenTick;
                 emptySlot = i;
             }
         }
     }
 
     ZeroMemory(&g_Ledger[emptySlot], sizeof(g_Ledger[emptySlot]));
-    g_Ledger[emptySlot].Active       = TRUE;
-    g_Ledger[emptySlot].Pid          = Pid;
+    g_Ledger[emptySlot].Active = TRUE;
+    g_Ledger[emptySlot].Pid = Pid;
     g_Ledger[emptySlot].LastSeenTick = Now;
     return &g_Ledger[emptySlot];
 }
 
 /* Record one event into the ring and purge stale entries */
-static VOID HeurRecordEvent(_Inout_ BLACKBIRD_CONTROLLER_PID_LEDGER *L,
-                            _In_    ULONGLONG Now,
-                            _In_    UINT32    Severity,
-                            _In_    UINT32    Flags)
+static VOID HeurRecordEvent(_Inout_ BLACKBIRD_CONTROLLER_PID_LEDGER *L, _In_ ULONGLONG Now, _In_ UINT32 Severity,
+                            _In_ UINT32 Flags)
 {
     UINT32 slot = L->EventHead % HEUR_EVENT_SLOTS;
-    L->Events[slot].Tick     = Now;
+    L->Events[slot].Tick = Now;
     L->Events[slot].Severity = Severity;
-    L->Events[slot].Flags    = Flags;
-    L->EventHead             = (L->EventHead + 1) % HEUR_EVENT_SLOTS;
+    L->Events[slot].Flags = Flags;
+    L->EventHead = (L->EventHead + 1) % HEUR_EVENT_SLOTS;
     if (L->EventCount < HEUR_EVENT_SLOTS)
     {
         L->EventCount++;
@@ -156,8 +154,8 @@ static BOOL HeurCheckShellcodeStage(_In_ const BLACKBIRD_CONTROLLER_PID_LEDGER *
             seenFlags |= ev->Flags;
         }
     }
-    return (seenFlags & (BLACKBIRD_HEUR_FLAG_ALLOC_RW | BLACKBIRD_HEUR_FLAG_PROTECT_RX |
-                         BLACKBIRD_HEUR_FLAG_WRITE_VM)) ==
+    return (seenFlags &
+            (BLACKBIRD_HEUR_FLAG_ALLOC_RW | BLACKBIRD_HEUR_FLAG_PROTECT_RX | BLACKBIRD_HEUR_FLAG_WRITE_VM)) ==
            (BLACKBIRD_HEUR_FLAG_ALLOC_RW | BLACKBIRD_HEUR_FLAG_PROTECT_RX | BLACKBIRD_HEUR_FLAG_WRITE_VM);
 }
 
@@ -165,17 +163,17 @@ static BOOL HeurCheckShellcodeStage(_In_ const BLACKBIRD_CONTROLLER_PID_LEDGER *
  * Returns TRUE if a beacon pattern was identified. */
 static BOOL HeurCheckBeacon(_Inout_ BLACKBIRD_CONTROLLER_PID_LEDGER *L, _In_ ULONGLONG Now)
 {
-    UINT32    n;
+    UINT32 n;
     ULONGLONG intervals[HEUR_BEACON_MAX_SLOTS - 1];
-    UINT32    intCount;
-    double    sum;
-    double    mean;
-    double    variance;
-    double    stddev;
+    UINT32 intCount;
+    double sum;
+    double mean;
+    double variance;
+    double stddev;
 
     /* Record the connect tick */
     L->BeaconTicks[L->BeaconHead % HEUR_BEACON_MAX_SLOTS] = Now;
-    L->BeaconHead  = (L->BeaconHead + 1) % HEUR_BEACON_MAX_SLOTS;
+    L->BeaconHead = (L->BeaconHead + 1) % HEUR_BEACON_MAX_SLOTS;
     if (L->BeaconCount < HEUR_BEACON_MAX_SLOTS)
     {
         L->BeaconCount++;
@@ -197,7 +195,7 @@ static BOOL HeurCheckBeacon(_Inout_ BLACKBIRD_CONTROLLER_PID_LEDGER *L, _In_ ULO
 
     /* Compute intervals */
     intCount = 0;
-    sum      = 0.0;
+    sum = 0.0;
     for (UINT32 i = 1; i < n; ++i)
     {
         ULONGLONG delta = (sorted[i] >= sorted[i - 1]) ? (sorted[i] - sorted[i - 1]) : 0u;
@@ -230,7 +228,7 @@ static BOOL HeurCheckBeacon(_Inout_ BLACKBIRD_CONTROLLER_PID_LEDGER *L, _In_ ULO
         variance += diff * diff;
     }
     variance /= (double)intCount;
-    stddev    = sqrt(variance);
+    stddev = sqrt(variance);
 
     /* Coefficient of Variation (CV) = stddev / mean — low CV = regular beaconing */
     return (stddev / mean) < HEUR_BEACON_VAR_THRESH;
@@ -238,15 +236,14 @@ static BOOL HeurCheckBeacon(_Inout_ BLACKBIRD_CONTROLLER_PID_LEDGER *L, _In_ ULO
 
 /* Emit a synthetic detection event by directly building and dispatching a
  * BLACKBIRD_IPC_ETW_EVENT — mirrors ControllerEmitSyntheticDetectionEx. */
-static VOID HeurEmitDetection(_In_ DWORD Pid, _In_ UINT32 Severity, _In_z_ PCSTR DetectionName,
-                              _In_z_ PCWSTR Reason)
+static VOID HeurEmitDetection(_In_ DWORD Pid, _In_ UINT32 Severity, _In_z_ PCSTR DetectionName, _In_z_ PCWSTR Reason)
 {
     BLACKBIRD_IPC_ETW_EVENT ev;
 
     ZeroMemory(&ev, sizeof(ev));
-    ev.Source    = BlackbirdIpcEtwSourceBlackbird;
-    ev.Family    = BlackbirdIpcEtwFamilyDetection;
-    ev.Severity  = Severity;
+    ev.Source = BlackbirdIpcEtwSourceBlackbird;
+    ev.Family = BlackbirdIpcEtwFamilyDetection;
+    ev.Severity = Severity;
     ev.ProcessId = Pid;
     ev.CallerPid = Pid;
     ev.TargetPid = Pid;
@@ -289,9 +286,9 @@ VOID ControllerHeuristicsObserveEvent(_In_ DWORD Pid, _In_ UINT32 Severity, _In_
 {
     BLACKBIRD_CONTROLLER_PID_LEDGER *ledger;
     ULONGLONG now;
-    UINT32    score;
-    BOOL      shellcode;
-    BOOL      beacon = FALSE;
+    UINT32 score;
+    BOOL shellcode;
+    BOOL beacon = FALSE;
 
     if (InterlockedCompareExchange(&g_HeurInitialized, 0, 0) == 0)
     {
@@ -321,23 +318,21 @@ VOID ControllerHeuristicsObserveEvent(_In_ DWORD Pid, _In_ UINT32 Severity, _In_
         beacon = HeurCheckBeacon(ledger, now);
     }
 
-    score    = HeurComputeScore(ledger, now);
+    score = HeurComputeScore(ledger, now);
     shellcode = HeurCheckShellcodeStage(ledger, now);
 
     /* Take snapshots needed for cooldown checks before releasing */
-    ULONGLONG lastAggrHigh  = ledger->LastAggrHighTick;
-    ULONGLONG lastAggrMed   = ledger->LastAggrMedTick;
-    ULONGLONG lastShell     = ledger->LastShellcodeTick;
-    ULONGLONG lastBeacon    = ledger->LastBeaconTick;
+    ULONGLONG lastAggrHigh = ledger->LastAggrHighTick;
+    ULONGLONG lastAggrMed = ledger->LastAggrMedTick;
+    ULONGLONG lastShell = ledger->LastShellcodeTick;
+    ULONGLONG lastBeacon = ledger->LastBeaconTick;
 
     /* Update cooldown timestamps atomically under the lock */
-    if (score >= BLACKBIRD_HEUR_AGGREGATE_HIGH_SCORE &&
-        (now - lastAggrHigh) >= HEUR_COOLDOWN_AGG_MS)
+    if (score >= BLACKBIRD_HEUR_AGGREGATE_HIGH_SCORE && (now - lastAggrHigh) >= HEUR_COOLDOWN_AGG_MS)
     {
         ledger->LastAggrHighTick = now;
     }
-    else if (score >= BLACKBIRD_HEUR_AGGREGATE_MED_SCORE &&
-             (now - lastAggrMed) >= HEUR_COOLDOWN_AGG_MS)
+    else if (score >= BLACKBIRD_HEUR_AGGREGATE_MED_SCORE && (now - lastAggrMed) >= HEUR_COOLDOWN_AGG_MS)
     {
         ledger->LastAggrMedTick = now;
     }
@@ -355,8 +350,7 @@ VOID ControllerHeuristicsObserveEvent(_In_ DWORD Pid, _In_ UINT32 Severity, _In_
     ReleaseSRWLockExclusive(&g_HeurLock);
 
     /* Emit detections outside the lock to avoid deadlock risk */
-    if (score >= BLACKBIRD_HEUR_AGGREGATE_HIGH_SCORE &&
-        (now - lastAggrHigh) >= HEUR_COOLDOWN_AGG_MS)
+    if (score >= BLACKBIRD_HEUR_AGGREGATE_HIGH_SCORE && (now - lastAggrHigh) >= HEUR_COOLDOWN_AGG_MS)
     {
         WCHAR reason[256];
         (void)StringCchPrintfW(reason, RTL_NUMBER_OF(reason),
@@ -366,8 +360,7 @@ VOID ControllerHeuristicsObserveEvent(_In_ DWORD Pid, _In_ UINT32 Severity, _In_
                                (unsigned long)(HEUR_WINDOW_MS / 1000u));
         HeurEmitDetection(Pid, 7u, "AGGREGATE_THREAT_SIGNAL_HIGH", reason);
     }
-    else if (score >= BLACKBIRD_HEUR_AGGREGATE_MED_SCORE &&
-             (now - lastAggrMed) >= HEUR_COOLDOWN_AGG_MS)
+    else if (score >= BLACKBIRD_HEUR_AGGREGATE_MED_SCORE && (now - lastAggrMed) >= HEUR_COOLDOWN_AGG_MS)
     {
         WCHAR reason[256];
         (void)StringCchPrintfW(reason, RTL_NUMBER_OF(reason),
@@ -381,18 +374,20 @@ VOID ControllerHeuristicsObserveEvent(_In_ DWORD Pid, _In_ UINT32 Severity, _In_
     if (shellcode && (now - lastShell) >= HEUR_COOLDOWN_SHELL_MS)
     {
         WCHAR reason[256];
-        (void)StringCchPrintfW(reason, RTL_NUMBER_OF(reason),
-                               L"pid=%lu observed RW alloc + VM write + RX protect within %lu second window — classic shellcode staging pattern",
-                               (unsigned long)Pid, (unsigned long)(HEUR_SHELLCODE_WIN_MS / 1000u));
+        (void)StringCchPrintfW(
+            reason, RTL_NUMBER_OF(reason),
+            L"pid=%lu observed RW alloc + VM write + RX protect within %lu second window — classic shellcode staging pattern",
+            (unsigned long)Pid, (unsigned long)(HEUR_SHELLCODE_WIN_MS / 1000u));
         HeurEmitDetection(Pid, 7u, "SHELLCODE_STAGE_PATTERN", reason);
     }
 
     if (beacon && (now - lastBeacon) >= HEUR_COOLDOWN_BEACON_MS)
     {
         WCHAR reason[256];
-        (void)StringCchPrintfW(reason, RTL_NUMBER_OF(reason),
-                               L"pid=%lu outbound network connects show regular periodicity (CV < %.0f%%) — C2 beacon candidate",
-                               (unsigned long)Pid, HEUR_BEACON_VAR_THRESH * 100.0);
+        (void)StringCchPrintfW(
+            reason, RTL_NUMBER_OF(reason),
+            L"pid=%lu outbound network connects show regular periodicity (CV < %.0f%%) — C2 beacon candidate",
+            (unsigned long)Pid, HEUR_BEACON_VAR_THRESH * 100.0);
         HeurEmitDetection(Pid, 4u, "PERIODIC_BEACON_PATTERN", reason);
     }
 }

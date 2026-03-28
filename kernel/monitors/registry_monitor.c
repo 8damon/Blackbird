@@ -11,23 +11,22 @@
  * actionable detection — caller should not emit a detection event. */
 typedef struct _BLACKBIRD_REG_WRITE_CLASS
 {
-    PCSTR  DetectionName;
-    ULONG  Severity;
+    PCSTR DetectionName;
+    ULONG Severity;
     PCWSTR Reason;
 } BLACKBIRD_REG_WRITE_CLASS;
 
 /* Classify a registry key path + optional value name for persistence / security-bypass
  * relevance.  Only called on write-class operations (SET_VALUE, CREATE_KEY). */
-static VOID BLACKBIRDRegistryClassifyWrite(_In_opt_z_ PCWSTR KeyPath,
-                                           _In_opt_z_ PCWSTR ValueName,
+static VOID BLACKBIRDRegistryClassifyWrite(_In_opt_z_ PCWSTR KeyPath, _In_opt_z_ PCWSTR ValueName,
                                            _Out_ BLACKBIRD_REG_WRITE_CLASS *Out)
 {
     UNICODE_STRING keyUs;
     UNICODE_STRING valUs;
 
     Out->DetectionName = NULL;
-    Out->Severity      = 0;
-    Out->Reason        = NULL;
+    Out->Severity = 0;
+    Out->Reason = NULL;
 
     if (KeyPath == NULL || KeyPath[0] == L'\0')
     {
@@ -52,8 +51,8 @@ static VOID BLACKBIRDRegistryClassifyWrite(_In_opt_z_ PCWSTR KeyPath,
             BLACKBIRDUnicodeContainsInsensitive(&valUs, L"Notification Packages", 21))
         {
             Out->DetectionName = "REGISTRY_LSA_PACKAGE_WRITE";
-            Out->Severity      = 8;
-            Out->Reason        = L"write to LSA security-package value — DLL injected into lsass at next boot";
+            Out->Severity = 8;
+            Out->Reason = L"write to LSA security-package value — DLL injected into lsass at next boot";
             return;
         }
     }
@@ -63,8 +62,8 @@ static VOID BLACKBIRDRegistryClassifyWrite(_In_opt_z_ PCWSTR KeyPath,
         BLACKBIRDUnicodeContainsInsensitive(&keyUs, L"Windows Defender\\Features", 25))
     {
         Out->DetectionName = "REGISTRY_SECURITY_BYPASS_WRITE";
-        Out->Severity      = 7;
-        Out->Reason        = L"write to Windows Defender exclusion or feature key";
+        Out->Severity = 7;
+        Out->Reason = L"write to Windows Defender exclusion or feature key";
         return;
     }
 
@@ -72,8 +71,8 @@ static VOID BLACKBIRDRegistryClassifyWrite(_In_opt_z_ PCWSTR KeyPath,
     if (BLACKBIRDUnicodeContainsInsensitive(&valUs, L"AppInit_DLLs", 12))
     {
         Out->DetectionName = "REGISTRY_APPINIT_DLL_WRITE";
-        Out->Severity      = 7;
-        Out->Reason        = L"write to AppInit_DLLs — DLL loaded into every user-mode process using user32";
+        Out->Severity = 7;
+        Out->Reason = L"write to AppInit_DLLs — DLL loaded into every user-mode process using user32";
         return;
     }
 
@@ -82,8 +81,8 @@ static VOID BLACKBIRDRegistryClassifyWrite(_In_opt_z_ PCWSTR KeyPath,
         BLACKBIRDUnicodeContainsInsensitive(&keyUs, L"Session Manager\\BootExecute", 27))
     {
         Out->DetectionName = "REGISTRY_BOOT_EXECUTE_WRITE";
-        Out->Severity      = 7;
-        Out->Reason        = L"write to BootExecute — executed by smss before Win32 subsystem starts";
+        Out->Severity = 7;
+        Out->Reason = L"write to BootExecute — executed by smss before Win32 subsystem starts";
         return;
     }
 
@@ -91,13 +90,13 @@ static VOID BLACKBIRDRegistryClassifyWrite(_In_opt_z_ PCWSTR KeyPath,
     if (BLACKBIRDUnicodeContainsInsensitive(&keyUs, L"Windows NT\\CurrentVersion\\Winlogon", 33))
     {
         if (BLACKBIRDUnicodeContainsInsensitive(&valUs, L"Userinit", 8) ||
-            BLACKBIRDUnicodeContainsInsensitive(&valUs, L"Shell", 5)    ||
-            BLACKBIRDUnicodeContainsInsensitive(&valUs, L"Notify", 6)   ||
+            BLACKBIRDUnicodeContainsInsensitive(&valUs, L"Shell", 5) ||
+            BLACKBIRDUnicodeContainsInsensitive(&valUs, L"Notify", 6) ||
             BLACKBIRDUnicodeContainsInsensitive(&valUs, L"GpExtensions", 12))
         {
             Out->DetectionName = "REGISTRY_WINLOGON_MODIFY";
-            Out->Severity      = 6;
-            Out->Reason        = L"write to Winlogon control value — can redirect logon shell or hook logon events";
+            Out->Severity = 6;
+            Out->Reason = L"write to Winlogon control value — can redirect logon shell or hook logon events";
             return;
         }
     }
@@ -105,13 +104,13 @@ static VOID BLACKBIRDRegistryClassifyWrite(_In_opt_z_ PCWSTR KeyPath,
     /* Image File Execution Options — debugger/silentprocessexit hijack */
     if (BLACKBIRDUnicodeContainsInsensitive(&keyUs, L"Image File Execution Options", 28))
     {
-        if (BLACKBIRDUnicodeContainsInsensitive(&valUs, L"Debugger", 8)            ||
-            BLACKBIRDUnicodeContainsInsensitive(&valUs, L"MonitorProcess", 14)     ||
+        if (BLACKBIRDUnicodeContainsInsensitive(&valUs, L"Debugger", 8) ||
+            BLACKBIRDUnicodeContainsInsensitive(&valUs, L"MonitorProcess", 14) ||
             BLACKBIRDUnicodeContainsInsensitive(&valUs, L"ReportingMode", 13))
         {
             Out->DetectionName = "REGISTRY_IFEO_WRITE";
-            Out->Severity      = 6;
-            Out->Reason        = L"write to Image File Execution Options — Debugger or MonitorProcess can redirect execution";
+            Out->Severity = 6;
+            Out->Reason = L"write to Image File Execution Options — Debugger or MonitorProcess can redirect execution";
             return;
         }
     }
@@ -121,8 +120,8 @@ static VOID BLACKBIRDRegistryClassifyWrite(_In_opt_z_ PCWSTR KeyPath,
         BLACKBIRDUnicodeContainsInsensitive(&keyUs, L"\\REGISTRY\\MACHINE\\SECURITY", 26))
     {
         Out->DetectionName = "REGISTRY_CREDENTIAL_HIVE_WRITE";
-        Out->Severity      = 7;
-        Out->Reason        = L"write into SAM or SECURITY hive — credential store modification";
+        Out->Severity = 7;
+        Out->Reason = L"write into SAM or SECURITY hive — credential store modification";
         return;
     }
 
@@ -130,8 +129,8 @@ static VOID BLACKBIRDRegistryClassifyWrite(_In_opt_z_ PCWSTR KeyPath,
     if (BLACKBIRDUnicodeContainsInsensitive(&keyUs, L"CurrentVersion\\Run", 18))
     {
         Out->DetectionName = "REGISTRY_AUTORUN_WRITE";
-        Out->Severity      = 5;
-        Out->Reason        = L"write to autorun persistence key (Run/RunOnce/RunServices)";
+        Out->Severity = 5;
+        Out->Reason = L"write to autorun persistence key (Run/RunOnce/RunServices)";
         return;
     }
 
@@ -141,8 +140,8 @@ static VOID BLACKBIRDRegistryClassifyWrite(_In_opt_z_ PCWSTR KeyPath,
         BLACKBIRDUnicodeContainsInsensitive(&valUs, L"InprocServer32", 14))
     {
         Out->DetectionName = "REGISTRY_COM_HIJACK_WRITE";
-        Out->Severity      = 5;
-        Out->Reason        = L"write to per-user CLSID InprocServer32 — COM server hijacking via HKCU override";
+        Out->Severity = 5;
+        Out->Reason = L"write to per-user CLSID InprocServer32 — COM server hijacking via HKCU override";
         return;
     }
 }
@@ -153,8 +152,8 @@ static volatile LONG g_RegistryFailureCounter = 0;
 
 NTKERNELAPI ULONG PsGetProcessSessionIdEx(_In_ PEPROCESS Process);
 
-static VOID BLACKBIRDRegistryOverwriteKeyName(_Out_writes_bytes_(NameBytes) PWCHAR NameBuffer,
-                                              _In_ ULONG NameBytes, _In_z_ PCWSTR Replacement)
+static VOID BLACKBIRDRegistryOverwriteKeyName(_Out_writes_bytes_(NameBytes) PWCHAR NameBuffer, _In_ ULONG NameBytes,
+                                              _In_z_ PCWSTR Replacement)
 {
     SIZE_T maxChars;
     SIZE_T copyChars;
@@ -189,8 +188,8 @@ static BOOLEAN BLACKBIRDRegistryBlindPciEnumeration(_In_ PREG_POST_OPERATION_INF
     NTSTATUS nameStatus;
     PREG_ENUMERATE_KEY_INFORMATION preInfo;
 
-    if (PostInfo == NULL || !NT_SUCCESS(PostInfo->Status) || PostInfo->Object == NULL || PostInfo->PreInformation == NULL ||
-        !BLACKBIRDRuntimeConfigIsAntiVirtualizationEnabled())
+    if (PostInfo == NULL || !NT_SUCCESS(PostInfo->Status) || PostInfo->Object == NULL ||
+        PostInfo->PreInformation == NULL || !BLACKBIRDRuntimeConfigIsAntiVirtualizationEnabled())
     {
         return FALSE;
     }
@@ -214,8 +213,7 @@ static BOOLEAN BLACKBIRDRegistryBlindPciEnumeration(_In_ PREG_POST_OPERATION_INF
     case KeyBasicInformation:
     {
         PKEY_BASIC_INFORMATION info = (PKEY_BASIC_INFORMATION)preInfo->KeyInformation;
-        if (info != NULL && info->NameLength >= (8 * sizeof(WCHAR)) &&
-            _wcsnicmp(info->Name, L"VEN_15AD", 8) == 0)
+        if (info != NULL && info->NameLength >= (8 * sizeof(WCHAR)) && _wcsnicmp(info->Name, L"VEN_15AD", 8) == 0)
         {
             BLACKBIRDRegistryOverwriteKeyName(info->Name, info->NameLength, L"VEN_8086");
             info->NameLength = 8 * sizeof(WCHAR);
@@ -227,8 +225,7 @@ static BOOLEAN BLACKBIRDRegistryBlindPciEnumeration(_In_ PREG_POST_OPERATION_INF
     case KeyNodeInformation:
     {
         PKEY_NODE_INFORMATION info = (PKEY_NODE_INFORMATION)preInfo->KeyInformation;
-        if (info != NULL && info->NameLength >= (8 * sizeof(WCHAR)) &&
-            _wcsnicmp(info->Name, L"VEN_15AD", 8) == 0)
+        if (info != NULL && info->NameLength >= (8 * sizeof(WCHAR)) && _wcsnicmp(info->Name, L"VEN_15AD", 8) == 0)
         {
             BLACKBIRDRegistryOverwriteKeyName(info->Name, info->NameLength, L"VEN_8086");
             info->NameLength = 8 * sizeof(WCHAR);
@@ -240,8 +237,7 @@ static BOOLEAN BLACKBIRDRegistryBlindPciEnumeration(_In_ PREG_POST_OPERATION_INF
     case KeyNameInformation:
     {
         PKEY_NAME_INFORMATION info = (PKEY_NAME_INFORMATION)preInfo->KeyInformation;
-        if (info != NULL && info->NameLength >= (8 * sizeof(WCHAR)) &&
-            _wcsnicmp(info->Name, L"VEN_15AD", 8) == 0)
+        if (info != NULL && info->NameLength >= (8 * sizeof(WCHAR)) && _wcsnicmp(info->Name, L"VEN_15AD", 8) == 0)
         {
             BLACKBIRDRegistryOverwriteKeyName(info->Name, info->NameLength, L"VEN_8086");
             info->NameLength = 8 * sizeof(WCHAR);

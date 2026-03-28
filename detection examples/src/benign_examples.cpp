@@ -46,7 +46,8 @@ int ExampleRunBenignFileIo(int argc, wchar_t **argv)
         return 1;
     }
 
-    file = CreateFileW(filePath, GENERIC_READ | GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY, nullptr);
+    file = CreateFileW(filePath, GENERIC_READ | GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY,
+                       nullptr);
     if (file == INVALID_HANDLE_VALUE)
     {
         ExamplePrint("[FAIL] benign-file-io CreateFileW err=%lu\n", GetLastError());

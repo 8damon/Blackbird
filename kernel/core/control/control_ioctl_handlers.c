@@ -694,8 +694,8 @@ NTSTATUS BLACKBIRDHandleSetRuntimeConfigIoctl(_In_ PBLACKBIRD_CLIENT Client, _In
 
     status = BLACKBIRDRuntimeConfigSetRuntimeFlags(in->Flags, in->Mask);
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, NT_SUCCESS(status) ? DPFLTR_INFO_LEVEL : DPFLTR_WARNING_LEVEL,
-               "BLACKBIRD: set-runtime-config requesterPid=%lu flags=0x%08X mask=0x%08X status=0x%08X.\n",
-               requesterPid, in->Flags, in->Mask, status);
+               "BLACKBIRD: set-runtime-config requesterPid=%lu flags=0x%08X mask=0x%08X status=0x%08X.\n", requesterPid,
+               in->Flags, in->Mask, status);
     return status;
 }
 
@@ -755,8 +755,8 @@ NTSTATUS BLACKBIRDHandleMarkInterfaceReadyIoctl(_In_ PBLACKBIRD_CLIENT Client, _
     }
 
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
-               "BLACKBIRD: mark-interface-ready requesterPid=%lu targetPid=%lu status=STATUS_SUCCESS.\n",
-               requesterPid, in->ProcessId);
+               "BLACKBIRD: mark-interface-ready requesterPid=%lu targetPid=%lu status=STATUS_SUCCESS.\n", requesterPid,
+               in->ProcessId);
     return STATUS_SUCCESS;
 }
 NTSTATUS BLACKBIRDHandleMarkControllerReadyIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request)
@@ -787,15 +787,15 @@ NTSTATUS BLACKBIRDHandleMarkControllerReadyIoctl(_In_ PBLACKBIRD_CLIENT Client, 
     }
     if (!BLACKBIRDProcessMonitorMarkControllerReady(in->ProcessId))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                   "BLACKBIRD: mark-controller-ready rejected requesterPid=%lu targetPid=%lu status=STATUS_NOT_FOUND.\n",
-                   requesterPid, in->ProcessId);
+        DbgPrintEx(
+            DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+            "BLACKBIRD: mark-controller-ready rejected requesterPid=%lu targetPid=%lu status=STATUS_NOT_FOUND.\n",
+            requesterPid, in->ProcessId);
         return STATUS_NOT_FOUND;
     }
 
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
-               "BLACKBIRD: mark-controller-ready requesterPid=%lu targetPid=%lu status=STATUS_SUCCESS.\n",
-               requesterPid, in->ProcessId);
+               "BLACKBIRD: mark-controller-ready requesterPid=%lu targetPid=%lu status=STATUS_SUCCESS.\n", requesterPid,
+               in->ProcessId);
     return STATUS_SUCCESS;
 }
-

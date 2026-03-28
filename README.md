@@ -1,5 +1,5 @@
 <h1 align="center">BLACKBIRD v1.7</h1>
-<p align="center"><b>DFIR Kernel Telemetry & Detection Platform for Windows</b></p>
+<p align="center"><b>Malware Analysis DFIR Kernel Telemetry & Detection Platform for Windows</b></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/-00599C?logo=c&logoColor=white&style=for-the-badge" />

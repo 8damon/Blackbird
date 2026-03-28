@@ -16,7 +16,7 @@
   <img src="./media/MAIN_ALT.png" width="980" alt="Blackbird main interface" />
 </p>
 
-# BLACKBIRD
+# [BLACKBIRD](https://titansoftwork.com/blackbird/)
 
 Blackbird is a malware-analysis platform for everyone from SOC teams to hobbyists. BK unifies kernel telemetry, user-mode hook data, grouped detections, and capture-backed drilldown into one platform. The analyst interface is summary-first, the raw event graph retains the full session timeline, and deeper evidence is exposed through dedicated inspectors, diagnostics, and relation views.
 

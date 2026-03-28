@@ -1,113 +1,79 @@
 # Blackbird Install and Operator Workflow
 
-## Deployment/Validation Visuals
-
-<p align="center">
-  <img src="./media/TEST_PASS.png" width="700" />
-</p>
-
 ## Prerequisites
 
 - Windows VM for analysis/testing
 - Visual Studio + WDK (KMDF toolchain)
-- Administrative shell
-- Test-signing enabled for non-production certs
+- administrative shell
+- test-signing enabled for non-production certs
 
 ## Conventions
 
 - `<REPO_ROOT>` means the local folder where you cloned this repository.
 - Commands below assume an elevated terminal.
 
-## 1) Build the Driver
+## 1) Build The Projects
 
-Open the solution file (`*.slnx`) in Visual Studio and build:
+Build the driver and the user-mode pieces you need:
 
-- Project: `vcxproj/Blackbird.vcxproj`
-- Platform: `x64`
-- Configuration: `Debug` or `Release`
-
-Expected artifacts (default):
-
-- `x64\Debug\blackbird.sys`
-- `x64\Debug\Blackbird.inf`
-
-## 2) Install the Driver Package
-
-From elevated terminal:
-
-```bat
-cd /d "<REPO_ROOT>"
-pnputil /add-driver "Blackbird.inf" /install
-```
-
-Validate package presence:
-
-```bat
-pnputil /enum-drivers | findstr /i blackbird
-```
-
-## 3) Start/Stop Service
-
-```bat
-sc query blackbird
-sc start blackbird
-sc stop blackbird
-```
-
-## 4) Build User-Mode Tools
-
-Build one or more:
-
+- `vcxproj/Blackbird.vcxproj`
 - `vcxproj/BlackbirdController.vcxproj`
-- `vcxproj/BlackbirdIoctlTest.vcxproj`
 - `vcxproj/BlackbirdSensorCore.vcxproj`
+- `vcxproj/BlackbirdIoctlTest.vcxproj`
 - `vcxproj/BlackbirdInterface.csproj`
-- `vcxproj/BlackbirdOperator.csproj`
+- `vcxproj/BlackbirdExamples.vcxproj`
 
-## 5) Install/Run Controller Service (Recommended)
-
-Install/update the Session 0 broker service:
+## 2) Install / Update Driver And Controller
 
 ```powershell
 cd "<REPO_ROOT>"
-powershell -ExecutionPolicy Bypass -File .\usage\install-controller-service.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\installer.ps1
 ```
 
-Validate:
+Optional runtime defaults:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\installer.ps1 -EnableAntiVirtualization -EnableControllerHiding
+```
+
+What the installer does:
+
+- copies `blackbird.sys`, `BlackbirdController.exe`, and `J58.dll`
+- recreates the driver and controller services
+- waits for locked files and pending service deletions to clear
+- seeds runtime default registry values for anti-virtualization and concealment
+
+## 3) Validate Service State
 
 ```bat
+sc query blackbird
 sc query BlackbirdController
 ```
 
-Uninstall:
+## 4) Remove The Stack
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\usage\install-controller-service.ps1 -Uninstall
+cd "<REPO_ROOT>"
+powershell -ExecutionPolicy Bypass -File .\scripts\remover.ps1
 ```
 
-## 6) Validate IOCTL Path (Recommended)
+## 5) Validate The IOCTL / Broker Path
 
 ```bat
 cd /d "<REPO_ROOT>"
 .\x64\Debug\BlackbirdTestSuite.exe
 ```
 
-## 7) Run The Interface
+## 6) Run The Interface
 
 ```bat
 cd /d "<REPO_ROOT>"
 .\interface\analysis\bin\Debug\net9.0-windows\BlackbirdInterface.exe
 ```
 
-## 8) Run ETW Capture (Optional)
-
-Use the analyst interface inspectors or a custom consumer via `BlackbirdSensorCore` (`BLACKBIRDSCStartBlackbirdEtwSession` / `SwkStartDetectionEtwSession`).
-
 ## Notes
 
-- Control plane endpoint: `\\.\BlackbirdCtl`
-- ACL policy: `SYSTEM` and `Administrators`
-- Driver project is kernel-only; user tooling is isolated under dedicated user-mode projects
-- Session archives produced by the analyst interface use the `.bkcap` extension
-
-
+- Control plane endpoint: `\\.\Global\BlackbirdCtl` preferred, `\\.\BlackbirdCtl` legacy
+- Driver control-device ACL remains `SYSTEM` and `Administrators`
+- Controller now separates privileged control traffic from SR71 hook-ingest traffic
+- Session archives use the `.bkcap` extension

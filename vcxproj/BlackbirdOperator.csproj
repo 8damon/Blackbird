@@ -17,9 +17,9 @@
     <AssemblyName>BlackbirdOperator</AssemblyName>
     <Product>Blackbird Operator</Product>
     <Company>TITAN Softwork Solutions</Company>
-    <Version>1.5.0</Version>
-    <AssemblyVersion>1.5.0.0</AssemblyVersion>
-    <FileVersion>1.5.0.0</FileVersion>
+    <Version>1.7.0</Version>
+    <AssemblyVersion>1.7.0.0</AssemblyVersion>
+    <FileVersion>1.7.0.0</FileVersion>
     <ApplicationIcon>..\interface\analysis\Resources\BK.ico</ApplicationIcon>
   </PropertyGroup>
 

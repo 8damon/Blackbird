@@ -22,8 +22,12 @@ NTSTATUS NTAPI BLACKBIRDNtQuerySystemInformationHook(_In_ ULONG SystemInformatio
     }
     status = g_OriginalNtQuerySystemInformation(SystemInformationClass, SystemInformation, SystemInformationLength,
                                                 ReturnLength);
+    BLACKBIRDNtApiSanitizeProcessInformation(SystemInformationClass, SystemInformation, SystemInformationLength, status);
+    BLACKBIRDNtApiSanitizeModuleInformation(SystemInformationClass, SystemInformation, SystemInformationLength, status);
     BLACKBIRDNtApiSanitizeKernelDebuggerInformation(SystemInformationClass, SystemInformation, SystemInformationLength,
                                                     status);
+    BLACKBIRDNtApiSanitizeFirmwareTableInformation(SystemInformationClass, SystemInformation, SystemInformationLength,
+                                                   status);
 
     if (!BLACKBIRDNtApiShouldLog(&callerPid))
     {

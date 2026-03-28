@@ -1,5 +1,6 @@
 #include <ntddk.h>
 #include "..\..\core\control.h"
+#include "..\..\core\runtime_config.h"
 #include "..\..\telemetry\etw.h"
 #include "..\hook\ntapi_hook.h"
 #include "ntapi_monitor.h"
@@ -7,6 +8,8 @@
 #if defined(_AMD64_)
 
 #define BLACKBIRD_NTAPI_LOG(_level, ...) DbgPrintEx(DPFLTR_IHVDRIVER_ID, (_level), __VA_ARGS__)
+#define BLACKBIRD_SYSTEM_INFORMATION_CLASS_PROCESS 5u
+#define BLACKBIRD_SYSTEM_INFORMATION_CLASS_MODULE 11u
 #define BLACKBIRD_SYSTEM_INFORMATION_CLASS_KERNEL_DEBUGGER 35u
 #define BLACKBIRD_SYSTEM_INFORMATION_CLASS_FIRMWARE_TABLE 76u
 #define BLACKBIRD_FIRMWARE_PROVIDER_RSMB 0x424D5352u
@@ -80,6 +83,9 @@ static volatile LONG g_NtApiHookInFlight = 0;
 static volatile LONG g_NtApiUninitWaitBudget = 16;
 static volatile LONG g_NtApiKdSanitizeBudget = 16;
 static volatile LONG g_NtApiKdSanitizeApplyBudget = 16;
+static volatile UCHAR *g_NtApiSharedKdByte = NULL;
+static UCHAR g_NtApiSharedKdOriginalValue = 0;
+static BOOLEAN g_NtApiSharedKdSpoofActive = FALSE;
 volatile LONG g_NtApiSmbiosSanitizeBudget = 16;
 volatile LONG g_NtApiSmbiosSanitizeApplyBudget = 16;
 
@@ -132,9 +138,56 @@ VOID BLACKBIRDNtApiSanitizeKernelDebuggerInformation(_In_ ULONG SystemInformatio
                                                          PVOID SystemInformation,
                                                      _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status);
 VOID BLACKBIRDNtApiSanitizeFirmwareTableInformation(_In_ ULONG SystemInformationClass,
-                                                    _Out_writes_bytes_opt_(SystemInformationLength)
+                                                    _Inout_updates_bytes_opt_(SystemInformationLength)
                                                         PVOID SystemInformation,
                                                     _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status);
+
+static volatile UCHAR *BLACKBIRDNtApiGetSharedKdByteAddress(VOID)
+{
+    return (volatile UCHAR *)((PUCHAR)SharedUserData + FIELD_OFFSET(KUSER_SHARED_DATA, KdDebuggerEnabled));
+}
+
+static VOID BLACKBIRDNtApiApplySharedKdSpoof(VOID)
+{
+    volatile UCHAR *sharedKdByte;
+    const UCHAR desiredValue = 0x00u;
+
+    sharedKdByte = BLACKBIRDNtApiGetSharedKdByteAddress();
+    if (sharedKdByte == NULL)
+    {
+        return;
+    }
+
+    g_NtApiSharedKdByte = sharedKdByte;
+    g_NtApiSharedKdOriginalValue = *sharedKdByte;
+    if (*sharedKdByte != desiredValue)
+    {
+        *sharedKdByte = desiredValue;
+        KeMemoryBarrier();
+    }
+    g_NtApiSharedKdSpoofActive = TRUE;
+}
+
+static VOID BLACKBIRDNtApiRestoreSharedKdSpoof(VOID)
+{
+    volatile UCHAR *sharedKdByte;
+
+    if (!g_NtApiSharedKdSpoofActive)
+    {
+        return;
+    }
+
+    sharedKdByte = g_NtApiSharedKdByte;
+    if (sharedKdByte != NULL)
+    {
+        *sharedKdByte = g_NtApiSharedKdOriginalValue;
+        KeMemoryBarrier();
+    }
+
+    g_NtApiSharedKdByte = NULL;
+    g_NtApiSharedKdSpoofActive = FALSE;
+    g_NtApiSharedKdOriginalValue = 0;
+}
 
 static BLACKBIRD_NTAPI_HOOK g_Hooks[BLACKBIRD_HOOK_COUNT];
 static const BLACKBIRD_NTAPI_HOOK_DESCRIPTOR g_HookDescriptors[BLACKBIRD_HOOK_COUNT] = {
@@ -319,6 +372,280 @@ VOID BLACKBIRDNtApiSanitizeKernelDebuggerInformation(_In_ ULONG SystemInformatio
                 "BLACKBIRD: ntapi kernel-debugger sanitize failed class=0x%lX status=0x%08X ex=0x%08X.\n",
                 SystemInformationClass, Status, GetExceptionCode());
         }
+    }
+}
+
+typedef struct _BLACKBIRD_SYSTEM_PROCESS_INFORMATION
+{
+    ULONG NextEntryOffset;
+    ULONG NumberOfThreads;
+    LARGE_INTEGER WorkingSetPrivateSize;
+    ULONG HardFaultCount;
+    ULONG NumberOfThreadsHighWatermark;
+    ULONGLONG CycleTime;
+    LARGE_INTEGER CreateTime;
+    LARGE_INTEGER UserTime;
+    LARGE_INTEGER KernelTime;
+    UNICODE_STRING ImageName;
+    KPRIORITY BasePriority;
+    HANDLE UniqueProcessId;
+    PVOID InheritedFromUniqueProcessId;
+} BLACKBIRD_SYSTEM_PROCESS_INFORMATION, *PBLACKBIRD_SYSTEM_PROCESS_INFORMATION;
+
+typedef struct _BLACKBIRD_SYSTEM_MODULE_ENTRY
+{
+    HANDLE Section;
+    PVOID MappedBase;
+    PVOID ImageBase;
+    ULONG ImageSize;
+    ULONG Flags;
+    USHORT LoadOrderIndex;
+    USHORT InitOrderIndex;
+    USHORT LoadCount;
+    USHORT OffsetToFileName;
+    UCHAR FullPathName[256];
+} BLACKBIRD_SYSTEM_MODULE_ENTRY, *PBLACKBIRD_SYSTEM_MODULE_ENTRY;
+
+typedef struct _BLACKBIRD_SYSTEM_MODULE_INFORMATION
+{
+    ULONG NumberOfModules;
+    BLACKBIRD_SYSTEM_MODULE_ENTRY Modules[1];
+} BLACKBIRD_SYSTEM_MODULE_INFORMATION, *PBLACKBIRD_SYSTEM_MODULE_INFORMATION;
+
+static BOOLEAN BLACKBIRDNtApiUnicodeEqualsInsensitive(_In_ PCUNICODE_STRING Value, _In_ PCUNICODE_STRING Expected)
+{
+    if (Value == NULL || Expected == NULL || Value->Buffer == NULL || Expected->Buffer == NULL)
+    {
+        return FALSE;
+    }
+
+    return RtlEqualUnicodeString(Value, Expected, TRUE);
+}
+
+static BOOLEAN BLACKBIRDNtApiAnsiEqualsInsensitive(_In_z_ const UCHAR *Value, _In_z_ const CHAR *Expected)
+{
+    SIZE_T i = 0;
+    CHAR left;
+    CHAR right;
+
+    if (Value == NULL || Expected == NULL)
+    {
+        return FALSE;
+    }
+
+    for (;;)
+    {
+        left = (CHAR)Value[i];
+        right = Expected[i];
+        if (left >= 'A' && left <= 'Z')
+        {
+            left = (CHAR)(left - 'A' + 'a');
+        }
+        if (right >= 'A' && right <= 'Z')
+        {
+            right = (CHAR)(right - 'A' + 'a');
+        }
+        if (left != right)
+        {
+            return FALSE;
+        }
+        if (left == '\0')
+        {
+            return TRUE;
+        }
+        i++;
+    }
+}
+
+VOID BLACKBIRDNtApiSanitizeProcessInformation(_In_ ULONG SystemInformationClass,
+                                             _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
+                                             _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status)
+{
+    static const UNICODE_STRING selfHiddenNames[] = {
+        RTL_CONSTANT_STRING(L"BlackbirdController.exe"),
+    };
+    static const UNICODE_STRING antiVirtualizationNames[] = {
+        RTL_CONSTANT_STRING(L"vmtoolsd.exe"),
+        RTL_CONSTANT_STRING(L"vm3dservice.exe"),
+        RTL_CONSTANT_STRING(L"VGAuthService.exe"),
+        RTL_CONSTANT_STRING(L"vboxservice.exe"),
+        RTL_CONSTANT_STRING(L"vboxtray.exe"),
+        RTL_CONSTANT_STRING(L"qemu-ga.exe"),
+        RTL_CONSTANT_STRING(L"qga.exe"),
+        RTL_CONSTANT_STRING(L"qemuwmiagent.exe"),
+        RTL_CONSTANT_STRING(L"spice-vdagent.exe"),
+        RTL_CONSTANT_STRING(L"spice-agent.exe"),
+        RTL_CONSTANT_STRING(L"spice-vdagentd.exe"),
+        RTL_CONSTANT_STRING(L"virtiofs.exe"),
+        RTL_CONSTANT_STRING(L"virtiofsd.exe"),
+        RTL_CONSTANT_STRING(L"prl_tools.exe"),
+        RTL_CONSTANT_STRING(L"prl_cc.exe"),
+        RTL_CONSTANT_STRING(L"prl_tools_service.exe"),
+        RTL_CONSTANT_STRING(L"xenservice.exe"),
+        RTL_CONSTANT_STRING(L"xensvc.exe"),
+    };
+    PUCHAR base;
+    PBLACKBIRD_SYSTEM_PROCESS_INFORMATION previous;
+    PBLACKBIRD_SYSTEM_PROCESS_INFORMATION current;
+
+    if (SystemInformationClass != BLACKBIRD_SYSTEM_INFORMATION_CLASS_PROCESS || !NT_SUCCESS(Status) ||
+        SystemInformation == NULL || SystemInformationLength < sizeof(BLACKBIRD_SYSTEM_PROCESS_INFORMATION))
+    {
+        return;
+    }
+
+    __try
+    {
+        base = (PUCHAR)SystemInformation;
+        previous = NULL;
+        current = (PBLACKBIRD_SYSTEM_PROCESS_INFORMATION)base;
+
+        for (;;)
+        {
+            ULONG currentOffset = (ULONG)((PUCHAR)current - base);
+            BOOLEAN shouldHide = FALSE;
+            ULONG nameIndex;
+
+            if (currentOffset + sizeof(*current) > SystemInformationLength)
+            {
+                break;
+            }
+
+            if (BLACKBIRDRuntimeConfigIsSelfHideEnabled())
+            {
+                for (nameIndex = 0; nameIndex < RTL_NUMBER_OF(selfHiddenNames); ++nameIndex)
+                {
+                    if (BLACKBIRDNtApiUnicodeEqualsInsensitive(&current->ImageName, &selfHiddenNames[nameIndex]))
+                    {
+                        shouldHide = TRUE;
+                        break;
+                    }
+                }
+            }
+
+
+            if (!shouldHide && BLACKBIRDRuntimeConfigIsAntiVirtualizationEnabled())
+            {
+                for (nameIndex = 0; nameIndex < RTL_NUMBER_OF(antiVirtualizationNames); ++nameIndex)
+                {
+                    if (BLACKBIRDNtApiUnicodeEqualsInsensitive(&current->ImageName, &antiVirtualizationNames[nameIndex]))
+                    {
+                        shouldHide = TRUE;
+                        break;
+                    }
+                }
+            }
+
+            if (shouldHide)
+            {
+                if (current->NextEntryOffset == 0)
+                {
+                    if (previous != NULL)
+                    {
+                        previous->NextEntryOffset = 0;
+                    }
+                    else
+                    {
+                        RtlZeroMemory(current, SystemInformationLength - currentOffset);
+                    }
+                    break;
+                }
+
+                if (currentOffset + current->NextEntryOffset > SystemInformationLength)
+                {
+                    break;
+                }
+
+                if (previous == NULL)
+                {
+                    SIZE_T bytesToMove = SystemInformationLength - (currentOffset + current->NextEntryOffset);
+                    RtlMoveMemory(current, base + currentOffset + current->NextEntryOffset, bytesToMove);
+                    RtlZeroMemory(base + SystemInformationLength - current->NextEntryOffset, current->NextEntryOffset);
+                    continue;
+                }
+
+                previous->NextEntryOffset += current->NextEntryOffset;
+                current = (PBLACKBIRD_SYSTEM_PROCESS_INFORMATION)((PUCHAR)previous + previous->NextEntryOffset);
+                continue;
+            }
+
+            if (current->NextEntryOffset == 0)
+            {
+                break;
+            }
+            if (currentOffset + current->NextEntryOffset > SystemInformationLength)
+            {
+                break;
+            }
+
+            previous = current;
+            current = (PBLACKBIRD_SYSTEM_PROCESS_INFORMATION)(base + currentOffset + current->NextEntryOffset);
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+    }
+}
+
+VOID BLACKBIRDNtApiSanitizeModuleInformation(_In_ ULONG SystemInformationClass,
+                                            _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
+                                            _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status)
+{
+    PBLACKBIRD_SYSTEM_MODULE_INFORMATION modules;
+    ULONG index;
+
+    if (SystemInformationClass != BLACKBIRD_SYSTEM_INFORMATION_CLASS_MODULE || !NT_SUCCESS(Status) ||
+        SystemInformation == NULL || SystemInformationLength < sizeof(BLACKBIRD_SYSTEM_MODULE_INFORMATION))
+    {
+        return;
+    }
+
+    if (!BLACKBIRDRuntimeConfigIsSelfHideEnabled())
+    {
+        return;
+    }
+
+    __try
+    {
+        modules = (PBLACKBIRD_SYSTEM_MODULE_INFORMATION)SystemInformation;
+        if (modules->NumberOfModules == 0)
+        {
+            return;
+        }
+        if (FIELD_OFFSET(BLACKBIRD_SYSTEM_MODULE_INFORMATION, Modules) +
+                (modules->NumberOfModules * sizeof(BLACKBIRD_SYSTEM_MODULE_ENTRY)) >
+            SystemInformationLength)
+        {
+            return;
+        }
+
+        index = 0;
+        while (index < modules->NumberOfModules)
+        {
+            PBLACKBIRD_SYSTEM_MODULE_ENTRY entry = &modules->Modules[index];
+            const UCHAR *fileName = entry->FullPathName;
+
+            if (entry->OffsetToFileName < RTL_NUMBER_OF(entry->FullPathName))
+            {
+                fileName = entry->FullPathName + entry->OffsetToFileName;
+            }
+
+            if (BLACKBIRDNtApiAnsiEqualsInsensitive(fileName, "blackbird.sys"))
+            {
+                ULONG remaining = modules->NumberOfModules - index - 1;
+                if (remaining != 0)
+                {
+                    RtlMoveMemory(entry, entry + 1, remaining * sizeof(*entry));
+                }
+                modules->NumberOfModules--;
+                continue;
+            }
+
+            index++;
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
     }
 }
 
@@ -513,6 +840,8 @@ BLACKBIRDNtApiMonitorInitialize(VOID)
         BLACKBIRDNtApiHookInitialize(&g_Hooks[i], &g_HookDescriptors[i]);
     }
 
+    BLACKBIRDNtApiApplySharedKdSpoof();
+
     for (i = 0; i < BLACKBIRD_HOOK_COUNT; ++i)
     {
         PVOID *originalSlot = BLACKBIRDNtApiOriginalSlot((BLACKBIRD_HOOK_ID)i);
@@ -560,6 +889,7 @@ Fail:
     g_OriginalNtMapViewOfSection = NULL;
     g_OriginalNtAllocateVirtualMemory = NULL;
     g_OriginalNtQuerySystemInformationEx = NULL;
+    BLACKBIRDNtApiRestoreSharedKdSpoof();
     InterlockedExchange(&g_NtApiMonitorInitialized, 0);
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
                "BLACKBIRD: ntapi monitor init failed during install status=0x%08X.\n", status);
@@ -590,6 +920,8 @@ VOID BLACKBIRDNtApiMonitorUninitialize(VOID)
     {
         BLACKBIRDNtApiHookFreeTrampoline(&g_Hooks[i]);
     }
+
+    BLACKBIRDNtApiRestoreSharedKdSpoof();
 
     g_OriginalNtQuerySystemInformation = NULL;
     g_OriginalNtQueryInformationProcess = NULL;
@@ -653,3 +985,10 @@ BLACKBIRDNtApiMonitorSelfCheck(VOID)
 }
 
 #endif
+
+
+
+
+
+
+

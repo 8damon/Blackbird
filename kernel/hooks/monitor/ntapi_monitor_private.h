@@ -7,6 +7,8 @@
 #include "..\hook\ntapi_hook.h"
 
 #define BLACKBIRD_NTAPI_LOG(_level, ...) DbgPrintEx(DPFLTR_IHVDRIVER_ID, (_level), __VA_ARGS__)
+#define BLACKBIRD_SYSTEM_INFORMATION_CLASS_PROCESS 5u
+#define BLACKBIRD_SYSTEM_INFORMATION_CLASS_MODULE 11u
 #define BLACKBIRD_SYSTEM_INFORMATION_CLASS_KERNEL_DEBUGGER 35u
 #define BLACKBIRD_SYSTEM_INFORMATION_CLASS_FIRMWARE_TABLE 76u
 #define BLACKBIRD_FIRMWARE_PROVIDER_RSMB 0x424D5352u
@@ -76,9 +78,15 @@ VOID BLACKBIRDNtApiSanitizeKernelDebuggerInformation(_In_ ULONG SystemInformatio
                                                          PVOID SystemInformation,
                                                      _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status);
 VOID BLACKBIRDNtApiSanitizeFirmwareTableInformation(_In_ ULONG SystemInformationClass,
-                                                    _Out_writes_bytes_opt_(SystemInformationLength)
+                                                    _Inout_updates_bytes_opt_(SystemInformationLength)
                                                         PVOID SystemInformation,
                                                     _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status);
+VOID BLACKBIRDNtApiSanitizeProcessInformation(_In_ ULONG SystemInformationClass,
+                                             _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
+                                             _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status);
+VOID BLACKBIRDNtApiSanitizeModuleInformation(_In_ ULONG SystemInformationClass,
+                                            _Out_writes_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
+                                            _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status);
 
 ULONG BLACKBIRDNtApiReadUlongSafe(_In_opt_ PULONG Value);
 SIZE_T BLACKBIRDNtApiReadSizeTSafe(_In_opt_ PSIZE_T Value);

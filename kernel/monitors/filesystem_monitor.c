@@ -1,11 +1,35 @@
 #include <fltkernel.h>
 #include <ntstrsafe.h>
 #include "..\core\control.h"
+#include "..\core\runtime_config.h"
+#include "..\core\unicode_utils.h"
 #include "filesystem_monitor.h"
 
 static PFLT_FILTER g_FileSystemFilter = NULL;
 static volatile LONG g_FileSystemMonitorRegistered = 0;
 static volatile LONG g_FileSystemMonitorFailureCounter = 0;
+
+static BOOLEAN BLACKBIRDFsShouldHidePath(_In_opt_z_ PCWSTR Path)
+{
+    UNICODE_STRING pathUs;
+
+    if (Path == NULL || Path[0] == L'\0' || !BLACKBIRDRuntimeConfigIsAntiVirtualizationEnabled())
+    {
+        return FALSE;
+    }
+
+    RtlInitUnicodeString(&pathUs, Path);
+    return (BLACKBIRDUnicodeContainsInsensitive(&pathUs, L"\\windows\\system32\\drivers\\vmhgfs.sys", 35) ||
+            BLACKBIRDUnicodeContainsInsensitive(&pathUs, L"\\windows\\system32\\drivers\\vmmouse.sys", 36) ||
+            BLACKBIRDUnicodeContainsInsensitive(&pathUs, L"\\windows\\system32\\drivers\\vmrawdsk.sys", 37) ||
+            BLACKBIRDUnicodeContainsInsensitive(&pathUs, L"\\windows\\system32\\drivers\\vmusbmouse.sys", 39) ||
+            BLACKBIRDUnicodeContainsInsensitive(&pathUs, L"\\windows\\system32\\drivers\\vmci.sys", 33) ||
+            BLACKBIRDUnicodeContainsInsensitive(&pathUs, L"\\windows\\system32\\drivers\\vsock.sys", 34) ||
+            BLACKBIRDUnicodeContainsInsensitive(&pathUs, L"\\windows\\system32\\drivers\\vmbus.sys", 34) ||
+            BLACKBIRDUnicodeContainsInsensitive(&pathUs, L"\\windows\\system32\\drivers\\hyperkbd.sys", 37) ||
+            BLACKBIRDUnicodeContainsInsensitive(&pathUs, L"\\windows\\system32\\drivers\\vmstorfl.sys", 37) ||
+            BLACKBIRDUnicodeContainsInsensitive(&pathUs, L"\\program files\\vmware\\vmware tools", 34));
+}
 
 static UINT32 BLACKBIRDMapMajorToFileOperation(_In_ UCHAR MajorFunction)
 {
@@ -190,6 +214,14 @@ _Function_class_(FLT_PRE_OPERATION_CALLBACK) static FLT_PREOP_CALLBACK_STATUS
     RtlZeroMemory(&event, sizeof(event));
     BLACKBIRDFillCommonFileEventFields(Data, FltObjects, &event);
     BLACKBIRDCaptureFilePath(Data, FltObjects, event.Path, RTL_NUMBER_OF(event.Path));
+
+    if (BLACKBIRDFsShouldHidePath(event.Path))
+    {
+        Data->IoStatus.Status = STATUS_OBJECT_NAME_NOT_FOUND;
+        Data->IoStatus.Information = 0;
+        return FLT_PREOP_COMPLETE;
+    }
+
     BLACKBIRDControlPublishFileEvent(&event);
 
     return FLT_PREOP_SUCCESS_NO_CALLBACK;

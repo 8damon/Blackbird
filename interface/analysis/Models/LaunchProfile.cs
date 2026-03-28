@@ -22,6 +22,10 @@ namespace BlackbirdInterface
         public bool LeaveSuspendedAfterReady { get; set; }
         public uint ParentProcessId { get; set; }
         public bool InheritHandles { get; set; }
+        public bool EnableAntiVirtualizationMasking { get; set; }
+        public bool EnableControllerConcealment { get; set; }
+        public bool EnableInterfaceProtectedAccess { get; set; }
+        public bool EnableControllerProtectedAccess { get; set; }
         public LaunchPriorityPreset Priority { get; set; } = LaunchPriorityPreset.Inherit;
         public ulong AffinityMask { get; set; }
 

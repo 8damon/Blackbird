@@ -10,6 +10,38 @@
 #include "..\..\correlation\intent_store.h"
 #include "..\..\correlation\hollowing_engine.h"
 #include "..\..\telemetry\etw.h"
+#include "..\runtime_config.h"
+
+static BOOLEAN BLACKBIRDRequestorIsTrustedControlPlane(_In_ ULONG RequesterPid)
+{
+    return (BLACKBIRDProcessMonitorIsControllerPid(RequesterPid) ||
+            BLACKBIRDProcessMonitorIsInterfacePid(RequesterPid));
+}
+
+static BOOLEAN BLACKBIRDRequestorIsControllerOnly(_In_ ULONG RequesterPid)
+{
+    return BLACKBIRDProcessMonitorIsControllerPid(RequesterPid);
+}
+
+static BOOLEAN BLACKBIRDRequestorCanMarkInterfaceReady(_In_ ULONG RequesterPid, _In_ UINT32 TargetPid)
+{
+    if (TargetPid == 0)
+    {
+        return FALSE;
+    }
+
+    if (BLACKBIRDProcessMonitorIsControllerPid(RequesterPid) && BLACKBIRDProcessMonitorIsInterfacePid(TargetPid))
+    {
+        return TRUE;
+    }
+
+    return (RequesterPid == TargetPid) && BLACKBIRDProcessMonitorIsInterfacePid(TargetPid);
+}
+
+static BOOLEAN BLACKBIRDRequestorCanMarkControllerReady(_In_ ULONG RequesterPid, _In_ UINT32 TargetPid)
+{
+    return (TargetPid != 0 && RequesterPid == TargetPid && BLACKBIRDProcessMonitorIsControllerPid(TargetPid));
+}
 
 NTSTATUS BLACKBIRDHandleSubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request)
 {
@@ -257,6 +289,12 @@ NTSTATUS BLACKBIRDHandleSetPidsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQU
     }
     UNREFERENCED_PARAMETER(inSize);
 
+    requesterPid = BLACKBIRDGetRequestorPid();
+    if (!BLACKBIRDRequestorIsTrustedControlPlane(requesterPid))
+    {
+        return STATUS_ACCESS_DENIED;
+    }
+
     streamMask = in->StreamMask;
     if ((streamMask & (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD |
                        BLACKBIRD_STREAM_FILESYSTEM)) == 0)
@@ -338,6 +376,12 @@ NTSTATUS BLACKBIRDHandleArmPendingLaunchIoctl(_In_ PBLACKBIRD_CLIENT Client, _In
         return status;
     }
     UNREFERENCED_PARAMETER(inSize);
+
+    requesterPid = BLACKBIRDGetRequestorPid();
+    if (!BLACKBIRDRequestorIsControllerOnly(requesterPid))
+    {
+        return STATUS_ACCESS_DENIED;
+    }
 
     if (BLACKBIRDControlIsShutdown())
     {
@@ -573,6 +617,10 @@ NTSTATUS BLACKBIRDHandleSetShutdownModeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_
     UNREFERENCED_PARAMETER(Client);
     UNREFERENCED_PARAMETER(Request);
     requesterPid = BLACKBIRDGetRequestorPid();
+    if (!BLACKBIRDRequestorIsTrustedControlPlane(requesterPid))
+    {
+        return STATUS_ACCESS_DENIED;
+    }
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL, "BLACKBIRD: shutdown mode requested by requesterPid=%lu.\n",
                requesterPid);
     BLACKBIRDControlBeginShutdown();
@@ -601,6 +649,12 @@ NTSTATUS BLACKBIRDHandleControlExecutionIoctl(_In_ PBLACKBIRD_CLIENT Client, _In
         return STATUS_INVALID_PARAMETER;
     }
 
+    requesterPid = BLACKBIRDGetRequestorPid();
+    if (!BLACKBIRDRequestorIsTrustedControlPlane(requesterPid))
+    {
+        return STATUS_ACCESS_DENIED;
+    }
+
     status = PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)in->ProcessId, &process);
     if (!NT_SUCCESS(status))
     {
@@ -610,9 +664,138 @@ NTSTATUS BLACKBIRDHandleControlExecutionIoctl(_In_ PBLACKBIRD_CLIENT Client, _In
     status = in->Suspend ? PsSuspendProcess(process) : PsResumeProcess(process);
     ObDereferenceObject(process);
 
-    requesterPid = BLACKBIRDGetRequestorPid();
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, NT_SUCCESS(status) ? DPFLTR_INFO_LEVEL : DPFLTR_WARNING_LEVEL,
                "BLACKBIRD: control-execution requesterPid=%lu targetPid=%lu suspend=%lu status=0x%08X.\n", requesterPid,
                in->ProcessId, in->Suspend, status);
     return status;
 }
+
+NTSTATUS BLACKBIRDHandleSetRuntimeConfigIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request)
+{
+    NTSTATUS status;
+    PBLACKBIRD_SET_RUNTIME_CONFIG_REQUEST in;
+    size_t inSize;
+    ULONG requesterPid;
+
+    UNREFERENCED_PARAMETER(Client);
+
+    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
+    if (!NT_SUCCESS(status))
+    {
+        return status;
+    }
+    UNREFERENCED_PARAMETER(inSize);
+
+    requesterPid = BLACKBIRDGetRequestorPid();
+    if (!BLACKBIRDRequestorIsTrustedControlPlane(requesterPid))
+    {
+        return STATUS_ACCESS_DENIED;
+    }
+
+    status = BLACKBIRDRuntimeConfigSetRuntimeFlags(in->Flags, in->Mask);
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, NT_SUCCESS(status) ? DPFLTR_INFO_LEVEL : DPFLTR_WARNING_LEVEL,
+               "BLACKBIRD: set-runtime-config requesterPid=%lu flags=0x%08X mask=0x%08X status=0x%08X.\n",
+               requesterPid, in->Flags, in->Mask, status);
+    return status;
+}
+
+NTSTATUS BLACKBIRDHandleGetRuntimeConfigIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request,
+                                              _Out_ size_t *BytesOut)
+{
+    NTSTATUS status;
+    PBLACKBIRD_RUNTIME_CONFIG_RESPONSE out;
+    size_t outSize;
+
+    UNREFERENCED_PARAMETER(Client);
+
+    status = WdfRequestRetrieveOutputBuffer(Request, sizeof(*out), (PVOID *)&out, &outSize);
+    if (!NT_SUCCESS(status))
+    {
+        return status;
+    }
+    UNREFERENCED_PARAMETER(outSize);
+
+    BLACKBIRDRuntimeConfigFillResponse(out);
+    *BytesOut = sizeof(*out);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS BLACKBIRDHandleMarkInterfaceReadyIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request)
+{
+    NTSTATUS status;
+    PBLACKBIRD_MARK_INTERFACE_READY_REQUEST in;
+    size_t inSize;
+    ULONG requesterPid;
+
+    UNREFERENCED_PARAMETER(Client);
+
+    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
+    if (!NT_SUCCESS(status))
+    {
+        return status;
+    }
+    UNREFERENCED_PARAMETER(inSize);
+
+    if (in->ProcessId == 0)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    requesterPid = BLACKBIRDGetRequestorPid();
+    if (!BLACKBIRDRequestorCanMarkInterfaceReady(requesterPid, in->ProcessId))
+    {
+        return STATUS_ACCESS_DENIED;
+    }
+    if (!BLACKBIRDProcessMonitorMarkInterfaceReady(in->ProcessId))
+    {
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+                   "BLACKBIRD: mark-interface-ready rejected requesterPid=%lu targetPid=%lu status=STATUS_NOT_FOUND.\n",
+                   requesterPid, in->ProcessId);
+        return STATUS_NOT_FOUND;
+    }
+
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
+               "BLACKBIRD: mark-interface-ready requesterPid=%lu targetPid=%lu status=STATUS_SUCCESS.\n",
+               requesterPid, in->ProcessId);
+    return STATUS_SUCCESS;
+}
+NTSTATUS BLACKBIRDHandleMarkControllerReadyIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request)
+{
+    NTSTATUS status;
+    PBLACKBIRD_MARK_CONTROLLER_READY_REQUEST in;
+    size_t inSize;
+    ULONG requesterPid;
+
+    UNREFERENCED_PARAMETER(Client);
+
+    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
+    if (!NT_SUCCESS(status))
+    {
+        return status;
+    }
+    UNREFERENCED_PARAMETER(inSize);
+
+    if (in->ProcessId == 0)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    requesterPid = BLACKBIRDGetRequestorPid();
+    if (!BLACKBIRDRequestorCanMarkControllerReady(requesterPid, in->ProcessId))
+    {
+        return STATUS_ACCESS_DENIED;
+    }
+    if (!BLACKBIRDProcessMonitorMarkControllerReady(in->ProcessId))
+    {
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+                   "BLACKBIRD: mark-controller-ready rejected requesterPid=%lu targetPid=%lu status=STATUS_NOT_FOUND.\n",
+                   requesterPid, in->ProcessId);
+        return STATUS_NOT_FOUND;
+    }
+
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
+               "BLACKBIRD: mark-controller-ready requesterPid=%lu targetPid=%lu status=STATUS_SUCCESS.\n",
+               requesterPid, in->ProcessId);
+    return STATUS_SUCCESS;
+}
+

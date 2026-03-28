@@ -34,6 +34,12 @@ PCSTR BLACKBIRDIoctlName(_In_ ULONG Ioctl)
         return "ARM_PENDING_LAUNCH";
     case IOCTL_BLACKBIRD_CONTROL_EXECUTION:
         return "CONTROL_EXECUTION";
+    case IOCTL_BLACKBIRD_SET_RUNTIME_CONFIG:
+        return "SET_RUNTIME_CONFIG";
+    case IOCTL_BLACKBIRD_GET_RUNTIME_CONFIG:
+        return "GET_RUNTIME_CONFIG";
+    case IOCTL_BLACKBIRD_MARK_INTERFACE_READY:
+        return "MARK_INTERFACE_READY";
     default:
         return "UNKNOWN_IOCTL";
     }

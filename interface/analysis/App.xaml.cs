@@ -33,6 +33,10 @@ namespace BlackbirdInterface
         {
             public bool StartLaunchFlow { get; init; }
             public string? SessionPath { get; init; }
+            public bool EnableAntiVirtualizationMasking { get; init; }
+            public bool EnableControllerConcealment { get; init; }
+            public bool EnableInterfaceProtectedAccess { get; init; }
+            public bool EnableControllerProtectedAccess { get; init; }
         }
 
         private sealed class StartupOptions
@@ -179,6 +183,27 @@ namespace BlackbirdInterface
             main.Activate();
             await YieldForUiFrameAsync();
             loading.Close();
+
+            if (!main.MarkInterfaceReady(out string readyError))
+            {
+                ThemedMessageBox.Show(
+                    main,
+                    $"Failed to mark the interface ready for deferred protection.\n\n{readyError}",
+                    "Interface Readiness",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+
+            if (!main.ApplyStartupRuntimeSelections(intent.EnableAntiVirtualizationMasking, intent.EnableControllerConcealment,
+                                                    intent.EnableInterfaceProtectedAccess, intent.EnableControllerProtectedAccess, out string startupRuntimeError))
+            {
+                ThemedMessageBox.Show(
+                    main,
+                    $"Failed to apply runtime configuration after shell startup.\n\n{startupRuntimeError}",
+                    "Runtime Configuration",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
 
             if (intent.StartLaunchFlow)
             {
@@ -348,11 +373,82 @@ namespace BlackbirdInterface
             }
         }
 
+        private static uint GetPersistentRuntimeFlags()
+        {
+            const string parametersPath = @"SYSTEM\CurrentControlSet\Services\blackbird\Parameters";
+            uint flags = 0;
+
+            try
+            {
+                using RegistryKey? key = Registry.LocalMachine.OpenSubKey(parametersPath);
+                if (key == null)
+                {
+                    return 0;
+                }
+
+                object? antiVirtualizationValue = key.GetValue("EnableAntiVirtualization");
+                if (antiVirtualizationValue is int antiVirtualizationInt && antiVirtualizationInt != 0)
+                {
+                    flags |= BlackbirdNative.RuntimeFlagAntiVirtualization;
+                }
+                else if (antiVirtualizationValue is long antiVirtualizationLong && antiVirtualizationLong != 0)
+                {
+                    flags |= BlackbirdNative.RuntimeFlagAntiVirtualization;
+                }
+
+                object? selfHideValue = key.GetValue("EnableSelfHide");
+                if (selfHideValue is int selfHideInt && selfHideInt != 0)
+                {
+                    flags |= BlackbirdNative.RuntimeFlagSelfHide;
+                }
+                else if (selfHideValue is long selfHideLong && selfHideLong != 0)
+                {
+                    flags |= BlackbirdNative.RuntimeFlagSelfHide;
+                }
+
+                object? interfaceProtectedAccessValue = key.GetValue("EnableInterfaceProtectedAccess");
+                if (interfaceProtectedAccessValue is int interfaceProtectedAccessInt && interfaceProtectedAccessInt != 0)
+                {
+                    flags |= BlackbirdNative.RuntimeFlagInterfaceProtectedAccess;
+                }
+                else if (interfaceProtectedAccessValue is long interfaceProtectedAccessLong && interfaceProtectedAccessLong != 0)
+                {
+                    flags |= BlackbirdNative.RuntimeFlagInterfaceProtectedAccess;
+                }
+
+                object? controllerProtectedAccessValue = key.GetValue("EnableControllerProtectedAccess");
+                if (controllerProtectedAccessValue is int controllerProtectedAccessInt && controllerProtectedAccessInt != 0)
+                {
+                    flags |= BlackbirdNative.RuntimeFlagControllerProtectedAccess;
+                }
+                else if (controllerProtectedAccessValue is long controllerProtectedAccessLong && controllerProtectedAccessLong != 0)
+                {
+                    flags |= BlackbirdNative.RuntimeFlagControllerProtectedAccess;
+                }
+
+                object? protectedAccessValue = key.GetValue("EnableProtectedAccess");
+                if (protectedAccessValue is int protectedAccessInt && protectedAccessInt != 0)
+                {
+                    flags |= BlackbirdNative.RuntimeFlagProtectedAccess;
+                }
+                else if (protectedAccessValue is long protectedAccessLong && protectedAccessLong != 0)
+                {
+                    flags |= BlackbirdNative.RuntimeFlagProtectedAccess;
+                }
+            }
+            catch
+            {
+            }
+
+            return flags;
+        }
+
         private StartupIntent? ResolveStartupIntent()
         {
             while (true)
             {
-                var welcome = new StartupWelcomeWindow
+                uint persistentRuntimeFlags = GetPersistentRuntimeFlags();
+                var welcome = new StartupWelcomeWindow(persistentRuntimeFlags)
                 {
                     WindowStartupLocation = WindowStartupLocation.CenterScreen
                 };
@@ -371,13 +467,13 @@ namespace BlackbirdInterface
                 switch (welcome.SelectedAction)
                 {
                 case StartupWelcomeAction.Launch:
-                    return new StartupIntent { StartLaunchFlow = true };
+                    return new StartupIntent { StartLaunchFlow = true, EnableAntiVirtualizationMasking = welcome.EnableAntiVirtualizationMasking, EnableControllerConcealment = welcome.EnableControllerConcealment, EnableInterfaceProtectedAccess = welcome.EnableInterfaceProtectedAccess, EnableControllerProtectedAccess = welcome.EnableControllerProtectedAccess };
                 case StartupWelcomeAction.OpenFile:
                 {
                     string? sessionPath = PromptForSessionFile();
                     if (!string.IsNullOrWhiteSpace(sessionPath))
                     {
-                        return new StartupIntent { SessionPath = sessionPath };
+                        return new StartupIntent { SessionPath = sessionPath, EnableAntiVirtualizationMasking = welcome.EnableAntiVirtualizationMasking, EnableControllerConcealment = welcome.EnableControllerConcealment, EnableInterfaceProtectedAccess = welcome.EnableInterfaceProtectedAccess, EnableControllerProtectedAccess = welcome.EnableControllerProtectedAccess };
                     }
                     break;
                 }
@@ -678,5 +774,4 @@ namespace BlackbirdInterface
 
     }
 }
-
 

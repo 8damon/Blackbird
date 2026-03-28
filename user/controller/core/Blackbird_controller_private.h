@@ -20,6 +20,7 @@
 #include <string.h>
 #include "..\\..\\sensor\\blackbird_sensor_core.h"
 #include "..\\..\\..\\abi\\blackbird_ipc.h"
+#include "heuristics\\Blackbird_controller_heuristics.h"
 
 #define BLACKBIRD_CONTROLLER_SERVICE_NAMEW L"BlackbirdController"
 #define BLACKBIRD_CONTROLLER_ETW_SESSION_NAMEW L"BlackbirdControllerSession"
@@ -37,6 +38,14 @@
 #define BLACKBIRD_CONTROLLER_HOOK_LAUNCH_REQUIRED_MASK BLACKBIRD_IPC_HOOK_READY_FLAG_IPC_CONNECTED
 #define BLACKBIRD_CONTROLLER_HOOK_READY_REQUIRED_MASK BLACKBIRD_IPC_HOOK_READY_REQUIRED_MASK
 #define BLACKBIRD_CONTROLLER_SERVER_ACCEPT_THREADS 3u
+#define BLACKBIRD_CONTROLLER_HOOK_ACCEPT_THREADS 1u
+
+typedef enum _BLACKBIRD_CONTROLLER_CLIENT_ROLE
+{
+    BlackbirdControllerClientRoleUnknown = 0,
+    BlackbirdControllerClientRoleControl = 1,
+    BlackbirdControllerClientRoleHook = 2
+} BLACKBIRD_CONTROLLER_CLIENT_ROLE, *PBLACKBIRD_CONTROLLER_CLIENT_ROLE;
 #define BLACKBIRD_CONTROLLER_HOLLOW_MAX_ENTRIES 256u
 #define BLACKBIRD_CONTROLLER_HOLLOW_WINDOW_MS 30000u
 #define BLACKBIRD_CONTROLLER_HOLLOW_LARGE_ALLOC_BYTES 0x8000ull
@@ -79,6 +88,7 @@ typedef struct _BLACKBIRD_CONTROLLER_CLIENT
     HANDLE Pipe;
     DWORD ProcessId;
     DWORD SessionId;
+    DWORD Role;
     DWORD SlotIndex;
     CRITICAL_SECTION Lock;
     DWORD SubscriptionCount;
@@ -243,7 +253,7 @@ VOID ControllerSymbolServicePrimeHookAddress(_In_ DWORD ProcessId, _In_ UINT64 A
 BOOL ControllerNodeNetworkStart(VOID);
 VOID ControllerNodeNetworkStop(VOID);
 
-BOOL ControllerCreatePipeSecurity(_Out_ PSECURITY_ATTRIBUTES SecurityAttributes,
+BOOL ControllerCreatePipeSecurity(_In_ DWORD ClientRole, _Out_ PSECURITY_ATTRIBUTES SecurityAttributes,
                                   _Outptr_ PSECURITY_DESCRIPTOR *SecurityDescriptor);
 DWORD ControllerWaitForHookReady(_In_ DWORD ProcessId);
 VOID ControllerDetachClient(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client);

@@ -16,6 +16,7 @@ namespace BlackbirdInterface
         public LaunchParametersWindow(bool isLaunchTarget)
         {
             _isLaunchTarget = isLaunchTarget;
+
             InitializeComponent();
             WindowThemeHelper.ApplyTitleBarTheme(this, App.IsDarkTheme);
             UpdateUi();

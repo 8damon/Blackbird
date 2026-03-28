@@ -205,4 +205,12 @@
       <Filter>Header Files\Hooks</Filter>
     </ClInclude>
   </ItemGroup>
-</Project>
+  <ItemGroup>
+    <ClCompile Include="..\kernel\core\runtime_config.c">
+      <Filter>Source Files\Core</Filter>
+    </ClCompile>
+    <ClInclude Include="..\kernel\core\runtime_config.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
+  </ItemGroup></Project>
+

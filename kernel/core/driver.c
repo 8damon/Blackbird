@@ -1,6 +1,7 @@
 #include <ntddk.h>
 #include <wdf.h>
 #include "control.h"
+#include "runtime_config.h"
 #include "..\telemetry\etw.h"
 #include "..\monitors\handle_monitor.h"
 #include "..\monitors\apc_monitor.h"
@@ -155,6 +156,7 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtDriverUnload(WDFDRIVER Driver)
     BLACKBIRDControlBeginShutdown();
     initFlags = InterlockedExchange(&g_InitFlags, 0);
     BLACKBIRDDriverUninitializeByFlags(initFlags);
+    BLACKBIRDRuntimeConfigUninitialize();
 
     InterlockedExchange(&g_DriverState, BLACKBIRDStateUnloaded);
 
@@ -193,6 +195,14 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
     if (!NT_SUCCESS(status))
     {
         DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: WdfDriverCreate failed (0x%08X).\n", status);
+        goto ExitFailure;
+    }
+
+    status = BLACKBIRDRuntimeConfigInitialize(RegistryPath);
+    if (!NT_SUCCESS(status))
+    {
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: runtime config init failed (0x%08X).\n",
+                   status);
         goto ExitFailure;
     }
 
@@ -319,6 +329,9 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
 ExitFailure:
     initFlags = InterlockedExchange(&g_InitFlags, 0);
     BLACKBIRDDriverUninitializeByFlags(initFlags);
+    BLACKBIRDRuntimeConfigUninitialize();
     InterlockedExchange(&g_DriverState, BLACKBIRDStateCold);
     return status;
 }
+
+

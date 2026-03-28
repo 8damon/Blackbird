@@ -243,4 +243,8 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
-</Project>
+  <ItemGroup>
+    <ClCompile Include="..\kernel\core\runtime_config.c" />
+    <ClInclude Include="..\kernel\core\runtime_config.h" />
+  </ItemGroup></Project>
+

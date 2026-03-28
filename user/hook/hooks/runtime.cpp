@@ -700,7 +700,7 @@ DWORD WINAPI BkRuntimeThreadProc(LPVOID)
         ::Sleep(60);
     }
 
-    return 0;
+    __assume(0);
 }
 
 void BkRuntimeShutdown()

@@ -69,6 +69,7 @@ namespace BlackbirdInterface
         private bool _pendingHookPreconfigured;
         private bool _pendingLaunchStartsSuspended;
         private bool _pendingLeaveSuspendedAfterReady;
+        private bool _pendingLaunchOwnedByInterface;
         private bool _isMainWindowShuttingDown;
         private BlackbirdBackendSession? _preparedLaunchBackendSession;
         private int _preparedLaunchBackendPid;
@@ -250,6 +251,7 @@ namespace BlackbirdInterface
             SetupExplorer();
             SetupProcessTabs();
             InitializeBackendUi();
+            InitializeRuntimeConfigDefaults();
             ApiViewDataGrid.ItemsSource = _apiViewRows;
             ApiViewDataGrid.SelectedIndex = -1;
             UpdateApiViewSelection(null);
@@ -302,6 +304,7 @@ namespace BlackbirdInterface
             _processStateRefreshTimer.Stop();
             _apiGraphRefreshTimer.Stop();
             _timelineLiveTickTimer.Stop();
+            TerminateLaunchOwnedTargetsOnShutdown();
 
             if (_perf != null)
             {
@@ -3096,18 +3099,18 @@ namespace BlackbirdInterface
             _connectInProgress = true;
             try
             {
-            int pid = TryGetPid();
-            if (pid <= 0)
-            {
-                DisposePreparedLaunchBackendSession();
-                ClearPendingLaunchOptions();
-                StatusBlock.Text = "ENTER A VALID PID";
-                RefreshProcessStateBadge();
-                return;
-            }
+                int pid = TryGetPid();
+                if (pid <= 0)
+                {
+                    DisposePreparedLaunchBackendSession();
+                    ClearPendingLaunchOptions();
+                    StatusBlock.Text = "ENTER A VALID PID";
+                    RefreshProcessStateBadge();
+                    return;
+                }
 
-            if (!TryOpenTargetProcess(pid, out var processName, out var failure, out var accessDenied))
-            {
+                if (!TryOpenTargetProcess(pid, out var processName, out var failure, out var accessDenied))
+                {
                 DisposePreparedLaunchBackendSession();
                 ClearPendingLaunchOptions();
                 StatusBlock.Text = failure;
@@ -3127,6 +3130,10 @@ namespace BlackbirdInterface
 
             StatusBlock.Text = $"CONNECTED TO {processName} ({pid})";
             var tab = AddOrSelectProcessTab(pid, $"{processName} ({pid})", select: true);
+            if (_pendingLaunchOptions)
+            {
+                tab.LaunchOwnedByInterface = _pendingLaunchOwnedByInterface;
+            }
             bool hookPreconfigured = _pendingHookPreconfigured;
             bool launchStartsSuspended = _pendingLaunchStartsSuspended;
             bool leaveSuspendedAfterReady = _pendingLeaveSuspendedAfterReady;
@@ -3386,6 +3393,7 @@ namespace BlackbirdInterface
                                                 (hookPreconfigured || launchProfile.LeaveSuspendedAfterReady);
                 _pendingLeaveSuspendedAfterReady = showLaunchOptions && picker.LaunchSelectedImage &&
                                                    launchProfile.LeaveSuspendedAfterReady;
+                _pendingLaunchOwnedByInterface = showLaunchOptions && picker.LaunchSelectedImage;
                 PidBox.Text = selectedPid.ToString();
                 Connect_Click(this, new RoutedEventArgs());
             }
@@ -3474,6 +3482,7 @@ namespace BlackbirdInterface
             _pendingHookPreconfigured = false;
             _pendingLaunchStartsSuspended = false;
             _pendingLeaveSuspendedAfterReady = false;
+            _pendingLaunchOwnedByInterface = false;
         }
 
         private static uint MapLaunchPriorityClass(LaunchPriorityPreset priority) => priority switch
@@ -3585,6 +3594,22 @@ namespace BlackbirdInterface
             if (DiagnosticsState.GetValue("Usermode Hooks")?.Contains("INACTIVE", StringComparison.OrdinalIgnoreCase) == true)
             {
                 DiagnosticsState.SetValue("Usermode Hooks", "INACTIVE (resuming)");
+            }
+        }
+
+        private void TerminateLaunchOwnedTargetsOnShutdown()
+        {
+            foreach (ProcessSessionTab tab in _processTabs)
+            {
+                if (!tab.LaunchOwnedByInterface || tab.OfflineSnapshot || tab.TargetExited || tab.Pid <= 0)
+                {
+                    continue;
+                }
+
+                if (TryTerminateTargetProcess(tab.Pid, out _))
+                {
+                    tab.TargetExited = true;
+                }
             }
         }
 
@@ -4436,6 +4461,7 @@ namespace BlackbirdInterface
         public bool UseUsermodeHooks { get; set; }
         public bool AutoOpenApiGraphOnNextStart { get; set; }
         public bool LaunchStartsSuspendedPending { get; set; }
+        public bool LaunchOwnedByInterface { get; set; }
         public bool TargetExited { get; set; }
         public bool OfflineSnapshot { get; set; }
         public string? BackingStorePath { get; set; }
@@ -4469,3 +4495,4 @@ namespace BlackbirdInterface
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(prop));
     }
 }
+

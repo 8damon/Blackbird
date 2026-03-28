@@ -32,6 +32,71 @@ typedef struct _BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION
     BOOLEAN KernelDebuggerEnabled;
     BOOLEAN KernelDebuggerNotPresent;
 } BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION;
+
+#define BLACKBIRD_SHARED_USER_DATA_BASE ((ULONG_PTR)0x7FFE0000u)
+#define BLACKBIRD_SHARED_USER_DATA_KD_OFFSET 0x2D4u
+
+BOOL QueryKernelDebuggerState(_Out_opt_ BOOLEAN *Enabled, _Out_opt_ BOOLEAN *NotPresent)
+{
+    BLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_FN ntQuerySystemInformation;
+    HMODULE ntdll;
+    BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION kdInfo;
+    NTSTATUS status;
+
+    if (Enabled != NULL)
+    {
+        *Enabled = FALSE;
+    }
+    if (NotPresent != NULL)
+    {
+        *NotPresent = FALSE;
+    }
+
+    ntdll = GetModuleHandleW(L"ntdll.dll");
+    if (ntdll == NULL)
+    {
+        return FALSE;
+    }
+
+    ntQuerySystemInformation = (BLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_FN)GetProcAddress(ntdll, "NtQuerySystemInformation");
+    if (ntQuerySystemInformation == NULL)
+    {
+        return FALSE;
+    }
+
+    ZeroMemory(&kdInfo, sizeof(kdInfo));
+    status = ntQuerySystemInformation((SYSTEM_INFORMATION_CLASS)BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION_CLASS,
+                                      &kdInfo, sizeof(kdInfo), NULL);
+    if (!NT_SUCCESS(status))
+    {
+        return FALSE;
+    }
+
+    if (Enabled != NULL)
+    {
+        *Enabled = kdInfo.KernelDebuggerEnabled;
+    }
+    if (NotPresent != NULL)
+    {
+        *NotPresent = kdInfo.KernelDebuggerNotPresent;
+    }
+
+    return TRUE;
+}
+
+BOOL QuerySharedUserDataKernelDebuggerByte(_Out_ BYTE *Value)
+{
+    const volatile BYTE *sharedKdByte;
+
+    if (Value == NULL)
+    {
+        return FALSE;
+    }
+
+    sharedKdByte = (const volatile BYTE *)(BLACKBIRD_SHARED_USER_DATA_BASE + BLACKBIRD_SHARED_USER_DATA_KD_OFFSET);
+    *Value = *sharedKdByte;
+    return TRUE;
+}
 BOOL GetEtwAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_writes_z_(OutputChars) PSTR Output,
                         _In_ size_t OutputChars)
 {
@@ -530,6 +595,7 @@ VOID LogEnvironmentBaseline(_Inout_ SUITE_RESULTS *Results)
     BLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_FN ntQuerySystemInformation;
     BLACKBIRD_SYSTEM_CODEINTEGRITY_INFORMATION ci;
     BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION kdInfo;
+    BYTE sharedKdByte = 0;
     char line[512];
     char arch[32];
     char productName[128];
@@ -647,6 +713,18 @@ VOID LogEnvironmentBaseline(_Inout_ SUITE_RESULTS *Results)
     else
     {
         SuiteLogMetaLine(Results, "environmentKernelDebugger", "unavailable");
+    }
+
+    if (QuerySharedUserDataKernelDebuggerByte(&sharedKdByte))
+    {
+        (void)sprintf_s(line, RTL_NUMBER_OF(line), "0x%02X enabled %s notPresent %s", sharedKdByte,
+                        (sharedKdByte & 0x01u) ? "yes" : "no",
+                        (sharedKdByte & 0x02u) ? "yes" : "no");
+        SuiteLogMetaLine(Results, "environmentKernelDebuggerSharedData", line);
+    }
+    else
+    {
+        SuiteLogMetaLine(Results, "environmentKernelDebuggerSharedData", "unavailable");
     }
 }
 BOOL SuiteInitReport(_Inout_ SUITE_RESULTS *Results)

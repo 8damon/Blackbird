@@ -1,4 +1,4 @@
-<h1 align="center">BLACKBIRD v1.5</h1>
+<h1 align="center">BLACKBIRD v1.7</h1>
 <p align="center"><b>DFIR Kernel Telemetry & Detection Platform for Windows</b></p>
 
 <p align="center">
@@ -102,6 +102,8 @@ See these docs for setup and usage:
 - [USAGE.md](./USAGE.md)
 - [API.md](./API.md)
 
-Session archives are now written as `.bkcap`.
+Current runtime components include `blackbird.sys`, `BlackbirdController.exe`, `J58.dll`, `SR71.dll`, `BlackbirdInterface.exe`, `BlackbirdTestSuite.exe`, and `DetectionExamples.exe`.
+
+Session archives are now written as `.bkcap`. Detection examples now live in the dedicated `DetectionExamples.exe` runner rather than the old `usage/` source set.
 
 

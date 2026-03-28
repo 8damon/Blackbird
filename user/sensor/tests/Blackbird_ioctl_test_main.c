@@ -1,5 +1,119 @@
 #include "blackbird_ioctl_test_internal.h"
 
+static BOOL BuildDetectionExamplesPath(_Out_writes_z_(OutputChars) char *Output, _In_ size_t OutputChars)
+{
+    DWORD length;
+    char *lastSlash;
+
+    if (Output == NULL || OutputChars == 0)
+    {
+        return FALSE;
+    }
+
+    length = GetModuleFileNameA(NULL, Output, (DWORD)OutputChars);
+    if (length == 0 || length >= OutputChars)
+    {
+        return FALSE;
+    }
+
+    lastSlash = strrchr(Output, '\\');
+    if (lastSlash == NULL)
+    {
+        return FALSE;
+    }
+
+    lastSlash[1] = '\0';
+    if (FAILED(StringCchCatA(Output, OutputChars, "DetectionExamples\\DetectionExamples.exe")))
+    {
+        return FALSE;
+    }
+
+    return (GetFileAttributesA(Output) != INVALID_FILE_ATTRIBUTES);
+}
+
+static BOOL RunChildProcessAndWait(_In_z_ const char *ImagePath, _In_opt_z_ const char *Arguments, _In_ DWORD TimeoutMs,
+                                   _Out_opt_ DWORD *ExitCode)
+{
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+    char commandLine[1024];
+    DWORD waitResult;
+    DWORD childExit = STILL_ACTIVE;
+
+    if (ImagePath == NULL)
+    {
+        return FALSE;
+    }
+
+    ZeroMemory(&si, sizeof(si));
+    ZeroMemory(&pi, sizeof(pi));
+    si.cb = sizeof(si);
+
+    if (Arguments != NULL && Arguments[0] != '\0')
+    {
+        if (FAILED(StringCchPrintfA(commandLine, RTL_NUMBER_OF(commandLine), "\"%s\" %s", ImagePath, Arguments)))
+        {
+            return FALSE;
+        }
+    }
+    else
+    {
+        if (FAILED(StringCchPrintfA(commandLine, RTL_NUMBER_OF(commandLine), "\"%s\"", ImagePath)))
+        {
+            return FALSE;
+        }
+    }
+
+    if (!CreateProcessA(NULL, commandLine, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
+    {
+        return FALSE;
+    }
+
+    waitResult = WaitForSingleObject(pi.hProcess, TimeoutMs);
+    if (waitResult == WAIT_OBJECT_0)
+    {
+        (void)GetExitCodeProcess(pi.hProcess, &childExit);
+    }
+    else
+    {
+        (void)TerminateProcess(pi.hProcess, ERROR_TIMEOUT);
+    }
+
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+
+    if (ExitCode != NULL)
+    {
+        *ExitCode = childExit;
+    }
+
+    return (waitResult == WAIT_OBJECT_0);
+}
+
+static VOID RunDetectionExamplesSmoke(_Inout_ SUITE_RESULTS *Results)
+{
+    char imagePath[MAX_PATH];
+    DWORD exitCode = STILL_ACTIVE;
+    BOOL completed;
+
+    if (!BuildDetectionExamplesPath(imagePath, RTL_NUMBER_OF(imagePath)))
+    {
+        RecordSkip(Results, "DetectionExamples.exe not found; skipping dispatcher smoke test");
+        return;
+    }
+
+    completed = RunChildProcessAndWait(imagePath, "--list", 5000, &exitCode);
+    RecordResult(Results, completed, "DetectionExamples --list completed",
+                 "DetectionExamples --list did not complete");
+    if (!completed)
+    {
+        return;
+    }
+
+    RecordResult(Results, exitCode == 0, "DetectionExamples --list returned success",
+                 "DetectionExamples --list returned failure");
+}
+
 int __cdecl main(int argc, char **argv)
 {
     HANDLE h = INVALID_HANDLE_VALUE;
@@ -36,6 +150,11 @@ int __cdecl main(int argc, char **argv)
     CHILD_CTX graphActor;
     SUITE_RESULTS results;
     BOOL reportReady;
+    BOOLEAN kdEnabled = FALSE;
+    BOOLEAN kdNotPresent = FALSE;
+    BYTE sharedKdByte = 0;
+    BOOL haveKernelDebuggerState = FALSE;
+    BOOL haveSharedKdByte = FALSE;
 
     if (argc > 1 && strcmp(argv[1], BLACKBIRD_CHILD_ARG) == 0)
     {
@@ -78,6 +197,29 @@ int __cdecl main(int argc, char **argv)
     printf("[INFO] suite knobs requireKernelCorrelation=%u requireApcTelemetry=%u\n",
            requireKernelCorrelationSignals ? 1u : 0u, requireApcTelemetry ? 1u : 0u);
     LogEnvironmentBaseline(&results);
+    RunDetectionExamplesSmoke(&results);
+
+    haveKernelDebuggerState = QueryKernelDebuggerState(&kdEnabled, &kdNotPresent);
+    RecordResult(&results, haveKernelDebuggerState,
+                 "queried SystemKernelDebuggerInformation environment baseline",
+                 "failed to query SystemKernelDebuggerInformation environment baseline");
+    if (haveKernelDebuggerState)
+    {
+        RecordResult(&results, (!kdEnabled && kdNotPresent),
+                     "NtQuerySystemInformation reports kernel debugger disabled/not present",
+                     "NtQuerySystemInformation does not report kernel debugger disabled/not present");
+    }
+
+    haveSharedKdByte = QuerySharedUserDataKernelDebuggerByte(&sharedKdByte);
+    RecordResult(&results, haveSharedKdByte,
+                 "read KUSER_SHARED_DATA kernel debugger byte",
+                 "failed to read KUSER_SHARED_DATA kernel debugger byte");
+    if (haveSharedKdByte)
+    {
+        RecordResult(&results, ((sharedKdByte & 0x01u) == 0u) && ((sharedKdByte & 0x02u) == 0u),
+                     "KUSER_SHARED_DATA reports kernel debugger disabled bits cleared",
+                     "KUSER_SHARED_DATA does not report kernel debugger disabled bits cleared");
+    }
 
     h = OpenControlDeviceHandle();
     RecordResult(&results, (h != INVALID_HANDLE_VALUE), "opened control device",

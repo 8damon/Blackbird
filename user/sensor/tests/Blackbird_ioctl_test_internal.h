@@ -201,5 +201,7 @@ VOID RecordResult(_Inout_ SUITE_RESULTS *Results, _In_ BOOL Passed, _In_z_ const
                   _In_opt_z_ const char *FailText);
 VOID RecordSkip(_Inout_ SUITE_RESULTS *Results, _In_z_ const char *SkipText);
 VOID LogEnvironmentBaseline(_Inout_ SUITE_RESULTS *Results);
+BOOL QueryKernelDebuggerState(_Out_opt_ BOOLEAN *Enabled, _Out_opt_ BOOLEAN *NotPresent);
+BOOL QuerySharedUserDataKernelDebuggerByte(_Out_ BYTE *Value);
 
 #endif

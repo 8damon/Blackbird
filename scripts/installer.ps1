@@ -6,7 +6,11 @@ param(
     [string]$SensorCoreDll = "..\J58.dll",
     [string]$InstanceName = "Blackbird Default",
     [string]$InstanceAltitude = "385000.424244",
-    [uint32]$InstanceFlags = 0
+    [uint32]$InstanceFlags = 0,
+    [Alias("av")]
+    [switch]$EnableAntiVirtualization,
+    [Alias("hide")]
+    [switch]$EnableControllerHiding
 )
 
 $ErrorActionPreference = "Stop"
@@ -42,6 +46,35 @@ function Write-Stage {
     Write-Host ("[{0}/{1}] {2}" -f $Index, $Total, $Status) -ForegroundColor Cyan
 }
 
+function Write-VerboseLog {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
+
+    Write-Host $Message -ForegroundColor DarkGray
+}
+
+function Write-InfoLog {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
+
+    Write-Host ("[info] {0}" -f $Message) -ForegroundColor Gray
+}
+
+function Format-CommandArgs {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    return ($Arguments | ForEach-Object {
+            if ($_ -match '\s') { ('"{0}"' -f $_) } else { $_ }
+        }) -join ' '
+}
+
 function Resolve-ArtifactPath {
     param(
         [Parameter(Mandatory = $true)]
@@ -53,6 +86,7 @@ function Resolve-ArtifactPath {
     )
 
     $candidates = @($PreferredPath) + $FallbackPaths
+    Write-VerboseLog "Resolving $Label. Candidates: $($candidates -join ', ')"
     foreach ($candidate in $candidates) {
         if ([string]::IsNullOrWhiteSpace($candidate)) {
             continue
@@ -63,8 +97,10 @@ function Resolve-ArtifactPath {
             $pathToTry = Join-Path $repoRoot $pathToTry
         }
 
+        Write-VerboseLog "Trying $Label candidate: $pathToTry"
         $resolved = Resolve-Path -LiteralPath $pathToTry -ErrorAction SilentlyContinue
         if ($null -ne $resolved) {
+            Write-InfoLog "Resolved $Label to $($resolved.Path)"
             return $resolved.Path
         }
     }
@@ -79,8 +115,16 @@ function Invoke-Sc {
         [int[]]$AllowedExitCodes = @(0)
     )
 
+    $cmdText = Format-CommandArgs -Arguments $Arguments
+    Write-VerboseLog "sc.exe $cmdText"
     $output = & sc.exe @Arguments 2>&1
     $exitCode = $LASTEXITCODE
+    if ($output) {
+        foreach ($line in $output) {
+            Write-VerboseLog "sc.exe> $line"
+        }
+    }
+    Write-VerboseLog "sc.exe exit=$exitCode allowed=$($AllowedExitCodes -join ',')"
     if ($AllowedExitCodes -notcontains $exitCode) {
         $detail = (($output | ForEach-Object { "$_" }) -join [Environment]::NewLine).Trim()
         if ([string]::IsNullOrWhiteSpace($detail)) {
@@ -96,8 +140,93 @@ function Test-ServiceExists {
         [string]$ServiceName
     )
 
+    Write-VerboseLog "Checking service existence: $ServiceName"
     & sc.exe query $ServiceName 2>&1 | Out-Null
+    Write-VerboseLog "Service $ServiceName exists=$($LASTEXITCODE -eq 0)"
     return $LASTEXITCODE -eq 0
+}
+
+function Wait-ServiceNameAvailable {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ServiceName,
+        [int]$TimeoutSeconds = 30
+    )
+
+    Write-VerboseLog "Waiting for service name availability: $ServiceName (timeout ${TimeoutSeconds}s)"
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $attempt = 0
+
+    while ((Get-Date) -lt $deadline) {
+        $attempt++
+        & sc.exe query $ServiceName 2>&1 | Out-Null
+        $queryExit = $LASTEXITCODE
+
+        if ($queryExit -eq 1060) {
+            Write-VerboseLog "Service name available after $attempt attempt(s): $ServiceName"
+            return $true
+        }
+
+        if ($attempt -eq 1 -or ($attempt % 5) -eq 0) {
+            Write-VerboseLog "Service name still unavailable on attempt ${attempt}: $ServiceName (sc exit $queryExit)"
+        }
+
+        Start-Sleep -Milliseconds 500
+    }
+
+    Write-VerboseLog "Service name did not become available in time: $ServiceName"
+    return $false
+}
+
+function New-ServiceWithRetry {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ServiceName,
+        [Parameter(Mandatory = $true)]
+        [string[]]$CreateArguments,
+        [int]$TimeoutSeconds = 30
+    )
+
+    if (-not (Wait-ServiceNameAvailable -ServiceName $ServiceName -TimeoutSeconds $TimeoutSeconds)) {
+        throw "Service '$ServiceName' is still present or marked for deletion. Close Services.msc or other tools holding service handles, then rerun installer."
+    }
+
+    Invoke-Sc -Arguments $CreateArguments
+}
+
+function Wait-UntilFileUnlocked {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [int]$TimeoutSeconds = 20
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-VerboseLog "Unlock check skipped; file not present: $Path"
+        return $true
+    }
+
+    Write-VerboseLog "Waiting for file unlock: $Path (timeout ${TimeoutSeconds}s)"
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $attempt = 0
+    while ((Get-Date) -lt $deadline) {
+        $attempt++
+        try {
+            $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+            $stream.Close()
+            Write-VerboseLog "File unlocked after $attempt attempt(s): $Path"
+            return $true
+        }
+        catch {
+            if ($attempt -eq 1 -or ($attempt % 5) -eq 0) {
+                Write-VerboseLog "File still locked on attempt ${attempt}: $Path"
+            }
+            Start-Sleep -Milliseconds 300
+        }
+    }
+
+    Write-VerboseLog "Unlock wait timed out: $Path"
+    return $false
 }
 
 function Assert-PathExists {
@@ -126,6 +255,7 @@ function Ensure-MinifilterRegistry {
     $instancesKey = Join-Path $serviceKey "Instances"
     $instanceKey = Join-Path $instancesKey $InstanceName
 
+    Write-VerboseLog "Ensuring minifilter registry for $ServiceName at altitude $Altitude"
     if (-not (Test-Path -LiteralPath $serviceKey)) {
         throw "Service key '$serviceKey' is missing after sc.exe create. Aborting to avoid partial minifilter setup."
     }
@@ -142,6 +272,30 @@ function Ensure-MinifilterRegistry {
     New-ItemProperty -Path $instanceKey -Name "Flags" -PropertyType DWord -Value $InstanceFlags -Force | Out-Null
 }
 
+function Set-DriverRuntimeDefaults {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ServiceName,
+        [Parameter(Mandatory = $true)]
+        [bool]$EnableAntiVirtualization,
+        [Parameter(Mandatory = $true)]
+        [bool]$EnableSelfHide
+    )
+
+    $serviceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+    $parametersKey = Join-Path $serviceKey "Parameters"
+
+    if (-not (Test-Path -LiteralPath $serviceKey)) {
+        throw "Service key '$serviceKey' is missing after driver creation."
+    }
+    if (-not (Test-Path -LiteralPath $parametersKey)) {
+        New-Item -Path $parametersKey | Out-Null
+    }
+
+    New-ItemProperty -Path $parametersKey -Name "EnableAntiVirtualization" -PropertyType DWord -Value ([int]$EnableAntiVirtualization) -Force | Out-Null
+    New-ItemProperty -Path $parametersKey -Name "EnableSelfHide" -PropertyType DWord -Value ([int]$EnableSelfHide) -Force | Out-Null
+    Write-InfoLog ("Driver runtime defaults: av={0} hide={1}" -f ([int]$EnableAntiVirtualization), ([int]$EnableSelfHide))
+}
 function Get-ServicesUsingMinifilterAltitude {
     param(
         [Parameter(Mandatory = $true)]
@@ -152,6 +306,7 @@ function Get-ServicesUsingMinifilterAltitude {
     $servicesRoot = "HKLM:\SYSTEM\CurrentControlSet\Services"
     $matches = New-Object System.Collections.Generic.List[string]
 
+    Write-VerboseLog "Scanning services for altitude conflicts at $Altitude"
     foreach ($serviceKey in (Get-ChildItem -Path $servicesRoot -ErrorAction SilentlyContinue)) {
         $serviceName = $serviceKey.PSChildName
         if ([string]::IsNullOrWhiteSpace($serviceName)) {
@@ -196,8 +351,16 @@ function Remove-MinifilterServiceArtifacts {
         return
     }
 
+    Write-InfoLog "Removing stale minifilter artifacts for $ServiceName"
     Invoke-Sc -Arguments @("stop", $ServiceName) -AllowedExitCodes @(0, 5, 1060, 1062)
+    Write-VerboseLog "fltmc.exe unload $ServiceName"
     $fltOut = & fltmc.exe unload $ServiceName 2>&1
+    if ($fltOut) {
+        foreach ($line in $fltOut) {
+            Write-VerboseLog "fltmc> $line"
+        }
+    }
+    Write-VerboseLog "fltmc unload exit=$LASTEXITCODE"
     if ($LASTEXITCODE -ne 0) {
         # ignore unload failures; service delete + registry cleanup is enough for stale entries
         $null = $fltOut
@@ -440,14 +603,37 @@ $controllerDir = Join-Path $env:ProgramFiles "Blackbird"
 $controllerDst = Join-Path $controllerDir "BlackbirdController.exe"
 $sensorCoreDst = Join-Path $controllerDir "J58.dll"
 
-Write-Host "[+] Driver: $driverSrc"
-Write-Host "[+] Controller: $controllerSrc"
-Write-Host "[+] SensorCore: $sensorCoreSrc"
+Write-InfoLog "Driver source: $driverSrc"
+Write-InfoLog "Controller source: $controllerSrc"
+Write-InfoLog "SensorCore source: $sensorCoreSrc"
 
-Write-Stage -Index 3 -Total $totalStages -Activity $activity -Status "Copying binaries"
+Write-Stage -Index 3 -Total $totalStages -Activity $activity -Status "Stopping existing services and copying binaries"
+Invoke-Sc -Arguments @("stop", $DriverName) -AllowedExitCodes @(0, 1060, 1062, 1243)
+Write-VerboseLog "fltmc.exe unload $DriverName"
+$fltUnloadOut = & fltmc.exe unload $DriverName 2>&1
+if ($fltUnloadOut) {
+    foreach ($line in $fltUnloadOut) {
+        Write-VerboseLog "fltmc> $line"
+    }
+}
+Write-VerboseLog "fltmc unload exit=$LASTEXITCODE"
+Invoke-Sc -Arguments @("stop", $ControllerName) -AllowedExitCodes @(0, 1060, 1062)
+if (-not (Wait-UntilFileUnlocked -Path $controllerDst -TimeoutSeconds 20)) {
+    throw "$controllerDst is still locked after controller service stop. Reboot then rerun installer."
+}
+if (-not (Wait-UntilFileUnlocked -Path $sensorCoreDst -TimeoutSeconds 20)) {
+    throw "$sensorCoreDst is still locked after controller service stop. Reboot then rerun installer."
+}
+if (-not (Wait-UntilFileUnlocked -Path $driverDst -TimeoutSeconds 20)) {
+    throw "$driverDst is still locked after driver stop/unload. Reboot then rerun installer."
+}
+Write-VerboseLog "Ensuring controller directory exists: $controllerDir"
 New-Item -ItemType Directory -Path $controllerDir -Force | Out-Null
+Write-InfoLog "Copying driver: $driverSrc -> $driverDst"
 Copy-Item -LiteralPath $driverSrc -Destination $driverDst -Force
+Write-InfoLog "Copying controller: $controllerSrc -> $controllerDst"
 Copy-Item -LiteralPath $controllerSrc -Destination $controllerDst -Force
+Write-InfoLog "Copying SensorCore: $sensorCoreSrc -> $sensorCoreDst"
 Copy-Item -LiteralPath $sensorCoreSrc -Destination $sensorCoreDst -Force
 
 Assert-PathExists -Path $driverDst -Label "Installed driver"
@@ -467,7 +653,7 @@ if ($unknownPreCreateConflicts.Count -gt 0) {
 Write-Stage -Index 5 -Total $totalStages -Activity $activity -Status "Registering services"
 Invoke-Sc -Arguments @("stop", $DriverName) -AllowedExitCodes @(0, 1060, 1062)
 Invoke-Sc -Arguments @("delete", $DriverName) -AllowedExitCodes @(0, 1060)
-Invoke-Sc -Arguments @(
+New-ServiceWithRetry -ServiceName $DriverName -CreateArguments @(
     "create", $DriverName,
     "type=", "filesys",
     "start=", "demand",
@@ -476,13 +662,14 @@ Invoke-Sc -Arguments @(
     "depend=", "FltMgr",
     "binPath=", $driverDst,
     "DisplayName=", "Blackbird Driver"
-)
+) 
 Invoke-Sc -Arguments @("qc", $DriverName)
 Ensure-MinifilterRegistry -ServiceName $DriverName -InstanceName $InstanceName -Altitude $InstanceAltitude -InstanceFlags $InstanceFlags
+Set-DriverRuntimeDefaults -ServiceName $DriverName -EnableAntiVirtualization $EnableAntiVirtualization.IsPresent -EnableSelfHide $EnableControllerHiding.IsPresent
 
 Invoke-Sc -Arguments @("stop", $ControllerName) -AllowedExitCodes @(0, 1060, 1062)
 Invoke-Sc -Arguments @("delete", $ControllerName) -AllowedExitCodes @(0, 1060)
-Invoke-Sc -Arguments @("create", $ControllerName, "type=", "own", "start=", "auto", "obj=", "LocalSystem", "binPath=", "`"$controllerDst`"", "DisplayName=", "Blackbird Controller Service")
+New-ServiceWithRetry -ServiceName $ControllerName -CreateArguments @("create", $ControllerName, "type=", "own", "start=", "auto", "obj=", "LocalSystem", "binPath=", $controllerDst, "DisplayName=", "Blackbird Controller Service")
 Invoke-Sc -Arguments @("failure", $ControllerName, "reset=", "60", "actions=", "restart/5000/restart/5000/restart/5000")
 
 if (-not (Test-ServiceExists -ServiceName $DriverName)) {
@@ -528,6 +715,7 @@ catch {
         if ($unknownRetryConflicts.Count -eq 0) {
             try {
                 Ensure-MinifilterRegistry -ServiceName $DriverName -InstanceName $InstanceName -Altitude $InstanceAltitude -InstanceFlags $InstanceFlags
+Set-DriverRuntimeDefaults -ServiceName $DriverName -EnableAntiVirtualization $EnableAntiVirtualization.IsPresent -EnableSelfHide $EnableControllerHiding.IsPresent
                 Invoke-Sc -Arguments @("start", $DriverName)
                 Write-Host "    Driver start succeeded after altitude conflict remediation." -ForegroundColor Green
                 $driverRecovered = $true
@@ -582,8 +770,4 @@ Write-Host "[*] Installed and started $DriverName + $ControllerName"
 Write-Host "    Driver:     $driverDst"
 Write-Host "    Controller: $controllerDst"
 Write-Host "    SensorCore: $sensorCoreDst"
-
-
-
-
 

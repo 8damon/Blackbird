@@ -12,10 +12,10 @@
     <AssemblyName>BlackbirdInterface</AssemblyName>
     <Product>Blackbird</Product>
     <Company>TITAN Softwork Solutions</Company>
-    <Version>1.5.0</Version>
-    <AssemblyVersion>1.5.0.0</AssemblyVersion>
-    <FileVersion>1.5.0.0</FileVersion>
-    <InformationalVersion>1.5.0</InformationalVersion>
+    <Version>1.7.0</Version>
+    <AssemblyVersion>1.7.0.0</AssemblyVersion>
+    <FileVersion>1.7.0.0</FileVersion>
+    <InformationalVersion>1.7.0</InformationalVersion>
     <Copyright>Copyright (c) TITAN Softwork Solutions</Copyright>
     <NeutralLanguage>en-US</NeutralLanguage>
 

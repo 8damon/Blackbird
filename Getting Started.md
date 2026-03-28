@@ -1,6 +1,6 @@
 # Getting Started
 
-This is the shortest path to a working Blackbird v1.7 lab deployment.
+This guide is the shortest path to a working Blackbird v1.5 deployment in a lab or VM.
 
 ## 1. Prerequisites
 
@@ -18,7 +18,6 @@ Build these projects:
 - `vcxproj/BlackbirdSensorCore.vcxproj`
 - `vcxproj/BlackbirdIoctlTest.vcxproj`
 - `vcxproj/BlackbirdInterface.csproj`
-- `vcxproj/BlackbirdExamples.vcxproj`
 
 Typical artifacts:
 
@@ -26,31 +25,35 @@ Typical artifacts:
 - `x64\<Configuration>\BlackbirdController.exe`
 - `x64\<Configuration>\J58.dll`
 - `x64\<Configuration>\BlackbirdTestSuite.exe`
-- `x64\<Configuration>\DetectionExamples\DetectionExamples.exe`
 - `interface\analysis\bin\<Configuration>\net9.0-windows\BlackbirdInterface.exe`
 
-## 3. Install The Driver And Controller
+## 3. Install And Start The Driver
 
 From an elevated shell:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\installer.ps1
-```
-
-Useful flags:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\installer.ps1 -EnableAntiVirtualization -EnableControllerHiding
+```bat
+pnputil /add-driver "Blackbird.inf" /install
+sc start blackbird
 ```
 
 Check state:
 
 ```bat
 sc query blackbird
+```
+
+## 4. Install And Start The Controller
+
+Recommended service install:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\usage\install-controller-service.ps1
 sc query BlackbirdController
 ```
 
-## 4. Validate The Stack
+If you are iterating quickly, you can also run `BlackbirdController.exe` directly in your VM instead of installing it as a service.
+
+## 5. Validate The Stack
 
 Run the validation harness before opening the interface:
 
@@ -62,47 +65,49 @@ Expected outcome:
 
 - driver opens cleanly
 - broker handshake succeeds
-- IOCTL and ETW coverage passes or reports expected optional skips
-- runtime/debugger and DetectionExamples smoke checks pass
+- IOCTL and ETW test coverage passes or reports expected optional skips
 
-## 5. Launch The Interface
+## 6. Launch The Interface
+
+Start:
 
 ```bat
 .\interface\analysis\bin\Debug\net9.0-windows\BlackbirdInterface.exe
 ```
 
-The startup window now lets you seed runtime behavior such as:
+If you deployed the interface output somewhere else, make sure `J58.dll` beside the interface is from the same build as the controller.
 
-- anti-virtualization masking
-- controller concealment
-- interface handle protection
-- controller handle protection
-
-## 6. First Operator Workflow
+## 7. First Operator Workflow
 
 1. Use `Target` to attach to a process or launch a new one.
 2. Confirm options in the `Launch Parameters` dialog.
 3. Confirm uplink/backend status in the main shell.
 4. Watch the timeline, event log, heuristics, ETW, filesystem, and process relations views populate.
-5. Open inspectors or `Detection Chain` from grouped telemetry.
+5. Open `Detection Chain` or an inspector by double-clicking grouped telemetry.
 6. Use the time-travel slider to move from live view into historical view.
-7. Save or export the session when review is complete.
+7. Open `Thread Stack`, `Handle Evidence`, `Child Process Graph`, or the diagnostics cockpit when you need capture-time context.
+8. Save or export the session when the review is complete.
 
-## 7. Detection Examples
+## 8. Session Files And Export
 
-The example runner now lives in one dispatcher binary:
+The interface supports:
 
-```bat
-.\x64\Debug\DetectionExamples\DetectionExamples.exe
-```
+- opening saved session archives
+- importing a second archive into the current workspace
+- saving a session archive
+- exporting to:
+  - JSON Lines
+  - CSV
+  - CEF
+  - ATT&CK-ready CSV
 
-Use it to run detection scenarios and benign baselines. These are intentional trigger cases, not normal operator workflows.
+Archive files use the `.bkcap` extension. Legacy `.swlkr` and `.blackbird` bundles can still be opened/imported.
 
-## 8. Common Failure Modes
+## 9. Common Failure Modes
 
-### `OpenControlDevice failed`
+### `OpenControlDevice failed (win32=233)`
 
-Usually means the interface-side `J58.dll` does not match the running controller/driver ABI, or the controller pipe is unavailable.
+Usually means the interface-side `J58.dll` does not match the running controller ABI, or the broker dropped the pipe during handshake.
 
 ### Interface connects but no live data appears
 
@@ -110,13 +115,19 @@ Check:
 
 - target PID is valid
 - driver service is running
-- controller is running
+- controller is using the expected broker/service protocol
 - target exited before sampling began
-- launch parameters disabled the path you expected to use
+- `Launch Parameters` disabled hooks or selected an attach-only mode where `EarlyBird APC` is unavailable
 
-## 9. Where To Go Next
+### Time travel shows `No data`
 
-- [README.md](./README.md)
-- [INSTALL.md](./INSTALL.md)
-- [USAGE.md](./USAGE.md)
-- [API.md](./API.md)
+That is expected if you scrub to a point with no captured sample for memory or thread-stack history.
+
+## 10. Where To Go Next
+
+- [README.md](./README.md) for architecture and UI tour
+- [USAGE.md](./USAGE.md) for operator workflow and test-suite usage
+- [INSTALL.md](./INSTALL.md) for install/deployment details
+- [API.md](./API.md) for IOCTL/IPC/ETW contract details
+
+

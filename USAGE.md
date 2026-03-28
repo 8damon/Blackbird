@@ -1,19 +1,16 @@
 # Usage
 
-This is the CLI and operator quick reference for Blackbird v1.5.
+This is the operator and tooling quick reference for Blackbird v1.7.
 
 ## Core Runtime Pieces
 
-- `blackbird.sys`
-  - KMDF driver
-- `BlackbirdController.exe`
-  - broker/controller service
-- `J58.dll`
-  - shared user-mode SDK used by the controller, test suite, and interface-side integration
-- `BlackbirdTestSuite.exe`
-  - validation harness
-- `BlackbirdInterface.exe`
-  - primary GUI
+- `blackbird.sys`: KMDF driver
+- `BlackbirdController.exe`: broker/controller service
+- `J58.dll`: shared user-mode SDK
+- `SR71.dll`: target-side hook/instrumentation DLL
+- `BlackbirdTestSuite.exe`: validation harness
+- `BlackbirdInterface.exe`: analyst GUI
+- `DetectionExamples.exe`: detection and benign scenario runner
 
 ## BlackbirdTestSuite
 
@@ -32,29 +29,21 @@ BlackbirdTestSuite.exe
 - IOCTL subscription and event delivery
 - grouped telemetry and detection surfaces
 - ETW family coverage
-- multi-client fanout
-- deep-path enrichment and capture-backed evidence fields
-
-### Useful Runtime Knobs
-
-```bat
-set BLACKBIRD_TEST_BROKER_PIPE=\\.\pipe\<name>
-set BLACKBIRD_TEST_REQUIRE_KERNEL_CORRELATION=1
-set BLACKBIRD_TEST_REQUIRE_APC=1
-```
+- runtime/debugger concealment
+- `DetectionExamples --list` smoke
 
 ## Controller Service
 
 Install or update:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\usage\install-controller-service.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\installer.ps1
 ```
 
 Remove:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\usage\install-controller-service.ps1 -Uninstall
+powershell -ExecutionPolicy Bypass -File .\scripts\remover.ps1
 ```
 
 Check status:
@@ -71,19 +60,33 @@ Launch the GUI after the driver and controller are up:
 BlackbirdInterface.exe
 ```
 
-Main workflow:
+Startup/runtime toggles now include:
 
-1. `Target`
-2. confirm choices in `Launch Parameters`
-3. review the timeline, events, ETW, heuristics, filesystem, and relations views
-4. scrub the time-travel slider when needed
-5. open `Detection Chain`, `ETW Inspector`, `Handle Evidence`, `Thread Stack`, `Child Process Graph`, or `Diagnostics Cockpit`
-6. save/export the session
+- anti-virtualization masking
+- controller concealment
+- interface handle protection
+- controller handle protection
 
-Notes:
+If the interface launched the target, closing the interface now terminates that launch-owned target.
 
-- attaching to a running process cannot use `EarlyBird APC`; that option is only available when launching a new process
-- interface command icons are loaded from `interface/Resources/*.png` and embedded automatically by the interface project
+## Detection Examples
+
+Run the dispatcher with no arguments for the interactive menu:
+
+```bat
+DetectionExamples.exe
+```
+
+Other useful modes:
+
+```bat
+DetectionExamples.exe --list
+DetectionExamples.exe --run <scenario>
+DetectionExamples.exe --run-all-detection
+DetectionExamples.exe --run-all-benign
+```
+
+These scenarios are deliberate trigger and baseline cases used to validate detections and false-positive behavior.
 
 ## Session Export
 
@@ -95,7 +98,7 @@ The interface can export session data to:
 - `.cef`
 - `.attack.csv`
 
-The interface can still open/import legacy `.swlkr` and `.blackbird` bundles.
+Legacy `.swlkr` and `.blackbird` bundles can still be opened/imported.
 
 ## More Detail
 
@@ -104,5 +107,3 @@ The interface can still open/import legacy `.swlkr` and `.blackbird` bundles.
 - [INSTALL.md](./INSTALL.md)
 - [API.md](./API.md)
 - [user/sensor/README.md](./user/sensor/README.md)
-
-

@@ -13,7 +13,7 @@
 
 #ifdef _WIN64
 
-namespace RYX_NT
+namespace BK_NT
 {
     static bool ShouldEnableNtMemoryHooks() noexcept
     {
@@ -1131,7 +1131,7 @@ namespace RYX_NT
             return reinterpret_cast<void *>(&NtOpenThreadTokenEx_Hook);
         return nullptr;
     }
-} // namespace RYX_NT
+} // namespace BK_NT
 
 #endif
 
@@ -1141,7 +1141,7 @@ bool KeSetNtHook(NtHookCallback callback) noexcept
     (void)callback;
     return false;
 #else
-    using namespace RYX_NT;
+    using namespace BK_NT;
 
     if (!callback)
         return false;
@@ -1263,7 +1263,7 @@ bool KeSetNtHook(NtHookCallback callback) noexcept
 void KeRemoveNtHook() noexcept
 {
 #ifdef _WIN64
-    using namespace RYX_NT;
+    using namespace BK_NT;
 
     for (auto &hook : g_NtHooks)
     {
@@ -1289,7 +1289,7 @@ bool KeCheckNtHookIntegrity(std::uint32_t *mismatchCount) noexcept
     }
     return true;
 #else
-    using namespace RYX_NT;
+    using namespace BK_NT;
 
     std::uint32_t mismatches = 0;
 

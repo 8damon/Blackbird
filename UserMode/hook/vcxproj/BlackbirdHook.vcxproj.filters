@@ -37,6 +37,9 @@
     <ClCompile Include="..\hooks\ki.cpp">
       <Filter>BlackbirdHook\hooks</Filter>
     </ClCompile>
+    <ClCompile Include="..\hooks\module.cpp">
+      <Filter>BlackbirdHook\hooks</Filter>
+    </ClCompile>
     <ClCompile Include="..\hooks\runtime.cpp">
       <Filter>BlackbirdHook\hooks</Filter>
     </ClCompile>
@@ -64,6 +67,9 @@
       <Filter>BlackbirdHook\hooks</Filter>
     </ClInclude>
     <ClInclude Include="..\hooks\ki.h">
+      <Filter>BlackbirdHook\hooks</Filter>
+    </ClInclude>
+    <ClInclude Include="..\hooks\module.h">
       <Filter>BlackbirdHook\hooks</Filter>
     </ClInclude>
     <ClInclude Include="..\hooks\nt.h">

@@ -1,7 +1,7 @@
 #include "pipe.h"
 #include <strsafe.h>
 
-namespace XIPC
+namespace BKIPC
 {
     static HANDLE g_pipeHandle = INVALID_HANDLE_VALUE;
     static SRWLOCK g_pipeLock = SRWLOCK_INIT;
@@ -428,4 +428,4 @@ namespace XIPC
         }
         return PublishHookEvent(eventRecord);
     }
-} // namespace XIPC
+} // namespace BKIPC

@@ -1609,6 +1609,8 @@ static PCSTR ControllerHookEventKindName(_In_ UINT32 Kind)
         return "ExceptionHighPriv";
     case BlackbirdIpcHookEventIntegrity:
         return "Integrity";
+    case BlackbirdIpcHookEventModule:
+        return "Module";
     default:
         return "Unknown";
     }
@@ -1792,6 +1794,34 @@ static VOID ControllerHookCopyWideSampleToReason(_Out_writes_z_(ReasonChars) PWS
     Reason[charCount] = L'\0';
 }
 
+static VOID ControllerHookCopyAnsiSampleToReason(_Out_writes_z_(ReasonChars) PWSTR Reason, _In_ size_t ReasonChars,
+                                                 _In_reads_bytes_(SampleSize) const UINT8 *Sample,
+                                                 _In_ UINT32 SampleSize)
+{
+    CHAR buffer[BLACKBIRD_IPC_MAX_HOOK_DATA_SAMPLE + 1];
+    int written;
+
+    if (Reason == NULL || ReasonChars == 0)
+    {
+        return;
+    }
+
+    Reason[0] = L'\0';
+    if (Sample == NULL || SampleSize == 0)
+    {
+        return;
+    }
+
+    RtlZeroMemory(buffer, sizeof(buffer));
+    CopyMemory(buffer, Sample, (SampleSize < BLACKBIRD_IPC_MAX_HOOK_DATA_SAMPLE) ? SampleSize
+                                                                                : BLACKBIRD_IPC_MAX_HOOK_DATA_SAMPLE);
+    written = MultiByteToWideChar(CP_ACP, 0, buffer, -1, Reason, (int)ReasonChars);
+    if (written <= 0)
+    {
+        Reason[0] = L'\0';
+    }
+}
+
 static double ControllerComputeSampleEntropy(_In_reads_(SampleSize) const UINT8 *Sample, _In_ UINT32 SampleSize)
 {
     UINT32 i;
@@ -1930,7 +1960,7 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
         return ERROR_INVALID_PARAMETER;
     }
 
-    if (HookEvent->Kind == BlackbirdIpcHookEventUnknown || HookEvent->Kind > BlackbirdIpcHookEventIntegrity)
+    if (HookEvent->Kind == BlackbirdIpcHookEventUnknown || HookEvent->Kind > BlackbirdIpcHookEventModule)
     {
         return ERROR_INVALID_PARAMETER;
     }
@@ -2048,7 +2078,7 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
             }
 
             (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
-                                   L"%ws tamper=%u suspiciousPrologue=%llu baselineChanged=%llu checkCount=%llu",
+                                   L"%ws tamper=%u suspiciousPrologue=%llu imageMismatch=%llu checkCount=%llu",
                                    reasonLabel, integrityTampered ? 1u : 0u, (unsigned long long)HookEvent->Context1,
                                    (unsigned long long)HookEvent->Context2, (unsigned long long)HookEvent->Context3);
         }
@@ -2071,10 +2101,11 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
 
             (void)StringCchCopyA(mapped.ClassName, RTL_NUMBER_OF(mapped.ClassName), "SR71");
             (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
-                                   L"hookIntegrity tampered=%u mask=0x%llX winsock=%llu nt=%llu ki=%llu",
+                                   L"hookIntegrity tampered=%u mask=0x%llX winsock=%llu nt=%llu ki=%llu module=%llu",
                                    integrityTampered ? 1u : 0u, (unsigned long long)HookEvent->Context0,
                                    (unsigned long long)HookEvent->Context1, (unsigned long long)HookEvent->Context2,
-                                   (unsigned long long)HookEvent->Context3);
+                                   (unsigned long long)HookEvent->Context3,
+                                   (unsigned long long)((argCount > 2u) ? HookEvent->Args[2] : 0ull));
         }
     }
     else
@@ -2340,6 +2371,81 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
             if (mapped.Reason[0] == L'\0')
             {
                 (void)StringCchCopyW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason), L"domain.resolve");
+            }
+        }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventWinsock &&
+                 (lstrcmpiA(apiName, "WSASend") == 0 || lstrcmpiA(apiName, "WSARecv") == 0 || lstrcmpiA(apiName, "send") == 0 ||
+                  lstrcmpiA(apiName, "recv") == 0))
+        {
+            mapped.Family = BlackbirdIpcEtwFamilySocket;
+            mapped.TargetPid = 0;
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "USERMODE_NETWORK_IO");
+            mapped.Severity = 1u;
+            specializedEvent = TRUE;
+            (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                   L"socket.io api=%S bytes=%lu socket=0x%llX", apiName, (unsigned long)sampleSize,
+                                   (unsigned long long)HookEvent->Context0);
+        }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventKi)
+        {
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "USERMODE_KI_ACTIVITY");
+            mapped.Severity = 3u;
+            mapped.TargetPid = eventPid;
+            specializedEvent = TRUE;
+            (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                   L"ki.dispatch stub=%S caller=0x%llX stack=0x%llX", apiName,
+                                   (unsigned long long)HookEvent->Caller, (unsigned long long)HookEvent->Context0);
+        }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventModule)
+        {
+            WCHAR nameBuffer[BLACKBIRD_IPC_MAX_ETW_REASON] = {0};
+            ULONGLONG moduleHandle = HookEvent->Context0;
+            ULONGLONG frontFlags = HookEvent->Context1;
+            ULONGLONG auxValue = HookEvent->Context2;
+            ULONGLONG thirdValue = HookEvent->Context3;
+
+            mapped.TargetPid = eventPid;
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "USERMODE_MODULE_LOAD");
+            specializedEvent = TRUE;
+
+            if (lstrcmpiA(apiName, "LoadLibraryA") == 0 || lstrcmpiA(apiName, "LoadLibraryExA") == 0)
+            {
+                ControllerHookCopyAnsiSampleToReason(nameBuffer, RTL_NUMBER_OF(nameBuffer), HookEvent->DataSample,
+                                                     sampleSize);
+            }
+            else
+            {
+                ControllerHookCopyWideSampleToReason(nameBuffer, RTL_NUMBER_OF(nameBuffer), HookEvent->DataSample,
+                                                     sampleSize);
+            }
+
+            if (lstrcmpiA(apiName, "LdrLoadDll") == 0)
+            {
+                mapped.Severity = (((NTSTATUS)auxValue) < 0) ? 1u : 3u;
+                (void)StringCchPrintfW(
+                    mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                    L"module.ldr name=%ws handle=0x%llX flags=0x%llX status=0x%08llX searchPath=0x%llX caller=0x%llX",
+                    (nameBuffer[0] != L'\0') ? nameBuffer : L"<unknown>", (unsigned long long)moduleHandle,
+                    (unsigned long long)frontFlags, (unsigned long long)auxValue, (unsigned long long)thirdValue,
+                    (unsigned long long)HookEvent->Caller);
+            }
+            else if (lstrcmpiA(apiName, "LoadLibraryExA") == 0 || lstrcmpiA(apiName, "LoadLibraryExW") == 0)
+            {
+                mapped.Severity = 1u;
+                (void)StringCchPrintfW(
+                    mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                    L"module.frontend api=%S name=%ws handle=0x%llX flags=0x%llX hFile=0x%llX caller=0x%llX", apiName,
+                    (nameBuffer[0] != L'\0') ? nameBuffer : L"<unknown>", (unsigned long long)moduleHandle,
+                    (unsigned long long)frontFlags, (unsigned long long)auxValue,
+                    (unsigned long long)HookEvent->Caller);
+            }
+            else
+            {
+                mapped.Severity = 1u;
+                (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                       L"module.frontend api=%S name=%ws handle=0x%llX caller=0x%llX", apiName,
+                                       (nameBuffer[0] != L'\0') ? nameBuffer : L"<unknown>",
+                                       (unsigned long long)moduleHandle, (unsigned long long)HookEvent->Caller);
             }
         }
 

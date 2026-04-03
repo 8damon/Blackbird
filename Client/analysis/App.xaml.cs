@@ -251,7 +251,7 @@ namespace BlackbirdInterface
         {
             for (;;)
             {
-                BlackbirdPreflightReport report = await Task.Run(() => BlackbirdPreflight.Run(0, ensureServicesRunning: true));
+                BlackbirdPreflightReport report = await Task.Run(() => BlackbirdPreflight.Run(0, ensureServicesRunning: true, requireDriverProxy: false));
                 DebugConsoleService.WriteLocal($"startup preflight ready={report.StartupReady}");
                 if (report.StartupReady)
                 {

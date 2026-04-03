@@ -579,9 +579,6 @@ BLACKBIRDSCOpenControlDevice(VOID)
                     ringErr = ERROR_NOT_FOUND;
                 }
                 InterlockedExchange(&g_BlackbirdLastSharedRingError, (LONG)ringErr);
-                (void)BLACKBIRDSCCloseControlDevice(h);
-                SetLastError(ringErr);
-                return INVALID_HANDLE_VALUE;
             }
         }
 

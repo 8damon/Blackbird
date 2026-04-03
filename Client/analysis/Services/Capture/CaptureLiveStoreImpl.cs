@@ -476,7 +476,9 @@ namespace BlackbirdInterface.Capture
 
         private static CaptureCanonicalRecord BuildEtwRecord(BrokerEtwEventView view, out TelemetryEvent materialized)
         {
-            string group = string.IsNullOrWhiteSpace(view.Source) ? "etw" : view.Source;
+            string group = EventDetailFormatting.IsUsermodeSensorTelemetry(view)
+                ? EventDetailFormatting.HookTimelineGroup(view)
+                : (string.IsNullOrWhiteSpace(view.Source) ? "etw" : view.Source);
             string subtype = string.IsNullOrWhiteSpace(view.EventName)
                 ? (string.IsNullOrWhiteSpace(view.DetectionName) ? "Etw" : view.DetectionName)
                 : view.EventName;

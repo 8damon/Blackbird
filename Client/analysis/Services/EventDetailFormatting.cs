@@ -867,9 +867,45 @@ namespace BlackbirdInterface
             return view.NotifyClass is BlackbirdNative.IpcHookEventNt or
                 BlackbirdNative.IpcHookEventWinsock or
                 BlackbirdNative.IpcHookEventKi or
+                BlackbirdNative.IpcHookEventModule or
                 BlackbirdNative.IpcHookEventExceptionLowNoise or
                 BlackbirdNative.IpcHookEventExceptionHighPriv or
                 BlackbirdNative.IpcHookEventIntegrity;
+        }
+
+        internal static string HookKindName(uint notifyClass)
+        {
+            return notifyClass switch
+            {
+                BlackbirdNative.IpcHookEventNt => "NT",
+                BlackbirdNative.IpcHookEventWinsock => "Winsock",
+                BlackbirdNative.IpcHookEventKi => "KI",
+                BlackbirdNative.IpcHookEventModule => "Module",
+                BlackbirdNative.IpcHookEventExceptionLowNoise => "ExceptionLowNoise",
+                BlackbirdNative.IpcHookEventExceptionHighPriv => "ExceptionHighPriv",
+                BlackbirdNative.IpcHookEventIntegrity => "Integrity",
+                _ => "Hook"
+            };
+        }
+
+        internal static string HookTimelineGroup(BrokerEtwEventView view)
+        {
+            if (!IsUsermodeSensorTelemetry(view))
+            {
+                return "API Hooks";
+            }
+
+            return view.NotifyClass switch
+            {
+                BlackbirdNative.IpcHookEventNt => "Hook NT",
+                BlackbirdNative.IpcHookEventWinsock => "Hook Winsock",
+                BlackbirdNative.IpcHookEventKi => "Hook KI",
+                BlackbirdNative.IpcHookEventModule => "Hook Module",
+                BlackbirdNative.IpcHookEventIntegrity => "Hook Integrity",
+                BlackbirdNative.IpcHookEventExceptionLowNoise => "Hook Exceptions",
+                BlackbirdNative.IpcHookEventExceptionHighPriv => "Hook Exceptions",
+                _ => "API Hooks"
+            };
         }
 
         internal static bool IsApiGraphCandidate(BrokerEtwEventView view)

@@ -4048,6 +4048,10 @@ namespace BlackbirdInterface
                 ApiViewSelectedTargetValue == null ||
                 ApiViewSelectedThreadValue == null ||
                 ApiViewSelectedHitsValue == null ||
+                ApiViewSelectedField1Label == null ||
+                ApiViewSelectedField2Label == null ||
+                ApiViewSelectedField3Label == null ||
+                ApiViewSelectedField4Label == null ||
                 ApiViewSelectedBaseValue == null ||
                 ApiViewSelectedSizeValue == null ||
                 ApiViewSelectedAllocTypeValue == null ||
@@ -4069,6 +4073,10 @@ namespace BlackbirdInterface
                 ApiViewSelectedTargetValue.Text = string.Empty;
                 ApiViewSelectedThreadValue.Text = string.Empty;
                 ApiViewSelectedHitsValue.Text = string.Empty;
+                ApiViewSelectedField1Label.Text = "Base";
+                ApiViewSelectedField2Label.Text = "Size";
+                ApiViewSelectedField3Label.Text = "Alloc Type";
+                ApiViewSelectedField4Label.Text = "Protect";
                 ApiViewSelectedBaseValue.Text = string.Empty;
                 ApiViewSelectedSizeValue.Text = string.Empty;
                 ApiViewSelectedAllocTypeValue.Text = string.Empty;
@@ -4089,6 +4097,10 @@ namespace BlackbirdInterface
             ApiViewSelectedTargetValue.Text = selected.TargetLabel;
             ApiViewSelectedThreadValue.Text = selected.ThreadLabel;
             ApiViewSelectedHitsValue.Text = selected.Hits.ToString();
+            ApiViewSelectedField1Label.Text = selected.Field1Label;
+            ApiViewSelectedField2Label.Text = selected.Field2Label;
+            ApiViewSelectedField3Label.Text = selected.Field3Label;
+            ApiViewSelectedField4Label.Text = selected.Field4Label;
             ApiViewSelectedBaseValue.Text = selected.BaseLabel;
             ApiViewSelectedSizeValue.Text = selected.SizeLabel;
             ApiViewSelectedAllocTypeValue.Text = selected.AllocTypeLabel;
@@ -4414,6 +4426,10 @@ namespace BlackbirdInterface
             public string SourceLabel { get; set; } = string.Empty;
             public string TargetLabel { get; set; } = string.Empty;
             public string ThreadLabel { get; set; } = string.Empty;
+            public string Field1Label { get; set; } = "Base";
+            public string Field2Label { get; set; } = "Size";
+            public string Field3Label { get; set; } = "Alloc Type";
+            public string Field4Label { get; set; } = "Protect";
             public string BaseLabel { get; set; } = string.Empty;
             public string SizeLabel { get; set; } = string.Empty;
             public string AllocTypeLabel { get; set; } = string.Empty;

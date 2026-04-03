@@ -1,6 +1,6 @@
 #include "pipe.h"
 
-namespace XIPC
+namespace BKIPC
 {
     bool RecvHello(HelloMessage &out)
     {
@@ -14,4 +14,4 @@ namespace XIPC
 
         return true;
     }
-} // namespace XIPC
+} // namespace BKIPC

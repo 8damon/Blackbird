@@ -229,3 +229,83 @@ void KiHookController::EnqueueEvent(const KiHookContext &context)
     std::lock_guard<std::mutex> lock(s_QueueMutex);
     s_Queue.push_back(std::move(evt));
 }
+
+bool ModuleHookController::s_Initialized = false;
+std::mutex ModuleHookController::s_QueueMutex;
+std::vector<ModuleCapturedEvent> ModuleHookController::s_Queue;
+
+bool ModuleHookController::Initialize() noexcept
+{
+    if (s_Initialized)
+    {
+        return true;
+    }
+
+    if (!KeSetModuleHook(&ModuleHookController::KeModuleHookCallback))
+    {
+        return false;
+    }
+
+    s_Initialized = true;
+    return true;
+}
+
+void ModuleHookController::Shutdown() noexcept
+{
+    if (!s_Initialized)
+    {
+        return;
+    }
+
+    KeRemoveModuleHook();
+
+    {
+        std::lock_guard<std::mutex> lock(s_QueueMutex);
+        s_Queue.clear();
+    }
+
+    s_Initialized = false;
+}
+
+std::vector<ModuleCapturedEvent> ModuleHookController::ConsumeEvents()
+{
+    std::vector<ModuleCapturedEvent> events;
+
+    {
+        std::lock_guard<std::mutex> lock(s_QueueMutex);
+        events.swap(s_Queue);
+    }
+
+    return events;
+}
+
+void ModuleHookController::KeModuleHookCallback(const ModuleHookContext &context) noexcept
+{
+    EnqueueEvent(context);
+}
+
+void ModuleHookController::EnqueueEvent(const ModuleHookContext &context)
+{
+    ModuleCapturedEvent evt{};
+    evt.ThreadId = GetCurrentThreadId();
+    evt.Operation = context.Operation;
+    evt.FunctionName = context.FunctionName;
+    evt.SourceModule = context.SourceModule;
+    evt.Caller = context.Caller;
+    evt.ModuleHandle = context.ModuleHandle;
+    for (std::size_t i = 0; i < RTL_NUMBER_OF(evt.Args); ++i)
+    {
+        evt.Args[i] = context.Args[i];
+    }
+
+    if (context.NameBuffer != nullptr && context.NameLength != 0)
+    {
+        const auto *bytes = static_cast<const std::uint8_t *>(context.NameBuffer);
+        evt.NameSample.insert(evt.NameSample.end(), bytes, bytes + context.NameLength);
+    }
+
+    IC_STACKTRACE::Capture(evt.Stack, 2);
+
+    std::lock_guard<std::mutex> lock(s_QueueMutex);
+    s_Queue.push_back(std::move(evt));
+}

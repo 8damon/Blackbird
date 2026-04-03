@@ -64,6 +64,7 @@ namespace BlackbirdInterface
         internal const uint IpcHookEventExceptionLowNoise = 4;
         internal const uint IpcHookEventExceptionHighPriv = 5;
         internal const uint IpcHookEventIntegrity = 6;
+        internal const uint IpcHookEventModule = 7;
         internal const uint RuntimeFlagAntiVirtualization = 0x00000001;
         internal const uint RuntimeFlagSelfHide = 0x00000002;
         internal const uint RuntimeFlagInterfaceProtectedAccess = 0x00000004;

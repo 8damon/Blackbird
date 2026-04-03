@@ -13,6 +13,7 @@
 #include "runtime.h"
 
 #include "controller.h"
+#include "module.h"
 #include "ws.h"
 
 #include "../ipc/pipe.h"
@@ -29,20 +30,27 @@
 
 namespace
 {
+    struct ExportProbeCache
+    {
+        std::uint8_t Expected[16]{};
+        bool ExpectedCaptured = false;
+        wchar_t ModulePath[MAX_PATH]{};
+    };
+
     WinsockHookController g_WinsockController;
     NtHookController g_NtHookController;
     KiHookController g_KiHookController;
+    ModuleHookController g_ModuleHookController;
     bool g_WinsockInitialized = false;
     bool g_NtInitialized = false;
     bool g_KiInitialized = false;
+    bool g_ModuleInitialized = false;
     ULONGLONG g_LastIntegrityCheckTick = 0;
     ULONGLONG g_LastIntegrityPublishTick = 0;
     std::uint32_t g_LastIntegrityMask = UINT32_MAX; // sentinel: first poll always appears as state change
     std::uint64_t g_IntegrityCheckCount = 0;
-    std::uint8_t g_AmsiBaseline[16]{};
-    std::uint8_t g_EtwBaseline[16]{};
-    bool g_AmsiBaselineCaptured = false;
-    bool g_EtwBaselineCaptured = false;
+    ExportProbeCache g_AmsiProbe;
+    ExportProbeCache g_EtwProbe;
     bool g_LastAmsiTampered = false;
     bool g_LastEtwTampered = false;
     bool g_AmsiFirstPoll = true; // force publish on first AMSI observation
@@ -54,6 +62,7 @@ namespace
     inline constexpr std::uint32_t kIntegrityMaskWinsock = 0x00000001u;
     inline constexpr std::uint32_t kIntegrityMaskNt = 0x00000002u;
     inline constexpr std::uint32_t kIntegrityMaskKi = 0x00000004u;
+    inline constexpr std::uint32_t kIntegrityMaskModule = 0x00000008u;
     inline constexpr std::uint32_t kIntegrityOperationAmsiPatch = BLACKBIRD_HOOK_EVENT_OP_AMSI_PATCH;
     inline constexpr std::uint32_t kIntegrityOperationEtwPatch = BLACKBIRD_HOOK_EVENT_OP_ETW_PATCH;
     inline constexpr ULONGLONG kIntegrityCheckPeriodMs = 2000ull;
@@ -81,10 +90,8 @@ namespace
         g_LastIntegrityPublishTick = 0;
         g_LastIntegrityMask = UINT32_MAX;
         g_IntegrityCheckCount = 0;
-        g_AmsiBaselineCaptured = false;
-        g_EtwBaselineCaptured = false;
-        std::memset(g_AmsiBaseline, 0, sizeof(g_AmsiBaseline));
-        std::memset(g_EtwBaseline, 0, sizeof(g_EtwBaseline));
+        std::memset(&g_AmsiProbe, 0, sizeof(g_AmsiProbe));
+        std::memset(&g_EtwProbe, 0, sizeof(g_EtwProbe));
         g_LastAmsiTampered = false;
         g_LastEtwTampered = false;
         g_LastAmsiPublishTick = 0;
@@ -136,8 +143,19 @@ namespace
                 g_KiInitialized = true;
             }
         }
+        if (!g_ModuleInitialized)
+        {
+            __try
+            {
+                g_ModuleInitialized = g_ModuleHookController.Initialize();
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                g_ModuleInitialized = false;
+            }
+        }
 
-        return g_WinsockInitialized && g_NtInitialized && g_KiInitialized;
+        return g_WinsockInitialized && g_NtInitialized && g_KiInitialized && g_ModuleInitialized;
     }
 
     std::uint32_t BuildHookReadyMask(bool ipcConnected) noexcept
@@ -159,6 +177,10 @@ namespace
         {
             mask |= BLACKBIRD_IPC_HOOK_READY_FLAG_KI;
         }
+        if (g_ModuleInitialized)
+        {
+            mask |= BLACKBIRD_IPC_HOOK_READY_FLAG_MODULE;
+        }
         return mask;
     }
 
@@ -168,7 +190,7 @@ namespace
 
         for (;;)
         {
-            if (XIPC::Initialize(kIpcInitAttemptTimeoutMs))
+            if (BKIPC::Initialize(kIpcInitAttemptTimeoutMs))
             {
                 return true;
             }
@@ -193,7 +215,7 @@ namespace
         {
             std::uint32_t observedMask = 0;
             std::uint32_t localMask = BuildHookReadyMask(true);
-            if (XIPC::NotifyHookReady(localMask, &observedMask))
+            if (BKIPC::NotifyHookReady(localMask, &observedMask))
             {
                 return true;
             }
@@ -233,6 +255,25 @@ namespace
         }
     }
 
+    const char *ModuleOperationName(ModuleHookOperation op) noexcept
+    {
+        switch (op)
+        {
+        case ModuleHookOperation::LoadLibraryA:
+            return "LoadLibraryA";
+        case ModuleHookOperation::LoadLibraryW:
+            return "LoadLibraryW";
+        case ModuleHookOperation::LoadLibraryExA:
+            return "LoadLibraryExA";
+        case ModuleHookOperation::LoadLibraryExW:
+            return "LoadLibraryExW";
+        case ModuleHookOperation::LdrLoadDll:
+            return "LdrLoadDll";
+        default:
+            return "LoadLibrary";
+        }
+    }
+
     // Encode a CallerClassification into the hook event's CallerFlags field.
     static inline std::uint32_t BuildCallerFlags(const IC_STACKTRACE::CallerClassification &cls) noexcept
     {
@@ -244,7 +285,7 @@ namespace
 
     bool SendWinsockEvent(const WinsockCapturedEvent &evt) noexcept
     {
-        using namespace XIPC;
+        using namespace BKIPC;
 
         auto cls = IC_STACKTRACE::ClassifyTrace(evt.Stack);
 
@@ -285,7 +326,7 @@ namespace
 
     bool SendNtEvent(const NtCapturedEvent &evt) noexcept
     {
-        using namespace XIPC;
+        using namespace BKIPC;
 
         auto cls = IC_STACKTRACE::ClassifyTrace(evt.Stack);
 
@@ -324,7 +365,7 @@ namespace
 
     bool SendKiEvent(const KiCapturedEvent &evt) noexcept
     {
-        using namespace XIPC;
+        using namespace BKIPC;
 
         auto cls = IC_STACKTRACE::ClassifyTrace(evt.Stack);
 
@@ -348,6 +389,45 @@ namespace
         CopyHookStack(evt.Stack, record);
         (void)strncpy_s(record.ApiName, (stubName[0] != '\0') ? stubName : "KiUserApcDispatcher", _TRUNCATE);
         (void)strncpy_s(record.ModuleName, "ntdll", _TRUNCATE);
+        return PublishHookEvent(record);
+    }
+
+    bool SendModuleEvent(const ModuleCapturedEvent &evt) noexcept
+    {
+        using namespace BKIPC;
+
+        auto cls = IC_STACKTRACE::ClassifyTrace(evt.Stack);
+        if (cls.Flags & IC_STACKTRACE::kCallerFlagAllSystem)
+            return true;
+
+        BLACKBIRD_IPC_HOOK_EVENT record{};
+        const char *functionName = ModuleOperationName(evt.Operation);
+        std::size_t sampleSize = std::min<std::size_t>(evt.NameSample.size(), RTL_NUMBER_OF(record.DataSample));
+
+        record.Kind = BlackbirdIpcHookEventModule;
+        record.ProcessId = GetCurrentProcessId();
+        record.ThreadId = evt.ThreadId;
+        record.Operation = static_cast<std::uint32_t>(evt.Operation);
+        record.Caller = reinterpret_cast<std::uint64_t>(evt.Caller);
+        record.Context0 = reinterpret_cast<std::uint64_t>(evt.ModuleHandle);
+        record.Context1 = evt.Args[0];
+        record.Context2 = evt.Args[1];
+        record.Context3 = evt.Args[2];
+        record.ArgCount = 4;
+        record.CallerFlags = BuildCallerFlags(cls);
+        for (std::size_t i = 0; i < RTL_NUMBER_OF(evt.Args); ++i)
+        {
+            record.Args[i] = evt.Args[i];
+        }
+        if (sampleSize != 0)
+        {
+            record.DataSize = static_cast<std::uint32_t>(sampleSize);
+            CopyMemory(record.DataSample, evt.NameSample.data(), sampleSize);
+        }
+        CopyHookStack(evt.Stack, record);
+        (void)strncpy_s(record.ApiName, functionName, _TRUNCATE);
+        (void)strncpy_s(record.ModuleName, (evt.SourceModule != nullptr) ? evt.SourceModule : "KERNEL32",
+                        _TRUNCATE);
         return PublishHookEvent(record);
     }
 
@@ -375,12 +455,20 @@ namespace
             for (const auto &evt : events)
                 (void)SendKiEvent(evt);
         }
+
+        {
+            std::vector<ModuleCapturedEvent> events = g_ModuleHookController.ConsumeEvents();
+
+            for (const auto &evt : events)
+                (void)SendModuleEvent(evt);
+        }
     }
 
     bool SendHookIntegrityEvent(std::uint32_t integrityMask, std::uint32_t winsockMismatches,
-                                std::uint32_t ntMismatches, std::uint32_t kiMismatches) noexcept
+                                std::uint32_t ntMismatches, std::uint32_t kiMismatches,
+                                std::uint32_t moduleMismatches) noexcept
     {
-        using namespace XIPC;
+        using namespace BKIPC;
 
         BLACKBIRD_IPC_HOOK_EVENT record{};
         record.Kind = BlackbirdIpcHookEventIntegrity;
@@ -392,9 +480,10 @@ namespace
         record.Context1 = winsockMismatches;
         record.Context2 = ntMismatches;
         record.Context3 = kiMismatches;
-        record.ArgCount = 2;
+        record.ArgCount = 3;
         record.Args[0] = g_IntegrityCheckCount;
         record.Args[1] = static_cast<std::uint64_t>(GetTickCount64());
+        record.Args[2] = moduleMismatches;
         (void)strncpy_s(record.ApiName, "HookIntegrity", _TRUNCATE);
         (void)strncpy_s(record.ModuleName, "SR71", _TRUNCATE);
         return PublishHookEvent(record);
@@ -441,9 +530,192 @@ namespace
         return false;
     }
 
-    bool ProbeExportPatchState(const wchar_t *moduleName, const char *exportName, std::uint8_t baseline[16],
-                               bool &baselineCaptured, bool &present, bool &tampered, bool &suspicious,
-                               bool &baselineChanged, std::uint8_t sample[16]) noexcept
+    const std::uint8_t *RvaToFilePointer(const std::uint8_t *imageBase, std::size_t imageSize, DWORD rva,
+                                        std::size_t bytesNeeded) noexcept
+    {
+        if (imageBase == nullptr || imageSize < sizeof(IMAGE_DOS_HEADER) || bytesNeeded == 0)
+        {
+            return nullptr;
+        }
+
+        const auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(imageBase);
+        if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0 ||
+            static_cast<std::size_t>(dos->e_lfanew) > (imageSize - sizeof(IMAGE_NT_HEADERS64)))
+        {
+            return nullptr;
+        }
+
+        const auto *nt = reinterpret_cast<const IMAGE_NT_HEADERS *>(imageBase + dos->e_lfanew);
+        if (nt->Signature != IMAGE_NT_SIGNATURE || nt->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC)
+        {
+            return nullptr;
+        }
+
+        if (rva < nt->OptionalHeader.SizeOfHeaders)
+        {
+            if (static_cast<std::size_t>(rva) > imageSize || bytesNeeded > (imageSize - static_cast<std::size_t>(rva)))
+            {
+                return nullptr;
+            }
+            return imageBase + rva;
+        }
+
+        const auto *section = IMAGE_FIRST_SECTION(nt);
+        for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++section)
+        {
+            DWORD sectionRva = section->VirtualAddress;
+            DWORD rawSize = section->SizeOfRawData;
+            DWORD virtualSize = section->Misc.VirtualSize;
+            DWORD span = (rawSize > virtualSize) ? rawSize : virtualSize;
+            if (span == 0)
+            {
+                continue;
+            }
+
+            if (rva < sectionRva || rva >= (sectionRva + span))
+            {
+                continue;
+            }
+
+            DWORD offset = rva - sectionRva;
+            if (offset > rawSize || bytesNeeded > static_cast<std::size_t>(rawSize - offset))
+            {
+                return nullptr;
+            }
+
+            std::size_t fileOffset = static_cast<std::size_t>(section->PointerToRawData) + offset;
+            if (fileOffset > imageSize || bytesNeeded > (imageSize - fileOffset))
+            {
+                return nullptr;
+            }
+
+            return imageBase + fileOffset;
+        }
+
+        return nullptr;
+    }
+
+    bool RefreshExpectedExportBytes(HMODULE moduleHandle, const char *exportName, ExportProbeCache &cache) noexcept
+    {
+        wchar_t modulePath[MAX_PATH]{};
+        HANDLE fileHandle = INVALID_HANDLE_VALUE;
+        HANDLE mappingHandle = nullptr;
+        const std::uint8_t *view = nullptr;
+        bool success = false;
+
+        if (moduleHandle == nullptr || exportName == nullptr)
+        {
+            return false;
+        }
+
+        DWORD pathChars = GetModuleFileNameW(moduleHandle, modulePath, RTL_NUMBER_OF(modulePath));
+        if (pathChars == 0 || pathChars >= RTL_NUMBER_OF(modulePath))
+        {
+            return false;
+        }
+
+        if (cache.ExpectedCaptured && _wcsicmp(cache.ModulePath, modulePath) == 0)
+        {
+            return true;
+        }
+
+        fileHandle = CreateFileW(modulePath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr,
+                                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (fileHandle == INVALID_HANDLE_VALUE)
+        {
+            return false;
+        }
+
+        mappingHandle = CreateFileMappingW(fileHandle, nullptr, PAGE_READONLY, 0, 0, nullptr);
+        if (mappingHandle == nullptr)
+        {
+            CloseHandle(fileHandle);
+            return false;
+        }
+
+        view = static_cast<const std::uint8_t *>(MapViewOfFile(mappingHandle, FILE_MAP_READ, 0, 0, 0));
+        if (view != nullptr)
+        {
+            LARGE_INTEGER size{};
+            if (GetFileSizeEx(fileHandle, &size) && size.QuadPart > 0 &&
+                static_cast<ULONGLONG>(size.QuadPart) <= static_cast<ULONGLONG>(SIZE_MAX))
+            {
+                std::size_t imageSize = static_cast<std::size_t>(size.QuadPart);
+                const auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(view);
+                if (imageSize >= sizeof(IMAGE_DOS_HEADER) && dos->e_magic == IMAGE_DOS_SIGNATURE &&
+                    dos->e_lfanew > 0 && static_cast<std::size_t>(dos->e_lfanew) <= (imageSize - sizeof(IMAGE_NT_HEADERS64)))
+                {
+                    const auto *nt = reinterpret_cast<const IMAGE_NT_HEADERS *>(view + dos->e_lfanew);
+                    if (nt->Signature == IMAGE_NT_SIGNATURE &&
+                        nt->OptionalHeader.NumberOfRvaAndSizes > IMAGE_DIRECTORY_ENTRY_EXPORT)
+                    {
+                        const auto &exportDirEntry =
+                            nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT];
+                        const auto *exportDir = reinterpret_cast<const IMAGE_EXPORT_DIRECTORY *>(
+                            RvaToFilePointer(view, imageSize, exportDirEntry.VirtualAddress,
+                                             sizeof(IMAGE_EXPORT_DIRECTORY)));
+                        if (exportDir != nullptr)
+                        {
+                            const auto *nameRvAs = reinterpret_cast<const DWORD *>(
+                                RvaToFilePointer(view, imageSize, exportDir->AddressOfNames,
+                                                 exportDir->NumberOfNames * sizeof(DWORD)));
+                            const auto *nameOrdinals = reinterpret_cast<const WORD *>(
+                                RvaToFilePointer(view, imageSize, exportDir->AddressOfNameOrdinals,
+                                                 exportDir->NumberOfNames * sizeof(WORD)));
+                            const auto *functionRvAs = reinterpret_cast<const DWORD *>(
+                                RvaToFilePointer(view, imageSize, exportDir->AddressOfFunctions,
+                                                 exportDir->NumberOfFunctions * sizeof(DWORD)));
+
+                            if (nameRvAs != nullptr && nameOrdinals != nullptr && functionRvAs != nullptr)
+                            {
+                                for (DWORD i = 0; i < exportDir->NumberOfNames; ++i)
+                                {
+                                    const char *name = reinterpret_cast<const char *>(
+                                        RvaToFilePointer(view, imageSize, nameRvAs[i], 1));
+                                    if (name == nullptr || strcmp(name, exportName) != 0)
+                                    {
+                                        continue;
+                                    }
+
+                                    WORD ordinal = nameOrdinals[i];
+                                    if (ordinal >= exportDir->NumberOfFunctions)
+                                    {
+                                        break;
+                                    }
+
+                                    DWORD functionRva = functionRvAs[ordinal];
+                                    if (functionRva >= exportDirEntry.VirtualAddress &&
+                                        functionRva < (exportDirEntry.VirtualAddress + exportDirEntry.Size))
+                                    {
+                                        break;
+                                    }
+
+                                    const std::uint8_t *expected = RvaToFilePointer(view, imageSize, functionRva, 16);
+                                    if (expected != nullptr)
+                                    {
+                                        std::memcpy(cache.Expected, expected, 16);
+                                        (void)wcscpy_s(cache.ModulePath, modulePath);
+                                        cache.ExpectedCaptured = true;
+                                        success = true;
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            UnmapViewOfFile(view);
+        }
+
+        CloseHandle(mappingHandle);
+        CloseHandle(fileHandle);
+        return success;
+    }
+
+    bool ProbeExportPatchState(const wchar_t *moduleName, const char *exportName, ExportProbeCache &cache,
+                               bool &present, bool &tampered, bool &suspicious, bool &expectedMismatch,
+                               std::uint8_t sample[16]) noexcept
     {
         HMODULE moduleHandle = nullptr;
         FARPROC exportAddress = nullptr;
@@ -451,13 +723,13 @@ namespace
         present = false;
         tampered = false;
         suspicious = false;
-        baselineChanged = false;
+        expectedMismatch = false;
         if (sample != nullptr)
         {
             std::memset(sample, 0, 16);
         }
 
-        if (moduleName == nullptr || exportName == nullptr || baseline == nullptr || sample == nullptr)
+        if (moduleName == nullptr || exportName == nullptr || sample == nullptr)
         {
             return false;
         }
@@ -478,25 +750,19 @@ namespace
         std::memcpy(sample, exportAddress, 16);
         suspicious = IsSuspiciousPatchedPrologue(sample);
 
-        if (!baselineCaptured)
+        if (RefreshExpectedExportBytes(moduleHandle, exportName, cache))
         {
-            std::memcpy(baseline, sample, 16);
-            baselineCaptured = true;
-            baselineChanged = false;
-        }
-        else
-        {
-            baselineChanged = std::memcmp(sample, baseline, 16) != 0;
+            expectedMismatch = std::memcmp(sample, cache.Expected, 16) != 0;
         }
 
-        tampered = suspicious || baselineChanged;
+        tampered = suspicious || expectedMismatch;
         return true;
     }
 
     bool SendPatchTamperEvent(std::uint32_t operation, const char *apiName, const char *moduleName, bool tampered,
-                              bool suspicious, bool baselineChanged, const std::uint8_t sample[16]) noexcept
+                              bool suspicious, bool expectedMismatch, const std::uint8_t sample[16]) noexcept
     {
-        using namespace XIPC;
+        using namespace BKIPC;
 
         BLACKBIRD_IPC_HOOK_EVENT record{};
         record.Kind = BlackbirdIpcHookEventIntegrity;
@@ -506,7 +772,7 @@ namespace
         record.Caller = 0;
         record.Context0 = tampered ? 1u : 0u;
         record.Context1 = suspicious ? 1u : 0u;
-        record.Context2 = baselineChanged ? 1u : 0u;
+        record.Context2 = expectedMismatch ? 1u : 0u;
         record.Context3 = g_IntegrityCheckCount;
         record.ArgCount = 1;
         record.Args[0] = static_cast<std::uint64_t>(GetTickCount64());
@@ -522,11 +788,11 @@ namespace
         bool present = false;
         bool tampered = false;
         bool suspicious = false;
-        bool baselineChanged = false;
+        bool expectedMismatch = false;
         std::uint8_t sample[16]{};
 
-        if (ProbeExportPatchState(L"amsi.dll", "AmsiScanBuffer", g_AmsiBaseline, g_AmsiBaselineCaptured, present,
-                                  tampered, suspicious, baselineChanged, sample))
+        if (ProbeExportPatchState(L"amsi.dll", "AmsiScanBuffer", g_AmsiProbe, present, tampered, suspicious,
+                                  expectedMismatch, sample))
         {
             if (present)
             {
@@ -534,8 +800,8 @@ namespace
                 g_AmsiFirstPoll = false;
                 bool publish =
                     stateChanged || (tampered && (now - g_LastAmsiPublishTick >= kIntegrityRepublishPeriodMs));
-                if (publish && SendPatchTamperEvent(kIntegrityOperationAmsiPatch, "AmsiScanBuffer", "amsi", tampered,
-                                                    suspicious, baselineChanged, sample))
+                if (publish && SendPatchTamperEvent(kIntegrityOperationAmsiPatch, "AmsiScanBuffer", "amsi",
+                                                    tampered, suspicious, expectedMismatch, sample))
                 {
                     g_LastAmsiPublishTick = now;
                 }
@@ -543,13 +809,14 @@ namespace
             }
             else
             {
+                std::memset(&g_AmsiProbe, 0, sizeof(g_AmsiProbe));
                 g_AmsiFirstPoll = false;
                 g_LastAmsiTampered = false;
             }
         }
 
-        if (ProbeExportPatchState(L"ntdll.dll", "EtwEventWrite", g_EtwBaseline, g_EtwBaselineCaptured, present,
-                                  tampered, suspicious, baselineChanged, sample))
+        if (ProbeExportPatchState(L"ntdll.dll", "EtwEventWrite", g_EtwProbe, present, tampered, suspicious,
+                                  expectedMismatch, sample))
         {
             if (present)
             {
@@ -557,8 +824,8 @@ namespace
                 g_EtwFirstPoll = false;
                 bool publish =
                     stateChanged || (tampered && (now - g_LastEtwPublishTick >= kIntegrityRepublishPeriodMs));
-                if (publish && SendPatchTamperEvent(kIntegrityOperationEtwPatch, "EtwEventWrite", "ntdll", tampered,
-                                                    suspicious, baselineChanged, sample))
+                if (publish && SendPatchTamperEvent(kIntegrityOperationEtwPatch, "EtwEventWrite", "ntdll",
+                                                    tampered, suspicious, expectedMismatch, sample))
                 {
                     g_LastEtwPublishTick = now;
                 }
@@ -566,6 +833,7 @@ namespace
             }
             else
             {
+                std::memset(&g_EtwProbe, 0, sizeof(g_EtwProbe));
                 g_EtwFirstPoll = false;
                 g_LastEtwTampered = false;
             }
@@ -582,7 +850,7 @@ namespace
         g_LastIntegrityCheckTick = now;
         ++g_IntegrityCheckCount;
 
-        if (!g_WinsockInitialized && !g_NtInitialized && !g_KiInitialized)
+        if (!g_WinsockInitialized && !g_NtInitialized && !g_KiInitialized && !g_ModuleInitialized)
         {
             PollAmsiEtwPatchWatchdog(now);
             return;
@@ -591,6 +859,7 @@ namespace
         std::uint32_t winsockMismatches = 0;
         std::uint32_t ntMismatches = 0;
         std::uint32_t kiMismatches = 0;
+        std::uint32_t moduleMismatches = 0;
         std::uint32_t integrityMask = 0;
 
         if (g_WinsockInitialized && !KeCheckWinsockHookIntegrity(&winsockMismatches))
@@ -605,6 +874,10 @@ namespace
         {
             integrityMask |= kIntegrityMaskKi;
         }
+        if (g_ModuleInitialized && !KeCheckModuleHookIntegrity(&moduleMismatches))
+        {
+            integrityMask |= kIntegrityMaskModule;
+        }
 
         bool stateChanged = integrityMask != g_LastIntegrityMask;
         bool publish = false;
@@ -618,7 +891,8 @@ namespace
         }
 
         g_LastIntegrityMask = integrityMask;
-        if (publish && SendHookIntegrityEvent(integrityMask, winsockMismatches, ntMismatches, kiMismatches))
+        if (publish && SendHookIntegrityEvent(integrityMask, winsockMismatches, ntMismatches, kiMismatches,
+                                              moduleMismatches))
         {
             g_LastIntegrityPublishTick = now;
         }
@@ -706,15 +980,17 @@ DWORD WINAPI BkRuntimeThreadProc(LPVOID)
 void BkRuntimeShutdown()
 {
     g_KiHookController.Shutdown();
+    g_ModuleHookController.Shutdown();
     g_NtHookController.Shutdown();
     g_WinsockController.Shutdown();
+    g_ModuleInitialized = false;
     g_KiInitialized = false;
     g_NtInitialized = false;
     g_WinsockInitialized = false;
 
     IC_STACKTRACE::CleanupSymbols();
 
-    XIPC::Shutdown();
+    BKIPC::Shutdown();
 
     BkUnregisterVectoredExceptionHandler();
 }

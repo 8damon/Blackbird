@@ -2,7 +2,7 @@
 
 #include "pipe.h"
 
-namespace XIPC
+namespace BKIPC
 {
     bool SendHello()
     {
@@ -22,4 +22,4 @@ namespace XIPC
         outName.clear();
         return false;
     }
-} // namespace XIPC
+} // namespace BKIPC

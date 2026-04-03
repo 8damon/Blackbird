@@ -41,5 +41,6 @@ using WinsockHookCallback = void (*)(const WinsockHookContext &context) noexcept
 
 bool KeSetWinsockHook(WinsockHookCallback callback) noexcept;
 bool KeIsWinsockHookRequired() noexcept;
+bool KeRefreshWinsockHooks(HMODULE moduleHandle = nullptr) noexcept;
 void KeRemoveWinsockHook() noexcept;
 bool KeCheckWinsockHookIntegrity(std::uint32_t *mismatchCount) noexcept;

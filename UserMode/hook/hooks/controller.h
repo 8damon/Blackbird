@@ -10,6 +10,7 @@
 #include "ws.h"
 #include "nt.h"
 #include "ki.h"
+#include "module.h"
 
 #include "../instrument/stacktrace.h"
 
@@ -42,6 +43,20 @@ struct KiCapturedEvent
     const char *StubName;
     void *Caller;
     void *StackPointer;
+
+    IC_STACKTRACE::Trace Stack;
+};
+
+struct ModuleCapturedEvent
+{
+    DWORD ThreadId;
+    ModuleHookOperation Operation;
+    const char *FunctionName;
+    const char *SourceModule;
+    void *Caller;
+    HMODULE ModuleHandle;
+    std::vector<std::uint8_t> NameSample;
+    std::uint64_t Args[4];
 
     IC_STACKTRACE::Trace Stack;
 };
@@ -104,4 +119,24 @@ class KiHookController
     static bool s_Initialized;
     static std::mutex s_QueueMutex;
     static std::vector<KiCapturedEvent> s_Queue;
+};
+
+class ModuleHookController
+{
+  public:
+    ModuleHookController() = default;
+    ~ModuleHookController() = default;
+
+    bool Initialize() noexcept;
+    void Shutdown() noexcept;
+
+    std::vector<ModuleCapturedEvent> ConsumeEvents();
+
+  private:
+    static void KeModuleHookCallback(const ModuleHookContext &context) noexcept;
+    static void EnqueueEvent(const ModuleHookContext &context);
+
+    static bool s_Initialized;
+    static std::mutex s_QueueMutex;
+    static std::vector<ModuleCapturedEvent> s_Queue;
 };

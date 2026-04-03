@@ -5,7 +5,7 @@
 #include <cstdint>
 #include "../../../abi/blackbird_ipc.h"
 
-namespace XIPC
+namespace BKIPC
 {
     inline constexpr const wchar_t *PIPE_NAME = BLACKBIRD_IPC_HOOK_PIPE_NAME;
     inline constexpr DWORD KHOK_MAGIC = 0x4B4F484B;
@@ -110,4 +110,4 @@ namespace XIPC
 
     bool RequestNumberForName(const std::wstring &name, DWORD &outValue);
     bool RequestNameForNumber(DWORD ssn, std::wstring &outName);
-} // namespace XIPC
+} // namespace BKIPC

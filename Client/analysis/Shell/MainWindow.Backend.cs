@@ -34,6 +34,7 @@ namespace BlackbirdInterface
         private readonly Dictionary<string, string> _apiGraphDecodedByKey = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _apiGraphFramesByKey = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _apiGraphSensorByKey = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, BrokerEtwEventView> _apiGraphViewByKey = new(StringComparer.Ordinal);
         private readonly Dictionary<string, DateTime> _apiGraphTimelineLastEmitByKey = new(StringComparer.Ordinal);
         private readonly Dictionary<ulong, ApiMemoryPageSignal> _apiMemorySignalsByPage = new();
         private bool _apiGraphSnapshotDirty;
@@ -106,6 +107,7 @@ namespace BlackbirdInterface
             _apiGraphDecodedByKey.Clear();
             _apiGraphFramesByKey.Clear();
             _apiGraphSensorByKey.Clear();
+            _apiGraphViewByKey.Clear();
             _apiGraphTimelineLastEmitByKey.Clear();
             _apiMemorySignalsByPage.Clear();
             _crossProcWriteCountByPair.Clear();
@@ -356,6 +358,7 @@ namespace BlackbirdInterface
                 _apiGraphDecodedByKey.Clear();
                 _apiGraphFramesByKey.Clear();
                 _apiGraphSensorByKey.Clear();
+                _apiGraphViewByKey.Clear();
                 _apiGraphTimelineLastEmitByKey.Clear();
                 _apiMemorySignalsByPage.Clear();
                 _crossProcWriteCountByPair.Clear();
@@ -2152,16 +2155,7 @@ namespace BlackbirdInterface
 
             if (EventDetailFormatting.IsUsermodeSensorTelemetry(view))
             {
-                string kind = view.NotifyClass switch
-                {
-                    BlackbirdNative.IpcHookEventNt => "NT",
-                    BlackbirdNative.IpcHookEventWinsock => "Winsock",
-                    BlackbirdNative.IpcHookEventKi => "KI",
-                    BlackbirdNative.IpcHookEventExceptionLowNoise => "ExceptionLowNoise",
-                    BlackbirdNative.IpcHookEventExceptionHighPriv => "ExceptionHighPriv",
-                    BlackbirdNative.IpcHookEventIntegrity => "Integrity",
-                    _ => "Hook"
-                };
+                string kind = EventDetailFormatting.HookKindName(view.NotifyClass);
                 DiagnosticsState.SetValue("Usermode Hooks", $"Active ({kind})");
             }
         }
@@ -2336,6 +2330,7 @@ namespace BlackbirdInterface
             _apiGraphDecodedByKey[key] = decodedDetail;
             _apiGraphFramesByKey[key] = BuildHookFrameSummary(view, BuildHookFieldMap(view));
             _apiGraphSensorByKey[key] = sensorOrigin;
+            _apiGraphViewByKey[key] = view.Clone();
 
             ScheduleApiGraphSnapshot();
             if (string.IsNullOrWhiteSpace(view.Details))
@@ -2353,7 +2348,7 @@ namespace BlackbirdInterface
                 TimestampUtc = view.TimestampUtc,
                 PID = unchecked((int)sourcePid),
                 TID = unchecked((int)threadId),
-                Group = "API Hooks",
+                Group = EventDetailFormatting.HookTimelineGroup(view),
                 SubType = apiName,
                 Summary = $"{apiName} [caller {sourcePid} target {targetPid} hits {currentHits}]",
                 Details = decodedDetail
@@ -2421,7 +2416,8 @@ namespace BlackbirdInterface
                     ? detail
                     : BuildFallbackApiDetail(row.ApiName, rawReason, decodedAction);
                 sensor = _apiGraphSensorByKey.TryGetValue(key, out string? sensorLabel) ? sensorLabel : sensor;
-                ApiCallStructuredFields structured = BuildApiCallStructuredFields(row.ApiName, rawReason, decodedAction);
+                BrokerEtwEventView? rowView = FindApiGraphViewForKey(key);
+                ApiCallStructuredFields structured = BuildApiCallStructuredFields(row.ApiName, rawReason, decodedAction, rowView);
                 Dictionary<string, string> reasonFields = ParseReasonFields(rawReason);
                 string frameSummary = _apiGraphFramesByKey.TryGetValue(key, out string? storedFrameSummary)
                     ? storedFrameSummary
@@ -2448,10 +2444,14 @@ namespace BlackbirdInterface
                     SourceLabel = sourceLabel,
                     TargetLabel = targetLabel,
                     ThreadLabel = row.ThreadId == 0 ? string.Empty : row.ThreadId.ToString(CultureInfo.InvariantCulture),
-                    BaseLabel = structured.Base,
-                    SizeLabel = structured.Size,
-                    AllocTypeLabel = structured.AllocType,
-                    ProtectLabel = structured.Protect,
+                    BaseLabel = structured.Field1Value,
+                    SizeLabel = structured.Field2Value,
+                    AllocTypeLabel = structured.Field3Value,
+                    ProtectLabel = structured.Field4Value,
+                    Field1Label = structured.Field1Label,
+                    Field2Label = structured.Field2Label,
+                    Field3Label = structured.Field3Label,
+                    Field4Label = structured.Field4Label,
                     Hits = Math.Max(1, row.Hits),
                     HeatPercent = heatPercent,
                     ActivityFillWidth = Math.Round((heatPercent / 100.0) * 110.0),
@@ -2591,22 +2591,38 @@ namespace BlackbirdInterface
                     Matches(row.SourceLabel, callerFilter) &&
                     Matches(row.TargetLabel, targetFilter) &&
                     Matches(row.ThreadLabel, threadFilter) &&
-                    (Matches(row.BaseLabel, regionFilter) || Matches(row.SizeLabel, regionFilter)) &&
-                    Matches(row.ProtectLabel, protectFilter) &&
+                    (Matches(row.BaseLabel, regionFilter) ||
+                     Matches(row.SizeLabel, regionFilter) ||
+                     Matches(row.AllocTypeLabel, regionFilter) ||
+                     Matches(row.ProtectLabel, regionFilter)) &&
+                    (Matches(row.ProtectLabel, protectFilter) || Matches(row.AllocTypeLabel, protectFilter)) &&
                     row.Hits >= Math.Max(0, minHits))
                 .OrderByDescending(x => x.Hits)
                 .ThenByDescending(x => x.LastSeen, StringComparer.Ordinal)
                 .ToList();
         }
 
-        private static ApiCallStructuredFields BuildApiCallStructuredFields(string apiName, string rawReason, string decodedAction)
+        private BrokerEtwEventView? FindApiGraphViewForKey(string key)
+        {
+            return _apiGraphViewByKey.TryGetValue(key, out BrokerEtwEventView? view) ? view : null;
+        }
+
+        private static ApiCallStructuredFields BuildApiCallStructuredFields(
+            string apiName,
+            string rawReason,
+            string decodedAction,
+            BrokerEtwEventView? view)
         {
             Dictionary<string, string> fields = ParseReasonFields(rawReason);
             string action = SummarizeApiReason(decodedAction);
-            string baseLabel = string.Empty;
-            string sizeLabel = string.Empty;
-            string allocTypeLabel = string.Empty;
-            string protectLabel = string.Empty;
+            string field1Label = "Base";
+            string field2Label = "Size";
+            string field3Label = "Alloc Type";
+            string field4Label = "Protect";
+            string field1Value = string.Empty;
+            string field2Value = string.Empty;
+            string field3Value = string.Empty;
+            string field4Value = string.Empty;
 
             if (apiName.Equals("NtAllocateVirtualMemory", StringComparison.OrdinalIgnoreCase))
             {
@@ -2614,37 +2630,97 @@ namespace BlackbirdInterface
                 ulong regionSize = FirstU64(fields, "size", "c1", "a3");
                 uint allocationType = (uint)FirstU64(fields, "allocType", "c2", "a4");
                 uint protect = (uint)FirstU64(fields, "protect", "c3", "a5");
-                baseLabel = baseAddress == 0 ? string.Empty : $"0x{baseAddress:X}";
-                sizeLabel = regionSize == 0 ? string.Empty : $"0x{regionSize:X}";
-                allocTypeLabel = allocationType == 0 ? string.Empty : $"0x{allocationType:X} {DescribeMemoryAllocationType(allocationType)}";
-                protectLabel = protect == 0 ? string.Empty : $"0x{protect:X} {DescribeMemoryProtect(protect)}";
+                field1Value = baseAddress == 0 ? string.Empty : $"0x{baseAddress:X}";
+                field2Value = regionSize == 0 ? string.Empty : $"0x{regionSize:X}";
+                field3Value = allocationType == 0 ? string.Empty : $"0x{allocationType:X} {DescribeMemoryAllocationType(allocationType)}";
+                field4Value = protect == 0 ? string.Empty : $"0x{protect:X} {DescribeMemoryProtect(protect)}";
             }
             else if (apiName.Equals("NtProtectVirtualMemory", StringComparison.OrdinalIgnoreCase))
             {
                 ulong baseAddress = FirstU64(fields, "base", "c0", "a1");
                 ulong regionSize = FirstU64(fields, "size", "c1", "a2");
                 uint protect = (uint)FirstU64(fields, "newProtect", "c2", "a3");
-                baseLabel = baseAddress == 0 ? string.Empty : $"0x{baseAddress:X}";
-                sizeLabel = regionSize == 0 ? string.Empty : $"0x{regionSize:X}";
-                protectLabel = protect == 0 ? string.Empty : $"0x{protect:X} {DescribeMemoryProtect(protect)}";
+                field1Value = baseAddress == 0 ? string.Empty : $"0x{baseAddress:X}";
+                field2Value = regionSize == 0 ? string.Empty : $"0x{regionSize:X}";
+                field4Value = protect == 0 ? string.Empty : $"0x{protect:X} {DescribeMemoryProtect(protect)}";
             }
             else if (apiName.Equals("NtWriteVirtualMemory", StringComparison.OrdinalIgnoreCase) ||
                      apiName.Equals("NtReadVirtualMemory", StringComparison.OrdinalIgnoreCase))
             {
                 ulong baseAddress = FirstU64(fields, "base", "c0", "a1");
                 ulong regionSize = FirstU64(fields, "size", "c1", "a3");
-                baseLabel = baseAddress == 0 ? string.Empty : $"0x{baseAddress:X}";
-                sizeLabel = regionSize == 0 ? string.Empty : $"0x{regionSize:X}";
+                field1Value = baseAddress == 0 ? string.Empty : $"0x{baseAddress:X}";
+                field2Value = regionSize == 0 ? string.Empty : $"0x{regionSize:X}";
+            }
+            else if (apiName.Equals("LdrLoadDll", StringComparison.OrdinalIgnoreCase) ||
+                     apiName.StartsWith("LoadLibrary", StringComparison.OrdinalIgnoreCase))
+            {
+                field1Label = "Module";
+                field2Label = "Handle";
+                field3Label = "Flags";
+                field4Label = "Status";
+
+                field1Value = DecodeModuleHookName(apiName, view);
+                ulong handle = FirstU64(fields, "handle");
+                ulong flags = FirstU64(fields, "flags");
+                ulong status = FirstU64(fields, "status");
+
+                field2Value = handle == 0 ? string.Empty : $"0x{handle:X}";
+                field3Value = flags == 0 ? "0x0" : $"0x{flags:X}";
+                field4Value = apiName.Equals("LdrLoadDll", StringComparison.OrdinalIgnoreCase)
+                    ? $"0x{status:X8}"
+                    : string.Empty;
             }
 
             return new ApiCallStructuredFields
             {
                 Action = string.IsNullOrWhiteSpace(action) ? apiName : action,
-                Base = baseLabel,
-                Size = sizeLabel,
-                AllocType = allocTypeLabel,
-                Protect = protectLabel
+                Field1Label = field1Label,
+                Field2Label = field2Label,
+                Field3Label = field3Label,
+                Field4Label = field4Label,
+                Field1Value = field1Value,
+                Field2Value = field2Value,
+                Field3Value = field3Value,
+                Field4Value = field4Value
             };
+        }
+
+        private static string DecodeModuleHookName(string apiName, BrokerEtwEventView? view)
+        {
+            if (view == null || view.DeepSample == null || view.DeepSample.Length == 0 || view.DeepSampleSize == 0)
+            {
+                return string.Empty;
+            }
+
+            int sampleSize = Math.Min(view.DeepSample.Length, (int)view.DeepSampleSize);
+            if (sampleSize <= 0)
+            {
+                return string.Empty;
+            }
+
+            if (apiName.Equals("LoadLibraryA", StringComparison.OrdinalIgnoreCase) ||
+                apiName.Equals("LoadLibraryExA", StringComparison.OrdinalIgnoreCase))
+            {
+                int zeroIndex = Array.IndexOf(view.DeepSample, (byte)0, 0, sampleSize);
+                int length = zeroIndex >= 0 ? zeroIndex : sampleSize;
+                return length > 0 ? Encoding.ASCII.GetString(view.DeepSample, 0, length).Trim() : string.Empty;
+            }
+
+            int byteLength = sampleSize & ~1;
+            if (byteLength <= 0)
+            {
+                return string.Empty;
+            }
+
+            string decoded = Encoding.Unicode.GetString(view.DeepSample, 0, byteLength);
+            int nul = decoded.IndexOf('\0');
+            if (nul >= 0)
+            {
+                decoded = decoded[..nul];
+            }
+
+            return decoded.Trim();
         }
 
         private void RenderApiGraphCanvas(IReadOnlyList<ApiCallGraphRowSnapshot> rows, string? selectedKey)
@@ -4220,10 +4296,14 @@ namespace BlackbirdInterface
         private readonly struct ApiCallStructuredFields
         {
             internal string Action { get; init; }
-            internal string Base { get; init; }
-            internal string Size { get; init; }
-            internal string AllocType { get; init; }
-            internal string Protect { get; init; }
+            internal string Field1Label { get; init; }
+            internal string Field2Label { get; init; }
+            internal string Field3Label { get; init; }
+            internal string Field4Label { get; init; }
+            internal string Field1Value { get; init; }
+            internal string Field2Value { get; init; }
+            internal string Field3Value { get; init; }
+            internal string Field4Value { get; init; }
         }
 
         private enum BackendUiWorkKind

@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="./media/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
+  <img src="./Media/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
 </p>
 
 # [BLACKBIRD](https://titansoftwork.com/capability/blackbird/)
@@ -89,7 +89,7 @@ Representative detections include:
 For the full contract and field-level details, see [API.md](./API.md).
 
 <p align="center">
-  <img src="./media/BLACKBIRD_DIAGRAM.png" width="980" alt="Blackbird platform diagram" />
+  <img src="./Media/BLACKBIRD_DIAGRAM.png" width="980" alt="Blackbird platform diagram" />
 </p>
 
 ## QUICK START

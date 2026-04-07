@@ -6,9 +6,6 @@
   <img src="https://img.shields.io/badge/-00599C?logo=c%2B%2B&logoColor=white&style=for-the-badge" />
   <img src="https://img.shields.io/badge/.NET-512BD4?style=for-the-badge" />
   <img src="https://img.shields.io/badge/KMDF-000000?style=for-the-badge" />
-  <a href="https://discord.gg/yUWyvT9JyP">
-    <img src="https://img.shields.io/discord/1240608336005828668?label=TITAN%20Softworks&logo=discord&color=5865F2&style=for-the-badge" />
-  </a>
 </p>
 
 <p align="center">

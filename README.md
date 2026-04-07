@@ -1,4 +1,4 @@
-<h1 align="center">BLACKBIRD v1.7</h1>
+<h1 align="center">BLACKBIRD v1.8</h1>
 <p align="center"><b>Malware Analysis DFIR Kernel Telemetry & Detection Platform for Windows</b></p>
 
 <p align="center">

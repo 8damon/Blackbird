@@ -190,6 +190,8 @@ extern volatile LONG g_DriverSubscriptionsDirty;
 extern PBLACKBIRD_CONTROLLER_CLIENT g_ClientList;
 extern PBLACKBIRD_CONTROLLER_CLIENT g_ClientSlots[BLACKBIRD_CONTROLLER_MAX_CLIENTS];
 extern DWORD g_ClientCount;
+extern volatile DWORD g_AuthorizedControlProcessId;
+extern volatile DWORD g_AuthorizedControlSessionId;
 extern DWORD g_ProgrammedPids[BLACKBIRD_MAX_PID_LIST];
 extern DWORD g_ProgrammedPidCount;
 extern BLACKBIRD_CONTROLLER_PID_INDEX_ENTRY g_PidIndex[BLACKBIRD_MAX_PID_LIST];

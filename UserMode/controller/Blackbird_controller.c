@@ -27,6 +27,8 @@ volatile LONG g_DriverSubscriptionsDirty = 0;
 PBLACKBIRD_CONTROLLER_CLIENT g_ClientList = NULL;
 PBLACKBIRD_CONTROLLER_CLIENT g_ClientSlots[BLACKBIRD_CONTROLLER_MAX_CLIENTS];
 DWORD g_ClientCount = 0;
+volatile DWORD g_AuthorizedControlProcessId = 0;
+volatile DWORD g_AuthorizedControlSessionId = 0;
 DWORD g_ProgrammedPids[BLACKBIRD_MAX_PID_LIST];
 DWORD g_ProgrammedPidCount = 0;
 BLACKBIRD_CONTROLLER_PID_INDEX_ENTRY g_PidIndex[BLACKBIRD_MAX_PID_LIST];

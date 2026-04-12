@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Loading"
         Width="520"
-        Height="265"
+        Height="286"
         ResizeMode="NoResize"
         WindowStyle="None"
         ShowInTaskbar="False"
@@ -13,7 +13,8 @@
 
     <Grid Margin="16">
             <Grid.RowDefinitions>
-                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
@@ -27,7 +28,8 @@
                 <TextBlock x:Name="StatusBlock"
                            Text="Initializing..."
                            Margin="0,6,0,0"
-                           FontSize="13"
+                           FontSize="14"
+                           FontWeight="SemiBold"
                            Foreground="{DynamicResource WinTextBrush}"/>
                 <TextBlock x:Name="DetailBlock"
                            Text="Preparing startup."
@@ -39,11 +41,9 @@
             <ProgressBar Grid.Row="1"
                          x:Name="LoadBar"
                          Height="14"
-                         Margin="0,14,0,0"
+                         Margin="0,16,0,0"
                          Minimum="0"
                          Maximum="100"
-                         Background="{DynamicResource WinHeaderBrush}"
-                         Foreground="{DynamicResource WinAccentBrush}"
                          Value="8"/>
 
             <TextBlock Grid.Row="2"
@@ -57,10 +57,11 @@
                     Padding="8,6"
                     BorderThickness="1"
                     BorderBrush="{DynamicResource WinSubtleBorderBrush}"
-                    Background="{DynamicResource WinBgBrush}">
+                    Background="{DynamicResource WinPanelBrush}">
                 <TextBlock x:Name="StepsBlock"
                            FontFamily="Consolas"
                            FontSize="11"
+                           MaxHeight="72"
                            Foreground="{DynamicResource WinMutedTextBrush}"
                            Text="Startup timeline..."
                            TextWrapping="Wrap"/>

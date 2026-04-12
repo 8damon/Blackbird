@@ -116,11 +116,10 @@
                     </Border>
                 </StackPanel>
                 <Button DockPanel.Dock="Right"
-                        Content="✕"
-                        Width="24"
-                        Height="22"
-                        Margin="8,0,0,0"
-                        VerticalAlignment="Top"
+                        Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
+                        Content="&#xE8BB;"
+                        Tag="Close"
+                        ToolTip="Close"
                         Click="Close_Click"/>
             </DockPanel>
         </Border>

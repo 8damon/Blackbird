@@ -130,11 +130,11 @@
                            Text="Launch Parameters"/>
 
                 <Button Grid.Column="1"
-                        Width="28"
-                        Height="22"
                         Margin="0,6,6,6"
-                        Padding="0"
-                        Content="✕"
+                        Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
+                        Content="&#xE8BB;"
+                        Tag="Close"
+                        ToolTip="Close"
                         Click="Cancel_Click"/>
             </Grid>
 

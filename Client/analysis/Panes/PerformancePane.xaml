@@ -197,12 +197,6 @@
                                                Opacity="0.72"
                                                Foreground="{DynamicResource WinTextBrush}"
                                                HorizontalAlignment="Center"/>
-                                    <TextBlock x:Name="NetworkNoDataMessageBlock"
-                                               Margin="0,6,0,0"
-                                               FontSize="11"
-                                               Foreground="{DynamicResource WinMutedTextBrush}"
-                                               HorizontalAlignment="Center"
-                                               Text="No attributable network data for the selected range."/>
                                 </StackPanel>
                             </Border>
                         </Grid>

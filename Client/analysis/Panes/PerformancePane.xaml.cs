@@ -1378,7 +1378,6 @@ namespace BlackbirdInterface
         {
             string threadMessage = "No thread data in the selected range.";
             string memoryMessage = "No memory data in the selected range.";
-            string networkMessage = "No attributable network data for the selected range.";
             bool historicalDataVisible = HasHistoricalDataForObservedTime();
 
             if (!_processLiveDataAvailable)
@@ -1387,19 +1386,16 @@ namespace BlackbirdInterface
                 {
                     threadMessage = "Live capture unavailable.";
                     memoryMessage = "Live capture unavailable.";
-                    networkMessage = "Live capture unavailable.";
                 }
                 else if (!historicalDataVisible)
                 {
                     threadMessage = "No captured thread data at the selected time.";
                     memoryMessage = "No captured memory data at the selected time.";
-                    networkMessage = "No captured network data at the selected time.";
                 }
                 else
                 {
                     threadMessage = "Live capture unavailable.";
                     memoryMessage = "Live capture unavailable.";
-                    networkMessage = "Live capture unavailable.";
                 }
             }
 
@@ -1438,12 +1434,6 @@ namespace BlackbirdInterface
                 bool hasPeerData = NetworkPeers.Count > 0;
                 bool showNetworkNoData = _showNetworkPeers ? !hasPeerData : !hasTrafficData;
                 NetworkNoDataOverlay.Visibility = showNetworkNoData ? Visibility.Visible : Visibility.Collapsed;
-                if (NetworkNoDataMessageBlock != null)
-                {
-                    NetworkNoDataMessageBlock.Text = _showNetworkPeers
-                        ? "No active remote peers for this process."
-                        : networkMessage;
-                }
             }
         }
 

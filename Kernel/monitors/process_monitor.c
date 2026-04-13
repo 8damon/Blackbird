@@ -3,6 +3,7 @@
 #include "..\core\control.h"
 #include "..\core\pool_compat.h"
 #include "..\core\runtime_config.h"
+#include "..\core\tempus_debug.h"
 #include "..\telemetry\etw.h"
 #include "..\core\unicode_utils.h"
 #include "process_monitor.h"
@@ -10,17 +11,71 @@
 static volatile LONG g_ProcessMonitorRegistered = 0;
 static volatile LONG g_ProcessMonitorFailureCounter = 0;
 static volatile ULONG g_BlackbirdInterfacePid = 0;
-static volatile LONG g_BlackbirdInterfaceReady = 0;
 static volatile ULONG g_BlackbirdControllerPid = 0;
 static volatile LONG g_BlackbirdControllerReady = 0;
 static volatile ULONG g_ServicesPid = 0;
 
+#define BLACKBIRD_LAUNCH_BOOTSTRAP_PID_SLOTS 32
+
+static volatile LONG g_LaunchBootstrapPids[BLACKBIRD_LAUNCH_BOOTSTRAP_PID_SLOTS];
+static volatile LONG g_LaunchBootstrapWriteIndex = -1;
+
 NTKERNELAPI ULONGLONG PsGetProcessStartKey(_In_ PEPROCESS Process);
 NTKERNELAPI ULONG PsGetProcessSessionIdEx(_In_ PEPROCESS Process);
+NTKERNELAPI NTSTATUS PsLookupProcessByProcessId(_In_ HANDLE ProcessId, _Outptr_ PEPROCESS *Process);
 NTSYSAPI NTSTATUS NTAPI SeLocateProcessImageName(_In_ PEPROCESS Process, _Out_ PUNICODE_STRING *pImageFileName);
 NTSYSAPI NTSTATUS NTAPI ObQueryNameString(_In_ PVOID Object,
                                           _Out_writes_bytes_opt_(Length) POBJECT_NAME_INFORMATION ObjectNameInfo,
                                           _In_ ULONG Length, _Out_ PULONG ReturnLength);
+
+static VOID BLACKBIRDProcessMonitorArmLaunchBootstrapPid(_In_ UINT32 ProcessId)
+{
+    UINT32 i;
+    LONG replacementIndex;
+
+    if (ProcessId == 0)
+    {
+        return;
+    }
+
+    for (i = 0; i < RTL_NUMBER_OF(g_LaunchBootstrapPids); ++i)
+    {
+        LONG observedPid = InterlockedCompareExchange(&g_LaunchBootstrapPids[i], 0, 0);
+
+        if ((UINT32)observedPid == ProcessId)
+        {
+            return;
+        }
+        if (observedPid == 0 && InterlockedCompareExchange(&g_LaunchBootstrapPids[i], (LONG)ProcessId, 0) == 0)
+        {
+            return;
+        }
+    }
+
+    replacementIndex = InterlockedIncrement(&g_LaunchBootstrapWriteIndex);
+    if (replacementIndex < 0)
+    {
+        replacementIndex = 0;
+        InterlockedExchange(&g_LaunchBootstrapWriteIndex, 0);
+    }
+    InterlockedExchange(&g_LaunchBootstrapPids[(UINT32)replacementIndex % RTL_NUMBER_OF(g_LaunchBootstrapPids)],
+                        (LONG)ProcessId);
+}
+
+static VOID BLACKBIRDProcessMonitorClearLaunchBootstrapPid(_In_ UINT32 ProcessId)
+{
+    UINT32 i;
+
+    if (ProcessId == 0)
+    {
+        return;
+    }
+
+    for (i = 0; i < RTL_NUMBER_OF(g_LaunchBootstrapPids); ++i)
+    {
+        (void)InterlockedCompareExchange(&g_LaunchBootstrapPids[i], 0, (LONG)ProcessId);
+    }
+}
 
 static BOOLEAN BLACKBIRDProcessPathMatchesImage(_In_z_ PCWSTR ImageName, _In_opt_ PCUNICODE_STRING Candidate)
 {
@@ -55,6 +110,51 @@ static BOOLEAN BLACKBIRDProcessPathMatchesImage(_In_z_ PCWSTR ImageName, _In_opt
     return BLACKBIRDUnicodeEquals(&baseName, &expected, TRUE);
 }
 
+static BOOLEAN BLACKBIRDProcessMonitorRegisterNamedPid(_In_ UINT32 ProcessId, _In_z_ PCWSTR ImageName,
+                                                       _Inout_ volatile ULONG *PidSlot,
+                                                       _Inout_opt_ volatile LONG *ReadySlot)
+{
+    NTSTATUS status;
+    PEPROCESS process = NULL;
+    PUNICODE_STRING imagePath = NULL;
+    BOOLEAN matches = FALSE;
+
+    if (ProcessId == 0 || ImageName == NULL || ImageName[0] == L'\0' || PidSlot == NULL)
+    {
+        return FALSE;
+    }
+
+    status = PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)ProcessId, &process);
+    if (!NT_SUCCESS(status))
+    {
+        return FALSE;
+    }
+
+    status = SeLocateProcessImageName(process, &imagePath);
+    if (NT_SUCCESS(status) && imagePath != NULL && imagePath->Buffer != NULL && imagePath->Length != 0)
+    {
+        matches = BLACKBIRDProcessPathMatchesImage(ImageName, imagePath);
+    }
+
+    if (imagePath != NULL)
+    {
+        ExFreePool(imagePath);
+    }
+    ObDereferenceObject(process);
+
+    if (!matches)
+    {
+        return FALSE;
+    }
+
+    if (ReadySlot != NULL)
+    {
+        InterlockedExchange(ReadySlot, 0);
+    }
+    InterlockedExchange((volatile LONG *)PidSlot, (LONG)ProcessId);
+    return TRUE;
+}
+
 static VOID BLACKBIRDProcessMonitorTrackProtectedPid(_In_ UINT32 ProcessId, _In_reads_z_(ImageChars) PCWSTR ImagePath,
                                                      _In_ USHORT ImageChars)
 {
@@ -72,7 +172,6 @@ static VOID BLACKBIRDProcessMonitorTrackProtectedPid(_In_ UINT32 ProcessId, _In_
     if (BLACKBIRDProcessPathMatchesImage(L"BlackbirdInterface.exe", &image))
     {
         InterlockedExchange((volatile LONG *)&g_BlackbirdInterfacePid, (LONG)ProcessId);
-        InterlockedExchange(&g_BlackbirdInterfaceReady, 0);
     }
     if (BLACKBIRDProcessPathMatchesImage(L"BlackbirdController.exe", &image))
     {
@@ -95,7 +194,6 @@ static VOID BLACKBIRDProcessMonitorClearProtectedPid(_In_ UINT32 ProcessId)
     if ((UINT32)InterlockedCompareExchange((volatile LONG *)&g_BlackbirdInterfacePid, 0, 0) == ProcessId)
     {
         InterlockedCompareExchange((volatile LONG *)&g_BlackbirdInterfacePid, 0, (LONG)ProcessId);
-        InterlockedExchange(&g_BlackbirdInterfaceReady, 0);
     }
     if ((UINT32)InterlockedCompareExchange((volatile LONG *)&g_BlackbirdControllerPid, 0, 0) == ProcessId)
     {
@@ -223,6 +321,7 @@ static VOID BLACKBIRDProcessMonitorDetectImageTampering(_In_ HANDLE ProcessId,
 static VOID BLACKBIRDProcessNotifyRoutineEx(_Inout_ PEPROCESS Process, _In_ HANDLE ProcessId,
                                             _Inout_opt_ PPS_CREATE_NOTIFY_INFO CreateInfo)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemProcessMonitor);
     WCHAR imagePath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
     WCHAR commandLine[512];
     HANDLE parentPid = NULL;
@@ -292,9 +391,14 @@ static VOID BLACKBIRDProcessNotifyRoutineEx(_Inout_ PEPROCESS Process, _In_ HAND
             BLACKBIRDProcessMonitorTrackProtectedPid((UINT32)(ULONG_PTR)ProcessId, imagePath,
                                                      (USHORT)wcslen(imagePath));
         }
+        if (launchBound && NT_SUCCESS(createStatus) && ProcessId != NULL)
+        {
+            BLACKBIRDProcessMonitorArmLaunchBootstrapPid((UINT32)(ULONG_PTR)ProcessId);
+        }
     }
     else if (ProcessId != NULL)
     {
+        BLACKBIRDProcessMonitorClearLaunchBootstrapPid((UINT32)(ULONG_PTR)ProcessId);
         BLACKBIRDProcessMonitorClearProtectedPid((UINT32)(ULONG_PTR)ProcessId);
     }
 
@@ -319,6 +423,7 @@ static VOID BLACKBIRDProcessNotifyRoutineEx(_Inout_ PEPROCESS Process, _In_ HAND
             "PARENT_PID_SPOOF_SUSPECT", 5, ProcessId, ProcessId, 0, 0, 0,
             L"process has explicit parent-process override — ParentPid differs from CreatorPid");
     }
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemProcessMonitor, tempusStartQpc);
 }
 
 NTSTATUS
@@ -337,9 +442,10 @@ BLACKBIRDProcessMonitorInitialize(VOID)
     }
 
     InterlockedExchange((volatile LONG *)&g_BlackbirdInterfacePid, 0);
-    InterlockedExchange(&g_BlackbirdInterfaceReady, 0);
     InterlockedExchange((volatile LONG *)&g_BlackbirdControllerPid, 0);
     InterlockedExchange(&g_BlackbirdControllerReady, 0);
+    RtlZeroMemory((PVOID)g_LaunchBootstrapPids, sizeof(g_LaunchBootstrapPids));
+    InterlockedExchange(&g_LaunchBootstrapWriteIndex, -1);
 
     status = PsSetCreateProcessNotifyRoutineEx(BLACKBIRDProcessNotifyRoutineEx, FALSE);
     if (!NT_SUCCESS(status))
@@ -383,10 +489,11 @@ VOID BLACKBIRDProcessMonitorUninitialize(VOID)
 
     InterlockedExchange(&g_ProcessMonitorRegistered, 0);
     InterlockedExchange((volatile LONG *)&g_BlackbirdInterfacePid, 0);
-    InterlockedExchange(&g_BlackbirdInterfaceReady, 0);
     InterlockedExchange((volatile LONG *)&g_BlackbirdControllerPid, 0);
     InterlockedExchange(&g_BlackbirdControllerReady, 0);
     InterlockedExchange((volatile LONG *)&g_ServicesPid, 0);
+    RtlZeroMemory((PVOID)g_LaunchBootstrapPids, sizeof(g_LaunchBootstrapPids));
+    InterlockedExchange(&g_LaunchBootstrapWriteIndex, -1);
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: process monitor uninitialized.\n");
 }
 
@@ -416,6 +523,18 @@ BOOLEAN BLACKBIRDProcessMonitorIsControllerPid(_In_ UINT32 ProcessId)
     return (UINT32)InterlockedCompareExchange((volatile LONG *)&g_BlackbirdControllerPid, 0, 0) == ProcessId;
 }
 
+BOOLEAN BLACKBIRDProcessMonitorRegisterInterfacePid(_In_ UINT32 ProcessId)
+{
+    return BLACKBIRDProcessMonitorRegisterNamedPid(ProcessId, L"BlackbirdInterface.exe", &g_BlackbirdInterfacePid,
+                                                   NULL);
+}
+
+BOOLEAN BLACKBIRDProcessMonitorRegisterControllerPid(_In_ UINT32 ProcessId)
+{
+    return BLACKBIRDProcessMonitorRegisterNamedPid(ProcessId, L"BlackbirdController.exe", &g_BlackbirdControllerPid,
+                                                   &g_BlackbirdControllerReady);
+}
+
 BOOLEAN BLACKBIRDProcessMonitorIsProtectedPid(_In_ UINT32 ProcessId)
 {
     if (ProcessId == 0)
@@ -423,8 +542,7 @@ BOOLEAN BLACKBIRDProcessMonitorIsProtectedPid(_In_ UINT32 ProcessId)
         return FALSE;
     }
 
-    if (BLACKBIRDProcessMonitorIsInterfacePid(ProcessId) && BLACKBIRDRuntimeConfigIsInterfaceProtectedAccessEnabled() &&
-        (InterlockedCompareExchange(&g_BlackbirdInterfaceReady, 0, 0) != 0))
+    if (BLACKBIRDProcessMonitorIsInterfacePid(ProcessId) && BLACKBIRDRuntimeConfigIsInterfaceProtectedAccessEnabled())
     {
         return TRUE;
     }
@@ -432,25 +550,6 @@ BOOLEAN BLACKBIRDProcessMonitorIsProtectedPid(_In_ UINT32 ProcessId)
     return BLACKBIRDProcessMonitorIsControllerPid(ProcessId) &&
            BLACKBIRDRuntimeConfigIsControllerProtectedAccessEnabled() &&
            (InterlockedCompareExchange(&g_BlackbirdControllerReady, 0, 0) != 0);
-}
-
-BOOLEAN BLACKBIRDProcessMonitorMarkInterfaceReady(_In_ UINT32 ProcessId)
-{
-    UINT32 trackedInterfacePid;
-
-    if (ProcessId == 0)
-    {
-        return FALSE;
-    }
-
-    trackedInterfacePid = (UINT32)InterlockedCompareExchange((volatile LONG *)&g_BlackbirdInterfacePid, 0, 0);
-    if (trackedInterfacePid != ProcessId)
-    {
-        return FALSE;
-    }
-
-    InterlockedExchange(&g_BlackbirdInterfaceReady, 1);
-    return TRUE;
 }
 
 BOOLEAN BLACKBIRDProcessMonitorMarkControllerReady(_In_ UINT32 ProcessId)
@@ -463,7 +562,7 @@ BOOLEAN BLACKBIRDProcessMonitorMarkControllerReady(_In_ UINT32 ProcessId)
     }
 
     trackedControllerPid = (UINT32)InterlockedCompareExchange((volatile LONG *)&g_BlackbirdControllerPid, 0, 0);
-    if (trackedControllerPid != ProcessId)
+    if (trackedControllerPid != ProcessId && !BLACKBIRDProcessMonitorRegisterControllerPid(ProcessId))
     {
         return FALSE;
     }
@@ -502,6 +601,39 @@ BOOLEAN BLACKBIRDProcessMonitorIsTrustedProtectedCaller(_In_ UINT32 CallerPid, _
     if (CallerPid == controllerPid && TargetPid == interfacePid)
     {
         return TRUE;
+    }
+
+    return FALSE;
+}
+
+BOOLEAN BLACKBIRDProcessMonitorShouldSuppressLaunchBootstrapNtApi(_In_ UINT32 AttachedPid, _In_ UINT32 ThreadOwnerPid)
+{
+    UINT32 i;
+
+    if (AttachedPid == 0)
+    {
+        return FALSE;
+    }
+
+    for (i = 0; i < RTL_NUMBER_OF(g_LaunchBootstrapPids); ++i)
+    {
+        LONG observedPid = InterlockedCompareExchange(&g_LaunchBootstrapPids[i], 0, 0);
+
+        if ((UINT32)observedPid != AttachedPid)
+        {
+            continue;
+        }
+
+        /* During pending-launch bootstrap, kernel code can temporarily run attached to the
+         * new process while still executing on the creator's thread. Those syscalls are not
+         * target-owned user activity and should stay out of the target's NT API stream. */
+        if (ThreadOwnerPid == 0 || ThreadOwnerPid != AttachedPid)
+        {
+            return TRUE;
+        }
+
+        BLACKBIRDProcessMonitorClearLaunchBootstrapPid(AttachedPid);
+        return FALSE;
     }
 
     return FALSE;

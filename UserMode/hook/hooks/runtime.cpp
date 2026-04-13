@@ -949,17 +949,15 @@ DWORD WINAPI BkRuntimeThreadProc(LPVOID)
 
     ipcReady = InitializeIpcWithRetry();
 
-    // Install hooks before notifying the controller so the ready mask that we
-    // send reflects the hooks that are actually in place.  Sending the notify
-    // first (the old order) meant the mask always contained only IPC_CONNECTED
-    // because g_NtInitialized / g_WinsockInitialized / g_KiInitialized were
-    // still false, leaving the controller's HookReadyMask permanently incomplete.
-    (void)EnsureHookControllersReady();
-
+    // Signal controller launch-gating as soon as IPC is alive. The controller's
+    // launch wait only requires IPC_CONNECTED, so this is the only readiness
+    // notification the controller needs before it can continue launch/attach.
     if (ipcReady)
     {
         (void)NotifyHookReadyWithRetry();
     }
+
+    (void)EnsureHookControllersReady();
 
     for (;;)
     {

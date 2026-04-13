@@ -91,6 +91,7 @@ typedef struct _BLACKBIRD_CONTROLLER_CLIENT
     DWORD ProcessId;
     DWORD SessionId;
     DWORD Role;
+    BOOL ControlAuthenticated;
     DWORD SlotIndex;
     CRITICAL_SECTION Lock;
     DWORD SubscriptionCount;

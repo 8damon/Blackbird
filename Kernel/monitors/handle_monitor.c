@@ -3,6 +3,7 @@
 #include <intrin.h>
 #include <ntstrsafe.h>
 #include "..\core\control.h"
+#include "..\core\tempus_debug.h"
 #include "..\core\protection_utils.h"
 #include "..\core\pool_compat.h"
 #include "..\core\unicode_utils.h"
@@ -2123,6 +2124,7 @@ Exit:
 static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID RegistrationContext,
                                                              _Inout_ POB_PRE_OPERATION_INFORMATION OperationInformation)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemHandleMonitor);
     ACCESS_MASK desiredAccess;
     ACCESS_MASK originalDesiredAccess;
     ACCESS_MASK sanitizedAccess;
@@ -2154,11 +2156,13 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
 
     if (InterlockedCompareExchange(&g_HandleMonitorStopping, 0, 0) != 0)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
 
     if (OperationInformation == NULL || OperationInformation->KernelHandle)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
 
@@ -2173,6 +2177,7 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
     }
     else
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
 
@@ -2203,6 +2208,7 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
     }
     else
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
 
@@ -2232,10 +2238,12 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
 
     if (!hasVmWriteOrFull && !hasThreadContextAccess)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
     if (!BLACKBIRDControlHasClientsFast())
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
 
@@ -2248,6 +2256,7 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
 
     if (!BLACKBIRDControlHasPidInterest(callerPid32, secondaryPid32, streamMask))
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
 
@@ -2287,6 +2296,7 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
             DPFLTR_WARNING_LEVEL,
             "BLACKBIRD[DBG]: dropping handle preop caller=%p target=%p access=0x%08X (work slot unavailable).\n",
             callerPid, targetPid, originalDesiredAccess);
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
 
@@ -2302,6 +2312,7 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
         }
         BLACKBIRD_DBG_PRINT(DPFLTR_ERROR_LEVEL, "BLACKBIRD[DBG]: ExAllocatePool2 failed for handle work item.\n");
         BLACKBIRDHandleReleaseWorkSlot();
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
 
@@ -2373,6 +2384,7 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
                         "BLACKBIRD[DBG]: queued handle work caller=%p target=%p access=0x%08X frames=%lu.\n", callerPid,
                         targetPid, desiredAccess, copyCount);
 
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
     return OB_PREOP_SUCCESS;
 }
 

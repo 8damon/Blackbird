@@ -367,11 +367,11 @@ BOOL BLACKBIRDSCStartBlackbirdEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL En
     return TRUE;
 }
 
-BOOL SwkStartDetectionEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL EnableThreatIntelProvider,
-                                 _In_ SwkDetectionCallback Callback, _In_opt_ PVOID CallbackContext,
-                                 _Outptr_ BLACKBIRDSC_ETW_SESSION **Session, _Out_opt_ BOOL *ThreatIntelEnabled)
+BOOL BLACKBIRDSCStartDetectionEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL EnableThreatIntelProvider,
+                                         _In_ BLACKBIRDSC_DETECTION_CALLBACK Callback, _In_opt_ PVOID CallbackContext,
+                                         _Outptr_ BLACKBIRDSC_ETW_SESSION **Session, _Out_opt_ BOOL *ThreatIntelEnabled)
 {
-    BLACKBIRDSC_STG_DETECTION_BRIDGE *bridge;
+    BLACKBIRDSC_DETECTION_BRIDGE *bridge;
     BLACKBIRDSC_ETW_SESSION_INTERNAL *internal;
     DWORD err;
 
@@ -390,7 +390,7 @@ BOOL SwkStartDetectionEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL EnableThre
         return FALSE;
     }
 
-    bridge = (BLACKBIRDSC_STG_DETECTION_BRIDGE *)calloc(1, sizeof(*bridge));
+    bridge = (BLACKBIRDSC_DETECTION_BRIDGE *)calloc(1, sizeof(*bridge));
     if (bridge == NULL)
     {
         SetLastError(ERROR_OUTOFMEMORY);
@@ -401,8 +401,7 @@ BOOL SwkStartDetectionEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL EnableThre
     bridge->CallbackContext = CallbackContext;
 
     if (!BLACKBIRDSCStartBlackbirdEtwSession(SessionName, EnableThreatIntelProvider,
-                                             BLACKBIRDSCStgDetectionBridgeCallback, bridge, Session,
-                                             ThreatIntelEnabled))
+                                             BLACKBIRDSCDetectionBridgeCallback, bridge, Session, ThreatIntelEnabled))
     {
         err = GetLastError();
         free(bridge);

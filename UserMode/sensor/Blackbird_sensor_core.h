@@ -41,7 +41,7 @@ extern "C"
 
     typedef struct _BLACKBIRDSC_ETW_SESSION BLACKBIRDSC_ETW_SESSION;
 
-    typedef struct _StgDetectionEvent
+    typedef struct _BLACKBIRDSC_DETECTION_EVENT
     {
         WCHAR DetectionName[128];
         WCHAR Reason[512];
@@ -54,9 +54,10 @@ extern "C"
         ULONG EtwProcessId;
         ULONG EtwThreadId;
         ULONGLONG TimestampQpc;
-    } SwkDetectionEvent, *PStgDetectionEvent;
+    } BLACKBIRDSC_DETECTION_EVENT, *PBLACKBIRDSC_DETECTION_EVENT;
 
-    typedef VOID(WINAPI *SwkDetectionCallback)(_In_ const SwkDetectionEvent *Event, _In_opt_ PVOID Context);
+    typedef VOID(WINAPI *BLACKBIRDSC_DETECTION_CALLBACK)(_In_ const BLACKBIRDSC_DETECTION_EVENT *Event,
+                                                         _In_opt_ PVOID Context);
 
     typedef enum _BLACKBIRDSC_PROTOCOL_MODE
     {
@@ -78,7 +79,6 @@ extern "C"
     BLACKBIRDSC_API BOOL BLACKBIRDSCHasSharedChannel(_In_ HANDLE Device, _Out_opt_ BOOL *HasIoctlChannel,
                                                      _Out_opt_ BOOL *HasEtwChannel);
     BLACKBIRDSC_API DWORD BLACKBIRDSCGetLastSharedRingError(VOID);
-    BLACKBIRDSC_API DWORD BLACKBIRDSCGetBrokerThreatIntelEnableError(VOID);
     BLACKBIRDSC_API DWORD BLACKBIRDSCGetLastThreatIntelEnableError(VOID);
     BLACKBIRDSC_API BOOL BLACKBIRDSCSubscribe(_In_ HANDLE Device, _In_ DWORD ProcessId, _In_ DWORD StreamMask);
     BLACKBIRDSC_API BOOL BLACKBIRDSCUnsubscribe(_In_ HANDLE Device, _In_ DWORD ProcessId);
@@ -92,8 +92,6 @@ extern "C"
                                                  _Out_opt_ DWORD *BytesReturned, _In_ DWORD TimeoutMs);
     BLACKBIRDSC_API BOOL BLACKBIRDSCGetStats(_In_ HANDLE Device, _Out_ BLACKBIRD_STATS_RESPONSE *Stats,
                                              _Out_opt_ DWORD *BytesReturned);
-    BLACKBIRDSC_API BOOL BLACKBIRDSCGetHealth(_In_ HANDLE Device, _Out_ BLACKBIRD_HEALTH_RESPONSE *Health,
-                                              _Out_opt_ DWORD *BytesReturned);
     BLACKBIRDSC_API BOOL BLACKBIRDSCQueryProcessImagePath(_In_ HANDLE Device, _In_ DWORD ProcessId,
                                                           _Out_writes_z_(OutputChars) PWSTR Output,
                                                           _In_ DWORD OutputChars);
@@ -122,10 +120,10 @@ extern "C"
     BLACKBIRDSC_API BOOL BLACKBIRDSCStartBlackbirdEtwSession(
         _In_z_ PCWSTR SessionName, _In_ BOOL EnableThreatIntelProvider, _In_ BLACKBIRDSC_ETW_EVENT_CALLBACK Callback,
         _In_opt_ PVOID CallbackContext, _Outptr_ BLACKBIRDSC_ETW_SESSION **Session, _Out_opt_ BOOL *ThreatIntelEnabled);
-    BLACKBIRDSC_API BOOL SwkStartDetectionEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL EnableThreatIntelProvider,
-                                                     _In_ SwkDetectionCallback Callback, _In_opt_ PVOID CallbackContext,
-                                                     _Outptr_ BLACKBIRDSC_ETW_SESSION **Session,
-                                                     _Out_opt_ BOOL *ThreatIntelEnabled);
+    BLACKBIRDSC_API BOOL BLACKBIRDSCStartDetectionEtwSession(
+        _In_z_ PCWSTR SessionName, _In_ BOOL EnableThreatIntelProvider, _In_ BLACKBIRDSC_DETECTION_CALLBACK Callback,
+        _In_opt_ PVOID CallbackContext, _Outptr_ BLACKBIRDSC_ETW_SESSION **Session,
+        _Out_opt_ BOOL *ThreatIntelEnabled);
     BLACKBIRDSC_API ULONG BLACKBIRDSCRunEtwSession(_In_ BLACKBIRDSC_ETW_SESSION *Session);
     BLACKBIRDSC_API VOID BLACKBIRDSCStopEtwSession(_In_opt_ BLACKBIRDSC_ETW_SESSION *Session);
 

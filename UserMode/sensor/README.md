@@ -29,18 +29,18 @@ Exports:
 - `BLACKBIRDSCQueryProcessImagePath`
 - `BLACKBIRDSCSetShutdownMode`
 - `BLACKBIRDSCParseStreamMaskA`
-- `BLACKBIRDSCGetBrokerThreatIntelEnableError`
+- `BLACKBIRDSCGetLastThreatIntelEnableError`
 - `BLACKBIRDSCStopSessionByName`
 - `BLACKBIRDSCStartEtwSession`
 - `BLACKBIRDSCStartBlackbirdEtwSession`
-- `SwkStartDetectionEtwSession`
+- `BLACKBIRDSCStartDetectionEtwSession`
 - `BLACKBIRDSCRunEtwSession`
 - `BLACKBIRDSCStopEtwSession`
 
 Typed detection callback surface:
 
-- `SwkDetectionEvent`
-- `SwkDetectionCallback`
+- `BLACKBIRDSC_DETECTION_EVENT`
+- `BLACKBIRDSC_DETECTION_CALLBACK`
 
 Build project `vcxproj/BlackbirdSensorCore.vcxproj`.
 

@@ -38,9 +38,9 @@ This document describes the current Blackbird control-plane and telemetry contra
   - thread
   - filesystem
 - Shared user-mode SDK:
-  - `J58.dll` / `user/sensor/blackbird_sensor_core.h`
+  - `J58.dll` / `UserMode/sensor/Blackbird_sensor_core.h`
   - exported `BLACKBIRDSC*` APIs for IOCTL and ETW session management
-  - typed `Swk*` detection callback surface for ETW detection events
+  - typed `BLACKBIRDSC_DETECTION_*` surface for ETW detection events
 - ETW provider:
   - name: `Blackbird.Kernel`
   - GUID: `{D6C73F8A-6AD8-4F4B-A363-3D2FA31CD0E2}`
@@ -58,7 +58,7 @@ Current exports:
   - `BLACKBIRDSCUseServiceProtocol`
   - `BLACKBIRDSCUseClientProtocol`
   - `BLACKBIRDSCGetProtocolMode`
-  - `BLACKBIRDSCGetBrokerThreatIntelEnableError`
+  - `BLACKBIRDSCGetLastThreatIntelEnableError`
 - IOCTL control-plane wrappers:
   - `BLACKBIRDSCOpenControlDevice`
   - `BLACKBIRDSCSubscribe`
@@ -73,12 +73,12 @@ Current exports:
   - `BLACKBIRDSCStopSessionByName`
   - `BLACKBIRDSCStartEtwSession`
   - `BLACKBIRDSCStartBlackbirdEtwSession`
-  - `SwkStartDetectionEtwSession`
+  - `BLACKBIRDSCStartDetectionEtwSession`
   - `BLACKBIRDSCRunEtwSession`
   - `BLACKBIRDSCStopEtwSession`
 - Typed detection callback types:
-  - `SwkDetectionEvent`
-  - `SwkDetectionCallback`
+  - `BLACKBIRDSC_DETECTION_EVENT`
+  - `BLACKBIRDSC_DETECTION_CALLBACK`
 
 Consumers currently using these exports:
 

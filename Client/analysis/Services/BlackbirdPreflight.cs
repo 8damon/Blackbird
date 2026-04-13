@@ -105,7 +105,7 @@ namespace BlackbirdInterface
                     report.EtwUplinkCapable = (caps & BlackbirdNative.IpcCapEtwTiUplink) != 0;
                 }
 
-                report.ThreatIntelEnableError = BlackbirdNative.GetBrokerThreatIntelEnableError();
+                report.ThreatIntelEnableError = BlackbirdNative.GetLastThreatIntelEnableError();
 
                 if (targetPid > 0)
                 {

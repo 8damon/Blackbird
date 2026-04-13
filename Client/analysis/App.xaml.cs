@@ -436,15 +436,6 @@ namespace BlackbirdInterface
                     flags |= BlackbirdNative.RuntimeFlagControllerProtectedAccess;
                 }
 
-                object? protectedAccessValue = key.GetValue("EnableProtectedAccess");
-                if (protectedAccessValue is int protectedAccessInt && protectedAccessInt != 0)
-                {
-                    flags |= BlackbirdNative.RuntimeFlagProtectedAccess;
-                }
-                else if (protectedAccessValue is long protectedAccessLong && protectedAccessLong != 0)
-                {
-                    flags |= BlackbirdNative.RuntimeFlagProtectedAccess;
-                }
             }
             catch
             {

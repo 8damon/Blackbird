@@ -16,9 +16,14 @@ BOOLEAN BLACKBIRDProcessMonitorIsInterfacePid(_In_ UINT32 ProcessId);
 
 BOOLEAN BLACKBIRDProcessMonitorIsControllerPid(_In_ UINT32 ProcessId);
 
-BOOLEAN BLACKBIRDProcessMonitorMarkInterfaceReady(_In_ UINT32 ProcessId);
+BOOLEAN BLACKBIRDProcessMonitorRegisterInterfacePid(_In_ UINT32 ProcessId);
+BOOLEAN BLACKBIRDProcessMonitorRegisterControllerPid(_In_ UINT32 ProcessId);
+
 BOOLEAN BLACKBIRDProcessMonitorMarkControllerReady(_In_ UINT32 ProcessId);
 
 BOOLEAN BLACKBIRDProcessMonitorIsTrustedProtectedCaller(_In_ UINT32 CallerPid, _In_ UINT32 TargetPid);
+
+BOOLEAN BLACKBIRDProcessMonitorShouldSuppressLaunchBootstrapNtApi(_In_ UINT32 AttachedPid,
+                                                                  _In_ UINT32 ThreadOwnerPid);
 
 #endif

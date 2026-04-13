@@ -386,10 +386,6 @@ namespace BlackbirdInterface
         {
             if (!_apiGraphSnapshotDirty)
             {
-                if (_apiGraphSnapshotRows.Count > 0)
-                {
-                    PublishApiGraphSnapshot();
-                }
                 return;
             }
 
@@ -3040,31 +3036,44 @@ namespace BlackbirdInterface
 
         private static List<string> BuildHookFrameList(BrokerEtwEventView view, IReadOnlyDictionary<string, string> fields)
         {
-            var frames = new List<string>(6);
+            ulong[] stack = view.Stack ?? Array.Empty<ulong>();
+            var frames = new List<string>(BlackbirdNative.MaxIpcStackFrames);
 
-            void AddFrame(string key)
+            void AddFrameText(string frame)
             {
-                if (!fields.TryGetValue(key, out string? value) || string.IsNullOrWhiteSpace(value))
+                if (string.IsNullOrWhiteSpace(frame))
                 {
                     return;
                 }
 
-                string frame = value.Trim();
+                frame = frame.Trim();
                 if (frames.Count == 0 || !string.Equals(frames[^1], frame, StringComparison.OrdinalIgnoreCase))
                 {
                     frames.Add(frame);
                 }
             }
 
-            AddFrame("stack0Symbol");
-            AddFrame("stack1Symbol");
-            AddFrame("stack2Symbol");
+            for (int i = 0; i < Math.Min((int)view.StackCount, BlackbirdNative.MaxIpcStackFrames); i += 1)
+            {
+                string symbolKey = $"stack{i}Symbol";
+                if (fields.TryGetValue(symbolKey, out string? symbolValue) && !string.IsNullOrWhiteSpace(symbolValue))
+                {
+                    AddFrameText(symbolValue);
+                    continue;
+                }
+
+                ulong rawIp = i < stack.Length ? stack[i] : 0;
+                if (rawIp != 0)
+                {
+                    AddFrameText($"0x{rawIp:X}");
+                }
+            }
 
             if (frames.Count == 0 &&
                 fields.TryGetValue("originSymbol", out string? originSymbol) &&
                 !string.IsNullOrWhiteSpace(originSymbol))
             {
-                frames.Add(originSymbol.Trim());
+                AddFrameText(originSymbol);
             }
 
             return frames;
@@ -3080,12 +3089,26 @@ namespace BlackbirdInterface
 
         private static string BuildHookFrameSummary(BrokerEtwEventView view, IReadOnlyDictionary<string, string> fields)
         {
-            var sb = new StringBuilder(256);
+            var sb = new StringBuilder(512);
             string sensor = EventDetailFormatting.ClassifyHookSensorOrigin(view);
             string origin = GetApiCallerOriginDisplayLabel(NormalizeApiCallerOrigin(view.CallerOriginLabel), sensor);
             string immediate = EventDetailFormatting.HookImmediateCallerLabel(view.Flags);
             string deepOrigin = EventDetailFormatting.HookDeepOriginLabel(view.Flags);
-            string originModule = EventDetailFormatting.ModuleNameFromPath(view.OriginPath);
+            string originModule = ResolveHookOriginModule(view, fields);
+            bool returnAddressResolved =
+                !string.IsNullOrWhiteSpace(view.OriginPath) ||
+                (fields.TryGetValue("originSymbol", out string? originSymbol) && !string.IsNullOrWhiteSpace(originSymbol));
+            bool returnAddressPresentInStack = false;
+            ulong[] stack = view.Stack ?? Array.Empty<ulong>();
+            int compareFrames = Math.Min((int)view.StackCount, stack.Length);
+            for (int i = 0; i < compareFrames; i += 1)
+            {
+                if (stack[i] == view.OriginAddress && view.OriginAddress != 0)
+                {
+                    returnAddressPresentInStack = true;
+                    break;
+                }
+            }
 
             sb.Append("Origin: ").AppendLine(origin);
             if (!string.IsNullOrWhiteSpace(immediate) && !immediate.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
@@ -3100,6 +3123,13 @@ namespace BlackbirdInterface
             {
                 sb.Append("Origin Module: ").AppendLine(originModule);
             }
+            if (view.OriginAddress != 0)
+            {
+                sb.Append("Return Address: 0x").Append(view.OriginAddress.ToString("X", CultureInfo.InvariantCulture)).AppendLine();
+                sb.Append("Return Address Resolved: ").AppendLine(returnAddressResolved ? "yes" : "no");
+                sb.Append("Return Address In Stack: ").AppendLine(returnAddressPresentInStack ? "yes" : "no");
+            }
+            sb.Append("Stack Frames Captured: ").Append(view.StackCount.ToString(CultureInfo.InvariantCulture)).AppendLine();
             if (fields.TryGetValue("startSymbol", out string? startSymbol) && !string.IsNullOrWhiteSpace(startSymbol))
             {
                 sb.Append("Start Routine: ").AppendLine(startSymbol);
@@ -3121,6 +3151,29 @@ namespace BlackbirdInterface
             }
 
             return sb.ToString().TrimEnd();
+        }
+
+        private static string ResolveHookOriginModule(BrokerEtwEventView view, IReadOnlyDictionary<string, string> fields)
+        {
+            string originModule = EventDetailFormatting.ModuleNameFromPath(view.OriginPath);
+            if (!string.Equals(originModule, "unknown", StringComparison.OrdinalIgnoreCase))
+            {
+                return originModule;
+            }
+
+            if (fields.TryGetValue("originSymbol", out string? originSymbol) && !string.IsNullOrWhiteSpace(originSymbol))
+            {
+                string trimmed = originSymbol.Trim();
+                int plus = trimmed.IndexOf('+');
+                if (plus > 0)
+                {
+                    trimmed = trimmed[..plus].Trim();
+                }
+
+                return trimmed;
+            }
+
+            return originModule;
         }
 
         private static string BuildHookFrameSummary(IReadOnlyDictionary<string, string> fields)
@@ -3192,9 +3245,17 @@ namespace BlackbirdInterface
             if (TryBuildMemoryAction(apiName, view, fields, out string memoryAction, out string memoryDetail))
             {
                 action = memoryAction;
-                detail = string.IsNullOrWhiteSpace(argumentText)
-                    ? memoryDetail
-                    : memoryDetail + Environment.NewLine + argumentText;
+                string frameSummary = BuildHookFrameSummary(view, fields);
+                var detailBuilder = new StringBuilder(memoryDetail.TrimEnd());
+                if (!string.IsNullOrWhiteSpace(frameSummary))
+                {
+                    detailBuilder.AppendLine().AppendLine().Append(frameSummary);
+                }
+                if (!string.IsNullOrWhiteSpace(argumentText))
+                {
+                    detailBuilder.AppendLine().AppendLine().Append(argumentText);
+                }
+                detail = detailBuilder.ToString();
                 if (hasStartupContext)
                 {
                     action += " [startup]";

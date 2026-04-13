@@ -80,7 +80,7 @@ namespace BlackbirdInterface
         private const int MaxIpcCommandLineChars = 512;
         private const int MaxIpcKeyPathChars = 512;
         private const int MaxIpcValueNameChars = 256;
-        private const int MaxIpcStackFrames = 8;
+        internal const int MaxIpcStackFrames = 8;
         private const int MaxIpcDeepSampleBytes = 64;
         private const int MaxIpcHookArgs = 8;
 

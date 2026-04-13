@@ -103,6 +103,24 @@ cd /d "<REPO_ROOT>"
 
 Use the analyst interface inspectors or a custom consumer via `BlackbirdSensorCore` (`BLACKBIRDSCStartBlackbirdEtwSession` / `BLACKBIRDSCStartDetectionEtwSession`).
 
+## 9) Run Local CI Surface
+
+Use `Scripts\ci-surface.ps1` for the driverless wellness pass that mirrors remote CI:
+
+```powershell
+.\Scripts\ci-surface.ps1 -Configuration Debug -Platform x64
+```
+
+What it covers:
+- builds `BlackbirdSensorCore`, `BlackbirdController`, `BlackbirdHook`, `DetectionExamples`, `BlackbirdTestSuite`, `BlackbirdInterface`, and `BlackbirdOperator`
+- builds/packages the driver with `SignMode=None` so no local signing certificate is required
+- runs `DetectionExamples.exe --list` as an offline smoke test
+
+What it does not cover:
+- it does not load the driver
+- it does not run `BlackbirdTestSuite.exe` end-to-end unless you explicitly pass `-RunDriverDependentTests` with the controller and driver already available
+- it is Windows-only; Docker is not a practical substitute for the KMDF/WDK build path
+
 ## Notes
 
 - Control plane endpoint: `\\.\BlackbirdCtl`

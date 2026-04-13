@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: true
+  NUGET_XMLDOC_MODE: skip
+
+jobs:
+  build-and-smoke:
+    runs-on: windows-2022
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Install Windows SDK 10.0.26100
+        shell: pwsh
+        run: >
+          winget install
+          --id Microsoft.WindowsSDK.10.0.26100
+          --exact
+          --scope machine
+          --silent
+          --accept-package-agreements
+          --accept-source-agreements
+          --disable-interactivity
+
+      - name: Install Windows WDK 10.0.26100
+        shell: pwsh
+        run: >
+          winget install
+          --id Microsoft.WindowsWDK.10.0.26100
+          --exact
+          --scope machine
+          --silent
+          --accept-package-agreements
+          --accept-source-agreements
+          --disable-interactivity
+
+      - name: Run CI surface
+        shell: pwsh
+        run: .\Scripts\ci-surface.ps1 -Configuration Debug -Platform x64

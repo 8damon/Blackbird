@@ -904,28 +904,45 @@ static BOOL ControllerClientIsPrivileged(_In_ const BLACKBIRD_CONTROLLER_CLIENT 
     return TRUE;
 }
 
-static PCWSTR ControllerBaseNameFromPath(_In_opt_z_ PCWSTR Path)
+static BOOL ControllerBuildExpectedInterfacePath(_Out_writes_z_(PathChars) PWSTR Path, _In_ DWORD PathChars)
 {
-    PCWSTR cursor;
+    WCHAR modulePath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+    PWSTR lastSlash;
 
-    if (Path == NULL)
+    if (Path == NULL || PathChars == 0)
     {
-        return L"";
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
     }
 
-    cursor = wcsrchr(Path, L'\\');
-    if (cursor != NULL && cursor[1] != L'\0')
+    Path[0] = L'\0';
+    modulePath[0] = L'\0';
+
+    if (GetModuleFileNameW(NULL, modulePath, RTL_NUMBER_OF(modulePath)) == 0)
     {
-        return cursor + 1;
+        return FALSE;
     }
 
-    cursor = wcsrchr(Path, L'/');
-    if (cursor != NULL && cursor[1] != L'\0')
+    lastSlash = wcsrchr(modulePath, L'\\');
+    if (lastSlash == NULL)
     {
-        return cursor + 1;
+        lastSlash = wcsrchr(modulePath, L'/');
+    }
+    if (lastSlash == NULL)
+    {
+        SetLastError(ERROR_PATH_NOT_FOUND);
+        return FALSE;
     }
 
-    return Path;
+    *(lastSlash + 1) = L'\0';
+    if (FAILED(StringCchCopyW(Path, PathChars, modulePath)) ||
+        FAILED(StringCchCatW(Path, PathChars, L"BlackbirdInterface.exe")))
+    {
+        Path[0] = L'\0';
+        return FALSE;
+    }
+
+    return TRUE;
 }
 
 _Success_(return)
@@ -961,11 +978,11 @@ static BOOL ControllerClientQueryImagePath(_In_ const BLACKBIRD_CONTROLLER_CLIEN
     return TRUE;
 }
 
-static BOOL ControllerClientIsTrustedControlClient(_In_ const BLACKBIRD_CONTROLLER_CLIENT *Client,
-                                                   _Out_ BOOL *IsTrusted)
+static BOOL ControllerClientCanBootstrapControlClient(_In_ const BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                     _Out_ BOOL *IsTrusted)
 {
     WCHAR imagePath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
-    PCWSTR baseName;
+    WCHAR expectedPath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
 
     if (Client == NULL || IsTrusted == NULL)
     {
@@ -984,8 +1001,16 @@ static BOOL ControllerClientIsTrustedControlClient(_In_ const BLACKBIRD_CONTROLL
         return FALSE;
     }
 
-    baseName = ControllerBaseNameFromPath(imagePath);
-    *IsTrusted = (_wcsicmp(baseName, L"BlackbirdInterface.exe") == 0);
+    if (!ControllerBuildExpectedInterfacePath(expectedPath, RTL_NUMBER_OF(expectedPath)))
+    {
+        return FALSE;
+    }
+
+    ControllerStripPathPrefixes(imagePath, RTL_NUMBER_OF(imagePath));
+    ControllerStripPathPrefixes(expectedPath, RTL_NUMBER_OF(expectedPath));
+    ControllerNormalizePathForCompare(imagePath, imagePath, RTL_NUMBER_OF(imagePath));
+    ControllerNormalizePathForCompare(expectedPath, expectedPath, RTL_NUMBER_OF(expectedPath));
+    *IsTrusted = (_wcsicmp(imagePath, expectedPath) == 0);
     return TRUE;
 }
 
@@ -2703,15 +2728,6 @@ static DWORD ControllerClientSetUserHookTarget(_Inout_ BLACKBIRD_CONTROLLER_CLIE
         ControllerClientPrimePendingLaunchPidLocked(Client, targetPid);
         LeaveCriticalSection(&Client->Lock);
         (void)ControllerApplyDriverSubscriptionsIfDirty();
-
-        err = ControllerWaitForHookReady(targetPid);
-        if (err != ERROR_SUCCESS)
-        {
-            EnterCriticalSection(&Client->Lock);
-            ControllerClientClearPendingLaunchLocked(Client);
-            LeaveCriticalSection(&Client->Lock);
-            return err;
-        }
         break;
 
     default:
@@ -2841,16 +2857,24 @@ static DWORD ControllerHandleClientCommand(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *
 
     if (Client->Role == BlackbirdControllerClientRoleControl && Request->Command != BlackbirdIpcCommandHandshake)
     {
-        if (!ControllerClientIsTrustedControlClient(Client, &trustedControlClient))
+        if (Request->Command == BlackbirdIpcCommandMarkInterfaceReady)
         {
-            err = GetLastError();
-            if (err == ERROR_SUCCESS)
+            if (!ControllerClientCanBootstrapControlClient(Client, &trustedControlClient))
+            {
+                err = GetLastError();
+                if (err == ERROR_SUCCESS)
+                {
+                    err = ERROR_ACCESS_DENIED;
+                }
+                goto Complete;
+            }
+            if (!trustedControlClient)
             {
                 err = ERROR_ACCESS_DENIED;
+                goto Complete;
             }
-            goto Complete;
         }
-        if (!trustedControlClient)
+        else if (!Client->ControlAuthenticated)
         {
             err = ERROR_ACCESS_DENIED;
             goto Complete;
@@ -2957,7 +2981,9 @@ static DWORD ControllerHandleClientCommand(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *
             {
                 err = ERROR_GEN_FAILURE;
             }
+            break;
         }
+        Client->ControlAuthenticated = TRUE;
         break;
     case BlackbirdIpcCommandGetEtwEvent:
         err = ControllerClientGetEtwEvent(Client, Request->Payload.GetEventRequest.TimeoutMs,
@@ -3148,7 +3174,7 @@ BOOL ControllerCreatePipeSecurity(_In_ DWORD ClientRole, _Out_ PSECURITY_ATTRIBU
                                   _Outptr_ PSECURITY_DESCRIPTOR *SecurityDescriptor)
 {
     BOOL ok;
-    PCWSTR sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)";
+    PCWSTR sddl = NULL;
 
     if (SecurityAttributes == NULL || SecurityDescriptor == NULL)
     {
@@ -3158,7 +3184,18 @@ BOOL ControllerCreatePipeSecurity(_In_ DWORD ClientRole, _Out_ PSECURITY_ATTRIBU
     *SecurityDescriptor = NULL;
     ZeroMemory(SecurityAttributes, sizeof(*SecurityAttributes));
 
-    UNREFERENCED_PARAMETER(ClientRole);
+    switch (ClientRole)
+    {
+    case BlackbirdControllerClientRoleHook:
+        sddl = L"D:P(A;;GA;;;SY)(A;;GRGW;;;IU)";
+        break;
+    case BlackbirdControllerClientRoleControl:
+        sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)";
+        break;
+    default:
+        sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)";
+        break;
+    }
 
     ok = ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, SDDL_REVISION_1, SecurityDescriptor, NULL);
     if (!ok || *SecurityDescriptor == NULL)

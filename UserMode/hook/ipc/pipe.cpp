@@ -1,5 +1,4 @@
 #include "pipe.h"
-#include <strsafe.h>
 
 namespace BKIPC
 {
@@ -400,32 +399,5 @@ namespace BKIPC
             *observedMaskOut = response.Payload.NotifyHookReadyResponse.ObservedMask;
         }
         return true;
-    }
-
-    bool SendSwException(const BkExceptionMessage &msg)
-    {
-        BLACKBIRD_IPC_HOOK_EVENT eventRecord{};
-        eventRecord.Kind = (msg.Kind == RequestKind::BkExceptionHighPriv) ? BlackbirdIpcHookEventExceptionHighPriv
-                                                                          : BlackbirdIpcHookEventExceptionLowNoise;
-        eventRecord.ProcessId = msg.Pid;
-        eventRecord.ThreadId = msg.Tid;
-        eventRecord.Operation = msg.ExceptionCode;
-        eventRecord.Caller = msg.ExceptionAddress;
-        eventRecord.Context0 = msg.ExceptionFlags;
-        eventRecord.Context1 = msg.ExceptionInfo[0];
-        eventRecord.Context2 = msg.ExceptionInfo[1];
-        eventRecord.Context3 = msg.ExceptionInfo[2];
-        eventRecord.ArgCount = (msg.ExceptionInfoCount <= 4u) ? msg.ExceptionInfoCount : 4u;
-        for (UINT32 i = 0; i < eventRecord.ArgCount; i += 1)
-        {
-            eventRecord.Args[i] = msg.ExceptionInfo[i];
-        }
-        (void)StringCchCopyA(eventRecord.ApiName, RTL_NUMBER_OF(eventRecord.ApiName), "VectoredException");
-        if (msg.ModuleNameChars != 0)
-        {
-            (void)WideCharToMultiByte(CP_ACP, 0, msg.ModuleName, -1, eventRecord.ModuleName,
-                                      RTL_NUMBER_OF(eventRecord.ModuleName), nullptr, nullptr);
-        }
-        return PublishHookEvent(eventRecord);
     }
 } // namespace BKIPC

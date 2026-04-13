@@ -1,6 +1,8 @@
 #include <ntddk.h>
 #include "..\..\core\control.h"
+#include "..\..\core\tempus_debug.h"
 #include "..\..\core\runtime_config.h"
+#include "..\..\monitors\process_monitor.h"
 #include "..\..\telemetry\etw.h"
 #include "..\hook\ntapi_hook.h"
 #include "ntapi_monitor.h"
@@ -78,6 +80,7 @@ static volatile LONG g_NtApiSkipInitBudget = 8;
 static volatile LONG g_NtApiSkipIrqlBudget = 8;
 static volatile LONG g_NtApiSkipArmedBudget = 8;
 static volatile LONG g_NtApiSkipPidBudget = 8;
+static volatile LONG g_NtApiSkipLaunchBootstrapBudget = 8;
 static volatile LONG g_NtApiSkipRundownBudget = 8;
 static volatile LONG g_NtApiHookInFlight = 0;
 static volatile LONG g_NtApiUninitWaitBudget = 16;
@@ -88,6 +91,8 @@ static UCHAR g_NtApiSharedKdOriginalValue = 0;
 static BOOLEAN g_NtApiSharedKdSpoofActive = FALSE;
 volatile LONG g_NtApiSmbiosSanitizeBudget = 16;
 volatile LONG g_NtApiSmbiosSanitizeApplyBudget = 16;
+
+NTKERNELAPI HANDLE PsGetThreadProcessId(_In_ PETHREAD Thread);
 
 PBLACKBIRD_NT_QUERY_SYSTEM_INFORMATION g_OriginalNtQuerySystemInformation = NULL;
 PBLACKBIRD_NT_QUERY_INFORMATION_PROCESS g_OriginalNtQueryInformationProcess = NULL;
@@ -487,12 +492,15 @@ VOID BLACKBIRDNtApiSanitizeProcessInformation(_In_ ULONG SystemInformationClass,
     PUCHAR base;
     PBLACKBIRD_SYSTEM_PROCESS_INFORMATION previous;
     PBLACKBIRD_SYSTEM_PROCESS_INFORMATION current;
+    BOOLEAN callerIsController;
 
     if (SystemInformationClass != BLACKBIRD_SYSTEM_INFORMATION_CLASS_PROCESS || !NT_SUCCESS(Status) ||
         SystemInformation == NULL || SystemInformationLength < sizeof(BLACKBIRD_SYSTEM_PROCESS_INFORMATION))
     {
         return;
     }
+
+    callerIsController = BLACKBIRDProcessMonitorIsControllerPid((UINT32)(ULONG_PTR)PsGetCurrentProcessId());
 
     __try
     {
@@ -511,7 +519,7 @@ VOID BLACKBIRDNtApiSanitizeProcessInformation(_In_ ULONG SystemInformationClass,
                 break;
             }
 
-            if (BLACKBIRDRuntimeConfigIsSelfHideEnabled())
+            if (BLACKBIRDRuntimeConfigIsSelfHideEnabled() && !callerIsController)
             {
                 for (nameIndex = 0; nameIndex < RTL_NUMBER_OF(selfHiddenNames); ++nameIndex)
                 {
@@ -747,6 +755,7 @@ ULONGLONG BLACKBIRDNtApiReadLargeIntegerSafe(_In_opt_ PLARGE_INTEGER Value)
 BOOLEAN BLACKBIRDNtApiShouldLog(_Out_ HANDLE *CallerPid)
 {
     HANDLE pid;
+    HANDLE threadOwnerPid;
     KIRQL irql;
 
     if (InterlockedCompareExchange(&g_NtApiMonitorInitialized, 0, 0) == 0 ||
@@ -778,6 +787,10 @@ BOOLEAN BLACKBIRDNtApiShouldLog(_Out_ HANDLE *CallerPid)
         }
         return FALSE;
     }
+    if (BLACKBIRDRuntimeConfigIsNtApiHooksDisarmed())
+    {
+        return FALSE;
+    }
 
     pid = PsGetCurrentProcessId();
     if (!BLACKBIRDControlHasPidInterest((UINT32)(ULONG_PTR)pid, 0, BLACKBIRD_STREAM_MEMORY))
@@ -787,6 +800,19 @@ BOOLEAN BLACKBIRDNtApiShouldLog(_Out_ HANDLE *CallerPid)
             BLACKBIRD_NTAPI_LOG(DPFLTR_INFO_LEVEL,
                                 "BLACKBIRD: ntapi should-log skip reason=pid-not-monitored pid=%u.\n",
                                 (UINT32)(ULONG_PTR)pid);
+        }
+        return FALSE;
+    }
+    threadOwnerPid = PsGetThreadProcessId(PsGetCurrentThread());
+    if (BLACKBIRDProcessMonitorShouldSuppressLaunchBootstrapNtApi((UINT32)(ULONG_PTR)pid,
+                                                                  (UINT32)(ULONG_PTR)threadOwnerPid))
+    {
+        if (InterlockedDecrement(&g_NtApiSkipLaunchBootstrapBudget) >= 0)
+        {
+            BLACKBIRD_NTAPI_LOG(
+                DPFLTR_INFO_LEVEL,
+                "BLACKBIRD: ntapi should-log skip reason=launch-bootstrap-owner-mismatch pid=%u threadOwnerPid=%u tid=%u.\n",
+                (UINT32)(ULONG_PTR)pid, (UINT32)(ULONG_PTR)threadOwnerPid, (UINT32)(ULONG_PTR)PsGetCurrentThreadId());
         }
         return FALSE;
     }
@@ -808,8 +834,10 @@ VOID BLACKBIRDNtApiLog(_In_z_ PCSTR ApiName, _In_ HANDLE CallerPid, _In_ UINT64 
                        _In_ UINT64 Arg2, _In_ UINT64 Arg3, _In_ UINT64 Arg4, _In_ UINT64 Arg5, _In_ UINT64 Arg6,
                        _In_ UINT64 Arg7, _In_ NTSTATUS Status)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemNtApiMonitor);
     BLACKBIRDEtwLogNtApiEvent(ApiName, CallerPid, PsGetCurrentThreadId(), Arg0, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6,
                               Arg7, Status);
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemNtApiMonitor, tempusStartQpc);
 }
 
 NTSTATUS

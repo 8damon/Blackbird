@@ -162,7 +162,13 @@ VOID BLACKBIRDClientReference(_Inout_ PBLACKBIRD_CLIENT Client)
     (void)InterlockedIncrement(&Client->RefCount);
 }
 
-static VOID BLACKBIRDClientClearPendingLaunchLocked(_Inout_ PBLACKBIRD_CLIENT Client)
+BOOLEAN BLACKBIRDControlIsValidStreamMask(_In_ UINT32 StreamMask)
+{
+    return ((StreamMask & (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD |
+                           BLACKBIRD_STREAM_FILESYSTEM)) != 0);
+}
+
+VOID BLACKBIRDClientClearPendingLaunchLocked(_Inout_ PBLACKBIRD_CLIENT Client)
 {
     if (Client == NULL)
     {
@@ -174,6 +180,25 @@ static VOID BLACKBIRDClientClearPendingLaunchLocked(_Inout_ PBLACKBIRD_CLIENT Cl
     Client->PendingLaunchPathNormDos[0] = L'\0';
     Client->PendingLaunchPathNormNt[0] = L'\0';
     Client->PendingLaunchPathTail[0] = L'\0';
+}
+
+VOID BLACKBIRDClientConfigurePendingLaunchLocked(_Inout_ PBLACKBIRD_CLIENT Client,
+                                                 _In_opt_ const BLACKBIRD_ARM_PENDING_LAUNCH_REQUEST *Request)
+{
+    BLACKBIRDClientClearPendingLaunchLocked(Client);
+    if (Client == NULL || Request == NULL)
+    {
+        return;
+    }
+
+    Client->PendingLaunchStreamMask = Request->StreamMask;
+    Client->PendingLaunchArmed = TRUE;
+    (void)RtlStringCchCopyW(Client->PendingLaunchPathNormDos, RTL_NUMBER_OF(Client->PendingLaunchPathNormDos),
+                            Request->ImagePathNormDos);
+    (void)RtlStringCchCopyW(Client->PendingLaunchPathNormNt, RTL_NUMBER_OF(Client->PendingLaunchPathNormNt),
+                            Request->ImagePathNormNt);
+    (void)RtlStringCchCopyW(Client->PendingLaunchPathTail, RTL_NUMBER_OF(Client->PendingLaunchPathTail),
+                            Request->ImagePathTail);
 }
 
 static PCWSTR BLACKBIRDSkipKnownPathPrefixes(_In_opt_z_ PCWSTR Input)
@@ -332,8 +357,8 @@ static BOOLEAN BLACKBIRDClientPathMatchesPendingLaunchLocked(_In_ const BLACKBIR
     return FALSE;
 }
 
-static BOOLEAN BLACKBIRDClientAddOrUpdateSubscriptionLocked(_Inout_ PBLACKBIRD_CLIENT Client, _In_ UINT32 ProcessId,
-                                                            _In_ UINT32 StreamMask)
+BOOLEAN BLACKBIRDClientAddOrUpdateSubscriptionLocked(_Inout_ PBLACKBIRD_CLIENT Client, _In_ UINT32 ProcessId,
+                                                     _In_ UINT32 StreamMask)
 {
     UINT32 i;
 
@@ -360,6 +385,58 @@ static BOOLEAN BLACKBIRDClientAddOrUpdateSubscriptionLocked(_Inout_ PBLACKBIRD_C
     Client->Subscriptions[Client->SubscriptionCount].StreamMask = StreamMask;
     Client->SubscriptionCount += 1;
     return TRUE;
+}
+
+BOOLEAN BLACKBIRDClientRemoveSubscriptionLocked(_Inout_ PBLACKBIRD_CLIENT Client, _In_ UINT32 ProcessId)
+{
+    UINT32 i;
+
+    if (Client == NULL || ProcessId == 0)
+    {
+        return FALSE;
+    }
+
+    for (i = 0; i < Client->SubscriptionCount; ++i)
+    {
+        if (Client->Subscriptions[i].ProcessId == ProcessId)
+        {
+            UINT32 tail = Client->SubscriptionCount - 1;
+            if (i != tail)
+            {
+                Client->Subscriptions[i] = Client->Subscriptions[tail];
+            }
+            Client->SubscriptionCount -= 1;
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+UINT32 BLACKBIRDClientReplaceSubscriptionsLocked(_Inout_ PBLACKBIRD_CLIENT Client,
+                                                 _In_reads_(ProcessCount) const UINT32 *ProcessIds,
+                                                 _In_ UINT32 ProcessCount, _In_ UINT32 StreamMask)
+{
+    UINT32 i;
+
+    if (Client == NULL || ProcessIds == NULL || ProcessCount == 0 || StreamMask == 0)
+    {
+        return 0;
+    }
+
+    Client->SubscriptionCount = 0;
+    for (i = 0; i < ProcessCount; ++i)
+    {
+        UINT32 pid = ProcessIds[i];
+        if (pid == 0)
+        {
+            continue;
+        }
+
+        (void)BLACKBIRDClientAddOrUpdateSubscriptionLocked(Client, pid, StreamMask);
+    }
+
+    return Client->SubscriptionCount;
 }
 
 static VOID BLACKBIRDControlFlushAllClientState(VOID)

@@ -9,7 +9,6 @@ VOID BLACKBIRDRuntimeConfigUninitialize(VOID);
 
 BOOLEAN BLACKBIRDRuntimeConfigIsAntiVirtualizationEnabled(VOID);
 BOOLEAN BLACKBIRDRuntimeConfigIsSelfHideEnabled(VOID);
-BOOLEAN BLACKBIRDRuntimeConfigIsProtectedAccessEnabled(VOID);
 BOOLEAN BLACKBIRDRuntimeConfigIsInterfaceProtectedAccessEnabled(VOID);
 BOOLEAN BLACKBIRDRuntimeConfigIsControllerProtectedAccessEnabled(VOID);
 UINT32 BLACKBIRDRuntimeConfigGetPersistentFlags(VOID);

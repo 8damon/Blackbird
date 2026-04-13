@@ -120,6 +120,16 @@ VOID BLACKBIRDReleaseQueryInflightSlot(VOID);
 VOID BLACKBIRDClientFreeQueuedEvents(_Inout_ PBLACKBIRD_CLIENT Client);
 VOID BLACKBIRDClientRelease(_Inout_ PBLACKBIRD_CLIENT Client);
 VOID BLACKBIRDClientReference(_Inout_ PBLACKBIRD_CLIENT Client);
+BOOLEAN BLACKBIRDControlIsValidStreamMask(_In_ UINT32 StreamMask);
+VOID BLACKBIRDClientClearPendingLaunchLocked(_Inout_ PBLACKBIRD_CLIENT Client);
+VOID BLACKBIRDClientConfigurePendingLaunchLocked(_Inout_ PBLACKBIRD_CLIENT Client,
+                                                 _In_opt_ const BLACKBIRD_ARM_PENDING_LAUNCH_REQUEST *Request);
+BOOLEAN BLACKBIRDClientAddOrUpdateSubscriptionLocked(_Inout_ PBLACKBIRD_CLIENT Client, _In_ UINT32 ProcessId,
+                                                     _In_ UINT32 StreamMask);
+BOOLEAN BLACKBIRDClientRemoveSubscriptionLocked(_Inout_ PBLACKBIRD_CLIENT Client, _In_ UINT32 ProcessId);
+UINT32 BLACKBIRDClientReplaceSubscriptionsLocked(_Inout_ PBLACKBIRD_CLIENT Client,
+                                                 _In_reads_(ProcessCount) const UINT32 *ProcessIds,
+                                                 _In_ UINT32 ProcessCount, _In_ UINT32 StreamMask);
 VOID BLACKBIRDControlRefreshArmedState(VOID);
 BOOLEAN BLACKBIRDClientMatchSubscriptionEither(_In_ PBLACKBIRD_CLIENT Client, _In_ UINT32 PrimaryProcessId,
                                                _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask);

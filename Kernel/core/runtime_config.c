@@ -77,10 +77,6 @@ static ULONG BLACKBIRDRuntimeConfigLoadPersistentFlags(_In_ PUNICODE_STRING Regi
     {
         flags |= BLACKBIRD_RUNTIME_FLAG_CONTROLLER_PROTECTED_ACCESS;
     }
-    if (BLACKBIRDRuntimeConfigReadDwordValue(keyHandle, L"EnableProtectedAccess") != 0)
-    {
-        flags |= BLACKBIRD_RUNTIME_FLAG_PROTECTED_ACCESS;
-    }
 
     ZwClose(keyHandle);
     return flags;
@@ -127,11 +123,6 @@ BOOLEAN BLACKBIRDRuntimeConfigIsAntiVirtualizationEnabled(VOID)
 BOOLEAN BLACKBIRDRuntimeConfigIsSelfHideEnabled(VOID)
 {
     return ((BLACKBIRDRuntimeConfigGetEffectiveFlags() & BLACKBIRD_RUNTIME_FLAG_SELF_HIDE) != 0);
-}
-
-BOOLEAN BLACKBIRDRuntimeConfigIsProtectedAccessEnabled(VOID)
-{
-    return ((BLACKBIRDRuntimeConfigGetEffectiveFlags() & BLACKBIRD_RUNTIME_FLAG_PROTECTED_ACCESS) != 0);
 }
 
 BOOLEAN BLACKBIRDRuntimeConfigIsInterfaceProtectedAccessEnabled(VOID)

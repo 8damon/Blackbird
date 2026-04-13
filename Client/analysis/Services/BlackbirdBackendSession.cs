@@ -100,10 +100,14 @@ namespace BlackbirdInterface
                 }
                 else
                 {
-                    _controlHandle = BlackbirdNative.OpenControlDevice();
-                    if (_controlHandle == IntPtr.Zero || _controlHandle == new IntPtr(-1))
+                    if (!BlackbirdControlDeviceSession.TryOpen(out var control, out string error, ensureClientProtocol: false))
                     {
-                        throw BlackbirdNative.LastError("OpenControlDevice failed");
+                        throw new InvalidOperationException(error);
+                    }
+
+                    using (control)
+                    {
+                        _controlHandle = control.DetachHandle();
                     }
                 }
 

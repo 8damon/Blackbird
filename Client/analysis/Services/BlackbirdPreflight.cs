@@ -85,20 +85,16 @@ namespace BlackbirdInterface
                 Console.WriteLine($"[Preflight] Controller ensure: state={report.ControllerState} msg={controllerMsg}");
             }
 
-            IntPtr h = IntPtr.Zero;
-            try
+            if (!BlackbirdControlDeviceSession.TryOpen(out var control, out string error))
             {
-                if (!BlackbirdNative.UseClientProtocol(null, 1500))
-                {
-                    throw BlackbirdNative.LastError("UseClientProtocol failed");
-                }
+                report.Error = error;
+                DiagnosticsState.SetValue("Preflight", report.Summary);
+                Console.WriteLine($"[Preflight] Complete  {report.Summary}{(string.IsNullOrEmpty(report.Error) ? "" : $"  error={report.Error}")}");
+                return report;
+            }
 
-                h = BlackbirdNative.OpenControlDevice();
-                if (h == IntPtr.Zero || h == new IntPtr(-1))
-                {
-                    throw BlackbirdNative.LastError("OpenControlDevice failed");
-                }
-
+            using (control)
+            {
                 report.BrokerConnectOk = true;
                 DiagnosticsState.SetValue("BrokerHandle", "Open");
 
@@ -114,10 +110,10 @@ namespace BlackbirdInterface
                 if (targetPid > 0)
                 {
                     var pids = new[] { (uint)targetPid };
-                    _ = BlackbirdNative.SetPids(h, pids, 1, BlackbirdNative.StreamAll);
+                    _ = BlackbirdNative.SetPids(control.Handle, pids, 1, BlackbirdNative.StreamAll);
                 }
 
-                if (BlackbirdNative.GetStats(h, out var stats, out _))
+                if (BlackbirdNative.GetStats(control.Handle, out var stats, out _))
                 {
                     report.DriverProxyOk = true;
                     DiagnosticsState.SetValue("DriverProxy", "OK");
@@ -132,7 +128,7 @@ namespace BlackbirdInterface
 
                 if (report.EtwUplinkCapable)
                 {
-                    bool ok = BlackbirdNative.GetEtwEvent(h, out _, 0);
+                    bool ok = BlackbirdNative.GetEtwEvent(control.Handle, out _, 0);
                     if (ok)
                     {
                         report.EtwUplinkQueryOk = true;
@@ -146,17 +142,6 @@ namespace BlackbirdInterface
                 else
                 {
                     report.EtwUplinkQueryOk = false;
-                }
-            }
-            catch (Exception ex)
-            {
-                report.Error = ex.Message;
-            }
-            finally
-            {
-                if (h != IntPtr.Zero && h != new IntPtr(-1))
-                {
-                    _ = BlackbirdNative.CloseControlDevice(h);
                 }
             }
 

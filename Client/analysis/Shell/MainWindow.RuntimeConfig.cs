@@ -29,28 +29,6 @@ namespace BlackbirdInterface
         }
         private static string DescribeRuntimeMode(uint mode) => mode == BlackbirdNative.RuntimeModeGuided ? "GUIDED" : "LOITER";
 
-        private bool TryOpenRuntimeConfigHandle(out IntPtr handle, out string error)
-        {
-            handle = IntPtr.Zero;
-            error = string.Empty;
-
-            if (!BlackbirdNative.UseClientProtocol(null, 1500))
-            {
-                error = BlackbirdNative.LastError("UseClientProtocol failed").Message;
-                return false;
-            }
-
-            handle = BlackbirdNative.OpenControlDevice();
-            if (handle == IntPtr.Zero || handle == new IntPtr(-1))
-            {
-                error = BlackbirdNative.LastError("OpenControlDevice failed").Message;
-                handle = IntPtr.Zero;
-                return false;
-            }
-
-            return true;
-        }
-
         private void UpdateRuntimeConfigState(BlackbirdNative.BkRuntimeConfigResponse config)
         {
             _persistentRuntimeFlags = config.PersistentFlags;
@@ -60,63 +38,59 @@ namespace BlackbirdInterface
 
         private bool TryReadRuntimeConfig(out BlackbirdNative.BkRuntimeConfigResponse config, out string error)
         {
-            IntPtr handle;
             config = default;
             error = string.Empty;
 
-            if (!TryOpenRuntimeConfigHandle(out handle, out error))
+            if (!BlackbirdControlDeviceSession.TryOpen(out var control, out error))
             {
                 return false;
             }
 
-            try
+            using (control)
             {
-                if (!BlackbirdNative.GetRuntimeConfig(handle, out config))
+                if (!BlackbirdNative.GetRuntimeConfig(control.Handle, out config))
                 {
-                    error = BlackbirdNative.LastError("GetRuntimeConfig failed").Message;
+                    error = BlackbirdControlDeviceSession.FormatControlOpenError(
+                        "GetRuntimeConfig",
+                        BlackbirdNative.LastError("GetRuntimeConfig failed"));
                     return false;
                 }
 
                 UpdateRuntimeConfigState(config);
                 return true;
-            }
-            finally
-            {
-                _ = BlackbirdNative.CloseControlDevice(handle);
             }
         }
 
         private bool TryApplyRuntimeConfig(uint flags, uint mask, out BlackbirdNative.BkRuntimeConfigResponse config, out string error)
         {
-            IntPtr handle;
             config = default;
             error = string.Empty;
 
-            if (!TryOpenRuntimeConfigHandle(out handle, out error))
+            if (!BlackbirdControlDeviceSession.TryOpen(out var control, out error))
             {
                 return false;
             }
 
-            try
+            using (control)
             {
-                if (!BlackbirdNative.SetRuntimeConfig(handle, flags, mask))
+                if (!BlackbirdNative.SetRuntimeConfig(control.Handle, flags, mask))
                 {
-                    error = BlackbirdNative.LastError("SetRuntimeConfig failed").Message;
+                    error = BlackbirdControlDeviceSession.FormatControlOpenError(
+                        "SetRuntimeConfig",
+                        BlackbirdNative.LastError("SetRuntimeConfig failed"));
                     return false;
                 }
 
-                if (!BlackbirdNative.GetRuntimeConfig(handle, out config))
+                if (!BlackbirdNative.GetRuntimeConfig(control.Handle, out config))
                 {
-                    error = BlackbirdNative.LastError("GetRuntimeConfig failed").Message;
+                    error = BlackbirdControlDeviceSession.FormatControlOpenError(
+                        "GetRuntimeConfig",
+                        BlackbirdNative.LastError("GetRuntimeConfig failed"));
                     return false;
                 }
 
                 UpdateRuntimeConfigState(config);
                 return true;
-            }
-            finally
-            {
-                _ = BlackbirdNative.CloseControlDevice(handle);
             }
         }
 

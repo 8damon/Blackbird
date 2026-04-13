@@ -85,9 +85,7 @@ namespace BlackbirdInterface
                 return;
             }
 
-            UseUsermodeHooks = UseUsermodeHooksCheckBox?.IsChecked == true;
-            AutoOpenApiGraphWindow = UseUsermodeHooks && (AutoOpenApiGraphCheckBox?.IsChecked != false);
-            UseEarlyBirdApcLaunch = UseUsermodeHooks && _isLaunchTarget && (EarlyBirdApcCheckBox?.IsChecked == true);
+            ApplyLaunchHookOptions();
             DialogResult = true;
             Close();
         }
@@ -147,6 +145,19 @@ namespace BlackbirdInterface
         {
             DialogResult = false;
             Close();
+        }
+
+        private void ApplyLaunchHookOptions()
+        {
+            LaunchHookOptions state = LaunchHookOptions.Capture(
+                UseUsermodeHooksCheckBox?.IsChecked,
+                AutoOpenApiGraphCheckBox?.IsChecked,
+                EarlyBirdApcCheckBox?.IsChecked,
+                _isLaunchTarget);
+
+            UseUsermodeHooks = state.UseUsermodeHooks;
+            AutoOpenApiGraphWindow = state.AutoOpenApiGraphWindow;
+            UseEarlyBirdApcLaunch = state.UseEarlyBirdApcLaunch;
         }
 
         private void Root_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

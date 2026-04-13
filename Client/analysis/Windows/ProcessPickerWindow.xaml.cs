@@ -1301,9 +1301,7 @@ namespace BlackbirdInterface
             LaunchSelectedImage = false;
             LaunchImagePath = string.Empty;
             SelectedPid = item.Pid;
-            UseUsermodeHooks = UseUsermodeHooksCheckBox?.IsChecked == true;
-            AutoOpenApiGraphWindow = AutoOpenApiGraphCheckBox?.IsChecked != false;
-            UseEarlyBirdApcLaunch = UseUsermodeHooks && (EarlyBirdApcCheckBox?.IsChecked == true);
+            ApplyLaunchHookOptions(allowEarlyBird: true);
             DialogResult = true;
             Close();
         }
@@ -1411,9 +1409,7 @@ namespace BlackbirdInterface
                 LaunchSelectedImage = true;
                 LaunchImagePath = dlg.FileName;
                 SelectedPid = 0;
-                UseUsermodeHooks = UseUsermodeHooksCheckBox?.IsChecked == true;
-                AutoOpenApiGraphWindow = AutoOpenApiGraphCheckBox?.IsChecked != false;
-                UseEarlyBirdApcLaunch = UseUsermodeHooks && (EarlyBirdApcCheckBox?.IsChecked == true);
+                ApplyLaunchHookOptions(allowEarlyBird: true);
                 DialogResult = true;
                 Close();
                 return;
@@ -1446,6 +1442,19 @@ namespace BlackbirdInterface
         {
             DialogResult = false;
             Close();
+        }
+
+        private void ApplyLaunchHookOptions(bool allowEarlyBird)
+        {
+            LaunchHookOptions state = LaunchHookOptions.Capture(
+                UseUsermodeHooksCheckBox?.IsChecked,
+                AutoOpenApiGraphCheckBox?.IsChecked,
+                EarlyBirdApcCheckBox?.IsChecked,
+                allowEarlyBird);
+
+            UseUsermodeHooks = state.UseUsermodeHooks;
+            AutoOpenApiGraphWindow = state.AutoOpenApiGraphWindow;
+            UseEarlyBirdApcLaunch = state.UseEarlyBirdApcLaunch;
         }
 
         private static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);

@@ -8,24 +8,22 @@ namespace BlackbirdInterface
         {
             error = string.Empty;
 
-            if (!TryOpenRuntimeConfigHandle(out IntPtr handle, out error))
+            if (!BlackbirdControlDeviceSession.TryOpen(out var control, out error))
             {
                 return false;
             }
 
-            try
+            using (control)
             {
-                if (!BlackbirdNative.MarkInterfaceReady(handle, unchecked((uint)Environment.ProcessId)))
+                if (!BlackbirdNative.MarkInterfaceReady(control.Handle, unchecked((uint)Environment.ProcessId)))
                 {
-                    error = BlackbirdNative.LastError("MarkInterfaceReady failed").Message;
+                    error = BlackbirdControlDeviceSession.FormatControlOpenError(
+                        "MarkInterfaceReady",
+                        BlackbirdNative.LastError("MarkInterfaceReady failed"));
                     return false;
                 }
 
                 return true;
-            }
-            finally
-            {
-                _ = BlackbirdNative.CloseControlDevice(handle);
             }
         }
 

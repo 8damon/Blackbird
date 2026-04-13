@@ -1,5 +1,6 @@
 #include <ntddk.h>
 #include "..\telemetry\etw.h"
+#include "..\core\tempus_debug.h"
 #include "..\core\unicode_utils.h"
 #include "image_monitor.h"
 
@@ -56,6 +57,7 @@ static ULONG BLACKBIRDTrackNtdllLoad(_In_ HANDLE ProcessId)
 static VOID BLACKBIRDImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImageName, _In_ HANDLE ProcessId,
                                             _In_ PIMAGE_INFO ImageInfo)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemImageMonitor);
     WCHAR path[512];
     BOOLEAN isSignatureKnown = FALSE;
     UCHAR signatureLevel = 0;
@@ -67,6 +69,7 @@ static VOID BLACKBIRDImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImageNa
 
     if (ImageInfo == NULL)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemImageMonitor, tempusStartQpc);
         return;
     }
 
@@ -85,6 +88,7 @@ static VOID BLACKBIRDImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImageNa
 
     if (path[0] == L'\0' || ImageInfo->SystemModeImage)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemImageMonitor, tempusStartQpc);
         return;
     }
 
@@ -96,6 +100,7 @@ static VOID BLACKBIRDImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImageNa
     isNtdllPath = BLACKBIRDUnicodeContainsInsensitive(&imagePathUs, L"ntdll.dll", 9);
     if (!isNtdllPath)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemImageMonitor, tempusStartQpc);
         return;
     }
 
@@ -114,6 +119,7 @@ static VOID BLACKBIRDImageLoadNotifyRoutine(_In_opt_ PUNICODE_STRING FullImageNa
         BLACKBIRDEtwLogDetectionEvent("MULTIPLE_NTDLL_IMAGE_MAPPINGS", 3, ProcessId, ProcessId, 0, 0, 0,
                                       L"multiple ntdll image-load events observed for process");
     }
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemImageMonitor, tempusStartQpc);
 }
 
 /* Returns TRUE if the character sequence at [Ptr..Ptr+Len-1] (case-insensitive) is

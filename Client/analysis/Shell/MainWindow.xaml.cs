@@ -2896,28 +2896,25 @@ namespace BlackbirdInterface
             out BlackbirdNative.BkSetUserHookTargetResponse response,
             out string error)
         {
-            IntPtr device = IntPtr.Zero;
             response = default;
             error = string.Empty;
 
-            try
+            if (!BlackbirdControlDeviceSession.TryOpen(out var control, out error))
             {
-                if (!BlackbirdNative.UseClientProtocol(null, 1500))
-                {
-                    error = BlackbirdNative.LastError("UseClientProtocol failed").Message;
-                    return false;
-                }
+                return false;
+            }
 
-                device = BlackbirdNative.OpenControlDevice();
-                if (device == IntPtr.Zero || device == new IntPtr(-1))
-                {
-                    error = BlackbirdNative.LastError("OpenControlDevice failed").Message;
-                    return false;
-                }
-
+            using (control)
+            {
                 string hookPath = ResolveHookDllPathFromInterfaceDirectory();
+                if (!File.Exists(hookPath))
+                {
+                    error = $"SetUserHookTarget failed because the hook DLL is missing: '{hookPath}'.";
+                    return false;
+                }
+
                 if (!BlackbirdNative.SetUserHookTarget(
-                        device,
+                        control.Handle,
                         mode,
                         processId,
                         flags,
@@ -2931,18 +2928,14 @@ namespace BlackbirdInterface
                         false,
                         out response))
                 {
-                    error = BlackbirdNative.LastError("SetUserHookTarget failed").Message;
+                    error = BlackbirdControlDeviceSession.FormatUserHookOperationError(
+                        "SetUserHookTarget",
+                        BlackbirdNative.LastError("SetUserHookTarget failed"),
+                        hookPath);
                     return false;
                 }
 
                 return true;
-            }
-            finally
-            {
-                if (device != IntPtr.Zero && device != new IntPtr(-1))
-                {
-                    _ = BlackbirdNative.CloseControlDevice(device);
-                }
             }
         }
 
@@ -2981,8 +2974,6 @@ namespace BlackbirdInterface
             pid = 0;
             preparedSession = null;
             error = string.Empty;
-            IntPtr controlHandle = IntPtr.Zero;
-
             if (string.IsNullOrWhiteSpace(imagePath))
             {
                 error = "Launch path is empty.";
@@ -2993,59 +2984,63 @@ namespace BlackbirdInterface
                 ? BlackbirdNative.IpcUserHookFlagLaunchEarlybirdApc
                 : 0u;
 
-            if (!BlackbirdNative.UseClientProtocol(null, 1500))
-            {
-                error = BlackbirdNative.LastError("UseClientProtocol failed").Message;
-                return false;
-            }
-
-            controlHandle = BlackbirdNative.OpenControlDevice();
-            if (controlHandle == IntPtr.Zero || controlHandle == new IntPtr(-1))
-            {
-                error = BlackbirdNative.LastError("OpenControlDevice failed").Message;
-                return false;
-            }
-
             try
             {
-                string hookPath = ResolveHookDllPathFromInterfaceDirectory();
-                string environmentOverrides = launchProfile.ToIpcEnvironmentOverrideBlock();
-                if (!BlackbirdNative.SetUserHookTarget(
-                        controlHandle,
-                        BlackbirdNative.IpcUserHookTargetLaunch,
-                        0,
-                        flags,
-                        imagePath,
-                        hookPath,
-                        launchProfile.HasWorkingDirectory ? launchProfile.WorkingDirectory : null,
-                        string.IsNullOrWhiteSpace(environmentOverrides) ? null : environmentOverrides,
-                        launchProfile.ParentProcessId,
-                        MapLaunchPriorityClass(launchProfile.Priority),
-                        launchProfile.AffinityMask,
-                        launchProfile.InheritHandles,
-                        out BlackbirdNative.BkSetUserHookTargetResponse response))
+                if (!BlackbirdControlDeviceSession.TryOpen(out var control, out error))
                 {
-                    error = BlackbirdNative.LastError("SetUserHookTarget(launch) failed").Message;
                     return false;
                 }
 
-                if (response.ProcessId == 0)
+                using (control)
                 {
-                    error = "Controller launch returned no PID.";
-                    return false;
+                    string hookPath = ResolveHookDllPathFromInterfaceDirectory();
+                    if (!File.Exists(hookPath))
+                    {
+                        error = $"Hook launch failed because the hook DLL is missing: '{hookPath}'.";
+                        return false;
+                    }
+
+                    string environmentOverrides = launchProfile.ToIpcEnvironmentOverrideBlock();
+                    if (!BlackbirdNative.SetUserHookTarget(
+                            control.Handle,
+                            BlackbirdNative.IpcUserHookTargetLaunch,
+                            0,
+                            flags,
+                            imagePath,
+                            hookPath,
+                            launchProfile.HasWorkingDirectory ? launchProfile.WorkingDirectory : null,
+                            string.IsNullOrWhiteSpace(environmentOverrides) ? null : environmentOverrides,
+                            launchProfile.ParentProcessId,
+                            MapLaunchPriorityClass(launchProfile.Priority),
+                            launchProfile.AffinityMask,
+                            launchProfile.InheritHandles,
+                            out BlackbirdNative.BkSetUserHookTargetResponse response))
+                    {
+                        error = BlackbirdControlDeviceSession.FormatUserHookOperationError(
+                            "SetUserHookTarget(launch)",
+                            BlackbirdNative.LastError("SetUserHookTarget(launch) failed"),
+                            hookPath);
+                        return false;
+                    }
+
+                    if (response.ProcessId == 0)
+                    {
+                        error = "Controller launch returned no PID.";
+                        return false;
+                    }
+
+                    pid = unchecked((int)response.ProcessId);
+                    preparedSession = BlackbirdBackendSession.StartFromHandle(
+                        pid,
+                        BlackbirdNative.StreamAll,
+                        useUsermodeHooks: true,
+                        control.Handle);
+                    _ = control.DetachHandle();
+
+                    string modeLabel = useEarlyBirdApc ? "earlybird-apc" : "remote-thread";
+                    OutputCapture.AppendLine($"Hook launch via controller ({modeLabel}): {imagePath} \u2192 PID {pid} (pre-armed session)");
+                    return true;
                 }
-
-                pid = unchecked((int)response.ProcessId);
-                preparedSession = BlackbirdBackendSession.StartFromHandle(
-                    pid,
-                    BlackbirdNative.StreamAll,
-                    useUsermodeHooks: true,
-                    controlHandle);
-                controlHandle = IntPtr.Zero;
-
-                string modeLabel = useEarlyBirdApc ? "earlybird-apc" : "remote-thread";
-                OutputCapture.AppendLine($"Hook launch via controller ({modeLabel}): {imagePath} \u2192 PID {pid} (pre-armed session)");
-                return true;
             }
             catch (Exception ex)
             {
@@ -3059,13 +3054,6 @@ namespace BlackbirdInterface
                     error = ex.Message;
                 }
                 return false;
-            }
-            finally
-            {
-                if (controlHandle != IntPtr.Zero && controlHandle != new IntPtr(-1))
-                {
-                    _ = BlackbirdNative.CloseControlDevice(controlHandle);
-                }
             }
         }
 

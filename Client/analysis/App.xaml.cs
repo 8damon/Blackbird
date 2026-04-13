@@ -118,7 +118,6 @@ namespace BlackbirdInterface
                 return;
             }
 
-            await ShowVirtualizationPreflightAsync();
             if (!await EnsureStartupSystemsReadyAsync())
             {
                 Shutdown();
@@ -205,6 +204,8 @@ namespace BlackbirdInterface
                     MessageBoxImage.Error);
             }
 
+            await ShowVirtualizationPreflightAsync(intent.EnableAntiVirtualizationMasking);
+
             if (intent.StartLaunchFlow)
             {
                 await main.BeginStartupLaunchFlowAsync();
@@ -225,13 +226,22 @@ namespace BlackbirdInterface
             ShutdownMode = ShutdownMode.OnMainWindowClose;
         }
 
-        private static async Task ShowVirtualizationPreflightAsync()
+        private static async Task ShowVirtualizationPreflightAsync(bool antiVirtualizationMaskingEnabled)
         {
             VirtualizationProbeReport report = await Task.Run(VirtualizationProbe.Run);
             MessageBoxImage icon = report.VmLikely ? MessageBoxImage.Information : MessageBoxImage.Warning;
+            string message = report.BuildOperatorMessage();
+
+            if (antiVirtualizationMaskingEnabled)
+            {
+                message +=
+                    "\n\nDriver anti-virtualization masking is enabled for this session. " +
+                    "The host may still look virtualized here because this preflight reports the raw environment signals.";
+            }
+
             ThemedMessageBox.Show(
                 Current?.MainWindow,
-                report.BuildOperatorMessage(),
+                message,
                 "Environment Preflight",
                 MessageBoxButton.OK,
                 icon);

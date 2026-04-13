@@ -394,6 +394,9 @@ BOOL StartBrokerEtwCapture(_Out_ BROKER_ETW_CAPTURE *cap, _In_reads_opt_(SeedCou
         return FALSE;
     }
 
+    cap->TiProviderEnabled = tiEnabled;
+    cap->TiEnableError = BLACKBIRDSCGetLastThreatIntelEnableError();
+
     if (SeedPids != NULL && SeedCount > 0)
     {
         if (!BLACKBIRDSCSetPids(cap->Device, SeedPids, SeedCount, StreamMask))
@@ -404,8 +407,6 @@ BOOL StartBrokerEtwCapture(_Out_ BROKER_ETW_CAPTURE *cap, _In_reads_opt_(SeedCou
         }
     }
 
-    cap->TiProviderEnabled = tiEnabled;
-    cap->TiEnableError = BLACKBIRDSCGetBrokerThreatIntelEnableError();
     cap->StopRequested = 0;
     cap->TraceThread = CreateThread(NULL, 0, BrokerEtwConsumerThreadProc, cap, 0, NULL);
     if (cap->TraceThread == NULL)

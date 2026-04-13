@@ -69,7 +69,6 @@ namespace BlackbirdInterface
         internal const uint RuntimeFlagSelfHide = 0x00000002;
         internal const uint RuntimeFlagInterfaceProtectedAccess = 0x00000004;
         internal const uint RuntimeFlagControllerProtectedAccess = 0x00000008;
-        internal const uint RuntimeFlagProtectedAccess = RuntimeFlagInterfaceProtectedAccess | RuntimeFlagControllerProtectedAccess;
         internal const uint RuntimeModeLoiter = 0;
         internal const uint RuntimeModeGuided = 1;
 
@@ -268,8 +267,8 @@ namespace BlackbirdInterface
         [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetLastSharedRingError", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         internal static extern uint GetLastSharedRingError();
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetBrokerThreatIntelEnableError", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
-        internal static extern uint GetBrokerThreatIntelEnableError();
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetLastThreatIntelEnableError", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        internal static extern uint GetLastThreatIntelEnableError();
 
         [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCSetPids", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]

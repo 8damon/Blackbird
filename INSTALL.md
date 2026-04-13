@@ -101,7 +101,7 @@ cd /d "<REPO_ROOT>"
 
 ## 8) Run ETW Capture (Optional)
 
-Use the analyst interface inspectors or a custom consumer via `BlackbirdSensorCore` (`BLACKBIRDSCStartBlackbirdEtwSession` / `SwkStartDetectionEtwSession`).
+Use the analyst interface inspectors or a custom consumer via `BlackbirdSensorCore` (`BLACKBIRDSCStartBlackbirdEtwSession` / `BLACKBIRDSCStartDetectionEtwSession`).
 
 ## Notes
 

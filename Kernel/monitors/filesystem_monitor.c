@@ -1,6 +1,7 @@
 #include <fltkernel.h>
 #include <ntstrsafe.h>
 #include "..\core\control.h"
+#include "..\core\tempus_debug.h"
 #include "..\core\runtime_config.h"
 #include "..\core\unicode_utils.h"
 #include "filesystem_monitor.h"
@@ -190,6 +191,7 @@ _Function_class_(FLT_PRE_OPERATION_CALLBACK) static FLT_PREOP_CALLBACK_STATUS
     BLACKBIRDFsPreOperation(_Inout_ PFLT_CALLBACK_DATA Data, _In_ PCFLT_RELATED_OBJECTS FltObjects,
                             _Outptr_result_maybenull_ PVOID *CompletionContext)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemFileSystemMonitor);
     BLACKBIRD_FILE_EVENT event;
     UINT32 processPid32;
 
@@ -197,17 +199,20 @@ _Function_class_(FLT_PRE_OPERATION_CALLBACK) static FLT_PREOP_CALLBACK_STATUS
 
     if (Data == NULL || FltObjects == NULL || Data->Iopb == NULL)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemFileSystemMonitor, tempusStartQpc);
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
     if (!BLACKBIRDControlHasClientsFast())
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemFileSystemMonitor, tempusStartQpc);
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
     processPid32 = (UINT32)(ULONG_PTR)PsGetCurrentProcessId();
     if (!BLACKBIRDControlHasPidInterest(processPid32, 0, BLACKBIRD_STREAM_FILESYSTEM))
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemFileSystemMonitor, tempusStartQpc);
         return FLT_PREOP_SUCCESS_NO_CALLBACK;
     }
 
@@ -219,11 +224,13 @@ _Function_class_(FLT_PRE_OPERATION_CALLBACK) static FLT_PREOP_CALLBACK_STATUS
     {
         Data->IoStatus.Status = STATUS_OBJECT_NAME_NOT_FOUND;
         Data->IoStatus.Information = 0;
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemFileSystemMonitor, tempusStartQpc);
         return FLT_PREOP_COMPLETE;
     }
 
     BLACKBIRDControlPublishFileEvent(&event);
 
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemFileSystemMonitor, tempusStartQpc);
     return FLT_PREOP_SUCCESS_NO_CALLBACK;
 }
 

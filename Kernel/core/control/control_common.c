@@ -38,8 +38,6 @@ PCSTR BLACKBIRDIoctlName(_In_ ULONG Ioctl)
         return "SET_RUNTIME_CONFIG";
     case IOCTL_BLACKBIRD_GET_RUNTIME_CONFIG:
         return "GET_RUNTIME_CONFIG";
-    case IOCTL_BLACKBIRD_MARK_INTERFACE_READY:
-        return "MARK_INTERFACE_READY";
     default:
         return "UNKNOWN_IOCTL";
     }
@@ -767,6 +765,7 @@ static NTSTATUS BLACKBIRDCompleteGetEventRequestWithRecord(_In_ WDFREQUEST Reque
 VOID BLACKBIRDPublishRecordToSubscribers(_In_ UINT32 PrimaryPid, _In_ UINT32 SecondaryPid, _In_ UINT32 StreamMask,
                                          _In_ BLACKBIRD_EVENT_RECORD *Record)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemControl);
     PBLACKBIRD_CLIENT snapshot[BLACKBIRD_MAX_TOTAL_CLIENTS];
     UINT32 snapshotCount = 0;
     UINT32 i;
@@ -774,10 +773,12 @@ VOID BLACKBIRDPublishRecordToSubscribers(_In_ UINT32 PrimaryPid, _In_ UINT32 Sec
 
     if (InterlockedCompareExchange(&g_ControlInitialized, 0, 0) == 0)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
         return;
     }
     if (BLACKBIRDControlIsShutdown())
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
         return;
     }
 
@@ -830,6 +831,8 @@ VOID BLACKBIRDPublishRecordToSubscribers(_In_ UINT32 PrimaryPid, _In_ UINT32 Sec
 
         BLACKBIRDClientRelease(c);
     }
+
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
 }
 
 EVT_WDF_DEVICE_FILE_CREATE BLACKBIRDEvtFileCreate;

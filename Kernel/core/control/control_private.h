@@ -6,6 +6,7 @@
 #include <ntstrsafe.h>
 #include "../control.h"
 #include "../pool_compat.h"
+#include "../tempus_debug.h"
 
 #define BLACKBIRD_POOL_TAG 'lrtS'
 #define BLACKBIRD_MAX_CLIENT_SUBSCRIPTIONS 64
@@ -154,7 +155,6 @@ NTSTATUS BLACKBIRDHandleControlExecutionIoctl(_In_ PBLACKBIRD_CLIENT Client, _In
 NTSTATUS BLACKBIRDHandleSetRuntimeConfigIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
 NTSTATUS BLACKBIRDHandleGetRuntimeConfigIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request,
                                               _Out_ size_t *BytesOut);
-NTSTATUS BLACKBIRDHandleMarkInterfaceReadyIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
 NTSTATUS BLACKBIRDHandleMarkControllerReadyIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
 
 #endif

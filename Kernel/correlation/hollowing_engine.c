@@ -1,6 +1,7 @@
 #include <ntddk.h>
 #include "intent_store.h"
 #include "hollowing_engine.h"
+#include "..\core\tempus_debug.h"
 #include "..\telemetry\etw.h"
 
 #define BLACKBIRD_HOLLOW_RING_SIZE 256
@@ -310,6 +311,7 @@ BLACKBIRDHollowingResolveThreadCorrelation(_In_ HANDLE ProcessId, _In_opt_ HANDL
                                            _Out_opt_ UINT32 *CorrelationFlags, _Out_opt_ UINT32 *CorrelationAccessMask,
                                            _Out_opt_ UINT32 *CorrelationAgeMs)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemHollowingEngine);
     HANDLE actor;
     HANDLE correlatedCaller = NULL;
     UINT32 flags = 0;
@@ -319,6 +321,7 @@ BLACKBIRDHollowingResolveThreadCorrelation(_In_ HANDLE ProcessId, _In_opt_ HANDL
 
     if (ProcessId == NULL)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHollowingEngine, tempusStartQpc);
         return FALSE;
     }
 
@@ -362,6 +365,7 @@ BLACKBIRDHollowingResolveThreadCorrelation(_In_ HANDLE ProcessId, _In_opt_ HANDL
         *CorrelationAgeMs = ageMs;
     }
 
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHollowingEngine, tempusStartQpc);
     return found;
 }
 
@@ -370,6 +374,7 @@ VOID BLACKBIRDHollowingObserveThread(_In_ HANDLE ProcessId, _In_opt_ HANDLE Acto
                                      _In_ BOOLEAN StartRegionNonImage, _In_ UINT32 CorrelationFlags,
                                      _In_ UINT32 CorrelationAccessMask, _In_ UINT32 CorrelationAgeMs)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemHollowingEngine);
     HANDLE actor;
     BOOLEAN isRemoteCreator;
     BOOLEAN remoteNonImageExec;
@@ -380,6 +385,7 @@ VOID BLACKBIRDHollowingObserveThread(_In_ HANDLE ProcessId, _In_opt_ HANDLE Acto
 
     if (ProcessId == NULL)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHollowingEngine, tempusStartQpc);
         return;
     }
 
@@ -450,4 +456,5 @@ VOID BLACKBIRDHollowingObserveThread(_In_ HANDLE ProcessId, _In_opt_ HANDLE Acto
     }
 
     BLACKBIRDHollowApplyMarks(actor, ProcessId, marks, CorrelationFlags, CorrelationAccessMask, CorrelationAgeMs);
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHollowingEngine, tempusStartQpc);
 }

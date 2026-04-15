@@ -98,15 +98,12 @@ extern "C"
     BLACKBIRDSC_API BOOL BLACKBIRDSCSetRuntimeConfig(_In_ HANDLE Device, _In_ DWORD Flags, _In_ DWORD Mask);
     BLACKBIRDSC_API BOOL BLACKBIRDSCGetRuntimeConfig(_In_ HANDLE Device,
                                                      _Out_ BLACKBIRD_RUNTIME_CONFIG_RESPONSE *Response);
-    BLACKBIRDSC_API BOOL BLACKBIRDSCMarkInterfaceReady(_In_ HANDLE Device, _In_ DWORD ProcessId);
     BLACKBIRDSC_API BOOL BLACKBIRDSCMarkControllerReady(_In_ HANDLE Device, _In_ DWORD ProcessId);
-    BLACKBIRDSC_API BOOL BLACKBIRDSCSetUserHookTarget(_In_ HANDLE Device, _In_ DWORD Mode, _In_ DWORD ProcessId,
-                                                      _In_ DWORD Flags, _In_opt_z_ PCWSTR ImagePath,
-                                                      _In_opt_z_ PCWSTR HookDllPath, _In_opt_z_ PCWSTR WorkingDirectory,
-                                                      _In_opt_z_ PCWSTR EnvironmentOverrides,
-                                                      _In_ DWORD ParentProcessId, _In_ DWORD PriorityClass,
-                                                      _In_ UINT64 AffinityMask, _In_ BOOL InheritHandles,
-                                                      _Out_opt_ BLACKBIRD_IPC_SET_USER_HOOK_TARGET_RESPONSE *Response);
+    BLACKBIRDSC_API BOOL BLACKBIRDSCSetUserHookTarget(
+        _In_ HANDLE Device, _In_ DWORD Mode, _In_ DWORD ProcessId, _In_ DWORD Flags, _In_opt_z_ PCWSTR ImagePath,
+        _In_opt_z_ PCWSTR HookDllPath, _In_opt_z_ PCWSTR WorkingDirectory, _In_opt_z_ PCWSTR EnvironmentOverrides,
+        _In_ DWORD ParentProcessId, _In_ DWORD PriorityClass, _In_ UINT64 AffinityMask, _In_ BOOL InheritHandles,
+        _In_ DWORD IntegrityLevel, _Out_opt_ BLACKBIRD_IPC_SET_USER_HOOK_TARGET_RESPONSE *Response);
     BLACKBIRDSC_API BOOL BLACKBIRDSCSetShutdownMode(_In_ HANDLE Device);
     BLACKBIRDSC_API BOOL BLACKBIRDSCControlProcessExecution(_In_ HANDLE Device, _In_ DWORD ProcessId,
                                                             _In_ BOOL Suspend);
@@ -122,8 +119,7 @@ extern "C"
         _In_opt_ PVOID CallbackContext, _Outptr_ BLACKBIRDSC_ETW_SESSION **Session, _Out_opt_ BOOL *ThreatIntelEnabled);
     BLACKBIRDSC_API BOOL BLACKBIRDSCStartDetectionEtwSession(
         _In_z_ PCWSTR SessionName, _In_ BOOL EnableThreatIntelProvider, _In_ BLACKBIRDSC_DETECTION_CALLBACK Callback,
-        _In_opt_ PVOID CallbackContext, _Outptr_ BLACKBIRDSC_ETW_SESSION **Session,
-        _Out_opt_ BOOL *ThreatIntelEnabled);
+        _In_opt_ PVOID CallbackContext, _Outptr_ BLACKBIRDSC_ETW_SESSION **Session, _Out_opt_ BOOL *ThreatIntelEnabled);
     BLACKBIRDSC_API ULONG BLACKBIRDSCRunEtwSession(_In_ BLACKBIRDSC_ETW_SESSION *Session);
     BLACKBIRDSC_API VOID BLACKBIRDSCStopEtwSession(_In_opt_ BLACKBIRDSC_ETW_SESSION *Session);
 

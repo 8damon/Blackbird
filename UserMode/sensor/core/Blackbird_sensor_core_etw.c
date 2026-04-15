@@ -400,8 +400,8 @@ BOOL BLACKBIRDSCStartDetectionEtwSession(_In_z_ PCWSTR SessionName, _In_ BOOL En
     bridge->Callback = Callback;
     bridge->CallbackContext = CallbackContext;
 
-    if (!BLACKBIRDSCStartBlackbirdEtwSession(SessionName, EnableThreatIntelProvider,
-                                             BLACKBIRDSCDetectionBridgeCallback, bridge, Session, ThreatIntelEnabled))
+    if (!BLACKBIRDSCStartBlackbirdEtwSession(SessionName, EnableThreatIntelProvider, BLACKBIRDSCDetectionBridgeCallback,
+                                             bridge, Session, ThreatIntelEnabled))
     {
         err = GetLastError();
         free(bridge);

@@ -510,7 +510,8 @@ BLACKBIRDSCOpenControlDevice(VOID)
             return INVALID_HANDLE_VALUE;
         }
 
-        h = CreateFileW(pipeName, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        h = CreateFileW(pipeName, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
+                        FILE_ATTRIBUTE_NORMAL | SECURITY_SQOS_PRESENT | SECURITY_IMPERSONATION, NULL);
         if (h == INVALID_HANDLE_VALUE)
         {
             return h;
@@ -1035,33 +1036,6 @@ BOOL BLACKBIRDSCGetRuntimeConfig(_In_ HANDLE Device, _Out_ BLACKBIRD_RUNTIME_CON
                            &bytes, NULL);
 }
 
-BOOL BLACKBIRDSCMarkInterfaceReady(_In_ HANDLE Device, _In_ DWORD ProcessId)
-{
-    BLACKBIRD_IPC_PACKET request;
-    BLACKBIRD_IPC_PACKET response;
-    BLACKBIRD_MARK_INTERFACE_READY_REQUEST req;
-    DWORD bytes = 0;
-
-    if (Device == NULL || Device == INVALID_HANDLE_VALUE || ProcessId == 0)
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-
-    ZeroMemory(&req, sizeof(req));
-    req.ProcessId = ProcessId;
-
-    if (BLACKBIRDSCIsClientProtocol())
-    {
-        BLACKBIRDSCInitIpcRequest(&request, BlackbirdIpcCommandMarkInterfaceReady);
-        request.Payload.MarkInterfaceReadyRequest = req;
-        return BLACKBIRDSCIpcTransact(Device, &request, &response);
-    }
-
-    return DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_MARK_INTERFACE_READY, &req, sizeof(req), NULL, 0, &bytes,
-                           NULL);
-}
-
 BOOL BLACKBIRDSCMarkControllerReady(_In_ HANDLE Device, _In_ DWORD ProcessId)
 {
     BLACKBIRD_MARK_CONTROLLER_READY_REQUEST req;
@@ -1089,7 +1063,7 @@ BOOL BLACKBIRDSCSetUserHookTarget(_In_ HANDLE Device, _In_ DWORD Mode, _In_ DWOR
                                   _In_opt_z_ PCWSTR ImagePath, _In_opt_z_ PCWSTR HookDllPath,
                                   _In_opt_z_ PCWSTR WorkingDirectory, _In_opt_z_ PCWSTR EnvironmentOverrides,
                                   _In_ DWORD ParentProcessId, _In_ DWORD PriorityClass, _In_ UINT64 AffinityMask,
-                                  _In_ BOOL InheritHandles,
+                                  _In_ BOOL InheritHandles, _In_ DWORD IntegrityLevel,
                                   _Out_opt_ BLACKBIRD_IPC_SET_USER_HOOK_TARGET_RESPONSE *Response)
 {
     BLACKBIRD_IPC_PACKET request;
@@ -1114,6 +1088,7 @@ BOOL BLACKBIRDSCSetUserHookTarget(_In_ HANDLE Device, _In_ DWORD Mode, _In_ DWOR
     payload.ParentProcessId = ParentProcessId;
     payload.PriorityClass = PriorityClass;
     payload.InheritHandles = InheritHandles ? 1u : 0u;
+    payload.IntegrityLevel = IntegrityLevel;
     payload.AffinityMask = AffinityMask;
     if (ImagePath != NULL)
     {

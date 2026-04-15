@@ -1,0 +1,27 @@
+{
+  "rules": [
+    {
+      "id": "unsigned-temp-exec",
+      "title": "Unsigned executable launched from temp-like path",
+      "description": "Unsigned code launched from a temp or staging directory is a common payload dispatch pattern.",
+      "severity": "6",
+      "detection": "UNSIGNED_TEMP_EXECUTABLE",
+      "mitre_technique_id": "T1059",
+      "mitre_technique": "Command and Scripting Interpreter",
+      "sigma_rule_id": "blackbird.unsigned_temp_exec",
+      "signer_state": "Unsigned",
+      "path_contains": "\\Temp\\"
+    },
+    {
+      "id": "psexec-style-stager",
+      "title": "Service-style execution staging name",
+      "description": "Classic remote execution staging names are worth surfacing immediately.",
+      "severity": "5",
+      "detection": "STAGER_NAME_MATCH",
+      "mitre_technique_id": "T1569.002",
+      "mitre_technique": "Service Execution",
+      "sigma_rule_id": "blackbird.stager_name_match",
+      "file_name_contains": "psexesvc"
+    }
+  ]
+}

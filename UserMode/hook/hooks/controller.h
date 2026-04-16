@@ -32,7 +32,10 @@ struct NtCapturedEvent
     NtOperation Operation;
     const char *FunctionName;
     void *Caller;
+    NTSTATUS Status;
     std::uint64_t Args[8];
+    std::uint32_t DataSize;
+    std::uint8_t DataSample[64];
 
     IC_STACKTRACE::Trace Stack;
 };

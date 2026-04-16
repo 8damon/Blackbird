@@ -1,5 +1,7 @@
 #include "controller.h"
 
+#include <cstring>
+
 bool WinsockHookController::s_Initialized = false;
 std::mutex WinsockHookController::s_QueueMutex;
 std::vector<WinsockCapturedEvent> WinsockHookController::s_Queue;
@@ -151,13 +153,23 @@ void NtHookController::EnqueueEvent(const NtHookContext &context)
     evt.Operation = context.Operation;
     evt.FunctionName = context.FunctionName;
     evt.Caller = context.Caller;
+    evt.Status = context.Status;
 
     for (std::size_t i = 0; i < 8; ++i)
     {
         evt.Args[i] = context.Args[i];
     }
+    evt.DataSize = context.DataSize;
+    if (evt.DataSize > sizeof(evt.DataSample))
+    {
+        evt.DataSize = sizeof(evt.DataSample);
+    }
+    if (evt.DataSize != 0)
+    {
+        std::memcpy(evt.DataSample, context.DataSample, evt.DataSize);
+    }
 
-    IC_STACKTRACE::Capture(evt.Stack, 2);
+    evt.Stack = context.Stack;
 
     std::lock_guard<std::mutex> lock(s_QueueMutex);
     s_Queue.push_back(std::move(evt));

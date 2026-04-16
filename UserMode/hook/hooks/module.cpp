@@ -15,11 +15,126 @@
 
 namespace
 {
+    static ModuleHookInitFault g_LastModuleHookInitFault{};
+
+    struct ModuleRange
+    {
+        std::uintptr_t Base = 0;
+        std::uintptr_t End = 0;
+    };
+
+    static void ResetModuleHookInitFault() noexcept
+    {
+        std::memset(&g_LastModuleHookInitFault, 0, sizeof(g_LastModuleHookInitFault));
+        g_LastModuleHookInitFault.Code = ModuleHookInitFaultCode::None;
+    }
+
+    static void CaptureFaultSample(const void *address, std::uint8_t sample[16]) noexcept
+    {
+        std::memset(sample, 0, 16);
+        if (address == nullptr)
+        {
+            return;
+        }
+
+        __try
+        {
+            std::memcpy(sample, address, 16);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            std::memset(sample, 0, 16);
+        }
+    }
+
+    static void SetModuleHookInitFault(ModuleHookInitFaultCode code, const wchar_t *moduleName, const char *exportName,
+                                       void *address, void *redirectTarget = nullptr) noexcept
+    {
+        ResetModuleHookInitFault();
+        g_LastModuleHookInitFault.Code = code;
+        g_LastModuleHookInitFault.ModuleName = moduleName;
+        g_LastModuleHookInitFault.ExportName = exportName;
+        g_LastModuleHookInitFault.Address = address;
+        g_LastModuleHookInitFault.RedirectTarget = redirectTarget;
+        CaptureFaultSample(address, g_LastModuleHookInitFault.Sample);
+    }
+
+    static bool TryResolveModuleImageRange(HMODULE module, ModuleRange &range) noexcept
+    {
+        auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(module);
+        if (module == nullptr || dos->e_magic != IMAGE_DOS_SIGNATURE)
+        {
+            return false;
+        }
+
+        auto *nt =
+            reinterpret_cast<const IMAGE_NT_HEADERS *>(reinterpret_cast<const std::uint8_t *>(module) + dos->e_lfanew);
+        if (nt->Signature != IMAGE_NT_SIGNATURE || nt->OptionalHeader.SizeOfImage == 0)
+        {
+            return false;
+        }
+
+        range.Base = reinterpret_cast<std::uintptr_t>(module);
+        range.End = range.Base + nt->OptionalHeader.SizeOfImage;
+        return true;
+    }
+
+    static bool AddressWithinRange(void *address, const ModuleRange &range) noexcept
+    {
+        std::uintptr_t value = reinterpret_cast<std::uintptr_t>(address);
+        return value >= range.Base && value < range.End;
+    }
+
+    static bool TryDecodeAbsoluteTarget(void *entry, void *&target) noexcept
+    {
+        target = nullptr;
+        if (entry == nullptr)
+        {
+            return false;
+        }
+
+        auto *bytes = static_cast<std::uint8_t *>(entry);
+        __try
+        {
+            if (bytes[0] == 0xE9)
+            {
+                std::int32_t rel = *reinterpret_cast<std::int32_t *>(&bytes[1]);
+                target = bytes + 5 + rel;
+                return true;
+            }
+
+            if (bytes[0] == 0xFF && bytes[1] == 0x25)
+            {
+                std::int32_t disp = *reinterpret_cast<std::int32_t *>(&bytes[2]);
+                auto **slot = reinterpret_cast<void **>(bytes + 6 + disp);
+                target = *slot;
+                return true;
+            }
+
+            if (bytes[0] == 0x48 && bytes[1] == 0xB8 && bytes[10] == 0xFF && bytes[11] == 0xE0)
+            {
+                target = *reinterpret_cast<void **>(&bytes[2]);
+                return true;
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            target = nullptr;
+            return false;
+        }
+
+        return false;
+    }
+
     using LoadLibraryAFn = HMODULE(WINAPI *)(LPCSTR);
     using LoadLibraryWFn = HMODULE(WINAPI *)(LPCWSTR);
     using LoadLibraryExAFn = HMODULE(WINAPI *)(LPCSTR, HANDLE, DWORD);
     using LoadLibraryExWFn = HMODULE(WINAPI *)(LPCWSTR, HANDLE, DWORD);
     using LdrLoadDllFn = NTSTATUS(NTAPI *)(PWSTR, PULONG, PUNICODE_STRING, PHANDLE);
+    using RtlAddFunctionTableFn = BOOLEAN(WINAPI *)(PRUNTIME_FUNCTION, DWORD, DWORD64);
+    using RtlInstallFunctionTableCallbackFn = BOOLEAN(WINAPI *)(DWORD64, DWORD64, DWORD, PGET_RUNTIME_FUNCTION_CALLBACK,
+                                                                PVOID, PCWSTR);
+    using RtlDeleteFunctionTableFn = BOOLEAN(WINAPI *)(PRUNTIME_FUNCTION);
 
     struct InlineHook
     {
@@ -42,6 +157,9 @@ namespace
     static LoadLibraryExAFn g_OriginalLoadLibraryExA = nullptr;
     static LoadLibraryExWFn g_OriginalLoadLibraryExW = nullptr;
     static LdrLoadDllFn g_OriginalLdrLoadDll = nullptr;
+    static RtlAddFunctionTableFn g_OriginalRtlAddFunctionTable = nullptr;
+    static RtlInstallFunctionTableCallbackFn g_OriginalRtlInstallFunctionTableCallback = nullptr;
+    static RtlDeleteFunctionTableFn g_OriginalRtlDeleteFunctionTable = nullptr;
 
     HMODULE WINAPI LoadLibraryAHook(LPCSTR lpLibFileName);
     HMODULE WINAPI LoadLibraryWHook(LPCWSTR lpLibFileName);
@@ -49,18 +167,85 @@ namespace
     HMODULE WINAPI LoadLibraryExWHook(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags);
     NTSTATUS NTAPI LdrLoadDllHook(PWSTR searchPath, PULONG loadFlags, PUNICODE_STRING moduleFileName,
                                   PHANDLE moduleHandle);
+    BOOLEAN WINAPI RtlAddFunctionTableHook(PRUNTIME_FUNCTION functionTable, DWORD entryCount, DWORD64 baseAddress);
+    BOOLEAN WINAPI RtlInstallFunctionTableCallbackHook(DWORD64 tableIdentifier, DWORD64 baseAddress, DWORD length,
+                                                       PGET_RUNTIME_FUNCTION_CALLBACK callback, PVOID context,
+                                                       PCWSTR outOfProcessCallbackDll);
+    BOOLEAN WINAPI RtlDeleteFunctionTableHook(PRUNTIME_FUNCTION functionTable);
 
     static InlineHook g_Hooks[] = {
-        {L"KernelBase.dll", "LoadLibraryA", "KERNELBASE", reinterpret_cast<void *>(&LoadLibraryAHook),
-         reinterpret_cast<void **>(&g_OriginalLoadLibraryA), nullptr, nullptr, {}, false},
-        {L"KernelBase.dll", "LoadLibraryW", "KERNELBASE", reinterpret_cast<void *>(&LoadLibraryWHook),
-         reinterpret_cast<void **>(&g_OriginalLoadLibraryW), nullptr, nullptr, {}, false},
-        {L"KernelBase.dll", "LoadLibraryExA", "KERNELBASE", reinterpret_cast<void *>(&LoadLibraryExAHook),
-         reinterpret_cast<void **>(&g_OriginalLoadLibraryExA), nullptr, nullptr, {}, false},
-        {L"KernelBase.dll", "LoadLibraryExW", "KERNELBASE", reinterpret_cast<void *>(&LoadLibraryExWHook),
-         reinterpret_cast<void **>(&g_OriginalLoadLibraryExW), nullptr, nullptr, {}, false},
-        {L"ntdll.dll", "LdrLoadDll", "ntdll", reinterpret_cast<void *>(&LdrLoadDllHook),
-         reinterpret_cast<void **>(&g_OriginalLdrLoadDll), nullptr, nullptr, {}, false},
+        {L"KernelBase.dll",
+         "LoadLibraryA",
+         "KERNELBASE",
+         reinterpret_cast<void *>(&LoadLibraryAHook),
+         reinterpret_cast<void **>(&g_OriginalLoadLibraryA),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"KernelBase.dll",
+         "LoadLibraryW",
+         "KERNELBASE",
+         reinterpret_cast<void *>(&LoadLibraryWHook),
+         reinterpret_cast<void **>(&g_OriginalLoadLibraryW),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"KernelBase.dll",
+         "LoadLibraryExA",
+         "KERNELBASE",
+         reinterpret_cast<void *>(&LoadLibraryExAHook),
+         reinterpret_cast<void **>(&g_OriginalLoadLibraryExA),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"KernelBase.dll",
+         "LoadLibraryExW",
+         "KERNELBASE",
+         reinterpret_cast<void *>(&LoadLibraryExWHook),
+         reinterpret_cast<void **>(&g_OriginalLoadLibraryExW),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"ntdll.dll",
+         "LdrLoadDll",
+         "ntdll",
+         reinterpret_cast<void *>(&LdrLoadDllHook),
+         reinterpret_cast<void **>(&g_OriginalLdrLoadDll),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"ntdll.dll",
+         "RtlAddFunctionTable",
+         "ntdll",
+         reinterpret_cast<void *>(&RtlAddFunctionTableHook),
+         reinterpret_cast<void **>(&g_OriginalRtlAddFunctionTable),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"ntdll.dll",
+         "RtlInstallFunctionTableCallback",
+         "ntdll",
+         reinterpret_cast<void *>(&RtlInstallFunctionTableCallbackHook),
+         reinterpret_cast<void **>(&g_OriginalRtlInstallFunctionTableCallback),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"ntdll.dll",
+         "RtlDeleteFunctionTable",
+         "ntdll",
+         reinterpret_cast<void *>(&RtlDeleteFunctionTableHook),
+         reinterpret_cast<void **>(&g_OriginalRtlDeleteFunctionTable),
+         nullptr,
+         nullptr,
+         {},
+         false},
     };
 
     static bool InstallInlineHook(void *target, void *hook, std::uint8_t original[16], void **trampolineOut) noexcept
@@ -200,8 +385,8 @@ namespace
         }
 
         HMODULE moduleHandle = g_OriginalLoadLibraryA(lpLibFileName);
-        PublishModuleEvent(ModuleHookOperation::LoadLibraryA, "LoadLibraryA", "KERNELBASE", moduleHandle,
-                           lpLibFileName, CopyAnsiLength(lpLibFileName));
+        PublishModuleEvent(ModuleHookOperation::LoadLibraryA, "LoadLibraryA", "KERNELBASE", moduleHandle, lpLibFileName,
+                           CopyAnsiLength(lpLibFileName));
         return moduleHandle;
     }
 
@@ -213,8 +398,8 @@ namespace
         }
 
         HMODULE moduleHandle = g_OriginalLoadLibraryW(lpLibFileName);
-        PublishModuleEvent(ModuleHookOperation::LoadLibraryW, "LoadLibraryW", "KERNELBASE", moduleHandle,
-                           lpLibFileName, CopyWideLength(lpLibFileName));
+        PublishModuleEvent(ModuleHookOperation::LoadLibraryW, "LoadLibraryW", "KERNELBASE", moduleHandle, lpLibFileName,
+                           CopyWideLength(lpLibFileName));
         return moduleHandle;
     }
 
@@ -227,8 +412,7 @@ namespace
 
         HMODULE moduleHandle = g_OriginalLoadLibraryExA(lpLibFileName, hFile, dwFlags);
         PublishModuleEvent(ModuleHookOperation::LoadLibraryExA, "LoadLibraryExA", "KERNELBASE", moduleHandle,
-                           lpLibFileName, CopyAnsiLength(lpLibFileName),
-                           static_cast<std::uint64_t>(dwFlags),
+                           lpLibFileName, CopyAnsiLength(lpLibFileName), static_cast<std::uint64_t>(dwFlags),
                            static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(hFile)));
         return moduleHandle;
     }
@@ -242,8 +426,7 @@ namespace
 
         HMODULE moduleHandle = g_OriginalLoadLibraryExW(lpLibFileName, hFile, dwFlags);
         PublishModuleEvent(ModuleHookOperation::LoadLibraryExW, "LoadLibraryExW", "KERNELBASE", moduleHandle,
-                           lpLibFileName, CopyWideLength(lpLibFileName),
-                           static_cast<std::uint64_t>(dwFlags),
+                           lpLibFileName, CopyWideLength(lpLibFileName), static_cast<std::uint64_t>(dwFlags),
                            static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(hFile)));
         return moduleHandle;
     }
@@ -272,6 +455,62 @@ namespace
                            static_cast<std::uint64_t>((moduleFileName != nullptr) ? moduleFileName->Length : 0));
         return status;
     }
+
+    BOOLEAN WINAPI RtlAddFunctionTableHook(PRUNTIME_FUNCTION functionTable, DWORD entryCount, DWORD64 baseAddress)
+    {
+        if (g_OriginalRtlAddFunctionTable == nullptr)
+        {
+            return FALSE;
+        }
+
+        BOOLEAN ok = g_OriginalRtlAddFunctionTable(functionTable, entryCount, baseAddress);
+        if (ok)
+        {
+            PublishModuleEvent(ModuleHookOperation::RtlAddFunctionTable, "RtlAddFunctionTable", "ntdll", nullptr,
+                               nullptr, 0, static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(functionTable)),
+                               static_cast<std::uint64_t>(entryCount), static_cast<std::uint64_t>(baseAddress), 0);
+        }
+        return ok;
+    }
+
+    BOOLEAN WINAPI RtlInstallFunctionTableCallbackHook(DWORD64 tableIdentifier, DWORD64 baseAddress, DWORD length,
+                                                       PGET_RUNTIME_FUNCTION_CALLBACK callback, PVOID context,
+                                                       PCWSTR outOfProcessCallbackDll)
+    {
+        if (g_OriginalRtlInstallFunctionTableCallback == nullptr)
+        {
+            return FALSE;
+        }
+
+        BOOLEAN ok = g_OriginalRtlInstallFunctionTableCallback(tableIdentifier, baseAddress, length, callback, context,
+                                                               outOfProcessCallbackDll);
+        if (ok)
+        {
+            PublishModuleEvent(ModuleHookOperation::RtlInstallFunctionTableCallback,
+                               "RtlInstallFunctionTableCallback", "ntdll", nullptr, outOfProcessCallbackDll,
+                               CopyWideLength(outOfProcessCallbackDll), static_cast<std::uint64_t>(tableIdentifier),
+                               static_cast<std::uint64_t>(baseAddress), static_cast<std::uint64_t>(length),
+                               static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(callback)));
+        }
+        return ok;
+    }
+
+    BOOLEAN WINAPI RtlDeleteFunctionTableHook(PRUNTIME_FUNCTION functionTable)
+    {
+        if (g_OriginalRtlDeleteFunctionTable == nullptr)
+        {
+            return FALSE;
+        }
+
+        BOOLEAN ok = g_OriginalRtlDeleteFunctionTable(functionTable);
+        if (ok)
+        {
+            PublishModuleEvent(ModuleHookOperation::RtlDeleteFunctionTable, "RtlDeleteFunctionTable", "ntdll", nullptr,
+                               nullptr, 0, static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(functionTable)), 0, 0,
+                               0);
+        }
+        return ok;
+    }
 } // namespace
 
 bool KeSetModuleHook(ModuleHookCallback callback) noexcept
@@ -282,6 +521,7 @@ bool KeSetModuleHook(ModuleHookCallback callback) noexcept
     }
 
     g_ActiveCallback = callback;
+    ResetModuleHookInitFault();
 
     bool anyInstalled = false;
     for (auto &hook : g_Hooks)
@@ -295,18 +535,46 @@ bool KeSetModuleHook(ModuleHookCallback callback) noexcept
         HMODULE moduleHandle = GetModuleHandleW(hook.ModuleName);
         if (moduleHandle == nullptr)
         {
+            SetModuleHookInitFault(ModuleHookInitFaultCode::ModuleMissing, hook.ModuleName, hook.ExportName, nullptr);
+            continue;
+        }
+
+        ModuleRange moduleRange{};
+        if (!TryResolveModuleImageRange(moduleHandle, moduleRange))
+        {
+            SetModuleHookInitFault(ModuleHookInitFaultCode::ExportOutsideImage, hook.ModuleName, hook.ExportName,
+                                   moduleHandle);
             continue;
         }
 
         FARPROC exportAddress = GetProcAddress(moduleHandle, hook.ExportName);
         if (exportAddress == nullptr)
         {
+            SetModuleHookInitFault(ModuleHookInitFaultCode::ExportMissing, hook.ModuleName, hook.ExportName, nullptr);
             continue;
         }
 
         hook.TargetAddress = reinterpret_cast<void *>(exportAddress);
+        if (!AddressWithinRange(hook.TargetAddress, moduleRange))
+        {
+            SetModuleHookInitFault(ModuleHookInitFaultCode::ExportOutsideImage, hook.ModuleName, hook.ExportName,
+                                   hook.TargetAddress);
+            continue;
+        }
+
+        void *redirectTarget = nullptr;
+        if (TryDecodeAbsoluteTarget(hook.TargetAddress, redirectTarget) && redirectTarget != nullptr &&
+            !AddressWithinRange(redirectTarget, moduleRange))
+        {
+            SetModuleHookInitFault(ModuleHookInitFaultCode::ExportRedirectedOutsideImage, hook.ModuleName,
+                                   hook.ExportName, hook.TargetAddress, redirectTarget);
+            continue;
+        }
+
         if (!InstallInlineHook(hook.TargetAddress, hook.HookEntry, hook.OriginalBytes, &hook.Trampoline))
         {
+            SetModuleHookInitFault(ModuleHookInitFaultCode::PatchInstallFailed, hook.ModuleName, hook.ExportName,
+                                   hook.TargetAddress);
             continue;
         }
 
@@ -370,4 +638,15 @@ bool KeCheckModuleHookIntegrity(std::uint32_t *mismatchCount) noexcept
     }
 
     return mismatches == 0;
+}
+
+bool KeGetLastModuleHookInitFault(ModuleHookInitFault *faultOut) noexcept
+{
+    if (faultOut == nullptr)
+    {
+        return false;
+    }
+
+    *faultOut = g_LastModuleHookInitFault;
+    return faultOut->Code != ModuleHookInitFaultCode::None;
 }

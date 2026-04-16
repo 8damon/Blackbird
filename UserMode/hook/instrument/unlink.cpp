@@ -52,7 +52,7 @@ static void UnlinkListEntry(LIST_ENTRY *entry)
     entry->Blink = nullptr;
 }
 
-void UnlinkModule()
+void UnlinkModulePEB()
 {
 #if !defined(_WIN64)
     return;

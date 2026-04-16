@@ -12,7 +12,10 @@ enum class ModuleHookOperation : std::uint32_t
     LoadLibraryW = 1,
     LoadLibraryExA = 2,
     LoadLibraryExW = 3,
-    LdrLoadDll = 4
+    LdrLoadDll = 4,
+    RtlAddFunctionTable = 5,
+    RtlInstallFunctionTableCallback = 6,
+    RtlDeleteFunctionTable = 7
 };
 
 struct ModuleHookContext
@@ -29,7 +32,28 @@ struct ModuleHookContext
 
 using ModuleHookCallback = void (*)(const ModuleHookContext &context) noexcept;
 
+enum class ModuleHookInitFaultCode : std::uint32_t
+{
+    None = 0,
+    ModuleMissing,
+    ExportMissing,
+    ExportOutsideImage,
+    ExportRedirectedOutsideImage,
+    PatchInstallFailed,
+};
+
+struct ModuleHookInitFault
+{
+    ModuleHookInitFaultCode Code;
+    const wchar_t *ModuleName;
+    const char *ExportName;
+    void *Address;
+    void *RedirectTarget;
+    std::uint8_t Sample[16];
+};
+
 bool KeSetModuleHook(ModuleHookCallback callback) noexcept;
 void KeRemoveModuleHook() noexcept;
 
 bool KeCheckModuleHookIntegrity(std::uint32_t *mismatchCount) noexcept;
+bool KeGetLastModuleHookInitFault(ModuleHookInitFault *faultOut) noexcept;

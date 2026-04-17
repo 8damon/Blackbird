@@ -27,31 +27,40 @@
     <Filter Include="Controller Core\Injection">
       <UniqueIdentifier>{538DE716-C03C-4F3C-B415-8A8EF53B90A5}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Controller Core\Heuristics">
+      <UniqueIdentifier>{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\UserMode\controller\core\injection\Blackbird_controller_injection.c">
+    <ClCompile Include="..\UserMode\controller\controller.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\UserMode\controller\core\injection\injection.cpp">
       <Filter>Controller Core\Injection</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\controller\core\monitoring\Blackbird_controller_subscriptions.c">
+    <ClCompile Include="..\UserMode\controller\core\monitoring\ubscriptions.cpp">
       <Filter>Controller Core\Monitoring</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\controller\core\monitoring\Blackbird_controller_etw_monitor.c">
+    <ClCompile Include="..\UserMode\controller\core\monitoring\etw_monitor.cpp">
       <Filter>Controller Core\Monitoring</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\controller\core\correlation\Blackbird_controller_hollowing.c">
+    <ClCompile Include="..\UserMode\controller\core\correlation\hollowing.cpp">
       <Filter>Controller Core\Correlation</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\controller\core\ipc\Blackbird_controller_ipc.c">
+    <ClCompile Include="..\UserMode\controller\core\heuristics\heuristics.cpp">
+      <Filter>Controller Core\Heuristics</Filter>
+    </ClCompile>
+    <ClCompile Include="..\UserMode\controller\core\ipc\ipc.cpp">
       <Filter>Controller Core\IPC</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\controller\core\runtime\blackbird_controller_symbol_service.c">
+    <ClCompile Include="..\UserMode\controller\core\runtime\node_runtime.cpp">
       <Filter>Controller Core\Runtime</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\controller\core\runtime\Blackbird_controller_runtime.c">
+    <ClCompile Include="..\UserMode\controller\core\runtime\symbol_service.cpp">
       <Filter>Controller Core\Runtime</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\controller\Blackbird_controller.c">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="..\UserMode\controller\core\runtime\runtime.cpp">
+      <Filter>Controller Core\Runtime</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -64,11 +73,17 @@
     <ClInclude Include="..\UserMode\sensor\Blackbird_sensor_core.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\UserMode\controller\core\Blackbird_controller_private.h">
+      <Filter>Controller Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\UserMode\controller\core\util\handles.h">
+      <Filter>Controller Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\UserMode\controller\core\injection\Blackbird_controller_injection.h">
       <Filter>Controller Core\Injection</Filter>
     </ClInclude>
-    <ClInclude Include="..\UserMode\controller\core\Blackbird_controller_private.h">
-      <Filter>Controller Core</Filter>
+    <ClInclude Include="..\UserMode\controller\core\heuristics\heuristics.h">
+      <Filter>Controller Core\Heuristics</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -77,4 +92,3 @@
     </None>
   </ItemGroup>
 </Project>
-

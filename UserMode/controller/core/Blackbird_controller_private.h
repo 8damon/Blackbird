@@ -1,10 +1,6 @@
 #ifndef BLACKBIRD_CONTROLLER_PRIVATE_H
 #define BLACKBIRD_CONTROLLER_PRIVATE_H
 
-#ifndef _CRT_SECURE_NO_WARNINGS
-#define _CRT_SECURE_NO_WARNINGS
-#endif
-
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
@@ -18,49 +14,71 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#include <memory>
+#include <array>
+#include <vector>
+#include <atomic>
+#include "util/handles.h"
 #include "..\\..\\sensor\\blackbird_sensor_core.h"
 #include "..\\..\\..\\abi\\blackbird_ipc.h"
-#include "heuristics\\Blackbird_controller_heuristics.h"
+#include "heuristics\\heuristics.h"
 
+// ---------------------------------------------------------------------------
+// Compile-time constants
+// Using inline constexpr instead of #define gives type safety and scoping.
+// String literals and computed masks that must stay as macros are kept below.
+// ---------------------------------------------------------------------------
+inline constexpr DWORD BLACKBIRD_CONTROLLER_MAX_CLIENTS = 256u;
+inline constexpr DWORD BLACKBIRD_CONTROLLER_INVALID_SLOT = 0xFFFFFFFFu;
+inline constexpr DWORD BLACKBIRD_CONTROLLER_CLIENT_MASK_DWORDS = (BLACKBIRD_CONTROLLER_MAX_CLIENTS + 31u) / 32u;
+inline constexpr DWORD BLACKBIRD_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS = 256u;
+inline constexpr DWORD BLACKBIRD_CONTROLLER_MAX_CLIENT_QUEUE_DEPTH = 1024u;
+inline constexpr DWORD BLACKBIRD_CONTROLLER_MAX_CLIENT_ETW_QUEUE_DEPTH = 2048u;
+inline constexpr DWORD BLACKBIRD_CONTROLLER_SHARED_IOCTL_RING_CAPACITY = 262144u;
+inline constexpr DWORD BLACKBIRD_CONTROLLER_SHARED_ETW_RING_CAPACITY = 65536u;
+inline constexpr DWORD BLACKBIRD_CONTROLLER_DYNAMIC_SUBSCRIPTION_TTL_MS = 120000u;
+inline constexpr DWORD BLACKBIRD_CONTROLLER_DYNAMIC_SUBSCRIPTION_MAX_DEPTH = 3u;
+inline constexpr DWORD BLACKBIRD_CONTROLLER_HOOK_READY_TIMEOUT_MS = 15000u;
+inline constexpr DWORD BLACKBIRD_CONTROLLER_SERVER_ACCEPT_THREADS = 3u;
+inline constexpr DWORD BLACKBIRD_CONTROLLER_HOOK_ACCEPT_THREADS = 1u;
+inline constexpr DWORD BLACKBIRD_CONTROLLER_HOLLOW_MAX_ENTRIES = 256u;
+inline constexpr DWORD BLACKBIRD_CONTROLLER_HOLLOW_WINDOW_MS = 30000u;
+inline constexpr DWORD BLACKBIRD_CONTROLLER_MANUAL_MAP_EMIT_COOLDOWN_MS = 4000u;
+inline constexpr DWORD BLACKBIRD_CONTROLLER_MANUAL_MAP_PROBE_MIN_INTERVAL_MS = 1500u;
+inline constexpr DWORD BLACKBIRD_OPERATOR_DISCOVERY_PORT = 49371u;
+inline constexpr DWORD BLACKBIRD_OPERATOR_STATUS_PORT = 49372u;
+inline constexpr DWORD BLACKBIRD_OPERATOR_COMMAND_PORT = 49373u;
+inline constexpr UINT64 BLACKBIRD_CONTROLLER_HOLLOW_LARGE_ALLOC_BYTES = 0x8000ull;
+
+// String literals and computed masks remain as macros (constexpr won't help here).
 #define BLACKBIRD_CONTROLLER_SERVICE_NAMEW L"BlackbirdController"
 #define BLACKBIRD_CONTROLLER_ETW_SESSION_NAMEW L"BlackbirdControllerSession"
-#define BLACKBIRD_CONTROLLER_MAX_CLIENTS 256u
-#define BLACKBIRD_CONTROLLER_INVALID_SLOT 0xFFFFFFFFu
-#define BLACKBIRD_CONTROLLER_CLIENT_MASK_DWORDS ((BLACKBIRD_CONTROLLER_MAX_CLIENTS + 31u) / 32u)
-#define BLACKBIRD_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS 256u
-#define BLACKBIRD_CONTROLLER_MAX_CLIENT_QUEUE_DEPTH 1024u
-#define BLACKBIRD_CONTROLLER_MAX_CLIENT_ETW_QUEUE_DEPTH 2048u
-#define BLACKBIRD_CONTROLLER_SHARED_IOCTL_RING_CAPACITY 262144u
-#define BLACKBIRD_CONTROLLER_SHARED_ETW_RING_CAPACITY 65536u
-#define BLACKBIRD_CONTROLLER_DYNAMIC_SUBSCRIPTION_TTL_MS 120000u
-#define BLACKBIRD_CONTROLLER_DYNAMIC_SUBSCRIPTION_MAX_DEPTH 3u
-#define BLACKBIRD_CONTROLLER_HOOK_READY_TIMEOUT_MS 15000u
-#define BLACKBIRD_CONTROLLER_HOOK_LAUNCH_REQUIRED_MASK BLACKBIRD_IPC_HOOK_READY_FLAG_IPC_CONNECTED
-#define BLACKBIRD_CONTROLLER_HOOK_READY_REQUIRED_MASK BLACKBIRD_IPC_HOOK_READY_REQUIRED_MASK
-#define BLACKBIRD_CONTROLLER_SERVER_ACCEPT_THREADS 3u
-#define BLACKBIRD_CONTROLLER_HOOK_ACCEPT_THREADS 1u
-
-typedef enum _BLACKBIRD_CONTROLLER_CLIENT_ROLE
-{
-    BlackbirdControllerClientRoleUnknown = 0,
-    BlackbirdControllerClientRoleControl = 1,
-    BlackbirdControllerClientRoleHook = 2
-} BLACKBIRD_CONTROLLER_CLIENT_ROLE,
-    *PBLACKBIRD_CONTROLLER_CLIENT_ROLE;
-#define BLACKBIRD_CONTROLLER_HOLLOW_MAX_ENTRIES 256u
-#define BLACKBIRD_CONTROLLER_HOLLOW_WINDOW_MS 30000u
-#define BLACKBIRD_CONTROLLER_HOLLOW_LARGE_ALLOC_BYTES 0x8000ull
-#define BLACKBIRD_CONTROLLER_MANUAL_MAP_EMIT_COOLDOWN_MS 4000u
-#define BLACKBIRD_CONTROLLER_MANUAL_MAP_PROBE_MIN_INTERVAL_MS 1500u
-#define BLACKBIRD_OPERATOR_DISCOVERY_PORT 49371u
-#define BLACKBIRD_OPERATOR_STATUS_PORT 49372u
-#define BLACKBIRD_OPERATOR_COMMAND_PORT 49373u
+#define BLACKBIRD_CONTROLLER_VERSIONA "1.7.0"
 #define BLACKBIRD_OPERATOR_DISCOVERY_QUERY "BLACKBIRD_DISCOVER_V1"
 #define BLACKBIRD_OPERATOR_BEACON_KIND "blackbird.node.beacon"
 #define BLACKBIRD_OPERATOR_STATUS_KIND "blackbird.node.status"
-#define BLACKBIRD_CONTROLLER_VERSIONA "1.7.0"
+#define BLACKBIRD_CONTROLLER_HOOK_LAUNCH_REQUIRED_MASK BLACKBIRD_IPC_HOOK_READY_FLAG_IPC_CONNECTED
+#define BLACKBIRD_CONTROLLER_HOOK_READY_REQUIRED_MASK BLACKBIRD_IPC_HOOK_READY_REQUIRED_MASK
 #define BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK \
     (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD | BLACKBIRD_STREAM_FILESYSTEM)
+
+// ---------------------------------------------------------------------------
+// Client role — scoped enum replaces the C typedef enum.
+// The underlying type matches DWORD so it is safe to store in DWORD fields
+// without a cast, while still preventing implicit integer/enum conflation.
+// ---------------------------------------------------------------------------
+enum class BlackbirdControllerClientRole : DWORD
+{
+    Unknown = 0,
+    Control = 1,
+    Hook = 2
+};
+// Compatibility aliases so the old enumerator names keep working at call sites.
+inline constexpr DWORD BlackbirdControllerClientRoleUnknown =
+    static_cast<DWORD>(BlackbirdControllerClientRole::Unknown);
+inline constexpr DWORD BlackbirdControllerClientRoleControl =
+    static_cast<DWORD>(BlackbirdControllerClientRole::Control);
+inline constexpr DWORD BlackbirdControllerClientRoleHook = static_cast<DWORD>(BlackbirdControllerClientRole::Hook);
 
 typedef struct _BLACKBIRD_CONTROLLER_SUBSCRIPTION
 {
@@ -91,7 +109,6 @@ typedef struct _BLACKBIRD_CONTROLLER_CLIENT
     DWORD ProcessId;
     DWORD SessionId;
     DWORD Role;
-    BOOL ControlAuthenticated;
     DWORD SlotIndex;
     CRITICAL_SECTION Lock;
     DWORD SubscriptionCount;
@@ -182,16 +199,13 @@ extern BOOL g_ThreatIntelEnabled;
 extern DWORD g_ThreatIntelEnableError;
 extern volatile LONG g_EtwDetectionEvents;
 extern volatile LONG g_EtwTiEvents;
-extern CRITICAL_SECTION g_ClientListLock;
-extern CRITICAL_SECTION g_DriverLock;
-extern CRITICAL_SECTION g_DriverConfigLock;
-extern BOOL g_LocksInitialized;
+extern OwnedCriticalSection g_ClientListLock;
+extern OwnedCriticalSection g_DriverLock;
+extern OwnedCriticalSection g_DriverConfigLock;
 extern volatile LONG g_DriverSubscriptionsDirty;
 extern PBLACKBIRD_CONTROLLER_CLIENT g_ClientList;
 extern PBLACKBIRD_CONTROLLER_CLIENT g_ClientSlots[BLACKBIRD_CONTROLLER_MAX_CLIENTS];
 extern DWORD g_ClientCount;
-extern volatile DWORD g_AuthorizedControlProcessId;
-extern volatile DWORD g_AuthorizedControlSessionId;
 extern DWORD g_ProgrammedPids[BLACKBIRD_MAX_PID_LIST];
 extern DWORD g_ProgrammedPidCount;
 extern BLACKBIRD_CONTROLLER_PID_INDEX_ENTRY g_PidIndex[BLACKBIRD_MAX_PID_LIST];
@@ -268,5 +282,30 @@ BOOL ControllerCreatePipeSecurity(_In_ DWORD ClientRole, _Out_ PSECURITY_ATTRIBU
 DWORD ControllerWaitForHookReady(_In_ DWORD ProcessId);
 VOID ControllerDetachClient(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client);
 DWORD WINAPI ControllerClientThreadProc(_In_ LPVOID Context);
+
+// ---------------------------------------------------------------------------
+// ABI safety assertions
+// Structs that cross the C/C++ or kernel/usermode boundary must remain
+// trivially copyable POD so that the compiler cannot silently insert padding
+// or vtable pointers.
+// ---------------------------------------------------------------------------
+static_assert(std::is_trivially_copyable_v<BLACKBIRD_CONTROLLER_SUBSCRIPTION>,
+              "BLACKBIRD_CONTROLLER_SUBSCRIPTION must remain trivially copyable");
+static_assert(std::is_trivially_copyable_v<BLACKBIRD_CONTROLLER_CLIENT>,
+              "BLACKBIRD_CONTROLLER_CLIENT must remain trivially copyable");
+static_assert(std::is_trivially_copyable_v<BLACKBIRD_CONTROLLER_HOLLOW_ENTRY>,
+              "BLACKBIRD_CONTROLLER_HOLLOW_ENTRY must remain trivially copyable");
+static_assert(std::is_trivially_copyable_v<BLACKBIRD_CONTROLLER_PID_INDEX_ENTRY>,
+              "BLACKBIRD_CONTROLLER_PID_INDEX_ENTRY must remain trivially copyable");
+
+// ---------------------------------------------------------------------------
+// Service entry points — must keep C linkage to match SCM expectations.
+// ---------------------------------------------------------------------------
+extern "C"
+{
+    VOID WINAPI ServiceMain(_In_ DWORD argc, _In_ LPWSTR *argv);
+    DWORD WINAPI ServiceCtrlHandlerEx(_In_ DWORD control, _In_ DWORD eventType, _In_opt_ LPVOID eventData,
+                                      _In_opt_ LPVOID context);
+}
 
 #endif

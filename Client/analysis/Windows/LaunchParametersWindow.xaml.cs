@@ -51,10 +51,16 @@ namespace BlackbirdInterface
 
             if (EarlyBirdApcCheckBox != null)
             {
-                EarlyBirdApcCheckBox.IsEnabled = canUseEarlyBird;
+                EarlyBirdApcCheckBox.IsEnabled = false;
+                EarlyBirdApcCheckBox.IsChecked = canUseEarlyBird;
+            }
+
+            if (ConcealHookPresenceCheckBox != null)
+            {
+                ConcealHookPresenceCheckBox.IsEnabled = canUseEarlyBird;
                 if (!canUseEarlyBird)
                 {
-                    EarlyBirdApcCheckBox.IsChecked = false;
+                    ConcealHookPresenceCheckBox.IsChecked = false;
                 }
             }
 
@@ -64,11 +70,20 @@ namespace BlackbirdInterface
                 LaunchPhaseOnePanel.Opacity = launchControlsEnabled ? 1.0 : 0.55;
             }
 
+            if (IntegrityLevelComboBox != null)
+            {
+                IntegrityLevelComboBox.IsEnabled = launchControlsEnabled;
+                if (!launchControlsEnabled)
+                {
+                    IntegrityLevelComboBox.SelectedIndex = 0;
+                }
+            }
+
             if (CompatibilityNoteBlock != null)
             {
                 CompatibilityNoteBlock.Text = _isLaunchTarget
-                    ? "Parent PID and inherited handles only apply when creating a new process."
-                    : "Launch-only controls are disabled for attach mode. EarlyBird APC is also unavailable because the process is already running.";
+                    ? "Parent PID and inherited handles only apply when creating a new process. Launch hooking now always uses APC."
+                    : "Launch-only controls are disabled for attach mode. APC launch only applies when creating a new process.";
             }
         }
 
@@ -97,6 +112,7 @@ namespace BlackbirdInterface
             LaunchProfile.WorkingDirectory = _isLaunchTarget ? (WorkingDirectoryTextBox?.Text?.Trim() ?? string.Empty) : string.Empty;
             LaunchProfile.EnvironmentOverridesText = _isLaunchTarget ? (EnvironmentOverridesTextBox?.Text ?? string.Empty) : string.Empty;
             LaunchProfile.LeaveSuspendedAfterReady = _isLaunchTarget && (LeaveSuspendedCheckBox?.IsChecked == true);
+            LaunchProfile.ConcealHookPresence = _isLaunchTarget && (ConcealHookPresenceCheckBox?.IsChecked == true);
             LaunchProfile.InheritHandles = _isLaunchTarget && (InheritHandlesCheckBox?.IsChecked == true);
             LaunchProfile.ParentProcessId = 0;
             LaunchProfile.AffinityMask = 0;
@@ -110,6 +126,16 @@ namespace BlackbirdInterface
                 6 => LaunchPriorityPreset.Realtime,
                 _ => LaunchPriorityPreset.Inherit
             };
+
+            LaunchProfile.IntegrityLevel = _isLaunchTarget ? IntegrityLevelComboBox?.SelectedIndex switch
+            {
+                1 => LaunchIntegrityLevel.Untrusted,
+                2 => LaunchIntegrityLevel.Low,
+                3 => LaunchIntegrityLevel.Medium,
+                4 => LaunchIntegrityLevel.High,
+                5 => LaunchIntegrityLevel.System,
+                _ => LaunchIntegrityLevel.Default
+            } : LaunchIntegrityLevel.Default;
 
             if (!_isLaunchTarget)
             {

@@ -96,9 +96,14 @@
                           AutoGenerateColumns="False"
                           IsReadOnly="True"
                           BorderThickness="0"
+                          GridLinesVisibility="None"
+                          HorizontalGridLinesBrush="Transparent"
+                          VerticalGridLinesBrush="Transparent"
                           CanUserResizeRows="False"
                           ColumnHeaderHeight="24"
                           RowHeight="22"
+                          ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                           MouseDoubleClick="HeuristicsGrid_MouseDoubleClick">
                     <DataGrid.RowStyle>
                         <Style TargetType="DataGridRow">
@@ -127,9 +132,9 @@
                         </Style>
                     </DataGrid.RowStyle>
                     <DataGrid.Columns>
+                        <DataGridTextColumn Header="Detection" Width="*" Binding="{Binding Detection}"/>
                         <DataGridTextColumn Header="Event" Width="260" Binding="{Binding Event}"/>
                         <DataGridTextColumn Header="Hits" Width="72" Binding="{Binding Hits}"/>
-                        <DataGridTextColumn Header="Detection" Width="*" Binding="{Binding Detection}"/>
                     </DataGrid.Columns>
                 </DataGrid>
 

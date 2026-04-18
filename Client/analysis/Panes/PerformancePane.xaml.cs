@@ -31,11 +31,13 @@ namespace BlackbirdInterface
         private DateTime _viewEndUtc;
         private PerformanceSample? _lastSample;
         private readonly List<PerformanceSample> _historySamples = new();
+        private readonly List<MemoryRegionAttributionSample> _memoryRegionAttributionHistory = new();
         private readonly List<ThreadLifecycleEventSample> _threadLifecycleHistory = new();
         private bool _timeTravelEnabled = true;
         private bool _timeTravelSliderProgrammatic;
         private int _selectedSampleIndex = -1;
         private bool _memoryInspectorEnabled;
+        private bool _closingMemoryInspectorWindow;
         private bool _threadLifecycleEnabled;
 
         private readonly TimeSeriesBuffer _cpu = new(2000);
@@ -44,6 +46,7 @@ namespace BlackbirdInterface
         private readonly TimeSeriesBuffer _ramPrivate = new(2000);
         private readonly TimeSeriesBuffer _netIn = new(2000);
         private readonly TimeSeriesBuffer _netOut = new(2000);
+        private MemoryInspectorWindow? _memoryInspectorWindow;
 
         private int _pid;
         private DateTime _lastDetailsRefreshUtc;
@@ -68,13 +71,20 @@ namespace BlackbirdInterface
         public PerformancePane()
         {
             InitializeComponent();
-            if (ThreadsGrid != null) ThreadsGrid.ItemsSource = TopThreads;
-            if (ModulesGrid != null) ModulesGrid.ItemsSource = Modules;
-            if (PeInfoGrid != null) PeInfoGrid.ItemsSource = PeInfo;
-            if (MemoryGrid != null) MemoryGrid.ItemsSource = MemoryMetrics;
-            if (MemoryInspectorGrid != null) MemoryInspectorGrid.ItemsSource = MemoryInspectorRows;
-            if (ThreadLifecycleGrid != null) ThreadLifecycleGrid.ItemsSource = ThreadLifecycleRows;
-            if (NetworkPeersGrid != null) NetworkPeersGrid.ItemsSource = NetworkPeers;
+            if (ThreadsGrid != null)
+                ThreadsGrid.ItemsSource = TopThreads;
+            if (ModulesGrid != null)
+                ModulesGrid.ItemsSource = Modules;
+            if (PeInfoGrid != null)
+                PeInfoGrid.ItemsSource = PeInfo;
+            if (MemoryGrid != null)
+                MemoryGrid.ItemsSource = MemoryMetrics;
+            if (MemoryInspectorGrid != null)
+                MemoryInspectorGrid.ItemsSource = MemoryInspectorRows;
+            if (ThreadLifecycleGrid != null)
+                ThreadLifecycleGrid.ItemsSource = ThreadLifecycleRows;
+            if (NetworkPeersGrid != null)
+                NetworkPeersGrid.ItemsSource = NetworkPeers;
             if (MemoryTreemapCanvas != null)
             {
                 MemoryTreemapCanvas.SizeChanged += (_, __) => UpdateMemoryTreemap();
@@ -90,12 +100,18 @@ namespace BlackbirdInterface
                     MemoryViewToggle.IsChecked = true;
                     MemoryViewToggle.Content = "Table";
                 }
-                if (MemoryGrid != null) MemoryGrid.Visibility = Visibility.Collapsed;
-                if (MemoryTreemapHost != null) MemoryTreemapHost.Visibility = Visibility.Visible;
-                if (MemoryInspectorGrid != null) MemoryInspectorGrid.Visibility = Visibility.Collapsed;
-                if (ThreadsGrid != null) ThreadsGrid.Visibility = Visibility.Visible;
-                if (ThreadLifecycleGrid != null) ThreadLifecycleGrid.Visibility = Visibility.Collapsed;
-                if (TimeTravelStampBlock != null) TimeTravelStampBlock.Text = "LIVE";
+                if (MemoryGrid != null)
+                    MemoryGrid.Visibility = Visibility.Collapsed;
+                if (MemoryTreemapHost != null)
+                    MemoryTreemapHost.Visibility = Visibility.Visible;
+                if (MemoryInspectorGrid != null)
+                    MemoryInspectorGrid.Visibility = Visibility.Collapsed;
+                if (ThreadsGrid != null)
+                    ThreadsGrid.Visibility = Visibility.Visible;
+                if (ThreadLifecycleGrid != null)
+                    ThreadLifecycleGrid.Visibility = Visibility.Collapsed;
+                if (TimeTravelStampBlock != null)
+                    TimeTravelStampBlock.Text = "LIVE";
                 UpdateMemoryViewMode();
                 UpdateDetailsLayout();
                 UpdateLiveDataOverlays();
@@ -110,7 +126,8 @@ namespace BlackbirdInterface
 
         private void UpdateNetworkPaneView()
         {
-            if (NetChart == null || NetworkPeersGrid == null || NetworkPaneTitle == null || NetworkViewSwitchButton == null)
+            if (NetChart == null || NetworkPeersGrid == null || NetworkPaneTitle == null ||
+                NetworkViewSwitchButton == null)
                 return;
 
             if (_showNetworkPeers)
@@ -139,39 +156,45 @@ namespace BlackbirdInterface
         {
             if (CpuChart != null)
             {
-                CpuChart.SetSeries(new[]
-                {
-                    new ChartSeries("CPU %", Brush(0x35, 0xA8, 0xFF), SeriesScale.Percent, p => p.CpuPercent, ChartValueFormat.Percent),
-                    new ChartSeries("Cores used %", Brush(0x7C, 0xD5, 0xFF), SeriesScale.Percent, p => p.CoresUsedPercent, ChartValueFormat.Percent),
+                CpuChart.SetSeries(new[] {
+                    new ChartSeries("CPU %", Brush(0x35, 0xA8, 0xFF), SeriesScale.Percent, p => p.CpuPercent,
+                                    ChartValueFormat.Percent),
+                    new ChartSeries("Cores used %", Brush(0x7C, 0xD5, 0xFF), SeriesScale.Percent,
+                                    p => p.CoresUsedPercent, ChartValueFormat.Percent),
                 });
             }
 
             if (DiskChart != null)
             {
-                DiskChart.SetSeries(new[]
-                {
-                    new ChartSeries("Read B/s", Brush(0xFF9A21), SeriesScale.AutoToViewMax, p => p.DiskReadBytesPerSec, ChartValueFormat.BytesPerSecond),
-                    new ChartSeries("Write B/s", Brush(0xFF4545), SeriesScale.AutoToViewMax, p => p.DiskWriteBytesPerSec, ChartValueFormat.BytesPerSecond),
+                DiskChart.SetSeries(new[] {
+                    new ChartSeries("Read B/s", Brush(0xFF9A21), SeriesScale.AutoToViewMax, p => p.DiskReadBytesPerSec,
+                                    ChartValueFormat.BytesPerSecond),
+                    new ChartSeries("Write B/s", Brush(0xFF4545), SeriesScale.AutoToViewMax,
+                                    p => p.DiskWriteBytesPerSec, ChartValueFormat.BytesPerSecond),
                 });
             }
 
             if (RamChart != null)
             {
-                RamChart.SetSeries(new[]
-                {
-                    new ChartSeries("Private bytes", Brush(0x43, 0xF2, 0x72), SeriesScale.AutoToViewMax, p => p.PrivateBytes, ChartValueFormat.Bytes),
-                    new ChartSeries("Commit", Brush(0x66, 0xD9, 0xEF), SeriesScale.AutoToViewMax, p => p.CommitBytes, ChartValueFormat.Bytes),
-                    new ChartSeries("MEM_IMAGE", Brush(0xFF, 0xC8, 0x57), SeriesScale.AutoToViewMax, p => p.ImageBytes, ChartValueFormat.Bytes),
-                    new ChartSeries("MEM_MAPPED", Brush(0xB2, 0x8D, 0xFF), SeriesScale.AutoToViewMax, p => p.MappedBytes, ChartValueFormat.Bytes),
+                RamChart.SetSeries(new[] {
+                    new ChartSeries("Private bytes", Brush(0x43, 0xF2, 0x72), SeriesScale.AutoToViewMax,
+                                    p => p.PrivateBytes, ChartValueFormat.Bytes),
+                    new ChartSeries("Commit", Brush(0x66, 0xD9, 0xEF), SeriesScale.AutoToViewMax, p => p.CommitBytes,
+                                    ChartValueFormat.Bytes),
+                    new ChartSeries("MEM_IMAGE", Brush(0xFF, 0xC8, 0x57), SeriesScale.AutoToViewMax, p => p.ImageBytes,
+                                    ChartValueFormat.Bytes),
+                    new ChartSeries("MEM_MAPPED", Brush(0xB2, 0x8D, 0xFF), SeriesScale.AutoToViewMax,
+                                    p => p.MappedBytes, ChartValueFormat.Bytes),
                 });
             }
 
             if (NetChart != null)
             {
-                NetChart.SetSeries(new[]
-                {
-                    new ChartSeries("Inbound B/s", Brush(0xA0, 0x5B, 0xFF), SeriesScale.AutoToViewMax, p => p.NetInBytesPerSec, ChartValueFormat.BytesPerSecond),
-                    new ChartSeries("Outbound B/s", Brush(0xC0, 0x86, 0xFF), SeriesScale.AutoToViewMax, p => p.NetOutBytesPerSec, ChartValueFormat.BytesPerSecond),
+                NetChart.SetSeries(new[] {
+                    new ChartSeries("Inbound B/s", Brush(0xA0, 0x5B, 0xFF), SeriesScale.AutoToViewMax,
+                                    p => p.NetInBytesPerSec, ChartValueFormat.BytesPerSecond),
+                    new ChartSeries("Outbound B/s", Brush(0xC0, 0x86, 0xFF), SeriesScale.AutoToViewMax,
+                                    p => p.NetOutBytesPerSec, ChartValueFormat.BytesPerSecond),
                 });
             }
         }
@@ -228,11 +251,9 @@ namespace BlackbirdInterface
             return FindSampleIndexForTimestamp(target);
         }
 
-        private int ResolveSampleIndexForCurrentView()
-            => ResolveSampleIndexForTimestamp(GetObservedTimestampUtc());
+        private int ResolveSampleIndexForCurrentView() => ResolveSampleIndexForTimestamp(GetObservedTimestampUtc());
 
-        private bool HasHistoricalDataForObservedTime()
-            => ResolveSampleIndexForCurrentView() >= 0;
+        private bool HasHistoricalDataForObservedTime() => ResolveSampleIndexForCurrentView() >= 0;
 
         public void SetPid(int pid)
         {
@@ -245,6 +266,7 @@ namespace BlackbirdInterface
                 ThreadLifecycleRows.Clear();
                 MemoryMetrics.Clear();
                 MemoryInspectorRows.Clear();
+                _memoryRegionAttributionHistory.Clear();
                 RebuildTimeTravelSliderBounds();
                 if (TimeTravelStampBlock != null)
                 {
@@ -252,6 +274,7 @@ namespace BlackbirdInterface
                 }
             }
             _pid = pid;
+            UpdateMemoryInspectorWindowTitle();
         }
 
         public void SetProcessLiveDataAvailable(bool available)
@@ -259,7 +282,11 @@ namespace BlackbirdInterface
             _processLiveDataAvailable = available;
             if (!available)
             {
-                if (_historySamples.Count == 0)
+                if (_targetSuspended)
+                {
+                    PreserveSuspendedThreadState();
+                }
+                else if (_historySamples.Count == 0)
                 {
                     TopThreads.Clear();
                     ThreadLifecycleRows.Clear();
@@ -292,23 +319,118 @@ namespace BlackbirdInterface
             {
                 ApplySampleIndex(_historySamples.Count - 1, updateSlider: false);
             }
+            else if (suspended)
+            {
+                PreserveSuspendedThreadState();
+                UpdateSubtitle();
+                UpdateLiveDataOverlays();
+            }
             else
             {
                 UpdateLiveDataOverlays();
             }
         }
 
-        public IReadOnlyList<ThreadUsageRow> SnapshotTopThreads()
-            => TopThreads.Select(row => new ThreadUsageRow(new ThreadUsageSample
+        private void PreserveSuspendedThreadState()
+        {
+            List<ThreadUsageSample> suspendedThreads = BuildSuspendedThreadSnapshot();
+            if (suspendedThreads.Count == 0)
             {
-                Tid = row.Tid,
-                CpuMsDelta = row.CpuMs,
-                State = row.State,
-                WaitReason = row.IsSuspended ? "Suspended" : string.Empty,
-                Kind = row.ThreadKind,
-                StartTimeUtc = row.StartTimeUtc,
-                TargetSuspended = row.IsSuspended
-            })).ToList();
+                return;
+            }
+
+            TopThreads.Clear();
+            foreach (ThreadUsageSample sample in suspendedThreads)
+            {
+                TopThreads.Add(new ThreadUsageRow(sample, targetSuspendedOverride: true));
+            }
+
+            if (_threadLifecycleHistory.Count > 0)
+            {
+                RebuildThreadLifecycleRows(DateTime.UtcNow);
+            }
+        }
+
+        private List<ThreadUsageSample> BuildSuspendedThreadSnapshot()
+        {
+            if (_lastSample?.TopThreads.Count > 0)
+            {
+                return _lastSample.TopThreads.Select(CloneThreadUsageForSuspension)
+                                  .OrderByDescending(x => x.CpuMsDelta)
+                                  .Take(14)
+                                  .ToList();
+            }
+
+            if (TopThreads.Count > 0)
+            {
+                return TopThreads.Select(row => new ThreadUsageSample {
+                                      Tid = row.Tid,
+                                      CpuMsDelta = row.CpuMs,
+                                      State = row.State,
+                                      WaitReason = row.IsSuspended ? "Suspended" : string.Empty,
+                                      Kind = row.ThreadKind,
+                                      StartTimeUtc = row.StartTimeUtc,
+                                      TargetSuspended = true
+                                  })
+                               .Take(14)
+                               .ToList();
+            }
+
+            if (_threadLifecycleHistory.Count == 0)
+            {
+                return new List<ThreadUsageSample>();
+            }
+
+            var activeThreads = new Dictionary<uint, ThreadLifecycleEventSample>();
+            for (int i = 0; i < _threadLifecycleHistory.Count; i += 1)
+            {
+                ThreadLifecycleEventSample sample = _threadLifecycleHistory[i];
+                if (!sample.EventKind.Equals("Exit", StringComparison.OrdinalIgnoreCase))
+                {
+                    activeThreads[sample.ThreadId] = sample;
+                }
+                else
+                {
+                    activeThreads.Remove(sample.ThreadId);
+                }
+            }
+
+            return activeThreads.Values
+                .OrderByDescending(x => x.TimestampUtc)
+                .Take(14)
+                .Select(sample => new ThreadUsageSample {
+                            Tid = unchecked((int)sample.ThreadId),
+                            CpuMsDelta = 0,
+                            State = "Suspended",
+                            WaitReason = "Suspended",
+                            Kind = string.IsNullOrWhiteSpace(sample.EventKind) ? "Thread" : sample.EventKind,
+                            StartTimeUtc = sample.TimestampUtc,
+                            TargetSuspended = true
+                        })
+                .ToList();
+        }
+
+        private static ThreadUsageSample CloneThreadUsageForSuspension(ThreadUsageSample sample)
+        {
+            return new ThreadUsageSample {
+                Tid = sample.Tid,
+                CpuMsDelta = sample.CpuMsDelta,
+                State = sample.State,
+                WaitReason = "Suspended",
+                Kind = sample.Kind,
+                StartTimeUtc = sample.StartTimeUtc,
+                TargetSuspended = true
+            };
+        }
+
+        public IReadOnlyList<ThreadUsageRow> SnapshotTopThreads() =>
+            TopThreads
+                .Select(row => new ThreadUsageRow(new ThreadUsageSample {
+                            Tid = row.Tid, CpuMsDelta = row.CpuMs, State = row.State,
+                            WaitReason = row.IsSuspended ? "Suspended" : string.Empty, Kind = row.ThreadKind,
+                            StartTimeUtc = row.StartTimeUtc, TargetSuspended = row.IsSuspended
+                        }))
+                .ToList();
 
         public void SetViewWindow(DateTime viewStartUtc, DateTime viewEndUtc)
         {
@@ -340,7 +462,6 @@ namespace BlackbirdInterface
             }
             RebuildTimeTravelSliderBounds();
 
-            // keep buffers (not strictly necessary for drawing but useful if you want export later)
             _cpu.Add(s.TimestampUtc, s.CpuPercent);
             _diskRead.Add(s.TimestampUtc, s.DiskReadBytesPerSec);
             _diskWrite.Add(s.TimestampUtc, s.DiskWriteBytesPerSec);
@@ -392,9 +513,7 @@ namespace BlackbirdInterface
             RebuildTimeTravelSliderBounds();
             if (_historySamples.Count > 0)
             {
-                int index = _timeTravelEnabled
-                    ? ResolveSampleIndexForCurrentView()
-                    : _historySamples.Count - 1;
+                int index = _timeTravelEnabled ? ResolveSampleIndexForCurrentView() : _historySamples.Count - 1;
                 ApplySampleIndex(index, updateSlider: true);
             }
             else
@@ -408,6 +527,59 @@ namespace BlackbirdInterface
             RefreshProcessDetails();
             UpdateSubtitle();
             UpdateLiveDataOverlays();
+        }
+
+        public void PushMemoryRegionAttributions(IEnumerable<MemoryRegionAttributionSample> samples)
+        {
+            bool appended = false;
+            foreach (MemoryRegionAttributionSample sample in samples)
+            {
+                _memoryRegionAttributionHistory.Add(CloneMemoryRegionAttributionSample(sample));
+                appended = true;
+            }
+
+            if (!appended)
+            {
+                return;
+            }
+
+            if (_memoryRegionAttributionHistory.Count > 40_000)
+            {
+                _memoryRegionAttributionHistory.RemoveRange(0, _memoryRegionAttributionHistory.Count - 40_000);
+            }
+
+            if (_selectedSampleIndex >= 0 && _selectedSampleIndex < _historySamples.Count)
+            {
+                RebuildMemoryInspectorRows(_historySamples[_selectedSampleIndex].MemoryPages,
+                                           _historySamples[_selectedSampleIndex].TimestampUtc);
+            }
+            else if (_lastSample != null)
+            {
+                RebuildMemoryInspectorRows(_lastSample.MemoryPages, _lastSample.TimestampUtc);
+            }
+
+            UpdateLiveDataOverlays();
+        }
+
+        public void LoadMemoryRegionAttributionHistory(IEnumerable<MemoryRegionAttributionSample> history)
+        {
+            _memoryRegionAttributionHistory.Clear();
+            _memoryRegionAttributionHistory.AddRange(
+                history.Select(CloneMemoryRegionAttributionSample).OrderBy(x => x.TimestampUtc));
+
+            if (_selectedSampleIndex >= 0 && _selectedSampleIndex < _historySamples.Count)
+            {
+                RebuildMemoryInspectorRows(_historySamples[_selectedSampleIndex].MemoryPages,
+                                           _historySamples[_selectedSampleIndex].TimestampUtc);
+            }
+            else if (_lastSample != null)
+            {
+                RebuildMemoryInspectorRows(_lastSample.MemoryPages, _lastSample.TimestampUtc);
+            }
+            else
+            {
+                MemoryInspectorRows.Clear();
+            }
         }
 
         public void PushThreadLifecycle(ThreadLifecycleEventSample sample)
@@ -447,9 +619,10 @@ namespace BlackbirdInterface
             _threadLifecycleHistory.Clear();
             _threadLifecycleHistory.AddRange(history.Select(CloneThreadLifecycleEvent).OrderBy(x => x.TimestampUtc));
 
-            DateTime cutoff = _historySamples.Count > 0 && _selectedSampleIndex >= 0 && _selectedSampleIndex < _historySamples.Count
-                ? _historySamples[_selectedSampleIndex].TimestampUtc
-                : DateTime.UtcNow;
+            DateTime cutoff =
+                _historySamples.Count > 0 && _selectedSampleIndex >= 0 && _selectedSampleIndex < _historySamples.Count
+                    ? _historySamples[_selectedSampleIndex].TimestampUtc
+                    : DateTime.UtcNow;
             RebuildThreadLifecycleRows(cutoff);
             UpdateLiveDataOverlays();
         }
@@ -536,10 +709,8 @@ namespace BlackbirdInterface
                 selectedThreadIndex = ThreadsGrid.SelectedIndex;
             }
 
-            var rebuiltThreads = sample.TopThreads
-                .Take(14)
-                .Select(thread => new ThreadUsageRow(thread, _targetSuspended))
-                .ToList();
+            var rebuiltThreads =
+                sample.TopThreads.Take(14).Select(thread => new ThreadUsageRow(thread, _targetSuspended)).ToList();
             if (selectedThreadTid > 0 && selectedThreadIndex >= 0 && selectedThreadIndex < rebuiltThreads.Count)
             {
                 int selectedIndexInNew = rebuiltThreads.FindIndex(x => x.Tid == selectedThreadTid);
@@ -568,14 +739,10 @@ namespace BlackbirdInterface
             MemoryMetrics.Clear();
             foreach (MemoryMetricSample metric in sample.MemoryMetrics)
             {
-                MemoryMetrics.Add(new MemoryMetricRow
-                {
-                    Metric = metric.Metric,
-                    Value = metric.Value,
-                    BytesValue = metric.BytesValue
-                });
+                MemoryMetrics.Add(new MemoryMetricRow { Metric = metric.Metric, Value = metric.Value,
+                                                        BytesValue = metric.BytesValue });
             }
-            RebuildMemoryInspectorRows(sample.MemoryPages);
+            RebuildMemoryInspectorRows(sample.MemoryPages, sample.TimestampUtc);
             RebuildThreadLifecycleRows(sample.TimestampUtc);
 
             if (TimeTravelStampBlock != null)
@@ -597,40 +764,365 @@ namespace BlackbirdInterface
             UpdateLiveDataOverlays();
         }
 
-        private void RebuildMemoryInspectorRows(IEnumerable<MemoryPageSample> pages)
+        private void RebuildMemoryInspectorRows(IEnumerable<MemoryPageSample> pages, DateTime cutoffUtc)
         {
-            MemoryInspectorRows.Clear();
-            foreach (MemoryPageSample page in pages.Take(768))
+            List<MemoryInspectorRow> rows =
+                pages
+                    .Select(page =>
+                            {
+                                MemoryRegionAttributionSample? attribution =
+                                    FindLatestMemoryRegionAttribution(page, cutoffUtc);
+                                string allocator = DescribeAllocator(attribution);
+                                string source = DescribeResolvedMemorySource(page, attribution);
+                                string trust = DescribeResolvedMemoryTrust(page, attribution);
+                                string priorityBand = DetermineMemoryPriorityBand(page, trust);
+
+                                return new MemoryInspectorRow { BaseAddress = $"0x{page.BaseAddress:X}",
+                                                                Size = FormatBytes((long)Math.Min(
+                                                                    page.RegionSize, (ulong) long.MaxValue)),
+                                                                State = page.StateLabel,
+                                                                Type = page.TypeLabel,
+                                                                Protect = page.ProtectLabel,
+                                                                Category = DescribeResolvedMemoryCategory(page),
+                                                                Allocator = allocator,
+                                                                Source = source,
+                                                                Trust = trust,
+                                                                PriorityBand = priorityBand,
+                                                                SortRank = MemoryPriorityBandRank(priorityBand),
+                                                                RegionSizeBytes = page.RegionSize,
+                                                                BaseAddressValue = page.BaseAddress };
+                            })
+                    .OrderBy(row => row.SortRank)
+                    .ThenByDescending(row => row.RegionSizeBytes)
+                    .ThenBy(row => row.BaseAddressValue)
+                    .Take(768)
+                    .ToList();
+
+            ApplyMemoryInspectorRows(rows);
+        }
+
+        private void ApplyMemoryInspectorRows(IReadOnlyList<MemoryInspectorRow> rows)
+        {
+            var desiredKeys = new HashSet<(ulong BaseAddress, ulong RegionSize)>(
+                rows.Select(static row => (row.BaseAddressValue, row.RegionSizeBytes)));
+
+            for (int i = MemoryInspectorRows.Count - 1; i >= 0; i -= 1)
             {
-                MemoryInspectorRows.Add(new MemoryInspectorRow
+                MemoryInspectorRow existing = MemoryInspectorRows[i];
+                if (!desiredKeys.Contains((existing.BaseAddressValue, existing.RegionSizeBytes)))
                 {
-                    BaseAddress = $"0x{page.BaseAddress:X}",
-                    Size = FormatBytes((long)Math.Min(page.RegionSize, (ulong)long.MaxValue)),
-                    State = page.StateLabel,
-                    Type = page.TypeLabel,
-                    Protect = page.ProtectLabel,
-                    Category = page.Category
-                });
+                    MemoryInspectorRows.RemoveAt(i);
+                }
+            }
+
+            var existingByKey =
+                MemoryInspectorRows.ToDictionary(static row => (row.BaseAddressValue, row.RegionSizeBytes));
+
+            for (int i = 0; i < rows.Count; i += 1)
+            {
+                MemoryInspectorRow incoming = rows[i];
+                (ulong, ulong) key = (incoming.BaseAddressValue, incoming.RegionSizeBytes);
+                if (existingByKey.TryGetValue(key, out MemoryInspectorRow? existing))
+                {
+                    existing.UpdateFrom(incoming);
+                    int currentIndex = MemoryInspectorRows.IndexOf(existing);
+                    if (currentIndex >= 0 && currentIndex != i)
+                    {
+                        MemoryInspectorRows.Move(currentIndex, i);
+                    }
+                    continue;
+                }
+
+                MemoryInspectorRows.Insert(i, incoming);
+                existingByKey[key] = incoming;
+            }
+
+            while (MemoryInspectorRows.Count > rows.Count)
+            {
+                MemoryInspectorRows.RemoveAt(MemoryInspectorRows.Count - 1);
             }
         }
 
         private void RebuildThreadLifecycleRows(DateTime cutoffUtc)
         {
             ThreadLifecycleRows.Clear();
-            IEnumerable<ThreadLifecycleEventSample> rows = _threadLifecycleHistory
-                .Where(x => x.TimestampUtc <= cutoffUtc)
-                .OrderByDescending(x => x.TimestampUtc)
-                .Take(256);
+            IEnumerable<ThreadLifecycleEventSample> rows =
+                _threadLifecycleHistory.Where(x => x.TimestampUtc <= cutoffUtc)
+                    .OrderByDescending(x => x.TimestampUtc)
+                    .Take(256);
             foreach (ThreadLifecycleEventSample row in rows)
             {
                 ThreadLifecycleRows.Add(new ThreadLifecycleRow(row));
             }
         }
 
+        private MemoryRegionAttributionSample? FindLatestMemoryRegionAttribution(MemoryPageSample page,
+                                                                                 DateTime cutoffUtc)
+        {
+            if (_pid <= 0 || page.BaseAddress == 0 || page.RegionSize == 0 ||
+                _memoryRegionAttributionHistory.Count == 0)
+            {
+                return null;
+            }
+
+            MemoryRegionAttributionSample? latestLifecycle = null;
+            for (int i = _memoryRegionAttributionHistory.Count - 1; i >= 0; i -= 1)
+            {
+                MemoryRegionAttributionSample candidate = _memoryRegionAttributionHistory[i];
+                if (candidate.TimestampUtc > cutoffUtc)
+                {
+                    continue;
+                }
+                if (candidate.TargetPid != 0 && candidate.TargetPid != unchecked((uint)_pid))
+                {
+                    continue;
+                }
+                if (!MemoryRegionsOverlap(page.BaseAddress, page.RegionSize, candidate.BaseAddress,
+                                          candidate.RegionSize))
+                {
+                    continue;
+                }
+
+                if (latestLifecycle == null)
+                {
+                    latestLifecycle = candidate;
+                }
+
+                if (IsPrimaryMemoryAttributionEvent(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return latestLifecycle;
+        }
+
+        private static bool MemoryRegionsOverlap(ulong leftBase, ulong leftSize, ulong rightBase, ulong rightSize)
+        {
+            if (leftBase == 0 || rightBase == 0 || leftSize == 0 || rightSize == 0)
+            {
+                return false;
+            }
+
+            ulong leftEnd = leftBase + leftSize;
+            ulong rightEnd = rightBase + rightSize;
+            if (leftEnd <= leftBase)
+            {
+                leftEnd = ulong.MaxValue;
+            }
+            if (rightEnd <= rightBase)
+            {
+                rightEnd = ulong.MaxValue;
+            }
+
+            return leftBase < rightEnd && rightBase < leftEnd;
+        }
+
+        private static string DescribeAllocator(MemoryRegionAttributionSample? attribution)
+        {
+            if (attribution == null)
+            {
+                return "-";
+            }
+
+            string actor = ProcessIdentityResolver.Describe(attribution.ActorPid);
+            string label = !string.IsNullOrWhiteSpace(attribution.EventKind)
+                               ? attribution.EventKind.Trim()
+                               : (!string.IsNullOrWhiteSpace(attribution.ApiName) ? attribution.ApiName.Trim()
+                                                                                 : "allocation");
+            return $"{actor} via {label}";
+        }
+
+        private static string DescribeAllocatorSource(MemoryRegionAttributionSample? attribution)
+        {
+            if (attribution == null)
+            {
+                return "-";
+            }
+
+            if (!string.IsNullOrWhiteSpace(attribution.OriginPath))
+            {
+                return EventDetailFormatting.ModuleNameFromPath(attribution.OriginPath);
+            }
+
+            if (!string.IsNullOrWhiteSpace(attribution.FirstUserFrameModule))
+            {
+                return attribution.FirstUserFrameModule;
+            }
+
+            return string.IsNullOrWhiteSpace(attribution.CallerOrigin) ? "-" : attribution.CallerOrigin;
+        }
+
+        private static string DescribeResolvedMemorySource(MemoryPageSample page,
+                                                           MemoryRegionAttributionSample? attribution)
+        {
+            string modulePath = !string.IsNullOrWhiteSpace(page.ModulePath) ? page.ModulePath : page.BackingPath;
+            if (!string.IsNullOrWhiteSpace(modulePath))
+            {
+                string fileName = Path.GetFileName(modulePath);
+                return string.IsNullOrWhiteSpace(fileName) ? modulePath : fileName;
+            }
+
+            return DescribeAllocatorSource(attribution);
+        }
+
+        private static string DescribeAllocatorTrust(MemoryRegionAttributionSample? attribution)
+        {
+            if (attribution == null)
+            {
+                return "Unknown";
+            }
+
+            if (attribution.SignatureLevel != 0 || attribution.SignatureType != 0)
+            {
+                return "Signed";
+            }
+
+            if (attribution.UnwindClean)
+            {
+                return "Unwind-Clean";
+            }
+
+            if (!string.IsNullOrWhiteSpace(attribution.OriginPath))
+            {
+                return "Unsigned";
+            }
+
+            if (string.Equals(attribution.CallerOrigin, "system", StringComparison.OrdinalIgnoreCase))
+            {
+                return "System";
+            }
+
+            return "Unknown";
+        }
+
+        private static string DescribeResolvedMemoryTrust(MemoryPageSample page,
+                                                          MemoryRegionAttributionSample? attribution)
+        {
+            string trust = DescribeAllocatorTrust(attribution);
+            if (!trust.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
+            {
+                return trust;
+            }
+
+            if (!string.IsNullOrWhiteSpace(page.ModulePath) || LooksLikeImagePath(page.BackingPath))
+            {
+                return "Image";
+            }
+
+            if (!string.IsNullOrWhiteSpace(page.BackingPath))
+            {
+                return "Mapped";
+            }
+
+            return trust;
+        }
+
+        private static bool IsPrimaryMemoryAttributionEvent(MemoryRegionAttributionSample sample)
+        {
+            return sample.EventKind.Equals("PrivateAllocate", StringComparison.OrdinalIgnoreCase) ||
+                   sample.EventKind.Equals("SectionMap", StringComparison.OrdinalIgnoreCase) ||
+                   sample.EventKind.Equals("ImageMap", StringComparison.OrdinalIgnoreCase) ||
+                   sample.EventKind.Equals("ProtectChange", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string DescribeResolvedMemoryCategory(MemoryPageSample page)
+        {
+            if (!string.IsNullOrWhiteSpace(page.ModulePath) || LooksLikeImagePath(page.BackingPath))
+            {
+                if (page.Category.StartsWith("Mapped", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "Image" + page.Category["Mapped".Length..];
+                }
+
+                if (page.Category.StartsWith("Unknown", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "Image" + page.Category["Unknown".Length..];
+                }
+            }
+
+            return page.Category;
+        }
+
+        private static string DetermineMemoryPriorityBand(MemoryPageSample page, string trust)
+        {
+            bool isPrivate = (page.Type & 0x00020000u) != 0;
+            bool isMapped = (page.Type & 0x00040000u) != 0;
+            bool isImage = (page.Type & 0x01000000u) != 0;
+            bool hasImageBacking = !string.IsNullOrWhiteSpace(page.ModulePath) || LooksLikeImagePath(page.BackingPath);
+            bool isUnsigned = string.Equals(trust, "Unsigned", StringComparison.OrdinalIgnoreCase);
+            bool isExecutable = IsExecutableProtect(page.Protect);
+            bool isWritable = IsWritableProtect(page.Protect);
+
+            if (isPrivate && isUnsigned)
+            {
+                return "PrivateUnsigned";
+            }
+            if (isPrivate && isExecutable && isWritable)
+            {
+                return "PrivateExecutable";
+            }
+            if (isPrivate)
+            {
+                return "Private";
+            }
+            if (isUnsigned)
+            {
+                return "Unsigned";
+            }
+            if (isImage || hasImageBacking)
+            {
+                return "Image";
+            }
+            if (isMapped)
+            {
+                return "Mapped";
+            }
+
+            return "Normal";
+        }
+
+        private static bool LooksLikeImagePath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            string extension = Path.GetExtension(path);
+            return extension.Equals(".dll", StringComparison.OrdinalIgnoreCase) ||
+                   extension.Equals(".exe", StringComparison.OrdinalIgnoreCase) ||
+                   extension.Equals(".mui", StringComparison.OrdinalIgnoreCase) ||
+                   extension.Equals(".cpl", StringComparison.OrdinalIgnoreCase) ||
+                   extension.Equals(".drv", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsExecutableProtect(uint protect)
+        {
+            uint baseProtect = protect & 0xFFu;
+            return baseProtect == 0x10 || baseProtect == 0x20 || baseProtect == 0x40 || baseProtect == 0x80;
+        }
+
+        private static bool IsWritableProtect(uint protect)
+        {
+            uint baseProtect = protect & 0xFFu;
+            return baseProtect == 0x04 || baseProtect == 0x08 || baseProtect == 0x40 || baseProtect == 0x80;
+        }
+
+        private static int MemoryPriorityBandRank(string priorityBand)
+        {
+            return priorityBand switch { "PrivateUnsigned" => 0,
+                                         "PrivateExecutable" => 1,
+                                         "Private" => 2,
+                                         "Unsigned" => 3,
+                                         "Image" => 4,
+                                         "Mapped" => 5,
+                                         _ => 6 };
+        }
+
         private static PerformanceSample CloneSample(PerformanceSample src)
         {
-            return new PerformanceSample
-            {
+            return new PerformanceSample {
                 TimestampUtc = src.TimestampUtc,
                 CoreCount = src.CoreCount,
                 CpuPercent = src.CpuPercent,
@@ -646,52 +1138,77 @@ namespace BlackbirdInterface
                 NetInBytesPerSec = src.NetInBytesPerSec,
                 NetOutBytesPerSec = src.NetOutBytesPerSec,
                 NetPacketsPerSec = src.NetPacketsPerSec,
-                TopThreads = src.TopThreads.Select(t => new ThreadUsageSample
-                {
-                    Tid = t.Tid,
-                    CpuMsDelta = t.CpuMsDelta,
-                    State = t.State,
-                    WaitReason = t.WaitReason,
-                    Kind = t.Kind,
-                    StartTimeUtc = t.StartTimeUtc,
-                    TargetSuspended = t.TargetSuspended
-                }).ToList(),
-                MemoryMetrics = src.MemoryMetrics.Select(m => new MemoryMetricSample
-                {
-                    Metric = m.Metric,
-                    Value = m.Value,
-                    BytesValue = m.BytesValue
-                }).ToList(),
-                MemoryPages = src.MemoryPages.Select(m => new MemoryPageSample
-                {
-                    BaseAddress = m.BaseAddress,
-                    RegionSize = m.RegionSize,
-                    State = m.State,
-                    Protect = m.Protect,
-                    Type = m.Type,
-                    StateLabel = m.StateLabel,
-                    ProtectLabel = m.ProtectLabel,
-                    TypeLabel = m.TypeLabel,
-                    Category = m.Category
-                }).ToList()
+                TopThreads = src.TopThreads
+                                 .Select(t => new ThreadUsageSample { Tid = t.Tid, CpuMsDelta = t.CpuMsDelta,
+                                                                      State = t.State, WaitReason = t.WaitReason,
+                                                                      Kind = t.Kind, StartTimeUtc = t.StartTimeUtc,
+                                                                      TargetSuspended = t.TargetSuspended })
+                                 .ToList(),
+                MemoryMetrics = src.MemoryMetrics
+                                    .Select(m => new MemoryMetricSample { Metric = m.Metric, Value = m.Value,
+                                                                          BytesValue = m.BytesValue })
+                                    .ToList(),
+                MemoryPages = src.MemoryPages
+                                  .Select(m => new MemoryPageSample {
+                                      BaseAddress = m.BaseAddress, AllocationBase = m.AllocationBase,
+                                      RegionSize = m.RegionSize, State = m.State, Protect = m.Protect,
+                                      AllocationProtect = m.AllocationProtect, Type = m.Type, StateLabel = m.StateLabel,
+                                      ProtectLabel = m.ProtectLabel, TypeLabel = m.TypeLabel, Category = m.Category,
+                                      BackingPath = m.BackingPath, ModulePath = m.ModulePath
+                                  })
+                                  .ToList()
+            };
+        }
+
+        private static MemoryRegionAttributionSample
+        CloneMemoryRegionAttributionSample(MemoryRegionAttributionSample src)
+        {
+            return new MemoryRegionAttributionSample {
+                TimestampUtc = src.TimestampUtc,
+                ProcessStartKey = src.ProcessStartKey,
+                TargetPid = src.TargetPid,
+                ActorPid = src.ActorPid,
+                ActorTid = src.ActorTid,
+                AllocationBase = src.AllocationBase,
+                BaseAddress = src.BaseAddress,
+                RegionSize = src.RegionSize,
+                ApiName = src.ApiName,
+                EventKind = src.EventKind,
+                RegionKind = src.RegionKind,
+                RegionIdentity = src.RegionIdentity,
+                OriginPath = src.OriginPath,
+                CallerOrigin = src.CallerOrigin,
+                FirstUserFrame = src.FirstUserFrame,
+                FirstUserFrameModule = src.FirstUserFrameModule,
+                FrameSummary = src.FrameSummary,
+                UnwindClean = src.UnwindClean,
+                FrameChainHadGaps = src.FrameChainHadGaps,
+                InitialProtection = src.InitialProtection,
+                CurrentProtection = src.CurrentProtection,
+                PreviousProtection = src.PreviousProtection,
+                FirstExecutableTransition = src.FirstExecutableTransition,
+                ThreadStartObserved = src.ThreadStartObserved,
+                ThreadId = src.ThreadId,
+                ThreadStartAddress = src.ThreadStartAddress,
+                FunctionTableRegistered = src.FunctionTableRegistered,
+                FunctionTablePointer = src.FunctionTablePointer,
+                SignatureLevel = src.SignatureLevel,
+                SignatureType = src.SignatureType
             };
         }
 
         private static ThreadLifecycleEventSample CloneThreadLifecycleEvent(ThreadLifecycleEventSample src)
         {
-            return new ThreadLifecycleEventSample
-            {
-                TimestampUtc = src.TimestampUtc,
-                ProcessPid = src.ProcessPid,
-                ThreadId = src.ThreadId,
-                CreatorPid = src.CreatorPid,
-                Flags = src.Flags,
-                StartAddress = src.StartAddress,
-                ImageBase = src.ImageBase,
-                ImageSize = src.ImageSize,
-                EventKind = src.EventKind,
-                Notes = src.Notes
-            };
+            return new ThreadLifecycleEventSample { TimestampUtc = src.TimestampUtc,
+                                                    ProcessPid = src.ProcessPid,
+                                                    ThreadId = src.ThreadId,
+                                                    CreatorPid = src.CreatorPid,
+                                                    Flags = src.Flags,
+                                                    StartAddress = src.StartAddress,
+                                                    ImageBase = src.ImageBase,
+                                                    ImageSize = src.ImageSize,
+                                                    EventKind = src.EventKind,
+                                                    Notes = src.Notes };
         }
 
         private void UpdateSubtitle()
@@ -700,8 +1217,8 @@ namespace BlackbirdInterface
             if (_selectedSampleIndex < 0 || _selectedSampleIndex >= _historySamples.Count)
             {
                 PerfSubTitle.Text = !_processLiveDataAvailable && _historySamples.Count > 0
-                    ? $"{scope} | No data at selected time"
-                    : $"{scope} | No data";
+                                        ? $"{scope} | No data at selected time"
+                                        : $"{scope} | No data";
                 return;
             }
 
@@ -712,12 +1229,16 @@ namespace BlackbirdInterface
             }
 
             double coresUsed = _lastSample.CpuPercent / 100.0 * Math.Max(1, _lastSample.CoreCount);
-            PerfSubTitle.Text = $"{scope} | Cores used: {coresUsed:0.00}/{Math.Max(1, _lastSample.CoreCount)} ({_lastSample.CoresUsedPercent:0.0}%)";
+            PerfSubTitle.Text =
+                $"{scope} | Cores used: {coresUsed:0.00}/{Math.Max(1, _lastSample.CoreCount)} ({_lastSample.CoresUsedPercent:0.0}%)";
         }
 
-        private void PerfBtnReorder_Click(object sender, System.Windows.RoutedEventArgs e) => ReorderRequested?.Invoke(this, e);
-        private void PerfBtnFloat_Click(object sender, System.Windows.RoutedEventArgs e) => FloatRequested?.Invoke(this, e);
-        private void PerfBtnClose_Click(object sender, System.Windows.RoutedEventArgs e) => CloseRequested?.Invoke(this, e);
+        private void PerfBtnReorder_Click(object sender,
+                                          System.Windows.RoutedEventArgs e) => ReorderRequested?.Invoke(this, e);
+        private void PerfBtnFloat_Click(object sender, System.Windows.RoutedEventArgs e) => FloatRequested?.Invoke(this,
+                                                                                                                   e);
+        private void PerfBtnClose_Click(object sender, System.Windows.RoutedEventArgs e) => CloseRequested?.Invoke(this,
+                                                                                                                   e);
 
         private void TimeTravelToggle_Checked(object sender, RoutedEventArgs e)
         {
@@ -760,8 +1281,8 @@ namespace BlackbirdInterface
                 ThreadDoubleClicked?.Invoke(this, row);
         }
 
-        private void ParallelStacksButton_Click(object sender, RoutedEventArgs e)
-            => ParallelStacksRequested?.Invoke(this, e);
+        private void ParallelStacksButton_Click(object sender,
+                                                RoutedEventArgs e) => ParallelStacksRequested?.Invoke(this, e);
 
         private void ModulesGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
@@ -840,7 +1361,6 @@ namespace BlackbirdInterface
             if (ProcessDetailsLayout == null)
                 return;
 
-            // Wide layouts get side-by-side modules/memory, narrow layouts stack vertically.
             bool shouldStack = ProcessDetailsLayout.ActualWidth < 920;
             if (shouldStack == _detailsStacked)
                 return;
@@ -920,12 +1440,8 @@ namespace BlackbirdInterface
             {
                 try
                 {
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = peViewExe,
-                        Arguments = $"\"{normalizedPath}\"",
-                        UseShellExecute = true
-                    };
+                    var psi = new ProcessStartInfo { FileName = peViewExe, Arguments = $"\"{normalizedPath}\"",
+                                                     UseShellExecute = true };
                     Process.Start(psi);
                     return;
                 }
@@ -940,9 +1456,7 @@ namespace BlackbirdInterface
             ThemedMessageBox.Show(
                 Application.Current?.MainWindow,
                 "Could not launch PeView. Ensure peview.exe is available in PATH or in a standard tools folder.",
-                "PeView Not Found",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+                "PeView Not Found", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
 
         private static IEnumerable<string> EnumeratePeViewCandidates()
@@ -1001,13 +1515,9 @@ namespace BlackbirdInterface
             {
                 foreach (ProcessModule module in process.Modules)
                 {
-                    rows.Add(new ModuleInfoRow
-                    {
-                        Name = module.ModuleName,
-                        BaseAddress = $"0x{module.BaseAddress.ToInt64():X}",
-                        Size = FormatBytes(module.ModuleMemorySize),
-                        Path = module.FileName
-                    });
+                    rows.Add(new ModuleInfoRow { Name = module.ModuleName,
+                                                 BaseAddress = $"0x{module.BaseAddress.ToInt64():X}",
+                                                 Size = FormatBytes(module.ModuleMemorySize), Path = module.FileName });
                 }
             }
             catch
@@ -1025,11 +1535,30 @@ namespace BlackbirdInterface
 
             rows.Add(new PeInfoRow("PID", process.Id.ToString()));
             rows.Add(new PeInfoRow("Process Name", process.ProcessName));
-            try { rows.Add(new PeInfoRow("Start Time", process.StartTime.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss 'UTC'"))); } catch { }
-            try { rows.Add(new PeInfoRow("Priority Class", process.PriorityClass.ToString())); } catch { }
+            try
+            {
+                rows.Add(new PeInfoRow("Start Time",
+                                       process.StartTime.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss 'UTC'")));
+            }
+            catch
+            {
+            }
+            try
+            {
+                rows.Add(new PeInfoRow("Priority Class", process.PriorityClass.ToString()));
+            }
+            catch
+            {
+            }
 
             string? imagePath = null;
-            try { imagePath = process.MainModule?.FileName; } catch { }
+            try
+            {
+                imagePath = process.MainModule?.FileName;
+            }
+            catch
+            {
+            }
             if (!string.IsNullOrWhiteSpace(imagePath))
             {
                 rows.Add(new PeInfoRow("Image Path", imagePath));
@@ -1060,9 +1589,10 @@ namespace BlackbirdInterface
             pe = default;
             try
             {
-                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using var fs =
+                    new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                 using var br = new BinaryReader(fs);
-                if (br.ReadUInt16() != 0x5A4D) // MZ
+                if (br.ReadUInt16() != 0x5A4D)
                     return false;
 
                 fs.Position = 0x3C;
@@ -1071,16 +1601,16 @@ namespace BlackbirdInterface
                     return false;
 
                 fs.Position = peOffset;
-                if (br.ReadUInt32() != 0x00004550) // PE\0\0
+                if (br.ReadUInt32() != 0x00004550)
                     return false;
 
                 ushort machine = br.ReadUInt16();
-                _ = br.ReadUInt16(); // NumberOfSections
-                _ = br.ReadUInt32(); // TimeDateStamp
-                _ = br.ReadUInt32(); // PtrToSymTable
-                _ = br.ReadUInt32(); // NumSymbols
+                _ = br.ReadUInt16();
+                _ = br.ReadUInt32();
+                _ = br.ReadUInt32();
+                _ = br.ReadUInt32();
                 ushort sizeOfOptionalHeader = br.ReadUInt16();
-                _ = br.ReadUInt16(); // characteristics
+                _ = br.ReadUInt16();
 
                 long optStart = fs.Position;
                 ushort magic = br.ReadUInt16();
@@ -1110,14 +1640,9 @@ namespace BlackbirdInterface
                     imageBase = $"0x{imageBase32:X}";
                 }
 
-                pe = new PeSummary
-                {
-                    Machine = MachineToString(machine),
-                    IsPePlus = isPePlus,
-                    ImageBase = imageBase,
-                    Subsystem = SubsystemToString(subsystem),
-                    DllCharacteristics = $"0x{dllChars:X4}"
-                };
+                pe =
+                    new PeSummary { Machine = MachineToString(machine), IsPePlus = isPePlus, ImageBase = imageBase,
+                                    Subsystem = SubsystemToString(subsystem), DllCharacteristics = $"0x{dllChars:X4}" };
                 return true;
             }
             catch
@@ -1131,24 +1656,33 @@ namespace BlackbirdInterface
             rows = new List<PeInfoRow>();
             try
             {
-                if (GetProcessMitigationPolicy(process.Handle, ProcessMitigationPolicy.DepPolicy, out PROCESS_MITIGATION_DEP_POLICY dep, Marshal.SizeOf<PROCESS_MITIGATION_DEP_POLICY>()))
+                if (GetProcessMitigationPolicy(process.Handle, ProcessMitigationPolicy.DepPolicy,
+                                               out PROCESS_MITIGATION_DEP_POLICY dep,
+                                               Marshal.SizeOf<PROCESS_MITIGATION_DEP_POLICY>()))
                 {
                     rows.Add(new PeInfoRow("Mitigation DEP", (dep.Flags & 0x1) != 0 ? "Enabled" : "Disabled"));
                 }
 
-                if (GetProcessMitigationPolicy(process.Handle, ProcessMitigationPolicy.AslrPolicy, out PROCESS_MITIGATION_ASLR_POLICY aslr, Marshal.SizeOf<PROCESS_MITIGATION_ASLR_POLICY>()))
+                if (GetProcessMitigationPolicy(process.Handle, ProcessMitigationPolicy.AslrPolicy,
+                                               out PROCESS_MITIGATION_ASLR_POLICY aslr,
+                                               Marshal.SizeOf<PROCESS_MITIGATION_ASLR_POLICY>()))
                 {
                     rows.Add(new PeInfoRow("Mitigation ASLR", (aslr.Flags & 0x7) != 0 ? "Enabled" : "Disabled"));
                 }
 
-                if (GetProcessMitigationPolicy(process.Handle, ProcessMitigationPolicy.ControlFlowGuardPolicy, out PROCESS_MITIGATION_CONTROL_FLOW_GUARD_POLICY cfg, Marshal.SizeOf<PROCESS_MITIGATION_CONTROL_FLOW_GUARD_POLICY>()))
+                if (GetProcessMitigationPolicy(process.Handle, ProcessMitigationPolicy.ControlFlowGuardPolicy,
+                                               out PROCESS_MITIGATION_CONTROL_FLOW_GUARD_POLICY cfg,
+                                               Marshal.SizeOf<PROCESS_MITIGATION_CONTROL_FLOW_GUARD_POLICY>()))
                 {
                     rows.Add(new PeInfoRow("Mitigation CFG", (cfg.Flags & 0x1) != 0 ? "Enabled" : "Disabled"));
                 }
 
-                if (GetProcessMitigationPolicy(process.Handle, ProcessMitigationPolicy.DynamicCodePolicy, out PROCESS_MITIGATION_DYNAMIC_CODE_POLICY dyn, Marshal.SizeOf<PROCESS_MITIGATION_DYNAMIC_CODE_POLICY>()))
+                if (GetProcessMitigationPolicy(process.Handle, ProcessMitigationPolicy.DynamicCodePolicy,
+                                               out PROCESS_MITIGATION_DYNAMIC_CODE_POLICY dyn,
+                                               Marshal.SizeOf<PROCESS_MITIGATION_DYNAMIC_CODE_POLICY>()))
                 {
-                    rows.Add(new PeInfoRow("Mitigation DynamicCode", (dyn.Flags & 0x1) != 0 ? "Prohibited" : "Allowed"));
+                    rows.Add(
+                        new PeInfoRow("Mitigation DynamicCode", (dyn.Flags & 0x1) != 0 ? "Prohibited" : "Allowed"));
                 }
 
                 return rows.Count > 0;
@@ -1161,8 +1695,7 @@ namespace BlackbirdInterface
 
         private static string MachineToString(ushort machine)
         {
-            return machine switch
-            {
+            return machine switch {
                 0x014C => "x86",
                 0x8664 => "x64",
                 0xAA64 => "ARM64",
@@ -1172,8 +1705,7 @@ namespace BlackbirdInterface
 
         private static string SubsystemToString(ushort subsystem)
         {
-            return subsystem switch
-            {
+            return subsystem switch {
                 2 => "Windows GUI",
                 3 => "Windows CUI",
                 _ => subsystem.ToString()
@@ -1182,15 +1714,20 @@ namespace BlackbirdInterface
 
         private void RefreshMemoryMetrics(Process process)
         {
-            var rows = new List<MemoryMetricRow>
-            {
-                new() { Metric = "Working Set", Value = FormatBytes(process.WorkingSet64), BytesValue = process.WorkingSet64 },
-                new() { Metric = "Peak Working Set", Value = FormatBytes(process.PeakWorkingSet64), BytesValue = process.PeakWorkingSet64 },
-                new() { Metric = "Private Bytes", Value = FormatBytes(process.PrivateMemorySize64), BytesValue = process.PrivateMemorySize64 },
+            var rows = new List<MemoryMetricRow> {
+                new() { Metric = "Working Set", Value = FormatBytes(process.WorkingSet64),
+                        BytesValue = process.WorkingSet64 },
+                new() { Metric = "Peak Working Set", Value = FormatBytes(process.PeakWorkingSet64),
+                        BytesValue = process.PeakWorkingSet64 },
+                new() { Metric = "Private Bytes", Value = FormatBytes(process.PrivateMemorySize64),
+                        BytesValue = process.PrivateMemorySize64 },
                 new() { Metric = "Virtual Bytes", Value = FormatBytes(process.VirtualMemorySize64), BytesValue = null },
-                new() { Metric = "Paged Memory", Value = FormatBytes(process.PagedMemorySize64), BytesValue = process.PagedMemorySize64 },
-                new() { Metric = "Nonpaged System Memory", Value = FormatBytes(process.NonpagedSystemMemorySize64), BytesValue = process.NonpagedSystemMemorySize64 },
-                new() { Metric = "Paged System Memory", Value = FormatBytes(process.PagedSystemMemorySize64), BytesValue = process.PagedSystemMemorySize64 },
+                new() { Metric = "Paged Memory", Value = FormatBytes(process.PagedMemorySize64),
+                        BytesValue = process.PagedMemorySize64 },
+                new() { Metric = "Nonpaged System Memory", Value = FormatBytes(process.NonpagedSystemMemorySize64),
+                        BytesValue = process.NonpagedSystemMemorySize64 },
+                new() { Metric = "Paged System Memory", Value = FormatBytes(process.PagedSystemMemorySize64),
+                        BytesValue = process.PagedSystemMemorySize64 },
                 new() { Metric = "Handle Count", Value = process.HandleCount.ToString(), BytesValue = null },
                 new() { Metric = "Thread Count", Value = process.Threads.Count.ToString(), BytesValue = null }
             };
@@ -1202,7 +1739,7 @@ namespace BlackbirdInterface
             try
             {
                 List<MemoryPageSample> pages = CaptureLiveMemoryPages(process);
-                RebuildMemoryInspectorRows(pages);
+                RebuildMemoryInspectorRows(pages, DateTime.UtcNow);
             }
             catch
             {
@@ -1228,15 +1765,9 @@ namespace BlackbirdInterface
             var rows = new Dictionary<string, NetworkPeerRow>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "netstat",
-                    Arguments = "-ano",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = false,
-                    CreateNoWindow = true
-                };
+                var psi = new ProcessStartInfo { FileName = "netstat",          Arguments = "-ano",
+                                                 UseShellExecute = false,       RedirectStandardOutput = true,
+                                                 RedirectStandardError = false, CreateNoWindow = true };
 
                 using Process? process = Process.Start(psi);
                 if (process == null)
@@ -1244,7 +1775,7 @@ namespace BlackbirdInterface
                     return new List<NetworkPeerRow>();
                 }
 
-                string? line;
+                string ? line;
                 while ((line = process.StandardOutput.ReadLine()) != null)
                 {
                     if (string.IsNullOrWhiteSpace(line))
@@ -1259,8 +1790,7 @@ namespace BlackbirdInterface
                         continue;
                     }
 
-                    string[] tokens = trimmed
-                        .Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                    string[] tokens = trimmed.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
                     if (tokens.Length < 4)
                     {
                         continue;
@@ -1276,7 +1806,8 @@ namespace BlackbirdInterface
                     }
 
                     string remoteAddress = ExtractAddress(remoteEndpoint);
-                    if (remoteAddress.Length == 0 || remoteAddress == "*" || remoteAddress == "0.0.0.0" || remoteAddress == "::")
+                    if (remoteAddress.Length == 0 || remoteAddress == "*" || remoteAddress == "0.0.0.0" ||
+                        remoteAddress == "::")
                     {
                         continue;
                     }
@@ -1284,16 +1815,13 @@ namespace BlackbirdInterface
                     string key = $"{protocol}|{remoteAddress}|{state}";
                     if (!rows.TryGetValue(key, out NetworkPeerRow? row))
                     {
-                        row = new NetworkPeerRow
-                        {
-                            LocalEndpoint = tokens[1],
-                            RemoteEndpoint = remoteEndpoint,
-                            RemoteAddress = remoteAddress,
-                            Protocol = protocol,
-                            State = state,
-                            DnsName = ResolveDnsName(remoteAddress),
-                            ConnectionCount = 1
-                        };
+                        row = new NetworkPeerRow { LocalEndpoint = tokens[1],
+                                                   RemoteEndpoint = remoteEndpoint,
+                                                   RemoteAddress = remoteAddress,
+                                                   Protocol = protocol,
+                                                   State = state,
+                                                   DnsName = ResolveDnsName(remoteAddress),
+                                                   ConnectionCount = 1 };
                         rows[key] = row;
                     }
                     else
@@ -1307,8 +1835,7 @@ namespace BlackbirdInterface
                 return new List<NetworkPeerRow>();
             }
 
-            return rows.Values
-                .OrderByDescending(x => x.ConnectionCount)
+            return rows.Values.OrderByDescending(x => x.ConnectionCount)
                 .ThenBy(x => x.RemoteAddress, StringComparer.OrdinalIgnoreCase)
                 .Take(128)
                 .ToList();
@@ -1334,9 +1861,7 @@ namespace BlackbirdInterface
                 var lookup = System.Threading.Tasks.Task.Run(() => Dns.GetHostEntry(remoteAddress));
                 if (lookup.Wait(120) && lookup.Result != null)
                 {
-                    host = string.IsNullOrWhiteSpace(lookup.Result.HostName)
-                        ? remoteAddress
-                        : lookup.Result.HostName;
+                    host = string.IsNullOrWhiteSpace(lookup.Result.HostName) ? remoteAddress : lookup.Result.HostName;
                 }
             }
             catch
@@ -1427,10 +1952,9 @@ namespace BlackbirdInterface
 
             if (NetworkNoDataOverlay != null)
             {
-                bool hasTrafficData = _historySamples.Any(sample =>
-                    sample.NetInBytesPerSec > 0.01 ||
-                    sample.NetOutBytesPerSec > 0.01 ||
-                    sample.NetPacketsPerSec > 0.01);
+                bool hasTrafficData =
+                    _historySamples.Any(sample => sample.NetInBytesPerSec > 0.01 || sample.NetOutBytesPerSec > 0.01 ||
+                                                  sample.NetPacketsPerSec > 0.01);
                 bool hasPeerData = NetworkPeers.Count > 0;
                 bool showNetworkNoData = _showNetworkPeers ? !hasPeerData : !hasTrafficData;
                 NetworkNoDataOverlay.Visibility = showNetworkNoData ? Visibility.Visible : Visibility.Collapsed;
@@ -1439,12 +1963,7 @@ namespace BlackbirdInterface
 
         private static MemoryMetricRow CloneMetric(MemoryMetricRow src)
         {
-            return new MemoryMetricRow
-            {
-                Metric = src.Metric,
-                Value = src.Value,
-                BytesValue = src.BytesValue
-            };
+            return new MemoryMetricRow { Metric = src.Metric, Value = src.Value, BytesValue = src.BytesValue };
         }
 
         private static string FormatBytes(long bytes)
@@ -1465,21 +1984,21 @@ namespace BlackbirdInterface
             const uint processVmRead = 0x0010;
             const uint processQueryLimited = 0x1000;
 
-            IntPtr hProcess = Kernel32Native.OpenProcess(
-                processQuery | processVmRead | processQueryLimited,
-                false,
-                unchecked((uint)process.Id));
+            IntPtr hProcess = Kernel32Native.OpenProcess(processQuery | processVmRead | processQueryLimited, false,
+                                                         unchecked((uint)process.Id));
             if (hProcess == IntPtr.Zero)
             {
                 return new List<MemoryPageSample>();
             }
 
             var pages = new List<MemoryPageSample>(768);
+            List<MemoryModuleMapEntry> modules = CaptureModuleMap(process);
             try
             {
                 ulong address = 0;
                 ulong maxAddress = Environment.Is64BitProcess ? 0x00007FFF_FFFFFFFFul : uint.MaxValue;
                 nuint mbiSize = (nuint)Marshal.SizeOf<MEMORY_BASIC_INFORMATION>();
+                var mappedPathCache = new Dictionary<ulong, string>();
 
                 while (address < maxAddress && pages.Count < 1536)
                 {
@@ -1493,17 +2012,18 @@ namespace BlackbirdInterface
 
                     if (mbi.State == memCommit)
                     {
-                        pages.Add(new MemoryPageSample
-                        {
-                            BaseAddress = (ulong)mbi.BaseAddress,
-                            RegionSize = regionSize,
-                            State = mbi.State,
-                            Protect = mbi.Protect,
-                            Type = mbi.Type,
-                            StateLabel = EventDetailFormatting.DescribeMemoryState(mbi.State),
+                        ulong baseAddress = (ulong)mbi.BaseAddress;
+                        ulong allocationBase = (ulong)mbi.AllocationBase;
+                        pages.Add(new MemoryPageSample {
+                            BaseAddress = baseAddress, AllocationBase = allocationBase, RegionSize = regionSize,
+                            State = mbi.State, Protect = mbi.Protect, AllocationProtect = mbi.AllocationProtect,
+                            Type = mbi.Type, StateLabel = EventDetailFormatting.DescribeMemoryState(mbi.State),
                             ProtectLabel = EventDetailFormatting.DescribeMemoryProtection(mbi.Protect),
                             TypeLabel = EventDetailFormatting.DescribeMemoryType(mbi.Type),
-                            Category = BuildMemoryCategory(mbi.Type, mbi.Protect)
+                            Category = BuildMemoryCategory(mbi.Type, mbi.Protect),
+                            BackingPath =
+                                ResolveMappedBackingPath(hProcess, baseAddress, allocationBase, mappedPathCache),
+                            ModulePath = ResolveMappedModulePath(modules, baseAddress, allocationBase, regionSize)
                         });
                     }
 
@@ -1519,11 +2039,115 @@ namespace BlackbirdInterface
                 _ = Kernel32Native.CloseHandle(hProcess);
             }
 
-            return pages
-                .OrderByDescending(x => x.RegionSize)
-                .ThenBy(x => x.BaseAddress)
-                .Take(768)
-                .ToList();
+            return pages.OrderByDescending(x => x.RegionSize).ThenBy(x => x.BaseAddress).Take(768).ToList();
+        }
+
+        private static List<MemoryModuleMapEntry> CaptureModuleMap(Process process)
+        {
+            var rows = new List<MemoryModuleMapEntry>(128);
+            try
+            {
+                foreach (ProcessModule module in process.Modules)
+                {
+                    ulong baseAddress = unchecked((ulong)module.BaseAddress.ToInt64());
+                    ulong size = (ulong)Math.Max(module.ModuleMemorySize, 0);
+                    if (baseAddress == 0 || size == 0)
+                    {
+                        continue;
+                    }
+
+                    rows.Add(new MemoryModuleMapEntry(baseAddress, baseAddress + size,
+                                                      module.ModuleName ?? string.Empty,
+                                                      module.FileName ?? string.Empty));
+                }
+            }
+            catch
+            {
+            }
+
+            rows.Sort((left, right) => left.BaseAddress.CompareTo(right.BaseAddress));
+            return rows;
+        }
+
+        private static string ResolveMappedModulePath(IReadOnlyList<MemoryModuleMapEntry> modules, ulong baseAddress,
+                                                      ulong allocationBase, ulong regionSize)
+        {
+            ulong regionEnd = baseAddress + regionSize;
+            if (regionEnd <= baseAddress)
+            {
+                regionEnd = ulong.MaxValue;
+            }
+
+            for (int i = 0; i < modules.Count; i += 1)
+            {
+                MemoryModuleMapEntry module = modules[i];
+                if ((allocationBase != 0 && allocationBase == module.BaseAddress) ||
+                    (baseAddress >= module.BaseAddress && baseAddress < module.EndAddress) ||
+                    (module.BaseAddress >= baseAddress && module.BaseAddress < regionEnd))
+                {
+                    return module.Path;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static string ResolveMappedBackingPath(IntPtr processHandle, ulong baseAddress, ulong allocationBase,
+                                                       Dictionary<ulong, string> cache)
+        {
+            ulong key = allocationBase != 0 ? allocationBase : baseAddress;
+            if (key == 0)
+            {
+                return string.Empty;
+            }
+
+            if (cache.TryGetValue(key, out string? existing))
+            {
+                return existing;
+            }
+
+            string mappedPath = QueryMappedFilename(processHandle, key);
+            cache[key] = mappedPath;
+            return mappedPath;
+        }
+
+        private static string QueryMappedFilename(IntPtr processHandle, ulong address)
+        {
+            const int memoryMappedFilenameInformation = 2;
+            const int bufferBytes = 32768;
+
+            if (processHandle == IntPtr.Zero || address == 0)
+            {
+                return string.Empty;
+            }
+
+            IntPtr buffer = Marshal.AllocHGlobal(bufferBytes);
+            try
+            {
+                int status =
+                    NtQueryVirtualMemory(processHandle, unchecked((nint)address), memoryMappedFilenameInformation,
+                                         buffer, (uint)bufferBytes, out uint _);
+                if (status < 0)
+                {
+                    return string.Empty;
+                }
+
+                UNICODE_STRING text = Marshal.PtrToStructure<UNICODE_STRING>(buffer);
+                if (text.Buffer == IntPtr.Zero || text.Length == 0)
+                {
+                    return string.Empty;
+                }
+
+                return Marshal.PtrToStringUni(text.Buffer, text.Length / 2) ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
         }
 
         private static string BuildMemoryCategory(uint type, uint protect)
@@ -1532,8 +2156,7 @@ namespace BlackbirdInterface
             bool executable = baseProtect == 0x10 || baseProtect == 0x20 || baseProtect == 0x40 || baseProtect == 0x80;
             bool writable = baseProtect == 0x04 || baseProtect == 0x08 || baseProtect == 0x40 || baseProtect == 0x80;
 
-            string typeLabel = type switch
-            {
+            string typeLabel = type switch {
                 0x20000 => "Private",
                 0x40000 => "Mapped",
                 0x1000000 => "Image",
@@ -1566,10 +2189,8 @@ namespace BlackbirdInterface
             const uint processVmRead = 0x0010;
             const uint processQueryLimited = 0x1000;
 
-            IntPtr hProcess = Kernel32Native.OpenProcess(
-                processQuery | processVmRead | processQueryLimited,
-                false,
-                unchecked((uint)process.Id));
+            IntPtr hProcess = Kernel32Native.OpenProcess(processQuery | processVmRead | processQueryLimited, false,
+                                                         unchecked((uint)process.Id));
             if (hProcess == IntPtr.Zero)
                 return;
 
@@ -1606,9 +2227,12 @@ namespace BlackbirdInterface
                     {
                         commitBytes += regionSize;
 
-                        if (mbi.Type == memPrivate) privateCount += 1;
-                        else if (mbi.Type == memImage) imageCount += 1;
-                        else if (mbi.Type == memMapped) mappedCount += 1;
+                        if (mbi.Type == memPrivate)
+                            privateCount += 1;
+                        else if (mbi.Type == memImage)
+                            imageCount += 1;
+                        else if (mbi.Type == memMapped)
+                            mappedCount += 1;
 
                         uint protect = mbi.Protect;
                         uint baseProtect = protect & 0xFFu;
@@ -1642,15 +2266,24 @@ namespace BlackbirdInterface
             }
 
             rows.Add(new MemoryMetricRow { Metric = "VAD Regions", Value = regionCount.ToString(), BytesValue = null });
-            rows.Add(new MemoryMetricRow { Metric = "VAD Commit", Value = FormatBytes((long)commitBytes), BytesValue = (long)commitBytes });
-            rows.Add(new MemoryMetricRow { Metric = "VAD Private Regions", Value = privateCount.ToString(), BytesValue = null });
-            rows.Add(new MemoryMetricRow { Metric = "VAD Image Regions", Value = imageCount.ToString(), BytesValue = null });
-            rows.Add(new MemoryMetricRow { Metric = "VAD Mapped Regions", Value = mappedCount.ToString(), BytesValue = null });
-            rows.Add(new MemoryMetricRow { Metric = "Prot RW", Value = FormatBytes((long)rwBytes), BytesValue = (long)rwBytes });
-            rows.Add(new MemoryMetricRow { Metric = "Prot RX", Value = FormatBytes((long)rxBytes), BytesValue = (long)rxBytes });
-            rows.Add(new MemoryMetricRow { Metric = "Prot RWX", Value = FormatBytes((long)rwxBytes), BytesValue = (long)rwxBytes });
-            rows.Add(new MemoryMetricRow { Metric = "Prot RO/NoAccess", Value = FormatBytes((long)roBytes), BytesValue = (long)roBytes });
-            rows.Add(new MemoryMetricRow { Metric = "Prot Guard", Value = FormatBytes((long)guardBytes), BytesValue = (long)guardBytes });
+            rows.Add(new MemoryMetricRow { Metric = "VAD Commit", Value = FormatBytes((long)commitBytes),
+                                           BytesValue = (long)commitBytes });
+            rows.Add(new MemoryMetricRow { Metric = "VAD Private Regions", Value = privateCount.ToString(),
+                                           BytesValue = null });
+            rows.Add(
+                new MemoryMetricRow { Metric = "VAD Image Regions", Value = imageCount.ToString(), BytesValue = null });
+            rows.Add(new MemoryMetricRow { Metric = "VAD Mapped Regions", Value = mappedCount.ToString(),
+                                           BytesValue = null });
+            rows.Add(new MemoryMetricRow { Metric = "Prot RW", Value = FormatBytes((long)rwBytes),
+                                           BytesValue = (long)rwBytes });
+            rows.Add(new MemoryMetricRow { Metric = "Prot RX", Value = FormatBytes((long)rxBytes),
+                                           BytesValue = (long)rxBytes });
+            rows.Add(new MemoryMetricRow { Metric = "Prot RWX", Value = FormatBytes((long)rwxBytes),
+                                           BytesValue = (long)rwxBytes });
+            rows.Add(new MemoryMetricRow { Metric = "Prot RO/NoAccess", Value = FormatBytes((long)roBytes),
+                                           BytesValue = (long)roBytes });
+            rows.Add(new MemoryMetricRow { Metric = "Prot Guard", Value = FormatBytes((long)guardBytes),
+                                           BytesValue = (long)guardBytes });
         }
 
         private void MemoryViewToggle_Checked(object sender, RoutedEventArgs e)
@@ -1675,6 +2308,7 @@ namespace BlackbirdInterface
         private void MemoryInspectorToggle_Checked(object sender, RoutedEventArgs e)
         {
             _memoryInspectorEnabled = true;
+            EnsureMemoryInspectorWindow();
             UpdateMemoryViewMode();
             UpdateLiveDataOverlays();
         }
@@ -1682,6 +2316,7 @@ namespace BlackbirdInterface
         private void MemoryInspectorToggle_Unchecked(object sender, RoutedEventArgs e)
         {
             _memoryInspectorEnabled = false;
+            CloseMemoryInspectorWindow();
             UpdateMemoryViewMode();
             UpdateLiveDataOverlays();
         }
@@ -1708,24 +2343,112 @@ namespace BlackbirdInterface
 
         private void UpdateMemoryViewMode()
         {
-            if (MemoryInspectorGrid == null || MemoryGrid == null || MemoryTreemapHost == null || MemoryViewToggle == null)
+            if (MemoryInspectorGrid == null || MemoryGrid == null || MemoryTreemapHost == null ||
+                MemoryViewToggle == null)
             {
                 return;
             }
 
-            MemoryInspectorGrid.Visibility = _memoryInspectorEnabled ? Visibility.Visible : Visibility.Collapsed;
-
-            if (_memoryInspectorEnabled)
-            {
-                MemoryGrid.Visibility = Visibility.Collapsed;
-                MemoryTreemapHost.Visibility = Visibility.Collapsed;
-                MemoryViewToggle.IsEnabled = false;
-                return;
-            }
-
+            MemoryInspectorGrid.Visibility = Visibility.Collapsed;
             MemoryViewToggle.IsEnabled = true;
             MemoryGrid.Visibility = _memoryTreemapEnabled ? Visibility.Collapsed : Visibility.Visible;
             MemoryTreemapHost.Visibility = _memoryTreemapEnabled ? Visibility.Visible : Visibility.Collapsed;
+        }
+
+        private void EnsureMemoryInspectorWindow()
+        {
+            if (_memoryInspectorWindow != null)
+            {
+                UpdateMemoryInspectorWindowTitle();
+                if (!_memoryInspectorWindow.IsVisible)
+                {
+                    _memoryInspectorWindow.Show();
+                }
+
+                _memoryInspectorWindow.Activate();
+                return;
+            }
+
+            _memoryInspectorWindow = new MemoryInspectorWindow(MemoryInspectorRows, _pid);
+            Window? owner = Window.GetWindow(this);
+            if (owner != null && !ReferenceEquals(owner, _memoryInspectorWindow))
+            {
+                _memoryInspectorWindow.Owner = owner;
+            }
+
+            _memoryInspectorWindow.Closing += MemoryInspectorWindow_Closing;
+            _memoryInspectorWindow.Closed += MemoryInspectorWindow_Closed;
+            _memoryInspectorWindow.Show();
+            _memoryInspectorWindow.Activate();
+        }
+
+        private void CloseMemoryInspectorWindow()
+        {
+            if (_memoryInspectorWindow == null)
+            {
+                return;
+            }
+
+            MemoryInspectorWindow window = _memoryInspectorWindow;
+            _memoryInspectorWindow = null;
+            _closingMemoryInspectorWindow = true;
+            window.Closing -= MemoryInspectorWindow_Closing;
+            window.Closed -= MemoryInspectorWindow_Closed;
+            window.Close();
+            _closingMemoryInspectorWindow = false;
+        }
+
+        private void MemoryInspectorWindow_Closing(object? sender, CancelEventArgs e)
+        {
+            if (_closingMemoryInspectorWindow || sender is not MemoryInspectorWindow window)
+            {
+                return;
+            }
+
+            e.Cancel = true;
+            window.Hide();
+
+            if (_memoryInspectorEnabled)
+            {
+                _memoryInspectorEnabled = false;
+                if (MemoryInspectorToggle != null && MemoryInspectorToggle.IsChecked == true)
+                {
+                    MemoryInspectorToggle.IsChecked = false;
+                    return;
+                }
+            }
+
+            UpdateMemoryViewMode();
+            UpdateLiveDataOverlays();
+        }
+
+        private void MemoryInspectorWindow_Closed(object? sender, EventArgs e)
+        {
+            if (sender is MemoryInspectorWindow window)
+            {
+                window.Closing -= MemoryInspectorWindow_Closing;
+                window.Closed -= MemoryInspectorWindow_Closed;
+            }
+
+            _memoryInspectorWindow = null;
+            if (_memoryInspectorEnabled)
+            {
+                _memoryInspectorEnabled = false;
+                if (MemoryInspectorToggle != null && MemoryInspectorToggle.IsChecked == true)
+                {
+                    MemoryInspectorToggle.IsChecked = false;
+                }
+                else
+                {
+                    UpdateMemoryViewMode();
+                    UpdateLiveDataOverlays();
+                }
+            }
+        }
+
+        private void UpdateMemoryInspectorWindowTitle()
+        {
+            _memoryInspectorWindow?.SetTargetPid(_pid);
         }
 
         private void UpdateMemoryTreemap()
@@ -1742,17 +2465,15 @@ namespace BlackbirdInterface
 
             MemoryTreemapCanvas.Children.Clear();
 
-            var entries = MemoryMetrics
-                .Where(x => x.BytesValue.HasValue && x.BytesValue.Value > 0)
-                .OrderByDescending(x => x.BytesValue!.Value)
-                .Select(x => new MemoryTreemapEntry(x.Metric, x.Value, x.BytesValue!.Value))
-                .ToList();
+            var entries = MemoryMetrics.Where(x => x.BytesValue.HasValue && x.BytesValue.Value > 0)
+                              .OrderByDescending(x => x.BytesValue!.Value)
+                              .Select(x => new MemoryTreemapEntry(x.Metric, x.Value, x.BytesValue!.Value))
+                              .ToList();
 
             if (entries.Count == 0)
             {
-                MemoryTreemapNoData.Visibility = MemoryNoDataOverlay?.Visibility == Visibility.Visible
-                    ? Visibility.Collapsed
-                    : Visibility.Visible;
+                MemoryTreemapNoData.Visibility =
+                    MemoryNoDataOverlay?.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
                 return;
             }
 
@@ -1762,14 +2483,9 @@ namespace BlackbirdInterface
             var layout = new List<(MemoryTreemapEntry Entry, Rect Rect)>();
             LayoutTreemap(entries, plot, plot.Width >= plot.Height, layout);
 
-            var fills = new[]
-            {
-                Color.FromRgb(0x60, 0xA5, 0xFA),
-                Color.FromRgb(0x34, 0xD3, 0x99),
-                Color.FromRgb(0xF5, 0x9E, 0x0B),
-                Color.FromRgb(0xA7, 0x8B, 0xFA),
-                Color.FromRgb(0xF4, 0x72, 0xB6),
-                Color.FromRgb(0x22, 0xD3, 0xEE),
+            var fills = new[] {
+                Color.FromRgb(0x60, 0xA5, 0xFA), Color.FromRgb(0x34, 0xD3, 0x99), Color.FromRgb(0xF5, 0x9E, 0x0B),
+                Color.FromRgb(0xA7, 0x8B, 0xFA), Color.FromRgb(0xF4, 0x72, 0xB6), Color.FromRgb(0x22, 0xD3, 0xEE),
                 Color.FromRgb(0xFB, 0x71, 0x71),
             };
 
@@ -1782,23 +2498,19 @@ namespace BlackbirdInterface
 
                 var fillBrush = new SolidColorBrush(fills[i % fills.Length]);
                 fillBrush.Opacity = 0.55;
-                var border = new Border
-                {
+                var border = new Border {
                     Width = r.Width,
                     Height = r.Height,
                     BorderThickness = new Thickness(1),
                     BorderBrush = UiPalette.BorderBrush,
                     Background = fillBrush,
-                    Child = new TextBlock
-                    {
-                        Text = (r.Width < 60 || r.Height < 26) ? "" : $"{item.Entry.Name}\n{item.Entry.Display}",
-                        Margin = new Thickness(5, 4, 5, 4),
-                        TextTrimming = TextTrimming.CharacterEllipsis,
-                        TextWrapping = TextWrapping.Wrap,
-                        Foreground = UiPalette.TextBrush,
-                        FontSize = r.Width < 120 || r.Height < 48 ? 10 : 11,
-                        FontWeight = FontWeights.SemiBold
-                    }
+                    Child =
+                        new TextBlock {
+                            Text = (r.Width < 60 || r.Height < 26) ? "" : $"{item.Entry.Name}\n{item.Entry.Display}",
+                            Margin = new Thickness(5, 4, 5, 4), TextTrimming = TextTrimming.CharacterEllipsis,
+                            TextWrapping = TextWrapping.Wrap, Foreground = UiPalette.TextBrush,
+                            FontSize = r.Width < 120 || r.Height < 48 ? 10 : 11, FontWeight = FontWeights.SemiBold
+                        }
                 };
 
                 Canvas.SetLeft(border, r.Left);
@@ -1819,11 +2531,8 @@ namespace BlackbirdInterface
             return new Rect(x, y, w, h);
         }
 
-        private static void LayoutTreemap(
-            List<MemoryTreemapEntry> entries,
-            Rect area,
-            bool splitHorizontal,
-            List<(MemoryTreemapEntry Entry, Rect Rect)> output)
+        private static void LayoutTreemap(List<MemoryTreemapEntry> entries, Rect area, bool splitHorizontal,
+                                          List<(MemoryTreemapEntry Entry, Rect Rect)> output)
         {
             if (entries.Count == 0 || area.Width <= 0 || area.Height <= 0)
                 return;
@@ -1909,11 +2618,21 @@ namespace BlackbirdInterface
         }
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern nuint VirtualQueryEx(
-            IntPtr hProcess,
-            nint lpAddress,
-            out MEMORY_BASIC_INFORMATION lpBuffer,
-            nuint dwLength);
+        private static extern nuint VirtualQueryEx(IntPtr hProcess, nint lpAddress,
+                                                   out MEMORY_BASIC_INFORMATION lpBuffer, nuint dwLength);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct UNICODE_STRING
+        {
+            public ushort Length;
+            public ushort MaximumLength;
+            public IntPtr Buffer;
+        }
+
+        [DllImport("ntdll.dll")]
+        private static extern int NtQueryVirtualMemory(IntPtr processHandle, nint baseAddress,
+                                                       int memoryInformationClass, IntPtr memoryInformation,
+                                                       uint memoryInformationLength, out uint returnLength);
 
         private enum ProcessMitigationPolicy
         {
@@ -1955,32 +2674,23 @@ namespace BlackbirdInterface
         }
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool GetProcessMitigationPolicy(
-            IntPtr hProcess,
-            ProcessMitigationPolicy mitigationPolicy,
-            out PROCESS_MITIGATION_DEP_POLICY lpBuffer,
-            int dwLength);
+        private static extern bool GetProcessMitigationPolicy(IntPtr hProcess, ProcessMitigationPolicy mitigationPolicy,
+                                                              out PROCESS_MITIGATION_DEP_POLICY lpBuffer, int dwLength);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool GetProcessMitigationPolicy(
-            IntPtr hProcess,
-            ProcessMitigationPolicy mitigationPolicy,
-            out PROCESS_MITIGATION_ASLR_POLICY lpBuffer,
-            int dwLength);
+        private static extern bool GetProcessMitigationPolicy(IntPtr hProcess, ProcessMitigationPolicy mitigationPolicy,
+                                                              out PROCESS_MITIGATION_ASLR_POLICY lpBuffer,
+                                                              int dwLength);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool GetProcessMitigationPolicy(
-            IntPtr hProcess,
-            ProcessMitigationPolicy mitigationPolicy,
-            out PROCESS_MITIGATION_DYNAMIC_CODE_POLICY lpBuffer,
-            int dwLength);
+        private static extern bool GetProcessMitigationPolicy(IntPtr hProcess, ProcessMitigationPolicy mitigationPolicy,
+                                                              out PROCESS_MITIGATION_DYNAMIC_CODE_POLICY lpBuffer,
+                                                              int dwLength);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool GetProcessMitigationPolicy(
-            IntPtr hProcess,
-            ProcessMitigationPolicy mitigationPolicy,
-            out PROCESS_MITIGATION_CONTROL_FLOW_GUARD_POLICY lpBuffer,
-            int dwLength);
+        private static extern bool GetProcessMitigationPolicy(IntPtr hProcess, ProcessMitigationPolicy mitigationPolicy,
+                                                              out PROCESS_MITIGATION_CONTROL_FLOW_GUARD_POLICY lpBuffer,
+                                                              int dwLength);
 
         private struct PeSummary
         {
@@ -1990,6 +2700,9 @@ namespace BlackbirdInterface
             public string Subsystem;
             public string DllCharacteristics;
         }
+
+        private readonly record struct MemoryModuleMapEntry(ulong BaseAddress, ulong EndAddress, string Name,
+                                                            string Path);
     }
 
     public sealed class ThreadUsageRow
@@ -2077,14 +2790,129 @@ namespace BlackbirdInterface
         public int ConnectionCount { get; set; }
     }
 
-    public sealed class MemoryInspectorRow
+    public sealed class MemoryInspectorRow : INotifyPropertyChanged
     {
-        public string BaseAddress { get; init; } = "";
-        public string Size { get; init; } = "";
-        public string State { get; init; } = "";
-        public string Type { get; init; } = "";
-        public string Protect { get; init; } = "";
-        public string Category { get; init; } = "";
+        private string _baseAddress = "";
+        private string _size = "";
+        private string _state = "";
+        private string _type = "";
+        private string _protect = "";
+        private string _category = "";
+        private string _allocator = "";
+        private string _source = "";
+        private string _trust = "";
+        private string _priorityBand = "Normal";
+        private int _sortRank;
+        private ulong _regionSizeBytes;
+        private ulong _baseAddressValue;
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+
+        public string BaseAddress
+        {
+            get => _baseAddress;
+            set => SetField(ref _baseAddress, value, nameof(BaseAddress));
+        }
+
+        public string Size
+        {
+            get => _size;
+            set => SetField(ref _size, value, nameof(Size));
+        }
+
+        public string State
+        {
+            get => _state;
+            set => SetField(ref _state, value, nameof(State));
+        }
+
+        public string Type
+        {
+            get => _type;
+            set => SetField(ref _type, value, nameof(Type));
+        }
+
+        public string Protect
+        {
+            get => _protect;
+            set => SetField(ref _protect, value, nameof(Protect));
+        }
+
+        public string Category
+        {
+            get => _category;
+            set => SetField(ref _category, value, nameof(Category));
+        }
+
+        public string Allocator
+        {
+            get => _allocator;
+            set => SetField(ref _allocator, value, nameof(Allocator));
+        }
+
+        public string Source
+        {
+            get => _source;
+            set => SetField(ref _source, value, nameof(Source));
+        }
+
+        public string Trust
+        {
+            get => _trust;
+            set => SetField(ref _trust, value, nameof(Trust));
+        }
+
+        public string PriorityBand
+        {
+            get => _priorityBand;
+            set => SetField(ref _priorityBand, value, nameof(PriorityBand));
+        }
+
+        public int SortRank
+        {
+            get => _sortRank;
+            set => SetField(ref _sortRank, value, nameof(SortRank));
+        }
+
+        public ulong RegionSizeBytes
+        {
+            get => _regionSizeBytes;
+            set => SetField(ref _regionSizeBytes, value, nameof(RegionSizeBytes));
+        }
+
+        public ulong BaseAddressValue
+        {
+            get => _baseAddressValue;
+            set => SetField(ref _baseAddressValue, value, nameof(BaseAddressValue));
+        }
+
+        public void UpdateFrom(MemoryInspectorRow other)
+        {
+            BaseAddress = other.BaseAddress;
+            Size = other.Size;
+            State = other.State;
+            Type = other.Type;
+            Protect = other.Protect;
+            Category = other.Category;
+            Allocator = other.Allocator;
+            Source = other.Source;
+            Trust = other.Trust;
+            PriorityBand = other.PriorityBand;
+            SortRank = other.SortRank;
+            RegionSizeBytes = other.RegionSizeBytes;
+            BaseAddressValue = other.BaseAddressValue;
+        }
+
+        private void SetField<T>(ref T field, T value, string propertyName)
+        {
+            if (EqualityComparer<T>.Default.Equals(field, value))
+            {
+                return;
+            }
+
+            field = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
     }
 
     public sealed class ThreadLifecycleRow
@@ -2107,4 +2935,3 @@ namespace BlackbirdInterface
         public string StartAddress { get; }
     }
 }
-

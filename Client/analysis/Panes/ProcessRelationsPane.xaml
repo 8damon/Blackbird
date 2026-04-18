@@ -76,9 +76,14 @@
                           AutoGenerateColumns="False"
                           IsReadOnly="True"
                           BorderThickness="0"
+                          GridLinesVisibility="None"
+                          HorizontalGridLinesBrush="Transparent"
+                          VerticalGridLinesBrush="Transparent"
                           CanUserResizeRows="False"
                           ColumnHeaderHeight="24"
                           RowHeight="22"
+                          ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                           MouseDoubleClick="RelationsGrid_MouseDoubleClick">
                     <DataGrid.RowStyle>
                         <Style TargetType="DataGridRow">

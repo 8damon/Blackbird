@@ -95,9 +95,14 @@
                           AutoGenerateColumns="False"
                           IsReadOnly="True"
                           BorderThickness="0"
+                          GridLinesVisibility="None"
+                          HorizontalGridLinesBrush="Transparent"
+                          VerticalGridLinesBrush="Transparent"
                           CanUserResizeRows="False"
                           ColumnHeaderHeight="24"
                           RowHeight="22"
+                          ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                           MouseDoubleClick="EventsGrid_MouseDoubleClick">
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Event" Width="260" Binding="{Binding Event}"/>

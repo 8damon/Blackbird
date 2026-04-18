@@ -415,10 +415,12 @@ namespace BlackbirdInterface
         {
             var rows = new List<InspectorStackRow>();
             int index = 0;
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach ((string key, string value) in parsed
                          .Where(x => IsCapturedStackFrameKey(x.Key))
                          .OrderBy(x => StackFrameSortKey(x.Key))
+                         .ThenByDescending(x => x.Key.EndsWith("Symbol", StringComparison.OrdinalIgnoreCase))
                          .ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
             {
                 if (string.IsNullOrWhiteSpace(value) ||
@@ -429,11 +431,17 @@ namespace BlackbirdInterface
                     continue;
                 }
 
+                string normalizedKey = NormalizeStackFrameKey(key);
+                if (!seen.Add(normalizedKey))
+                {
+                    continue;
+                }
+
                 rows.Add(new InspectorStackRow
                 {
                     Index = index.ToString(CultureInfo.InvariantCulture),
                     Address = value,
-                    Notes = key
+                    Notes = normalizedKey
                 });
                 index += 1;
             }
@@ -776,9 +784,22 @@ namespace BlackbirdInterface
 
         private static int StackFrameSortKey(string key)
         {
-            return int.TryParse(key[5..], NumberStyles.Integer, CultureInfo.InvariantCulture, out int index)
+            int end = 5;
+            while (end < key.Length && char.IsDigit(key[end]))
+            {
+                end += 1;
+            }
+
+            return end > 5 && int.TryParse(key[5..end], NumberStyles.Integer, CultureInfo.InvariantCulture, out int index)
                 ? index
                 : int.MaxValue;
+        }
+
+        private static string NormalizeStackFrameKey(string key)
+        {
+            return key.EndsWith("Symbol", StringComparison.OrdinalIgnoreCase)
+                ? key[..^"Symbol".Length]
+                : key;
         }
 
         private static IEnumerable<string> SplitLines(string text)

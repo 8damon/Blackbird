@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Loading"
         Width="520"
-        Height="286"
+        Height="248"
         ResizeMode="NoResize"
         WindowStyle="None"
         ShowInTaskbar="False"
@@ -53,7 +53,7 @@
                        Foreground="{DynamicResource WinMutedTextBrush}"/>
 
             <Border Grid.Row="3"
-                    Margin="0,10,0,0"
+                    Margin="0,8,0,0"
                     Padding="8,6"
                     BorderThickness="1"
                     BorderBrush="{DynamicResource WinSubtleBorderBrush}"

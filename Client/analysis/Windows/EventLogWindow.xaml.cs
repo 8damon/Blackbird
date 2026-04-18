@@ -20,7 +20,8 @@ namespace BlackbirdInterface
         public int Pid { get; }
         public int Tid { get; }
 
-        public EventLogCardOpenRequestedEventArgs(string group, string subType, string summary, string details, int pid, int tid)
+        public EventLogCardOpenRequestedEventArgs(string group, string subType, string summary, string details, int pid,
+                                                  int tid)
         {
             Group = group ?? string.Empty;
             SubType = subType ?? string.Empty;
@@ -73,19 +74,16 @@ namespace BlackbirdInterface
 
                 if (!grouped.TryGetValue(key, out var item))
                 {
-                    grouped[key] = new EventLogCardAggregate
-                    {
-                        Key = key,
-                        Group = group,
-                        SubType = subtype,
-                        PID = ev.PID,
-                        TID = ev.TID,
-                        Summary = summary,
-                        Details = details,
-                        FirstSeenUtc = ev.TimestampUtc,
-                        LastSeenUtc = ev.TimestampUtc,
-                        Count = 1
-                    };
+                    grouped[key] = new EventLogCardAggregate { Key = key,
+                                                               Group = group,
+                                                               SubType = subtype,
+                                                               PID = ev.PID,
+                                                               TID = ev.TID,
+                                                               Summary = summary,
+                                                               Details = details,
+                                                               FirstSeenUtc = ev.TimestampUtc,
+                                                               LastSeenUtc = ev.TimestampUtc,
+                                                               Count = 1 };
                 }
                 else
                 {
@@ -112,9 +110,7 @@ namespace BlackbirdInterface
             }
 
             var cardsByKey = _cards.ToDictionary(x => x.Key, x => x, StringComparer.OrdinalIgnoreCase);
-            var orderedAggregates = grouped.Values
-                .OrderByDescending(x => x.LastSeenUtc)
-                .ToList();
+            var orderedAggregates = grouped.Values.OrderByDescending(x => x.LastSeenUtc).ToList();
             var nextOrder = new List<EventLogCardItem>(orderedAggregates.Count);
             foreach (EventLogCardAggregate aggregate in orderedAggregates)
             {
@@ -136,7 +132,8 @@ namespace BlackbirdInterface
 
             if (!string.IsNullOrWhiteSpace(selectedKey) && selectedIndex >= 0)
             {
-                int selectedPos = nextOrder.FindIndex(x => string.Equals(x.Key, selectedKey, StringComparison.OrdinalIgnoreCase));
+                int selectedPos =
+                    nextOrder.FindIndex(x => string.Equals(x.Key, selectedKey, StringComparison.OrdinalIgnoreCase));
                 if (selectedPos >= 0)
                 {
                     EventLogCardItem selectedCard = nextOrder[selectedPos];
@@ -180,7 +177,8 @@ namespace BlackbirdInterface
             _cardView.Refresh();
             if (!string.IsNullOrWhiteSpace(selectedKey))
             {
-                EventLogCardItem? selected = _cards.FirstOrDefault(x => string.Equals(x.Key, selectedKey, StringComparison.OrdinalIgnoreCase));
+                EventLogCardItem? selected =
+                    _cards.FirstOrDefault(x => string.Equals(x.Key, selectedKey, StringComparison.OrdinalIgnoreCase));
                 if (selected != null)
                 {
                     EventCardList.SelectedItem = selected;
@@ -252,16 +250,22 @@ namespace BlackbirdInterface
 
         private void EventCardList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            EventLogCardItem? card = GetCardFromEventSource(e.OriginalSource as DependencyObject)
-                ?? EventCardList.SelectedItem as EventLogCardItem;
+            if (e.Handled)
+            {
+                return;
+            }
+
+            EventLogCardItem? card = GetCardFromEventSource(e.OriginalSource as DependencyObject) ??
+                                     EventCardList.SelectedItem as EventLogCardItem;
             if (card == null)
             {
                 return;
             }
 
-            EtwFeedRequested?.Invoke(
-                this,
-                new EventLogCardOpenRequestedEventArgs(card.Group, card.SubType, card.Summary, card.Details, card.PID, card.TID));
+            e.Handled = true;
+            EtwFeedRequested?.Invoke(this,
+                                     new EventLogCardOpenRequestedEventArgs(card.Group, card.SubType, card.Summary,
+                                                                            card.Details, card.PID, card.TID));
         }
 
         private EventLogCardItem? GetCardFromEventSource(DependencyObject? source)
@@ -293,29 +297,29 @@ namespace BlackbirdInterface
             string previousGroup = GroupFilterBox.SelectedItem as string ?? "All Groups";
             string previousSubtype = SubtypeFilterBox.SelectedItem as string ?? "All Subtypes";
 
-            var groups = _cards
-                .Select(x => x.Group)
-                .Where(x => !string.IsNullOrWhiteSpace(x))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var groups = _cards.Select(x => x.Group)
+                             .Where(x => !string.IsNullOrWhiteSpace(x))
+                             .Distinct(StringComparer.OrdinalIgnoreCase)
+                             .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                             .ToList();
             groups.Insert(0, "All Groups");
             GroupFilterBox.ItemsSource = groups;
-            GroupFilterBox.SelectedItem = groups.Contains(previousGroup, StringComparer.OrdinalIgnoreCase)
-                ? groups.First(x => string.Equals(x, previousGroup, StringComparison.OrdinalIgnoreCase))
-                : "All Groups";
+            GroupFilterBox.SelectedItem =
+                groups.Contains(previousGroup, StringComparer.OrdinalIgnoreCase)
+                    ? groups.First(x => string.Equals(x, previousGroup, StringComparison.OrdinalIgnoreCase))
+                    : "All Groups";
 
-            var subtypes = _cards
-                .Select(x => x.SubTypeDisplay)
-                .Where(x => !string.IsNullOrWhiteSpace(x))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var subtypes = _cards.Select(x => x.SubTypeDisplay)
+                               .Where(x => !string.IsNullOrWhiteSpace(x))
+                               .Distinct(StringComparer.OrdinalIgnoreCase)
+                               .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                               .ToList();
             subtypes.Insert(0, "All Subtypes");
             SubtypeFilterBox.ItemsSource = subtypes;
-            SubtypeFilterBox.SelectedItem = subtypes.Contains(previousSubtype, StringComparer.OrdinalIgnoreCase)
-                ? subtypes.First(x => string.Equals(x, previousSubtype, StringComparison.OrdinalIgnoreCase))
-                : "All Subtypes";
+            SubtypeFilterBox.SelectedItem =
+                subtypes.Contains(previousSubtype, StringComparer.OrdinalIgnoreCase)
+                    ? subtypes.First(x => string.Equals(x, previousSubtype, StringComparison.OrdinalIgnoreCase))
+                    : "All Subtypes";
         }
 
         private void RefreshSummaryText()
@@ -352,12 +356,9 @@ namespace BlackbirdInterface
             public string SubTypeDisplay => string.IsNullOrWhiteSpace(SubType) ? "(none)" : SubType;
             public string LaneLabel => string.IsNullOrWhiteSpace(SubType) ? Group : $"{Group}/{SubType}";
             public string ActorLabel => $"PID {PID}  TID {TID}";
-            public string TimeLabel =>
-                Count <= 1
-                    ? $"{LastSeenUtc:HH:mm:ss.fff}Z"
-                    : $"{FirstSeenUtc:HH:mm:ss.fff}Z → {LastSeenUtc:HH:mm:ss.fff}Z";
-            public string SearchText =>
-                $"{Group} {SubType} {PID} {TID} {Summary} {Details} {TimeLabel}";
+            public string TimeLabel => Count <= 1 ? $"{LastSeenUtc:HH:mm:ss.fff}Z"
+                                                  : $"{FirstSeenUtc:HH:mm:ss.fff}Z → {LastSeenUtc:HH:mm:ss.fff}Z";
+            public string SearchText => $"{Group} {SubType} {PID} {TID} {Summary} {Details} {TimeLabel}";
         }
 
         private sealed class EventLogCardAggregate
@@ -375,4 +376,3 @@ namespace BlackbirdInterface
         }
     }
 }
-

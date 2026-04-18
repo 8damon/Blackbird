@@ -77,6 +77,9 @@ namespace BlackbirdInterface
             report.HookDllExists = File.Exists(report.HookDllPath);
             Console.WriteLine($"[Preflight] Services  driver={report.DriverState} controller={report.ControllerState} hookDll={report.HookDllPath} exists={report.HookDllExists}");
             DiagnosticsState.SetValue("HookDLL", report.HookDllExists ? "Found" : $"Missing ({report.HookDllPath})");
+            DiagnosticsState.SetValue("HookDLL Presence", report.HookDllExists ? "Found" : $"Missing ({report.HookDllPath})");
+            DiagnosticsState.SetValue("Driver Service", report.DriverState);
+            DiagnosticsState.SetValue("Controller Service", report.ControllerState);
 
             if (ensureServicesRunning)
             {
@@ -87,11 +90,18 @@ namespace BlackbirdInterface
                 report.ControllerState = EnsureServiceRunning("BlackbirdController", TimeSpan.FromSeconds(10), out string controllerMsg);
                 report.ControllerEnsureMessage = controllerMsg;
                 Console.WriteLine($"[Preflight] Controller ensure: state={report.ControllerState} msg={controllerMsg}");
+                DiagnosticsState.SetValue("Driver Service", report.DriverState);
+                DiagnosticsState.SetValue("Controller Service", report.ControllerState);
             }
 
             if (!BlackbirdControlDeviceSession.TryOpen(out var control, out string error))
             {
                 report.Error = error;
+                DiagnosticsState.SetValue("Interface->Controller IPC", $"FAILED: {error}");
+                if (error.IndexOf("access denied", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    DiagnosticsState.SetValue("DACLs", "Access denied");
+                }
                 DiagnosticsState.SetValue("Preflight", report.Summary);
                 Console.WriteLine($"[Preflight] Complete  {report.Summary}{(string.IsNullOrEmpty(report.Error) ? "" : $"  error={report.Error}")}");
                 return report;
@@ -101,6 +111,8 @@ namespace BlackbirdInterface
             {
                 report.BrokerConnectOk = true;
                 DiagnosticsState.SetValue("BrokerHandle", "Open");
+                DiagnosticsState.SetValue("Interface->Controller IPC", "OK");
+                DiagnosticsState.SetValue("DACLs", "OK");
 
                 if (BlackbirdNative.GetBrokerInfo(out uint caps, out bool tiEnabled))
                 {
@@ -122,6 +134,7 @@ namespace BlackbirdInterface
                     report.DriverProxyOk = true;
                     DiagnosticsState.SetValue("DriverProxy", "OK");
                     DiagnosticsState.SetValue("DriverStats", $"subs={stats.SubscriptionCount} depth={stats.QueueDepth} dropped={stats.DroppedEvents}");
+                    DiagnosticsState.SetValue("Controller<->Driver Comms", $"OK depth={stats.QueueDepth} dropped={stats.DroppedEvents}");
                 }
                 else
                 {
@@ -131,6 +144,7 @@ namespace BlackbirdInterface
                         ? "Deferred (awaiting interface authentication)"
                         : $"Error {err}";
                     DiagnosticsState.SetValue("DriverProxy", proxyState);
+                    DiagnosticsState.SetValue("Controller<->Driver Comms", proxyState);
                 }
 
                 if (report.EtwUplinkCapable)
@@ -150,6 +164,14 @@ namespace BlackbirdInterface
                 {
                     report.EtwUplinkQueryOk = false;
                 }
+
+                DiagnosticsState.SetValue(
+                    "ETW Status",
+                    report.EtwUplinkCapable
+                        ? (report.EtwUplinkQueryOk
+                            ? (report.ThreatIntelEnabled ? "Ready (ThreatIntel enabled)" : "Ready")
+                            : "Degraded")
+                        : "Unsupported");
             }
 
             DiagnosticsState.SetValue("Preflight", report.Summary);

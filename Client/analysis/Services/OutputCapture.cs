@@ -37,6 +37,16 @@ namespace BlackbirdInterface
 
         public static void AppendLine(string? text)
         {
+            AppendLineCore(text, raiseEvent: true);
+        }
+
+        internal static void AppendExternalLine(string? text)
+        {
+            AppendLineCore(text, raiseEvent: false);
+        }
+
+        private static void AppendLineCore(string? text, bool raiseEvent)
+        {
             if (text == null)
                 return;
 
@@ -51,7 +61,10 @@ namespace BlackbirdInterface
                 s_lines.Enqueue($"[{DateTime.Now:HH:mm:ss}] {line}");
             }
 
-            LineReceived?.Invoke(line);
+            if (raiseEvent)
+            {
+                LineReceived?.Invoke(line);
+            }
         }
 
         private sealed class OutputTraceListener : TraceListener

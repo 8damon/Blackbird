@@ -74,8 +74,9 @@ namespace BlackbirdInterface
                 998 => $"{operation} failed because the target process memory could not be accessed safely. {detail}",
                 1114 => $"{operation} failed because the hook DLL initialization routine did not complete successfully. {detail}",
                 1314 => $"{operation} failed because the required privileges are not present. Run elevated and ensure the controller can enable debug privileges. {detail}",
+                1346 => $"{operation} failed: ERROR_BAD_IMPERSONATION_LEVEL (1346). The controller could not acquire or use the launch token in the native process-create path. Check %ProgramData%\\Blackbird\\Node\\logs\\controller.log for [INJ] lines around token acquisition, process parameters, and NtCreateUserProcess. {detail}",
                 1460 => $"{operation} timed out waiting for the hook/controller ready handshake. {detail}",
-                _ => $"{operation} failed. {detail}"
+                _ => $"{operation} failed (win32={error.NativeErrorCode}). {detail}"
             };
         }
 

@@ -34,6 +34,7 @@ namespace BlackbirdInterface
 
         public List<TelemetryEvent> Events { get; set; } = new();
         public List<PerformanceSample> PerformanceHistory { get; set; } = new();
+        public List<MemoryRegionAttributionSample> MemoryRegionAttributionHistory { get; set; } = new();
         public List<ThreadLifecycleEventSample> ThreadLifecycleHistory { get; set; } = new();
         public List<GroupedEventRow> EtwGroups { get; set; } = new();
         public List<GroupedEventRow> HeuristicsGroups { get; set; } = new();
@@ -184,6 +185,7 @@ namespace BlackbirdInterface
                 tab.LaneFocusKey ??= null;
                 tab.Events ??= new List<TelemetryEvent>();
                 tab.PerformanceHistory ??= new List<PerformanceSample>();
+                tab.MemoryRegionAttributionHistory ??= new List<MemoryRegionAttributionSample>();
                 tab.ThreadLifecycleHistory ??= new List<ThreadLifecycleEventSample>();
                 tab.EtwGroups ??= new List<GroupedEventRow>();
                 tab.HeuristicsGroups ??= new List<GroupedEventRow>();

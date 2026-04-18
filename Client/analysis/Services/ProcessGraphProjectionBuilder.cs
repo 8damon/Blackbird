@@ -11,15 +11,10 @@ namespace BlackbirdInterface
 {
     internal sealed class ProcessGraphSnapshot
     {
-        public ProcessGraphSnapshot(
-            IReadOnlyList<ProcessGraphNodeView> roots,
-            IReadOnlyList<ProcessGraphNodeView> inboundHandles,
-            IReadOnlyList<ProcessGraphNodeView> outboundHandles,
-            int processCount,
-            int launchEdges,
-            int actionEdges,
-            uint rootPid,
-            string summaryText)
+        public ProcessGraphSnapshot(IReadOnlyList<ProcessGraphNodeView> roots,
+                                    IReadOnlyList<ProcessGraphNodeView> inboundHandles,
+                                    IReadOnlyList<ProcessGraphNodeView> outboundHandles, int processCount,
+                                    int launchEdges, int actionEdges, uint rootPid, string summaryText)
         {
             Roots = roots;
             InboundHandles = inboundHandles;
@@ -45,16 +40,9 @@ namespace BlackbirdInterface
     {
         private bool _isExpanded;
 
-        public ProcessGraphNodeView(
-            string key,
-            uint pid,
-            bool isProcess,
-            string title,
-            string meta,
-            Brush dotBrush,
-            Brush titleBrush,
-            IReadOnlyList<ProcessGraphNodeView>? children = null,
-            bool isBlackbirdInternal = false)
+        public ProcessGraphNodeView(string key, uint pid, bool isProcess, string title, string meta, Brush dotBrush,
+                                    Brush titleBrush, IReadOnlyList<ProcessGraphNodeView>? children = null,
+                                    bool isBlackbirdInternal = false)
         {
             Key = key ?? string.Empty;
             Pid = pid;
@@ -79,8 +67,7 @@ namespace BlackbirdInterface
         public bool IsExpanded
         {
             get => _isExpanded;
-            set
-            {
+            set {
                 if (_isExpanded == value)
                 {
                     return;
@@ -112,7 +99,8 @@ namespace BlackbirdInterface
             int launchEdges = 0;
             int actionEdges = 0;
 
-            MutableProcessNode EnsureProcessNode(uint pid, string displayName, string imagePath, DateTime firstSeenUtc, DateTime lastSeenUtc)
+            MutableProcessNode EnsureProcessNode(uint pid, string displayName, string imagePath, DateTime firstSeenUtc,
+                                                 DateTime lastSeenUtc)
             {
                 if (!processNodes.TryGetValue(pid, out MutableProcessNode? node))
                 {
@@ -139,21 +127,13 @@ namespace BlackbirdInterface
                     continue;
                 }
 
-                MutableProcessNode actorNode = EnsureProcessNode(
-                    edge.ActorPid,
-                    edge.ActorName,
-                    string.Empty,
-                    edge.FirstSeenUtc,
-                    edge.LastSeenUtc);
+                MutableProcessNode actorNode =
+                    EnsureProcessNode(edge.ActorPid, edge.ActorName, string.Empty, edge.FirstSeenUtc, edge.LastSeenUtc);
 
                 if (string.Equals(edge.RelationType, "ProcessCreate", StringComparison.OrdinalIgnoreCase))
                 {
-                    MutableProcessNode childNode = EnsureProcessNode(
-                        edge.TargetPid,
-                        edge.TargetName,
-                        edge.ImagePath,
-                        edge.FirstSeenUtc,
-                        edge.LastSeenUtc);
+                    MutableProcessNode childNode = EnsureProcessNode(edge.TargetPid, edge.TargetName, edge.ImagePath,
+                                                                     edge.FirstSeenUtc, edge.LastSeenUtc);
                     childNode.LaunchMeta = BuildLaunchMeta(edge);
                     if (!childParentByPid.ContainsKey(edge.TargetPid))
                     {
@@ -184,61 +164,53 @@ namespace BlackbirdInterface
                 else
                 {
                     actorNode.ActionChildren.Add(new ProcessGraphNodeView(
-                        BuildActionKey(edge),
-                        0,
-                        false,
-                        BuildActionTitle(edge),
-                        BuildActionMeta(edge),
-                        BrushForSeverity(edge.Severity),
-                        ActionThreadBrush));
+                        BuildActionKey(edge), 0, false, BuildActionTitle(edge), BuildActionMeta(edge),
+                        BrushForSeverity(edge.Severity), ActionThreadBrush));
                 }
                 actionEdges += edge.Hits;
             }
 
-            IEnumerable<MutableProcessNode> roots = processNodes.Values
-                .Where(x => !childParentByPid.ContainsKey(x.Pid))
-                .OrderBy(x => x.Pid);
+            IEnumerable<MutableProcessNode> roots =
+                processNodes.Values.Where(x => !childParentByPid.ContainsKey(x.Pid)).OrderBy(x => x.Pid);
 
             if (rootPid != 0 && processNodes.TryGetValue(rootPid, out MutableProcessNode? rootNode))
             {
                 roots = new[] { rootNode }.Concat(roots.Where(x => x.Pid != rootPid));
             }
 
-            List<ProcessGraphNodeView> finalizedRoots = roots
-                .Select(FinalizeProcessNode)
-                .ToList();
-            List<ProcessGraphNodeView> finalizedInboundHandles = inboundHandles
-                .OrderByDescending(x => x.Meta, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(x => x.Title, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            List<ProcessGraphNodeView> finalizedOutboundHandles = outboundHandles
-                .OrderByDescending(x => x.Meta, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(x => x.Title, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            List<ProcessGraphNodeView> finalizedRoots = roots.Select(FinalizeProcessNode).ToList();
+            List<ProcessGraphNodeView> finalizedInboundHandles =
+                inboundHandles.OrderByDescending(x => x.Meta, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(x => x.Title, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            List<ProcessGraphNodeView> finalizedOutboundHandles =
+                outboundHandles.OrderByDescending(x => x.Meta, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(x => x.Title, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
 
             string summaryText;
-            if (rootPid == 0 && processNodes.Count == 0 && finalizedInboundHandles.Count == 0 && finalizedOutboundHandles.Count == 0)
+            if (rootPid == 0 && processNodes.Count == 0 && finalizedInboundHandles.Count == 0 &&
+                finalizedOutboundHandles.Count == 0)
             {
                 summaryText = "No monitored descendants or pivots yet";
             }
             else
             {
                 string rootText = rootPid != 0 ? $"root={rootPid}  " : string.Empty;
-                summaryText = $"{rootText}processes={processNodes.Count}  launches={launchEdges}  pivots={actionEdges}  inboundHandles={finalizedInboundHandles.Count}  outboundHandles={finalizedOutboundHandles.Count}";
+                summaryText =
+                    $"{rootText}processes={processNodes.Count}  launches={launchEdges}  pivots={actionEdges}  inboundHandles={finalizedInboundHandles.Count}  outboundHandles={finalizedOutboundHandles.Count}";
             }
 
-            return new ProcessGraphSnapshot(finalizedRoots, finalizedInboundHandles, finalizedOutboundHandles, processNodes.Count, launchEdges, actionEdges, rootPid, summaryText);
+            return new ProcessGraphSnapshot(finalizedRoots, finalizedInboundHandles, finalizedOutboundHandles,
+                                            processNodes.Count, launchEdges, actionEdges, rootPid, summaryText);
         }
 
         private static ProcessGraphNodeView FinalizeProcessNode(MutableProcessNode node)
         {
-            List<ProcessGraphNodeView> processChildren = node.ProcessChildren
-                .OrderBy(x => x.Pid)
-                .Select(FinalizeProcessNode)
-                .ToList();
-            List<ProcessGraphNodeView> actionChildren = node.ActionChildren
-                .OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            List<ProcessGraphNodeView> processChildren =
+                node.ProcessChildren.OrderBy(x => x.Pid).Select(FinalizeProcessNode).ToList();
+            List<ProcessGraphNodeView> actionChildren =
+                node.ActionChildren.OrderBy(x => x.Title, StringComparer.OrdinalIgnoreCase).ToList();
 
             var children = new List<ProcessGraphNodeView>(processChildren.Count + actionChildren.Count);
             children.AddRange(processChildren);
@@ -250,28 +222,25 @@ namespace BlackbirdInterface
             string image = SafeFileName(node.ImagePath);
             string imageSuffix = string.IsNullOrWhiteSpace(image) ? string.Empty : $"  image={image}";
             string launchSuffix = string.IsNullOrWhiteSpace(node.LaunchMeta) ? string.Empty : $"  {node.LaunchMeta}";
-            string meta = $"{FormatRange(node.FirstSeenUtc, node.LastSeenUtc)}  children={childProcesses}  pivots={actionLeaves}{imageSuffix}{launchSuffix}";
+            string role = ClassifyProcessRole(node.DisplayName, node.ImagePath, node.LaunchMeta);
+            string meta =
+                $"{FormatRange(node.FirstSeenUtc, node.LastSeenUtc)}  role={role}  children={childProcesses}  pivots={actionLeaves}{imageSuffix}{launchSuffix}";
 
-            return new ProcessGraphNodeView(BuildProcessKey(node.Pid), node.Pid, true, identity, meta, ProcessBrush, Brushes.White, children);
+            return new ProcessGraphNodeView(BuildProcessKey(node.Pid), node.Pid, true, identity, meta, ProcessBrush,
+                                            Brushes.White, children);
         }
 
         private static ProcessGraphEdge? BuildProcessGraphEdge(GroupedEventRow row)
         {
-            GroupedEventDetailRow? detail = row.Details
-                .OrderByDescending(x => x.TimestampUtc)
-                .FirstOrDefault();
+            GroupedEventDetailRow? detail = row.Details.OrderByDescending(x => x.TimestampUtc).FirstOrDefault();
             if (detail == null || detail.ActorPid == 0 || detail.TargetPid == 0)
             {
                 return null;
             }
 
             Dictionary<string, string> fields = EventDetailsParsing.ParseRawFields(detail.Details);
-            DateTime firstSeenUtc = row.Details.Count > 0
-                ? row.Details.Min(x => x.TimestampUtc)
-                : detail.TimestampUtc;
-            DateTime lastSeenUtc = row.LastSeenUtc != default
-                ? row.LastSeenUtc
-                : detail.TimestampUtc;
+            DateTime firstSeenUtc = row.Details.Count > 0 ? row.Details.Min(x => x.TimestampUtc) : detail.TimestampUtc;
+            DateTime lastSeenUtc = row.LastSeenUtc != default ? row.LastSeenUtc : detail.TimestampUtc;
 
             fields.TryGetValue("imagePath", out string? imagePath);
             fields.TryGetValue("access", out string? access);
@@ -280,25 +249,22 @@ namespace BlackbirdInterface
             fields.TryGetValue("startKey", out string? startKey);
             fields.TryGetValue("originModule", out string? originModule);
 
-            return new ProcessGraphEdge
-            {
-                RelationType = row.Event ?? detail.Event,
-                Severity = row.Severity,
-                Hits = Math.Max(1, row.Hits),
-                ActorPid = detail.ActorPid,
-                TargetPid = detail.TargetPid,
-                ActorName = detail.Actor,
-                TargetName = detail.Target,
-                FirstSeenUtc = firstSeenUtc,
-                LastSeenUtc = lastSeenUtc,
-                AccessText = access ?? string.Empty,
-                FlagsText = flags ?? string.Empty,
-                ImagePath = imagePath ?? string.Empty,
-                CreateStatus = createStatus ?? string.Empty,
-                ProcessStartKey = startKey ?? string.Empty,
-                OriginModule = originModule ?? string.Empty,
-                IsSr71Handle = EventDetailFormatting.IsSr71Module(originModule)
-            };
+            return new ProcessGraphEdge { RelationType = row.Event ?? detail.Event,
+                                          Severity = row.Severity,
+                                          Hits = Math.Max(1, row.Hits),
+                                          ActorPid = detail.ActorPid,
+                                          TargetPid = detail.TargetPid,
+                                          ActorName = detail.Actor,
+                                          TargetName = detail.Target,
+                                          FirstSeenUtc = firstSeenUtc,
+                                          LastSeenUtc = lastSeenUtc,
+                                          AccessText = access ?? string.Empty,
+                                          FlagsText = flags ?? string.Empty,
+                                          ImagePath = imagePath ?? string.Empty,
+                                          CreateStatus = createStatus ?? string.Empty,
+                                          ProcessStartKey = startKey ?? string.Empty,
+                                          OriginModule = originModule ?? string.Empty,
+                                          IsSr71Handle = EventDetailFormatting.IsSr71Module(originModule) };
         }
 
         private static bool ShouldShowActionInTree(ProcessGraphEdge edge)
@@ -320,9 +286,11 @@ namespace BlackbirdInterface
         {
             string image = SafeFileName(edge.ImagePath);
             string imageSuffix = string.IsNullOrWhiteSpace(image) ? string.Empty : $"  image={image}";
-            string startKeySuffix = string.IsNullOrWhiteSpace(edge.ProcessStartKey) ? string.Empty : $"  start={edge.ProcessStartKey}";
-            string statusSuffix = string.IsNullOrWhiteSpace(edge.CreateStatus) ? string.Empty : $"  status={edge.CreateStatus}";
-            return $"spawned {FormatRange(edge.FirstSeenUtc, edge.LastSeenUtc)}{imageSuffix}{startKeySuffix}{statusSuffix}";
+            string startKeySuffix =
+                string.IsNullOrWhiteSpace(edge.ProcessStartKey) ? string.Empty : $"  start={edge.ProcessStartKey}";
+            string statusSuffix =
+                string.IsNullOrWhiteSpace(edge.CreateStatus) ? string.Empty : $"  status={edge.CreateStatus}";
+            return $"actual-child {FormatRange(edge.FirstSeenUtc, edge.LastSeenUtc)}{imageSuffix}{startKeySuffix}{statusSuffix}";
         }
 
         private static string BuildActionTitle(ProcessGraphEdge edge)
@@ -339,15 +307,15 @@ namespace BlackbirdInterface
         private static string BuildActionMeta(ProcessGraphEdge edge)
         {
             string qualifier = string.Equals(edge.RelationType, "ThreadCreate", StringComparison.OrdinalIgnoreCase)
-                ? EventDetailsParsing.FallbackText(edge.FlagsText)
-                : EventDetailsParsing.FallbackText(edge.AccessText);
+                                   ? EventDetailsParsing.FallbackText(edge.FlagsText)
+                                   : EventDetailsParsing.FallbackText(edge.AccessText);
             return $"{FormatRange(edge.FirstSeenUtc, edge.LastSeenUtc)}  hits={edge.Hits}  {qualifier}";
         }
 
-        private static bool IsBlackbirdInternalProcess(string name)
-            => !string.IsNullOrWhiteSpace(name) &&
-               (name.IndexOf("BlackbirdController", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                name.IndexOf("BlackbirdInterface", StringComparison.OrdinalIgnoreCase) >= 0);
+        private static bool IsBlackbirdInternalProcess(string name) =>
+            !string.IsNullOrWhiteSpace(name) &&
+            (name.IndexOf("BlackbirdController", StringComparison.OrdinalIgnoreCase) >= 0 ||
+             name.IndexOf("BlackbirdInterface", StringComparison.OrdinalIgnoreCase) >= 0);
 
         private static ProcessGraphNodeView BuildHandleNode(ProcessGraphEdge edge, uint rootPid, bool inbound)
         {
@@ -355,33 +323,22 @@ namespace BlackbirdInterface
             string otherName = inbound ? edge.ActorName : edge.TargetName;
             string other = DecorateIdentity(otherName, otherPid);
             bool isInternal = inbound && IsBlackbirdInternalProcess(edge.ActorName);
-            string title = inbound
-                ? $"Inbound handle from {other}"
-                : $"{(edge.IsSr71Handle ? "SR71" : "Target")} opens handle to {other}";
-            string relation = inbound
-                ? "another process -> target"
-                : "target -> another process";
-            string owner = edge.IsSr71Handle
-                ? "SR71 instrumentation"
-                : "target process";
+            string title = inbound ? $"Inbound handle from {other}"
+                                   : $"{(edge.IsSr71Handle ? "SR71" : "Target")} opens handle to {other}";
+            string relation = inbound ? "another process -> target" : "target -> another process";
+            string owner = edge.IsSr71Handle ? "SR71 instrumentation" : "target process";
             string via = !string.IsNullOrWhiteSpace(edge.OriginModule) &&
-                         !string.Equals(edge.OriginModule, "unknown", StringComparison.OrdinalIgnoreCase)
-                ? $" via {edge.OriginModule}"
-                : string.Empty;
-            string meta = $"{FormatRange(edge.FirstSeenUtc, edge.LastSeenUtc)}  hits={edge.Hits}  {relation}  access={EventDetailsParsing.FallbackText(edge.AccessText)}  owner={owner}{via}";
-            return new ProcessGraphNodeView(
-                BuildHandleKey(edge, rootPid, inbound),
-                0,
-                false,
-                title,
-                meta,
-                BrushForSeverity(edge.Severity),
-                ActionHandleBrush,
-                isBlackbirdInternal: isInternal);
+                                 !string.Equals(edge.OriginModule, "unknown", StringComparison.OrdinalIgnoreCase)
+                             ? $" via {edge.OriginModule}"
+                             : string.Empty;
+            string meta =
+                $"{FormatRange(edge.FirstSeenUtc, edge.LastSeenUtc)}  hits={edge.Hits}  {relation}  access={EventDetailsParsing.FallbackText(edge.AccessText)}  owner={owner}{via}";
+            return new ProcessGraphNodeView(BuildHandleKey(edge, rootPid, inbound), 0, false, title, meta,
+                                            BrushForSeverity(edge.Severity), ActionHandleBrush,
+                                            isBlackbirdInternal: isInternal);
         }
 
-        private static string BuildProcessKey(uint pid)
-            => $"proc:{pid.ToString(CultureInfo.InvariantCulture)}";
+        private static string BuildProcessKey(uint pid) => $"proc:{pid.ToString(CultureInfo.InvariantCulture)}";
 
         private static string BuildActionKey(ProcessGraphEdge edge)
         {
@@ -395,9 +352,7 @@ namespace BlackbirdInterface
 
         private static string DecorateIdentity(string displayName, uint pid)
         {
-            string fallback = pid != 0
-                ? $"PID {pid.ToString(CultureInfo.InvariantCulture)}"
-                : "Process";
+            string fallback = pid != 0 ? $"PID {pid.ToString(CultureInfo.InvariantCulture)}" : "Process";
             string value = string.IsNullOrWhiteSpace(displayName) ? fallback : displayName.Trim();
             string pidText = pid.ToString(CultureInfo.InvariantCulture);
             if (pid != 0 && !value.Contains(pidText, StringComparison.Ordinal))
@@ -446,6 +401,28 @@ namespace BlackbirdInterface
             }
         }
 
+        private static string ClassifyProcessRole(string displayName, string imagePath, string launchMeta)
+        {
+            if (!string.IsNullOrWhiteSpace(launchMeta) &&
+                launchMeta.Contains("actual-child", StringComparison.OrdinalIgnoreCase))
+            {
+                return "actual child process";
+            }
+
+            string name = SafeFileName(string.IsNullOrWhiteSpace(imagePath) ? displayName : imagePath);
+            if (name.Equals("conhost.exe", StringComparison.OrdinalIgnoreCase))
+            {
+                return "console host attachment";
+            }
+
+            if (name.Equals("svchost.exe", StringComparison.OrdinalIgnoreCase))
+            {
+                return "service host";
+            }
+
+            return "related process";
+        }
+
         private static string FormatRange(DateTime firstSeenUtc, DateTime lastSeenUtc)
         {
             if (firstSeenUtc == default && lastSeenUtc == default)
@@ -460,31 +437,21 @@ namespace BlackbirdInterface
                 return "time=unknown";
             }
 
-            return first == last
-                ? $"seen={first:HH:mm:ss}"
-                : $"seen={first:HH:mm:ss}->{last:HH:mm:ss}";
+            return first == last ? $"seen={first:HH:mm:ss}" : $"seen={first:HH:mm:ss}->{last:HH:mm:ss}";
         }
 
         private static Brush BrushForSeverity(string severity)
         {
-            return SeverityRank(severity) switch
-            {
-                >= 3 => ActionCriticalBrush,
-                2 => ActionMediumBrush,
-                _ => ActionInfoBrush
-            };
+            return SeverityRank(severity) switch { >=
+                                                       3 => ActionCriticalBrush,
+                                                   2 => ActionMediumBrush,
+                                                   _ => ActionInfoBrush };
         }
 
         private static int SeverityRank(string severity)
         {
-            return severity?.Trim().ToUpperInvariant() switch
-            {
-                "CRITICAL" => 4,
-                "HIGH" => 3,
-                "MEDIUM" => 2,
-                "LOW" => 1,
-                _ => 0
-            };
+            return severity?.Trim().ToUpperInvariant() switch { "CRITICAL" => 4, "HIGH" => 3, "MEDIUM" => 2, "LOW" => 1,
+                                                                _ => 0 };
         }
 
         private static Brush CreateBrush(byte r, byte g, byte b)

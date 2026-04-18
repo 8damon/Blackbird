@@ -7,7 +7,11 @@ namespace BlackbirdInterface
         private const uint RuntimeConfigMask = BlackbirdNative.RuntimeFlagAntiVirtualization |
                                                BlackbirdNative.RuntimeFlagSelfHide |
                                                BlackbirdNative.RuntimeFlagInterfaceProtectedAccess |
-                                               BlackbirdNative.RuntimeFlagControllerProtectedAccess;
+                                               BlackbirdNative.RuntimeFlagControllerProtectedAccess |
+                                               BlackbirdNative.RuntimeFlagNtApiHooksDisarmed;
+        private const uint RuntimeConfigTeardownProtectionMask = BlackbirdNative.RuntimeFlagSelfHide |
+                                                                 BlackbirdNative.RuntimeFlagInterfaceProtectedAccess |
+                                                                 BlackbirdNative.RuntimeFlagControllerProtectedAccess;
         private uint _persistentRuntimeFlags;
         private uint _effectiveRuntimeFlags;
 
@@ -22,8 +26,9 @@ namespace BlackbirdInterface
             string selfHide = (flags & BlackbirdNative.RuntimeFlagSelfHide) != 0 ? "hide" : string.Empty;
             string interfaceProtected = (flags & BlackbirdNative.RuntimeFlagInterfaceProtectedAccess) != 0 ? "iface-protect" : string.Empty;
             string controllerProtected = (flags & BlackbirdNative.RuntimeFlagControllerProtectedAccess) != 0 ? "ctrl-protect" : string.Empty;
+            string hooksDisarmed = (flags & BlackbirdNative.RuntimeFlagNtApiHooksDisarmed) != 0 ? "hooks-disarmed" : string.Empty;
 
-            string[] active = new[] { antiVirtualization, selfHide, interfaceProtected, controllerProtected };
+            string[] active = new[] { antiVirtualization, selfHide, interfaceProtected, controllerProtected, hooksDisarmed };
             string joined = string.Join(",", Array.FindAll(active, static value => value.Length != 0));
             return joined.Length != 0 ? joined : "off";
         }
@@ -113,7 +118,14 @@ namespace BlackbirdInterface
             uint flags = 0;
             error = string.Empty;
 
-            if (launchProfile.EnableAntiVirtualizationMasking)
+            bool hooksArmed = launchProfile.EnableKernelHooks;
+
+            if (!hooksArmed)
+            {
+                flags |= BlackbirdNative.RuntimeFlagNtApiHooksDisarmed;
+            }
+            // Anti-virt requires hooks; force off if hooks are disarmed
+            if (hooksArmed && launchProfile.EnableAntiVirtualizationMasking)
             {
                 flags |= BlackbirdNative.RuntimeFlagAntiVirtualization;
             }
@@ -135,9 +147,35 @@ namespace BlackbirdInterface
                 return false;
             }
 
+            SetKernelHooksArmed(hooksArmed);
             OutputCapture.AppendLine($"Runtime config applied: effective={DescribeRuntimeFlags(config.EffectiveFlags)} mode={DescribeRuntimeMode(config.Mode)}");
             return true;
         }
+
+        private void DisarmTeardownProtectionBestEffort()
+        {
+            if (_teardownProtectionDisarmAttempted)
+            {
+                return;
+            }
+
+            _teardownProtectionDisarmAttempted = true;
+
+            if ((_effectiveRuntimeFlags & RuntimeConfigTeardownProtectionMask) == 0 &&
+                (_persistentRuntimeFlags & RuntimeConfigTeardownProtectionMask) == 0)
+            {
+                return;
+            }
+
+            if (!TryApplyRuntimeConfig(0, RuntimeConfigTeardownProtectionMask, out var config, out string error))
+            {
+                OutputCapture.AppendLine($"Runtime protection teardown disarm failed: {error}");
+                DiagnosticsState.SetValue("RuntimeConfig Teardown", $"Disarm failed: {error}");
+                return;
+            }
+
+            OutputCapture.AppendLine($"Runtime protection teardown disarmed: effective={DescribeRuntimeFlags(config.EffectiveFlags)}");
+            DiagnosticsState.SetValue("RuntimeConfig Teardown", $"Disarmed: effective={DescribeRuntimeFlags(config.EffectiveFlags)}");
+        }
     }
 }
-

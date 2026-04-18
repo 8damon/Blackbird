@@ -17,7 +17,7 @@ namespace BlackbirdInterface
         {
             bool useUsermodeHooks = useUsermodeHooksChecked == true;
             bool autoOpenApiGraphWindow = useUsermodeHooks && autoOpenApiGraphChecked != false;
-            bool useEarlyBirdApcLaunch = useUsermodeHooks && allowEarlyBird && earlyBirdChecked == true;
+            bool useEarlyBirdApcLaunch = useUsermodeHooks && allowEarlyBird;
             return new LaunchHookOptions(useUsermodeHooks, autoOpenApiGraphWindow, useEarlyBirdApcLaunch);
         }
     }

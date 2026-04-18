@@ -241,17 +241,23 @@
                             </Grid>
                         </Border>
 
-                        <TextBox x:Name="CommandOutputBox"
-                                 IsReadOnly="True"
-                                 TextWrapping="Wrap"
-                                 VerticalScrollBarVisibility="Auto"
-                                 AcceptsReturn="True"
-                                 FontFamily="Consolas"
-                                 FontSize="12"
-                                 Background="#FF0A0A0A"
-                                 Foreground="#FFCCCCCC"
-                                 BorderThickness="0"
-                                 Padding="12" />
+                        <RichTextBox x:Name="CommandOutputBox"
+                                     IsReadOnly="True"
+                                     VerticalScrollBarVisibility="Auto"
+                                     FontFamily="Consolas"
+                                     FontSize="12"
+                                     Background="#FF0A0A0A"
+                                     Foreground="#FFCCCCCC"
+                                     BorderThickness="0"
+                                     Padding="12"
+                                     SpellCheck.IsEnabled="False">
+                            <RichTextBox.Resources>
+                                <Style TargetType="Paragraph">
+                                    <Setter Property="Margin" Value="0" />
+                                    <Setter Property="LineHeight" Value="18" />
+                                </Style>
+                            </RichTextBox.Resources>
+                        </RichTextBox>
                     </DockPanel>
                 </Border>
 

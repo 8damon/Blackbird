@@ -4,9 +4,9 @@
         xmlns:local="clr-namespace:BlackbirdInterface"
         Title="Telemetry Inspector"
         Height="920"
-        Width="1440"
+        Width="1660"
         MinHeight="720"
-        MinWidth="1180"
+        MinWidth="1360"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None"
         ResizeMode="CanResize"
@@ -73,9 +73,9 @@
 
         <Style x:Key="FrameTreeViewStyle" TargetType="{x:Type TreeView}" BasedOn="{StaticResource {x:Type TreeView}}">
             <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Hidden"/>
-            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
             <Setter Property="ScrollViewer.CanContentScroll" Value="False"/>
-            <Setter Property="ScrollViewer.PanningMode" Value="HorizontalOnly"/>
+            <Setter Property="ScrollViewer.PanningMode" Value="VerticalOnly"/>
         </Style>
 
         <HierarchicalDataTemplate DataType="{x:Type local:InspectorEventTreeNode}" ItemsSource="{Binding Children}">
@@ -133,7 +133,7 @@
                                Text="{Binding Value}"
                                FontFamily="Consolas"
                                Foreground="{DynamicResource WinTextBrush}"
-                               TextWrapping="NoWrap"/>
+                               TextWrapping="Wrap"/>
                 </Grid>
             </Border>
             <HierarchicalDataTemplate.Triggers>
@@ -253,7 +253,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="1.05*"/>
                 <ColumnDefinition Width="8"/>
-                <ColumnDefinition Width="1.75*"/>
+                <ColumnDefinition Width="2.25*"/>
             </Grid.ColumnDefinitions>
 
             <Border Grid.Column="0"

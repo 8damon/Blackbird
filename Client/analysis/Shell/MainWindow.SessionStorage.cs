@@ -123,6 +123,9 @@ namespace BlackbirdInterface
             List<PerformanceSample> performanceHistory = tab.PerformanceHistory.Count > 0
                 ? tab.PerformanceHistory.Select(ClonePerformanceSample).ToList()
                 : (persistedSnapshot?.PerformanceHistory.Select(ClonePerformanceSample).ToList() ?? new List<PerformanceSample>());
+            List<MemoryRegionAttributionSample> memoryRegionAttributionHistory = tab.MemoryRegionAttributionHistory.Count > 0
+                ? tab.MemoryRegionAttributionHistory.Select(CloneMemoryRegionAttributionSample).ToList()
+                : (persistedSnapshot?.MemoryRegionAttributionHistory.Select(CloneMemoryRegionAttributionSample).ToList() ?? new List<MemoryRegionAttributionSample>());
             List<ThreadLifecycleEventSample> threadLifecycleHistory = tab.ThreadLifecycleHistory.Count > 0
                 ? tab.ThreadLifecycleHistory.Select(CloneThreadLifecycleEvent).ToList()
                 : (persistedSnapshot?.ThreadLifecycleHistory.Select(CloneThreadLifecycleEvent).ToList() ?? new List<ThreadLifecycleEventSample>());
@@ -179,6 +182,7 @@ namespace BlackbirdInterface
                 CaptureStorePath = preferExistingCaptureStore ? tab.BackingStorePath : null,
                 Events = events,
                 PerformanceHistory = performanceHistory,
+                MemoryRegionAttributionHistory = memoryRegionAttributionHistory,
                 ThreadLifecycleHistory = threadLifecycleHistory,
                 EtwGroups = etw,
                 HeuristicsGroups = heuristics,
@@ -206,6 +210,7 @@ namespace BlackbirdInterface
 
             tab.Events.Clear();
             tab.PerformanceHistory.Clear();
+            tab.MemoryRegionAttributionHistory.Clear();
             tab.ThreadLifecycleHistory.Clear();
             tab.ThreadStackHistories.Clear();
             _etwHistoryByPid.Remove(tab.Pid);
@@ -219,6 +224,7 @@ namespace BlackbirdInterface
         {
             bool hasInlineData = tab.Events.Count > 0 ||
                                  tab.PerformanceHistory.Count > 0 ||
+                                 tab.MemoryRegionAttributionHistory.Count > 0 ||
                                  tab.ThreadLifecycleHistory.Count > 0 ||
                                  _etwHistoryByPid.ContainsKey(tab.Pid) ||
                                  _heuristicsHistoryByPid.ContainsKey(tab.Pid) ||
@@ -257,6 +263,8 @@ namespace BlackbirdInterface
 
             tab.PerformanceHistory.Clear();
             tab.PerformanceHistory.AddRange(snapshot.PerformanceHistory.Select(ClonePerformanceSample));
+            tab.MemoryRegionAttributionHistory.Clear();
+            tab.MemoryRegionAttributionHistory.AddRange(snapshot.MemoryRegionAttributionHistory.Select(CloneMemoryRegionAttributionSample));
             tab.ThreadLifecycleHistory.Clear();
             tab.ThreadLifecycleHistory.AddRange(snapshot.ThreadLifecycleHistory.Select(CloneThreadLifecycleEvent));
             tab.ThreadStackHistories.Clear();
@@ -300,6 +308,7 @@ namespace BlackbirdInterface
             return (ReferenceEquals(tab, _currentSession) && _allEvents.Count > 0) ||
                    tab.Events.Count > 0 ||
                    tab.PerformanceHistory.Count > 0 ||
+                   tab.MemoryRegionAttributionHistory.Count > 0 ||
                    tab.ThreadLifecycleHistory.Count > 0 ||
                    tab.ThreadStackHistories.Count > 0 ||
                    _etwHistoryByPid.ContainsKey(tab.Pid) ||

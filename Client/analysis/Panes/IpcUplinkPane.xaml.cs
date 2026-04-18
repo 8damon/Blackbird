@@ -29,8 +29,10 @@ namespace BlackbirdInterface
 
         internal void SetInactive(string primary, string secondary)
         {
-            SummaryPrimaryBlock.Text = string.IsNullOrWhiteSpace(primary) ? "No IPC diagnostics yet" : primary;
-            SummarySecondaryBlock.Text = string.IsNullOrWhiteSpace(secondary) ? "Enable uplink and wait for stats sample." : secondary;
+            SummaryPrimaryBlock.Text = string.IsNullOrWhiteSpace(primary) ? "No transport diagnostics yet" : primary;
+            SummarySecondaryBlock.Text = string.IsNullOrWhiteSpace(secondary)
+                                             ? "Enable the uplink and wait for the first transport sample."
+                                             : secondary;
             _rows.Clear();
             _index.Clear();
             _lastIoctlErrorsTotal = 0;
@@ -51,9 +53,10 @@ namespace BlackbirdInterface
 
         internal void UpdateDiagnostics(BackendIpcDiagnosticsView d)
         {
-            string transport = "shared-ring+event";
+            string transport = "shared-ring + event";
             SummaryPrimaryBlock.Text = $"{transport} | caps=0x{d.BrokerCapabilities:X8}";
-            SummarySecondaryBlock.Text = $"driverQ={d.DriverQueueDepth} dropped={d.DriverDroppedEvents} | ioctl={d.IoctlEventsPerSec:0} ev/s etw={d.EtwEventsPerSec:0} ev/s";
+            SummarySecondaryBlock.Text =
+                $"driverQ={d.DriverQueueDepth} dropped={d.DriverDroppedEvents} | ioctl={d.IoctlEventsPerSec:0} ev/s etw={d.EtwEventsPerSec:0} ev/s";
             TransportModeBlock.Text = transport.ToUpperInvariant();
             TimestampBlock.Text = d.TimestampUtc.ToString("HH:mm:ss.fff");
 
@@ -187,8 +190,7 @@ namespace BlackbirdInterface
         public string Name
         {
             get => _name;
-            set
-            {
+            set {
                 if (string.Equals(_name, value, StringComparison.Ordinal))
                 {
                     return;
@@ -202,8 +204,7 @@ namespace BlackbirdInterface
         public string Value
         {
             get => _value;
-            set
-            {
+            set {
                 if (string.Equals(_value, value, StringComparison.Ordinal))
                 {
                     return;
@@ -216,8 +217,7 @@ namespace BlackbirdInterface
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
-

@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="./media/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
+  <img src="https://titansoftwork.com/content/capabilities/blackbird/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
 </p>
 
 # [BLACKBIRD](https://titansoftwork.com/capability/blackbird/)
@@ -149,7 +149,7 @@ Repository docs:
 Session archives are stored as `.bkcap` (SQLite + LZ4). Detection reference scenarios are in `DetectionExamples.exe`.
 
 <p align="center">
-  <img src="./media/BLACKBIRD_DIAGRAM.png" width="980" alt="Blackbird platform diagram" />
+  <img src="https://titansoftwork.com/content/capabilities/blackbird/BLACKBIRD_DIAGRAM.png" width="980" alt="Blackbird platform diagram" />
 </p>
 
 ## KNOWN ISSUES

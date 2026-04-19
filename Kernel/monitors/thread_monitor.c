@@ -2,6 +2,7 @@
 #include "..\core\control.h"
 #include "..\core\protection_utils.h"
 #include "..\core\pool_compat.h"
+#include "..\core\tempus_debug.h"
 #include "..\telemetry\etw.h"
 #include "..\correlation\intent_store.h"
 #include "..\correlation\hollowing_engine.h"
@@ -584,6 +585,7 @@ Exit:
 
 VOID BLACKBIRDThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Create)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemThreadMonitor);
     LONG failureCounter;
     HANDLE creatorProcessId;
     UINT32 processPid32;
@@ -592,14 +594,17 @@ VOID BLACKBIRDThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Cre
 
     if (!Create)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemThreadMonitor, tempusStartQpc);
         return;
     }
     if (InterlockedCompareExchange(&g_ThreadMonitorStopping, 0, 0) != 0)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemThreadMonitor, tempusStartQpc);
         return;
     }
     if (!BLACKBIRDControlHasClientsFast())
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemThreadMonitor, tempusStartQpc);
         return;
     }
 
@@ -609,11 +614,13 @@ VOID BLACKBIRDThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Cre
     secondaryPid32 = (creatorPid32 != processPid32) ? creatorPid32 : 0;
     if (!BLACKBIRDControlHasPidInterest(processPid32, secondaryPid32, BLACKBIRD_STREAM_THREAD))
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemThreadMonitor, tempusStartQpc);
         return;
     }
 
     if (!BLACKBIRDThreadTryAcquireWorkSlot())
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemThreadMonitor, tempusStartQpc);
         return;
     }
 
@@ -630,6 +637,7 @@ VOID BLACKBIRDThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Cre
                        ThreadId, status, (ULONG)failureCounter);
         }
         BLACKBIRDThreadReleaseWorkSlot();
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemThreadMonitor, tempusStartQpc);
         return;
     }
 
@@ -646,6 +654,7 @@ VOID BLACKBIRDThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Cre
         }
         ObDereferenceObject(process);
         BLACKBIRDThreadReleaseWorkSlot();
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemThreadMonitor, tempusStartQpc);
         return;
     }
 
@@ -658,6 +667,7 @@ VOID BLACKBIRDThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Cre
     ExInitializeWorkItem(&w->WorkItem, BLACKBIRDThreadWorkRoutine, w);
 
     ExQueueWorkItem(&w->WorkItem, DelayedWorkQueue);
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemThreadMonitor, tempusStartQpc);
 }
 
 NTSTATUS

@@ -82,9 +82,22 @@
             <Setter Property="BorderThickness" Value="0,0,0,1"/>
             <Setter Property="Padding" Value="12,10"/>
         </Style>
+
+        <Style x:Key="FeedRichTextBoxStyle" TargetType="RichTextBox">
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="#FF101010"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="FontFamily" Value="Cascadia Code, Consolas"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="IsDocumentEnabled" Value="True"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="HorizontalScrollBarVisibility" Value="Auto"/>
+        </Style>
     </Window.Resources>
 
-        <Grid Margin="14,0,14,14">
+    <Grid Margin="14,0,14,14">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -116,11 +129,10 @@
                     </Border>
                 </StackPanel>
                 <Button DockPanel.Dock="Right"
-                        Content="✕"
-                        Width="24"
-                        Height="22"
-                        Margin="8,0,0,0"
-                        VerticalAlignment="Top"
+                        Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
+                        Content="&#xE8BB;"
+                        Tag="Close"
+                        ToolTip="Close"
                         Click="Close_Click"/>
             </DockPanel>
         </Border>
@@ -153,7 +165,7 @@
                 <ColumnDefinition Width="12"/>
                 <ColumnDefinition Width="1.05*"/>
                 <ColumnDefinition Width="12"/>
-                <ColumnDefinition Width="1.35*"/>
+                <ColumnDefinition Width="1.5*"/>
             </Grid.ColumnDefinitions>
 
             <Border Grid.Column="0" Style="{StaticResource BoardColumnBorderStyle}">
@@ -195,10 +207,10 @@
             <Border Grid.Column="4" Style="{StaticResource BoardColumnBorderStyle}">
                 <DockPanel LastChildFill="True">
                     <Border DockPanel.Dock="Top" Style="{StaticResource BoardColumnHeaderStyle}">
-                        <TextBlock Text="Waiting / No Data" FontSize="13" FontWeight="SemiBold"/>
+                        <TextBlock Text="Degraded / Review" FontSize="13" FontWeight="SemiBold"/>
                     </Border>
                     <Border Padding="12,12,12,2" ClipToBounds="True">
-                        <ItemsControl x:Name="WaitingItemsControl"
+                        <ItemsControl x:Name="DegradedItemsControl"
                                       ItemTemplate="{StaticResource DiagnosticCardTemplate}">
                             <ItemsControl.ItemsPanel>
                                 <ItemsPanelTemplate>
@@ -251,19 +263,9 @@
                                         Click="Clear_Click"/>
                             </DockPanel>
                         </Border>
-                        <TextBox Grid.Row="1"
-                                 x:Name="OutputBox"
-                                 IsReadOnly="True"
-                                 AcceptsReturn="True"
-                                 AcceptsTab="True"
-                                 TextWrapping="NoWrap"
-                                 VerticalScrollBarVisibility="Auto"
-                                 HorizontalScrollBarVisibility="Auto"
-                                 FontFamily="Cascadia Code, Consolas"
-                                 FontSize="12"
-                                 BorderThickness="0"
-                                 Background="Transparent"
-                                 Padding="12"/>
+                        <RichTextBox Grid.Row="1"
+                                     x:Name="OutputFeedBox"
+                                     Style="{StaticResource FeedRichTextBoxStyle}"/>
                     </Grid>
 
                     <Grid Grid.Row="2">
@@ -281,18 +283,9 @@
                                            VerticalAlignment="Center"/>
                             </DockPanel>
                         </Border>
-                        <TextBox Grid.Row="1"
-                                 x:Name="ControllerLogBox"
-                                 IsReadOnly="True"
-                                 AcceptsReturn="True"
-                                 TextWrapping="NoWrap"
-                                 VerticalScrollBarVisibility="Auto"
-                                 HorizontalScrollBarVisibility="Auto"
-                                 FontFamily="Cascadia Code, Consolas"
-                                 FontSize="11"
-                                 BorderThickness="0"
-                                 Background="Transparent"
-                                 Padding="12"/>
+                        <RichTextBox Grid.Row="1"
+                                     x:Name="ControllerFeedBox"
+                                     Style="{StaticResource FeedRichTextBoxStyle}"/>
                     </Grid>
                 </Grid>
             </Border>

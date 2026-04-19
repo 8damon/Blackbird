@@ -11,6 +11,7 @@
 #endif
 
 #include <Windows.h>
+#include <TlHelp32.h>
 #include <intrin.h>
 
 #include <cstring>
@@ -60,7 +61,7 @@ namespace
         void *HookFunction;
     };
 
-    static PatchedIatSlot g_PatchedSlots[16]{};
+    static PatchedIatSlot g_PatchedSlots[512]{};
     static std::size_t g_PatchedSlotCount = 0;
 
     static bool ModuleImportsWinsock(HMODULE moduleHandle)
@@ -515,18 +516,17 @@ namespace
                         if (*hookEntry.OriginalFunction == nullptr)
                         {
                             *hookEntry.OriginalFunction = reinterpret_cast<void *>(*functionSlot);
-
-                            *functionSlot = reinterpret_cast<ULONG_PTR>(hookEntry.HookFunction);
-                            TrackPatchedSlot(functionSlot, hookEntry.HookFunction);
-                            anyPatched = true;
                         }
+
+                        *functionSlot = reinterpret_cast<ULONG_PTR>(hookEntry.HookFunction);
+                        TrackPatchedSlot(functionSlot, hookEntry.HookFunction);
+                        anyPatched = true;
                     }
                     else
                     {
                         if (*hookEntry.OriginalFunction != nullptr)
                         {
                             *functionSlot = reinterpret_cast<ULONG_PTR>(*hookEntry.OriginalFunction);
-                            *hookEntry.OriginalFunction = nullptr;
                             anyPatched = true;
                         }
                     }
@@ -536,6 +536,35 @@ namespace
             }
         }
 
+        return anyPatched;
+    }
+
+    bool PatchLoadedModules(bool install, HMODULE specificModule = nullptr)
+    {
+        if (specificModule != nullptr)
+        {
+            return PatchImportAddressTableForModule(specificModule, install);
+        }
+
+        HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, GetCurrentProcessId());
+        if (snapshot == INVALID_HANDLE_VALUE)
+        {
+            return false;
+        }
+
+        MODULEENTRY32W moduleEntry{};
+        moduleEntry.dwSize = sizeof(moduleEntry);
+        bool anyPatched = false;
+
+        if (Module32FirstW(snapshot, &moduleEntry))
+        {
+            do
+            {
+                anyPatched |= PatchImportAddressTableForModule(moduleEntry.hModule, install);
+            } while (Module32NextW(snapshot, &moduleEntry));
+        }
+
+        CloseHandle(snapshot);
         return anyPatched;
     }
 } // namespace
@@ -556,14 +585,7 @@ bool KeSetWinsockHook(WinsockHookCallback callback) noexcept
 
     g_PatchedSlotCount = 0;
 
-    const HMODULE moduleHandle = GetModuleHandleW(nullptr);
-    if (moduleHandle == nullptr)
-    {
-        g_ActiveCallback = nullptr;
-        return false;
-    }
-
-    const bool patched = PatchImportAddressTableForModule(moduleHandle, true);
+    const bool patched = PatchLoadedModules(true);
     if (!patched)
     {
         g_ActiveCallback = nullptr;
@@ -585,6 +607,16 @@ bool KeIsWinsockHookRequired() noexcept
     return ModuleImportsWinsock(moduleHandle);
 }
 
+bool KeRefreshWinsockHooks(HMODULE moduleHandle) noexcept
+{
+    if (!g_HooksInstalled)
+    {
+        return false;
+    }
+
+    return PatchLoadedModules(true, moduleHandle);
+}
+
 void KeRemoveWinsockHook() noexcept
 {
     if (!g_HooksInstalled)
@@ -593,11 +625,7 @@ void KeRemoveWinsockHook() noexcept
         return;
     }
 
-    const HMODULE moduleHandle = GetModuleHandleW(nullptr);
-    if (moduleHandle != nullptr)
-    {
-        PatchImportAddressTableForModule(moduleHandle, false);
-    }
+    (void)PatchLoadedModules(false);
 
     g_ActiveCallback = nullptr;
     g_HooksInstalled = false;

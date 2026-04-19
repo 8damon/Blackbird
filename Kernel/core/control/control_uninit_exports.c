@@ -26,15 +26,18 @@ VOID BLACKBIRDControlUninitialize(VOID)
 
 VOID BLACKBIRDControlPublishHandleEvent(_In_ const BLACKBIRD_HANDLE_EVENT *HandleEvent)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemControl);
     BLACKBIRD_EVENT_RECORD record;
     UINT32 stream = BLACKBIRD_STREAM_HANDLE;
 
     if (KeGetCurrentIrql() > APC_LEVEL)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
         return;
     }
     if (HandleEvent == NULL)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
         return;
     }
 
@@ -54,6 +57,7 @@ VOID BLACKBIRDControlPublishHandleEvent(_In_ const BLACKBIRD_HANDLE_EVENT *Handl
         (UINT32)HandleEvent->CallerPid,
         ((UINT32)HandleEvent->TargetPid != (UINT32)HandleEvent->CallerPid) ? (UINT32)HandleEvent->TargetPid : 0, stream,
         &record);
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
 }
 
 VOID BLACKBIRDControlPublishThreadEvent(_In_ UINT64 ProcessId, _In_ UINT64 ThreadId, _In_ UINT64 CreatorPid,
@@ -61,12 +65,14 @@ VOID BLACKBIRDControlPublishThreadEvent(_In_ UINT64 ProcessId, _In_ UINT64 Threa
                                         _In_ UINT32 Flags, _In_ UINT32 FrameCount,
                                         _In_reads_opt_(FrameCount) PVOID const *Frames)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemControl);
     BLACKBIRD_EVENT_RECORD record;
     UINT32 i;
     UINT32 safeCount;
 
     if (KeGetCurrentIrql() > APC_LEVEL)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
         return;
     }
 
@@ -97,18 +103,22 @@ VOID BLACKBIRDControlPublishThreadEvent(_In_ UINT64 ProcessId, _In_ UINT64 Threa
     BLACKBIRDPublishRecordToSubscribers((UINT32)ProcessId,
                                         ((UINT32)CreatorPid != (UINT32)ProcessId) ? (UINT32)CreatorPid : 0,
                                         BLACKBIRD_STREAM_THREAD, &record);
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
 }
 
 VOID BLACKBIRDControlPublishFileEvent(_In_ const BLACKBIRD_FILE_EVENT *FileEvent)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemControl);
     BLACKBIRD_EVENT_RECORD record;
 
     if (KeGetCurrentIrql() > APC_LEVEL)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
         return;
     }
     if (FileEvent == NULL)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
         return;
     }
 
@@ -120,6 +130,7 @@ VOID BLACKBIRDControlPublishFileEvent(_In_ const BLACKBIRD_FILE_EVENT *FileEvent
     record.Data.FileSystem = *FileEvent;
 
     BLACKBIRDPublishRecordToSubscribers((UINT32)FileEvent->ProcessId, 0, BLACKBIRD_STREAM_FILESYSTEM, &record);
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
 }
 
 BOOLEAN

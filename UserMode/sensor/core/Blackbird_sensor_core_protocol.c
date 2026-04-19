@@ -6,7 +6,7 @@ BLACKBIRDSC_API VOID BLACKBIRDSCUseServiceProtocol(VOID)
     g_BlackbirdProtocolMode = BLACKBIRDSC_PROTOCOL_SERVICE;
     InterlockedExchange(&g_BlackbirdBrokerCapabilities, 0);
     InterlockedExchange(&g_BlackbirdBrokerThreatIntelEnabled, 0);
-    InterlockedExchange(&g_BlackbirdBrokerThreatIntelEnableError, 0);
+    InterlockedExchange(&g_BlackbirdLastTiEnableError, 0);
     InterlockedExchange(&g_BlackbirdLastSharedRingError, ERROR_NOT_FOUND);
     ReleaseSRWLockExclusive(&g_BlackbirdProtocolLock);
 }
@@ -41,7 +41,7 @@ BLACKBIRDSC_API BOOL BLACKBIRDSCUseClientProtocol(_In_opt_z_ PCWSTR PipeName, _I
     g_BlackbirdProtocolMode = BLACKBIRDSC_PROTOCOL_CLIENT;
     InterlockedExchange(&g_BlackbirdBrokerCapabilities, 0);
     InterlockedExchange(&g_BlackbirdBrokerThreatIntelEnabled, 0);
-    InterlockedExchange(&g_BlackbirdBrokerThreatIntelEnableError, 0);
+    InterlockedExchange(&g_BlackbirdLastTiEnableError, 0);
     InterlockedExchange(&g_BlackbirdLastSharedRingError, ERROR_NOT_FOUND);
     ReleaseSRWLockExclusive(&g_BlackbirdProtocolLock);
     return TRUE;
@@ -433,11 +433,11 @@ static VOID BLACKBIRDSCCopyAnsiToWide(_In_z_ const char *Source, _Out_writes_z_(
     }
 }
 
-VOID WINAPI BLACKBIRDSCStgDetectionBridgeCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName,
-                                                  _In_opt_ PVOID Context)
+VOID WINAPI BLACKBIRDSCDetectionBridgeCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName,
+                                               _In_opt_ PVOID Context)
 {
-    BLACKBIRDSC_STG_DETECTION_BRIDGE *bridge = (BLACKBIRDSC_STG_DETECTION_BRIDGE *)Context;
-    SwkDetectionEvent event;
+    BLACKBIRDSC_DETECTION_BRIDGE *bridge = (BLACKBIRDSC_DETECTION_BRIDGE *)Context;
+    BLACKBIRDSC_DETECTION_EVENT event;
     char detectionNameAnsi[128];
 
     if (Record == NULL || bridge == NULL || bridge->Callback == NULL)
@@ -491,7 +491,7 @@ BLACKBIRDSCOpenControlDevice(VOID)
     {
         InterlockedExchange(&g_BlackbirdBrokerCapabilities, 0);
         InterlockedExchange(&g_BlackbirdBrokerThreatIntelEnabled, 0);
-        InterlockedExchange(&g_BlackbirdBrokerThreatIntelEnableError, 0);
+        InterlockedExchange(&g_BlackbirdLastTiEnableError, 0);
         h = CreateFileW(L"\\\\.\\Global\\BlackbirdCtl", GENERIC_READ | GENERIC_WRITE,
                         FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
         return h;
@@ -510,7 +510,8 @@ BLACKBIRDSCOpenControlDevice(VOID)
             return INVALID_HANDLE_VALUE;
         }
 
-        h = CreateFileW(pipeName, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        h = CreateFileW(pipeName, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
+                        FILE_ATTRIBUTE_NORMAL | SECURITY_SQOS_PRESENT | SECURITY_IMPERSONATION, NULL);
         if (h == INVALID_HANDLE_VALUE)
         {
             return h;
@@ -537,8 +538,7 @@ BLACKBIRDSCOpenControlDevice(VOID)
         InterlockedExchange(&g_BlackbirdBrokerCapabilities, (LONG)response.Payload.HandshakeResponse.Capabilities);
         InterlockedExchange(&g_BlackbirdBrokerThreatIntelEnabled,
                             response.Payload.HandshakeResponse.ThreatIntelEnabled ? 1 : 0);
-        InterlockedExchange(&g_BlackbirdBrokerThreatIntelEnableError,
-                            (LONG)response.Payload.HandshakeResponse.Reserved);
+        InterlockedExchange(&g_BlackbirdLastTiEnableError, (LONG)response.Payload.HandshakeResponse.Reserved);
         InterlockedExchange(&g_BlackbirdLastSharedRingError, ERROR_NOT_FOUND);
 
         {
@@ -580,9 +580,6 @@ BLACKBIRDSCOpenControlDevice(VOID)
                     ringErr = ERROR_NOT_FOUND;
                 }
                 InterlockedExchange(&g_BlackbirdLastSharedRingError, (LONG)ringErr);
-                (void)BLACKBIRDSCCloseControlDevice(h);
-                SetLastError(ringErr);
-                return INVALID_HANDLE_VALUE;
             }
         }
 
@@ -664,17 +661,6 @@ BLACKBIRDSC_API BOOL BLACKBIRDSCHasSharedChannel(_In_ HANDLE Device, _Out_opt_ B
 BLACKBIRDSC_API DWORD BLACKBIRDSCGetLastSharedRingError(VOID)
 {
     return (DWORD)InterlockedCompareExchange(&g_BlackbirdLastSharedRingError, 0, 0);
-}
-
-DWORD BLACKBIRDSCGetBrokerThreatIntelEnableError(VOID)
-{
-    if (!BLACKBIRDSCIsClientProtocol())
-    {
-        SetLastError(ERROR_NOT_SUPPORTED);
-        return ERROR_NOT_SUPPORTED;
-    }
-
-    return (DWORD)InterlockedCompareExchange(&g_BlackbirdBrokerThreatIntelEnableError, 0, 0);
 }
 
 DWORD BLACKBIRDSCGetLastThreatIntelEnableError(VOID)
@@ -934,32 +920,6 @@ BOOL BLACKBIRDSCGetStats(_In_ HANDLE Device, _Out_ BLACKBIRD_STATS_RESPONSE *Sta
     return ok;
 }
 
-BOOL BLACKBIRDSCGetHealth(_In_ HANDLE Device, _Out_ BLACKBIRD_HEALTH_RESPONSE *Health, _Out_opt_ DWORD *BytesReturned)
-{
-    DWORD bytes = 0;
-    BOOL ok;
-
-    if (Health == NULL)
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-
-    ZeroMemory(Health, sizeof(*Health));
-    if (BLACKBIRDSCIsClientProtocol())
-    {
-        SetLastError(ERROR_NOT_SUPPORTED);
-        return FALSE;
-    }
-
-    ok = DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_GET_HEALTH, NULL, 0, Health, sizeof(*Health), &bytes, NULL);
-    if (BytesReturned != NULL)
-    {
-        *BytesReturned = bytes;
-    }
-    return ok;
-}
-
 BOOL BLACKBIRDSCQueryProcessImagePath(_In_ HANDLE Device, _In_ DWORD ProcessId,
                                       _Out_writes_z_(OutputChars) PWSTR Output, _In_ DWORD OutputChars)
 {
@@ -1076,33 +1036,6 @@ BOOL BLACKBIRDSCGetRuntimeConfig(_In_ HANDLE Device, _Out_ BLACKBIRD_RUNTIME_CON
                            &bytes, NULL);
 }
 
-BOOL BLACKBIRDSCMarkInterfaceReady(_In_ HANDLE Device, _In_ DWORD ProcessId)
-{
-    BLACKBIRD_IPC_PACKET request;
-    BLACKBIRD_IPC_PACKET response;
-    BLACKBIRD_MARK_INTERFACE_READY_REQUEST req;
-    DWORD bytes = 0;
-
-    if (Device == NULL || Device == INVALID_HANDLE_VALUE || ProcessId == 0)
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-
-    ZeroMemory(&req, sizeof(req));
-    req.ProcessId = ProcessId;
-
-    if (BLACKBIRDSCIsClientProtocol())
-    {
-        BLACKBIRDSCInitIpcRequest(&request, BlackbirdIpcCommandMarkInterfaceReady);
-        request.Payload.MarkInterfaceReadyRequest = req;
-        return BLACKBIRDSCIpcTransact(Device, &request, &response);
-    }
-
-    return DeviceIoControl(Device, (DWORD)IOCTL_BLACKBIRD_MARK_INTERFACE_READY, &req, sizeof(req), NULL, 0, &bytes,
-                           NULL);
-}
-
 BOOL BLACKBIRDSCMarkControllerReady(_In_ HANDLE Device, _In_ DWORD ProcessId)
 {
     BLACKBIRD_MARK_CONTROLLER_READY_REQUEST req;
@@ -1130,7 +1063,7 @@ BOOL BLACKBIRDSCSetUserHookTarget(_In_ HANDLE Device, _In_ DWORD Mode, _In_ DWOR
                                   _In_opt_z_ PCWSTR ImagePath, _In_opt_z_ PCWSTR HookDllPath,
                                   _In_opt_z_ PCWSTR WorkingDirectory, _In_opt_z_ PCWSTR EnvironmentOverrides,
                                   _In_ DWORD ParentProcessId, _In_ DWORD PriorityClass, _In_ UINT64 AffinityMask,
-                                  _In_ BOOL InheritHandles,
+                                  _In_ BOOL InheritHandles, _In_ DWORD IntegrityLevel,
                                   _Out_opt_ BLACKBIRD_IPC_SET_USER_HOOK_TARGET_RESPONSE *Response)
 {
     BLACKBIRD_IPC_PACKET request;
@@ -1155,6 +1088,7 @@ BOOL BLACKBIRDSCSetUserHookTarget(_In_ HANDLE Device, _In_ DWORD Mode, _In_ DWOR
     payload.ParentProcessId = ParentProcessId;
     payload.PriorityClass = PriorityClass;
     payload.InheritHandles = InheritHandles ? 1u : 0u;
+    payload.IntegrityLevel = IntegrityLevel;
     payload.AffinityMask = AffinityMask;
     if (ImagePath != NULL)
     {

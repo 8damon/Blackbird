@@ -13,6 +13,7 @@ namespace BlackbirdInterface
         public bool HookDllExists { get; set; }
         public bool BrokerConnectOk { get; set; }
         public bool DriverProxyOk { get; set; }
+        public bool DriverProxyRequired { get; set; } = true;
         public bool EtwUplinkCapable { get; set; }
         public bool EtwUplinkQueryOk { get; set; }
         public bool ThreatIntelEnabled { get; set; }
@@ -28,7 +29,7 @@ namespace BlackbirdInterface
             string.Equals(ControllerState, "Running", StringComparison.OrdinalIgnoreCase) &&
             HookDllExists &&
             BrokerConnectOk &&
-            DriverProxyOk;
+            (!DriverProxyRequired || DriverProxyOk);
 
         public string Summary
         {
@@ -39,7 +40,8 @@ namespace BlackbirdInterface
                     return $"preflight failed: {Error}";
                 }
 
-                return $"driver={DriverState} controller={ControllerState} broker={(BrokerConnectOk ? "ok" : "down")} proxy={(DriverProxyOk ? "ok" : "fail")} hookDll={(HookDllExists ? "ok" : "missing")} etwUplink={(EtwUplinkCapable ? "yes" : "no")}";
+                string proxyState = DriverProxyRequired ? (DriverProxyOk ? "ok" : "fail") : (DriverProxyOk ? "ok" : "deferred");
+                return $"driver={DriverState} controller={ControllerState} broker={(BrokerConnectOk ? "ok" : "down")} proxy={proxyState} hookDll={(HookDllExists ? "ok" : "missing")} etwUplink={(EtwUplinkCapable ? "yes" : "no")}";
             }
         }
 
@@ -51,7 +53,7 @@ namespace BlackbirdInterface
                 $"Controller service: {ControllerState}\n" +
                 $"Hook DLL: {(HookDllExists ? "Found" : "Missing")} ({HookDllPath})\n" +
                 $"Broker link: {(BrokerConnectOk ? "OK" : "Failed")}\n" +
-                $"Driver proxy: {(DriverProxyOk ? "OK" : "Failed")}\n" +
+                $"Driver proxy: {(DriverProxyRequired ? (DriverProxyOk ? "OK" : "Failed") : (DriverProxyOk ? "OK" : "Deferred until interface authentication"))}\n" +
                 $"{(string.IsNullOrWhiteSpace(DriverEnsureMessage) ? string.Empty : $"Driver ensure: {DriverEnsureMessage}\n")}" +
                 $"{(string.IsNullOrWhiteSpace(ControllerEnsureMessage) ? string.Empty : $"Controller ensure: {ControllerEnsureMessage}\n")}" +
                 $"{(string.IsNullOrWhiteSpace(Error) ? string.Empty : $"\nError: {Error}\n")}";
@@ -60,7 +62,8 @@ namespace BlackbirdInterface
 
     internal static class BlackbirdPreflight
     {
-        public static BlackbirdPreflightReport Run(int targetPid, bool ensureServicesRunning = false, string? hookDllPath = null)
+        public static BlackbirdPreflightReport Run(int targetPid, bool ensureServicesRunning = false, string? hookDllPath = null,
+                                                   bool requireDriverProxy = true)
         {
             Console.WriteLine($"[Preflight] Starting  pid={targetPid} ensureServices={ensureServicesRunning}");
             var report = new BlackbirdPreflightReport
@@ -68,11 +71,15 @@ namespace BlackbirdInterface
                 CheckedUtc = DateTime.UtcNow,
                 DriverState = BlackbirdServiceControl.QueryState("blackbird"),
                 ControllerState = BlackbirdServiceControl.QueryState("BlackbirdController"),
-                HookDllPath = ResolveHookDllPath(hookDllPath)
+                HookDllPath = ResolveHookDllPath(hookDllPath),
+                DriverProxyRequired = requireDriverProxy
             };
             report.HookDllExists = File.Exists(report.HookDllPath);
             Console.WriteLine($"[Preflight] Services  driver={report.DriverState} controller={report.ControllerState} hookDll={report.HookDllPath} exists={report.HookDllExists}");
             DiagnosticsState.SetValue("HookDLL", report.HookDllExists ? "Found" : $"Missing ({report.HookDllPath})");
+            DiagnosticsState.SetValue("HookDLL Presence", report.HookDllExists ? "Found" : $"Missing ({report.HookDllPath})");
+            DiagnosticsState.SetValue("Driver Service", report.DriverState);
+            DiagnosticsState.SetValue("Controller Service", report.ControllerState);
 
             if (ensureServicesRunning)
             {
@@ -83,24 +90,29 @@ namespace BlackbirdInterface
                 report.ControllerState = EnsureServiceRunning("BlackbirdController", TimeSpan.FromSeconds(10), out string controllerMsg);
                 report.ControllerEnsureMessage = controllerMsg;
                 Console.WriteLine($"[Preflight] Controller ensure: state={report.ControllerState} msg={controllerMsg}");
+                DiagnosticsState.SetValue("Driver Service", report.DriverState);
+                DiagnosticsState.SetValue("Controller Service", report.ControllerState);
             }
 
-            IntPtr h = IntPtr.Zero;
-            try
+            if (!BlackbirdControlDeviceSession.TryOpen(out var control, out string error))
             {
-                if (!BlackbirdNative.UseClientProtocol(null, 1500))
+                report.Error = error;
+                DiagnosticsState.SetValue("Interface->Controller IPC", $"FAILED: {error}");
+                if (error.IndexOf("access denied", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    throw BlackbirdNative.LastError("UseClientProtocol failed");
+                    DiagnosticsState.SetValue("DACLs", "Access denied");
                 }
+                DiagnosticsState.SetValue("Preflight", report.Summary);
+                Console.WriteLine($"[Preflight] Complete  {report.Summary}{(string.IsNullOrEmpty(report.Error) ? "" : $"  error={report.Error}")}");
+                return report;
+            }
 
-                h = BlackbirdNative.OpenControlDevice();
-                if (h == IntPtr.Zero || h == new IntPtr(-1))
-                {
-                    throw BlackbirdNative.LastError("OpenControlDevice failed");
-                }
-
+            using (control)
+            {
                 report.BrokerConnectOk = true;
                 DiagnosticsState.SetValue("BrokerHandle", "Open");
+                DiagnosticsState.SetValue("Interface->Controller IPC", "OK");
+                DiagnosticsState.SetValue("DACLs", "OK");
 
                 if (BlackbirdNative.GetBrokerInfo(out uint caps, out bool tiEnabled))
                 {
@@ -109,30 +121,35 @@ namespace BlackbirdInterface
                     report.EtwUplinkCapable = (caps & BlackbirdNative.IpcCapEtwTiUplink) != 0;
                 }
 
-                report.ThreatIntelEnableError = BlackbirdNative.GetBrokerThreatIntelEnableError();
+                report.ThreatIntelEnableError = BlackbirdNative.GetLastThreatIntelEnableError();
 
                 if (targetPid > 0)
                 {
                     var pids = new[] { (uint)targetPid };
-                    _ = BlackbirdNative.SetPids(h, pids, 1, BlackbirdNative.StreamAll);
+                    _ = BlackbirdNative.SetPids(control.Handle, pids, 1, BlackbirdNative.StreamAll);
                 }
 
-                if (BlackbirdNative.GetStats(h, out var stats, out _))
+                if (BlackbirdNative.GetStats(control.Handle, out var stats, out _))
                 {
                     report.DriverProxyOk = true;
                     DiagnosticsState.SetValue("DriverProxy", "OK");
                     DiagnosticsState.SetValue("DriverStats", $"subs={stats.SubscriptionCount} depth={stats.QueueDepth} dropped={stats.DroppedEvents}");
+                    DiagnosticsState.SetValue("Controller<->Driver Comms", $"OK depth={stats.QueueDepth} dropped={stats.DroppedEvents}");
                 }
                 else
                 {
                     report.DriverProxyOk = false;
                     int err = Marshal.GetLastWin32Error();
-                    DiagnosticsState.SetValue("DriverProxy", $"Error {err}");
+                    string proxyState = !report.DriverProxyRequired && err == 5
+                        ? "Deferred (awaiting interface authentication)"
+                        : $"Error {err}";
+                    DiagnosticsState.SetValue("DriverProxy", proxyState);
+                    DiagnosticsState.SetValue("Controller<->Driver Comms", proxyState);
                 }
 
                 if (report.EtwUplinkCapable)
                 {
-                    bool ok = BlackbirdNative.GetEtwEvent(h, out _, 0);
+                    bool ok = BlackbirdNative.GetEtwEvent(control.Handle, out _, 0);
                     if (ok)
                     {
                         report.EtwUplinkQueryOk = true;
@@ -147,17 +164,14 @@ namespace BlackbirdInterface
                 {
                     report.EtwUplinkQueryOk = false;
                 }
-            }
-            catch (Exception ex)
-            {
-                report.Error = ex.Message;
-            }
-            finally
-            {
-                if (h != IntPtr.Zero && h != new IntPtr(-1))
-                {
-                    _ = BlackbirdNative.CloseControlDevice(h);
-                }
+
+                DiagnosticsState.SetValue(
+                    "ETW Status",
+                    report.EtwUplinkCapable
+                        ? (report.EtwUplinkQueryOk
+                            ? (report.ThreatIntelEnabled ? "Ready (ThreatIntel enabled)" : "Ready")
+                            : "Degraded")
+                        : "Unsupported");
             }
 
             DiagnosticsState.SetValue("Preflight", report.Summary);

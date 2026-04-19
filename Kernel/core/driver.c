@@ -1,6 +1,7 @@
 #include <ntddk.h>
 #include <wdf.h>
 #include "control.h"
+#include "tempus_debug.h"
 #include "runtime_config.h"
 #include "..\telemetry\etw.h"
 #include "..\monitors\handle_monitor.h"
@@ -135,6 +136,7 @@ static NTSTATUS BLACKBIRDDriverSelfTest(VOID)
 
 _Use_decl_annotations_ VOID BLACKBIRDEvtDriverUnload(WDFDRIVER Driver)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemDriver);
     LONG prevState;
     LONG initFlags;
 
@@ -159,12 +161,15 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtDriverUnload(WDFDRIVER Driver)
     BLACKBIRDRuntimeConfigUninitialize();
 
     InterlockedExchange(&g_DriverState, BLACKBIRDStateUnloaded);
+    BLACKBIRDTempusUninitialize();
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemDriver, tempusStartQpc);
 
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: EvtDriverUnload invoked.\n");
 }
 
 _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 {
+    ULONGLONG tempusStartQpc = 0;
     LONG expectedState;
     LONG initFlags;
     NTSTATUS status;
@@ -197,6 +202,9 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
         DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: WdfDriverCreate failed (0x%08X).\n", status);
         goto ExitFailure;
     }
+
+    (void)BLACKBIRDTempusInitialize();
+    tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemDriver);
 
     status = BLACKBIRDRuntimeConfigInitialize(RegistryPath);
     if (!NT_SUCCESS(status))
@@ -323,6 +331,7 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
     }
 
     InterlockedExchange(&g_DriverState, BLACKBIRDStateInitialized);
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemDriver, tempusStartQpc);
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: Driver initialized.\n");
     return STATUS_SUCCESS;
 
@@ -331,5 +340,7 @@ ExitFailure:
     BLACKBIRDDriverUninitializeByFlags(initFlags);
     BLACKBIRDRuntimeConfigUninitialize();
     InterlockedExchange(&g_DriverState, BLACKBIRDStateCold);
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemDriver, tempusStartQpc);
+    BLACKBIRDTempusUninitialize();
     return status;
 }

@@ -188,6 +188,63 @@
         </Setter>
     </Style>
 
+    <Style TargetType="CheckBox">
+        <Setter Property="Foreground" Value="{StaticResource WinTextBrush}"/>
+        <Setter Property="Margin" Value="0"/>
+        <Setter Property="Padding" Value="0,1,0,1"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <BulletDecorator Background="Transparent" SnapsToDevicePixels="True">
+                        <BulletDecorator.Bullet>
+                            <Border x:Name="CheckBorder"
+                                    Width="16"
+                                    Height="16"
+                                    Margin="0,0,12,0"
+                                    VerticalAlignment="Center"
+                                    Background="#FF141414"
+                                    BorderBrush="{StaticResource WinBorderBrush}"
+                                    BorderThickness="1">
+                                <Path x:Name="CheckMark"
+                                      Width="9"
+                                      Height="7"
+                                      Stretch="Fill"
+                                      Stroke="{StaticResource WinTextBrush}"
+                                      StrokeThickness="1.6"
+                                      Data="M 0 3.5 L 3 6.5 L 9 0.5"
+                                      Visibility="Collapsed"/>
+                            </Border>
+                        </BulletDecorator.Bullet>
+                        <ContentPresenter VerticalAlignment="Center"
+                                          Margin="0,1,0,0"
+                                          RecognizesAccessKey="True"/>
+                    </BulletDecorator>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="CheckBorder" Property="BorderBrush" Value="{StaticResource WinAccentBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="CheckBorder" Property="Background" Value="#FF1B1B1B"/>
+                            <Setter TargetName="CheckBorder" Property="BorderBrush" Value="{StaticResource WinAccentBrush}"/>
+                            <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.55"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ProgressBar">
+        <Setter Property="Background" Value="{StaticResource WinHeaderBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource WinAccentBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource WinBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+
     <Style TargetType="ToggleButton">
         <Setter Property="Background" Value="{StaticResource WinHeaderBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource WinTextBrush}"/>
@@ -532,8 +589,8 @@
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
-        <Setter Property="GridLinesVisibility" Value="Horizontal"/>
-        <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource WinSubtleBorderBrush}"/>
+        <Setter Property="GridLinesVisibility" Value="None"/>
+        <Setter Property="HorizontalGridLinesBrush" Value="#00000000"/>
         <Setter Property="VerticalGridLinesBrush" Value="#00000000"/>
         <Setter Property="HeadersVisibility" Value="Column"/>
         <Setter Property="RowBackground" Value="#FF161616"/>
@@ -591,8 +648,8 @@
 
     <Style TargetType="DataGridCell" x:Key="AppDataGridCellStyle">
         <Setter Property="Background" Value="Transparent"/>
-        <Setter Property="BorderBrush" Value="{StaticResource WinSubtleBorderBrush}"/>
-        <Setter Property="BorderThickness" Value="0,0,0,1"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="6,0"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
@@ -615,7 +672,7 @@
             <Trigger Property="IsSelected" Value="True">
                 <Setter Property="Background" Value="#33323232"/>
                 <Setter Property="Foreground" Value="#FFF7FAFC"/>
-                <Setter Property="BorderBrush" Value="{StaticResource WinSubtleBorderBrush}"/>
+                <Setter Property="BorderBrush" Value="Transparent"/>
             </Trigger>
             <MultiTrigger>
                 <MultiTrigger.Conditions>
@@ -624,7 +681,7 @@
                 </MultiTrigger.Conditions>
                 <Setter Property="Background" Value="#33323232"/>
                 <Setter Property="Foreground" Value="#FFF7FAFC"/>
-                <Setter Property="BorderBrush" Value="{StaticResource WinSubtleBorderBrush}"/>
+                <Setter Property="BorderBrush" Value="Transparent"/>
             </MultiTrigger>
         </Style.Triggers>
     </Style>

@@ -20,20 +20,50 @@ namespace BlackbirdInterface
         private readonly bool _forceControllerProtectedAccess;
 
         internal StartupWelcomeAction SelectedAction { get; private set; }
-        internal bool EnableAntiVirtualizationMasking => _forceAntiVirtualizationMasking || (EnableAntiVirtualizationMaskingCheckBox?.IsChecked == true);
-        internal bool EnableControllerConcealment => _forceControllerConcealment || (EnableControllerConcealmentCheckBox?.IsChecked == true);
-        internal bool EnableInterfaceProtectedAccess => _forceInterfaceProtectedAccess || (EnableInterfaceProtectedAccessCheckBox?.IsChecked == true);
-        internal bool EnableControllerProtectedAccess => _forceControllerProtectedAccess || (EnableControllerProtectedAccessCheckBox?.IsChecked == true);
+        internal bool EnableKernelHooks => EnableKernelHooksCheckBox?.IsChecked == true;
+        internal bool EnableAntiVirtualizationMasking =>
+            EnableKernelHooks &&
+            (_forceAntiVirtualizationMasking || (EnableAntiVirtualizationMaskingCheckBox?.IsChecked == true));
+        internal bool EnableControllerConcealment =>
+            _forceControllerConcealment || (EnableControllerConcealmentCheckBox?.IsChecked == true);
+        internal bool EnableInterfaceProtectedAccess =>
+            _forceInterfaceProtectedAccess || (EnableInterfaceProtectedAccessCheckBox?.IsChecked == true);
+        internal bool EnableControllerProtectedAccess =>
+            _forceControllerProtectedAccess || (EnableControllerProtectedAccessCheckBox?.IsChecked == true);
+        internal bool EnableSignatureIntel => EnableSignatureIntelCheckBox?.IsChecked == true;
+        internal bool EnableSignatureIntelMemoryScan => EnableSignatureIntelMemoryScanCheckBox?.IsChecked == true;
+        internal bool EnableSignatureIntelPageScan => EnableSignatureIntelPageScanCheckBox?.IsChecked == true;
 
         public StartupWelcomeWindow(uint persistentRuntimeFlags = 0)
         {
-            _forceAntiVirtualizationMasking = (persistentRuntimeFlags & BlackbirdNative.RuntimeFlagAntiVirtualization) != 0;
+            _forceAntiVirtualizationMasking =
+                (persistentRuntimeFlags & BlackbirdNative.RuntimeFlagAntiVirtualization) != 0;
             _forceControllerConcealment = (persistentRuntimeFlags & BlackbirdNative.RuntimeFlagSelfHide) != 0;
-            _forceInterfaceProtectedAccess = (persistentRuntimeFlags & BlackbirdNative.RuntimeFlagInterfaceProtectedAccess) != 0;
-            _forceControllerProtectedAccess = (persistentRuntimeFlags & BlackbirdNative.RuntimeFlagControllerProtectedAccess) != 0;
+            _forceInterfaceProtectedAccess =
+                (persistentRuntimeFlags & BlackbirdNative.RuntimeFlagInterfaceProtectedAccess) != 0;
+            _forceControllerProtectedAccess =
+                (persistentRuntimeFlags & BlackbirdNative.RuntimeFlagControllerProtectedAccess) != 0;
 
             InitializeComponent();
             ApplyRuntimeConfigUi();
+        }
+
+        private void KernelHooksCheckBox_Changed(object sender, RoutedEventArgs e)
+        {
+            bool hooksEnabled = EnableKernelHooksCheckBox?.IsChecked == true;
+            if (EnableAntiVirtualizationMaskingCheckBox != null)
+            {
+                EnableAntiVirtualizationMaskingCheckBox.IsEnabled = hooksEnabled && !_forceAntiVirtualizationMasking;
+                if (!hooksEnabled)
+                {
+                    EnableAntiVirtualizationMaskingCheckBox.IsChecked = false;
+                }
+            }
+
+        }
+
+        private void SubsystemOptions_Changed(object sender, RoutedEventArgs e)
+        {
         }
 
         private void ApplyRuntimeConfigUi()
@@ -64,6 +94,11 @@ namespace BlackbirdInterface
 
             if (RuntimeConfigNoteBlock != null)
             {
+                if (EnableSignatureIntelCheckBox != null)
+                {
+                    EnableSignatureIntelCheckBox.IsChecked = true;
+                }
+
                 var forcedItems = new List<string>();
                 if (_forceAntiVirtualizationMasking)
                 {
@@ -84,7 +119,8 @@ namespace BlackbirdInterface
 
                 if (forcedItems.Count != 0)
                 {
-                    RuntimeConfigNoteBlock.Text = $"Installed driver defaults keep {string.Join(" and ", forcedItems)} enabled.";
+                    RuntimeConfigNoteBlock.Text =
+                        $"Installed driver defaults keep {string.Join(" and ", forcedItems)} enabled.";
                     RuntimeConfigNoteBlock.Visibility = Visibility.Visible;
                 }
                 else

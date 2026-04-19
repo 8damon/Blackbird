@@ -904,28 +904,122 @@ static BOOL ControllerClientIsPrivileged(_In_ const BLACKBIRD_CONTROLLER_CLIENT 
     return TRUE;
 }
 
-static PCWSTR ControllerBaseNameFromPath(_In_opt_z_ PCWSTR Path)
+static BOOL ControllerPathsMatchNormalized(_Inout_updates_z_(PathChars) PWSTR CandidatePath,
+                                           _Inout_updates_z_(PathChars) PWSTR ObservedPath, _In_ DWORD PathChars)
 {
-    PCWSTR cursor;
+    ControllerStripPathPrefixes(CandidatePath, PathChars);
+    ControllerStripPathPrefixes(ObservedPath, PathChars);
+    ControllerNormalizePathForCompare(CandidatePath, CandidatePath, PathChars);
+    ControllerNormalizePathForCompare(ObservedPath, ObservedPath, PathChars);
+    return (_wcsicmp(CandidatePath, ObservedPath) == 0);
+}
 
-    if (Path == NULL)
+static BOOL ControllerBuildPublishedInterfacePath(_Out_writes_z_(PathChars) PWSTR Path, _In_ DWORD PathChars)
+{
+    WCHAR modulePath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+    PWSTR lastSlash;
+
+    if (Path == NULL || PathChars == 0)
     {
-        return L"";
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
     }
 
-    cursor = wcsrchr(Path, L'\\');
-    if (cursor != NULL && cursor[1] != L'\0')
+    Path[0] = L'\0';
+    modulePath[0] = L'\0';
+
+    if (GetModuleFileNameW(NULL, modulePath, RTL_NUMBER_OF(modulePath)) == 0)
     {
-        return cursor + 1;
+        return FALSE;
     }
 
-    cursor = wcsrchr(Path, L'/');
-    if (cursor != NULL && cursor[1] != L'\0')
+    lastSlash = wcsrchr(modulePath, L'\\');
+    if (lastSlash == NULL)
     {
-        return cursor + 1;
+        lastSlash = wcsrchr(modulePath, L'/');
+    }
+    if (lastSlash == NULL)
+    {
+        SetLastError(ERROR_PATH_NOT_FOUND);
+        return FALSE;
     }
 
-    return Path;
+    *(lastSlash + 1) = L'\0';
+    if (FAILED(StringCchCopyW(Path, PathChars, modulePath)) ||
+        FAILED(StringCchCatW(Path, PathChars, L"BlackbirdInterface.exe")))
+    {
+        Path[0] = L'\0';
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static BOOL ControllerBuildRepoInterfacePath(_Out_writes_z_(PathChars) PWSTR Path, _In_ DWORD PathChars)
+{
+    WCHAR modulePath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+    PWSTR fileSlash;
+    PWSTR configSlash;
+    PWSTR platformSlash;
+    PCWSTR configurationName;
+
+    if (Path == NULL || PathChars == 0)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    Path[0] = L'\0';
+    modulePath[0] = L'\0';
+    if (GetModuleFileNameW(NULL, modulePath, RTL_NUMBER_OF(modulePath)) == 0)
+    {
+        return FALSE;
+    }
+
+    fileSlash = wcsrchr(modulePath, L'\\');
+    if (fileSlash == NULL)
+    {
+        fileSlash = wcsrchr(modulePath, L'/');
+    }
+    if (fileSlash == NULL)
+    {
+        SetLastError(ERROR_PATH_NOT_FOUND);
+        return FALSE;
+    }
+
+    *fileSlash = L'\0';
+    configSlash = wcsrchr(modulePath, L'\\');
+    if (configSlash == NULL)
+    {
+        configSlash = wcsrchr(modulePath, L'/');
+    }
+    if (configSlash == NULL || configSlash[1] == L'\0')
+    {
+        SetLastError(ERROR_PATH_NOT_FOUND);
+        return FALSE;
+    }
+
+    configurationName = configSlash + 1;
+    platformSlash = configSlash;
+    while (platformSlash > modulePath && platformSlash[-1] != L'\\' && platformSlash[-1] != L'/')
+    {
+        platformSlash -= 1;
+    }
+    if (platformSlash == modulePath)
+    {
+        SetLastError(ERROR_PATH_NOT_FOUND);
+        return FALSE;
+    }
+
+    *(platformSlash - 1) = L'\0';
+    if (FAILED(StringCchPrintfW(Path, PathChars, L"%s\\Client\\analysis\\bin\\%s\\net9.0-windows\\BlackbirdInterface.exe",
+                                modulePath, configurationName)))
+    {
+        Path[0] = L'\0';
+        return FALSE;
+    }
+
+    return TRUE;
 }
 
 _Success_(return)
@@ -961,11 +1055,12 @@ static BOOL ControllerClientQueryImagePath(_In_ const BLACKBIRD_CONTROLLER_CLIEN
     return TRUE;
 }
 
-static BOOL ControllerClientIsTrustedControlClient(_In_ const BLACKBIRD_CONTROLLER_CLIENT *Client,
-                                                   _Out_ BOOL *IsTrusted)
+static BOOL ControllerClientCanBootstrapControlClient(_In_ const BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                     _Out_ BOOL *IsTrusted)
 {
     WCHAR imagePath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
-    PCWSTR baseName;
+    WCHAR candidatePath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+    WCHAR observedPath[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
 
     if (Client == NULL || IsTrusted == NULL)
     {
@@ -984,9 +1079,59 @@ static BOOL ControllerClientIsTrustedControlClient(_In_ const BLACKBIRD_CONTROLL
         return FALSE;
     }
 
-    baseName = ControllerBaseNameFromPath(imagePath);
-    *IsTrusted = (_wcsicmp(baseName, L"BlackbirdInterface.exe") == 0);
+    if (FAILED(StringCchCopyW(observedPath, RTL_NUMBER_OF(observedPath), imagePath)))
+    {
+        return FALSE;
+    }
+
+    if (ControllerBuildPublishedInterfacePath(candidatePath, RTL_NUMBER_OF(candidatePath)))
+    {
+        WCHAR observedCopy[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+
+        if (SUCCEEDED(StringCchCopyW(observedCopy, RTL_NUMBER_OF(observedCopy), observedPath)) &&
+            ControllerPathsMatchNormalized(candidatePath, observedCopy, RTL_NUMBER_OF(candidatePath)))
+        {
+            *IsTrusted = TRUE;
+            return TRUE;
+        }
+    }
+
+    if (ControllerBuildRepoInterfacePath(candidatePath, RTL_NUMBER_OF(candidatePath)))
+    {
+        WCHAR observedCopy[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+
+        if (SUCCEEDED(StringCchCopyW(observedCopy, RTL_NUMBER_OF(observedCopy), observedPath)) &&
+            ControllerPathsMatchNormalized(candidatePath, observedCopy, RTL_NUMBER_OF(candidatePath)))
+        {
+            *IsTrusted = TRUE;
+            return TRUE;
+        }
+    }
+
     return TRUE;
+}
+
+static BOOL ControllerClientCanResumeControlAuthentication(_In_ const BLACKBIRD_CONTROLLER_CLIENT *Client,
+                                                           _Out_ BOOL *IsTrusted)
+{
+    DWORD authorizedPid;
+    DWORD authorizedSessionId;
+
+    if (Client == NULL || IsTrusted == NULL)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    *IsTrusted = FALSE;
+    authorizedPid = (DWORD)InterlockedCompareExchange((volatile LONG *)&g_AuthorizedControlProcessId, 0, 0);
+    authorizedSessionId = (DWORD)InterlockedCompareExchange((volatile LONG *)&g_AuthorizedControlSessionId, 0, 0);
+    if (authorizedPid == 0 || authorizedPid != Client->ProcessId || authorizedSessionId != Client->SessionId)
+    {
+        return TRUE;
+    }
+
+    return ControllerClientCanBootstrapControlClient(Client, IsTrusted);
 }
 
 static BOOL ControllerCommandAllowedForRole(_In_ DWORD ClientRole, _In_ UINT32 Command)
@@ -1609,6 +1754,8 @@ static PCSTR ControllerHookEventKindName(_In_ UINT32 Kind)
         return "ExceptionHighPriv";
     case BlackbirdIpcHookEventIntegrity:
         return "Integrity";
+    case BlackbirdIpcHookEventModule:
+        return "Module";
     default:
         return "Unknown";
     }
@@ -1792,6 +1939,34 @@ static VOID ControllerHookCopyWideSampleToReason(_Out_writes_z_(ReasonChars) PWS
     Reason[charCount] = L'\0';
 }
 
+static VOID ControllerHookCopyAnsiSampleToReason(_Out_writes_z_(ReasonChars) PWSTR Reason, _In_ size_t ReasonChars,
+                                                 _In_reads_bytes_(SampleSize) const UINT8 *Sample,
+                                                 _In_ UINT32 SampleSize)
+{
+    CHAR buffer[BLACKBIRD_IPC_MAX_HOOK_DATA_SAMPLE + 1];
+    int written;
+
+    if (Reason == NULL || ReasonChars == 0)
+    {
+        return;
+    }
+
+    Reason[0] = L'\0';
+    if (Sample == NULL || SampleSize == 0)
+    {
+        return;
+    }
+
+    RtlZeroMemory(buffer, sizeof(buffer));
+    CopyMemory(buffer, Sample, (SampleSize < BLACKBIRD_IPC_MAX_HOOK_DATA_SAMPLE) ? SampleSize
+                                                                                : BLACKBIRD_IPC_MAX_HOOK_DATA_SAMPLE);
+    written = MultiByteToWideChar(CP_ACP, 0, buffer, -1, Reason, (int)ReasonChars);
+    if (written <= 0)
+    {
+        Reason[0] = L'\0';
+    }
+}
+
 static double ControllerComputeSampleEntropy(_In_reads_(SampleSize) const UINT8 *Sample, _In_ UINT32 SampleSize)
 {
     UINT32 i;
@@ -1930,7 +2105,7 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
         return ERROR_INVALID_PARAMETER;
     }
 
-    if (HookEvent->Kind == BlackbirdIpcHookEventUnknown || HookEvent->Kind > BlackbirdIpcHookEventIntegrity)
+    if (HookEvent->Kind == BlackbirdIpcHookEventUnknown || HookEvent->Kind > BlackbirdIpcHookEventModule)
     {
         return ERROR_INVALID_PARAMETER;
     }
@@ -2048,7 +2223,7 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
             }
 
             (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
-                                   L"%ws tamper=%u suspiciousPrologue=%llu baselineChanged=%llu checkCount=%llu",
+                                   L"%ws tamper=%u suspiciousPrologue=%llu imageMismatch=%llu checkCount=%llu",
                                    reasonLabel, integrityTampered ? 1u : 0u, (unsigned long long)HookEvent->Context1,
                                    (unsigned long long)HookEvent->Context2, (unsigned long long)HookEvent->Context3);
         }
@@ -2071,10 +2246,11 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
 
             (void)StringCchCopyA(mapped.ClassName, RTL_NUMBER_OF(mapped.ClassName), "SR71");
             (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
-                                   L"hookIntegrity tampered=%u mask=0x%llX winsock=%llu nt=%llu ki=%llu",
+                                   L"hookIntegrity tampered=%u mask=0x%llX winsock=%llu nt=%llu ki=%llu module=%llu",
                                    integrityTampered ? 1u : 0u, (unsigned long long)HookEvent->Context0,
                                    (unsigned long long)HookEvent->Context1, (unsigned long long)HookEvent->Context2,
-                                   (unsigned long long)HookEvent->Context3);
+                                   (unsigned long long)HookEvent->Context3,
+                                   (unsigned long long)((argCount > 2u) ? HookEvent->Args[2] : 0ull));
         }
     }
     else
@@ -2342,6 +2518,81 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
                 (void)StringCchCopyW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason), L"domain.resolve");
             }
         }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventWinsock &&
+                 (lstrcmpiA(apiName, "WSASend") == 0 || lstrcmpiA(apiName, "WSARecv") == 0 || lstrcmpiA(apiName, "send") == 0 ||
+                  lstrcmpiA(apiName, "recv") == 0))
+        {
+            mapped.Family = BlackbirdIpcEtwFamilySocket;
+            mapped.TargetPid = 0;
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "USERMODE_NETWORK_IO");
+            mapped.Severity = 1u;
+            specializedEvent = TRUE;
+            (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                   L"socket.io api=%S bytes=%lu socket=0x%llX", apiName, (unsigned long)sampleSize,
+                                   (unsigned long long)HookEvent->Context0);
+        }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventKi)
+        {
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "USERMODE_KI_ACTIVITY");
+            mapped.Severity = 3u;
+            mapped.TargetPid = eventPid;
+            specializedEvent = TRUE;
+            (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                   L"ki.dispatch stub=%S caller=0x%llX stack=0x%llX", apiName,
+                                   (unsigned long long)HookEvent->Caller, (unsigned long long)HookEvent->Context0);
+        }
+        else if (HookEvent->Kind == BlackbirdIpcHookEventModule)
+        {
+            WCHAR nameBuffer[BLACKBIRD_IPC_MAX_ETW_REASON] = {0};
+            ULONGLONG moduleHandle = HookEvent->Context0;
+            ULONGLONG frontFlags = HookEvent->Context1;
+            ULONGLONG auxValue = HookEvent->Context2;
+            ULONGLONG thirdValue = HookEvent->Context3;
+
+            mapped.TargetPid = eventPid;
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "USERMODE_MODULE_LOAD");
+            specializedEvent = TRUE;
+
+            if (lstrcmpiA(apiName, "LoadLibraryA") == 0 || lstrcmpiA(apiName, "LoadLibraryExA") == 0)
+            {
+                ControllerHookCopyAnsiSampleToReason(nameBuffer, RTL_NUMBER_OF(nameBuffer), HookEvent->DataSample,
+                                                     sampleSize);
+            }
+            else
+            {
+                ControllerHookCopyWideSampleToReason(nameBuffer, RTL_NUMBER_OF(nameBuffer), HookEvent->DataSample,
+                                                     sampleSize);
+            }
+
+            if (lstrcmpiA(apiName, "LdrLoadDll") == 0)
+            {
+                mapped.Severity = (((NTSTATUS)auxValue) < 0) ? 1u : 3u;
+                (void)StringCchPrintfW(
+                    mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                    L"module.ldr name=%ws handle=0x%llX flags=0x%llX status=0x%08llX searchPath=0x%llX caller=0x%llX",
+                    (nameBuffer[0] != L'\0') ? nameBuffer : L"<unknown>", (unsigned long long)moduleHandle,
+                    (unsigned long long)frontFlags, (unsigned long long)auxValue, (unsigned long long)thirdValue,
+                    (unsigned long long)HookEvent->Caller);
+            }
+            else if (lstrcmpiA(apiName, "LoadLibraryExA") == 0 || lstrcmpiA(apiName, "LoadLibraryExW") == 0)
+            {
+                mapped.Severity = 1u;
+                (void)StringCchPrintfW(
+                    mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                    L"module.frontend api=%S name=%ws handle=0x%llX flags=0x%llX hFile=0x%llX caller=0x%llX", apiName,
+                    (nameBuffer[0] != L'\0') ? nameBuffer : L"<unknown>", (unsigned long long)moduleHandle,
+                    (unsigned long long)frontFlags, (unsigned long long)auxValue,
+                    (unsigned long long)HookEvent->Caller);
+            }
+            else
+            {
+                mapped.Severity = 1u;
+                (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                       L"module.frontend api=%S name=%ws handle=0x%llX caller=0x%llX", apiName,
+                                       (nameBuffer[0] != L'\0') ? nameBuffer : L"<unknown>",
+                                       (unsigned long long)moduleHandle, (unsigned long long)HookEvent->Caller);
+            }
+        }
 
         if (!memoryEvent && !specializedEvent)
         {
@@ -2358,7 +2609,19 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
     ControllerHookAppendArgsToReason(mapped.Reason, RTL_NUMBER_OF(mapped.Reason), HookEvent->Args, argCount);
 
     mapped.OriginAddress = HookEvent->Caller;
-    mapped.StackCount = 0;
+    mapped.StackCount = HookEvent->StackCount;
+    if (mapped.StackCount > RTL_NUMBER_OF(mapped.Stack))
+    {
+        mapped.StackCount = RTL_NUMBER_OF(mapped.Stack);
+    }
+    if (mapped.StackCount > RTL_NUMBER_OF(HookEvent->Stack))
+    {
+        mapped.StackCount = RTL_NUMBER_OF(HookEvent->Stack);
+    }
+    if (mapped.StackCount != 0)
+    {
+        CopyMemory(mapped.Stack, HookEvent->Stack, mapped.StackCount * sizeof(mapped.Stack[0]));
+    }
     mapped.NotifyClass = HookEvent->Kind;
     mapped.DataType = HookEvent->Operation;
     ControllerHookCopyArgs(mapped.HookArgs, &mapped.HookArgCount, HookEvent->Args, argCount);
@@ -2597,15 +2860,6 @@ static DWORD ControllerClientSetUserHookTarget(_Inout_ BLACKBIRD_CONTROLLER_CLIE
         ControllerClientPrimePendingLaunchPidLocked(Client, targetPid);
         LeaveCriticalSection(&Client->Lock);
         (void)ControllerApplyDriverSubscriptionsIfDirty();
-
-        err = ControllerWaitForHookReady(targetPid);
-        if (err != ERROR_SUCCESS)
-        {
-            EnterCriticalSection(&Client->Lock);
-            ControllerClientClearPendingLaunchLocked(Client);
-            LeaveCriticalSection(&Client->Lock);
-            return err;
-        }
         break;
 
     default:
@@ -2735,19 +2989,43 @@ static DWORD ControllerHandleClientCommand(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *
 
     if (Client->Role == BlackbirdControllerClientRoleControl && Request->Command != BlackbirdIpcCommandHandshake)
     {
-        if (!ControllerClientIsTrustedControlClient(Client, &trustedControlClient))
+        if (Request->Command == BlackbirdIpcCommandMarkInterfaceReady)
         {
-            err = GetLastError();
-            if (err == ERROR_SUCCESS)
+            if (!ControllerClientCanBootstrapControlClient(Client, &trustedControlClient))
+            {
+                err = GetLastError();
+                if (err == ERROR_SUCCESS)
+                {
+                    err = ERROR_ACCESS_DENIED;
+                }
+                goto Complete;
+            }
+            if (!trustedControlClient)
             {
                 err = ERROR_ACCESS_DENIED;
+                goto Complete;
             }
-            goto Complete;
         }
-        if (!trustedControlClient)
+        else if (!Client->ControlAuthenticated)
         {
-            err = ERROR_ACCESS_DENIED;
-            goto Complete;
+            if (!ControllerClientCanResumeControlAuthentication(Client, &trustedControlClient))
+            {
+                err = GetLastError();
+                if (err == ERROR_SUCCESS)
+                {
+                    err = ERROR_ACCESS_DENIED;
+                }
+                goto Complete;
+            }
+            if (trustedControlClient)
+            {
+                Client->ControlAuthenticated = TRUE;
+            }
+            else
+            {
+                err = ERROR_ACCESS_DENIED;
+                goto Complete;
+            }
         }
     }
 
@@ -2851,7 +3129,12 @@ static DWORD ControllerHandleClientCommand(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *
             {
                 err = ERROR_GEN_FAILURE;
             }
+            break;
         }
+        Client->ControlAuthenticated = TRUE;
+        InterlockedExchange((volatile LONG *)&g_AuthorizedControlProcessId,
+                            (LONG)Request->Payload.MarkInterfaceReadyRequest.ProcessId);
+        InterlockedExchange((volatile LONG *)&g_AuthorizedControlSessionId, (LONG)Client->SessionId);
         break;
     case BlackbirdIpcCommandGetEtwEvent:
         err = ControllerClientGetEtwEvent(Client, Request->Payload.GetEventRequest.TimeoutMs,
@@ -3042,7 +3325,7 @@ BOOL ControllerCreatePipeSecurity(_In_ DWORD ClientRole, _Out_ PSECURITY_ATTRIBU
                                   _Outptr_ PSECURITY_DESCRIPTOR *SecurityDescriptor)
 {
     BOOL ok;
-    PCWSTR sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)";
+    PCWSTR sddl = NULL;
 
     if (SecurityAttributes == NULL || SecurityDescriptor == NULL)
     {
@@ -3052,7 +3335,18 @@ BOOL ControllerCreatePipeSecurity(_In_ DWORD ClientRole, _Out_ PSECURITY_ATTRIBU
     *SecurityDescriptor = NULL;
     ZeroMemory(SecurityAttributes, sizeof(*SecurityAttributes));
 
-    UNREFERENCED_PARAMETER(ClientRole);
+    switch (ClientRole)
+    {
+    case BlackbirdControllerClientRoleHook:
+        sddl = L"D:P(A;;GA;;;SY)(A;;GRGW;;;IU)";
+        break;
+    case BlackbirdControllerClientRoleControl:
+        sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)";
+        break;
+    default:
+        sddl = L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)";
+        break;
+    }
 
     ok = ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, SDDL_REVISION_1, SecurityDescriptor, NULL);
     if (!ok || *SecurityDescriptor == NULL)

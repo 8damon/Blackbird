@@ -16,7 +16,6 @@ DWORD g_BlackbirdPipeTimeoutMs = 3000;
 volatile LONG g_BlackbirdIpcSequence = 1;
 volatile LONG g_BlackbirdBrokerCapabilities = 0;
 volatile LONG g_BlackbirdBrokerThreatIntelEnabled = 0;
-volatile LONG g_BlackbirdBrokerThreatIntelEnableError = 0;
 volatile LONG g_BlackbirdLastTiEnableError = 0;
 volatile LONG g_BlackbirdLastSharedRingError = ERROR_NOT_FOUND;
 SRWLOCK g_BlackbirdProtocolLock = SRWLOCK_INIT;

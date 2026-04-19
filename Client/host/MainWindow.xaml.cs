@@ -4,7 +4,9 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Documents;
 using System.Windows.Interop;
+using System.Windows.Media;
 using Microsoft.Win32;
 using BlackbirdOperator.Models;
 using BlackbirdOperator.Services;
@@ -203,7 +205,7 @@ public partial class MainWindow : Window
 
     private void ClearCommandOutputButton_Click(object sender, RoutedEventArgs e)
     {
-        CommandOutputBox.Clear();
+        CommandOutputBox.Document.Blocks.Clear();
     }
 
     private void FileDropZone_DragOver(object sender, DragEventArgs e)
@@ -456,13 +458,20 @@ public partial class MainWindow : Window
         }
     }
 
+    private static readonly SolidColorBrush _outputColorSent    = new(Color.FromRgb(0x88, 0x88, 0x88));
+    private static readonly SolidColorBrush _outputColorReceive = new(Color.FromRgb(0xCC, 0xCC, 0xCC));
+    private static readonly SolidColorBrush _outputColorError   = new(Color.FromRgb(0xFF, 0x55, 0x55));
+    private static readonly SolidColorBrush _outputColorDefault = new(Color.FromRgb(0xAA, 0xAA, 0xAA));
+
     private void AppendCommandOutput(string line)
     {
-        if (!string.IsNullOrWhiteSpace(CommandOutputBox.Text))
-        {
-            CommandOutputBox.AppendText("\n");
-        }
-        CommandOutputBox.AppendText(line);
+        SolidColorBrush color = line.StartsWith("[ERROR]") ? _outputColorError
+                              : line.StartsWith("[>]")     ? _outputColorSent
+                              : line.StartsWith("[<]")     ? _outputColorReceive
+                              : _outputColorDefault;
+
+        var para = new Paragraph(new Run(line)) { Margin = new Thickness(0), Foreground = color };
+        CommandOutputBox.Document.Blocks.Add(para);
         CommandOutputBox.ScrollToEnd();
     }
 

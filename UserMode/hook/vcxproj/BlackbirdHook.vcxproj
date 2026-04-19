@@ -161,8 +161,12 @@
   <ItemGroup>
     <ClCompile Include="..\hooks\controller.cpp" />
     <ClCompile Include="..\hooks\ki.cpp" />
+    <ClCompile Include="..\hooks\module.cpp" />
     <ClCompile Include="..\hooks\nt.cpp" />
+    <ClCompile Include="..\hooks\runtime_bootstrap.cpp" />
     <ClCompile Include="..\hooks\runtime.cpp" />
+    <ClCompile Include="..\hooks\runtime_integrity.cpp" />
+    <ClCompile Include="..\hooks\runtime_launch_gate.cpp" />
     <ClCompile Include="..\hooks\ws.cpp" />
     <ClCompile Include="..\instrument\stacktrace.cpp" />
     <ClCompile Include="..\instrument\unlink.cpp" />
@@ -175,8 +179,10 @@
   <ItemGroup>
     <ClInclude Include="..\hooks\controller.h" />
     <ClInclude Include="..\hooks\ki.h" />
+    <ClInclude Include="..\hooks\module.h" />
     <ClInclude Include="..\hooks\nt.h" />
     <ClInclude Include="..\hooks\runtime.h" />
+    <ClInclude Include="..\hooks\runtime_private.h" />
     <ClInclude Include="..\hooks\ws.h" />
     <ClInclude Include="..\instrument\stacktrace.h" />
     <ClInclude Include="..\instrument\unlink.h" />

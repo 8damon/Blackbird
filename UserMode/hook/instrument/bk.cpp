@@ -13,12 +13,6 @@ namespace
     static std::atomic<RtlCaptureStackBackTrace_t> g_capture{nullptr};
     static std::atomic<DWORD> g_tls{TLS_OUT_OF_INDEXES};
 
-    // -----------------------------------------------------------------------
-    // Lock-free VEH telemetry ring.
-    // Non-memory-fault telemetry events are enqueued here from the VEH handler
-    // (which runs under exception context) and drained by a background thread.
-    // This decouples the pipe I/O latency from the exception handler path.
-    // -----------------------------------------------------------------------
     static constexpr DWORD kVehRingCapacity = 256;
 
     struct alignas(MEMORY_ALLOCATION_ALIGNMENT) VehRingNode
@@ -444,7 +438,6 @@ PVOID BkRegisterVectoredExceptionHandler(BkBlackbirdTelemetryArguments *args) no
 
     g_args.store(args, std::memory_order_release);
 
-    /* Start the async dispatcher ring before installing the VEH. */
     (void)VehRingInit();
 
     const ULONG first = args->install_first ? 1u : 0u;

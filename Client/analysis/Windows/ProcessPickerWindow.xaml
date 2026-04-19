@@ -586,8 +586,9 @@
                           Margin="0,4,0,0"
                           IsChecked="True"/>
                 <CheckBox x:Name="EarlyBirdApcCheckBox"
-                          Content="EarlyBird APC (optional)"
+                          Content="Launch via APC"
                           Margin="0,4,0,0"
+                          IsEnabled="False"
                           IsChecked="True"/>
             </StackPanel>
             <Button Content="Open .exe..."

@@ -15,6 +15,16 @@ namespace BlackbirdInterface
         Realtime
     }
 
+    public enum LaunchIntegrityLevel : uint
+    {
+        Default    = 0,
+        Untrusted  = 1,
+        Low        = 2,
+        Medium     = 3,
+        High       = 4,
+        System     = 5,
+    }
+
     public sealed class LaunchProfile
     {
         public string WorkingDirectory { get; set; } = string.Empty;
@@ -22,10 +32,13 @@ namespace BlackbirdInterface
         public bool LeaveSuspendedAfterReady { get; set; }
         public uint ParentProcessId { get; set; }
         public bool InheritHandles { get; set; }
+        public bool EnableKernelHooks { get; set; } = true;
         public bool EnableAntiVirtualizationMasking { get; set; }
+        public LaunchIntegrityLevel IntegrityLevel { get; set; } = LaunchIntegrityLevel.Default;
         public bool EnableControllerConcealment { get; set; }
         public bool EnableInterfaceProtectedAccess { get; set; }
         public bool EnableControllerProtectedAccess { get; set; }
+        public bool ConcealHookPresence { get; set; }
         public LaunchPriorityPreset Priority { get; set; } = LaunchPriorityPreset.Inherit;
         public ulong AffinityMask { get; set; }
 
@@ -104,6 +117,12 @@ namespace BlackbirdInterface
             if (!TryParseEnvironmentOverrides(out List<KeyValuePair<string, string>> variables, out _))
             {
                 return string.Empty;
+            }
+
+            if (ConcealHookPresence)
+            {
+                variables.RemoveAll(static p => p.Key.Equals("BLACKBIRD_HOOK_CONCEAL", StringComparison.OrdinalIgnoreCase));
+                variables.Add(new KeyValuePair<string, string>("BLACKBIRD_HOOK_CONCEAL", "1"));
             }
 
             return string.Join("\n", variables.Select(static pair => $"{pair.Key}={pair.Value}"));

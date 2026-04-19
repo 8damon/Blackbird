@@ -130,11 +130,11 @@
                            Text="Launch Parameters"/>
 
                 <Button Grid.Column="1"
-                        Width="28"
-                        Height="22"
                         Margin="0,6,6,6"
-                        Padding="0"
-                        Content="✕"
+                        Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
+                        Content="&#xE8BB;"
+                        Tag="Close"
+                        ToolTip="Close"
                         Click="Cancel_Click"/>
             </Grid>
 
@@ -187,9 +187,13 @@
                                           IsChecked="True"/>
                                 <CheckBox x:Name="EarlyBirdApcCheckBox"
                                           Margin="0,8,0,0"
-                                          Content="Use EarlyBird APC for launch"
+                                          Content="Launch via APC (required)"
                                           Checked="UseUsermodeHooksCheckBox_Changed"
                                           Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                <CheckBox x:Name="ConcealHookPresenceCheckBox"
+                                          Margin="0,8,0,0"
+                                          Content="Conceal Hook Presence"
+                                          ToolTip="Hides SR71 runtime threads from NtQuerySystemInformation(Ex) and NtGetNextThread. Launch mode only."/>
                             </StackPanel>
                         </Border>
 
@@ -291,6 +295,28 @@
                                     <TextBox x:Name="AffinityMaskTextBox"
                                              Grid.Column="3"
                                              Margin="10,0,0,0"/>
+                                </Grid>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Integrity level"/>
+                                    <ComboBox x:Name="IntegrityLevelComboBox"
+                                              Grid.Column="1"
+                                              Style="{StaticResource LaunchComboStyle}"
+                                              ItemContainerStyle="{StaticResource LaunchComboItemStyle}"
+                                              SelectedIndex="0"
+                                              ToolTip="Token integrity level for the launched process. Default inherits the caller's level. SYSTEM requires the service to hold SE_TCB_PRIVILEGE.">
+                                        <ComboBoxItem Content="Default"/>
+                                        <ComboBoxItem Content="Untrusted"/>
+                                        <ComboBoxItem Content="Low"/>
+                                        <ComboBoxItem Content="Medium"/>
+                                        <ComboBoxItem Content="High (admin)"/>
+                                        <ComboBoxItem Content="SYSTEM"/>
+                                    </ComboBox>
                                 </Grid>
                             </StackPanel>
                         </Border>

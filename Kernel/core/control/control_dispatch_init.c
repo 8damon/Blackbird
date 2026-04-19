@@ -116,9 +116,6 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUE
     case IOCTL_BLACKBIRD_GET_RUNTIME_CONFIG:
         status = BLACKBIRDHandleGetRuntimeConfigIoctl(ctx->Client, Request, &bytesOut);
         break;
-    case IOCTL_BLACKBIRD_MARK_INTERFACE_READY:
-        status = BLACKBIRDHandleMarkInterfaceReadyIoctl(ctx->Client, Request);
-        break;
     case IOCTL_BLACKBIRD_MARK_CONTROLLER_READY:
         status = BLACKBIRDHandleMarkControllerReadyIoctl(ctx->Client, Request);
         break;

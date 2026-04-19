@@ -239,6 +239,7 @@ namespace BlackbirdInterface
 
                     string source = ResolveSourceLabel(pid);
                     WriteEntry(source, pid, text);
+                    OutputCapture.AppendExternalLine($"[{source}:{pid}] {text}");
                 }
             }
             catch (Exception ex)

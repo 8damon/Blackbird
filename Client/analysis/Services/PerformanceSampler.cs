@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
@@ -387,6 +388,7 @@ namespace BlackbirdInterface
             const uint memCommit = 0x1000;
 
             var rows = new List<MemoryPageSample>(768);
+            List<MemoryModuleMapEntry> modules = CaptureModuleMap(process);
             IntPtr handle = Kernel32Native.OpenProcess(
                 processQuery | processVmRead | processQueryLimited,
                 false,
@@ -401,6 +403,7 @@ namespace BlackbirdInterface
                 ulong address = 0;
                 ulong maxAddress = Environment.Is64BitProcess ? 0x00007FFF_FFFFFFFFul : uint.MaxValue;
                 nuint infoSize = (nuint)Marshal.SizeOf<MEMORY_BASIC_INFORMATION>();
+                var mappedPathCache = new Dictionary<ulong, string>();
 
                 while (address < maxAddress && rows.Count < 1536)
                 {
@@ -421,17 +424,25 @@ namespace BlackbirdInterface
                         string stateLabel = EventDetailFormatting.DescribeMemoryState(info.State);
                         string protectLabel = EventDetailFormatting.DescribeMemoryProtection(info.Protect);
                         string typeLabel = EventDetailFormatting.DescribeMemoryType(info.Type);
+                        ulong baseAddress = (ulong)info.BaseAddress;
+                        ulong allocationBase = (ulong)info.AllocationBase;
+                        string modulePath = ResolveMappedModulePath(modules, baseAddress, allocationBase, regionSize);
+                        string backingPath = ResolveMappedBackingPath(handle, baseAddress, allocationBase, mappedPathCache);
                         rows.Add(new MemoryPageSample
                         {
-                            BaseAddress = (ulong)info.BaseAddress,
+                            BaseAddress = baseAddress,
+                            AllocationBase = allocationBase,
                             RegionSize = regionSize,
                             State = info.State,
                             Protect = info.Protect,
+                            AllocationProtect = info.AllocationProtect,
                             Type = info.Type,
                             StateLabel = stateLabel,
                             ProtectLabel = protectLabel,
                             TypeLabel = typeLabel,
-                            Category = BuildPageCategory(info.Type, info.Protect)
+                            Category = BuildPageCategory(info.Type, info.Protect),
+                            BackingPath = backingPath,
+                            ModulePath = modulePath
                         });
                     }
 
@@ -490,6 +501,126 @@ namespace BlackbirdInterface
             return typeLabel;
         }
 
+        private static List<MemoryModuleMapEntry> CaptureModuleMap(Process process)
+        {
+            var rows = new List<MemoryModuleMapEntry>(128);
+            try
+            {
+                foreach (ProcessModule module in process.Modules)
+                {
+                    ulong baseAddress = unchecked((ulong)module.BaseAddress.ToInt64());
+                    ulong size = (ulong)Math.Max(module.ModuleMemorySize, 0);
+                    if (baseAddress == 0 || size == 0)
+                    {
+                        continue;
+                    }
+
+                    rows.Add(new MemoryModuleMapEntry(
+                        baseAddress,
+                        baseAddress + size,
+                        module.ModuleName ?? string.Empty,
+                        module.FileName ?? string.Empty));
+                }
+            }
+            catch
+            {
+            }
+
+            rows.Sort((left, right) => left.BaseAddress.CompareTo(right.BaseAddress));
+            return rows;
+        }
+
+        private static string ResolveMappedModulePath(
+            IReadOnlyList<MemoryModuleMapEntry> modules,
+            ulong baseAddress,
+            ulong allocationBase,
+            ulong regionSize)
+        {
+            ulong regionEnd = baseAddress + regionSize;
+            if (regionEnd <= baseAddress)
+            {
+                regionEnd = ulong.MaxValue;
+            }
+
+            for (int i = 0; i < modules.Count; i += 1)
+            {
+                MemoryModuleMapEntry module = modules[i];
+                if ((allocationBase != 0 && allocationBase == module.BaseAddress) ||
+                    (baseAddress >= module.BaseAddress && baseAddress < module.EndAddress) ||
+                    (module.BaseAddress >= baseAddress && module.BaseAddress < regionEnd))
+                {
+                    return module.Path;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static string ResolveMappedBackingPath(
+            IntPtr processHandle,
+            ulong baseAddress,
+            ulong allocationBase,
+            Dictionary<ulong, string> cache)
+        {
+            ulong key = allocationBase != 0 ? allocationBase : baseAddress;
+            if (key == 0)
+            {
+                return string.Empty;
+            }
+
+            if (cache.TryGetValue(key, out string? existing))
+            {
+                return existing;
+            }
+
+            string mappedPath = QueryMappedFilename(processHandle, key);
+            cache[key] = mappedPath;
+            return mappedPath;
+        }
+
+        private static string QueryMappedFilename(IntPtr processHandle, ulong address)
+        {
+            const int memoryMappedFilenameInformation = 2;
+            const int bufferBytes = 32768;
+
+            if (processHandle == IntPtr.Zero || address == 0)
+            {
+                return string.Empty;
+            }
+
+            IntPtr buffer = Marshal.AllocHGlobal(bufferBytes);
+            try
+            {
+                int status = NtQueryVirtualMemory(
+                    processHandle,
+                    unchecked((nint)address),
+                    memoryMappedFilenameInformation,
+                    buffer,
+                    (uint)bufferBytes,
+                    out uint _);
+                if (status < 0)
+                {
+                    return string.Empty;
+                }
+
+                UNICODE_STRING text = Marshal.PtrToStructure<UNICODE_STRING>(buffer);
+                if (text.Buffer == IntPtr.Zero || text.Length == 0)
+                {
+                    return string.Empty;
+                }
+
+                return Marshal.PtrToStringUni(text.Buffer, text.Length / 2) ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+
         private static MemoryMetricSample CloneMetric(MemoryMetricSample src)
         {
             return new MemoryMetricSample
@@ -505,14 +636,18 @@ namespace BlackbirdInterface
             return new MemoryPageSample
             {
                 BaseAddress = src.BaseAddress,
+                AllocationBase = src.AllocationBase,
                 RegionSize = src.RegionSize,
                 State = src.State,
                 Protect = src.Protect,
+                AllocationProtect = src.AllocationProtect,
                 Type = src.Type,
                 StateLabel = src.StateLabel,
                 ProtectLabel = src.ProtectLabel,
                 TypeLabel = src.TypeLabel,
-                Category = src.Category
+                Category = src.Category,
+                BackingPath = src.BackingPath,
+                ModulePath = src.ModulePath
             };
         }
 
@@ -632,12 +767,35 @@ namespace BlackbirdInterface
             public uint Type;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct UNICODE_STRING
+        {
+            public ushort Length;
+            public ushort MaximumLength;
+            public IntPtr Buffer;
+        }
+
+        private readonly record struct MemoryModuleMapEntry(
+            ulong BaseAddress,
+            ulong EndAddress,
+            string Name,
+            string Path);
+
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern nuint VirtualQueryEx(
             IntPtr hProcess,
             nint lpAddress,
             out MEMORY_BASIC_INFORMATION lpBuffer,
             nuint dwLength);
+
+        [DllImport("ntdll.dll")]
+        private static extern int NtQueryVirtualMemory(
+            IntPtr processHandle,
+            nint baseAddress,
+            int memoryInformationClass,
+            IntPtr memoryInformation,
+            uint memoryInformationLength,
+            out uint returnLength);
     }
 }
 

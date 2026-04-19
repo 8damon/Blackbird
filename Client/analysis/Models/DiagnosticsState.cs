@@ -82,11 +82,6 @@ namespace BlackbirdInterface
                     entries.Add(new DiagnosticsStateEntry { Key = pair.Key, Value = pair.Value });
                 }
 
-                foreach (var pair in Counters.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
-                {
-                    entries.Add(new DiagnosticsStateEntry { Key = pair.Key, Value = pair.Value.ToString() });
-                }
-
                 return entries;
             }
         }

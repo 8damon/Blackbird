@@ -6,6 +6,7 @@
 #include <ntstrsafe.h>
 #include "../control.h"
 #include "../pool_compat.h"
+#include "../tempus_debug.h"
 
 #define BLACKBIRD_POOL_TAG 'lrtS'
 #define BLACKBIRD_MAX_CLIENT_SUBSCRIPTIONS 64
@@ -120,6 +121,16 @@ VOID BLACKBIRDReleaseQueryInflightSlot(VOID);
 VOID BLACKBIRDClientFreeQueuedEvents(_Inout_ PBLACKBIRD_CLIENT Client);
 VOID BLACKBIRDClientRelease(_Inout_ PBLACKBIRD_CLIENT Client);
 VOID BLACKBIRDClientReference(_Inout_ PBLACKBIRD_CLIENT Client);
+BOOLEAN BLACKBIRDControlIsValidStreamMask(_In_ UINT32 StreamMask);
+VOID BLACKBIRDClientClearPendingLaunchLocked(_Inout_ PBLACKBIRD_CLIENT Client);
+VOID BLACKBIRDClientConfigurePendingLaunchLocked(_Inout_ PBLACKBIRD_CLIENT Client,
+                                                 _In_opt_ const BLACKBIRD_ARM_PENDING_LAUNCH_REQUEST *Request);
+BOOLEAN BLACKBIRDClientAddOrUpdateSubscriptionLocked(_Inout_ PBLACKBIRD_CLIENT Client, _In_ UINT32 ProcessId,
+                                                     _In_ UINT32 StreamMask);
+BOOLEAN BLACKBIRDClientRemoveSubscriptionLocked(_Inout_ PBLACKBIRD_CLIENT Client, _In_ UINT32 ProcessId);
+UINT32 BLACKBIRDClientReplaceSubscriptionsLocked(_Inout_ PBLACKBIRD_CLIENT Client,
+                                                 _In_reads_(ProcessCount) const UINT32 *ProcessIds,
+                                                 _In_ UINT32 ProcessCount, _In_ UINT32 StreamMask);
 VOID BLACKBIRDControlRefreshArmedState(VOID);
 BOOLEAN BLACKBIRDClientMatchSubscriptionEither(_In_ PBLACKBIRD_CLIENT Client, _In_ UINT32 PrimaryProcessId,
                                                _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask);
@@ -144,7 +155,6 @@ NTSTATUS BLACKBIRDHandleControlExecutionIoctl(_In_ PBLACKBIRD_CLIENT Client, _In
 NTSTATUS BLACKBIRDHandleSetRuntimeConfigIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
 NTSTATUS BLACKBIRDHandleGetRuntimeConfigIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request,
                                               _Out_ size_t *BytesOut);
-NTSTATUS BLACKBIRDHandleMarkInterfaceReadyIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
 NTSTATUS BLACKBIRDHandleMarkControllerReadyIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
 
 #endif

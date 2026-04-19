@@ -15,7 +15,8 @@ namespace BlackbirdInterface
         public string Summary { get; }
         public TelemetryEvent? Event { get; }
 
-        public EventLogEntryOpenRequestedEventArgs(string group, string subType, string summary, TelemetryEvent? ev = null)
+        public EventLogEntryOpenRequestedEventArgs(string group, string subType, string summary,
+                                                   TelemetryEvent? ev = null)
         {
             Group = group ?? string.Empty;
             SubType = subType ?? string.Empty;
@@ -94,14 +95,14 @@ namespace BlackbirdInterface
                 return;
             }
 
-            HeaderStatsBlock.Text = string.IsNullOrWhiteSpace(statsText)
-                ? "View 0 | Total 0 | 0.0/s"
-                : statsText.Trim();
+            HeaderStatsBlock.Text =
+                string.IsNullOrWhiteSpace(statsText) ? "View 0 | Total 0 | 0.0/s" : statsText.Trim();
         }
 
         public void SetLaneFilterOptions(IEnumerable<string> keys)
         {
-            if (LaneFilterBox == null) return;
+            if (LaneFilterBox == null)
+                return;
             _laneFilterSuppressChange = true;
             string? current = (LaneFilterBox.SelectedItem as ComboBoxItem)?.Tag as string;
             LaneFilterBox.Items.Clear();
@@ -126,7 +127,8 @@ namespace BlackbirdInterface
 
         public void SetLaneFilterKey(string? key)
         {
-            if (LaneFilterBox == null) return;
+            if (LaneFilterBox == null)
+                return;
             _laneFilterSuppressChange = true;
             for (int i = 0; i < LaneFilterBox.Items.Count; i++)
             {
@@ -141,7 +143,8 @@ namespace BlackbirdInterface
 
         private void LaneFilterBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (_laneFilterSuppressChange) return;
+            if (_laneFilterSuppressChange)
+                return;
             string? key = (LaneFilterBox.SelectedItem as ComboBoxItem)?.Tag as string;
             LaneFilterSelectionChanged?.Invoke(this, key);
         }
@@ -152,14 +155,20 @@ namespace BlackbirdInterface
         private void BtnLogPopout_Click(object sender, RoutedEventArgs e) => LogPopoutRequested?.Invoke(this, e);
         private void EventGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            TelemetryEvent? ev = GetEventFromSource(e.OriginalSource as DependencyObject)
-                ?? EventGrid.SelectedItem as TelemetryEvent;
+            if (e.Handled)
+            {
+                return;
+            }
+
+            TelemetryEvent? ev =
+                GetEventFromSource(e.OriginalSource as DependencyObject) ?? EventGrid.SelectedItem as TelemetryEvent;
             if (ev == null)
                 return;
 
+            e.Handled = true;
             EventLogEntryOpenRequested?.Invoke(
-                this,
-                new EventLogEntryOpenRequestedEventArgs(ev.Group ?? string.Empty, ev.SubType ?? string.Empty, ev.Summary ?? string.Empty, ev));
+                this, new EventLogEntryOpenRequestedEventArgs(ev.Group ?? string.Empty, ev.SubType ?? string.Empty,
+                                                              ev.Summary ?? string.Empty, ev));
         }
 
         private static TelemetryEvent? GetEventFromSource(DependencyObject? source)
@@ -244,7 +253,8 @@ namespace BlackbirdInterface
 
         private void UpdateNoDataOverlay()
         {
-            EventsNoDataOverlay.Visibility = (_hasData && _connectivityHealthy) ? Visibility.Collapsed : Visibility.Visible;
+            EventsNoDataOverlay.Visibility =
+                (_hasData && _connectivityHealthy) ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private void EventTimeline_VerticalMetricsChanged(object? sender, EventArgs e)
@@ -298,4 +308,3 @@ namespace BlackbirdInterface
         }
     }
 }
-

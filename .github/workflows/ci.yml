@@ -25,27 +25,27 @@ jobs:
 
       - name: Install Windows SDK 10.0.26100
         shell: pwsh
-        run: >
-          winget install
-          --id Microsoft.WindowsSDK.10.0.26100
-          --exact
-          --scope machine
-          --silent
-          --accept-package-agreements
-          --accept-source-agreements
-          --disable-interactivity
+        run: |
+          $vswhere    = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsInstaller = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
+          $installPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+          & $vsInstaller modify --installPath "$installPath" `
+            --add Microsoft.VisualStudio.Component.Windows11SDK.26100 `
+            --quiet --norestart
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) {
+            throw "SDK install failed (exit $LASTEXITCODE)"
+          }
 
       - name: Install Windows WDK 10.0.26100
         shell: pwsh
-        run: >
-          winget install
-          --id Microsoft.WindowsWDK.10.0.26100
-          --exact
-          --scope machine
-          --silent
-          --accept-package-agreements
-          --accept-source-agreements
-          --disable-interactivity
+        run: |
+          $wdkSetup = "$env:TEMP\wdksetup.exe"
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2272612" `
+            -OutFile $wdkSetup -UseBasicParsing
+          & $wdkSetup /features OptionId.WindowsDriverKit /q /norestart
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) {
+            throw "WDK install failed (exit $LASTEXITCODE)"
+          }
 
       - name: Run CI surface
         shell: pwsh

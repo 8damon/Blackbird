@@ -30,6 +30,7 @@ namespace BlackbirdInterface
         private DateTime _lastStatsSnapshotUtc = DateTime.UtcNow;
         private long _lastStatsIoctlEvents;
         private long _lastStatsEtwEvents;
+        private string _lastTempusSummary = string.Empty;
 
         public event Action<IoctlParsedEvent>? IoctlEvent;
         public event Action<BlackbirdNative.BkIpcEtwEvent>? EtwEvent;
@@ -100,10 +101,14 @@ namespace BlackbirdInterface
                 }
                 else
                 {
-                    _controlHandle = BlackbirdNative.OpenControlDevice();
-                    if (_controlHandle == IntPtr.Zero || _controlHandle == new IntPtr(-1))
+                    if (!BlackbirdControlDeviceSession.TryOpen(out var control, out string error, ensureClientProtocol: false))
                     {
-                        throw BlackbirdNative.LastError("OpenControlDevice failed");
+                        throw new InvalidOperationException(error);
+                    }
+
+                    using (control)
+                    {
+                        _controlHandle = control.DetachHandle();
                     }
                 }
 
@@ -148,6 +153,8 @@ namespace BlackbirdInterface
                 DiagnosticsState.SetValue("Session", $"pid={_targetPid} stream=0x{_streamMask:X8}");
                 DiagnosticsState.SetValue("IPC Mode", "SharedRing+Event");
                 DiagnosticsState.SetValue("IPC Shared Ring", $"enabled={_sharedRingEnabled} ioctl={hasIoctlRing} etw={hasEtwRing} err={_sharedRingError}");
+                DiagnosticsState.SetValue("Interface->Controller IPC", _sharedRingEnabled ? "Ready (shared ring + events)" : $"Degraded err={_sharedRingError}");
+                DiagnosticsState.SetValue("Controller<->Driver Comms", "Ready");
                 Console.WriteLine($"[Session] Started  pid={_targetPid} stream=0x{_streamMask:X8} caps=0x{_brokerCapabilities:X8} sharedRing={_sharedRingEnabled} hooks={_useUsermodeHooks}");
 
                 _ioctlTask = Task.Run(() => IoctlPump(_cts.Token));
@@ -201,6 +208,7 @@ namespace BlackbirdInterface
                         {
                             Status?.Invoke($"IOCTL pump stopped (err={drainErr})");
                             DiagnosticsState.SetValue("IOCTL Pump", $"Stopped err={drainErr}");
+                            DiagnosticsState.SetValue("Controller<->Driver Comms", $"Stopped err={drainErr}");
                             Console.WriteLine($"[Session] IOCTL pump stopped  pid={_targetPid} err={drainErr}");
                             break;
                         }
@@ -220,6 +228,7 @@ namespace BlackbirdInterface
                     {
                         Status?.Invoke($"IOCTL pump stopped (err={err})");
                         DiagnosticsState.SetValue("IOCTL Pump", $"Stopped err={err}");
+                        DiagnosticsState.SetValue("Controller<->Driver Comms", $"Stopped err={err}");
                         Console.WriteLine($"[Session] IOCTL pump stopped  pid={_targetPid} err={err}");
                         break;
                     }
@@ -264,6 +273,7 @@ namespace BlackbirdInterface
                 {
                     Status?.Invoke($"ETW pump stopped (err={err})");
                     DiagnosticsState.SetValue("ETW Pump", $"Stopped err={err}");
+                    DiagnosticsState.SetValue("ETW Status", $"Stopped err={err}");
                     Console.WriteLine($"[Session] ETW pump stopped  pid={_targetPid} err={err}");
                     return;
                 }
@@ -272,6 +282,7 @@ namespace BlackbirdInterface
                 {
                     Status?.Invoke("ETW uplink unsupported by active controller build");
                     DiagnosticsState.SetValue("ETW Pump", "Unsupported");
+                    DiagnosticsState.SetValue("ETW Status", "Unsupported");
                     return;
                 }
 
@@ -333,6 +344,17 @@ namespace BlackbirdInterface
                     _lastStatsEtwEvents = etwTotal;
 
                     DiagnosticsState.SetValue("Driver Queue", $"subs={stats.SubscriptionCount} depth={stats.QueueDepth} dropped={stats.DroppedEvents}");
+                    DiagnosticsState.SetValue("Controller<->Driver Comms", $"OK depth={stats.QueueDepth} dropped={stats.DroppedEvents}");
+                    string tempusSummary = BuildTempusSummary(stats);
+                    if (!string.IsNullOrWhiteSpace(tempusSummary))
+                    {
+                        DiagnosticsState.SetValue("Tempus", tempusSummary);
+                        if (!string.Equals(_lastTempusSummary, tempusSummary, StringComparison.Ordinal))
+                        {
+                            _lastTempusSummary = tempusSummary;
+                            Console.WriteLine($"[Tempus] {tempusSummary}");
+                        }
+                    }
                 }
 
                 ct.WaitHandle.WaitOne(2000);
@@ -383,6 +405,71 @@ namespace BlackbirdInterface
                 _ = BlackbirdNative.CloseControlDevice(_controlHandle);
                 _controlHandle = IntPtr.Zero;
             }
+        }
+
+        private static string BuildTempusSummary(BlackbirdNative.BkStatsResponse stats)
+        {
+            if (stats.TempusEnabled == 0 || stats.Tempus is null || stats.Tempus.Length == 0 || stats.TempusQpcFrequency == 0)
+            {
+                return string.Empty;
+            }
+
+            int count = (int)Math.Min(stats.TempusSubsystemCount, (uint)stats.Tempus.Length);
+            ulong bestTotal = 0;
+            ulong bestAvg = 0;
+            ulong bestMax = 0;
+            ulong bestSamples = 0;
+            int bestIndex = -1;
+
+            for (int i = 0; i < count; i += 1)
+            {
+                BlackbirdNative.BkTempusBucket bucket = stats.Tempus[i];
+                if (bucket.SampleCount == 0 || bucket.TotalQpc == 0)
+                {
+                    continue;
+                }
+
+                ulong avg = bucket.TotalQpc / bucket.SampleCount;
+                if (bucket.TotalQpc > bestTotal)
+                {
+                    bestTotal = bucket.TotalQpc;
+                    bestAvg = avg;
+                    bestMax = bucket.MaxQpc;
+                    bestSamples = bucket.SampleCount;
+                    bestIndex = i;
+                }
+            }
+
+            if (bestIndex < 0)
+            {
+                return string.Empty;
+            }
+
+            double avgMs = bestAvg * 1000.0 / stats.TempusQpcFrequency;
+            double maxMs = bestMax * 1000.0 / stats.TempusQpcFrequency;
+            return $"{TempusName(bestIndex)} avg={avgMs:0.###}ms max={maxMs:0.###}ms samples={bestSamples}";
+        }
+
+        private static string TempusName(int index)
+        {
+            return index switch
+            {
+                0 => "driver",
+                1 => "control",
+                2 => "etw",
+                3 => "handle",
+                4 => "thread",
+                5 => "process",
+                6 => "image",
+                7 => "registry",
+                8 => "filesystem",
+                9 => "apc",
+                10 => "correlation",
+                11 => "hollowing",
+                12 => "ntapi",
+                13 => "anti-tamper",
+                _ => $"bucket-{index}"
+            };
         }
     }
 }

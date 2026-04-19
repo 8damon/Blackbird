@@ -57,6 +57,7 @@ namespace BlackbirdInterface
         internal const uint IpcUserHookTargetAttach = 1;
         internal const uint IpcUserHookTargetLaunch = 2;
         internal const uint IpcUserHookFlagLaunchEarlybirdApc = 0x00000001;
+        internal const uint IpcUserHookFlagDeferredLaunchGateRelease = 0x00000002;
         internal const uint IpcHookEventUnknown = 0;
         internal const uint IpcHookEventNt = 1;
         internal const uint IpcHookEventWinsock = 2;
@@ -64,13 +65,21 @@ namespace BlackbirdInterface
         internal const uint IpcHookEventExceptionLowNoise = 4;
         internal const uint IpcHookEventExceptionHighPriv = 5;
         internal const uint IpcHookEventIntegrity = 6;
+        internal const uint IpcHookEventModule = 7;
         internal const uint RuntimeFlagAntiVirtualization = 0x00000001;
         internal const uint RuntimeFlagSelfHide = 0x00000002;
         internal const uint RuntimeFlagInterfaceProtectedAccess = 0x00000004;
         internal const uint RuntimeFlagControllerProtectedAccess = 0x00000008;
-        internal const uint RuntimeFlagProtectedAccess = RuntimeFlagInterfaceProtectedAccess | RuntimeFlagControllerProtectedAccess;
+        internal const uint RuntimeFlagNtApiHooksDisarmed = 0x00000010;
         internal const uint RuntimeModeLoiter = 0;
         internal const uint RuntimeModeGuided = 1;
+
+        internal const uint LaunchIntegrityDefault   = 0;
+        internal const uint LaunchIntegrityUntrusted = 1;
+        internal const uint LaunchIntegrityLow       = 2;
+        internal const uint LaunchIntegrityMedium    = 3;
+        internal const uint LaunchIntegrityHigh      = 4;
+        internal const uint LaunchIntegritySystem    = 5;
 
         private const int MaxIpcEventNameChars = 96;
         private const int MaxIpcDetectionNameChars = 128;
@@ -80,7 +89,7 @@ namespace BlackbirdInterface
         private const int MaxIpcCommandLineChars = 512;
         private const int MaxIpcKeyPathChars = 512;
         private const int MaxIpcValueNameChars = 256;
-        private const int MaxIpcStackFrames = 8;
+        internal const int MaxIpcStackFrames = 8;
         private const int MaxIpcDeepSampleBytes = 64;
         private const int MaxIpcHookArgs = 8;
 
@@ -137,7 +146,21 @@ namespace BlackbirdInterface
             public uint SubscriptionCount;
             public uint QueueDepth;
             public uint DroppedEvents;
+            public uint TempusEnabled;
+            public ulong TempusQpcFrequency;
+            public uint TempusSubsystemCount;
             public uint Reserved;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 14)]
+            public BkTempusBucket[] Tempus;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 8)]
+        internal struct BkTempusBucket
+        {
+            public ulong SampleCount;
+            public ulong TotalQpc;
+            public ulong MaxQpc;
+            public ulong LastQpc;
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 8)]
@@ -267,8 +290,8 @@ namespace BlackbirdInterface
         [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetLastSharedRingError", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         internal static extern uint GetLastSharedRingError();
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetBrokerThreatIntelEnableError", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
-        internal static extern uint GetBrokerThreatIntelEnableError();
+        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetLastThreatIntelEnableError", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        internal static extern uint GetLastThreatIntelEnableError();
 
         [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCSetPids", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -305,10 +328,6 @@ namespace BlackbirdInterface
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool GetRuntimeConfig(IntPtr device, out BkRuntimeConfigResponse response);
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCMarkInterfaceReady", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static extern bool MarkInterfaceReady(IntPtr device, uint processId);
-
         [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCSetUserHookTarget", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool SetUserHookTarget(
@@ -324,6 +343,7 @@ namespace BlackbirdInterface
             uint priorityClass,
             ulong affinityMask,
             [MarshalAs(UnmanagedType.Bool)] bool inheritHandles,
+            uint integrityLevel,
             out BkSetUserHookTargetResponse response);
 
         internal static string WideBufferToString(ushort[]? buffer)

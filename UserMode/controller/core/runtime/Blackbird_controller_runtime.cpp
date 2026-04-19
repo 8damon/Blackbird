@@ -114,6 +114,7 @@ static DWORD WINAPI ControllerServerThreadProc(_In_ LPVOID Context)
 
         client->Pipe = pipe;
         client->Role = clientRole;
+        client->ControlAuthenticated = FALSE;
         client->QueueHead = NULL;
         client->QueueTail = NULL;
         client->QueueDepth = 0;

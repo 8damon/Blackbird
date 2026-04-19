@@ -23,24 +23,9 @@ static BOOLEAN BLACKBIRDRequestorIsControllerOnly(_In_ ULONG RequesterPid)
     return BLACKBIRDProcessMonitorIsControllerPid(RequesterPid);
 }
 
-static BOOLEAN BLACKBIRDRequestorCanMarkInterfaceReady(_In_ ULONG RequesterPid, _In_ UINT32 TargetPid)
-{
-    if (TargetPid == 0)
-    {
-        return FALSE;
-    }
-
-    if (BLACKBIRDProcessMonitorIsControllerPid(RequesterPid) && BLACKBIRDProcessMonitorIsInterfacePid(TargetPid))
-    {
-        return TRUE;
-    }
-
-    return (RequesterPid == TargetPid) && BLACKBIRDProcessMonitorIsInterfacePid(TargetPid);
-}
-
 static BOOLEAN BLACKBIRDRequestorCanMarkControllerReady(_In_ ULONG RequesterPid, _In_ UINT32 TargetPid)
 {
-    return (TargetPid != 0 && RequesterPid == TargetPid && BLACKBIRDProcessMonitorIsControllerPid(TargetPid));
+    return (TargetPid != 0 && RequesterPid == TargetPid);
 }
 
 NTSTATUS BLACKBIRDHandleSubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request)
@@ -48,10 +33,10 @@ NTSTATUS BLACKBIRDHandleSubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFRE
     NTSTATUS status;
     PBLACKBIRD_SUBSCRIBE_REQUEST in;
     size_t inSize;
-    UINT32 i;
     ULONG requesterPid;
     UINT32 subscriptionCountSnapshot;
     UINT32 mergedMask;
+    BOOLEAN updated;
 
     status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
     if (!NT_SUCCESS(status))
@@ -60,8 +45,7 @@ NTSTATUS BLACKBIRDHandleSubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFRE
     }
     UNREFERENCED_PARAMETER(inSize);
 
-    if ((in->StreamMask & (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD |
-                           BLACKBIRD_STREAM_FILESYSTEM)) == 0)
+    if (!BLACKBIRDControlIsValidStreamMask(in->StreamMask))
     {
         return STATUS_INVALID_PARAMETER;
     }
@@ -71,40 +55,35 @@ NTSTATUS BLACKBIRDHandleSubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFRE
     }
 
     ExAcquireFastMutex(&Client->Lock);
-    for (i = 0; i < Client->SubscriptionCount; ++i)
+    subscriptionCountSnapshot = Client->SubscriptionCount;
+    updated = FALSE;
+    mergedMask = in->StreamMask;
+    if (BLACKBIRDClientAddOrUpdateSubscriptionLocked(Client, in->ProcessId, in->StreamMask))
     {
-        if (Client->Subscriptions[i].ProcessId == in->ProcessId)
+        UINT32 i;
+
+        updated = (subscriptionCountSnapshot == Client->SubscriptionCount);
+        subscriptionCountSnapshot = Client->SubscriptionCount;
+        for (i = 0; i < Client->SubscriptionCount; ++i)
         {
-            Client->Subscriptions[i].StreamMask |= in->StreamMask;
-            mergedMask = Client->Subscriptions[i].StreamMask;
-            subscriptionCountSnapshot = Client->SubscriptionCount;
-            ExReleaseFastMutex(&Client->Lock);
-            requesterPid = BLACKBIRDGetRequestorPid();
-            DbgPrintEx(
-                DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
-                "BLACKBIRD: subscribe update requesterPid=%lu targetPid=%lu streamMask=0x%08X mergedMask=0x%08X subscriptions=%lu.\n",
-                requesterPid, in->ProcessId, in->StreamMask, mergedMask, subscriptionCountSnapshot);
-            InterlockedExchange(&g_ControlTelemetryArmed, 1);
-            return STATUS_SUCCESS;
+            if (Client->Subscriptions[i].ProcessId == in->ProcessId)
+            {
+                mergedMask = Client->Subscriptions[i].StreamMask;
+                break;
+            }
         }
     }
-
-    if (Client->SubscriptionCount >= BLACKBIRD_MAX_CLIENT_SUBSCRIPTIONS)
+    ExReleaseFastMutex(&Client->Lock);
+    if (subscriptionCountSnapshot == 0 || mergedMask == 0)
     {
-        ExReleaseFastMutex(&Client->Lock);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    Client->Subscriptions[Client->SubscriptionCount].ProcessId = in->ProcessId;
-    Client->Subscriptions[Client->SubscriptionCount].StreamMask = in->StreamMask;
-    Client->SubscriptionCount += 1;
-    subscriptionCountSnapshot = Client->SubscriptionCount;
-    ExReleaseFastMutex(&Client->Lock);
-
     requesterPid = BLACKBIRDGetRequestorPid();
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
-               "BLACKBIRD: subscribe add requesterPid=%lu targetPid=%lu streamMask=0x%08X subscriptions=%lu.\n",
-               requesterPid, in->ProcessId, in->StreamMask, subscriptionCountSnapshot);
+    DbgPrintEx(
+        DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
+        "BLACKBIRD: subscribe %s requesterPid=%lu targetPid=%lu streamMask=0x%08X mergedMask=0x%08X subscriptions=%lu.\n",
+        updated ? "update" : "add", requesterPid, in->ProcessId, in->StreamMask, mergedMask, subscriptionCountSnapshot);
     InterlockedExchange(&g_ControlTelemetryArmed, 1);
 
     return STATUS_SUCCESS;
@@ -115,9 +94,9 @@ NTSTATUS BLACKBIRDHandleUnsubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDF
     NTSTATUS status;
     PBLACKBIRD_UNSUBSCRIBE_REQUEST in;
     size_t inSize;
-    UINT32 i;
     ULONG requesterPid;
     UINT32 subscriptionCountSnapshot;
+    BOOLEAN removed;
 
     status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
     if (!NT_SUCCESS(status))
@@ -131,27 +110,18 @@ NTSTATUS BLACKBIRDHandleUnsubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDF
     }
 
     ExAcquireFastMutex(&Client->Lock);
-    for (i = 0; i < Client->SubscriptionCount; ++i)
-    {
-        if (Client->Subscriptions[i].ProcessId == in->ProcessId)
-        {
-            UINT32 tail = Client->SubscriptionCount - 1;
-            if (i != tail)
-            {
-                Client->Subscriptions[i] = Client->Subscriptions[tail];
-            }
-            Client->SubscriptionCount -= 1;
-            subscriptionCountSnapshot = Client->SubscriptionCount;
-            ExReleaseFastMutex(&Client->Lock);
-            requesterPid = BLACKBIRDGetRequestorPid();
-            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
-                       "BLACKBIRD: unsubscribe requesterPid=%lu targetPid=%lu subscriptions=%lu.\n", requesterPid,
-                       in->ProcessId, subscriptionCountSnapshot);
-            BLACKBIRDControlRefreshArmedState();
-            return STATUS_SUCCESS;
-        }
-    }
+    removed = BLACKBIRDClientRemoveSubscriptionLocked(Client, in->ProcessId);
+    subscriptionCountSnapshot = Client->SubscriptionCount;
     ExReleaseFastMutex(&Client->Lock);
+    if (removed)
+    {
+        requesterPid = BLACKBIRDGetRequestorPid();
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
+                   "BLACKBIRD: unsubscribe requesterPid=%lu targetPid=%lu subscriptions=%lu.\n", requesterPid,
+                   in->ProcessId, subscriptionCountSnapshot);
+        BLACKBIRDControlRefreshArmedState();
+        return STATUS_SUCCESS;
+    }
     requesterPid = BLACKBIRDGetRequestorPid();
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
                "BLACKBIRD: unsubscribe miss requesterPid=%lu targetPid=%lu status=STATUS_NOT_FOUND.\n", requesterPid,
@@ -161,6 +131,7 @@ NTSTATUS BLACKBIRDHandleUnsubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDF
 
 NTSTATUS BLACKBIRDHandleGetStatsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemControl);
     NTSTATUS status;
     PBLACKBIRD_STATS_RESPONSE out;
     size_t outSize;
@@ -185,6 +156,9 @@ NTSTATUS BLACKBIRDHandleGetStatsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQ
     out->QueueDepth = Client->QueueDepth;
     out->DroppedEvents = Client->DroppedEvents;
     ExReleaseFastMutex(&Client->Lock);
+    out->TempusEnabled = BLACKBIRDTempusIsEnabled() ? 1u : 0u;
+    out->TempusSubsystemCount = BLACKBIRD_TEMPUS_SUBSYSTEM_COUNT;
+    BLACKBIRDTempusQueryStats(out->Tempus, RTL_NUMBER_OF(out->Tempus), &out->TempusQpcFrequency);
 
     *BytesOut = sizeof(*out);
     statsCounter = InterlockedIncrement(&g_IoctlGetStatsCounter);
@@ -195,6 +169,7 @@ NTSTATUS BLACKBIRDHandleGetStatsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQ
                    "BLACKBIRD: get-stats requesterPid=%lu count=%ld subscriptions=%lu queueDepth=%lu dropped=%lu.\n",
                    requesterPid, statsCounter, out->SubscriptionCount, out->QueueDepth, out->DroppedEvents);
     }
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
     return STATUS_SUCCESS;
 }
 
@@ -277,7 +252,6 @@ NTSTATUS BLACKBIRDHandleSetPidsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQU
     NTSTATUS status;
     PBLACKBIRD_SET_PIDS_REQUEST in;
     size_t inSize;
-    UINT32 i;
     UINT32 streamMask;
     UINT32 appliedCount;
     ULONG requesterPid;
@@ -296,8 +270,7 @@ NTSTATUS BLACKBIRDHandleSetPidsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQU
     }
 
     streamMask = in->StreamMask;
-    if ((streamMask & (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD |
-                       BLACKBIRD_STREAM_FILESYSTEM)) == 0)
+    if (!BLACKBIRDControlIsValidStreamMask(streamMask))
     {
         return STATUS_INVALID_PARAMETER;
     }
@@ -312,38 +285,7 @@ NTSTATUS BLACKBIRDHandleSetPidsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQU
     }
 
     ExAcquireFastMutex(&Client->Lock);
-    Client->SubscriptionCount = 0;
-
-    for (i = 0; i < in->ProcessCount; ++i)
-    {
-        UINT32 pid = in->ProcessIds[i];
-        UINT32 j;
-        BOOLEAN seen = FALSE;
-
-        if (pid == 0)
-        {
-            continue;
-        }
-
-        for (j = 0; j < Client->SubscriptionCount; ++j)
-        {
-            if (Client->Subscriptions[j].ProcessId == pid)
-            {
-                Client->Subscriptions[j].StreamMask |= streamMask;
-                seen = TRUE;
-                break;
-            }
-        }
-
-        if (!seen && Client->SubscriptionCount < BLACKBIRD_MAX_CLIENT_SUBSCRIPTIONS)
-        {
-            Client->Subscriptions[Client->SubscriptionCount].ProcessId = pid;
-            Client->Subscriptions[Client->SubscriptionCount].StreamMask = streamMask;
-            Client->SubscriptionCount += 1;
-        }
-    }
-
-    appliedCount = Client->SubscriptionCount;
+    appliedCount = BLACKBIRDClientReplaceSubscriptionsLocked(Client, in->ProcessIds, in->ProcessCount, streamMask);
     ExReleaseFastMutex(&Client->Lock);
     requesterPid = BLACKBIRDGetRequestorPid();
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
@@ -405,22 +347,13 @@ NTSTATUS BLACKBIRDHandleArmPendingLaunchIoctl(_In_ PBLACKBIRD_CLIENT Client, _In
     }
 
     ExAcquireFastMutex(&Client->Lock);
-    Client->PendingLaunchArmed = FALSE;
-    Client->PendingLaunchStreamMask = 0;
-    Client->PendingLaunchPathNormDos[0] = L'\0';
-    Client->PendingLaunchPathNormNt[0] = L'\0';
-    Client->PendingLaunchPathTail[0] = L'\0';
-
     if (!clearOnly)
     {
-        Client->PendingLaunchStreamMask = in->StreamMask;
-        Client->PendingLaunchArmed = TRUE;
-        (void)RtlStringCchCopyW(Client->PendingLaunchPathNormDos, RTL_NUMBER_OF(Client->PendingLaunchPathNormDos),
-                                in->ImagePathNormDos);
-        (void)RtlStringCchCopyW(Client->PendingLaunchPathNormNt, RTL_NUMBER_OF(Client->PendingLaunchPathNormNt),
-                                in->ImagePathNormNt);
-        (void)RtlStringCchCopyW(Client->PendingLaunchPathTail, RTL_NUMBER_OF(Client->PendingLaunchPathTail),
-                                in->ImagePathTail);
+        BLACKBIRDClientConfigurePendingLaunchLocked(Client, in);
+    }
+    else
+    {
+        BLACKBIRDClientClearPendingLaunchLocked(Client);
     }
     ExReleaseFastMutex(&Client->Lock);
 
@@ -546,6 +479,7 @@ NTSTATUS BLACKBIRDHandleQueryProcessImageIoctl(_In_ PBLACKBIRD_CLIENT Client, _I
 
 NTSTATUS BLACKBIRDHandleGetEventIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemControl);
     NTSTATUS status;
     PBLACKBIRD_EVENT_RECORD out;
     size_t outSize;
@@ -580,6 +514,7 @@ NTSTATUS BLACKBIRDHandleGetEventIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQ
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
                        "BLACKBIRD: get-event empty requesterPid=%lu emptyCount=%ld.\n", requesterPid, emptyCounter);
         }
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
         return STATUS_NO_MORE_ENTRIES;
     }
 
@@ -607,6 +542,7 @@ NTSTATUS BLACKBIRDHandleGetEventIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQ
             "BLACKBIRD: get-event delivered requesterPid=%lu deliveredCount=%ld queueDepthNow=%lu eventType=%lu seq=%lu.\n",
             requesterPid, deliverCounter, queueDepthSnapshot, out->Header.Type, out->Header.Sequence);
     }
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
     return STATUS_SUCCESS;
 }
 
@@ -720,45 +656,6 @@ NTSTATUS BLACKBIRDHandleGetRuntimeConfigIoctl(_In_ PBLACKBIRD_CLIENT Client, _In
     return STATUS_SUCCESS;
 }
 
-NTSTATUS BLACKBIRDHandleMarkInterfaceReadyIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request)
-{
-    NTSTATUS status;
-    PBLACKBIRD_MARK_INTERFACE_READY_REQUEST in;
-    size_t inSize;
-    ULONG requesterPid;
-
-    UNREFERENCED_PARAMETER(Client);
-
-    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
-    if (!NT_SUCCESS(status))
-    {
-        return status;
-    }
-    UNREFERENCED_PARAMETER(inSize);
-
-    if (in->ProcessId == 0)
-    {
-        return STATUS_INVALID_PARAMETER;
-    }
-
-    requesterPid = BLACKBIRDGetRequestorPid();
-    if (!BLACKBIRDRequestorCanMarkInterfaceReady(requesterPid, in->ProcessId))
-    {
-        return STATUS_ACCESS_DENIED;
-    }
-    if (!BLACKBIRDProcessMonitorMarkInterfaceReady(in->ProcessId))
-    {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                   "BLACKBIRD: mark-interface-ready rejected requesterPid=%lu targetPid=%lu status=STATUS_NOT_FOUND.\n",
-                   requesterPid, in->ProcessId);
-        return STATUS_NOT_FOUND;
-    }
-
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
-               "BLACKBIRD: mark-interface-ready requesterPid=%lu targetPid=%lu status=STATUS_SUCCESS.\n", requesterPid,
-               in->ProcessId);
-    return STATUS_SUCCESS;
-}
 NTSTATUS BLACKBIRDHandleMarkControllerReadyIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request)
 {
     NTSTATUS status;
@@ -781,6 +678,10 @@ NTSTATUS BLACKBIRDHandleMarkControllerReadyIoctl(_In_ PBLACKBIRD_CLIENT Client, 
     }
 
     requesterPid = BLACKBIRDGetRequestorPid();
+    if (!BLACKBIRDProcessMonitorRegisterControllerPid(in->ProcessId))
+    {
+        return STATUS_ACCESS_DENIED;
+    }
     if (!BLACKBIRDRequestorCanMarkControllerReady(requesterPid, in->ProcessId))
     {
         return STATUS_ACCESS_DENIED;

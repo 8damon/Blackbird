@@ -56,14 +56,52 @@ namespace BlackbirdInterface
     public sealed class MemoryPageSample
     {
         public ulong BaseAddress { get; set; }
+        public ulong AllocationBase { get; set; }
         public ulong RegionSize { get; set; }
         public uint State { get; set; }
         public uint Protect { get; set; }
+        public uint AllocationProtect { get; set; }
         public uint Type { get; set; }
         public string StateLabel { get; set; } = "";
         public string ProtectLabel { get; set; } = "";
         public string TypeLabel { get; set; } = "";
         public string Category { get; set; } = "";
+        public string BackingPath { get; set; } = "";
+        public string ModulePath { get; set; } = "";
+    }
+
+    public sealed class MemoryRegionAttributionSample
+    {
+        public DateTime TimestampUtc { get; set; }
+        public ulong ProcessStartKey { get; set; }
+        public uint TargetPid { get; set; }
+        public uint ActorPid { get; set; }
+        public uint ActorTid { get; set; }
+        public ulong AllocationBase { get; set; }
+        public ulong BaseAddress { get; set; }
+        public ulong RegionSize { get; set; }
+        public string ApiName { get; set; } = "";
+        public string EventKind { get; set; } = "";
+        public string RegionKind { get; set; } = "";
+        public string RegionIdentity { get; set; } = "";
+        public string OriginPath { get; set; } = "";
+        public string CallerOrigin { get; set; } = "";
+        public ulong FirstUserFrame { get; set; }
+        public string FirstUserFrameModule { get; set; } = "";
+        public string FrameSummary { get; set; } = "";
+        public bool UnwindClean { get; set; }
+        public bool FrameChainHadGaps { get; set; }
+        public uint InitialProtection { get; set; }
+        public uint CurrentProtection { get; set; }
+        public uint PreviousProtection { get; set; }
+        public bool FirstExecutableTransition { get; set; }
+        public bool ThreadStartObserved { get; set; }
+        public uint ThreadId { get; set; }
+        public ulong ThreadStartAddress { get; set; }
+        public bool FunctionTableRegistered { get; set; }
+        public ulong FunctionTablePointer { get; set; }
+        public byte SignatureLevel { get; set; }
+        public byte SignatureType { get; set; }
     }
 
     public sealed class ThreadLifecycleEventSample

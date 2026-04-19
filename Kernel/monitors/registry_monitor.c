@@ -1,6 +1,7 @@
 #include <ntddk.h>
 #include "..\core\unicode_utils.h"
 #include "..\core\runtime_config.h"
+#include "..\core\tempus_debug.h"
 #include "..\telemetry\etw.h"
 #include "..\antivirt\registry_concealment.h"
 #include "registry_monitor.h"
@@ -257,6 +258,7 @@ static BOOLEAN BLACKBIRDRegistryBlindPciEnumeration(_In_ PREG_POST_OPERATION_INF
 static NTSTATUS BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_opt_ PVOID Argument1,
                                           _In_opt_ PVOID Argument2)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemRegistryMonitor);
     REG_NOTIFY_CLASS notifyClass;
     UNICODE_STRING keyPathUs;
     WCHAR keyPath[512];
@@ -277,6 +279,7 @@ static NTSTATUS BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_op
 
     if (Argument1 == NULL)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemRegistryMonitor, tempusStartQpc);
         return STATUS_SUCCESS;
     }
 
@@ -415,6 +418,7 @@ static NTSTATUS BLACKBIRDRegistryCallback(_In_opt_ PVOID CallbackContext, _In_op
         return STATUS_OBJECT_NAME_NOT_FOUND;
     }
 
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemRegistryMonitor, tempusStartQpc);
     return STATUS_SUCCESS;
 }
 

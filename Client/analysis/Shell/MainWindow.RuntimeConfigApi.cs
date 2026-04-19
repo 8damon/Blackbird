@@ -4,36 +4,12 @@ namespace BlackbirdInterface
 {
     public partial class MainWindow
     {
-        internal bool MarkInterfaceReady(out string error)
-        {
-            error = string.Empty;
-
-            if (!TryOpenRuntimeConfigHandle(out IntPtr handle, out error))
-            {
-                return false;
-            }
-
-            try
-            {
-                if (!BlackbirdNative.MarkInterfaceReady(handle, unchecked((uint)Environment.ProcessId)))
-                {
-                    error = BlackbirdNative.LastError("MarkInterfaceReady failed").Message;
-                    return false;
-                }
-
-                return true;
-            }
-            finally
-            {
-                _ = BlackbirdNative.CloseControlDevice(handle);
-            }
-        }
-
-        internal bool ApplyStartupRuntimeSelections(bool enableAntiVirtualizationMasking, bool enableControllerConcealment,
+        internal bool ApplyStartupRuntimeSelections(bool enableKernelHooks, bool enableAntiVirtualizationMasking, bool enableControllerConcealment,
                                                     bool enableInterfaceProtectedAccess, bool enableControllerProtectedAccess, out string error)
         {
             var profile = new LaunchProfile
             {
+                EnableKernelHooks = enableKernelHooks,
                 EnableAntiVirtualizationMasking = enableAntiVirtualizationMasking,
                 EnableControllerConcealment = enableControllerConcealment,
                 EnableInterfaceProtectedAccess = enableInterfaceProtectedAccess,

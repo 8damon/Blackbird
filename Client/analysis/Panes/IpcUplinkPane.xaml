@@ -52,11 +52,11 @@
             <StackPanel>
                 <TextBlock x:Name="SummaryPrimaryBlock"
                            FontWeight="SemiBold"
-                           Text="No IPC diagnostics yet"/>
+                           Text="No transport diagnostics yet"/>
                 <TextBlock x:Name="SummarySecondaryBlock"
                            Margin="0,2,0,0"
                            Foreground="{DynamicResource WinMutedTextBrush}"
-                           Text="Enable uplink and wait for stats sample."/>
+                           Text="Enable the uplink and wait for the first transport sample."/>
             </StackPanel>
         </Border>
 
@@ -189,10 +189,10 @@
                                 BorderBrush="{DynamicResource WinSubtleBorderBrush}"
                                 BorderThickness="0,0,0,1"
                                 Padding="8,0">
-                            <DockPanel LastChildFill="False">
+                           <DockPanel LastChildFill="False">
                                 <TextBlock Text="Counters"
                                            FontWeight="SemiBold"/>
-                                <TextBlock Text="live IPC telemetry"
+                                <TextBlock Text="live transport counters"
                                            Margin="8,0,0,0"
                                            Foreground="{DynamicResource WinMutedTextBrush}"/>
                             </DockPanel>
@@ -209,9 +209,10 @@
                                   CanUserSortColumns="False"
                                   CanUserResizeRows="False"
                                   HeadersVisibility="Column"
-                                  GridLinesVisibility="Horizontal"
+                                  GridLinesVisibility="None"
                                   ColumnHeaderHeight="24"
                                   RowHeight="24"
+                                  ScrollViewer.VerticalScrollBarVisibility="Hidden"
                                   ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Counter" Width="*" Binding="{Binding Name}"/>

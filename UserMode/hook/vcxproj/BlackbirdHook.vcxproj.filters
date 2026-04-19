@@ -37,6 +37,9 @@
     <ClCompile Include="..\hooks\ki.cpp">
       <Filter>BlackbirdHook\hooks</Filter>
     </ClCompile>
+    <ClCompile Include="..\hooks\module.cpp">
+      <Filter>BlackbirdHook\hooks</Filter>
+    </ClCompile>
     <ClCompile Include="..\hooks\runtime.cpp">
       <Filter>BlackbirdHook\hooks</Filter>
     </ClCompile>
@@ -52,6 +55,15 @@
     <ClCompile Include="..\instrument\bk.cpp">
       <Filter>BlackbirdHook\instrument</Filter>
     </ClCompile>
+    <ClCompile Include="..\hooks\runtime_launch_gate.cpp">
+      <Filter>BlackbirdHook\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hooks\runtime_bootstrap.cpp">
+      <Filter>BlackbirdHook\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hooks\runtime_integrity.cpp">
+      <Filter>BlackbirdHook\hooks</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\ipc\pipe.h">
@@ -64,6 +76,9 @@
       <Filter>BlackbirdHook\hooks</Filter>
     </ClInclude>
     <ClInclude Include="..\hooks\ki.h">
+      <Filter>BlackbirdHook\hooks</Filter>
+    </ClInclude>
+    <ClInclude Include="..\hooks\module.h">
       <Filter>BlackbirdHook\hooks</Filter>
     </ClInclude>
     <ClInclude Include="..\hooks\nt.h">
@@ -81,6 +96,11 @@
     <ClInclude Include="..\instrument\bk.h">
       <Filter>BlackbirdHook\instrument</Filter>
     </ClInclude>
+    <ClInclude Include="..\hooks\runtime_private.h">
+      <Filter>BlackbirdHook\hooks</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="$(BlackbirdVersionRcPath)" />
   </ItemGroup>
 </Project>
-

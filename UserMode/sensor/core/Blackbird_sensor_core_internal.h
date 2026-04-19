@@ -30,11 +30,11 @@ typedef struct _BLACKBIRDSC_ETW_SESSION
     HANDLE RunStoppedEvent;
 } BLACKBIRDSC_ETW_SESSION_INTERNAL;
 
-typedef struct _BLACKBIRDSC_STG_DETECTION_BRIDGE
+typedef struct _BLACKBIRDSC_DETECTION_BRIDGE
 {
-    SwkDetectionCallback Callback;
+    BLACKBIRDSC_DETECTION_CALLBACK Callback;
     PVOID CallbackContext;
-} BLACKBIRDSC_STG_DETECTION_BRIDGE;
+} BLACKBIRDSC_DETECTION_BRIDGE;
 
 extern volatile LONG g_BlackbirdProtocolMode;
 extern WCHAR g_BlackbirdPipeName[MAX_PATH];
@@ -42,13 +42,12 @@ extern DWORD g_BlackbirdPipeTimeoutMs;
 extern volatile LONG g_BlackbirdIpcSequence;
 extern volatile LONG g_BlackbirdBrokerCapabilities;
 extern volatile LONG g_BlackbirdBrokerThreatIntelEnabled;
-extern volatile LONG g_BlackbirdBrokerThreatIntelEnableError;
 extern volatile LONG g_BlackbirdLastTiEnableError;
 extern volatile LONG g_BlackbirdLastSharedRingError;
 extern SRWLOCK g_BlackbirdProtocolLock;
 
 VOID WINAPI BLACKBIRDSCInternalRecordCallback(_In_ PEVENT_RECORD Record);
-VOID WINAPI BLACKBIRDSCStgDetectionBridgeCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName,
-                                                  _In_opt_ PVOID Context);
+VOID WINAPI BLACKBIRDSCDetectionBridgeCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName,
+                                               _In_opt_ PVOID Context);
 
 #endif

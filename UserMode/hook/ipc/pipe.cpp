@@ -1,17 +1,33 @@
 #include "pipe.h"
+
 #include <strsafe.h>
 
-namespace XIPC
+namespace BKIPC
 {
+    static void PipeDebugLog(_In_z_ _Printf_format_string_ PCSTR format, ...) noexcept
+    {
+        if (format == nullptr)
+        {
+            return;
+        }
+
+        char message[512]{};
+        va_list args;
+        va_start(args, format);
+        (void)StringCchVPrintfA(message, RTL_NUMBER_OF(message), format, args);
+        va_end(args);
+
+        char line[768]{};
+        (void)StringCchPrintfA(line, RTL_NUMBER_OF(line), "[BKIPC pid=%lu tid=%lu] %s\n", GetCurrentProcessId(),
+                               GetCurrentThreadId(), message);
+        OutputDebugStringA(line);
+    }
+
     static HANDLE g_pipeHandle = INVALID_HANDLE_VALUE;
     static SRWLOCK g_pipeLock = SRWLOCK_INIT;
     static volatile LONG g_sequence = 1;
     static bool g_handshakeComplete = false;
 
-    // ---------------------------------------------------------------------------
-    // Async hook-event dispatch: SLIST-based MPSC queue + background thread.
-    // PublishHookEvent is now fire-and-forget; hook threads never block on pipe I/O.
-    // ---------------------------------------------------------------------------
     static constexpr LONG kAsyncPoolSize = 4096;
 
     struct alignas(MEMORY_ALLOCATION_ALIGNMENT) AsyncHookNode
@@ -91,6 +107,8 @@ namespace XIPC
 
         if (!WaitNamedPipeW(PIPE_NAME, timeoutMs))
         {
+            PipeDebugLog("EnsurePipeOpenLocked: WaitNamedPipe failed timeoutMs=%lu gle=%lu", timeoutMs,
+                         GetLastError());
             return false;
         }
 
@@ -99,6 +117,7 @@ namespace XIPC
 
         if (hPipe == INVALID_HANDLE_VALUE)
         {
+            PipeDebugLog("EnsurePipeOpenLocked: CreateFile failed gle=%lu", GetLastError());
             return false;
         }
 
@@ -106,6 +125,7 @@ namespace XIPC
         (void)SetNamedPipeHandleState(hPipe, &mode, nullptr, nullptr);
         g_pipeHandle = hPipe;
         g_handshakeComplete = false;
+        PipeDebugLog("EnsurePipeOpenLocked: connected");
         return true;
     }
 
@@ -116,6 +136,7 @@ namespace XIPC
         BOOL ok = WriteFile(g_pipeHandle, &request, sizeof(request), &bytesWritten, nullptr);
         if (!ok || bytesWritten != sizeof(request))
         {
+            PipeDebugLog("SendPacketLocked: write failed cmd=%lu gle=%lu", request.Command, GetLastError());
             ClosePipeLocked();
             return false;
         }
@@ -123,6 +144,8 @@ namespace XIPC
         ok = ReadFile(g_pipeHandle, &response, sizeof(response), &bytesRead, nullptr);
         if (!ok || bytesRead != sizeof(response))
         {
+            PipeDebugLog("SendPacketLocked: read failed cmd=%lu gle=%lu bytesRead=%lu", request.Command, GetLastError(),
+                         bytesRead);
             ClosePipeLocked();
             return false;
         }
@@ -131,6 +154,8 @@ namespace XIPC
             response.PacketType != BlackbirdIpcPacketResponse || response.Command != request.Command ||
             response.Sequence != request.Sequence)
         {
+            PipeDebugLog("SendPacketLocked: protocol mismatch cmd=%lu respCmd=%lu respType=%lu seq=%lu respSeq=%lu",
+                         request.Command, response.Command, response.PacketType, request.Sequence, response.Sequence);
             ClosePipeLocked();
             return false;
         }
@@ -158,17 +183,22 @@ namespace XIPC
 
         if (!SendPacketLocked(request, response))
         {
+            PipeDebugLog("EnsureHandshakeLocked: send failed");
             return false;
         }
 
         if (response.Status != ERROR_SUCCESS ||
             response.Payload.HandshakeResponse.NegotiatedVersion != BLACKBIRD_IPC_VERSION)
         {
+            PipeDebugLog("EnsureHandshakeLocked: negotiation failed status=%lu version=%lu", response.Status,
+                         response.Payload.HandshakeResponse.NegotiatedVersion);
             ClosePipeLocked();
             return false;
         }
 
         g_handshakeComplete = true;
+        PipeDebugLog("EnsureHandshakeLocked: success caps=0x%08lX",
+                     response.Payload.HandshakeResponse.Capabilities);
         return true;
     }
 
@@ -248,6 +278,10 @@ namespace XIPC
         AcquireSRWLockExclusive(&g_pipeLock);
         ok = EnsurePipeOpenLocked(timeoutMs) && EnsureHandshakeLocked();
         ReleaseSRWLockExclusive(&g_pipeLock);
+        if (!ok)
+        {
+            PipeDebugLog("Initialize: failed timeoutMs=%lu", timeoutMs);
+        }
         return ok;
     }
 
@@ -392,6 +426,7 @@ namespace XIPC
 
         if (!ok)
         {
+            PipeDebugLog("NotifyHookReady: failed mask=0x%08lX", readyMask);
             return false;
         }
 
@@ -401,31 +436,4 @@ namespace XIPC
         }
         return true;
     }
-
-    bool SendSwException(const BkExceptionMessage &msg)
-    {
-        BLACKBIRD_IPC_HOOK_EVENT eventRecord{};
-        eventRecord.Kind = (msg.Kind == RequestKind::BkExceptionHighPriv) ? BlackbirdIpcHookEventExceptionHighPriv
-                                                                          : BlackbirdIpcHookEventExceptionLowNoise;
-        eventRecord.ProcessId = msg.Pid;
-        eventRecord.ThreadId = msg.Tid;
-        eventRecord.Operation = msg.ExceptionCode;
-        eventRecord.Caller = msg.ExceptionAddress;
-        eventRecord.Context0 = msg.ExceptionFlags;
-        eventRecord.Context1 = msg.ExceptionInfo[0];
-        eventRecord.Context2 = msg.ExceptionInfo[1];
-        eventRecord.Context3 = msg.ExceptionInfo[2];
-        eventRecord.ArgCount = (msg.ExceptionInfoCount <= 4u) ? msg.ExceptionInfoCount : 4u;
-        for (UINT32 i = 0; i < eventRecord.ArgCount; i += 1)
-        {
-            eventRecord.Args[i] = msg.ExceptionInfo[i];
-        }
-        (void)StringCchCopyA(eventRecord.ApiName, RTL_NUMBER_OF(eventRecord.ApiName), "VectoredException");
-        if (msg.ModuleNameChars != 0)
-        {
-            (void)WideCharToMultiByte(CP_ACP, 0, msg.ModuleName, -1, eventRecord.ModuleName,
-                                      RTL_NUMBER_OF(eventRecord.ModuleName), nullptr, nullptr);
-        }
-        return PublishHookEvent(eventRecord);
-    }
-} // namespace XIPC
+} // namespace BKIPC

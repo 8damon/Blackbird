@@ -800,7 +800,7 @@ VOID ControllerSymbolServiceEnrichEvent(_Inout_ BLACKBIRD_IPC_ETW_EVENT *Event)
         ControllerSymbolServicePrimeAddress(execPid, Event->StartAddress);
     }
 
-    framesToPrime = (Event->StackCount > 4u) ? 4u : Event->StackCount;
+    framesToPrime = (Event->StackCount > RTL_NUMBER_OF(Event->Stack)) ? RTL_NUMBER_OF(Event->Stack) : Event->StackCount;
     for (i = 0; i < framesToPrime; ++i)
     {
         if (Event->Stack[i] != 0)
@@ -809,7 +809,7 @@ VOID ControllerSymbolServiceEnrichEvent(_Inout_ BLACKBIRD_IPC_ETW_EVENT *Event)
         }
     }
 
-    for (i = 0; i < Event->StackCount && i < 3u; ++i)
+    for (i = 0; i < framesToPrime; ++i)
     {
         ControllerSymbolServiceTryAppendStackFrameSymbol(Event, originPid, i);
     }

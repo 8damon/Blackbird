@@ -114,8 +114,7 @@
                           BorderThickness="0"
                           Background="{DynamicResource WinPanelBrush}"
                           ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                          ScrollViewer.VerticalScrollBarVisibility="Auto"
-                          PreviewMouseDoubleClick="EventCardList_MouseDoubleClick"
+                          ScrollViewer.VerticalScrollBarVisibility="Hidden"
                           MouseDoubleClick="EventCardList_MouseDoubleClick"
                           VirtualizingPanel.IsVirtualizing="True"
                           VirtualizingPanel.VirtualizationMode="Recycling">
@@ -126,11 +125,11 @@
                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                             <Setter Property="Background" Value="Transparent"/>
                             <Setter Property="BorderBrush" Value="Transparent"/>
-                            <Setter Property="BorderThickness" Value="1"/>
+                            <Setter Property="BorderThickness" Value="0"/>
                             <Style.Triggers>
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter Property="Background" Value="#5E1E5F8C"/>
-                                    <Setter Property="BorderBrush" Value="#FF72D2FF"/>
+                                    <Setter Property="BorderBrush" Value="Transparent"/>
                                     <Setter Property="Foreground" Value="#FFFFFFFF"/>
                                 </Trigger>
                                 <MultiTrigger>
@@ -139,7 +138,7 @@
                                         <Condition Property="Selector.IsSelectionActive" Value="False"/>
                                     </MultiTrigger.Conditions>
                                     <Setter Property="Background" Value="#4A194B6B"/>
-                                    <Setter Property="BorderBrush" Value="#FF5CB7F0"/>
+                                    <Setter Property="BorderBrush" Value="Transparent"/>
                                 </MultiTrigger>
                             </Style.Triggers>
                         </Style>
@@ -148,7 +147,7 @@
                         <DataTemplate>
                             <Border Margin="8,6,8,0"
                                     Padding="8,6"
-                                    BorderThickness="1">
+                                    BorderThickness="0">
                                 <Border.Style>
                                     <Style TargetType="Border">
                                         <Setter Property="BorderBrush" Value="{DynamicResource WinSubtleBorderBrush}"/>

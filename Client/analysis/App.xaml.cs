@@ -33,10 +33,14 @@ namespace BlackbirdInterface
         {
             public bool StartLaunchFlow { get; init; }
             public string? SessionPath { get; init; }
+            public bool EnableKernelHooks { get; init; } = true;
             public bool EnableAntiVirtualizationMasking { get; init; }
             public bool EnableControllerConcealment { get; init; }
             public bool EnableInterfaceProtectedAccess { get; init; }
             public bool EnableControllerProtectedAccess { get; init; }
+            public bool EnableSignatureIntel { get; init; }
+            public bool EnableSignatureIntelMemoryScan { get; init; }
+            public bool EnableSignatureIntelPageScan { get; init; }
         }
 
         private sealed class StartupOptions
@@ -118,7 +122,6 @@ namespace BlackbirdInterface
                 return;
             }
 
-            await ShowVirtualizationPreflightAsync();
             if (!await EnsureStartupSystemsReadyAsync())
             {
                 Shutdown();
@@ -184,17 +187,7 @@ namespace BlackbirdInterface
             await YieldForUiFrameAsync();
             loading.Close();
 
-            if (!main.MarkInterfaceReady(out string readyError))
-            {
-                ThemedMessageBox.Show(
-                    main,
-                    $"Failed to mark the interface ready for deferred protection.\n\n{readyError}",
-                    "Interface Readiness",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-            }
-
-            if (!main.ApplyStartupRuntimeSelections(intent.EnableAntiVirtualizationMasking, intent.EnableControllerConcealment,
+            if (!main.ApplyStartupRuntimeSelections(intent.EnableKernelHooks, intent.EnableAntiVirtualizationMasking, intent.EnableControllerConcealment,
                                                     intent.EnableInterfaceProtectedAccess, intent.EnableControllerProtectedAccess, out string startupRuntimeError))
             {
                 ThemedMessageBox.Show(
@@ -204,6 +197,13 @@ namespace BlackbirdInterface
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
+
+            main.ConfigureStartupSignatureIntel(
+                intent.EnableSignatureIntel,
+                intent.EnableSignatureIntelMemoryScan,
+                intent.EnableSignatureIntelPageScan);
+
+            await ShowVirtualizationPreflightAsync(intent.EnableAntiVirtualizationMasking);
 
             if (intent.StartLaunchFlow)
             {
@@ -225,13 +225,22 @@ namespace BlackbirdInterface
             ShutdownMode = ShutdownMode.OnMainWindowClose;
         }
 
-        private static async Task ShowVirtualizationPreflightAsync()
+        private static async Task ShowVirtualizationPreflightAsync(bool antiVirtualizationMaskingEnabled)
         {
             VirtualizationProbeReport report = await Task.Run(VirtualizationProbe.Run);
             MessageBoxImage icon = report.VmLikely ? MessageBoxImage.Information : MessageBoxImage.Warning;
+            string message = report.BuildOperatorMessage();
+
+            if (antiVirtualizationMaskingEnabled)
+            {
+                message +=
+                    "\n\nDriver anti-virtualization masking is enabled for this session. " +
+                    "The host may still look virtualized here because this preflight reports the raw environment signals.";
+            }
+
             ThemedMessageBox.Show(
                 Current?.MainWindow,
-                report.BuildOperatorMessage(),
+                message,
                 "Environment Preflight",
                 MessageBoxButton.OK,
                 icon);
@@ -241,7 +250,7 @@ namespace BlackbirdInterface
         {
             for (;;)
             {
-                BlackbirdPreflightReport report = await Task.Run(() => BlackbirdPreflight.Run(0, ensureServicesRunning: true));
+                BlackbirdPreflightReport report = await Task.Run(() => BlackbirdPreflight.Run(0, ensureServicesRunning: true, requireDriverProxy: false));
                 DebugConsoleService.WriteLocal($"startup preflight ready={report.StartupReady}");
                 if (report.StartupReady)
                 {
@@ -297,7 +306,12 @@ namespace BlackbirdInterface
 
         private static StartupOptions ParseStartupOptions(string[] args)
         {
-            bool debugConsole = false;
+            bool debugConsole =
+#if TEMPUS_DEBUG
+                true;
+#else
+                false;
+#endif
 
             foreach (string arg in args)
             {
@@ -426,15 +440,6 @@ namespace BlackbirdInterface
                     flags |= BlackbirdNative.RuntimeFlagControllerProtectedAccess;
                 }
 
-                object? protectedAccessValue = key.GetValue("EnableProtectedAccess");
-                if (protectedAccessValue is int protectedAccessInt && protectedAccessInt != 0)
-                {
-                    flags |= BlackbirdNative.RuntimeFlagProtectedAccess;
-                }
-                else if (protectedAccessValue is long protectedAccessLong && protectedAccessLong != 0)
-                {
-                    flags |= BlackbirdNative.RuntimeFlagProtectedAccess;
-                }
             }
             catch
             {
@@ -452,7 +457,6 @@ namespace BlackbirdInterface
                 {
                     WindowStartupLocation = WindowStartupLocation.CenterScreen
                 };
-                // Keep first-launch UX discoverable even with borderless custom chrome.
                 welcome.ShowInTaskbar = true;
                 welcome.Topmost = true;
                 welcome.Activate();
@@ -467,13 +471,13 @@ namespace BlackbirdInterface
                 switch (welcome.SelectedAction)
                 {
                 case StartupWelcomeAction.Launch:
-                    return new StartupIntent { StartLaunchFlow = true, EnableAntiVirtualizationMasking = welcome.EnableAntiVirtualizationMasking, EnableControllerConcealment = welcome.EnableControllerConcealment, EnableInterfaceProtectedAccess = welcome.EnableInterfaceProtectedAccess, EnableControllerProtectedAccess = welcome.EnableControllerProtectedAccess };
+                    return new StartupIntent { StartLaunchFlow = true, EnableKernelHooks = welcome.EnableKernelHooks, EnableAntiVirtualizationMasking = welcome.EnableAntiVirtualizationMasking, EnableControllerConcealment = welcome.EnableControllerConcealment, EnableInterfaceProtectedAccess = welcome.EnableInterfaceProtectedAccess, EnableControllerProtectedAccess = welcome.EnableControllerProtectedAccess, EnableSignatureIntel = welcome.EnableSignatureIntel, EnableSignatureIntelMemoryScan = welcome.EnableSignatureIntelMemoryScan, EnableSignatureIntelPageScan = welcome.EnableSignatureIntelPageScan };
                 case StartupWelcomeAction.OpenFile:
                 {
                     string? sessionPath = PromptForSessionFile();
                     if (!string.IsNullOrWhiteSpace(sessionPath))
                     {
-                        return new StartupIntent { SessionPath = sessionPath, EnableAntiVirtualizationMasking = welcome.EnableAntiVirtualizationMasking, EnableControllerConcealment = welcome.EnableControllerConcealment, EnableInterfaceProtectedAccess = welcome.EnableInterfaceProtectedAccess, EnableControllerProtectedAccess = welcome.EnableControllerProtectedAccess };
+                        return new StartupIntent { SessionPath = sessionPath, EnableKernelHooks = welcome.EnableKernelHooks, EnableAntiVirtualizationMasking = welcome.EnableAntiVirtualizationMasking, EnableControllerConcealment = welcome.EnableControllerConcealment, EnableInterfaceProtectedAccess = welcome.EnableInterfaceProtectedAccess, EnableControllerProtectedAccess = welcome.EnableControllerProtectedAccess, EnableSignatureIntel = welcome.EnableSignatureIntel, EnableSignatureIntelMemoryScan = welcome.EnableSignatureIntelMemoryScan, EnableSignatureIntelPageScan = welcome.EnableSignatureIntelPageScan };
                     }
                     break;
                 }
@@ -657,7 +661,6 @@ namespace BlackbirdInterface
             }
             catch
             {
-                // Safe fallback while a light theme dictionary is not available.
                 effectiveDark = true;
                 Resources.MergedDictionaries.Clear();
                 Resources.MergedDictionaries.Add(new ResourceDictionary
@@ -713,7 +716,6 @@ namespace BlackbirdInterface
             {
             }
 
-            // Keep existing behavior when system preference cannot be read.
             return false;
         }
 

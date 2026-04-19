@@ -1,6 +1,7 @@
 #include <ntddk.h>
 #include "apc_monitor.h"
 #include "..\correlation\intent_store.h"
+#include "..\core\tempus_debug.h"
 #include "..\telemetry\etw.h"
 
 #ifndef THREAD_SET_CONTEXT
@@ -151,6 +152,7 @@ VOID BLACKBIRDApcMonitorUninitialize(VOID)
 VOID BLACKBIRDApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
                                                  _In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsDuplicateOperation)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemApcMonitor);
     BOOLEAN hasSetContext;
     BOOLEAN hasSuspendResume;
     BOOLEAN hasRecentIntent;
@@ -161,11 +163,13 @@ VOID BLACKBIRDApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ HAN
 
     if (InterlockedCompareExchange(&g_ApcMonitorInitialized, 0, 0) == 0)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemApcMonitor, tempusStartQpc);
         return;
     }
 
     if (CallerPid == TargetPid)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemApcMonitor, tempusStartQpc);
         return;
     }
 
@@ -173,6 +177,7 @@ VOID BLACKBIRDApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ HAN
     hasSuspendResume = ((DesiredAccess & THREAD_SUSPEND_RESUME) != 0);
     if (!hasSetContext && !hasSuspendResume)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemApcMonitor, tempusStartQpc);
         return;
     }
     hasRecentIntent = BLACKBIRDCorrelationQueryRecentIntent(CallerPid, TargetPid, BLACKBIRD_APC_INTENT_WINDOW_MS,
@@ -198,6 +203,7 @@ VOID BLACKBIRDApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ HAN
                                       intentAgeMs,
                                       L"high-confidence hijack intent chain (thread context + memory intent)");
     }
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemApcMonitor, tempusStartQpc);
 }
 
 BOOLEAN

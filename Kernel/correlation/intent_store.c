@@ -1,4 +1,5 @@
 #include <ntddk.h>
+#include "..\core\tempus_debug.h"
 #include "intent_store.h"
 
 #define BLACKBIRD_CORRELATION_RING_SIZE 256
@@ -81,12 +82,14 @@ VOID BLACKBIRDCorrelationUninitialize(VOID)
 VOID BLACKBIRDCorrelationRecordHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ ACCESS_MASK AccessMask,
                                             _In_ UINT32 IntentFlags)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemCorrelation);
     LONG idx;
     KIRQL oldIrql;
     INT64 nowQpc;
 
     if (InterlockedCompareExchange(&g_CorrelationInitialized, 0, 0) == 0)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemCorrelation, tempusStartQpc);
         return;
     }
 
@@ -108,6 +111,7 @@ VOID BLACKBIRDCorrelationRecordHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE T
     g_IntentRing[idx].TimestampQpc = nowQpc;
 
     KeReleaseSpinLock(&g_IntentLock, oldIrql);
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemCorrelation, tempusStartQpc);
 }
 
 BOOLEAN
@@ -115,6 +119,7 @@ BLACKBIRDCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetP
                                       _Out_opt_ UINT32 *IntentFlags, _Out_opt_ UINT32 *AccessMask,
                                       _Out_opt_ UINT32 *AgeMs)
 {
+    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemCorrelation);
     UINT64 caller = (UINT64)(ULONG_PTR)CallerPid;
     UINT64 target = (UINT64)(ULONG_PTR)TargetPid;
     INT64 nowQpc = KeQueryPerformanceCounter(NULL).QuadPart;
@@ -141,6 +146,7 @@ BLACKBIRDCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetP
 
     if (InterlockedCompareExchange(&g_CorrelationInitialized, 0, 0) == 0)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemCorrelation, tempusStartQpc);
         return FALSE;
     }
 
@@ -182,6 +188,7 @@ BLACKBIRDCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetP
 
     if (!found)
     {
+        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemCorrelation, tempusStartQpc);
         return FALSE;
     }
 
@@ -197,6 +204,7 @@ BLACKBIRDCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetP
     {
         *AgeMs = BLACKBIRDCorrelationQpcDeltaToMs(newestDeltaQpc);
     }
+    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemCorrelation, tempusStartQpc);
     return TRUE;
 }
 

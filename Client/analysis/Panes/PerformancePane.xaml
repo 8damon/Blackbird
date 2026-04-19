@@ -119,7 +119,7 @@
 
             <Grid Grid.Row="1" ClipToBounds="True" Margin="0,0,0,1">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="1.1*"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
@@ -151,7 +151,7 @@
                                 <Button x:Name="NetworkViewSwitchButton"
                                         DockPanel.Dock="Right"
                                         Content="Peers"
-                                        MinWidth="0"
+                                        MinWidth="54"
                                         MinHeight="0"
                                         Height="18"
                                         Padding="6,0"
@@ -171,6 +171,9 @@
                                       AutoGenerateColumns="False"
                                       IsReadOnly="True"
                                       BorderThickness="0"
+                                      GridLinesVisibility="None"
+                                      HorizontalGridLinesBrush="Transparent"
+                                      VerticalGridLinesBrush="Transparent"
                                       CanUserResizeRows="False"
                                       ColumnHeaderHeight="24"
                                       RowHeight="22"
@@ -197,12 +200,6 @@
                                                Opacity="0.72"
                                                Foreground="{DynamicResource WinTextBrush}"
                                                HorizontalAlignment="Center"/>
-                                    <TextBlock x:Name="NetworkNoDataMessageBlock"
-                                               Margin="0,6,0,0"
-                                               FontSize="11"
-                                               Foreground="{DynamicResource WinMutedTextBrush}"
-                                               HorizontalAlignment="Center"
-                                               Text="No attributable network data for the selected range."/>
                                 </StackPanel>
                             </Border>
                         </Grid>
@@ -247,7 +244,7 @@
                                 <Button x:Name="ParallelStacksButton"
                                         DockPanel.Dock="Right"
                                         Margin="8,0,0,0"
-                                        MinWidth="0"
+                                        MinWidth="88"
                                         Height="18"
                                         Padding="6,1"
                                         FontSize="10"
@@ -257,7 +254,7 @@
                                 <ToggleButton x:Name="ThreadLifecycleToggle"
                                               DockPanel.Dock="Right"
                                               Margin="8,0,0,0"
-                                              MinWidth="0"
+                                              MinWidth="64"
                                               Height="18"
                                               Padding="6,1"
                                               FontSize="10"
@@ -380,9 +377,14 @@
                                               AutoGenerateColumns="False"
                                               IsReadOnly="True"
                                               BorderThickness="0"
+                                              GridLinesVisibility="None"
+                                              HorizontalGridLinesBrush="Transparent"
+                                              VerticalGridLinesBrush="Transparent"
                                               CanUserResizeRows="False"
                                               ColumnHeaderHeight="24"
                                               RowHeight="22"
+                                              ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                               MouseDoubleClick="ModulesGrid_MouseDoubleClick">
                                         <DataGrid.Columns>
                                             <DataGridTextColumn Header="Module" Binding="{Binding Name}" Width="170"/>
@@ -398,9 +400,14 @@
                                               AutoGenerateColumns="False"
                                               IsReadOnly="True"
                                               BorderThickness="0"
+                                              GridLinesVisibility="None"
+                                              HorizontalGridLinesBrush="Transparent"
+                                              VerticalGridLinesBrush="Transparent"
                                               CanUserResizeRows="False"
                                               ColumnHeaderHeight="24"
-                                              RowHeight="22">
+                                              RowHeight="22"
+                                              ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                                         <DataGrid.Columns>
                                             <DataGridTextColumn Header="Field" Binding="{Binding Field}" Width="220"/>
                                             <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"/>
@@ -443,7 +450,7 @@
                                                       VerticalAlignment="Center"
                                                       Checked="MemoryInspectorToggle_Checked"
                                                       Unchecked="MemoryInspectorToggle_Unchecked"
-                                                      Content="Inspector"/>
+                                                      Content="Inspector Window"/>
                                         <ToggleButton x:Name="MemoryViewToggle"
                                                       Margin="8,0,0,0"
                                                       Padding="8,2"
@@ -473,17 +480,66 @@
                                               AutoGenerateColumns="False"
                                               IsReadOnly="True"
                                               BorderThickness="0"
+                                              GridLinesVisibility="None"
+                                              HorizontalGridLinesBrush="Transparent"
+                                              VerticalGridLinesBrush="Transparent"
                                               CanUserResizeRows="False"
                                               ColumnHeaderHeight="24"
                                               RowHeight="22"
                                               Visibility="Collapsed">
+                                        <DataGrid.CellStyle>
+                                            <Style TargetType="DataGridCell">
+                                                <Setter Property="Background" Value="Transparent"/>
+                                                <Setter Property="BorderBrush" Value="Transparent"/>
+                                                <Setter Property="BorderThickness" Value="0"/>
+                                                <Setter Property="Padding" Value="6,0"/>
+                                            </Style>
+                                        </DataGrid.CellStyle>
+                                        <DataGrid.RowStyle>
+                                            <Style TargetType="DataGridRow">
+                                                <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                                                <Setter Property="FontWeight" Value="Normal"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding PriorityBand}" Value="PrivateUnsigned">
+                                                        <Setter Property="Background" Value="#3F2418"/>
+                                                        <Setter Property="Foreground" Value="#FFD9B8"/>
+                                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding PriorityBand}" Value="PrivateExecutable">
+                                                        <Setter Property="Background" Value="#341A1A"/>
+                                                        <Setter Property="Foreground" Value="#FFC7C7"/>
+                                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding PriorityBand}" Value="Private">
+                                                        <Setter Property="Background" Value="#1D2438"/>
+                                                        <Setter Property="Foreground" Value="#C9D8FF"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding PriorityBand}" Value="Unsigned">
+                                                        <Setter Property="Background" Value="#322715"/>
+                                                        <Setter Property="Foreground" Value="#FFE1A8"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding PriorityBand}" Value="Image">
+                                                        <Setter Property="Background" Value="#25311B"/>
+                                                        <Setter Property="Foreground" Value="#D3F2B0"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding PriorityBand}" Value="Mapped">
+                                                        <Setter Property="Background" Value="#241E35"/>
+                                                        <Setter Property="Foreground" Value="#D4C8FF"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </DataGrid.RowStyle>
                                         <DataGrid.Columns>
                                             <DataGridTextColumn Header="Base" Binding="{Binding BaseAddress}" Width="132"/>
                                             <DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="92"/>
                                             <DataGridTextColumn Header="State" Binding="{Binding State}" Width="82"/>
                                             <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="82"/>
-                                            <DataGridTextColumn Header="Protect" Binding="{Binding Protect}" Width="180"/>
-                                            <DataGridTextColumn Header="Class" Binding="{Binding Category}" Width="*"/>
+                                            <DataGridTextColumn Header="Protect" Binding="{Binding Protect}" Width="170"/>
+                                            <DataGridTextColumn Header="Class" Binding="{Binding Category}" Width="140"/>
+                                            <DataGridTextColumn Header="Allocator" Binding="{Binding Allocator}" Width="190"/>
+                                            <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="120"/>
+                                            <DataGridTextColumn Header="Trust" Binding="{Binding Trust}" Width="86"/>
                                         </DataGrid.Columns>
                                     </DataGrid>
 

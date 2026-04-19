@@ -501,6 +501,15 @@
                                                            Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                                             </StackPanel>
                                         </Button>
+                                        <Border Style="{StaticResource CommandBarSectionDividerStyle}"/>
+                                        <Button x:Name="KernelHooksToggleButton"
+                                                Style="{DynamicResource CommandBarButtonStyle}"
+                                                Click="KernelHooks_Click"
+                                                ToolTip="Toggle kernel NTAPI hooks armed or disarmed. Anti-virtualization masking requires hooks to be armed.">
+                                            <TextBlock x:Name="KernelHooksToggleLabel"
+                                                       Text="Hooks ARMED"
+                                                       VerticalAlignment="Center"/>
+                                        </Button>
                                     </StackPanel>
                                 </ScrollViewer>
                             </TabItem>
@@ -1239,8 +1248,7 @@
                                               ColumnHeaderHeight="24"
                                               RowHeight="26"
                                               BorderThickness="0"
-                                              GridLinesVisibility="Horizontal"
-                                              HorizontalGridLinesBrush="{DynamicResource WinSubtleBorderBrush}"
+                                              GridLinesVisibility="None"
                                               SelectionChanged="ApiViewDataGrid_SelectionChanged">
                                         <DataGrid.RowStyle>
                                             <Style TargetType="{x:Type DataGridRow}" BasedOn="{StaticResource AppDataGridRowStyle}">
@@ -1324,25 +1332,39 @@
                                             <DataGridTextColumn Header="Caller" Width="96" Binding="{Binding SourceLabel}"/>
                                             <DataGridTextColumn Header="Target" Width="110" Binding="{Binding TargetLabel}"/>
                                             <DataGridTextColumn Header="Thread" Width="86" Binding="{Binding ThreadLabel}"/>
-                                            <DataGridTemplateColumn Header="Region" Width="1.3*">
+                                            <DataGridTemplateColumn Header="Context" Width="1.3*">
                                                 <DataGridTemplateColumn.CellTemplate>
                                                     <DataTemplate>
                                                         <StackPanel Margin="6,0,6,0" VerticalAlignment="Center">
-                                                            <TextBlock Text="{Binding BaseLabel}" FontFamily="Consolas"/>
+                                                            <TextBlock Text="{Binding SizeLabel}" FontFamily="Consolas"/>
                                                             <TextBlock Text="{Binding SizeLabel}"
                                                                        Margin="0,1,0,0"
                                                                        Foreground="{DynamicResource WinMutedTextBrush}"
-                                                                       FontFamily="Consolas"/>
+                                                                       FontFamily="Consolas"
+                                                                       Visibility="Collapsed"/>
                                                         </StackPanel>
                                                     </DataTemplate>
                                                 </DataGridTemplateColumn.CellTemplate>
                                             </DataGridTemplateColumn>
-                                            <DataGridTextColumn Header="Protect" Width="1.0*" Binding="{Binding ProtectLabel}"/>
+                                            <DataGridTemplateColumn Header="Flags" Width="1.0*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Margin="6,0,6,0" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding ProtectLabel}" TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding ProtectLabel}"
+                                                                       Margin="0,1,0,0"
+                                                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       Visibility="Collapsed"/>
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
                                             <DataGridTemplateColumn Header="Activity" Width="132">
                                                 <DataGridTemplateColumn.CellTemplate>
                                                     <DataTemplate>
-                                                        <Grid Margin="8,0">
-                                                            <Border Height="12"
+                                                        <StackPanel Margin="8,0,8,0" VerticalAlignment="Center">
+                                                            <Border Height="8"
                                                                     CornerRadius="0"
                                                                     Background="{Binding HeatTrackBackground}"
                                                                     BorderBrush="{Binding RowBorderBrush}"
@@ -1351,13 +1373,17 @@
                                                                 <Grid HorizontalAlignment="Left"
                                                                       ClipToBounds="True"
                                                                       SnapsToDevicePixels="True">
-                                                                    <Border Height="12"
+                                                                    <Border Height="8"
                                                                             Width="{Binding ActivityFillWidth}"
                                                                             CornerRadius="0"
                                                                             Background="{Binding HeatFillBackground}"/>
                                                                 </Grid>
                                                             </Border>
-                                                        </Grid>
+                                                            <TextBlock Margin="0,3,0,0"
+                                                                       Text="{Binding HeatPercent, StringFormat={}{0:0}%}"
+                                                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                                                       HorizontalAlignment="Right"/>
+                                                        </StackPanel>
                                                     </DataTemplate>
                                                 </DataGridTemplateColumn.CellTemplate>
                                             </DataGridTemplateColumn>
@@ -1502,25 +1528,13 @@
                                                     </Border>
                                                     <Border Margin="0,0,8,0" Padding="8,6" BorderBrush="{DynamicResource WinSubtleBorderBrush}" BorderThickness="1" Background="{DynamicResource WinHeaderBrush}">
                                                         <StackPanel>
-                                                            <TextBlock Text="Base" Foreground="{DynamicResource WinMutedTextBrush}"/>
-                                                            <TextBlock x:Name="ApiViewSelectedBaseValue" Margin="0,2,0,0" FontFamily="Consolas" FontWeight="SemiBold" Text=""/>
-                                                        </StackPanel>
-                                                    </Border>
-                                                    <Border Margin="0,0,8,0" Padding="8,6" BorderBrush="{DynamicResource WinSubtleBorderBrush}" BorderThickness="1" Background="{DynamicResource WinHeaderBrush}">
-                                                        <StackPanel>
-                                                            <TextBlock Text="Size" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                            <TextBlock x:Name="ApiViewSelectedField2Label" Text="Context" Foreground="{DynamicResource WinMutedTextBrush}"/>
                                                             <TextBlock x:Name="ApiViewSelectedSizeValue" Margin="0,2,0,0" FontFamily="Consolas" FontWeight="SemiBold" Text=""/>
-                                                        </StackPanel>
-                                                    </Border>
-                                                    <Border Margin="0,0,8,0" Padding="8,6" BorderBrush="{DynamicResource WinSubtleBorderBrush}" BorderThickness="1" Background="{DynamicResource WinHeaderBrush}">
-                                                        <StackPanel>
-                                                            <TextBlock Text="Alloc Type" Foreground="{DynamicResource WinMutedTextBrush}"/>
-                                                            <TextBlock x:Name="ApiViewSelectedAllocTypeValue" Margin="0,2,0,0" FontWeight="SemiBold" Text=""/>
                                                         </StackPanel>
                                                     </Border>
                                                     <Border Margin="0,0,0,0" Padding="8,6" BorderBrush="{DynamicResource WinSubtleBorderBrush}" BorderThickness="1" Background="{DynamicResource WinHeaderBrush}">
                                                         <StackPanel>
-                                                            <TextBlock Text="Protect" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                            <TextBlock x:Name="ApiViewSelectedField4Label" Text="Flags" Foreground="{DynamicResource WinMutedTextBrush}"/>
                                                             <TextBlock x:Name="ApiViewSelectedProtectValue" Margin="0,2,0,0" FontWeight="SemiBold" Text=""/>
                                                         </StackPanel>
                                                     </Border>

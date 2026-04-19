@@ -151,3 +151,15 @@ Session archives are stored as `.bkcap` (SQLite + LZ4). Detection reference scen
 <p align="center">
   <img src="./media/BLACKBIRD_DIAGRAM.png" width="980" alt="Blackbird platform diagram" />
 </p>
+
+## KNOWN ISSUES
+
+- `BlackbirdOperator.exe` is WIP. Communications channel is currently in-dev & not supported.
+
+- YARA, MITRE & SIGMA rules + memory scanning for YARA are WIP, currently not supported.
+
+- Some executables when launched present with `ERROR_BAD_IMPERSONATION_LEVEL (1346)`, this is a known bug and the root cause is being identified.
+
+- "Uplink Failed" / "Service Not Found", this is due to you not running the installer script `Installer.ps1`, this is required to start the service & install the driver.
+
+- Memory page inspector is WIP. File-backings & some visual bugs are present.

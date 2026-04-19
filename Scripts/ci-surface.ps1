@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("Debug", "Release")]
+    [ValidateSet("Debug", "Release", "TEMPUS_DEBUG")]
     [string]$Configuration = "Debug",
 
     [ValidateSet("x64", "ARM64")]

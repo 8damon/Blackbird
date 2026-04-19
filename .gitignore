@@ -30,6 +30,9 @@ test-results/
 *.tmp
 *.cache
 
+./interface
+/interface
+
 ./$документы
 $документы
 

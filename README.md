@@ -1,4 +1,4 @@
-<h1 align="center">BLACKBIRD v1.7</h1>
+<h1 align="center">BLACKBIRD</h1>
 <p align="center"><b>Malware Analysis DFIR Kernel Telemetry & Detection Platform for Windows</b></p>
 
 <p align="center">
@@ -86,20 +86,36 @@ Representative detections include:
 - multiple `ntdll` image mappings
 - registry activity
 
-For the full contract and field-level details, see [API.md](./API.md).
+For the full contract and field-level details, use the hosted docs at [docs.titansoftwork.com/blackbird](https://docs.titansoftwork.com/blackbird/).
 
 <p align="center">
   <img src="./media/BLACKBIRD_DIAGRAM.png" width="980" alt="Blackbird platform diagram" />
 </p>
 
-## QUICK START
+## DOCUMENTATION
 
-See these docs for setup and usage:
+The hosted documentation is the public source of truth for Blackbird setup, usage, and API/reference material:
 
-- [Getting Started.md](./Getting%20Started.md)
-- [INSTALL.md](./INSTALL.md)
-- [USAGE.md](./USAGE.md)
+- [Blackbird Docs](https://docs.titansoftwork.com/blackbird/)
+
+The repository keeps only the docs that need to live on GitHub or that are directly useful when reading the source tree:
+
+- [README.md](./README.md)
+  - GitHub landing page, project summary, and repo navigation
+- [SECURITY.md](./SECURITY.md)
+  - security policy and disclosure process
 - [API.md](./API.md)
+  - bridge page to the hosted API/reference docs and ABI source files
+- [Getting Started.md](./Getting%20Started.md)
+  - bridge page to the hosted getting-started flow
+- [INSTALL.md](./INSTALL.md)
+  - bridge page to the hosted install docs and local CI entrypoint
+- [USAGE.md](./USAGE.md)
+  - bridge page to the hosted operator/runtime usage docs
+- [UserMode/sensor/README.md](./UserMode/sensor/README.md)
+  - component-local notes for the sensor code
+- [UserMode/controller/core/README.md](./UserMode/controller/core/README.md)
+  - component-local notes for the controller core
 
 Current runtime components include `blackbird.sys`, `BlackbirdController.exe`, `J58.dll`, `SR71.dll`, `BlackbirdInterface.exe`, `BlackbirdTestSuite.exe`, and `DetectionExamples.exe`.
 

@@ -9,6 +9,10 @@
       <Configuration>Release</Configuration>
       <Platform>x64</Platform>
     </ProjectConfiguration>
+    <ProjectConfiguration Include="TEMPUS_DEBUG|x64">
+      <Configuration>TEMPUS_DEBUG</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
     <ProjectConfiguration Include="Debug|ARM64">
       <Configuration>Debug</Configuration>
       <Platform>ARM64</Platform>
@@ -33,6 +37,13 @@
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='TEMPUS_DEBUG|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <PlatformToolset>v145</PlatformToolset>
@@ -66,6 +77,15 @@
     <OutDir>$(MSBuildThisFileDirectory)..\$(Platform)\$(Configuration)\DetectionExamples\</OutDir>
     <IntDir>$(MSBuildThisFileDirectory)..\$(Platform)\$(Configuration)\obj\DetectionExamples\</IntDir>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='TEMPUS_DEBUG|x64'">
+    <OutDir>$(MSBuildThisFileDirectory)..\$(Platform)\$(Configuration)\DetectionExamples\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)..\$(Platform)\$(Configuration)\obj\DetectionExamples\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='TEMPUS_DEBUG|x64'">
+    <ClCompile>
+      <PreprocessorDefinitions>TEMPUS_DEBUG=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
     <OutDir>$(MSBuildThisFileDirectory)..\$(Platform)\$(Configuration)\DetectionExamples\</OutDir>
     <IntDir>$(MSBuildThisFileDirectory)..\$(Platform)\$(Configuration)\obj\DetectionExamples\</IntDir>
@@ -81,6 +101,7 @@
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <AdditionalIncludeDirectories>..\DetectionExamples\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <MultiProcessorCompilation Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

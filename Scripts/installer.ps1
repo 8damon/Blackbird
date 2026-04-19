@@ -570,8 +570,10 @@ $driverSrc = Resolve-ArtifactPath `
     -FallbackPaths @(
         "vcxproj\x64\Debug\blackbird.sys",
         "vcxproj\x64\Release\blackbird.sys",
+        "vcxproj\x64\TEMPUS_DEBUG\blackbird.sys",
         "x64\Debug\blackbird.sys",
         "x64\Release\blackbird.sys",
+        "x64\TEMPUS_DEBUG\blackbird.sys",
         "blackbird.sys"
     ) `
     -Label "Driver .sys"
@@ -581,8 +583,10 @@ $controllerSrc = Resolve-ArtifactPath `
     -FallbackPaths @(
         "vcxproj\x64\Debug\BlackbirdController.exe",
         "vcxproj\x64\Release\BlackbirdController.exe",
+        "vcxproj\x64\TEMPUS_DEBUG\BlackbirdController.exe",
         "x64\Debug\BlackbirdController.exe",
         "x64\Release\BlackbirdController.exe",
+        "x64\TEMPUS_DEBUG\BlackbirdController.exe",
         "BlackbirdController.exe"
     ) `
     -Label "Controller .exe"
@@ -592,8 +596,10 @@ $sensorCoreSrc = Resolve-ArtifactPath `
     -FallbackPaths @(
         "vcxproj\x64\Debug\J58.dll",
         "vcxproj\x64\Release\J58.dll",
+        "vcxproj\x64\TEMPUS_DEBUG\J58.dll",
         "x64\Debug\J58.dll",
         "x64\Release\J58.dll",
+        "x64\TEMPUS_DEBUG\J58.dll",
         "J58.dll"
     ) `
     -Label "SensorCore .dll"

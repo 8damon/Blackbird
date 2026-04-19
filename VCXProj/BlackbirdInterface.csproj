@@ -60,6 +60,12 @@
     <TrimMode Condition="'$(PublishTrimmed)' == 'true'">partial</TrimMode>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)' == 'TEMPUS_DEBUG'">
+    <Optimize>true</Optimize>
+    <DefineConstants>$(DefineConstants);TEMPUS_DEBUG</DefineConstants>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
   <ItemGroup>
     <ApplicationDefinition Include="..\Client\analysis\App.xaml">
       <Link>App.xaml</Link>
@@ -79,6 +85,11 @@
     <None Include="..\Client\analysis\runtimeconfig.template.json">
       <Link>runtimeconfig.template.json</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\Client\analysis\Rules\SignatureIntel\**\*">
+      <Link>Rules\SignatureIntel\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
   </ItemGroup>
 

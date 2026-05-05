@@ -38,7 +38,25 @@
     <ClCompile Include="..\UserMode\controller\core\injection\injection.cpp">
       <Filter>Controller Core\Injection</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\controller\core\monitoring\ubscriptions.cpp">
+    <ClCompile Include="..\UserMode\controller\core\injection\common.cpp">
+      <Filter>Controller Core\Injection</Filter>
+    </ClCompile>
+    <ClCompile Include="..\UserMode\controller\core\injection\environment.cpp">
+      <Filter>Controller Core\Injection</Filter>
+    </ClCompile>
+    <ClCompile Include="..\UserMode\controller\core\injection\hook.cpp">
+      <Filter>Controller Core\Injection</Filter>
+    </ClCompile>
+    <ClCompile Include="..\UserMode\controller\core\injection\image.cpp">
+      <Filter>Controller Core\Injection</Filter>
+    </ClCompile>
+    <ClCompile Include="..\UserMode\controller\core\injection\launch.cpp">
+      <Filter>Controller Core\Injection</Filter>
+    </ClCompile>
+    <ClCompile Include="..\UserMode\controller\core\injection\token.cpp">
+      <Filter>Controller Core\Injection</Filter>
+    </ClCompile>
+    <ClCompile Include="..\UserMode\controller\core\monitoring\subscriptions.cpp">
       <Filter>Controller Core\Monitoring</Filter>
     </ClCompile>
     <ClCompile Include="..\UserMode\controller\core\monitoring\etw_monitor.cpp">
@@ -53,8 +71,17 @@
     <ClCompile Include="..\UserMode\controller\core\ipc\ipc.cpp">
       <Filter>Controller Core\IPC</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\controller\core\runtime\node_runtime.cpp">
-      <Filter>Controller Core\Runtime</Filter>
+    <ClCompile Include="..\UserMode\controller\core\ipc\ipc_hook_support.cpp">
+      <Filter>Controller Core\IPC</Filter>
+    </ClCompile>
+    <ClCompile Include="..\UserMode\controller\core\ipc\ipc_launch.cpp">
+      <Filter>Controller Core\IPC</Filter>
+    </ClCompile>
+    <ClCompile Include="..\UserMode\controller\core\ipc\ipc_proxy.cpp">
+      <Filter>Controller Core\IPC</Filter>
+    </ClCompile>
+    <ClCompile Include="..\UserMode\controller\core\ipc\ipc_shared_ring.cpp">
+      <Filter>Controller Core\IPC</Filter>
     </ClCompile>
     <ClCompile Include="..\UserMode\controller\core\runtime\symbol_service.cpp">
       <Filter>Controller Core\Runtime</Filter>
@@ -62,24 +89,36 @@
     <ClCompile Include="..\UserMode\controller\core\runtime\runtime.cpp">
       <Filter>Controller Core\Runtime</Filter>
     </ClCompile>
+    <ClCompile Include="..\UserMode\controller\core\runtime\ns\ns_launcher.cpp">
+      <Filter>Controller Core\Runtime</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\ABI\Blackbird_ipc.h">
+    <ClInclude Include="..\ABI\blackbird_ipc.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\ABI\blackbird_ioctl.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\UserMode\sensor\Blackbird_sensor_core.h">
+    <ClInclude Include="..\UserMode\sensor\sensor_core.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\UserMode\controller\core\Blackbird_controller_private.h">
+    <ClInclude Include="..\UserMode\controller\core\controller_private.h">
       <Filter>Controller Core</Filter>
     </ClInclude>
     <ClInclude Include="..\UserMode\controller\core\util\handles.h">
       <Filter>Controller Core</Filter>
     </ClInclude>
-    <ClInclude Include="..\UserMode\controller\core\injection\Blackbird_controller_injection.h">
+    <ClInclude Include="..\UserMode\controller\core\ipc\ipc_internal.h">
+      <Filter>Controller Core\IPC</Filter>
+    </ClInclude>
+    <ClInclude Include="..\UserMode\controller\core\runtime\ns\ns_launcher.h">
+      <Filter>Controller Core\Runtime</Filter>
+    </ClInclude>
+    <ClInclude Include="..\UserMode\controller\core\injection\injection.h">
+      <Filter>Controller Core\Injection</Filter>
+    </ClInclude>
+    <ClInclude Include="..\UserMode\controller\core\injection\internal.h">
       <Filter>Controller Core\Injection</Filter>
     </ClInclude>
     <ClInclude Include="..\UserMode\controller\core\heuristics\heuristics.h">

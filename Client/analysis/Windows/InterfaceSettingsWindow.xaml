@@ -1,0 +1,154 @@
+<Window x:Class="BlackbirdInterface.InterfaceSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Interface Settings"
+        Height="700"
+        Width="1080"
+        MinHeight="620"
+        MinWidth="920"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        Background="{DynamicResource WinBgBrush}"
+        PreviewKeyDown="Window_PreviewKeyDown">
+
+    <Grid Margin="12,0,12,12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0"
+                   Margin="0,0,0,10"
+                   LastChildFill="False"
+                   MouseLeftButtonDown="Root_MouseLeftButtonDown">
+            <StackPanel>
+                <TextBlock Text="Interface Settings"
+                           FontWeight="SemiBold"
+                           FontSize="14"/>
+                <TextBlock Text="Theme mode and analyst shortcuts."
+                           Foreground="{DynamicResource WinMutedTextBrush}"/>
+            </StackPanel>
+            <Button DockPanel.Dock="Right"
+                    Content="✕"
+                    Width="22"
+                    Height="20"
+                    Margin="8,0,0,0"
+                    Click="Close_Click"/>
+        </DockPanel>
+
+        <Border Grid.Row="1"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="1"
+                Background="{DynamicResource WinPanelBrush}"
+                Padding="12"
+                Margin="0,0,0,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="160"/>
+                    <ColumnDefinition Width="220"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0"
+                           Text="Theme"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+
+                <ComboBox x:Name="ThemeModeBox"
+                          Grid.Column="1"
+                          Width="180"
+                          HorizontalAlignment="Left"
+                          SelectionChanged="ThemeModeBox_SelectionChanged">
+                    <ComboBoxItem Tag="Auto" Content="Follow Windows"/>
+                    <ComboBoxItem Tag="Dark" Content="Dark"/>
+                    <ComboBoxItem Tag="Light" Content="Light"/>
+                </ComboBox>
+
+                <TextBlock Grid.Column="2"
+                           Margin="12,0,0,0"
+                           Text="Light mode is applied live so open windows and pop-outs update immediately."
+                           Foreground="{DynamicResource WinMutedTextBrush}"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+
+        <TextBlock Grid.Row="2"
+                   x:Name="CaptureStatusBlock"
+                   Margin="0,0,0,8"
+                   Foreground="{DynamicResource WinMutedTextBrush}"
+                   Text="Select Rebind, then press the new shortcut. Escape cancels. Backspace clears."/>
+
+        <DataGrid Grid.Row="3"
+                  x:Name="ShortcutGrid"
+                  AutoGenerateColumns="False"
+                  IsReadOnly="True"
+                  CanUserAddRows="False"
+                  CanUserDeleteRows="False"
+                  CanUserResizeRows="False"
+                  ColumnHeaderHeight="24"
+                  RowHeight="28"
+                  HeadersVisibility="Column"
+                  SelectionMode="Single">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Action" Binding="{Binding Label}" Width="220"/>
+                <DataGridTextColumn Header="Shortcut" Binding="{Binding GestureText}" Width="140"/>
+                <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*"/>
+                <DataGridTemplateColumn Header="" Width="88">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Content="{Binding RebindButtonText}"
+                                    Tag="{Binding}"
+                                    Padding="8,2"
+                                    MinWidth="72"
+                                    Click="RebindShortcut_Click"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="" Width="72">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Content="Clear"
+                                    Tag="{Binding}"
+                                    Padding="8,2"
+                                    MinWidth="56"
+                                    Click="ClearShortcut_Click"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="" Width="72">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Content="Reset"
+                                    Tag="{Binding}"
+                                    Padding="8,2"
+                                    MinWidth="56"
+                                    Click="ResetShortcut_Click"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <StackPanel Grid.Row="4"
+                    Margin="0,12,0,0"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right">
+            <Button Content="Defaults"
+                    Margin="0,0,8,0"
+                    Padding="12,4"
+                    Click="Defaults_Click"/>
+            <Button Content="Apply"
+                    Margin="0,0,8,0"
+                    Padding="14,4"
+                    Click="Apply_Click"/>
+            <Button Content="Close"
+                    Padding="14,4"
+                    Click="Close_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>

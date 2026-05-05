@@ -21,7 +21,7 @@ namespace BlackbirdInterface
         public LaneSettingsWindow(MainWindow host)
         {
             InitializeComponent();
-            WindowThemeHelper.ApplyTitleBarTheme(this, App.IsDarkTheme);
+            WindowThemeHelper.WireThemeAwareTitleBar(this);
             _host = host ?? throw new ArgumentNullException(nameof(host));
             RulesGrid.ItemsSource = _rules;
             LaneGrid.ItemsSource = _lanes;
@@ -67,14 +67,8 @@ namespace BlackbirdInterface
             if (string.IsNullOrWhiteSpace(value))
                 return;
 
-            _rules.Add(new LaneFilterRule
-            {
-                Enabled = true,
-                Field = field,
-                Relation = relation,
-                Value = value,
-                Action = action
-            });
+            _rules.Add(new LaneFilterRule { Enabled = true, Field = field, Relation = relation, Value = value,
+                                            Action = action });
 
             RuleValueBox.SelectedItem = null;
             RuleValueBox.Text = "";
@@ -134,9 +128,7 @@ namespace BlackbirdInterface
                 if (obj is not TelemetryEvent te)
                     continue;
 
-                string key = string.IsNullOrWhiteSpace(te.SubType)
-                    ? te.Group
-                    : $"{te.Group}/{te.SubType}";
+                string key = string.IsNullOrWhiteSpace(te.SubType) ? te.Group : $"{te.Group}/{te.SubType}";
 
                 if (!string.IsNullOrWhiteSpace(key))
                     keys.Add(key);
@@ -146,11 +138,7 @@ namespace BlackbirdInterface
             foreach (var key in keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
             {
                 string group = key.Contains('/') ? key.Split('/')[0] : key;
-                _lanes.Add(new LaneStateRow
-                {
-                    Key = key,
-                    Group = group
-                });
+                _lanes.Add(new LaneStateRow { Key = key, Group = group });
             }
 
             PopulateRuleValueChoices();
@@ -167,8 +155,12 @@ namespace BlackbirdInterface
             string priorText = (RuleValueBox.SelectedItem as string) ?? RuleValueBox.Text ?? string.Empty;
 
             IEnumerable<string> values = selectedField.Equals("Group", StringComparison.OrdinalIgnoreCase)
-                ? _lanes.Select(x => x.Group).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase)
-                : _lanes.Select(x => x.Key).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase);
+                                             ? _lanes.Select(x => x.Group)
+                                                   .Where(x => !string.IsNullOrWhiteSpace(x))
+                                                   .Distinct(StringComparer.OrdinalIgnoreCase)
+                                             : _lanes.Select(x => x.Key)
+                                                   .Where(x => !string.IsNullOrWhiteSpace(x))
+                                                   .Distinct(StringComparer.OrdinalIgnoreCase);
 
             var ordered = values.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
             RuleValueBox.ItemsSource = ordered;
@@ -180,7 +172,8 @@ namespace BlackbirdInterface
                 return;
             }
 
-            string? exact = ordered.FirstOrDefault(x => string.Equals(x, priorText, StringComparison.OrdinalIgnoreCase));
+            string? exact =
+                ordered.FirstOrDefault(x => string.Equals(x, priorText, StringComparison.OrdinalIgnoreCase));
             if (exact != null)
             {
                 RuleValueBox.SelectedItem = exact;
@@ -212,9 +205,7 @@ namespace BlackbirdInterface
 
                 lane.State = state ? "On" : "Off";
                 lane.Source = source;
-                lane.RowBackground = state
-                    ? _laneEnabledRowBrush
-                    : _laneDisabledRowBrush;
+                lane.RowBackground = state ? _laneEnabledRowBrush : _laneDisabledRowBrush;
 
                 _host.EventsPaneHost.Timeline.SetLaneVisible(lane.Key, state);
             }
@@ -230,14 +221,11 @@ namespace BlackbirdInterface
             string right = rule.Value ?? "";
             string relation = rule.Relation?.Trim().ToLowerInvariant() ?? "contains";
 
-            return relation switch
-            {
-                "is" => string.Equals(left, right, StringComparison.OrdinalIgnoreCase),
-                "contains" => left.Contains(right, StringComparison.OrdinalIgnoreCase),
-                "begins with" => left.StartsWith(right, StringComparison.OrdinalIgnoreCase),
-                "ends with" => left.EndsWith(right, StringComparison.OrdinalIgnoreCase),
-                _ => left.Contains(right, StringComparison.OrdinalIgnoreCase)
-            };
+            return relation switch { "is" => string.Equals(left, right, StringComparison.OrdinalIgnoreCase),
+                                     "contains" => left.Contains(right, StringComparison.OrdinalIgnoreCase),
+                                     "begins with" => left.StartsWith(right, StringComparison.OrdinalIgnoreCase),
+                                     "ends with" => left.EndsWith(right, StringComparison.OrdinalIgnoreCase),
+                                     _ => left.Contains(right, StringComparison.OrdinalIgnoreCase) };
         }
 
         private void LaneGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -253,11 +241,11 @@ namespace BlackbirdInterface
         private void OnThemeChanged(bool _)
         {
             Dispatcher.BeginInvoke(new Action(() =>
-            {
-                WindowThemeHelper.ApplyTitleBarTheme(this, App.IsDarkTheme);
-                RefreshThemePalette();
-                ApplyRules();
-            }), DispatcherPriority.Background);
+                                              {
+                                                  RefreshThemePalette();
+                                                  ApplyRules();
+                                              }),
+                                   DispatcherPriority.Background);
         }
 
         private void RefreshThemePalette()
@@ -297,4 +285,3 @@ namespace BlackbirdInterface
         public Brush RowBackground { get; set; } = Brushes.Transparent;
     }
 }
-

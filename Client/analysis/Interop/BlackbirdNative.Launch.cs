@@ -63,59 +63,47 @@ namespace BlackbirdInterface
         }
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool CreateProcessW(
-            string? lpApplicationName,
-            StringBuilder lpCommandLine,
-            IntPtr lpProcessAttributes,
-            IntPtr lpThreadAttributes,
-            [MarshalAs(UnmanagedType.Bool)] bool bInheritHandles,
-            uint dwCreationFlags,
-            IntPtr lpEnvironment,
-            string? lpCurrentDirectory,
-            [In] ref StartupInfoEx lpStartupInfo,
-            out ProcessInformation lpProcessInformation);
+        [return:MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CreateProcessW(string? lpApplicationName, StringBuilder lpCommandLine,
+                                                  IntPtr lpProcessAttributes, IntPtr lpThreadAttributes,
+                                                  [MarshalAs(UnmanagedType.Bool)] bool bInheritHandles,
+                                                  uint dwCreationFlags, IntPtr lpEnvironment,
+                                                  string? lpCurrentDirectory, [In] ref StartupInfoEx lpStartupInfo,
+                                                  out ProcessInformation lpProcessInformation);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
+        [return:MarshalAs(UnmanagedType.Bool)]
         private static extern bool CloseHandle(IntPtr hObject);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern IntPtr OpenProcess(uint dwDesiredAccess, [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle, uint dwProcessId);
+        private static extern IntPtr OpenProcess(uint dwDesiredAccess,
+                                                 [MarshalAs(UnmanagedType.Bool)] bool bInheritHandle, uint dwProcessId);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
+        [return:MarshalAs(UnmanagedType.Bool)]
         private static extern bool TerminateProcess(IntPtr hProcess, uint uExitCode);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern uint ResumeThread(IntPtr hThread);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
+        [return:MarshalAs(UnmanagedType.Bool)]
         private static extern bool SetPriorityClass(IntPtr hProcess, uint dwPriorityClass);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
+        [return:MarshalAs(UnmanagedType.Bool)]
         private static extern bool SetProcessAffinityMask(IntPtr hProcess, IntPtr dwProcessAffinityMask);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool InitializeProcThreadAttributeList(
-            IntPtr lpAttributeList,
-            int dwAttributeCount,
-            int dwFlags,
-            ref IntPtr lpSize);
+        [return:MarshalAs(UnmanagedType.Bool)]
+        private static extern bool InitializeProcThreadAttributeList(IntPtr lpAttributeList, int dwAttributeCount,
+                                                                     int dwFlags, ref IntPtr lpSize);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool UpdateProcThreadAttribute(
-            IntPtr lpAttributeList,
-            uint dwFlags,
-            IntPtr attribute,
-            IntPtr lpValue,
-            IntPtr cbSize,
-            IntPtr lpPreviousValue,
-            IntPtr lpReturnSize);
+        [return:MarshalAs(UnmanagedType.Bool)]
+        private static extern bool UpdateProcThreadAttribute(IntPtr lpAttributeList, uint dwFlags, IntPtr attribute,
+                                                             IntPtr lpValue, IntPtr cbSize, IntPtr lpPreviousValue,
+                                                             IntPtr lpReturnSize);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern void DeleteProcThreadAttributeList(IntPtr lpAttributeList);
@@ -139,10 +127,9 @@ namespace BlackbirdInterface
 
                 if (profile.HasParentProcess)
                 {
-                    parentHandle = OpenProcess(
-                        ProcessCreateProcessAccess | ProcessDupHandleAccess | ProcessQueryLimitedInformationAccess,
-                        false,
-                        profile.ParentProcessId);
+                    parentHandle = OpenProcess(ProcessCreateProcessAccess | ProcessDupHandleAccess |
+                                                   ProcessQueryLimitedInformationAccess,
+                                               false, profile.ParentProcessId);
                     if (parentHandle == IntPtr.Zero || parentHandle == new IntPtr(-1))
                     {
                         error = LastError("OpenProcess(parent) failed").Message;
@@ -160,14 +147,8 @@ namespace BlackbirdInterface
 
                     parentValue = Marshal.AllocHGlobal(IntPtr.Size);
                     Marshal.WriteIntPtr(parentValue, parentHandle);
-                    if (!UpdateProcThreadAttribute(
-                            attributeList,
-                            0,
-                            (IntPtr)ProcThreadAttributeParentProcess,
-                            parentValue,
-                            (IntPtr)IntPtr.Size,
-                            IntPtr.Zero,
-                            IntPtr.Zero))
+                    if (!UpdateProcThreadAttribute(attributeList, 0, (IntPtr)ProcThreadAttributeParentProcess,
+                                                   parentValue, (IntPtr)IntPtr.Size, IntPtr.Zero, IntPtr.Zero))
                     {
                         error = LastError("UpdateProcThreadAttribute(parent) failed").Message;
                         return false;
@@ -188,18 +169,14 @@ namespace BlackbirdInterface
                 commandLine.Append('"');
                 commandLine.Append(imagePath);
                 commandLine.Append('"');
+                if (profile.HasCommandLineArguments)
+                {
+                    commandLine.Append(' ');
+                    commandLine.Append(profile.CommandLineArguments.Trim());
+                }
 
-                if (!CreateProcessW(
-                        imagePath,
-                        commandLine,
-                        IntPtr.Zero,
-                        IntPtr.Zero,
-                        profile.InheritHandles,
-                        creationFlags,
-                        envBlock,
-                        currentDirectory,
-                        ref startupInfo,
-                        out processInfo))
+                if (!CreateProcessW(imagePath, commandLine, IntPtr.Zero, IntPtr.Zero, profile.InheritHandles,
+                                    creationFlags, envBlock, currentDirectory, ref startupInfo, out processInfo))
                 {
                     error = LastError("CreateProcessW failed").Message;
                     return false;
@@ -267,8 +244,8 @@ namespace BlackbirdInterface
 
         private static string? BuildEnvironmentBlock(LaunchProfile profile)
         {
-            if (!profile.TryParseEnvironmentOverrides(out List<KeyValuePair<string, string>> overrides, out _)
-                || overrides.Count == 0)
+            if (!profile.TryParseEnvironmentOverrides(out List<KeyValuePair<string, string>> overrides, out _) ||
+                overrides.Count == 0)
             {
                 return null;
             }
@@ -304,8 +281,7 @@ namespace BlackbirdInterface
             return block.ToString();
         }
 
-        private static uint MapPriorityClass(LaunchPriorityPreset priority) => priority switch
-        {
+        private static uint MapPriorityClass(LaunchPriorityPreset priority) => priority switch {
             LaunchPriorityPreset.Idle => PriorityClassIdle,
             LaunchPriorityPreset.BelowNormal => PriorityClassBelowNormal,
             LaunchPriorityPreset.Normal => PriorityClassNormal,

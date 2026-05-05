@@ -1,21 +1,76 @@
 using System;
 using System.Buffers.Binary;
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Reflection;
 
 namespace BlackbirdInterface
 {
     internal static partial class BlackbirdNative
     {
+        static BlackbirdNative()
+        {
+            NativeLibrary.SetDllImportResolver(typeof(BlackbirdNative).Assembly, ResolveNativeLibrary);
+        }
+
         internal const uint StreamHandle = 0x00000001;
         internal const uint StreamMemory = 0x00000002;
         internal const uint StreamThread = 0x00000004;
         internal const uint StreamFilesystem = 0x00000008;
-        internal const uint StreamAll = StreamHandle | StreamMemory | StreamThread | StreamFilesystem;
+        internal const uint StreamRegistry = 0x00000010;
+        internal const uint StreamTiming = 0x00000020;
+        internal const uint StreamEnterprise = 0x00000040;
+        internal const uint StreamAll = StreamHandle | StreamMemory | StreamThread | StreamFilesystem | StreamRegistry |
+                                        StreamTiming | StreamEnterprise;
 
         internal const uint EventTypeHandle = 1;
         internal const uint EventTypeThread = 2;
         internal const uint EventTypeFileSystem = 3;
+        internal const uint EventTypeRegistry = 4;
+        internal const uint EventTypeEnterprise = 5;
+
+        internal const uint EnterpriseOperationProcessCredentialAccess = 1;
+        internal const uint EnterpriseOperationProcessPrivilegedAccess = 2;
+        internal const uint EnterpriseOperationTokenAccess = 3;
+        internal const uint EnterpriseOperationRegistryCredentialHiveAccess = 4;
+        internal const uint EnterpriseOperationRegistryLsaPolicyAccess = 5;
+        internal const uint EnterpriseOperationRegistryKerberosNtlmAccess = 6;
+        internal const uint EnterpriseOperationRegistryServiceConfigAccess = 7;
+        internal const uint EnterpriseOperationRegistryLpePersistenceAccess = 8;
+        internal const uint EnterpriseOperationFileCredentialStoreAccess = 9;
+        internal const uint EnterpriseOperationFileDirectoryCredentialAccess = 10;
+        internal const uint EnterpriseOperationFileDriverArtifactAccess = 11;
+        internal const uint EnterpriseOperationNetworkAdProtocolConnect = 12;
+
+        internal const uint EnterpriseFlagHighSignal = 0x00000001;
+        internal const uint EnterpriseFlagCritical = 0x00000002;
+        internal const uint EnterpriseFlagQuery = 0x00000004;
+        internal const uint EnterpriseFlagWrite = 0x00000008;
+        internal const uint EnterpriseFlagCreate = 0x00000010;
+        internal const uint EnterpriseFlagDelete = 0x00000020;
+        internal const uint EnterpriseFlagDuplicateHandle = 0x00000040;
+        internal const uint EnterpriseFlagProcessObject = 0x00000080;
+        internal const uint EnterpriseFlagThreadObject = 0x00000100;
+        internal const uint EnterpriseFlagVmRead = 0x00000200;
+        internal const uint EnterpriseFlagVmWrite = 0x00000400;
+        internal const uint EnterpriseFlagVmOperation = 0x00000800;
+        internal const uint EnterpriseFlagCreateThread = 0x00001000;
+        internal const uint EnterpriseFlagCredentialProcess = 0x00002000;
+        internal const uint EnterpriseFlagPrivilegedTarget = 0x00004000;
+        internal const uint EnterpriseFlagLsassTarget = 0x00008000;
+        internal const uint EnterpriseFlagWinlogonTarget = 0x00010000;
+        internal const uint EnterpriseFlagServiceConfig = 0x00020000;
+        internal const uint EnterpriseFlagSecurityHive = 0x00040000;
+        internal const uint EnterpriseFlagLsaPolicy = 0x00080000;
+        internal const uint EnterpriseFlagKerberosNtlm = 0x00100000;
+        internal const uint EnterpriseFlagCredentialFile = 0x00200000;
+        internal const uint EnterpriseFlagDriverArtifact = 0x00400000;
+        internal const uint EnterpriseFlagAdNetwork = 0x00800000;
+        internal const uint EnterpriseFlagDirectSyscallSuspect = 0x01000000;
+        internal const uint EnterpriseFlagQueryAccess = 0x02000000;
+        internal const uint EnterpriseFlagThreadContext = 0x04000000;
+        internal const uint EnterpriseFlagSetOrTerminate = 0x08000000;
 
         internal const uint FileOperationUnknown = 0;
         internal const uint FileOperationCreate = 1;
@@ -28,12 +83,89 @@ namespace BlackbirdInterface
         internal const uint FileOperationDirectoryControl = 8;
         internal const uint FileOperationFsControl = 9;
 
+        internal const uint RegistryOperationUnknown = 0;
+        internal const uint RegistryOperationQueryValue = 1;
+        internal const uint RegistryOperationQueryKey = 2;
+        internal const uint RegistryOperationEnumerateKey = 3;
+        internal const uint RegistryOperationEnumerateValue = 4;
+        internal const uint RegistryOperationSetValue = 5;
+        internal const uint RegistryOperationCreateKey = 6;
+        internal const uint RegistryOperationOpenKey = 7;
+        internal const uint RegistryOperationDeleteValue = 8;
+        internal const uint RegistryOperationDeleteKey = 9;
+
+        internal const uint RegistryFlagHighValuePath = 0x00000001;
+        internal const uint RegistryFlagSensitiveQuery = 0x00000002;
+
         internal const uint IpcCapDriverProxy = 0x00000001;
         internal const uint IpcCapEtwTiSession = 0x00000002;
         internal const uint IpcCapEtwTiUplink = 0x00000004;
         internal const uint IpcCapSharedRing = 0x00000008;
         internal const uint IpcCapUserHookIngest = 0x00000010;
         internal const uint IpcCapUserHookReady = 0x00000020;
+        internal const uint IpcCapDriverDiagnostics = 0x00000040;
+        internal const uint IpcCapQpcTiming = 0x00000080;
+        internal const uint AnalysisSubjectKindProcess = 0;
+        internal const uint AnalysisSubjectKindDll = 1;
+        internal const uint HealthControlReady = 0x00000001;
+        internal const uint HealthEtwReady = 0x00000002;
+        internal const uint HealthHandleMonitorReady = 0x00000004;
+        internal const uint HealthThreadMonitorReady = 0x00000008;
+        internal const uint HealthProcessMonitorReady = 0x00000010;
+        internal const uint HealthImageMonitorReady = 0x00000020;
+        internal const uint HealthRegistryMonitorReady = 0x00000040;
+        internal const uint HealthApcMonitorReady = 0x00000080;
+        internal const uint HealthFileSystemMonitorReady = 0x00000100;
+        internal const uint HealthCorrelationReady = 0x00000200;
+        internal const uint HealthHollowingEngineReady = 0x00000400;
+        internal const uint HealthNtApiMonitorReady = 0x00000800;
+        internal const uint HealthAntiTamperReady = 0x00001000;
+        internal const uint HealthDiagnosticsReady = 0x00002000;
+        internal const uint HealthEndpointGuardReady = 0x00004000;
+        internal const uint HealthEnterpriseMonitorReady = 0x00008000;
+        internal const uint HealthBugcheckMonitorReady = 0x00010000;
+
+        internal const int DiagnosticMaxEvents = 64;
+        internal const uint DiagEventInitBegin = 1;
+        internal const uint DiagEventInitOk = 2;
+        internal const uint DiagEventInitFailed = 3;
+        internal const uint DiagEventOnline = 4;
+        internal const uint DiagEventConfirmedOnline = 5;
+        internal const uint DiagEventDisabledByPolicy = 6;
+        internal const uint DiagEventOptionalMissingContinuing = 7;
+        internal const uint DiagEventDisarmed = 8;
+        internal const uint DiagEventArmed = 9;
+        internal const uint DiagEventShutdownBegin = 10;
+        internal const uint DiagEventShutdownOk = 11;
+        internal const uint DiagEventSelfCheckFailed = 12;
+        internal const uint DiagEventDegradedContinuing = 13;
+        internal const uint DiagFlagFailure = 0x00000001;
+        internal const uint DiagFlagOptional = 0x00000002;
+        internal const uint DiagFlagContinuing = 0x00000004;
+        internal const uint DiagFlagPolicy = 0x00000008;
+        internal const uint DiagFlagShutdown = 0x00000010;
+        internal const uint DiagFlagSelfCheck = 0x00000020;
+        internal const uint DiagComponentNone = 0;
+        internal const uint DiagComponentDriverEntry = 1;
+        internal const uint DiagComponentRuntimeConfig = 2;
+        internal const uint DiagComponentEtw = 3;
+        internal const uint DiagComponentControl = 4;
+        internal const uint DiagComponentCorrelation = 5;
+        internal const uint DiagComponentHollowingEngine = 6;
+        internal const uint DiagComponentApcMonitor = 7;
+        internal const uint DiagComponentProcessMonitor = 8;
+        internal const uint DiagComponentImageMonitor = 9;
+        internal const uint DiagComponentRegistryMonitor = 10;
+        internal const uint DiagComponentThreadMonitor = 11;
+        internal const uint DiagComponentFilesystemMonitor = 12;
+        internal const uint DiagComponentHandleMonitor = 13;
+        internal const uint DiagComponentNtApiMonitor = 14;
+        internal const uint DiagComponentAntiTamper = 15;
+        internal const uint DiagComponentDiagnostics = 16;
+        internal const uint DiagComponentWfpEndpointGuard = 17;
+        internal const uint DiagComponentWfpEndpoint = 18;
+        internal const uint DiagComponentEnterpriseMonitor = 19;
+        internal const uint DiagComponentBugcheckMonitor = 20;
 
         internal const uint IpcEtwSourceUnknown = 0;
         internal const uint IpcEtwSourceBlackbird = 1;
@@ -51,6 +183,9 @@ namespace BlackbirdInterface
         internal const int ErrorInvalidFunction = 1;
 
         internal const int EventReadBufferBytes = 8192;
+        internal const int DiagnosticMaxComponentStates = 32;
+        internal const int DiagnosticMaxNtApiHookStates = 64;
+        internal const int DiagnosticMaxSanitizerStates = 32;
         internal const int MaxIpcHookImagePathChars = 1024;
         internal const int MaxIpcLaunchEnvironmentChars = 4096;
         internal const uint IpcUserHookTargetNone = 0;
@@ -71,15 +206,25 @@ namespace BlackbirdInterface
         internal const uint RuntimeFlagInterfaceProtectedAccess = 0x00000004;
         internal const uint RuntimeFlagControllerProtectedAccess = 0x00000008;
         internal const uint RuntimeFlagNtApiHooksDisarmed = 0x00000010;
+        internal const uint RuntimeFlagQpcTimingDisabled = 0x00000020;
+        internal const uint QpcTimingConfigFlagEnabled = 0x00000001;
+        internal const uint QpcTimingConfigFlagManualBias = 0x00000002;
+        internal const uint QpcTimingSourceBlackbirdOverhead = 0x00000001;
+        internal const uint QpcTimingSourceAutoBias = 0x00000002;
+        internal const uint QpcTimingSourceManualBias = 0x00000004;
+        internal const uint QpcTimingSourceSuspendPause = 0x00000008;
+        internal const uint QpcTimingSourceMonotonicClamp = 0x00000010;
+        internal const uint QpcTimingSourcePairMatch = 0x00000020;
+        internal const uint QpcTimingSourceTightPairClamp = 0x00000040;
         internal const uint RuntimeModeLoiter = 0;
         internal const uint RuntimeModeGuided = 1;
 
-        internal const uint LaunchIntegrityDefault   = 0;
+        internal const uint LaunchIntegrityDefault = 0;
         internal const uint LaunchIntegrityUntrusted = 1;
-        internal const uint LaunchIntegrityLow       = 2;
-        internal const uint LaunchIntegrityMedium    = 3;
-        internal const uint LaunchIntegrityHigh      = 4;
-        internal const uint LaunchIntegritySystem    = 5;
+        internal const uint LaunchIntegrityLow = 2;
+        internal const uint LaunchIntegrityMedium = 3;
+        internal const uint LaunchIntegrityHigh = 4;
+        internal const uint LaunchIntegritySystem = 5;
 
         private const int MaxIpcEventNameChars = 96;
         private const int MaxIpcDetectionNameChars = 128;
@@ -89,7 +234,7 @@ namespace BlackbirdInterface
         private const int MaxIpcCommandLineChars = 512;
         private const int MaxIpcKeyPathChars = 512;
         private const int MaxIpcValueNameChars = 256;
-        internal const int MaxIpcStackFrames = 8;
+        internal const int MaxIpcStackFrames = 16;
         private const int MaxIpcDeepSampleBytes = 64;
         private const int MaxIpcHookArgs = 8;
 
@@ -118,27 +263,107 @@ namespace BlackbirdInterface
         internal const uint IpcEtwFlagRegistryHighValue = 0x00000400;
         internal const uint IpcEtwFlagApcDuplicateOperation = 0x00000800;
         // Syscall / stack-integrity signals (kernel-side, 0x1000–0x20000)
-        internal const uint IpcEtwFlagSyscallExportMatch         = 0x00001000;
-        internal const uint IpcEtwFlagSyscallExportMismatch      = 0x00002000;
-        internal const uint IpcEtwFlagModuleChainSane            = 0x00004000;
-        internal const uint IpcEtwFlagUnwindMetadataValid        = 0x00008000;
-        internal const uint IpcEtwFlagTebStackBoundsValid        = 0x00010000;
-        internal const uint IpcEtwFlagFramesOutsideTebStack      = 0x00020000;
+        internal const uint IpcEtwFlagSyscallExportMatch = 0x00001000;
+        internal const uint IpcEtwFlagSyscallExportMismatch = 0x00002000;
+        internal const uint IpcEtwFlagModuleChainSane = 0x00004000;
+        internal const uint IpcEtwFlagUnwindMetadataValid = 0x00008000;
+        internal const uint IpcEtwFlagTebStackBoundsValid = 0x00010000;
+        internal const uint IpcEtwFlagFramesOutsideTebStack = 0x00020000;
         // Hook-event caller origin (usermode SR71 classification, 0x40000–0x200000)
-        internal const uint IpcEtwFlagHookCallerAllSystem        = 0x00040000;
-        internal const uint IpcEtwFlagHookCallerHasUnmapped      = 0x00080000;
-        internal const uint IpcEtwFlagHookCallerHasProcessImage  = 0x00100000;
-        internal const uint IpcEtwFlagHookCallerHasNonSystemDll  = 0x00200000;
-        internal const uint HookCallerImmediateShift             = 4;
-        internal const uint HookCallerImmediateMask              = 0x000000F0;
-        internal const uint HookCallerDeepOriginShift            = 8;
-        internal const uint HookCallerDeepOriginMask             = 0x00000F00;
-        internal const uint HookCallerKindUnknown                = 0;
-        internal const uint HookCallerKindUnmapped               = 1;
-        internal const uint HookCallerKindSystemDll              = 2;
-        internal const uint HookCallerKindProcessImage           = 3;
-        internal const uint HookCallerKindOwnModule              = 4;
-        internal const uint HookCallerKindNonSystemDll           = 5;
+        internal const uint IpcEtwFlagHookCallerAllSystem = 0x00040000;
+        internal const uint IpcEtwFlagHookCallerHasUnmapped = 0x00080000;
+        internal const uint IpcEtwFlagHookCallerHasProcessImage = 0x00100000;
+        internal const uint IpcEtwFlagHookCallerHasNonSystemDll = 0x00200000;
+        internal const uint IpcEtwFlagHookCallerHasOwnModule = 0x04000000;
+        internal const uint IpcEtwFlagHookKernelCaller = 0x00400000;
+        internal const uint IpcEtwFlagHookUserCaller = 0x00800000;
+        internal const uint IpcEtwFlagHookTargetCurrentProcess = 0x01000000;
+        internal const uint IpcEtwFlagHookSectionImage = 0x02000000;
+        internal const uint IpcEtwTraitMemoryAllocRw = 0x00000001;
+        internal const uint IpcEtwTraitMemoryWriteVm = 0x00000002;
+        internal const uint IpcEtwTraitMemoryProtectRx = 0x00000004;
+        internal const uint IpcEtwTraitNetwork = 0x00000008;
+        internal const uint IpcEtwTraitRemoteExecution = 0x00000010;
+        internal const uint IpcEtwTraitCredentialAccess = 0x00000020;
+        internal const uint IpcEtwTraitImageTamper = 0x00000040;
+        internal const uint IpcEtwTraitLolbin = 0x00000080;
+        internal const uint IpcEtwTraitDetectionClass = 0x00000100;
+        internal const uint IpcEtwTraitDirectSyscall = 0x00000200;
+        internal const uint IpcEtwTraitHookTamper = 0x00000400;
+        internal const uint IpcEtwTraitImageLoad = 0x00000800;
+        internal const uint IpcEtwTraitProcessLaunch = 0x00001000;
+        internal const uint IpcEtwTraitScanImagePath = 0x00002000;
+        internal const uint IpcEtwTraitScanTargetProcess = 0x00004000;
+        internal const uint IpcEtwTraitBlackbirdOwn = 0x00008000; /* BK instrumentation - suppress heuristics */
+        internal const uint HookCallerImmediateShift = 4;
+        internal const uint HookCallerImmediateMask = 0x000000F0;
+        internal const uint HookCallerDeepOriginShift = 8;
+        internal const uint HookCallerDeepOriginMask = 0x00000F00;
+        internal const uint HookCallerComponentShift = 28;
+        internal const uint HookCallerComponentMask = 0xF0000000;
+        internal const uint HookCallerKindUnknown = 0;
+        internal const uint HookCallerKindUnmapped = 1;
+        internal const uint HookCallerKindSystemDll = 2;
+        internal const uint HookCallerKindProcessImage = 3;
+        internal const uint HookCallerKindOwnModule = 4;
+        internal const uint HookCallerKindNonSystemDll = 5;
+        internal const uint HookComponentUnknown = 0;
+        internal const uint HookComponentRuntime = 1;
+        internal const uint HookComponentWinsock = 2;
+        internal const uint HookComponentNt = 3;
+        internal const uint HookComponentKi = 4;
+        internal const uint HookComponentModule = 5;
+        internal const uint HookComponentIntegrity = 6;
+        internal const uint HookComponentLaunchGate = 7;
+        internal const uint HookComponentIpc = 8;
+
+        private static IntPtr ResolveNativeLibrary(string libraryName, Assembly assembly,
+                                                   DllImportSearchPath? searchPath)
+        {
+            if (!string.Equals(libraryName, "J58.dll", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(libraryName, "J58", StringComparison.OrdinalIgnoreCase))
+            {
+                return IntPtr.Zero;
+            }
+
+            string? preferredPath = ResolvePreferredSensorCorePath();
+            if (!string.IsNullOrWhiteSpace(preferredPath) && NativeLibrary.TryLoad(preferredPath, out IntPtr handle))
+            {
+                return handle;
+            }
+
+            return IntPtr.Zero;
+        }
+
+        private static string? ResolvePreferredSensorCorePath()
+        {
+            string basePath = Path.Combine(AppContext.BaseDirectory, "J58.dll");
+            if (File.Exists(basePath))
+            {
+                return basePath;
+            }
+
+            string currentPath = Path.Combine(Environment.CurrentDirectory, "J58.dll");
+            if (!string.Equals(currentPath, basePath, StringComparison.OrdinalIgnoreCase) && File.Exists(currentPath))
+            {
+                return currentPath;
+            }
+
+            string? programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+            if (string.IsNullOrWhiteSpace(programFiles))
+            {
+                return null;
+            }
+
+            string blackbirdPath = Path.Combine(programFiles, "Blackbird", "J58.dll");
+            if (File.Exists(blackbirdPath))
+            {
+                return blackbirdPath;
+            }
+
+            string bkPath = Path.Combine(programFiles, "BK", "J58.dll");
+            return File.Exists(bkPath) ? bkPath : null;
+        }
 
         [StructLayout(LayoutKind.Sequential, Pack = 8)]
         internal struct BkStatsResponse
@@ -149,9 +374,108 @@ namespace BlackbirdInterface
             public uint TempusEnabled;
             public ulong TempusQpcFrequency;
             public uint TempusSubsystemCount;
-            public uint Reserved;
+            public uint HookReadyMask;
+            public uint HookReadyRequiredMask;
+            public uint InstrumentationRangeCount;
+            public uint HookPatchCount;
+            public ulong HookPatchOverlayCount;
+            public ulong InstrumentationReadDenyCount;
+            public ulong DuplicateNtdllMirrorCount;
+            public ulong DuplicateNtdllMirrorFailureCount;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 14)]
             public BkTempusBucket[] Tempus;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 8)]
+        internal struct BkHealthResponse
+        {
+            public uint HealthMask;
+            public uint TamperMask;
+            public uint Reserved0;
+            public uint Reserved1;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 8)]
+        internal struct BkDiagnosticEvent
+        {
+            public ulong Sequence;
+            public long TimestampQpc;
+            public ulong ElapsedQpc;
+            public uint SubsystemId;
+            public uint EventType;
+            public int Status;
+            public uint Flags;
+            public uint DetailCode;
+            public uint ComponentId;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 8)]
+        internal struct BkDiagnosticComponentState
+        {
+            public ushort ComponentId;
+            public ushort SubsystemId;
+            public uint Flags;
+            public int Status;
+            public uint Reserved;
+            public ulong Detail0;
+            public ulong Detail1;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 8)]
+        internal struct BkDiagnosticNtApiHookState
+        {
+            public ushort HookId;
+            public ushort Required;
+            public uint Flags;
+            public uint OverwriteLength;
+            public uint Reserved;
+            public ulong RoutineAddress;
+            public ulong TrampolineAddress;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 8)]
+        internal struct BkDiagnosticSanitizerState
+        {
+            public ushort SanitizerId;
+            public ushort ComponentId;
+            public uint Flags;
+            public uint StreamMask;
+            public uint SourceClass;
+            public ulong HitCount;
+            public ulong Detail0;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 8)]
+        internal struct BkDiagnosticsResponse
+        {
+            public ulong QpcFrequency;
+            public ulong OldestSequence;
+            public ulong NextSequence;
+            public uint EventCount;
+            public uint DroppedCount;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = DiagnosticMaxEvents)]
+            public BkDiagnosticEvent[] Events;
+            public uint SchemaVersion;
+            public uint RuntimeFlags;
+            public uint EffectiveRuntimeFlags;
+            public uint HealthMask;
+            public uint TamperMask;
+            public uint ComponentStateCount;
+            public uint NtApiHookStateCount;
+            public uint SanitizerStateCount;
+            public uint InstrumentationRangeCount;
+            public uint HookPatchCount;
+            public ulong HookPatchOverlayCount;
+            public ulong InstrumentationReadDenyCount;
+            public ulong DuplicateNtdllMirrorCount;
+            public ulong DuplicateNtdllMirrorFailureCount;
+            public BkQpcTimingState QpcTiming;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = DiagnosticMaxComponentStates)]
+            public BkDiagnosticComponentState[] Components;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = DiagnosticMaxNtApiHookStates)]
+            public BkDiagnosticNtApiHookState[] NtApiHooks;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = DiagnosticMaxSanitizerStates)]
+            public BkDiagnosticSanitizerState[] Sanitizers;
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 8)]
@@ -244,6 +568,11 @@ namespace BlackbirdInterface
             public ushort[] KeyPath;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcValueNameChars)]
             public ushort[] ValueName;
+            public uint DetectionTraits
+            {
+                get => Reserved2;
+                set => Reserved2 = value;
+            }
         }
 
         [StructLayout(LayoutKind.Sequential, Pack = 8)]
@@ -254,97 +583,168 @@ namespace BlackbirdInterface
             public uint EffectiveFlags;
             public uint Mode;
         }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 8)]
+        internal struct BkQpcTimingConfig
+        {
+            public uint Flags;
+            public uint Mask;
+            public uint PairWindowMs;
+            public uint MaxCorrectionUs;
+            public long ManualBiasTicks;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 8)]
+        internal struct BkQpcTimingState
+        {
+            public uint Flags;
+            public uint PairWindowMs;
+            public uint MaxCorrectionUs;
+            public uint ActiveThreadSlots;
+            public long ManualBiasTicks;
+            public long AutoBiasTicks;
+            public ulong Frequency;
+            public ulong QueryCount;
+            public ulong PairCount;
+            public ulong CorrectedCount;
+            public ulong TotalCorrectionTicks;
+            public ulong PauseCorrectionTicks;
+            public ulong LastCorrectionTicks;
+        }
+
         [StructLayout(LayoutKind.Sequential, Pack = 8)]
         internal struct BkSetUserHookTargetResponse
         {
             public uint ProcessId;
             public int Status;
-            public uint Reserved0;
+            public uint AnalysisSubjectKind;
             public uint Reserved1;
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcHookImagePathChars)]
             public ushort[] ImagePath;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = MaxIpcHookImagePathChars)]
+            public ushort[] AnalysisSubjectPath;
         }
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCUseClientProtocol", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
+        [DllImport("J58.dll", EntryPoint = "BkscUseClientProtocol", CallingConvention = CallingConvention.Cdecl,
+                   CharSet = CharSet.Unicode, SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
         internal static extern bool UseClientProtocol(string? pipeName, uint connectTimeoutMs);
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCOpenControlDevice", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [DllImport("J58.dll", EntryPoint = "BkscOpenControlDevice", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
         internal static extern IntPtr OpenControlDevice();
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCCloseControlDevice", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
+        [DllImport("J58.dll", EntryPoint = "BkscCloseControlDevice", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
         internal static extern bool CloseControlDevice(IntPtr device);
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetBrokerInfo", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static extern bool GetBrokerInfo(out uint capabilities, [MarshalAs(UnmanagedType.Bool)] out bool threatIntelEnabled);
+        [DllImport("J58.dll", EntryPoint = "BkscGetBrokerInfo", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetBrokerInfo(out uint capabilities,
+                                                  [MarshalAs(UnmanagedType.Bool)] out bool threatIntelEnabled);
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCHasSharedChannel", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static extern bool HasSharedChannel(
-            IntPtr device,
-            [MarshalAs(UnmanagedType.Bool)] out bool hasIoctlChannel,
-            [MarshalAs(UnmanagedType.Bool)] out bool hasEtwChannel);
+        [DllImport("J58.dll", EntryPoint = "BkscHasSharedChannel", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool HasSharedChannel(IntPtr device,
+                                                     [MarshalAs(UnmanagedType.Bool)] out bool hasIoctlChannel,
+                                                     [MarshalAs(UnmanagedType.Bool)] out bool hasEtwChannel);
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetLastSharedRingError", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [DllImport("J58.dll", EntryPoint = "BkscGetLastSharedRingError", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
         internal static extern uint GetLastSharedRingError();
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetLastThreatIntelEnableError", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
+        [DllImport("J58.dll", EntryPoint = "BkscGetLastThreatIntelEnableError",
+                   CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
         internal static extern uint GetLastThreatIntelEnableError();
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCSetPids", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
+        [DllImport("J58.dll", EntryPoint = "BkscSetPids", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
         internal static extern bool SetPids(IntPtr device, [In] uint[] processIds, uint processCount, uint streamMask);
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetEvent", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
+        [DllImport("J58.dll", EntryPoint = "BkscGetEvent", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
         internal static extern bool GetEventRaw(IntPtr device, IntPtr recordBuffer, out uint bytesReturned);
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetEventWait", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static extern bool GetEventWait(IntPtr device, IntPtr recordBuffer, out uint bytesReturned, uint timeoutMs);
+        [DllImport("J58.dll", EntryPoint = "BkscGetEventWait", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetEventWait(IntPtr device, IntPtr recordBuffer, out uint bytesReturned,
+                                                 uint timeoutMs);
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetEtwEvent", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
+        [DllImport("J58.dll", EntryPoint = "BkscGetEtwEvent", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
         internal static extern bool GetEtwEvent(IntPtr device, out BkIpcEtwEvent etwEvent, uint timeoutMs);
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetStats", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
+        [DllImport("J58.dll", EntryPoint = "BkscGetStats", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
         internal static extern bool GetStats(IntPtr device, out BkStatsResponse stats, out uint bytesReturned);
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCSetShutdownMode", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
+        [DllImport("J58.dll", EntryPoint = "BkscGetHealth", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetHealth(IntPtr device, out BkHealthResponse health, out uint bytesReturned);
+
+        [DllImport("J58.dll", EntryPoint = "BkscGetDiagnostics", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetDiagnostics(IntPtr device, out BkDiagnosticsResponse diagnostics,
+                                                   out uint bytesReturned);
+
+        [DllImport("J58.dll", EntryPoint = "BkscSetShutdownMode", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
         internal static extern bool SetShutdownMode(IntPtr device);
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCControlProcessExecution", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static extern bool ControlProcessExecution(IntPtr device, uint processId, [MarshalAs(UnmanagedType.Bool)] bool suspend);
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCSetRuntimeConfig", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
+        [DllImport("J58.dll", EntryPoint = "BkscControlProcessExecution", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool ControlProcessExecution(IntPtr device, uint processId,
+                                                            [MarshalAs(UnmanagedType.Bool)] bool suspend);
+        [DllImport("J58.dll", EntryPoint = "BkscSetRuntimeConfig", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
         internal static extern bool SetRuntimeConfig(IntPtr device, uint flags, uint mask);
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCGetRuntimeConfig", CallingConvention = CallingConvention.Cdecl, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
+        [DllImport("J58.dll", EntryPoint = "BkscGetRuntimeConfig", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
         internal static extern bool GetRuntimeConfig(IntPtr device, out BkRuntimeConfigResponse response);
 
-        [DllImport("J58.dll", EntryPoint = "BLACKBIRDSCSetUserHookTarget", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        internal static extern bool SetUserHookTarget(
-            IntPtr device,
-            uint mode,
-            uint processId,
-            uint flags,
-            string? imagePath,
-            string? hookDllPath,
-            string? workingDirectory,
-            string? environmentOverrides,
-            uint parentProcessId,
-            uint priorityClass,
-            ulong affinityMask,
-            [MarshalAs(UnmanagedType.Bool)] bool inheritHandles,
-            uint integrityLevel,
-            out BkSetUserHookTargetResponse response);
+        [DllImport("J58.dll", EntryPoint = "BkscSetQpcTimingConfig", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool SetQpcTimingConfig(IntPtr device, in BkQpcTimingConfig config);
+
+        [DllImport("J58.dll", EntryPoint = "BkscGetQpcTimingState", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetQpcTimingState(IntPtr device, out BkQpcTimingState state);
+
+        [DllImport("J58.dll", EntryPoint = "BkscQueryProcessMemory", CallingConvention = CallingConvention.Cdecl,
+                   SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool QueryProcessMemory(IntPtr device, uint processId, ulong baseAddress,
+                                                       uint requestedSize, [Out] byte[] buffer, uint bufferSize,
+                                                       out uint bytesRead);
+
+        [DllImport("J58.dll", EntryPoint = "BkscSetUserHookTarget", CallingConvention = CallingConvention.Cdecl,
+                   CharSet = CharSet.Unicode, SetLastError = true)]
+        [return:MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool SetUserHookTarget(IntPtr device, uint mode, uint processId, uint flags,
+                                                      string? imagePath, uint analysisSubjectKind,
+                                                      string? analysisSubjectPath, string? hookDllPath,
+                                                      string? workingDirectory, string? environmentOverrides,
+                                                      string? commandLineArguments, uint parentProcessId,
+                                                      uint priorityClass, ulong affinityMask,
+                                                      [MarshalAs(UnmanagedType.Bool)] bool inheritHandles,
+                                                      uint integrityLevel, out BkSetUserHookTargetResponse response);
 
         internal static string WideBufferToString(ushort[]? buffer)
         {
@@ -427,6 +827,35 @@ namespace BlackbirdInterface
             return new Win32Exception(err, $"{context} (win32={err})");
         }
 
+        internal static string? ValidateManagedAbiLayout()
+        {
+            string? error = null;
+
+            CheckAbiSize(nameof(BkStatsResponse), Marshal.SizeOf<BkStatsResponse>(), 528, ref error);
+            CheckAbiSize(nameof(BkHealthResponse), Marshal.SizeOf<BkHealthResponse>(), 16, ref error);
+            CheckAbiSize(nameof(BkDiagnosticEvent), Marshal.SizeOf<BkDiagnosticEvent>(), 48, ref error);
+            CheckAbiSize(nameof(BkDiagnosticComponentState), Marshal.SizeOf<BkDiagnosticComponentState>(), 32,
+                         ref error);
+            CheckAbiSize(nameof(BkDiagnosticNtApiHookState), Marshal.SizeOf<BkDiagnosticNtApiHookState>(), 32,
+                         ref error);
+            CheckAbiSize(nameof(BkDiagnosticSanitizerState), Marshal.SizeOf<BkDiagnosticSanitizerState>(), 32,
+                         ref error);
+            CheckAbiSize(nameof(BkQpcTimingState), Marshal.SizeOf<BkQpcTimingState>(), 88, ref error);
+            CheckAbiSize(nameof(BkDiagnosticsResponse), Marshal.SizeOf<BkDiagnosticsResponse>(), 7360, ref error);
+
+            return error;
+        }
+
+        private static void CheckAbiSize(string name, int actual, int expected, ref string? error)
+        {
+            if (actual == expected || error != null)
+            {
+                return;
+            }
+
+            error = $"{name} managed size={actual} expected native size={expected}";
+        }
+
         internal static bool TryParseIoctlEvent(byte[] buffer, int bytesRead, out IoctlParsedEvent parsed)
         {
             parsed = new IoctlParsedEvent();
@@ -474,7 +903,9 @@ namespace BlackbirdInterface
                 parsed.DeepRegionType = ReadU32(buffer, payloadOffset + 152);
                 parsed.DeepSampleSize = ReadU32(buffer, payloadOffset + 156);
                 parsed.DeepSample = new byte[64];
-                int deepCopy = Math.Min(parsed.DeepSample.Length, Math.Min((int)parsed.DeepSampleSize, Math.Max(0, bytesRead - (payloadOffset + 160))));
+                int deepCopy =
+                    Math.Min(parsed.DeepSample.Length,
+                             Math.Min((int)parsed.DeepSampleSize, Math.Max(0, bytesRead - (payloadOffset + 160))));
                 if (deepCopy > 0)
                 {
                     Buffer.BlockCopy(buffer, payloadOffset + 160, parsed.DeepSample, 0, deepCopy);
@@ -518,9 +949,9 @@ namespace BlackbirdInterface
                 parsed.StackSnapshotAddress = ReadU64(buffer, registerOffset + 192);
                 parsed.StackSnapshotSize = ReadU32(buffer, registerOffset + 200);
                 parsed.StackSnapshot = new byte[stackSnapshotBytes];
-                int stackCopy = Math.Min(
-                    parsed.StackSnapshot.Length,
-                    Math.Min((int)parsed.StackSnapshotSize, Math.Max(0, bytesRead - (registerOffset + 204))));
+                int stackCopy =
+                    Math.Min(parsed.StackSnapshot.Length,
+                             Math.Min((int)parsed.StackSnapshotSize, Math.Max(0, bytesRead - (registerOffset + 204))));
                 if (stackCopy > 0)
                 {
                     Buffer.BlockCopy(buffer, registerOffset + 204, parsed.StackSnapshot, 0, stackCopy);
@@ -578,6 +1009,54 @@ namespace BlackbirdInterface
                 parsed.FileShareAccess = ReadU32(buffer, payloadOffset + 92);
                 parsed.FileFlags = ReadU32(buffer, payloadOffset + 96);
                 parsed.FilePath = ReadWideFixedString(buffer, payloadOffset + 100, 520);
+                return true;
+            }
+
+            if (type == EventTypeRegistry)
+            {
+                const int registryPayloadSize = 1320;
+                if (bytesRead < payloadOffset + registryPayloadSize)
+                {
+                    return false;
+                }
+
+                parsed.RegistryProcessPid = ToPid(ReadU64(buffer, payloadOffset + 0));
+                parsed.RegistryThreadId = ToPid(ReadU64(buffer, payloadOffset + 8));
+                parsed.RegistryOperation = ReadU32(buffer, payloadOffset + 16);
+                parsed.RegistryNotifyClass = ReadU32(buffer, payloadOffset + 20);
+                parsed.RegistryDataType = ReadU32(buffer, payloadOffset + 24);
+                parsed.RegistryDataSize = ReadU32(buffer, payloadOffset + 28);
+                parsed.RegistryFlags = ReadU32(buffer, payloadOffset + 32);
+                parsed.RegistrySessionId = ReadU32(buffer, payloadOffset + 36);
+                parsed.RegistryKeyPath = ReadWideFixedString(buffer, payloadOffset + 40, 512);
+                parsed.RegistryValueName = ReadWideFixedString(buffer, payloadOffset + 1064, 128);
+                return true;
+            }
+
+            if (type == EventTypeEnterprise)
+            {
+                const int enterprisePayloadSize = 96;
+                if (bytesRead < payloadOffset + enterprisePayloadSize)
+                {
+                    return false;
+                }
+
+                parsed.EnterpriseProcessPid = ToPid(ReadU64(buffer, payloadOffset + 0));
+                parsed.EnterpriseThreadId = ToPid(ReadU64(buffer, payloadOffset + 8));
+                parsed.EnterpriseTargetProcessPid = ToPid(ReadU64(buffer, payloadOffset + 16));
+                parsed.EnterpriseTargetThreadId = ToPid(ReadU64(buffer, payloadOffset + 24));
+                parsed.EnterpriseObjectAddress = ReadU64(buffer, payloadOffset + 32);
+                parsed.EnterpriseAux0 = ReadU64(buffer, payloadOffset + 40);
+                parsed.EnterpriseAux1 = ReadU64(buffer, payloadOffset + 48);
+                parsed.EnterpriseOperation = ReadU32(buffer, payloadOffset + 56);
+                parsed.EnterpriseSubOperation = ReadU32(buffer, payloadOffset + 60);
+                parsed.EnterpriseFlags = ReadU32(buffer, payloadOffset + 64);
+                parsed.EnterpriseDesiredAccess = ReadU32(buffer, payloadOffset + 68);
+                parsed.EnterpriseGrantedAccess = ReadU32(buffer, payloadOffset + 72);
+                parsed.EnterpriseStatus = ReadU32(buffer, payloadOffset + 76);
+                parsed.EnterpriseProtocol = ReadU32(buffer, payloadOffset + 80);
+                parsed.EnterpriseLocalPort = ReadU32(buffer, payloadOffset + 84);
+                parsed.EnterpriseRemotePort = ReadU32(buffer, payloadOffset + 88);
                 return true;
             }
 

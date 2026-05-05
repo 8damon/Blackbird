@@ -15,7 +15,18 @@ enum class ModuleHookOperation : std::uint32_t
     LdrLoadDll = 4,
     RtlAddFunctionTable = 5,
     RtlInstallFunctionTableCallback = 6,
-    RtlDeleteFunctionTable = 7
+    RtlDeleteFunctionTable = 7,
+    CoInitializeEx = 8,
+    CoInitializeSecurity = 9,
+    CoCreateInstance = 10,
+    EventRegister = 11,
+    EventUnregister = 12,
+    StartTraceW = 13,
+    EnableTraceEx2 = 14,
+    CreateJobObjectW = 15,
+    OpenJobObjectW = 16,
+    AssignProcessToJobObject = 17,
+    SetInformationJobObject = 18
 };
 
 struct ModuleHookContext
@@ -57,3 +68,15 @@ void KeRemoveModuleHook() noexcept;
 
 bool KeCheckModuleHookIntegrity(std::uint32_t *mismatchCount) noexcept;
 bool KeGetLastModuleHookInitFault(ModuleHookInitFault *faultOut) noexcept;
+
+struct ModuleHookPatchInfo
+{
+    void *PatchAddress;
+    std::size_t PatchSize;
+    std::uint8_t OriginalBytes[16];
+    const char *HookName;
+    std::uint32_t Flags;
+};
+
+std::size_t KeCollectModuleHookPatchInfos(_Out_writes_(capacity) ModuleHookPatchInfo *out,
+                                          _In_ std::size_t capacity) noexcept;

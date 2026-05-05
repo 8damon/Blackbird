@@ -1,19 +1,19 @@
-#ifndef BLACKBIRD_POOL_COMPAT_H
-#define BLACKBIRD_POOL_COMPAT_H
+#ifndef BK_POOL_COMPAT_H
+#define BK_POOL_COMPAT_H
 
-typedef PVOID(NTAPI *BLACKBIRD_EX_ALLOCATE_POOL2_FN)(_In_ POOL_FLAGS Flags, _In_ SIZE_T NumberOfBytes, _In_ ULONG Tag);
+typedef PVOID(NTAPI *BK_EX_ALLOCATE_POOL2_FN)(_In_ POOL_FLAGS Flags, _In_ SIZE_T NumberOfBytes, _In_ ULONG Tag);
 
-static __forceinline PVOID BLACKBIRDAllocatePoolCompat(_In_ POOL_FLAGS Flags, _In_ SIZE_T NumberOfBytes, _In_ ULONG Tag)
+static __forceinline PVOID BkpoolAllocateCompat(_In_ POOL_FLAGS Flags, _In_ SIZE_T NumberOfBytes, _In_ ULONG Tag)
 {
     static volatile LONG resolved = 0;
-    static volatile BLACKBIRD_EX_ALLOCATE_POOL2_FN allocatePool2 = NULL;
+    static volatile BK_EX_ALLOCATE_POOL2_FN allocatePool2 = NULL;
 
     if (InterlockedCompareExchange(&resolved, 0, 0) == 0)
     {
         UNICODE_STRING name;
 
         RtlInitUnicodeString(&name, L"ExAllocatePool2");
-        allocatePool2 = (BLACKBIRD_EX_ALLOCATE_POOL2_FN)MmGetSystemRoutineAddress(&name);
+        allocatePool2 = (BK_EX_ALLOCATE_POOL2_FN)MmGetSystemRoutineAddress(&name);
         InterlockedExchange(&resolved, 1);
     }
 

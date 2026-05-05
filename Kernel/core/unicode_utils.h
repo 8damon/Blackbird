@@ -1,11 +1,11 @@
-#ifndef BLACKBIRD_UNICODE_UTILS_H
-#define BLACKBIRD_UNICODE_UTILS_H
+#ifndef BK_UNICODE_UTILS_H
+#define BK_UNICODE_UTILS_H
 
 #include <ntddk.h>
 
-static __forceinline BOOLEAN BLACKBIRDUnicodeContainsInsensitive(_In_ PCUNICODE_STRING Haystack,
-                                                                 _In_reads_(NeedleChars) PCWSTR Needle,
-                                                                 _In_ USHORT NeedleChars)
+static __forceinline BOOLEAN BkstrUnicodeContainsInsensitive(_In_ PCUNICODE_STRING Haystack,
+                                                             _In_reads_(NeedleChars) PCWSTR Needle,
+                                                             _In_ USHORT NeedleChars)
 {
     USHORT hayChars;
     USHORT i;
@@ -42,8 +42,8 @@ static __forceinline BOOLEAN BLACKBIRDUnicodeContainsInsensitive(_In_ PCUNICODE_
     return FALSE;
 }
 
-static __forceinline BOOLEAN BLACKBIRDUnicodeEquals(_In_opt_ PCUNICODE_STRING Left, _In_opt_ PCUNICODE_STRING Right,
-                                                    _In_ BOOLEAN CaseInsensitive)
+static __forceinline BOOLEAN BkstrUnicodeEquals(_In_opt_ PCUNICODE_STRING Left, _In_opt_ PCUNICODE_STRING Right,
+                                                _In_ BOOLEAN CaseInsensitive)
 {
     USHORT charCount;
     USHORT i;
@@ -84,8 +84,8 @@ static __forceinline BOOLEAN BLACKBIRDUnicodeEquals(_In_opt_ PCUNICODE_STRING Le
     return TRUE;
 }
 
-static __forceinline VOID BLACKBIRDSafeCopyUnicode(_In_opt_ PCUNICODE_STRING Source,
-                                                   _Out_writes_z_(DestChars) PWSTR Dest, _In_ SIZE_T DestChars)
+static VOID BkstrSafeCopyUnicode(_In_opt_ PCUNICODE_STRING Source, _Out_writes_z_(DestChars) PWSTR Dest,
+                                 _In_ SIZE_T DestChars)
 {
     SIZE_T copyChars;
 
@@ -95,23 +95,30 @@ static __forceinline VOID BLACKBIRDSafeCopyUnicode(_In_opt_ PCUNICODE_STRING Sou
     }
     Dest[0] = L'\0';
 
-    if (Source == NULL || Source->Buffer == NULL || Source->Length == 0)
+    __try
     {
-        return;
-    }
+        if (Source == NULL || Source->Buffer == NULL || Source->Length == 0)
+        {
+            return;
+        }
 
-    copyChars = Source->Length / sizeof(WCHAR);
-    if (copyChars >= DestChars)
-    {
-        copyChars = DestChars - 1;
-    }
-    if (copyChars == 0)
-    {
-        return;
-    }
+        copyChars = Source->Length / sizeof(WCHAR);
+        if (copyChars >= DestChars)
+        {
+            copyChars = DestChars - 1;
+        }
+        if (copyChars == 0)
+        {
+            return;
+        }
 
-    RtlCopyMemory(Dest, Source->Buffer, copyChars * sizeof(WCHAR));
-    Dest[copyChars] = L'\0';
+        RtlCopyMemory(Dest, Source->Buffer, copyChars * sizeof(WCHAR));
+        Dest[copyChars] = L'\0';
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        Dest[0] = L'\0';
+    }
 }
 
 #endif

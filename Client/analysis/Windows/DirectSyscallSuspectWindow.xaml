@@ -406,7 +406,7 @@
                                              HorizontalScrollBarVisibility="Disabled"
                                              MinHeight="120"
                                              AcceptsReturn="True"
-                                             FontFamily="Consolas"
+                                             FontFamily="{DynamicResource AppMonoFontFamily}"
                                              FontSize="12"
                                              Background="Transparent"
                                              Foreground="{DynamicResource WinTextBrush}"/>

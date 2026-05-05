@@ -8,7 +8,7 @@
 #include "..\core\pool_compat.h"
 #include "..\core\unicode_utils.h"
 #include "..\telemetry\etw.h"
-#include "apc_monitor.h"
+#include "..\monitors\apc_monitor.h"
 #include "process_monitor.h"
 #include "..\correlation\intent_store.h"
 #include "handle_monitor.h"
@@ -31,6 +31,22 @@
 
 #ifndef PROCESS_QUERY_LIMITED_INFORMATION
 #define PROCESS_QUERY_LIMITED_INFORMATION 0x1000
+#endif
+
+#ifndef PROCESS_QUERY_INFORMATION
+#define PROCESS_QUERY_INFORMATION 0x0400
+#endif
+
+#ifndef PROCESS_SET_INFORMATION
+#define PROCESS_SET_INFORMATION 0x0200
+#endif
+
+#ifndef PROCESS_CREATE_PROCESS
+#define PROCESS_CREATE_PROCESS 0x0080
+#endif
+
+#ifndef PROCESS_TERMINATE
+#define PROCESS_TERMINATE 0x0001
 #endif
 
 #ifndef THREAD_SET_CONTEXT
@@ -57,8 +73,8 @@
 #define THREAD_ALL_ACCESS (STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFFF)
 #endif
 
-#define BLACKBIRD_PROTECTED_PROCESS_ALLOWED_ACCESS (PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE)
-#define BLACKBIRD_PROTECTED_THREAD_ALLOWED_ACCESS (THREAD_QUERY_LIMITED_INFORMATION | SYNCHRONIZE)
+#define BK_PROTECTED_PROCESS_ALLOWED_ACCESS (PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE)
+#define BK_PROTECTED_THREAD_ALLOWED_ACCESS (THREAD_QUERY_LIMITED_INFORMATION | SYNCHRONIZE)
 
 #ifndef MEM_COMMIT
 #define MEM_COMMIT 0x00001000
@@ -93,7 +109,7 @@ typedef struct _MEMORY_BASIC_INFORMATION
 } MEMORY_BASIC_INFORMATION, *PMEMORY_BASIC_INFORMATION;
 #endif
 
-typedef struct _BLACKBIRD_THREAD_BASIC_INFORMATION
+typedef struct _BK_THREAD_BASIC_INFORMATION
 {
     NTSTATUS ExitStatus;
     PVOID TebBaseAddress;
@@ -101,9 +117,9 @@ typedef struct _BLACKBIRD_THREAD_BASIC_INFORMATION
     KAFFINITY AffinityMask;
     KPRIORITY Priority;
     KPRIORITY BasePriority;
-} BLACKBIRD_THREAD_BASIC_INFORMATION, *PBLACKBIRD_THREAD_BASIC_INFORMATION;
+} BK_THREAD_BASIC_INFORMATION, *PBK_THREAD_BASIC_INFORMATION;
 
-typedef struct _BLACKBIRD_NT_TIB
+typedef struct _BK_NT_TIB
 {
     PVOID ExceptionList;
     PVOID StackBase;
@@ -112,16 +128,16 @@ typedef struct _BLACKBIRD_NT_TIB
     PVOID FiberData;
     PVOID ArbitraryUserPointer;
     PVOID Self;
-} BLACKBIRD_NT_TIB, *PBLACKBIRD_NT_TIB;
+} BK_NT_TIB, *PBK_NT_TIB;
 
-typedef enum _BLACKBIRD_MEMORY_INFORMATION_CLASS
+typedef enum _BK_MEMORY_INFORMATION_CLASS
 {
-    BLACKBIRDMemoryBasicInformation = 0,
-    BLACKBIRDMemorySectionName = 2
-} BLACKBIRD_MEMORY_INFORMATION_CLASS;
+    BkchdlMemoryBasicInformation = 0,
+    BkchdlMemorySectionName = 2
+} BK_MEMORY_INFORMATION_CLASS;
 
 NTSYSAPI NTSTATUS NTAPI ZwQueryVirtualMemory(_In_ HANDLE ProcessHandle, _In_opt_ PVOID BaseAddress,
-                                             _In_ BLACKBIRD_MEMORY_INFORMATION_CLASS MemoryInformationClass,
+                                             _In_ BK_MEMORY_INFORMATION_CLASS MemoryInformationClass,
                                              _Out_writes_bytes_(MemoryInformationLength) PVOID MemoryInformation,
                                              _In_ SIZE_T MemoryInformationLength, _Out_opt_ PSIZE_T ReturnLength);
 NTSYSAPI NTSTATUS NTAPI ZwOpenThread(_Out_ PHANDLE ThreadHandle, _In_ ACCESS_MASK DesiredAccess,
@@ -136,6 +152,7 @@ NTSYSAPI VOID NTAPI RtlCaptureContext(_Out_ PCONTEXT ContextRecord);
 #endif
 
 NTKERNELAPI HANDLE PsGetThreadProcessId(_In_ PETHREAD Thread);
+NTKERNELAPI HANDLE PsGetThreadId(_In_ PETHREAD Thread);
 NTKERNELAPI NTSTATUS PsLookupProcessByProcessId(_In_ HANDLE ProcessId, _Outptr_ PEPROCESS *Process);
 NTKERNELAPI PCHAR PsGetProcessImageFileName(_In_ PEPROCESS Process);
 NTKERNELAPI NTSTATUS MmCopyVirtualMemory(_In_ PEPROCESS FromProcess, _In_ const VOID *FromAddress,
@@ -143,10 +160,11 @@ NTKERNELAPI NTSTATUS MmCopyVirtualMemory(_In_ PEPROCESS FromProcess, _In_ const 
                                          _In_ SIZE_T BufferSize, _In_ KPROCESSOR_MODE PreviousMode,
                                          _Out_ PSIZE_T NumberOfBytesCopied);
 
-#define BLACKBIRD_HANDLE_MAX_OUTSTANDING_WORK 2048
-#define BLACKBIRD_DEEP_CAPTURE_MAX_BYTES 64
-#define BLACKBIRD_DEEP_CACHE_RING_SIZE 64
-#define BLACKBIRD_DEEP_CACHE_TTL_MS 3000
+#define BK_HANDLE_MAX_OUTSTANDING_WORK 2048
+#define BK_DEEP_CAPTURE_MAX_BYTES 64
+#define BK_DEEP_CACHE_RING_SIZE 64
+#define BK_DEEP_CACHE_TTL_MS 3000
+#define BK_SYSCALL_EXPORT_MATCH_WINDOW_BYTES 0x40u
 
 static PVOID g_ProcessObRegistrationHandle = NULL;
 static OB_OPERATION_REGISTRATION g_OperationRegistration[2];
@@ -166,7 +184,7 @@ static KSPIN_LOCK g_DeepCacheLock;
 static volatile LONG g_DeepCacheWriteIndex = -1;
 static ULONGLONG g_DeepCacheQpcFrequency = 1;
 
-typedef struct _BLACKBIRD_DEEP_CACHE_ENTRY
+typedef struct _BK_DEEP_CACHE_ENTRY
 {
     UINT64 CallerPid;
     UINT64 AllocationBase;
@@ -175,33 +193,35 @@ typedef struct _BLACKBIRD_DEEP_CACHE_ENTRY
     ULONG RegionProtect;
     ULONG RegionState;
     ULONG RegionType;
-    UCHAR Sample[BLACKBIRD_DEEP_CAPTURE_MAX_BYTES];
+    UCHAR Sample[BK_DEEP_CAPTURE_MAX_BYTES];
     UINT32 SampleSize;
     INT64 TimestampQpc;
-} BLACKBIRD_DEEP_CACHE_ENTRY, *PBLACKBIRD_DEEP_CACHE_ENTRY;
+} BK_DEEP_CACHE_ENTRY, *PBK_DEEP_CACHE_ENTRY;
 
-static BLACKBIRD_DEEP_CACHE_ENTRY g_DeepCache[BLACKBIRD_DEEP_CACHE_RING_SIZE];
+static BK_DEEP_CACHE_ENTRY g_DeepCache[BK_DEEP_CACHE_RING_SIZE];
 
 /*
  * Hot-path debug tracing is disabled by default to prevent KD console flooding.
- * Define BLACKBIRD_VERBOSE_HOTPATH_DEBUG=1 for local deep diagnostics.
+ * Define BK_VERBOSE_HOTPATH_DEBUG=1 for local deep diagnostics.
  */
-#if !defined(BLACKBIRD_VERBOSE_HOTPATH_DEBUG)
-#define BLACKBIRD_VERBOSE_HOTPATH_DEBUG 0
+#if !defined(BK_VERBOSE_HOTPATH_DEBUG)
+#define BK_VERBOSE_HOTPATH_DEBUG 0
 #endif
 
-#if defined(DBG) && DBG && BLACKBIRD_VERBOSE_HOTPATH_DEBUG
-#define BLACKBIRD_DBG_PRINT(_level, ...) DbgPrintEx(DPFLTR_IHVDRIVER_ID, (_level), __VA_ARGS__)
+#if defined(DBG) && DBG && BK_VERBOSE_HOTPATH_DEBUG
+#define BK_DBG_PRINT(_level, ...) DbgPrintEx(DPFLTR_IHVDRIVER_ID, (_level), __VA_ARGS__)
 #else
-#define BLACKBIRD_DBG_PRINT(_level, ...) ((void)0)
+#define BK_DBG_PRINT(_level, ...) ((void)0)
 #endif
 
-typedef struct _BLACKBIRD_HANDLE_WORK
+typedef struct _BK_HANDLE_WORK
 {
     WORK_QUEUE_ITEM WorkItem;
     HANDLE CallerPid;
     HANDLE CallerTid;
     HANDLE TargetPid;
+    HANDLE TargetTid;
+    UINT64 ObjectAddress;
     ACCESS_MASK DesiredAccess;
     BOOLEAN IsThreadObject;
     BOOLEAN IsDuplicateOperation;
@@ -209,7 +229,7 @@ typedef struct _BLACKBIRD_HANDLE_WORK
     ULONG FrameCount;
     PVOID Frames[8];
     ULONG FullFrameCount;
-    PVOID FullFrames[BLACKBIRD_MAX_FULL_EVENT_FRAMES];
+    PVOID FullFrames[BK_MAX_FULL_EVENT_FRAMES];
     UINT64 RegRax;
     UINT64 RegRbx;
     UINT64 RegRcx;
@@ -236,17 +256,17 @@ typedef struct _BLACKBIRD_HANDLE_WORK
     UINT64 RegDr7;
     UINT64 EarlyOriginAddress;
     ULONG EarlyOriginSampleSize;
-    UCHAR EarlyOriginSample[BLACKBIRD_DEEP_CAPTURE_MAX_BYTES];
-} BLACKBIRD_HANDLE_WORK, *PBLACKBIRD_HANDLE_WORK;
+    UCHAR EarlyOriginSample[BK_DEEP_CAPTURE_MAX_BYTES];
+} BK_HANDLE_WORK, *PBK_HANDLE_WORK;
 
-typedef enum _BLACKBIRD_HANDLE_CLASSIFICATION
+typedef enum _BK_HANDLE_CLASSIFICATION
 {
-    BLACKBIRDHandleUnknown = 0,
-    BLACKBIRDHandleLegitimateSyscall,
-    BLACKBIRDHandleDirectSyscallSuspect
-} BLACKBIRD_HANDLE_CLASSIFICATION;
+    BkchdlHandleUnknown = 0,
+    BkchdlHandleLegitimateSyscall,
+    BkchdlHandleDirectSyscallSuspect
+} BK_HANDLE_CLASSIFICATION;
 
-typedef struct _BLACKBIRD_HANDLE_TELEMETRY
+typedef struct _BK_HANDLE_TELEMETRY
 {
     PVOID OriginAddress;
     PVOID AllocationBase;
@@ -261,7 +281,7 @@ typedef struct _BLACKBIRD_HANDLE_TELEMETRY
     NTSTATUS BasicInfoStatus;
     NTSTATUS SectionNameStatus;
     ULONG DeepSampleSize;
-    UCHAR DeepSample[BLACKBIRD_DEEP_CAPTURE_MAX_BYTES];
+    UCHAR DeepSample[BK_DEEP_CAPTURE_MAX_BYTES];
     BOOLEAN DeepPathCandidate;
     BOOLEAN DeepPathCaptured;
     BOOLEAN DeepPathCacheHit;
@@ -279,7 +299,7 @@ typedef struct _BLACKBIRD_HANDLE_TELEMETRY
     BOOLEAN FramesOutsideTebStack;
     UINT32 CaptureFlags;
     ULONG FullFrameCount;
-    PVOID FullFrames[BLACKBIRD_MAX_FULL_EVENT_FRAMES];
+    PVOID FullFrames[BK_MAX_FULL_EVENT_FRAMES];
     UINT64 RegRax;
     UINT64 RegRbx;
     UINT64 RegRcx;
@@ -306,10 +326,10 @@ typedef struct _BLACKBIRD_HANDLE_TELEMETRY
     UINT64 RegDr7;
     UINT64 StackSnapshotAddress;
     ULONG StackSnapshotSize;
-    UCHAR StackSnapshot[BLACKBIRD_MAX_STACK_SNAPSHOT_BYTES];
-} BLACKBIRD_HANDLE_TELEMETRY, *PBLACKBIRD_HANDLE_TELEMETRY;
+    UCHAR StackSnapshot[BK_MAX_STACK_SNAPSHOT_BYTES];
+} BK_HANDLE_TELEMETRY, *PBK_HANDLE_TELEMETRY;
 
-static VOID BLACKBIRDCaptureRegisterSnapshot(_Out_ PBLACKBIRD_HANDLE_WORK Work)
+static VOID BkchdlCaptureRegisterSnapshot(_Out_ PBK_HANDLE_WORK Work)
 {
 #if defined(_M_AMD64)
     CONTEXT context;
@@ -320,7 +340,6 @@ static VOID BLACKBIRDCaptureRegisterSnapshot(_Out_ PBLACKBIRD_HANDLE_WORK Work)
     }
 
     RtlZeroMemory(&context, sizeof(context));
-    // Snapshot the callback-time CPU state as forensic context without suspending the caller thread.
     RtlCaptureContext(&context);
 
     Work->RegRax = context.Rax;
@@ -341,7 +360,7 @@ static VOID BLACKBIRDCaptureRegisterSnapshot(_Out_ PBLACKBIRD_HANDLE_WORK Work)
     Work->RegR15 = context.R15;
     Work->RegRip = context.Rip;
     Work->RegEFlags = context.EFlags;
-    Work->CaptureFlags |= BLACKBIRD_HANDLE_CAPTURE_CONTEXT_VALID;
+    Work->CaptureFlags |= BK_HANDLE_CAPTURE_CONTEXT_VALID;
 
     __try
     {
@@ -351,7 +370,7 @@ static VOID BLACKBIRDCaptureRegisterSnapshot(_Out_ PBLACKBIRD_HANDLE_WORK Work)
         Work->RegDr3 = __readdr(3);
         Work->RegDr6 = __readdr(6);
         Work->RegDr7 = __readdr(7);
-        Work->CaptureFlags |= BLACKBIRD_HANDLE_CAPTURE_DEBUG_REGS_VALID;
+        Work->CaptureFlags |= BK_HANDLE_CAPTURE_DEBUG_REGS_VALID;
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
@@ -361,8 +380,8 @@ static VOID BLACKBIRDCaptureRegisterSnapshot(_Out_ PBLACKBIRD_HANDLE_WORK Work)
 #endif
 }
 
-static VOID BLACKBIRDApplyWorkCaptureToTelemetry(_In_opt_ const BLACKBIRD_HANDLE_WORK *Work,
-                                                 _Inout_ PBLACKBIRD_HANDLE_TELEMETRY Telemetry)
+static VOID BkchdlApplyWorkCaptureToTelemetry(_In_opt_ const BK_HANDLE_WORK *Work,
+                                              _Inout_ PBK_HANDLE_TELEMETRY Telemetry)
 {
     ULONG safeFullCount;
 
@@ -379,7 +398,7 @@ static VOID BLACKBIRDApplyWorkCaptureToTelemetry(_In_opt_ const BLACKBIRD_HANDLE
     if (safeFullCount != 0)
     {
         RtlCopyMemory(Telemetry->FullFrames, Work->FullFrames, safeFullCount * sizeof(PVOID));
-        Telemetry->CaptureFlags |= BLACKBIRD_HANDLE_CAPTURE_FULL_FRAMES_VALID;
+        Telemetry->CaptureFlags |= BK_HANDLE_CAPTURE_FULL_FRAMES_VALID;
     }
 
     Telemetry->RegRax = Work->RegRax;
@@ -408,8 +427,8 @@ static VOID BLACKBIRDApplyWorkCaptureToTelemetry(_In_opt_ const BLACKBIRD_HANDLE
     Telemetry->RegDr7 = Work->RegDr7;
 }
 
-static VOID BLACKBIRDCaptureStackSnapshot(_In_ PEPROCESS SourceProcess, _In_ UINT64 StackPointer,
-                                          _Inout_ PBLACKBIRD_HANDLE_TELEMETRY Telemetry)
+static VOID BkchdlCaptureStackSnapshot(_In_ PEPROCESS SourceProcess, _In_ UINT64 StackPointer,
+                                       _Inout_ PBK_HANDLE_TELEMETRY Telemetry)
 {
     NTSTATUS status;
     SIZE_T bytesRead = 0;
@@ -435,21 +454,21 @@ static VOID BLACKBIRDCaptureStackSnapshot(_In_ PEPROCESS SourceProcess, _In_ UIN
 
     Telemetry->StackSnapshotAddress = StackPointer;
     Telemetry->StackSnapshotSize = (ULONG)bytesRead;
-    Telemetry->CaptureFlags |= BLACKBIRD_HANDLE_CAPTURE_STACK_SNAPSHOT_VALID;
+    Telemetry->CaptureFlags |= BK_HANDLE_CAPTURE_STACK_SNAPSHOT_VALID;
 }
 
-static BOOLEAN BLACKBIRDHandleTryAcquireWorkSlot(VOID)
+static BOOLEAN BkchdlHandleTryAcquireWorkSlot(VOID)
 {
     LONG current;
 
     for (;;)
     {
         current = InterlockedCompareExchange(&g_HandleOutstandingWork, 0, 0);
-        if (current >= BLACKBIRD_HANDLE_MAX_OUTSTANDING_WORK)
+        if (current >= BK_HANDLE_MAX_OUTSTANDING_WORK)
         {
             InterlockedIncrement(&g_HandleDroppedWork);
-            BLACKBIRD_DBG_PRINT(DPFLTR_WARNING_LEVEL, "BLACKBIRD[DBG]: handle monitor work queue full (max=%lu).\n",
-                                BLACKBIRD_HANDLE_MAX_OUTSTANDING_WORK);
+            BK_DBG_PRINT(DPFLTR_WARNING_LEVEL, "BK[DBG]: handle monitor work queue full (max=%lu).\n",
+                         BK_HANDLE_MAX_OUTSTANDING_WORK);
             return FALSE;
         }
 
@@ -464,7 +483,7 @@ static BOOLEAN BLACKBIRDHandleTryAcquireWorkSlot(VOID)
     }
 }
 
-static VOID BLACKBIRDHandleReleaseWorkSlot(VOID)
+static VOID BkchdlHandleReleaseWorkSlot(VOID)
 {
     if (InterlockedDecrement(&g_HandleOutstandingWork) == 0)
     {
@@ -472,7 +491,7 @@ static VOID BLACKBIRDHandleReleaseWorkSlot(VOID)
     }
 }
 
-static ULONGLONG BLACKBIRDDeepCacheMsToQpc(_In_ UINT32 Ms)
+static ULONGLONG BkchdlDeepCacheMsToQpc(_In_ UINT32 Ms)
 {
     ULONGLONG ticks;
 
@@ -485,11 +504,10 @@ static ULONGLONG BLACKBIRDDeepCacheMsToQpc(_In_ UINT32 Ms)
     return (ticks == 0) ? 1 : ticks;
 }
 
-static BOOLEAN BLACKBIRDDeepCacheLookup(_In_ HANDLE CallerPid, _In_ PVOID AllocationBase, _In_ PVOID SampleAddress,
-                                        _In_ SIZE_T RegionSize, _In_ ULONG RegionProtect, _In_ ULONG RegionState,
-                                        _In_ ULONG RegionType,
-                                        _Out_writes_bytes_(BLACKBIRD_DEEP_CAPTURE_MAX_BYTES) UCHAR *Sample,
-                                        _Out_ UINT32 *SampleSize)
+static BOOLEAN BkchdlDeepCacheLookup(_In_ HANDLE CallerPid, _In_ PVOID AllocationBase, _In_ PVOID SampleAddress,
+                                     _In_ SIZE_T RegionSize, _In_ ULONG RegionProtect, _In_ ULONG RegionState,
+                                     _In_ ULONG RegionType, _Out_writes_bytes_(BK_DEEP_CAPTURE_MAX_BYTES) UCHAR *Sample,
+                                     _Out_ UINT32 *SampleSize)
 {
     KIRQL oldIrql;
     UINT32 i;
@@ -502,11 +520,11 @@ static BOOLEAN BLACKBIRDDeepCacheLookup(_In_ HANDLE CallerPid, _In_ PVOID Alloca
     }
 
     nowQpc = KeQueryPerformanceCounter(NULL).QuadPart;
-    maxAgeQpc = BLACKBIRDDeepCacheMsToQpc(BLACKBIRD_DEEP_CACHE_TTL_MS);
+    maxAgeQpc = BkchdlDeepCacheMsToQpc(BK_DEEP_CACHE_TTL_MS);
     KeAcquireSpinLock(&g_DeepCacheLock, &oldIrql);
     for (i = 0; i < RTL_NUMBER_OF(g_DeepCache); ++i)
     {
-        const BLACKBIRD_DEEP_CACHE_ENTRY *e = &g_DeepCache[i];
+        const BK_DEEP_CACHE_ENTRY *e = &g_DeepCache[i];
         INT64 ageQpc;
         UINT32 safeSize;
 
@@ -527,8 +545,7 @@ static BOOLEAN BLACKBIRDDeepCacheLookup(_In_ HANDLE CallerPid, _In_ PVOID Alloca
             continue;
         }
 
-        safeSize =
-            (e->SampleSize > BLACKBIRD_DEEP_CAPTURE_MAX_BYTES) ? BLACKBIRD_DEEP_CAPTURE_MAX_BYTES : e->SampleSize;
+        safeSize = (e->SampleSize > BK_DEEP_CAPTURE_MAX_BYTES) ? BK_DEEP_CAPTURE_MAX_BYTES : e->SampleSize;
         *SampleSize = safeSize;
         if (safeSize != 0)
         {
@@ -541,10 +558,10 @@ static BOOLEAN BLACKBIRDDeepCacheLookup(_In_ HANDLE CallerPid, _In_ PVOID Alloca
     return FALSE;
 }
 
-static VOID BLACKBIRDDeepCacheStore(_In_ HANDLE CallerPid, _In_ PVOID AllocationBase, _In_ PVOID SampleAddress,
-                                    _In_ SIZE_T RegionSize, _In_ ULONG RegionProtect, _In_ ULONG RegionState,
-                                    _In_ ULONG RegionType, _In_reads_bytes_(SampleSize) const UCHAR *Sample,
-                                    _In_ UINT32 SampleSize)
+static VOID BkchdlDeepCacheStore(_In_ HANDLE CallerPid, _In_ PVOID AllocationBase, _In_ PVOID SampleAddress,
+                                 _In_ SIZE_T RegionSize, _In_ ULONG RegionProtect, _In_ ULONG RegionState,
+                                 _In_ ULONG RegionType, _In_reads_bytes_(SampleSize) const UCHAR *Sample,
+                                 _In_ UINT32 SampleSize)
 {
     LONG idx;
     UINT32 slot;
@@ -556,7 +573,7 @@ static VOID BLACKBIRDDeepCacheStore(_In_ HANDLE CallerPid, _In_ PVOID Allocation
         return;
     }
 
-    safeSize = (SampleSize > BLACKBIRD_DEEP_CAPTURE_MAX_BYTES) ? BLACKBIRD_DEEP_CAPTURE_MAX_BYTES : SampleSize;
+    safeSize = (SampleSize > BK_DEEP_CAPTURE_MAX_BYTES) ? BK_DEEP_CAPTURE_MAX_BYTES : SampleSize;
 
     idx = InterlockedIncrement(&g_DeepCacheWriteIndex);
     if (idx < 0)
@@ -579,8 +596,8 @@ static VOID BLACKBIRDDeepCacheStore(_In_ HANDLE CallerPid, _In_ PVOID Allocation
     KeReleaseSpinLock(&g_DeepCacheLock, oldIrql);
 }
 
-static BOOLEAN BLACKBIRDReadProcessBytes(_In_ PEPROCESS SourceProcess, _In_ const VOID *Address,
-                                         _Out_writes_bytes_(Size) VOID *Buffer, _In_ SIZE_T Size)
+static BOOLEAN BkchdlReadProcessBytes(_In_ PEPROCESS SourceProcess, _In_ const VOID *Address,
+                                      _Out_writes_bytes_(Size) VOID *Buffer, _In_ SIZE_T Size)
 {
     NTSTATUS status;
     SIZE_T bytesRead = 0;
@@ -596,8 +613,8 @@ static BOOLEAN BLACKBIRDReadProcessBytes(_In_ PEPROCESS SourceProcess, _In_ cons
     return NT_SUCCESS(status) && bytesRead == Size;
 }
 
-static VOID BLACKBIRDCaptureImmediateOriginSample(_In_ HANDLE CallerProcessId, _In_ PVOID OriginAddress,
-                                                  _Inout_ PBLACKBIRD_HANDLE_WORK Work)
+static VOID BkchdlCaptureImmediateOriginSample(_In_ HANDLE CallerProcessId, _In_ PVOID OriginAddress,
+                                               _Inout_ PBK_HANDLE_WORK Work)
 {
     NTSTATUS status;
     PEPROCESS sourceProcess = NULL;
@@ -633,7 +650,7 @@ static VOID BLACKBIRDCaptureImmediateOriginSample(_In_ HANDLE CallerProcessId, _
     Work->EarlyOriginSampleSize = (ULONG)bytesRead;
 }
 
-static CHAR BLACKBIRDAsciiUpper(_In_ CHAR Value)
+static CHAR BkchdlAsciiUpper(_In_ CHAR Value)
 {
     if (Value >= 'a' && Value <= 'z')
     {
@@ -642,7 +659,7 @@ static CHAR BLACKBIRDAsciiUpper(_In_ CHAR Value)
     return Value;
 }
 
-static BOOLEAN BLACKBIRDAsciiEqualsInsensitive(_In_z_ const CHAR *Left, _In_z_ const CHAR *Right)
+static BOOLEAN BkchdlAsciiEqualsInsensitive(_In_z_ const CHAR *Left, _In_z_ const CHAR *Right)
 {
     SIZE_T i;
 
@@ -653,8 +670,8 @@ static BOOLEAN BLACKBIRDAsciiEqualsInsensitive(_In_z_ const CHAR *Left, _In_z_ c
 
     for (i = 0;; ++i)
     {
-        CHAR a = BLACKBIRDAsciiUpper(Left[i]);
-        CHAR b = BLACKBIRDAsciiUpper(Right[i]);
+        CHAR a = BkchdlAsciiUpper(Left[i]);
+        CHAR b = BkchdlAsciiUpper(Right[i]);
         if (a != b)
         {
             return FALSE;
@@ -666,8 +683,8 @@ static BOOLEAN BLACKBIRDAsciiEqualsInsensitive(_In_z_ const CHAR *Left, _In_z_ c
     }
 }
 
-static BOOLEAN BLACKBIRDExtractSyscallNumberNearAddress(_In_ PEPROCESS SourceProcess, _In_ const VOID *Address,
-                                                        _Out_ ULONG *SyscallNumber)
+static BOOLEAN BkchdlExtractSyscallNumberNearAddress(_In_ PEPROCESS SourceProcess, _In_ const VOID *Address,
+                                                     _Out_ ULONG *SyscallNumber)
 {
     UCHAR bytes[64];
     ULONG_PTR base;
@@ -691,7 +708,7 @@ static BOOLEAN BLACKBIRDExtractSyscallNumberNearAddress(_In_ PEPROCESS SourcePro
 
     base -= 32;
     readLen = sizeof(bytes);
-    if (!BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)base, bytes, readLen))
+    if (!BkchdlReadProcessBytes(SourceProcess, (const VOID *)base, bytes, readLen))
     {
         return FALSE;
     }
@@ -740,7 +757,7 @@ static BOOLEAN BLACKBIRDExtractSyscallNumberNearAddress(_In_ PEPROCESS SourcePro
     return TRUE;
 }
 
-static BOOLEAN BLACKBIRDValidateReturnAddress(_In_ PEPROCESS SourceProcess, _In_ PVOID ReturnAddress)
+static BOOLEAN BkchdlValidateReturnAddress(_In_ PEPROCESS SourceProcess, _In_ PVOID ReturnAddress)
 {
     UCHAR tail[8];
     ULONG_PTR addrValue;
@@ -756,7 +773,7 @@ static BOOLEAN BLACKBIRDValidateReturnAddress(_In_ PEPROCESS SourceProcess, _In_
         return FALSE;
     }
 
-    if (!BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)(addrValue - sizeof(tail)), tail, sizeof(tail)))
+    if (!BkchdlReadProcessBytes(SourceProcess, (const VOID *)(addrValue - sizeof(tail)), tail, sizeof(tail)))
     {
         return FALSE;
     }
@@ -773,8 +790,8 @@ static BOOLEAN BLACKBIRDValidateReturnAddress(_In_ PEPROCESS SourceProcess, _In_
     return FALSE;
 }
 
-static BOOLEAN BLACKBIRDValidateStackFrames(_In_ HANDLE ProcessHandle, _In_ ULONG FrameCount,
-                                            _In_reads_(FrameCount) PVOID *Frames, _Out_ BOOLEAN *SpoofSuspect)
+static BOOLEAN BkchdlValidateStackFrames(_In_ HANDLE ProcessHandle, _In_ ULONG FrameCount,
+                                         _In_reads_(FrameCount) PVOID *Frames, _Out_ BOOLEAN *SpoofSuspect)
 {
     ULONG i;
     PVOID priorFrame = NULL;
@@ -806,13 +823,13 @@ static BOOLEAN BLACKBIRDValidateStackFrames(_In_ HANDLE ProcessHandle, _In_ ULON
         }
 
         RtlZeroMemory(&mbi, sizeof(mbi));
-        status = ZwQueryVirtualMemory(ProcessHandle, frame, BLACKBIRDMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
+        status = ZwQueryVirtualMemory(ProcessHandle, frame, BkchdlMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
         if (!NT_SUCCESS(status))
         {
             return FALSE;
         }
 
-        execProtect = BLACKBIRDIsExecutableProtection(mbi.Protect);
+        execProtect = BkprotIsExecutableProtection(mbi.Protect);
         if (mbi.State != MEM_COMMIT || !execProtect)
         {
             return FALSE;
@@ -829,7 +846,7 @@ static BOOLEAN BLACKBIRDValidateStackFrames(_In_ HANDLE ProcessHandle, _In_ ULON
     return TRUE;
 }
 
-static PCSTR BLACKBIRDGetExpectedSyscallExport(_In_ BOOLEAN IsThreadObject, _In_ BOOLEAN IsDuplicateOperation)
+static PCSTR BkchdlGetExpectedSyscallExport(_In_ BOOLEAN IsThreadObject, _In_ BOOLEAN IsDuplicateOperation)
 {
     if (IsDuplicateOperation)
     {
@@ -842,33 +859,33 @@ static PCSTR BLACKBIRDGetExpectedSyscallExport(_In_ BOOLEAN IsThreadObject, _In_
     return "NtOpenProcess";
 }
 
-static BOOLEAN BLACKBIRDIsNtdllPath(_In_ const UNICODE_STRING *Path)
+static BOOLEAN BkchdlIsNtdllPath(_In_ const UNICODE_STRING *Path)
 {
     if (Path == NULL || Path->Buffer == NULL || Path->Length == 0)
     {
         return FALSE;
     }
 
-    return BLACKBIRDUnicodeContainsInsensitive(Path, L"ntdll.dll", 9);
+    return BkstrUnicodeContainsInsensitive(Path, L"ntdll.dll", 9);
 }
 
-static BOOLEAN BLACKBIRDIsSyscallStubModulePath(_In_ const UNICODE_STRING *Path)
+static BOOLEAN BkchdlIsSyscallStubModulePath(_In_ const UNICODE_STRING *Path)
 {
     if (Path == NULL || Path->Buffer == NULL || Path->Length == 0)
     {
         return FALSE;
     }
 
-    if (BLACKBIRDIsNtdllPath(Path))
+    if (BkchdlIsNtdllPath(Path))
     {
         return TRUE;
     }
 
-    return BLACKBIRDUnicodeContainsInsensitive(Path, L"win32u.dll", 10);
+    return BkstrUnicodeContainsInsensitive(Path, L"win32u.dll", 10);
 }
 
-static BOOLEAN BLACKBIRDGetNtdllBaseFromFrames(_In_ HANDLE ProcessHandle, _In_ ULONG FrameCount,
-                                               _In_reads_(FrameCount) PVOID *Frames, _Out_ PVOID *NtdllBase)
+static BOOLEAN BkchdlGetNtdllBaseFromFrames(_In_ HANDLE ProcessHandle, _In_ ULONG FrameCount,
+                                            _In_reads_(FrameCount) PVOID *Frames, _Out_ PVOID *NtdllBase)
 {
     ULONG i;
     WCHAR sectionPath[512];
@@ -898,15 +915,14 @@ static BOOLEAN BLACKBIRDGetNtdllBaseFromFrames(_In_ HANDLE ProcessHandle, _In_ U
         }
 
         RtlZeroMemory(&mbi, sizeof(mbi));
-        status =
-            ZwQueryVirtualMemory(ProcessHandle, Frames[i], BLACKBIRDMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
+        status = ZwQueryVirtualMemory(ProcessHandle, Frames[i], BkchdlMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
         if (!NT_SUCCESS(status) || mbi.AllocationBase == NULL)
         {
             continue;
         }
 
         RtlZeroMemory(sectionNameRaw, sizeof(sectionNameRaw));
-        status = ZwQueryVirtualMemory(ProcessHandle, Frames[i], BLACKBIRDMemorySectionName, sectionNameRaw,
+        status = ZwQueryVirtualMemory(ProcessHandle, Frames[i], BkchdlMemorySectionName, sectionNameRaw,
                                       sizeof(sectionNameRaw), NULL);
         if (!NT_SUCCESS(status))
         {
@@ -915,9 +931,9 @@ static BOOLEAN BLACKBIRDGetNtdllBaseFromFrames(_In_ HANDLE ProcessHandle, _In_ U
 
         sectionName = (PUNICODE_STRING)sectionNameRaw;
         RtlZeroMemory(sectionPath, sizeof(sectionPath));
-        BLACKBIRDSafeCopyUnicode(sectionName, sectionPath, RTL_NUMBER_OF(sectionPath));
+        BkstrSafeCopyUnicode(sectionName, sectionPath, RTL_NUMBER_OF(sectionPath));
         RtlInitUnicodeString(&sectionUs, sectionPath);
-        if (!BLACKBIRDIsNtdllPath(&sectionUs))
+        if (!BkchdlIsNtdllPath(&sectionUs))
         {
             continue;
         }
@@ -929,8 +945,52 @@ static BOOLEAN BLACKBIRDGetNtdllBaseFromFrames(_In_ HANDLE ProcessHandle, _In_ U
     return FALSE;
 }
 
-static BOOLEAN BLACKBIRDResolveExportSyscallNumber(_In_ PEPROCESS SourceProcess, _In_ PVOID ModuleBase,
-                                                   _In_z_ PCSTR ExportName, _Out_ ULONG *SyscallNumber)
+static BOOLEAN BkchdlAddressWithinExportWindow(_In_opt_ PVOID Address, _In_opt_ PVOID ExportAddress)
+{
+    ULONG_PTR address;
+    ULONG_PTR exportAddress;
+
+    if (Address == NULL || ExportAddress == NULL)
+    {
+        return FALSE;
+    }
+
+    address = (ULONG_PTR)Address;
+    exportAddress = (ULONG_PTR)ExportAddress;
+    return address >= exportAddress && (address - exportAddress) < BK_SYSCALL_EXPORT_MATCH_WINDOW_BYTES;
+}
+
+static BOOLEAN BkchdlBuildZwAlias(_In_z_ PCSTR ExportName, _Out_writes_(AliasChars) PCHAR Alias, _In_ SIZE_T AliasChars)
+{
+    SIZE_T i;
+
+    if (ExportName == NULL || Alias == NULL || AliasChars < 3)
+    {
+        return FALSE;
+    }
+    if (ExportName[0] != 'N' || ExportName[1] != 't')
+    {
+        return FALSE;
+    }
+
+    Alias[0] = 'Z';
+    Alias[1] = 'w';
+    for (i = 2; i < AliasChars - 1; ++i)
+    {
+        Alias[i] = ExportName[i];
+        if (ExportName[i] == '\0')
+        {
+            return TRUE;
+        }
+    }
+
+    Alias[AliasChars - 1] = '\0';
+    return FALSE;
+}
+
+static BOOLEAN BkchdlResolveExportSyscallNumber(_In_ PEPROCESS SourceProcess, _In_ PVOID ModuleBase,
+                                                _In_z_ PCSTR ExportName, _Out_ ULONG *SyscallNumber,
+                                                _Out_opt_ PVOID *ExportAddress)
 {
     IMAGE_DOS_HEADER dos;
     IMAGE_NT_HEADERS64 nt;
@@ -943,13 +1003,18 @@ static BOOLEAN BLACKBIRDResolveExportSyscallNumber(_In_ PEPROCESS SourceProcess,
     ULONG *funcRvas = NULL;
     ULONG i;
     BOOLEAN success = FALSE;
+    PVOID resolvedAddress = NULL;
 
     if (SourceProcess == NULL || ModuleBase == NULL || ExportName == NULL || SyscallNumber == NULL)
     {
         return FALSE;
     }
+    if (ExportAddress != NULL)
+    {
+        *ExportAddress = NULL;
+    }
 
-    if (!BLACKBIRDReadProcessBytes(SourceProcess, ModuleBase, &dos, sizeof(dos)))
+    if (!BkchdlReadProcessBytes(SourceProcess, ModuleBase, &dos, sizeof(dos)))
     {
         goto Exit;
     }
@@ -962,8 +1027,8 @@ static BOOLEAN BLACKBIRDResolveExportSyscallNumber(_In_ PEPROCESS SourceProcess,
         goto Exit;
     }
 
-    if (!BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + (ULONG_PTR)dos.e_lfanew), &nt,
-                                   sizeof(nt)))
+    if (!BkchdlReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + (ULONG_PTR)dos.e_lfanew), &nt,
+                                sizeof(nt)))
     {
         goto Exit;
     }
@@ -981,7 +1046,7 @@ static BOOLEAN BLACKBIRDResolveExportSyscallNumber(_In_ PEPROCESS SourceProcess,
         goto Exit;
     }
 
-    if (!BLACKBIRDReadProcessBytes(
+    if (!BkchdlReadProcessBytes(
             SourceProcess,
             (const VOID *)((ULONG_PTR)ModuleBase +
                            nt.OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress),
@@ -1001,20 +1066,20 @@ static BOOLEAN BLACKBIRDResolveExportSyscallNumber(_In_ PEPROCESS SourceProcess,
     ordinalsSize = exports.NumberOfNames * sizeof(USHORT);
     funcsSize = exports.NumberOfFunctions * sizeof(ULONG);
 
-    nameRvas = (ULONG *)BLACKBIRDAllocatePoolCompat(POOL_FLAG_PAGED, namesSize, 'ndtT');
-    ordinals = (USHORT *)BLACKBIRDAllocatePoolCompat(POOL_FLAG_PAGED, ordinalsSize, 'odtT');
-    funcRvas = (ULONG *)BLACKBIRDAllocatePoolCompat(POOL_FLAG_PAGED, funcsSize, 'fdtT');
+    nameRvas = (ULONG *)BkpoolAllocateCompat(POOL_FLAG_PAGED, namesSize, 'ndtT');
+    ordinals = (USHORT *)BkpoolAllocateCompat(POOL_FLAG_PAGED, ordinalsSize, 'odtT');
+    funcRvas = (ULONG *)BkpoolAllocateCompat(POOL_FLAG_PAGED, funcsSize, 'fdtT');
     if (nameRvas == NULL || ordinals == NULL || funcRvas == NULL)
     {
         goto Exit;
     }
 
-    if (!BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + exports.AddressOfNames),
-                                   nameRvas, namesSize) ||
-        !BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + exports.AddressOfNameOrdinals),
-                                   ordinals, ordinalsSize) ||
-        !BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + exports.AddressOfFunctions),
-                                   funcRvas, funcsSize))
+    if (!BkchdlReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + exports.AddressOfNames), nameRvas,
+                                namesSize) ||
+        !BkchdlReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + exports.AddressOfNameOrdinals),
+                                ordinals, ordinalsSize) ||
+        !BkchdlReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + exports.AddressOfFunctions),
+                                funcRvas, funcsSize))
     {
         goto Exit;
     }
@@ -1033,8 +1098,8 @@ static BOOLEAN BLACKBIRDResolveExportSyscallNumber(_In_ PEPROCESS SourceProcess,
         }
 
         RtlZeroMemory(nameBuffer, sizeof(nameBuffer));
-        if (!BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + nameRvas[i]), nameBuffer,
-                                       sizeof(nameBuffer) - 1))
+        if (!BkchdlReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + nameRvas[i]), nameBuffer,
+                                    sizeof(nameBuffer) - 1))
         {
             continue;
         }
@@ -1050,7 +1115,7 @@ static BOOLEAN BLACKBIRDResolveExportSyscallNumber(_In_ PEPROCESS SourceProcess,
         {
             continue;
         }
-        if (!BLACKBIRDAsciiEqualsInsensitive(nameBuffer, ExportName))
+        if (!BkchdlAsciiEqualsInsensitive(nameBuffer, ExportName))
         {
             continue;
         }
@@ -1067,11 +1132,19 @@ static BOOLEAN BLACKBIRDResolveExportSyscallNumber(_In_ PEPROCESS SourceProcess,
             break;
         }
         funcAddress = (PVOID)((ULONG_PTR)ModuleBase + funcRva);
-        success = BLACKBIRDExtractSyscallNumberNearAddress(SourceProcess, funcAddress, SyscallNumber);
+        success = BkchdlExtractSyscallNumberNearAddress(SourceProcess, funcAddress, SyscallNumber);
+        if (success)
+        {
+            resolvedAddress = funcAddress;
+        }
         break;
     }
 
 Exit:
+    if (success && ExportAddress != NULL)
+    {
+        *ExportAddress = resolvedAddress;
+    }
     if (funcRvas != NULL)
     {
         ExFreePoolWithTag(funcRvas, 'fdtT');
@@ -1088,9 +1161,68 @@ Exit:
     return success;
 }
 
-static BOOLEAN BLACKBIRDQueryFrameModuleInfo(_In_ HANDLE ProcessHandle, _In_ PVOID Frame, _Out_ PVOID *AllocationBase,
-                                             _Out_ BOOLEAN *Executable, _Out_ BOOLEAN *ImageBacked,
-                                             _Out_ BOOLEAN *IsSyscallStubModule)
+static BOOLEAN BkchdlResolveExpectedSyscallExport(_In_ PEPROCESS SourceProcess, _In_ PVOID NtdllBase,
+                                                  _In_z_ PCSTR ExportName, _In_opt_ PVOID OriginAddress,
+                                                  _Out_ ULONG *SyscallNumber, _Out_ BOOLEAN *OriginInsideExpectedExport)
+{
+    ULONG primaryNumber = 0;
+    ULONG aliasNumber = 0;
+    PVOID primaryAddress = NULL;
+    PVOID aliasAddress = NULL;
+    CHAR aliasName[64];
+    BOOLEAN primaryResolved;
+    BOOLEAN aliasResolved = FALSE;
+    BOOLEAN primaryInside;
+    BOOLEAN aliasInside;
+
+    if (SyscallNumber == NULL || OriginInsideExpectedExport == NULL)
+    {
+        return FALSE;
+    }
+
+    *SyscallNumber = 0;
+    *OriginInsideExpectedExport = FALSE;
+
+    primaryResolved =
+        BkchdlResolveExportSyscallNumber(SourceProcess, NtdllBase, ExportName, &primaryNumber, &primaryAddress);
+    if (BkchdlBuildZwAlias(ExportName, aliasName, RTL_NUMBER_OF(aliasName)))
+    {
+        aliasResolved =
+            BkchdlResolveExportSyscallNumber(SourceProcess, NtdllBase, aliasName, &aliasNumber, &aliasAddress);
+    }
+
+    primaryInside = primaryResolved && BkchdlAddressWithinExportWindow(OriginAddress, primaryAddress);
+    aliasInside = aliasResolved && BkchdlAddressWithinExportWindow(OriginAddress, aliasAddress);
+
+    if (primaryInside)
+    {
+        *SyscallNumber = primaryNumber;
+        *OriginInsideExpectedExport = TRUE;
+        return TRUE;
+    }
+    if (aliasInside)
+    {
+        *SyscallNumber = aliasNumber;
+        *OriginInsideExpectedExport = TRUE;
+        return TRUE;
+    }
+    if (primaryResolved)
+    {
+        *SyscallNumber = primaryNumber;
+        return TRUE;
+    }
+    if (aliasResolved)
+    {
+        *SyscallNumber = aliasNumber;
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+static BOOLEAN BkchdlQueryFrameModuleInfo(_In_ HANDLE ProcessHandle, _In_ PVOID Frame, _Out_ PVOID *AllocationBase,
+                                          _Out_ BOOLEAN *Executable, _Out_ BOOLEAN *ImageBacked,
+                                          _Out_ BOOLEAN *IsSyscallStubModule)
 {
     MEMORY_BASIC_INFORMATION mbi;
     UCHAR sectionNameRaw[1024];
@@ -1111,14 +1243,14 @@ static BOOLEAN BLACKBIRDQueryFrameModuleInfo(_In_ HANDLE ProcessHandle, _In_ PVO
     *IsSyscallStubModule = FALSE;
 
     RtlZeroMemory(&mbi, sizeof(mbi));
-    status = ZwQueryVirtualMemory(ProcessHandle, Frame, BLACKBIRDMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
+    status = ZwQueryVirtualMemory(ProcessHandle, Frame, BkchdlMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
     if (!NT_SUCCESS(status))
     {
         return FALSE;
     }
 
     *AllocationBase = mbi.AllocationBase;
-    *Executable = (mbi.State == MEM_COMMIT) && BLACKBIRDIsExecutableProtection(mbi.Protect);
+    *Executable = (mbi.State == MEM_COMMIT) && BkprotIsExecutableProtection(mbi.Protect);
     *ImageBacked = (mbi.Type == MEM_IMAGE);
     if (mbi.AllocationBase == NULL)
     {
@@ -1126,8 +1258,8 @@ static BOOLEAN BLACKBIRDQueryFrameModuleInfo(_In_ HANDLE ProcessHandle, _In_ PVO
     }
 
     RtlZeroMemory(sectionNameRaw, sizeof(sectionNameRaw));
-    status = ZwQueryVirtualMemory(ProcessHandle, Frame, BLACKBIRDMemorySectionName, sectionNameRaw,
-                                  sizeof(sectionNameRaw), NULL);
+    status = ZwQueryVirtualMemory(ProcessHandle, Frame, BkchdlMemorySectionName, sectionNameRaw, sizeof(sectionNameRaw),
+                                  NULL);
     if (!NT_SUCCESS(status))
     {
         return TRUE;
@@ -1135,14 +1267,14 @@ static BOOLEAN BLACKBIRDQueryFrameModuleInfo(_In_ HANDLE ProcessHandle, _In_ PVO
 
     sectionName = (PUNICODE_STRING)sectionNameRaw;
     RtlZeroMemory(sectionPath, sizeof(sectionPath));
-    BLACKBIRDSafeCopyUnicode(sectionName, sectionPath, RTL_NUMBER_OF(sectionPath));
+    BkstrSafeCopyUnicode(sectionName, sectionPath, RTL_NUMBER_OF(sectionPath));
     RtlInitUnicodeString(&sectionUs, sectionPath);
-    *IsSyscallStubModule = BLACKBIRDIsSyscallStubModulePath(&sectionUs);
+    *IsSyscallStubModule = BkchdlIsSyscallStubModulePath(&sectionUs);
     return TRUE;
 }
 
-static BOOLEAN BLACKBIRDValidateModuleChainSanity(_In_ HANDLE ProcessHandle, _In_ ULONG FrameCount,
-                                                  _In_reads_(FrameCount) PVOID *Frames)
+static BOOLEAN BkchdlValidateModuleChainSanity(_In_ HANDLE ProcessHandle, _In_ ULONG FrameCount,
+                                               _In_reads_(FrameCount) PVOID *Frames)
 {
     ULONG i;
     ULONG inspectCount;
@@ -1164,7 +1296,7 @@ static BOOLEAN BLACKBIRDValidateModuleChainSanity(_In_ HANDLE ProcessHandle, _In
         BOOLEAN image;
         BOOLEAN isSyscallStubModule;
 
-        if (!BLACKBIRDQueryFrameModuleInfo(ProcessHandle, Frames[i], &frameBase, &exec, &image, &isSyscallStubModule))
+        if (!BkchdlQueryFrameModuleInfo(ProcessHandle, Frames[i], &frameBase, &exec, &image, &isSyscallStubModule))
         {
             return FALSE;
         }
@@ -1198,7 +1330,7 @@ static BOOLEAN BLACKBIRDValidateModuleChainSanity(_In_ HANDLE ProcessHandle, _In
     return (sawSyscallStubModule && sawHeadSyscallStubModule && sawNonSyscallStubModule);
 }
 
-static BOOLEAN BLACKBIRDModuleContainsUnwindForRva(_In_ PEPROCESS SourceProcess, _In_ PVOID ModuleBase, _In_ ULONG Rva)
+static BOOLEAN BkchdlModuleContainsUnwindForRva(_In_ PEPROCESS SourceProcess, _In_ PVOID ModuleBase, _In_ ULONG Rva)
 {
     IMAGE_DOS_HEADER dos;
     IMAGE_NT_HEADERS64 nt;
@@ -1216,14 +1348,14 @@ static BOOLEAN BLACKBIRDModuleContainsUnwindForRva(_In_ PEPROCESS SourceProcess,
         return FALSE;
     }
 
-    if (!BLACKBIRDReadProcessBytes(SourceProcess, ModuleBase, &dos, sizeof(dos)) ||
-        dos.e_magic != IMAGE_DOS_SIGNATURE || dos.e_lfanew <= 0 || dos.e_lfanew > 0x2000)
+    if (!BkchdlReadProcessBytes(SourceProcess, ModuleBase, &dos, sizeof(dos)) || dos.e_magic != IMAGE_DOS_SIGNATURE ||
+        dos.e_lfanew <= 0 || dos.e_lfanew > 0x2000)
     {
         return FALSE;
     }
 
-    if (!BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + (ULONG_PTR)dos.e_lfanew), &nt,
-                                   sizeof(nt)) ||
+    if (!BkchdlReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + (ULONG_PTR)dos.e_lfanew), &nt,
+                                sizeof(nt)) ||
         nt.Signature != IMAGE_NT_SIGNATURE || nt.OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC ||
         nt.OptionalHeader.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_EXCEPTION)
     {
@@ -1244,14 +1376,13 @@ static BOOLEAN BLACKBIRDModuleContainsUnwindForRva(_In_ PEPROCESS SourceProcess,
     }
 
     tableBytes = (SIZE_T)count * sizeof(IMAGE_RUNTIME_FUNCTION_ENTRY);
-    table = (IMAGE_RUNTIME_FUNCTION_ENTRY *)BLACKBIRDAllocatePoolCompat(POOL_FLAG_PAGED, tableBytes, 'udtT');
+    table = (IMAGE_RUNTIME_FUNCTION_ENTRY *)BkpoolAllocateCompat(POOL_FLAG_PAGED, tableBytes, 'udtT');
     if (table == NULL)
     {
         return FALSE;
     }
 
-    if (!BLACKBIRDReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + exceptionRva), table,
-                                   tableBytes))
+    if (!BkchdlReadProcessBytes(SourceProcess, (const VOID *)((ULONG_PTR)ModuleBase + exceptionRva), table, tableBytes))
     {
         ExFreePoolWithTag(table, 'udtT');
         return FALSE;
@@ -1283,8 +1414,8 @@ static BOOLEAN BLACKBIRDModuleContainsUnwindForRva(_In_ PEPROCESS SourceProcess,
     return found;
 }
 
-static BOOLEAN BLACKBIRDValidateUnwindMetadata(_In_ HANDLE ProcessHandle, _In_ PEPROCESS SourceProcess,
-                                               _In_ ULONG FrameCount, _In_reads_(FrameCount) PVOID *Frames)
+static BOOLEAN BkchdlValidateUnwindMetadata(_In_ HANDLE ProcessHandle, _In_ PEPROCESS SourceProcess,
+                                            _In_ ULONG FrameCount, _In_reads_(FrameCount) PVOID *Frames)
 {
     ULONG i;
     ULONG inspectCount;
@@ -1309,8 +1440,7 @@ static BOOLEAN BLACKBIRDValidateUnwindMetadata(_In_ HANDLE ProcessHandle, _In_ P
         }
 
         RtlZeroMemory(&mbi, sizeof(mbi));
-        status =
-            ZwQueryVirtualMemory(ProcessHandle, Frames[i], BLACKBIRDMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
+        status = ZwQueryVirtualMemory(ProcessHandle, Frames[i], BkchdlMemoryBasicInformation, &mbi, sizeof(mbi), NULL);
         if (!NT_SUCCESS(status) || mbi.AllocationBase == NULL || mbi.Type != MEM_IMAGE)
         {
             return FALSE;
@@ -1323,7 +1453,7 @@ static BOOLEAN BLACKBIRDValidateUnwindMetadata(_In_ HANDLE ProcessHandle, _In_ P
             return FALSE;
         }
         rva = (ULONG)(addr - base);
-        if (!BLACKBIRDModuleContainsUnwindForRva(SourceProcess, mbi.AllocationBase, rva))
+        if (!BkchdlModuleContainsUnwindForRva(SourceProcess, mbi.AllocationBase, rva))
         {
             return FALSE;
         }
@@ -1332,15 +1462,15 @@ static BOOLEAN BLACKBIRDValidateUnwindMetadata(_In_ HANDLE ProcessHandle, _In_ P
     return TRUE;
 }
 
-static BOOLEAN BLACKBIRDQueryTebStackBounds(_In_ HANDLE CallerProcessId, _In_ HANDLE CallerThreadId,
-                                            _In_ PEPROCESS SourceProcess, _Out_ ULONG_PTR *StackLimit,
-                                            _Out_ ULONG_PTR *StackBase)
+static BOOLEAN BkchdlQueryTebStackBounds(_In_ HANDLE CallerProcessId, _In_ HANDLE CallerThreadId,
+                                         _In_ PEPROCESS SourceProcess, _Out_ ULONG_PTR *StackLimit,
+                                         _Out_ ULONG_PTR *StackBase)
 {
     OBJECT_ATTRIBUTES oa;
     CLIENT_ID cid;
     HANDLE threadHandle = NULL;
-    BLACKBIRD_THREAD_BASIC_INFORMATION tbi;
-    BLACKBIRD_NT_TIB tib;
+    BK_THREAD_BASIC_INFORMATION tbi;
+    BK_NT_TIB tib;
     NTSTATUS status;
     ULONG_PTR limit;
     ULONG_PTR base;
@@ -1379,7 +1509,7 @@ static BOOLEAN BLACKBIRDQueryTebStackBounds(_In_ HANDLE CallerProcessId, _In_ HA
     }
 
     RtlZeroMemory(&tib, sizeof(tib));
-    if (!BLACKBIRDReadProcessBytes(SourceProcess, tbi.TebBaseAddress, &tib, sizeof(tib)))
+    if (!BkchdlReadProcessBytes(SourceProcess, tbi.TebBaseAddress, &tib, sizeof(tib)))
     {
         return FALSE;
     }
@@ -1400,8 +1530,8 @@ static BOOLEAN BLACKBIRDQueryTebStackBounds(_In_ HANDLE CallerProcessId, _In_ HA
     return TRUE;
 }
 
-static BOOLEAN BLACKBIRDFramesOutsideStackBounds(_In_ ULONG FrameCount, _In_reads_(FrameCount) PVOID *Frames,
-                                                 _In_ ULONG_PTR StackLimit, _In_ ULONG_PTR StackBase)
+static BOOLEAN BkchdlFramesOutsideStackBounds(_In_ ULONG FrameCount, _In_reads_(FrameCount) PVOID *Frames,
+                                              _In_ ULONG_PTR StackLimit, _In_ ULONG_PTR StackBase)
 {
     ULONG i;
 
@@ -1422,34 +1552,234 @@ static BOOLEAN BLACKBIRDFramesOutsideStackBounds(_In_ ULONG FrameCount, _In_read
     return TRUE;
 }
 
-static PCSTR BLACKBIRDHandleClassToString(_In_ BLACKBIRD_HANDLE_CLASSIFICATION Class)
+static PCSTR BkchdlClassToString(_In_ BK_HANDLE_CLASSIFICATION Class)
 {
-    if (Class == BLACKBIRDHandleLegitimateSyscall)
+    if (Class == BkchdlHandleLegitimateSyscall)
     {
         return "LEGITIMATE-SYSCALL";
     }
-    if (Class == BLACKBIRDHandleDirectSyscallSuspect)
+    if (Class == BkchdlHandleDirectSyscallSuspect)
     {
         return "DIRECT-SYSCALL-SUSPECT";
     }
     return "UNKNOWN-ORIGIN";
 }
 
-static BOOLEAN BLACKBIRDHandleAccessIsHighRisk(_In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsThreadObject)
+static BOOLEAN BkchdlHandleAccessIsHighRisk(_In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsThreadObject)
 {
     if (IsThreadObject)
     {
         return ((DesiredAccess & THREAD_SET_CONTEXT) != 0) || ((DesiredAccess & THREAD_SUSPEND_RESUME) != 0) ||
+               ((DesiredAccess & THREAD_GET_CONTEXT) != 0) || ((DesiredAccess & THREAD_QUERY_INFORMATION) != 0) ||
                ((DesiredAccess & THREAD_ALL_ACCESS) == THREAD_ALL_ACCESS);
     }
 
     return ((DesiredAccess & PROCESS_VM_OPERATION) != 0) || ((DesiredAccess & PROCESS_VM_WRITE) != 0) ||
-           ((DesiredAccess & PROCESS_CREATE_THREAD) != 0) ||
+           ((DesiredAccess & PROCESS_CREATE_THREAD) != 0) || ((DesiredAccess & PROCESS_DUP_HANDLE) != 0) ||
            ((DesiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS);
 }
 
-static UINT32 BLACKBIRDCountHandleAnomalySignals(_In_ BOOLEAN ExecProtect, _In_ BOOLEAN FromSyscallModule,
-                                                 _In_ const BLACKBIRD_HANDLE_TELEMETRY *Telemetry)
+static UINT32 BkchdlClassifyEnterpriseTargetName(_In_opt_z_ PCSTR ImageName)
+{
+    UINT32 flags = 0;
+
+    if (ImageName == NULL)
+    {
+        return 0;
+    }
+
+    if (BkchdlAsciiEqualsInsensitive(ImageName, "lsass.exe"))
+    {
+        return BK_ENTERPRISE_FLAG_CREDENTIAL_PROCESS | BK_ENTERPRISE_FLAG_PRIVILEGED_TARGET |
+               BK_ENTERPRISE_FLAG_LSASS_TARGET | BK_ENTERPRISE_FLAG_KERBEROS_NTLM;
+    }
+    if (BkchdlAsciiEqualsInsensitive(ImageName, "lsaiso.exe"))
+    {
+        return BK_ENTERPRISE_FLAG_CREDENTIAL_PROCESS | BK_ENTERPRISE_FLAG_PRIVILEGED_TARGET |
+               BK_ENTERPRISE_FLAG_KERBEROS_NTLM;
+    }
+    if (BkchdlAsciiEqualsInsensitive(ImageName, "winlogon.exe"))
+    {
+        return BK_ENTERPRISE_FLAG_CREDENTIAL_PROCESS | BK_ENTERPRISE_FLAG_PRIVILEGED_TARGET |
+               BK_ENTERPRISE_FLAG_WINLOGON_TARGET;
+    }
+
+    if (BkchdlAsciiEqualsInsensitive(ImageName, "services.exe") ||
+        BkchdlAsciiEqualsInsensitive(ImageName, "wininit.exe") ||
+        BkchdlAsciiEqualsInsensitive(ImageName, "csrss.exe") || BkchdlAsciiEqualsInsensitive(ImageName, "smss.exe"))
+    {
+        flags |= BK_ENTERPRISE_FLAG_PRIVILEGED_TARGET;
+    }
+
+    return flags;
+}
+
+static BOOLEAN BkchdlProcessAccessIsCredentialRelevant(_In_ ACCESS_MASK DesiredAccess)
+{
+    return ((DesiredAccess & (PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD |
+                              PROCESS_DUP_HANDLE | PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION)) !=
+            0) ||
+           ((DesiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS);
+}
+
+static BOOLEAN BkchdlProcessAccessIsPrivilegeRelevant(_In_ ACCESS_MASK DesiredAccess)
+{
+    return ((DesiredAccess & (PROCESS_TERMINATE | PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
+                              PROCESS_DUP_HANDLE | PROCESS_CREATE_PROCESS | PROCESS_SET_INFORMATION)) != 0) ||
+           ((DesiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS);
+}
+
+static UINT32 BkchdlEnterpriseAccessFlags(_In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsThreadObject,
+                                          _In_ BOOLEAN IsDuplicateOperation)
+{
+    UINT32 flags = IsThreadObject ? BK_ENTERPRISE_FLAG_THREAD_OBJECT : BK_ENTERPRISE_FLAG_PROCESS_OBJECT;
+
+    if (IsDuplicateOperation)
+    {
+        flags |= BK_ENTERPRISE_FLAG_DUPLICATE_HANDLE;
+    }
+    if ((DesiredAccess & PROCESS_VM_READ) != 0)
+    {
+        flags |= BK_ENTERPRISE_FLAG_VM_READ;
+    }
+    if ((DesiredAccess & PROCESS_VM_WRITE) != 0)
+    {
+        flags |= BK_ENTERPRISE_FLAG_VM_WRITE;
+    }
+    if ((DesiredAccess & PROCESS_VM_OPERATION) != 0)
+    {
+        flags |= BK_ENTERPRISE_FLAG_VM_OPERATION;
+    }
+    if ((DesiredAccess & PROCESS_CREATE_THREAD) != 0)
+    {
+        flags |= BK_ENTERPRISE_FLAG_CREATE_THREAD;
+    }
+    if ((DesiredAccess & (PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION | THREAD_QUERY_INFORMATION |
+                          THREAD_QUERY_LIMITED_INFORMATION)) != 0)
+    {
+        flags |= BK_ENTERPRISE_FLAG_QUERY_ACCESS;
+    }
+    if ((DesiredAccess & (THREAD_SET_CONTEXT | THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME)) != 0)
+    {
+        flags |= BK_ENTERPRISE_FLAG_THREAD_CONTEXT;
+    }
+    if ((DesiredAccess & (PROCESS_TERMINATE | PROCESS_SET_INFORMATION)) != 0)
+    {
+        flags |= BK_ENTERPRISE_FLAG_SET_OR_TERMINATE;
+    }
+
+    return flags;
+}
+
+static BOOLEAN BkchdlProcessEnterpriseCandidate(_In_ PEPROCESS TargetProcess, _In_ HANDLE CallerPid,
+                                                _In_ HANDLE TargetPid, _In_ ACCESS_MASK DesiredAccess)
+{
+    UINT32 targetFlags;
+    PCHAR imageName;
+
+    if (TargetProcess == NULL || CallerPid == TargetPid)
+    {
+        return FALSE;
+    }
+
+    imageName = PsGetProcessImageFileName(TargetProcess);
+    targetFlags = BkchdlClassifyEnterpriseTargetName(imageName);
+    if ((targetFlags & BK_ENTERPRISE_FLAG_CREDENTIAL_PROCESS) != 0)
+    {
+        return BkchdlProcessAccessIsCredentialRelevant(DesiredAccess);
+    }
+    if ((targetFlags & BK_ENTERPRISE_FLAG_PRIVILEGED_TARGET) != 0)
+    {
+        return BkchdlProcessAccessIsPrivilegeRelevant(DesiredAccess);
+    }
+
+    return FALSE;
+}
+
+static VOID BkchdlPublishEnterpriseHandleEvent(_In_ BK_HANDLE_CLASSIFICATION Class, _In_ HANDLE CallerPid,
+                                               _In_ HANDLE CallerTid, _In_ HANDLE TargetPid, _In_ HANDLE TargetTid,
+                                               _In_ UINT64 ObjectAddress, _In_ ACCESS_MASK DesiredAccess,
+                                               _In_ BOOLEAN IsThreadObject, _In_ BOOLEAN IsDuplicateOperation,
+                                               _In_ const BK_HANDLE_TELEMETRY *Telemetry)
+{
+    PEPROCESS targetProcess = NULL;
+    PCHAR imageName;
+    UINT32 targetFlags;
+    UINT32 flags;
+    BK_ENTERPRISE_EVENT event;
+    UINT32 callerPid32 = (UINT32)(ULONG_PTR)CallerPid;
+    UINT32 targetPid32 = (UINT32)(ULONG_PTR)TargetPid;
+
+    if (CallerPid == TargetPid || callerPid32 == 0 || targetPid32 == 0)
+    {
+        return;
+    }
+    if (!BkctlHasPidInterest(callerPid32, targetPid32, BK_STREAM_ENTERPRISE))
+    {
+        return;
+    }
+
+    if (!NT_SUCCESS(PsLookupProcessByProcessId(TargetPid, &targetProcess)))
+    {
+        return;
+    }
+
+    imageName = PsGetProcessImageFileName(targetProcess);
+    targetFlags = BkchdlClassifyEnterpriseTargetName(imageName);
+    if ((targetFlags & BK_ENTERPRISE_FLAG_CREDENTIAL_PROCESS) != 0)
+    {
+        if (!BkchdlProcessAccessIsCredentialRelevant(DesiredAccess))
+        {
+            ObDereferenceObject(targetProcess);
+            return;
+        }
+    }
+    else if ((targetFlags & BK_ENTERPRISE_FLAG_PRIVILEGED_TARGET) != 0)
+    {
+        if (!IsThreadObject && !BkchdlProcessAccessIsPrivilegeRelevant(DesiredAccess))
+        {
+            ObDereferenceObject(targetProcess);
+            return;
+        }
+    }
+    else
+    {
+        ObDereferenceObject(targetProcess);
+        return;
+    }
+
+    flags = BK_ENTERPRISE_FLAG_HIGH_SIGNAL |
+            BkchdlEnterpriseAccessFlags(DesiredAccess, IsThreadObject, IsDuplicateOperation) | targetFlags;
+    if ((targetFlags & BK_ENTERPRISE_FLAG_CREDENTIAL_PROCESS) != 0)
+    {
+        flags |= BK_ENTERPRISE_FLAG_CRITICAL;
+    }
+    if (Class == BkchdlHandleDirectSyscallSuspect)
+    {
+        flags |= BK_ENTERPRISE_FLAG_DIRECT_SYSCALL_SUSPECT;
+    }
+
+    RtlZeroMemory(&event, sizeof(event));
+    event.ProcessId = (UINT64)(ULONG_PTR)CallerPid;
+    event.ThreadId = (UINT64)(ULONG_PTR)CallerTid;
+    event.TargetProcessId = (UINT64)(ULONG_PTR)TargetPid;
+    event.TargetThreadId = (UINT64)(ULONG_PTR)TargetTid;
+    event.ObjectAddress = ObjectAddress;
+    event.Aux0 = (Telemetry != NULL) ? (UINT64)(ULONG_PTR)Telemetry->OriginAddress : 0;
+    event.Aux1 = (Telemetry != NULL) ? Telemetry->CaptureFlags : 0;
+    event.Operation = ((targetFlags & BK_ENTERPRISE_FLAG_CREDENTIAL_PROCESS) != 0)
+                          ? BkEnterpriseOperationProcessCredentialAccess
+                          : BkEnterpriseOperationProcessPrivilegedAccess;
+    event.SubOperation = (Class == BkchdlHandleDirectSyscallSuspect) ? BlackbirdHandleClassDirectSyscallSuspect
+                                                                     : BlackbirdHandleClassUnknown;
+    event.Flags = flags;
+    event.DesiredAccess = (UINT32)DesiredAccess;
+    BkctlPublishEnterpriseEvent(&event);
+    ObDereferenceObject(targetProcess);
+}
+
+static UINT32 BkchdlCountHandleAnomalySignals(_In_ BOOLEAN ExecProtect, _In_ BOOLEAN FromSyscallModule,
+                                              _In_ const BK_HANDLE_TELEMETRY *Telemetry)
 {
     UINT32 signals = 0;
 
@@ -1494,130 +1824,136 @@ static UINT32 BLACKBIRDCountHandleAnomalySignals(_In_ BOOLEAN ExecProtect, _In_ 
     return signals;
 }
 
-static VOID BLACKBIRDLogHandleTelemetry(_In_ BLACKBIRD_HANDLE_CLASSIFICATION Class, _In_ HANDLE CallerPid,
-                                        _In_ HANDLE TargetPid, _In_ ACCESS_MASK DesiredAccess,
-                                        _In_ BOOLEAN IsThreadObject, _In_ BOOLEAN IsDuplicateOperation,
-                                        _In_ BOOLEAN ExecProtect, _In_ BOOLEAN FromNtdll, _In_ BOOLEAN FromExe,
-                                        _In_ PBLACKBIRD_HANDLE_TELEMETRY Telemetry)
+static VOID BkchdlLogHandleTelemetry(_In_ BK_HANDLE_CLASSIFICATION Class, _In_ HANDLE CallerPid, _In_ HANDLE CallerTid,
+                                     _In_ HANDLE TargetPid, _In_ HANDLE TargetTid, _In_ UINT64 ObjectAddress,
+                                     _In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsThreadObject,
+                                     _In_ BOOLEAN IsDuplicateOperation, _In_ BOOLEAN ExecProtect,
+                                     _In_ BOOLEAN FromNtdll, _In_ BOOLEAN FromExe, _In_ PBK_HANDLE_TELEMETRY Telemetry)
 {
     UINT32 flags = 0;
     BOOLEAN memoryRelated;
     BOOLEAN stackIntegrityAnomaly;
     BOOLEAN highRiskAccess;
     BOOLEAN fromSyscallModule;
+    BOOLEAN directSyscallEntryAnomaly;
     UINT32 anomalySignals;
     UINT32 classId;
+    UINT32 handleStream;
     UNICODE_STRING originPathUs;
-    BLACKBIRD_HANDLE_EVENT handleEvent;
+    BK_HANDLE_EVENT handleEvent;
     UINT32 i;
     UINT32 safeFrameCount;
     UINT32 safeFullFrameCount;
     UINT32 safeStackBytes;
 
-    BLACKBIRDEtwLogHandleEvent(
-        BLACKBIRDHandleClassToString(Class), CallerPid, TargetPid, DesiredAccess, Telemetry->OriginAddress,
-        Telemetry->OriginProtect, ExecProtect, FromNtdll, FromExe,
-        (Telemetry->OriginPath[0] != L'\0') ? Telemetry->OriginPath : NULL, Telemetry->FrameCount, Telemetry->Frames,
-        Telemetry->OpenProcessStatus, Telemetry->BasicInfoStatus, Telemetry->SectionNameStatus,
-        (UINT64)(ULONG_PTR)Telemetry->AllocationBase, (UINT64)Telemetry->RegionSize, Telemetry->OriginProtect,
-        Telemetry->RegionState, Telemetry->RegionType, Telemetry->DeepSampleSize, Telemetry->DeepSample);
+    BketwLogHandleEvent(BkchdlClassToString(Class), CallerPid, TargetPid, DesiredAccess, Telemetry->OriginAddress,
+                        Telemetry->OriginProtect, ExecProtect, FromNtdll, FromExe,
+                        (Telemetry->OriginPath[0] != L'\0') ? Telemetry->OriginPath : NULL, Telemetry->FrameCount,
+                        Telemetry->Frames, Telemetry->OpenProcessStatus, Telemetry->BasicInfoStatus,
+                        Telemetry->SectionNameStatus, (UINT64)(ULONG_PTR)Telemetry->AllocationBase,
+                        (UINT64)Telemetry->RegionSize, Telemetry->OriginProtect, Telemetry->RegionState,
+                        Telemetry->RegionType, Telemetry->DeepSampleSize, Telemetry->DeepSample);
 
     if (ExecProtect)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_EXEC_PROTECT;
+        flags |= BK_HANDLE_FLAG_EXEC_PROTECT;
     }
     if (FromNtdll)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_FROM_NTDLL;
+        flags |= BK_HANDLE_FLAG_FROM_NTDLL;
     }
     if (FromExe)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_FROM_EXE;
+        flags |= BK_HANDLE_FLAG_FROM_EXE;
     }
 
     memoryRelated = ((DesiredAccess & PROCESS_VM_OPERATION) != 0) || ((DesiredAccess & PROCESS_VM_READ) != 0) ||
                     ((DesiredAccess & PROCESS_VM_WRITE) != 0) || ((DesiredAccess & PROCESS_CREATE_THREAD) != 0) ||
+                    ((DesiredAccess & PROCESS_DUP_HANDLE) != 0) ||
                     ((DesiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS);
-    highRiskAccess = BLACKBIRDHandleAccessIsHighRisk(DesiredAccess, IsThreadObject);
+    highRiskAccess = BkchdlHandleAccessIsHighRisk(DesiredAccess, IsThreadObject);
     RtlInitUnicodeString(&originPathUs, Telemetry->OriginPath);
-    fromSyscallModule = BLACKBIRDIsSyscallStubModulePath(&originPathUs);
-    anomalySignals = BLACKBIRDCountHandleAnomalySignals(ExecProtect, fromSyscallModule, Telemetry);
+    fromSyscallModule = BkchdlIsSyscallStubModulePath(&originPathUs);
+    anomalySignals = BkchdlCountHandleAnomalySignals(ExecProtect, fromSyscallModule, Telemetry);
+    directSyscallEntryAnomaly =
+        ExecProtect && (!fromSyscallModule || (Telemetry->SyscallExportChecked && !Telemetry->SyscallExportMatch));
     if (memoryRelated)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_MEMORY_RELATED;
+        flags |= BK_HANDLE_FLAG_MEMORY_RELATED;
     }
     if (IsThreadObject)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_THREAD_OBJECT;
+        flags |= BK_HANDLE_FLAG_THREAD_OBJECT;
     }
     if (IsDuplicateOperation)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_DUPLICATE_OPERATION;
+        flags |= BK_HANDLE_FLAG_DUPLICATE_OPERATION;
     }
     if (Telemetry->DeepPathCandidate)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_DEEP_PATH_CANDIDATE;
+        flags |= BK_HANDLE_FLAG_DEEP_PATH_CANDIDATE;
     }
     if (Telemetry->DeepPathCaptured)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_DEEP_PATH_CAPTURED;
+        flags |= BK_HANDLE_FLAG_DEEP_PATH_CAPTURED;
     }
     if (Telemetry->DeepPathCacheHit)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_DEEP_PATH_CACHE_HIT;
+        flags |= BK_HANDLE_FLAG_DEEP_PATH_CACHE_HIT;
     }
     if (Telemetry->ReturnAddressValid)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_RETURN_ADDRESS_VALID;
+        flags |= BK_HANDLE_FLAG_RETURN_ADDRESS_VALID;
     }
     if (Telemetry->StackValidated)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_STACK_VALIDATED;
+        flags |= BK_HANDLE_FLAG_STACK_VALIDATED;
     }
     if (Telemetry->StackSpoofSuspect)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_STACK_SPOOF_SUSPECT;
+        flags |= BK_HANDLE_FLAG_STACK_SPOOF_SUSPECT;
     }
     if (Telemetry->SyscallExportChecked && Telemetry->SyscallExportMatch)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_SYSCALL_EXPORT_MATCH;
+        flags |= BK_HANDLE_FLAG_SYSCALL_EXPORT_MATCH;
     }
     if (Telemetry->SyscallExportChecked && !Telemetry->SyscallExportMatch)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_SYSCALL_EXPORT_MISMATCH;
+        flags |= BK_HANDLE_FLAG_SYSCALL_EXPORT_MISMATCH;
     }
     if (Telemetry->ModuleChainChecked && Telemetry->ModuleChainSane)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_MODULE_CHAIN_SANE;
+        flags |= BK_HANDLE_FLAG_MODULE_CHAIN_SANE;
     }
     if (Telemetry->UnwindMetadataChecked && Telemetry->UnwindMetadataValid)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_UNWIND_METADATA_VALID;
+        flags |= BK_HANDLE_FLAG_UNWIND_METADATA_VALID;
     }
     if (Telemetry->TebStackBoundsChecked && Telemetry->TebStackBoundsValid)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_TEB_STACK_BOUNDS_VALID;
+        flags |= BK_HANDLE_FLAG_TEB_STACK_BOUNDS_VALID;
     }
     if (Telemetry->TebStackBoundsChecked && Telemetry->FramesOutsideTebStack)
     {
-        flags |= BLACKBIRD_HANDLE_FLAG_FRAMES_OUTSIDE_TEB_STACK;
+        flags |= BK_HANDLE_FLAG_FRAMES_OUTSIDE_TEB_STACK;
     }
 
     classId = BlackbirdHandleClassUnknown;
-    if (Class == BLACKBIRDHandleLegitimateSyscall)
+    if (Class == BkchdlHandleLegitimateSyscall)
     {
         classId = BlackbirdHandleClassLegitimateSyscall;
     }
-    else if (Class == BLACKBIRDHandleDirectSyscallSuspect)
+    else if (Class == BkchdlHandleDirectSyscallSuspect)
     {
         classId = BlackbirdHandleClassDirectSyscallSuspect;
     }
 
-    if (Class == BLACKBIRDHandleDirectSyscallSuspect && highRiskAccess && anomalySignals >= 3 && CallerPid != TargetPid)
+    if (Class == BkchdlHandleDirectSyscallSuspect && highRiskAccess &&
+        (directSyscallEntryAnomaly || anomalySignals >= 2))
     {
-        BLACKBIRDEtwLogDetectionEvent("DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION", 5, CallerPid, TargetPid, 0,
-                                      (UINT32)DesiredAccess, 0,
-                                      L"direct-syscall suspect requires multiple stack/module/teb/export anomalies");
+        BketwLogDetectionEvent(
+            "DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION", 5, CallerPid, TargetPid, 0, (UINT32)DesiredAccess, 0,
+            L"high-risk handle operation reached the kernel from outside the expected ntdll syscall export");
     }
 
     stackIntegrityAnomaly =
@@ -1625,12 +1961,12 @@ static VOID BLACKBIRDLogHandleTelemetry(_In_ BLACKBIRD_HANDLE_CLASSIFICATION Cla
          (Telemetry->ModuleChainChecked && !Telemetry->ModuleChainSane) ||
          (Telemetry->UnwindMetadataChecked && !Telemetry->UnwindMetadataValid) ||
          (Telemetry->TebStackBoundsChecked && (!Telemetry->TebStackBoundsValid || !Telemetry->FramesOutsideTebStack)));
-    if (stackIntegrityAnomaly && (Class == BLACKBIRDHandleDirectSyscallSuspect) && highRiskAccess &&
-        anomalySignals >= 4 && CallerPid != TargetPid)
+    if (stackIntegrityAnomaly && (Class == BkchdlHandleDirectSyscallSuspect) && highRiskAccess && anomalySignals >= 3 &&
+        CallerPid != TargetPid)
     {
-        BLACKBIRDEtwLogDetectionEvent("STACK_INTEGRITY_ANOMALY_ON_HANDLE_OP", 6, CallerPid, TargetPid, 0,
-                                      (UINT32)DesiredAccess, 0,
-                                      L"high-confidence stack integrity anomaly on high-risk handle operation");
+        BketwLogDetectionEvent("STACK_INTEGRITY_ANOMALY_ON_HANDLE_OP", 6, CallerPid, TargetPid, 0,
+                               (UINT32)DesiredAccess, 0,
+                               L"high-confidence stack integrity anomaly on high-risk handle operation");
     }
 
     /* Credential-access: process-memory handle to lsass.exe */
@@ -1662,10 +1998,10 @@ static VOID BLACKBIRDLogHandleTelemetry(_In_ BLACKBIRD_HANDLE_CLASSIFICATION Cla
                 }
                 if (isLsass && imageName[sizeof(kLsass) - 1u] == '\0')
                 {
-                    ULONG sev = (Class == BLACKBIRDHandleDirectSyscallSuspect) ? 8u : 7u;
-                    BLACKBIRDEtwLogDetectionEvent(
-                        "CREDENTIAL_ACCESS_LSASS_HANDLE", sev, CallerPid, TargetPid, 0, (UINT32)DesiredAccess, 0,
-                        L"cross-process memory handle to lsass.exe — credential access attempt");
+                    ULONG sev = (Class == BkchdlHandleDirectSyscallSuspect) ? 8u : 7u;
+                    BketwLogDetectionEvent("CREDENTIAL_ACCESS_LSASS_HANDLE", sev, CallerPid, TargetPid, 0,
+                                           (UINT32)DesiredAccess, 0,
+                                           L"cross-process memory handle to lsass.exe — credential access attempt");
                 }
 
                 /* Winlogon memory access is also high-value — holds logon tokens */
@@ -1686,9 +2022,9 @@ static VOID BLACKBIRDLogHandleTelemetry(_In_ BLACKBIRD_HANDLE_CLASSIFICATION Cla
                     if (isWinlogon && imageName[sizeof(kWinlogon) - 1u] == '\0' &&
                         (DesiredAccess & (PROCESS_VM_READ | PROCESS_VM_WRITE)) != 0)
                     {
-                        BLACKBIRDEtwLogDetectionEvent("CREDENTIAL_ACCESS_WINLOGON_HANDLE", 6, CallerPid, TargetPid, 0,
-                                                      (UINT32)DesiredAccess, 0,
-                                                      L"cross-process memory handle to winlogon.exe");
+                        BketwLogDetectionEvent("CREDENTIAL_ACCESS_WINLOGON_HANDLE", 6, CallerPid, TargetPid, 0,
+                                               (UINT32)DesiredAccess, 0,
+                                               L"cross-process memory handle to winlogon.exe");
                     }
                 }
             }
@@ -1696,7 +2032,46 @@ static VOID BLACKBIRDLogHandleTelemetry(_In_ BLACKBIRD_HANDLE_CLASSIFICATION Cla
         }
     }
 
-    if (BLACKBIRDControlHasClientsFast())
+    /* Hardware breakpoint register detection.
+     * DR7 enable bits: L0/G0=0x3, L1/G1=0xC, L2/G2=0x30, L3/G3=0xC0 */
+    if (Telemetry->CaptureFlags & BK_HANDLE_CAPTURE_DEBUG_REGS_VALID)
+    {
+        UINT32 dr7EnableBits = (UINT32)(Telemetry->RegDr7 & 0xFFu);
+        UINT32 activeCount = 0;
+        if ((dr7EnableBits & 0x03u) && Telemetry->RegDr0 != 0)
+            activeCount++;
+        if ((dr7EnableBits & 0x0Cu) && Telemetry->RegDr1 != 0)
+            activeCount++;
+        if ((dr7EnableBits & 0x30u) && Telemetry->RegDr2 != 0)
+            activeCount++;
+        if ((dr7EnableBits & 0xC0u) && Telemetry->RegDr3 != 0)
+            activeCount++;
+        if (activeCount == 4)
+        {
+            BketwLogDetectionEvent(
+                "HW_BREAKPOINT_SATURATION", 6, CallerPid, TargetPid, activeCount, (UINT32)Telemetry->RegDr7, 0,
+                L"all four hardware breakpoint registers occupied — possible anti-debug or memory breakpoint abuse");
+        }
+        else if (activeCount >= 1)
+        {
+            BketwLogDetectionEvent("HARDWARE_BREAKPOINT_HOGGING", 5, CallerPid, TargetPid, activeCount,
+                                   (UINT32)Telemetry->RegDr7, 0,
+                                   L"hardware breakpoint register(s) occupied on process making sensitive handle call");
+        }
+    }
+
+    BkchdlPublishEnterpriseHandleEvent(Class, CallerPid, CallerTid, TargetPid, TargetTid, ObjectAddress, DesiredAccess,
+                                       IsThreadObject, IsDuplicateOperation, Telemetry);
+
+    handleStream = BK_STREAM_HANDLE;
+    if (memoryRelated)
+    {
+        handleStream |= BK_STREAM_MEMORY;
+    }
+    if (BkctlHasPidInterest(
+            (UINT32)(ULONG_PTR)CallerPid,
+            ((UINT32)(ULONG_PTR)TargetPid != (UINT32)(ULONG_PTR)CallerPid) ? (UINT32)(ULONG_PTR)TargetPid : 0,
+            handleStream))
     {
         RtlZeroMemory(&handleEvent, sizeof(handleEvent));
         handleEvent.CallerPid = (UINT64)(ULONG_PTR)CallerPid;
@@ -1785,19 +2160,22 @@ static VOID BLACKBIRDLogHandleTelemetry(_In_ BLACKBIRD_HANDLE_CLASSIFICATION Cla
             RtlCopyMemory(handleEvent.StackSnapshot, Telemetry->StackSnapshot, safeStackBytes);
         }
 
-        BLACKBIRDControlPublishHandleEvent(&handleEvent);
+        BkctlPublishHandleEvent(&handleEvent);
     }
 }
 
-static VOID BLACKBIRDCaptureDeepPathData(_In_ HANDLE CallerProcessId, _In_ BOOLEAN ShouldCapture,
-                                         _In_ const MEMORY_BASIC_INFORMATION *Mbi,
-                                         _In_opt_ const BLACKBIRD_HANDLE_WORK *Work,
-                                         _Inout_ PBLACKBIRD_HANDLE_TELEMETRY Telemetry)
+static VOID BkchdlCaptureDeepPathData(_In_ HANDLE CallerProcessId, _In_ BOOLEAN ShouldCapture,
+                                      _In_ const MEMORY_BASIC_INFORMATION *Mbi, _In_opt_ const BK_HANDLE_WORK *Work,
+                                      _Inout_ PBK_HANDLE_TELEMETRY Telemetry)
 {
     NTSTATUS status;
     PEPROCESS sourceProcess = NULL;
     PEPROCESS localProcess;
     SIZE_T bytesRead = 0;
+    SIZE_T bytesToRead;
+    ULONG_PTR regionBase;
+    ULONG_PTR sampleAddress;
+    ULONG_PTR regionOffset;
     UINT32 sampleSize;
 
     if (!ShouldCapture || Mbi == NULL || Telemetry == NULL)
@@ -1820,8 +2198,8 @@ static VOID BLACKBIRDCaptureDeepPathData(_In_ HANDLE CallerProcessId, _In_ BOOLE
         RtlCopyMemory(Telemetry->DeepSample, Work->EarlyOriginSample, Telemetry->DeepSampleSize);
         Telemetry->DeepPathCaptured = TRUE;
         Telemetry->DeepPathCacheHit = FALSE;
-        BLACKBIRDDeepCacheStore(CallerProcessId, Mbi->BaseAddress, Telemetry->OriginAddress, Mbi->RegionSize,
-                                Mbi->Protect, Mbi->State, Mbi->Type, Telemetry->DeepSample, Telemetry->DeepSampleSize);
+        BkchdlDeepCacheStore(CallerProcessId, Mbi->BaseAddress, Telemetry->OriginAddress, Mbi->RegionSize, Mbi->Protect,
+                             Mbi->State, Mbi->Type, Telemetry->DeepSample, Telemetry->DeepSampleSize);
         return;
     }
 
@@ -1830,10 +2208,9 @@ static VOID BLACKBIRDCaptureDeepPathData(_In_ HANDLE CallerProcessId, _In_ BOOLE
         return;
     }
 
-    if (BLACKBIRDDeepCacheLookup(CallerProcessId, Mbi->BaseAddress,
-                                 (Telemetry->OriginAddress != NULL) ? Telemetry->OriginAddress : Mbi->BaseAddress,
-                                 Mbi->RegionSize, Mbi->Protect, Mbi->State, Mbi->Type, Telemetry->DeepSample,
-                                 &sampleSize))
+    if (BkchdlDeepCacheLookup(CallerProcessId, Mbi->BaseAddress,
+                              (Telemetry->OriginAddress != NULL) ? Telemetry->OriginAddress : Mbi->BaseAddress,
+                              Mbi->RegionSize, Mbi->Protect, Mbi->State, Mbi->Type, Telemetry->DeepSample, &sampleSize))
     {
         Telemetry->DeepPathCaptured = TRUE;
         Telemetry->DeepPathCacheHit = TRUE;
@@ -1847,10 +2224,36 @@ static VOID BLACKBIRDCaptureDeepPathData(_In_ HANDLE CallerProcessId, _In_ BOOLE
         return;
     }
 
+    sampleAddress =
+        (Telemetry->OriginAddress != NULL) ? (ULONG_PTR)Telemetry->OriginAddress : (ULONG_PTR)Mbi->BaseAddress;
+    regionBase = (ULONG_PTR)Mbi->BaseAddress;
+    if (sampleAddress < regionBase || Mbi->RegionSize == 0)
+    {
+        ObDereferenceObject(sourceProcess);
+        return;
+    }
+
+    regionOffset = sampleAddress - regionBase;
+    if (regionOffset >= Mbi->RegionSize)
+    {
+        ObDereferenceObject(sourceProcess);
+        return;
+    }
+
+    bytesToRead = Mbi->RegionSize - regionOffset;
+    if (bytesToRead > sizeof(Telemetry->DeepSample))
+    {
+        bytesToRead = sizeof(Telemetry->DeepSample);
+    }
+    if (bytesToRead == 0)
+    {
+        ObDereferenceObject(sourceProcess);
+        return;
+    }
+
     localProcess = PsGetCurrentProcess();
-    status = MmCopyVirtualMemory(
-        sourceProcess, (Telemetry->OriginAddress != NULL) ? Telemetry->OriginAddress : Mbi->BaseAddress, localProcess,
-        Telemetry->DeepSample, sizeof(Telemetry->DeepSample), KernelMode, &bytesRead);
+    status = MmCopyVirtualMemory(sourceProcess, (const VOID *)sampleAddress, localProcess, Telemetry->DeepSample,
+                                 bytesToRead, KernelMode, &bytesRead);
     ObDereferenceObject(sourceProcess);
     if (!NT_SUCCESS(status) || bytesRead == 0)
     {
@@ -1864,17 +2267,16 @@ static VOID BLACKBIRDCaptureDeepPathData(_In_ HANDLE CallerProcessId, _In_ BOOLE
     Telemetry->DeepSampleSize = (ULONG)bytesRead;
     Telemetry->DeepPathCaptured = TRUE;
     Telemetry->DeepPathCacheHit = FALSE;
-    BLACKBIRDDeepCacheStore(CallerProcessId, Mbi->BaseAddress,
-                            (Telemetry->OriginAddress != NULL) ? Telemetry->OriginAddress : Mbi->BaseAddress,
-                            Mbi->RegionSize, Mbi->Protect, Mbi->State, Mbi->Type, Telemetry->DeepSample,
-                            Telemetry->DeepSampleSize);
+    BkchdlDeepCacheStore(CallerProcessId, Mbi->BaseAddress,
+                         (Telemetry->OriginAddress != NULL) ? Telemetry->OriginAddress : Mbi->BaseAddress,
+                         Mbi->RegionSize, Mbi->Protect, Mbi->State, Mbi->Type, Telemetry->DeepSample,
+                         Telemetry->DeepSampleSize);
 }
 
-static VOID BLACKBIRDClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HANDLE CallerThreadId,
-                                        _In_ BOOLEAN IsThreadObject, _In_ BOOLEAN IsDuplicateOperation,
-                                        _In_ ULONG FrameCount, _In_reads_(FrameCount) PVOID *Frames,
-                                        _In_opt_ const BLACKBIRD_HANDLE_WORK *Work,
-                                        _Out_ PBLACKBIRD_HANDLE_TELEMETRY Telemetry)
+static VOID BkchdlClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HANDLE CallerThreadId,
+                                     _In_ BOOLEAN IsThreadObject, _In_ BOOLEAN IsDuplicateOperation,
+                                     _In_ ULONG FrameCount, _In_reads_(FrameCount) PVOID *Frames,
+                                     _In_opt_ const BK_HANDLE_WORK *Work, _Out_ PBK_HANDLE_TELEMETRY Telemetry)
 {
     NTSTATUS status;
     OBJECT_ATTRIBUTES objectAttributes;
@@ -1895,6 +2297,7 @@ static VOID BLACKBIRDClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HANDLE
     ULONG observedSyscallNumber;
     BOOLEAN hasExpectedSyscall;
     BOOLEAN hasObservedSyscall;
+    BOOLEAN originInsideExpectedExport;
     ULONG_PTR stackLimit;
     ULONG_PTR stackBase;
 
@@ -1902,7 +2305,7 @@ static VOID BLACKBIRDClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HANDLE
     Telemetry->OpenProcessStatus = STATUS_UNSUCCESSFUL;
     Telemetry->BasicInfoStatus = STATUS_UNSUCCESSFUL;
     Telemetry->SectionNameStatus = STATUS_UNSUCCESSFUL;
-    BLACKBIRDApplyWorkCaptureToTelemetry(Work, Telemetry);
+    BkchdlApplyWorkCaptureToTelemetry(Work, Telemetry);
 
     if (FrameCount == 0 || Frames == NULL || Frames[0] == NULL)
     {
@@ -1922,8 +2325,8 @@ static VOID BLACKBIRDClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HANDLE
     Telemetry->OpenProcessStatus = status;
     if (!NT_SUCCESS(status))
     {
-        BLACKBIRD_DBG_PRINT(DPFLTR_TRACE_LEVEL, "BLACKBIRD[DBG]: ZwOpenProcess failed callerPid=%p status=0x%08X.\n",
-                            CallerProcessId, (ULONG)status);
+        BK_DBG_PRINT(DPFLTR_TRACE_LEVEL, "BK[DBG]: ZwOpenProcess failed callerPid=%p status=0x%08X.\n", CallerProcessId,
+                     (ULONG)status);
         return;
     }
     if (InterlockedCompareExchange(&g_HandleMonitorStopping, 0, 0) != 0)
@@ -1938,7 +2341,7 @@ static VOID BLACKBIRDClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HANDLE
     (void)PsLookupProcessByProcessId(CallerProcessId, &sourceProcess);
 
     RtlZeroMemory(&mbi, sizeof(mbi));
-    status = ZwQueryVirtualMemory(processHandle, Telemetry->OriginAddress, BLACKBIRDMemoryBasicInformation, &mbi,
+    status = ZwQueryVirtualMemory(processHandle, Telemetry->OriginAddress, BkchdlMemoryBasicInformation, &mbi,
                                   sizeof(mbi), NULL);
     Telemetry->BasicInfoStatus = status;
     if (NT_SUCCESS(status))
@@ -1951,9 +2354,8 @@ static VOID BLACKBIRDClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HANDLE
     }
     else
     {
-        BLACKBIRD_DBG_PRINT(DPFLTR_TRACE_LEVEL,
-                            "BLACKBIRD[DBG]: ZwQueryVirtualMemory(basic) failed callerPid=%p status=0x%08X.\n",
-                            CallerProcessId, (ULONG)status);
+        BK_DBG_PRINT(DPFLTR_TRACE_LEVEL, "BK[DBG]: ZwQueryVirtualMemory(basic) failed callerPid=%p status=0x%08X.\n",
+                     CallerProcessId, (ULONG)status);
     }
     if (InterlockedCompareExchange(&g_HandleMonitorStopping, 0, 0) != 0)
     {
@@ -1966,35 +2368,34 @@ static VOID BLACKBIRDClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HANDLE
     }
 
     RtlZeroMemory(sectionNameRaw, sizeof(sectionNameRaw));
-    status = ZwQueryVirtualMemory(processHandle, Telemetry->OriginAddress, BLACKBIRDMemorySectionName, sectionNameRaw,
+    status = ZwQueryVirtualMemory(processHandle, Telemetry->OriginAddress, BkchdlMemorySectionName, sectionNameRaw,
                                   sizeof(sectionNameRaw), NULL);
     Telemetry->SectionNameStatus = status;
     if (NT_SUCCESS(status))
     {
         sectionName = (PUNICODE_STRING)sectionNameRaw;
-        BLACKBIRDSafeCopyUnicode(sectionName, Telemetry->OriginPath, RTL_NUMBER_OF(Telemetry->OriginPath));
+        BkstrSafeCopyUnicode(sectionName, Telemetry->OriginPath, RTL_NUMBER_OF(Telemetry->OriginPath));
     }
     else
     {
-        BLACKBIRD_DBG_PRINT(DPFLTR_TRACE_LEVEL,
-                            "BLACKBIRD[DBG]: ZwQueryVirtualMemory(section) failed callerPid=%p status=0x%08X.\n",
-                            CallerProcessId, (ULONG)status);
+        BK_DBG_PRINT(DPFLTR_TRACE_LEVEL, "BK[DBG]: ZwQueryVirtualMemory(section) failed callerPid=%p status=0x%08X.\n",
+                     CallerProcessId, (ULONG)status);
     }
 
     RtlInitUnicodeString(&originPathUs, Telemetry->OriginPath);
-    execProtect = BLACKBIRDIsExecutableProtection(Telemetry->OriginProtect);
-    fromNtdll = BLACKBIRDIsNtdllPath(&originPathUs);
-    fromSyscallModule = BLACKBIRDIsSyscallStubModulePath(&originPathUs);
+    execProtect = BkprotIsExecutableProtection(Telemetry->OriginProtect);
+    fromNtdll = BkchdlIsNtdllPath(&originPathUs);
+    fromSyscallModule = BkchdlIsSyscallStubModulePath(&originPathUs);
     // Capture sample bytes for executable origins, including ntdll/win32u stubs, so UI can disassemble real origin
     // bytes.
     deepPathGate = execProtect;
-    BLACKBIRDCaptureDeepPathData(CallerProcessId, deepPathGate, &mbi, Work, Telemetry);
+    BkchdlCaptureDeepPathData(CallerProcessId, deepPathGate, &mbi, Work, Telemetry);
 
-    Telemetry->StackValidated = BLACKBIRDValidateStackFrames(processHandle, Telemetry->FrameCount, Telemetry->Frames,
-                                                             &Telemetry->StackSpoofSuspect);
+    Telemetry->StackValidated = BkchdlValidateStackFrames(processHandle, Telemetry->FrameCount, Telemetry->Frames,
+                                                          &Telemetry->StackSpoofSuspect);
     if (sourceProcess != NULL && Telemetry->FrameCount > 1 && Telemetry->Frames[1] != NULL)
     {
-        Telemetry->ReturnAddressValid = BLACKBIRDValidateReturnAddress(sourceProcess, Telemetry->Frames[1]);
+        Telemetry->ReturnAddressValid = BkchdlValidateReturnAddress(sourceProcess, Telemetry->Frames[1]);
     }
     else
     {
@@ -2007,41 +2408,42 @@ static VOID BLACKBIRDClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HANDLE
     }
     else
     {
-        (void)BLACKBIRDGetNtdllBaseFromFrames(processHandle, Telemetry->FrameCount, Telemetry->Frames, &ntdllBase);
+        (void)BkchdlGetNtdllBaseFromFrames(processHandle, Telemetry->FrameCount, Telemetry->Frames, &ntdllBase);
     }
 
-    expectedExportName = BLACKBIRDGetExpectedSyscallExport(IsThreadObject, IsDuplicateOperation);
+    expectedExportName = BkchdlGetExpectedSyscallExport(IsThreadObject, IsDuplicateOperation);
     hasExpectedSyscall =
-        BLACKBIRDResolveExportSyscallNumber(sourceProcess, ntdllBase, expectedExportName, &expectedSyscallNumber);
+        BkchdlResolveExpectedSyscallExport(sourceProcess, ntdllBase, expectedExportName, Telemetry->OriginAddress,
+                                           &expectedSyscallNumber, &originInsideExpectedExport);
     hasObservedSyscall =
-        BLACKBIRDExtractSyscallNumberNearAddress(sourceProcess, Telemetry->OriginAddress, &observedSyscallNumber);
+        BkchdlExtractSyscallNumberNearAddress(sourceProcess, Telemetry->OriginAddress, &observedSyscallNumber);
     Telemetry->SyscallExportChecked = hasExpectedSyscall;
-    Telemetry->SyscallExportMatch =
-        hasExpectedSyscall && hasObservedSyscall && (expectedSyscallNumber == observedSyscallNumber);
+    Telemetry->SyscallExportMatch = fromNtdll && originInsideExpectedExport && hasExpectedSyscall &&
+                                    hasObservedSyscall && (expectedSyscallNumber == observedSyscallNumber);
 
     Telemetry->ModuleChainChecked = TRUE;
     Telemetry->ModuleChainSane =
-        BLACKBIRDValidateModuleChainSanity(processHandle, Telemetry->FrameCount, Telemetry->Frames);
+        BkchdlValidateModuleChainSanity(processHandle, Telemetry->FrameCount, Telemetry->Frames);
 
     Telemetry->UnwindMetadataChecked = (sourceProcess != NULL);
     Telemetry->UnwindMetadataValid =
         Telemetry->UnwindMetadataChecked &&
-        BLACKBIRDValidateUnwindMetadata(processHandle, sourceProcess, Telemetry->FrameCount, Telemetry->Frames);
+        BkchdlValidateUnwindMetadata(processHandle, sourceProcess, Telemetry->FrameCount, Telemetry->Frames);
 
     stackLimit = 0;
     stackBase = 0;
     Telemetry->TebStackBoundsChecked = (sourceProcess != NULL && CallerThreadId != NULL);
     Telemetry->TebStackBoundsValid =
         Telemetry->TebStackBoundsChecked &&
-        BLACKBIRDQueryTebStackBounds(CallerProcessId, CallerThreadId, sourceProcess, &stackLimit, &stackBase);
+        BkchdlQueryTebStackBounds(CallerProcessId, CallerThreadId, sourceProcess, &stackLimit, &stackBase);
     Telemetry->FramesOutsideTebStack =
         Telemetry->TebStackBoundsValid &&
-        BLACKBIRDFramesOutsideStackBounds(Telemetry->FrameCount, Telemetry->Frames, stackLimit, stackBase);
+        BkchdlFramesOutsideStackBounds(Telemetry->FrameCount, Telemetry->Frames, stackLimit, stackBase);
 
-    if (sourceProcess != NULL && (Telemetry->CaptureFlags & BLACKBIRD_HANDLE_CAPTURE_CONTEXT_VALID) != 0 &&
+    if (sourceProcess != NULL && (Telemetry->CaptureFlags & BK_HANDLE_CAPTURE_CONTEXT_VALID) != 0 &&
         Telemetry->RegRsp != 0)
     {
-        BLACKBIRDCaptureStackSnapshot(sourceProcess, Telemetry->RegRsp, Telemetry);
+        BkchdlCaptureStackSnapshot(sourceProcess, Telemetry->RegRsp, Telemetry);
     }
 
     if (sourceProcess != NULL)
@@ -2051,18 +2453,19 @@ static VOID BLACKBIRDClassifyUserOrigin(_In_ HANDLE CallerProcessId, _In_ HANDLE
     ZwClose(processHandle);
 }
 
-static VOID BLACKBIRDHandleWorkRoutine(_In_ PVOID Context)
+static VOID BkchdlHandleWorkRoutine(_In_ PVOID Context)
 {
-    PBLACKBIRD_HANDLE_WORK work = (PBLACKBIRD_HANDLE_WORK)Context;
-    BLACKBIRD_HANDLE_TELEMETRY telemetry;
+    PBK_HANDLE_WORK work = (PBK_HANDLE_WORK)Context;
+    BK_HANDLE_TELEMETRY telemetry;
     UNICODE_STRING originPathUs;
     BOOLEAN execProtect;
     BOOLEAN fromNtdll;
     BOOLEAN fromSyscallModule;
     BOOLEAN fromExe;
     BOOLEAN highRiskAccess;
+    BOOLEAN directSyscallEntryAnomaly;
     UINT32 anomalySignals;
-    BLACKBIRD_HANDLE_CLASSIFICATION classification = BLACKBIRDHandleUnknown;
+    BK_HANDLE_CLASSIFICATION classification = BkchdlHandleUnknown;
 
     PAGED_CODE();
     if (KeGetCurrentIrql() != PASSIVE_LEVEL)
@@ -2073,73 +2476,77 @@ static VOID BLACKBIRDHandleWorkRoutine(_In_ PVOID Context)
     {
         goto Exit;
     }
-    if (!BLACKBIRDControlHasClientsFast())
+    if (!BkctlIsArmedFast())
     {
         goto Exit;
     }
 
-    BLACKBIRDClassifyUserOrigin(work->CallerPid, work->CallerTid, work->IsThreadObject, work->IsDuplicateOperation,
-                                work->FrameCount, work->Frames, work, &telemetry);
+    BkchdlClassifyUserOrigin(work->CallerPid, work->CallerTid, work->IsThreadObject, work->IsDuplicateOperation,
+                             work->FrameCount, work->Frames, work, &telemetry);
 
     RtlInitUnicodeString(&originPathUs, telemetry.OriginPath);
-    execProtect = BLACKBIRDIsExecutableProtection(telemetry.OriginProtect);
+    execProtect = BkprotIsExecutableProtection(telemetry.OriginProtect);
 
-    fromNtdll = BLACKBIRDIsNtdllPath(&originPathUs);
-    fromSyscallModule = BLACKBIRDIsSyscallStubModulePath(&originPathUs);
-    fromExe = BLACKBIRDUnicodeContainsInsensitive(&originPathUs, L".exe", 4);
-    highRiskAccess = BLACKBIRDHandleAccessIsHighRisk(work->DesiredAccess, work->IsThreadObject);
-    anomalySignals = BLACKBIRDCountHandleAnomalySignals(execProtect, fromSyscallModule, &telemetry);
+    fromNtdll = BkchdlIsNtdllPath(&originPathUs);
+    fromSyscallModule = BkchdlIsSyscallStubModulePath(&originPathUs);
+    fromExe = BkstrUnicodeContainsInsensitive(&originPathUs, L".exe", 4);
+    highRiskAccess = BkchdlHandleAccessIsHighRisk(work->DesiredAccess, work->IsThreadObject);
+    anomalySignals = BkchdlCountHandleAnomalySignals(execProtect, fromSyscallModule, &telemetry);
+    directSyscallEntryAnomaly =
+        execProtect && (!fromSyscallModule || (telemetry.SyscallExportChecked && !telemetry.SyscallExportMatch));
     if (fromSyscallModule && telemetry.StackValidated && !telemetry.StackSpoofSuspect && telemetry.ReturnAddressValid &&
-        telemetry.ModuleChainChecked && telemetry.ModuleChainSane && telemetry.UnwindMetadataChecked &&
-        telemetry.UnwindMetadataValid && telemetry.TebStackBoundsChecked && telemetry.TebStackBoundsValid &&
-        telemetry.FramesOutsideTebStack)
+        telemetry.SyscallExportChecked && telemetry.SyscallExportMatch && telemetry.ModuleChainChecked &&
+        telemetry.ModuleChainSane && telemetry.UnwindMetadataChecked && telemetry.UnwindMetadataValid &&
+        telemetry.TebStackBoundsChecked && telemetry.TebStackBoundsValid && telemetry.FramesOutsideTebStack)
     {
-        classification = BLACKBIRDHandleLegitimateSyscall;
+        classification = BkchdlHandleLegitimateSyscall;
     }
-    else if (highRiskAccess && execProtect && anomalySignals >= 2)
+    else if (highRiskAccess && execProtect && (directSyscallEntryAnomaly || anomalySignals >= 2))
     {
-        classification = BLACKBIRDHandleDirectSyscallSuspect;
+        classification = BkchdlHandleDirectSyscallSuspect;
     }
     else
     {
-        classification = BLACKBIRDHandleUnknown;
+        classification = BkchdlHandleUnknown;
     }
 
-    BLACKBIRDLogHandleTelemetry(classification, work->CallerPid, work->TargetPid, work->DesiredAccess,
-                                work->IsThreadObject, work->IsDuplicateOperation, execProtect, fromNtdll, fromExe,
-                                &telemetry);
+    BkchdlLogHandleTelemetry(classification, work->CallerPid, work->CallerTid, work->TargetPid, work->TargetTid,
+                             work->ObjectAddress, work->DesiredAccess, work->IsThreadObject, work->IsDuplicateOperation,
+                             execProtect, fromNtdll, fromExe, &telemetry);
 
-    BLACKBIRD_DBG_PRINT(DPFLTR_INFO_LEVEL,
-                        "BLACKBIRD[DBG]: handle event caller=%p target=%p access=0x%08X class=%s open=0x%08X "
-                        "basic=0x%08X section=0x%08X frames=%lu.\n",
-                        work->CallerPid, work->TargetPid, work->DesiredAccess,
-                        BLACKBIRDHandleClassToString(classification), (ULONG)telemetry.OpenProcessStatus,
-                        (ULONG)telemetry.BasicInfoStatus, (ULONG)telemetry.SectionNameStatus, work->FrameCount);
+    BK_DBG_PRINT(DPFLTR_INFO_LEVEL,
+                 "BK[DBG]: handle event caller=%p target=%p access=0x%08X class=%s open=0x%08X "
+                 "basic=0x%08X section=0x%08X frames=%lu.\n",
+                 work->CallerPid, work->TargetPid, work->DesiredAccess, BkchdlClassToString(classification),
+                 (ULONG)telemetry.OpenProcessStatus, (ULONG)telemetry.BasicInfoStatus,
+                 (ULONG)telemetry.SectionNameStatus, work->FrameCount);
 
 Exit:
-    BLACKBIRDHandleReleaseWorkSlot();
+    BkchdlHandleReleaseWorkSlot();
     ExFreePoolWithTag(work, 'hdtT');
 }
 
-static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID RegistrationContext,
-                                                             _Inout_ POB_PRE_OPERATION_INFORMATION OperationInformation)
+static OB_PREOP_CALLBACK_STATUS BkchdlProcessPreOperation(_In_ PVOID RegistrationContext,
+                                                          _Inout_ POB_PRE_OPERATION_INFORMATION OperationInformation)
 {
-    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemHandleMonitor);
+    ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemHandleMonitor);
     ACCESS_MASK desiredAccess;
     ACCESS_MASK originalDesiredAccess;
     ACCESS_MASK sanitizedAccess;
     HANDLE callerPid;
     HANDLE callerTid;
     HANDLE targetPid;
+    HANDLE targetTid = NULL;
     PEPROCESS targetProcess;
     PETHREAD targetThread;
-    PBLACKBIRD_HANDLE_WORK work;
-    PVOID userFrames[BLACKBIRD_MAX_FULL_EVENT_FRAMES] = {0};
+    PBK_HANDLE_WORK work;
+    PVOID userFrames[BK_MAX_FULL_EVENT_FRAMES] = {0};
     ULONG frameCount;
     ULONG copyCount;
     ULONG fullCopyCount;
     BOOLEAN hasVmWriteOrFull;
     BOOLEAN hasThreadContextAccess;
+    BOOLEAN enterpriseCandidate;
     UINT32 intentFlags;
     UINT32 streamMask;
     UINT32 callerPid32;
@@ -2156,13 +2563,13 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
 
     if (InterlockedCompareExchange(&g_HandleMonitorStopping, 0, 0) != 0)
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
 
     if (OperationInformation == NULL || OperationInformation->KernelHandle)
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
 
@@ -2177,7 +2584,7 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
     }
     else
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
 
@@ -2185,6 +2592,7 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
     sanitizedAccess = desiredAccess;
     hasVmWriteOrFull = FALSE;
     hasThreadContextAccess = FALSE;
+    enterpriseCandidate = FALSE;
     if (OperationInformation->ObjectType == *PsProcessType)
     {
         targetProcess = (PEPROCESS)OperationInformation->Object;
@@ -2193,22 +2601,27 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
         hasVmWriteOrFull = ((originalDesiredAccess & PROCESS_VM_OPERATION) != 0) ||
                            ((originalDesiredAccess & PROCESS_VM_WRITE) != 0) ||
                            ((originalDesiredAccess & PROCESS_CREATE_THREAD) != 0) ||
+                           ((originalDesiredAccess & PROCESS_DUP_HANDLE) != 0) ||
                            ((originalDesiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS);
+        enterpriseCandidate =
+            BkchdlProcessEnterpriseCandidate(targetProcess, PsGetCurrentProcessId(), targetPid, originalDesiredAccess);
     }
     else if (OperationInformation->ObjectType == *PsThreadType)
     {
         isThreadObject = TRUE;
         targetThread = (PETHREAD)OperationInformation->Object;
         targetPid = PsGetThreadProcessId(targetThread);
+        targetTid = PsGetThreadId(targetThread);
 
         hasThreadContextAccess = ((originalDesiredAccess & THREAD_SET_CONTEXT) != 0) ||
                                  ((originalDesiredAccess & THREAD_GET_CONTEXT) != 0) ||
                                  ((originalDesiredAccess & THREAD_SUSPEND_RESUME) != 0) ||
                                  ((originalDesiredAccess & THREAD_ALL_ACCESS) == THREAD_ALL_ACCESS);
+        enterpriseCandidate = (hasThreadContextAccess && PsGetCurrentProcessId() != targetPid);
     }
     else
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
 
@@ -2216,12 +2629,11 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
     callerTid = PsGetCurrentThreadId();
     callerPid32 = (UINT32)(ULONG_PTR)callerPid;
     targetPid32 = (UINT32)(ULONG_PTR)targetPid;
-    isProtectedTarget = BLACKBIRDProcessMonitorIsProtectedPid(targetPid32);
-    trustedProtectedCaller = BLACKBIRDProcessMonitorIsTrustedProtectedCaller(callerPid32, targetPid32);
+    isProtectedTarget = BkcprocIsProtectedPid(targetPid32);
+    trustedProtectedCaller = isProtectedTarget && BkcprocIsTrustedProtectedCaller(callerPid32, targetPid32);
     if (isProtectedTarget && !trustedProtectedCaller)
     {
-        sanitizedAccess &=
-            isThreadObject ? BLACKBIRD_PROTECTED_THREAD_ALLOWED_ACCESS : BLACKBIRD_PROTECTED_PROCESS_ALLOWED_ACCESS;
+        sanitizedAccess &= isThreadObject ? BK_PROTECTED_THREAD_ALLOWED_ACCESS : BK_PROTECTED_PROCESS_ALLOWED_ACCESS;
         if (sanitizedAccess != desiredAccess)
         {
             if (OperationInformation->Operation == OB_OPERATION_HANDLE_CREATE)
@@ -2236,83 +2648,86 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
         }
     }
 
-    if (!hasVmWriteOrFull && !hasThreadContextAccess)
+    if (!hasVmWriteOrFull && !hasThreadContextAccess && !enterpriseCandidate)
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
-    if (!BLACKBIRDControlHasClientsFast())
+    if (!BkctlIsArmedFast())
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
 
     secondaryPid32 = (targetPid32 != callerPid32) ? targetPid32 : 0;
-    streamMask = BLACKBIRD_STREAM_HANDLE;
+    streamMask = (hasVmWriteOrFull || hasThreadContextAccess) ? BK_STREAM_HANDLE : 0;
     if (hasVmWriteOrFull)
     {
-        streamMask |= BLACKBIRD_STREAM_MEMORY;
+        streamMask |= BK_STREAM_MEMORY;
+    }
+    if (enterpriseCandidate)
+    {
+        streamMask |= BK_STREAM_ENTERPRISE;
     }
 
-    if (!BLACKBIRDControlHasPidInterest(callerPid32, secondaryPid32, streamMask))
+    if (!BkctlHasPidInterest(callerPid32, secondaryPid32, streamMask))
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
 
     intentFlags = 0;
     if (hasVmWriteOrFull)
     {
-        intentFlags |= BLACKBIRD_INTENT_PROCESS_MEMORY;
+        intentFlags |= BK_INTENT_PROCESS_MEMORY;
     }
     if (hasThreadContextAccess)
     {
-        intentFlags |= BLACKBIRD_INTENT_THREAD_CONTEXT;
+        intentFlags |= BK_INTENT_THREAD_CONTEXT;
     }
     if (isDuplicateOperation && (intentFlags != 0))
     {
-        intentFlags |= BLACKBIRD_INTENT_DUP_HANDLE;
+        intentFlags |= BK_INTENT_DUP_HANDLE;
     }
 
     if (intentFlags != 0)
     {
-        BLACKBIRDCorrelationRecordHandleIntent(callerPid, targetPid, originalDesiredAccess, intentFlags);
+        BkcorRecordHandleIntent(callerPid, targetPid, originalDesiredAccess, intentFlags);
     }
     if (isThreadObject)
     {
-        BLACKBIRDApcMonitorRecordThreadHandleIntent(callerPid, targetPid, originalDesiredAccess, isDuplicateOperation);
+        BkapcRecordThreadHandleIntent(callerPid, targetPid, originalDesiredAccess, isDuplicateOperation);
     }
 
-    if (!BLACKBIRDHandleTryAcquireWorkSlot())
+    if (!BkchdlHandleTryAcquireWorkSlot())
     {
         failureCounter = InterlockedIncrement(&g_HandleCallbackDropLogCounter);
         if (failureCounter == 1 || ((failureCounter & 0xFF) == 0))
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                       "BLACKBIRD: handle callback drop caller=%p target=%p access=0x%08X total=%lu.\n", callerPid,
-                       targetPid, originalDesiredAccess, (ULONG)failureCounter);
+                       "BK: handle callback drop caller=%p target=%p access=0x%08X total=%lu.\n", callerPid, targetPid,
+                       originalDesiredAccess, (ULONG)failureCounter);
         }
-        BLACKBIRD_DBG_PRINT(
-            DPFLTR_WARNING_LEVEL,
-            "BLACKBIRD[DBG]: dropping handle preop caller=%p target=%p access=0x%08X (work slot unavailable).\n",
-            callerPid, targetPid, originalDesiredAccess);
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
+        BK_DBG_PRINT(DPFLTR_WARNING_LEVEL,
+                     "BK[DBG]: dropping handle preop caller=%p target=%p access=0x%08X (work slot unavailable).\n",
+                     callerPid, targetPid, originalDesiredAccess);
+        BktmpLeave(BktmpSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
 
-    work = (PBLACKBIRD_HANDLE_WORK)BLACKBIRDAllocatePoolCompat(POOL_FLAG_NON_PAGED, sizeof(*work), 'hdtT');
+    work = (PBK_HANDLE_WORK)BkpoolAllocateCompat(POOL_FLAG_NON_PAGED, sizeof(*work), 'hdtT');
     if (work == NULL)
     {
         failureCounter = InterlockedIncrement(&g_HandleAllocFailureCounter);
         if (failureCounter == 1 || ((failureCounter & 0xFF) == 0))
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL,
-                       "BLACKBIRD: handle callback alloc failure caller=%p target=%p access=0x%08X total=%lu.\n",
-                       callerPid, targetPid, originalDesiredAccess, (ULONG)failureCounter);
+                       "BK: handle callback alloc failure caller=%p target=%p access=0x%08X total=%lu.\n", callerPid,
+                       targetPid, originalDesiredAccess, (ULONG)failureCounter);
         }
-        BLACKBIRD_DBG_PRINT(DPFLTR_ERROR_LEVEL, "BLACKBIRD[DBG]: ExAllocatePool2 failed for handle work item.\n");
-        BLACKBIRDHandleReleaseWorkSlot();
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
+        BK_DBG_PRINT(DPFLTR_ERROR_LEVEL, "BK[DBG]: ExAllocatePool2 failed for handle work item.\n");
+        BkchdlHandleReleaseWorkSlot();
+        BktmpLeave(BktmpSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
     }
 
@@ -2320,6 +2735,8 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
     work->CallerPid = callerPid;
     work->CallerTid = callerTid;
     work->TargetPid = targetPid;
+    work->TargetTid = targetTid;
+    work->ObjectAddress = (UINT64)(ULONG_PTR)OperationInformation->Object;
     work->DesiredAccess = originalDesiredAccess;
     work->IsThreadObject = isThreadObject;
     work->IsDuplicateOperation = isDuplicateOperation;
@@ -2327,10 +2744,11 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
     frameCount = 0;
     copyCount = 0;
     fullCopyCount = 0;
-    BLACKBIRDCaptureRegisterSnapshot(work);
+    BkchdlCaptureRegisterSnapshot(work);
     shouldCaptureStack = isDuplicateOperation ||
                          ((originalDesiredAccess & (PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD |
-                                                    THREAD_SET_CONTEXT | THREAD_SUSPEND_RESUME)) != 0) ||
+                                                    PROCESS_DUP_HANDLE | THREAD_SET_CONTEXT | THREAD_GET_CONTEXT |
+                                                    THREAD_SUSPEND_RESUME | THREAD_QUERY_INFORMATION)) != 0) ||
                          ((originalDesiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS) ||
                          ((originalDesiredAccess & THREAD_ALL_ACCESS) == THREAD_ALL_ACCESS);
     if (shouldCaptureStack)
@@ -2360,14 +2778,12 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
             failureCounter = InterlockedIncrement(&g_HandleStackFaultLogCounter);
             if (failureCounter == 1 || ((failureCounter & 0xFF) == 0))
             {
-                DbgPrintEx(
-                    DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                    "BLACKBIRD: handle callback stack capture fault caller=%p target=%p access=0x%08X total=%lu.\n",
-                    callerPid, targetPid, desiredAccess, (ULONG)failureCounter);
+                DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+                           "BK: handle callback stack capture fault caller=%p target=%p access=0x%08X total=%lu.\n",
+                           callerPid, targetPid, desiredAccess, (ULONG)failureCounter);
             }
-            BLACKBIRD_DBG_PRINT(DPFLTR_WARNING_LEVEL,
-                                "BLACKBIRD[DBG]: RtlWalkFrameChain fault caller=%p target=%p access=0x%08X.\n",
-                                callerPid, targetPid, desiredAccess);
+            BK_DBG_PRINT(DPFLTR_WARNING_LEVEL, "BK[DBG]: RtlWalkFrameChain fault caller=%p target=%p access=0x%08X.\n",
+                         callerPid, targetPid, desiredAccess);
         }
     }
 
@@ -2375,21 +2791,20 @@ static OB_PREOP_CALLBACK_STATUS BLACKBIRDProcessPreOperation(_In_ PVOID Registra
     work->FullFrameCount = fullCopyCount;
     if (copyCount != 0 && work->Frames[0] != NULL)
     {
-        BLACKBIRDCaptureImmediateOriginSample(callerPid, work->Frames[0], work);
+        BkchdlCaptureImmediateOriginSample(callerPid, work->Frames[0], work);
     }
 
-    ExInitializeWorkItem(&work->WorkItem, BLACKBIRDHandleWorkRoutine, work);
+    ExInitializeWorkItem(&work->WorkItem, BkchdlHandleWorkRoutine, work);
     ExQueueWorkItem(&work->WorkItem, DelayedWorkQueue);
-    BLACKBIRD_DBG_PRINT(DPFLTR_TRACE_LEVEL,
-                        "BLACKBIRD[DBG]: queued handle work caller=%p target=%p access=0x%08X frames=%lu.\n", callerPid,
-                        targetPid, desiredAccess, copyCount);
+    BK_DBG_PRINT(DPFLTR_TRACE_LEVEL, "BK[DBG]: queued handle work caller=%p target=%p access=0x%08X frames=%lu.\n",
+                 callerPid, targetPid, desiredAccess, copyCount);
 
-    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemHandleMonitor, tempusStartQpc);
+    BktmpLeave(BktmpSubsystemHandleMonitor, tempusStartQpc);
     return OB_PREOP_SUCCESS;
 }
 
 NTSTATUS
-BLACKBIRDHandleMonitorInitialize(VOID)
+BkchdlInitialize(VOID)
 {
     NTSTATUS status;
     LARGE_INTEGER freq;
@@ -2416,12 +2831,12 @@ BLACKBIRDHandleMonitorInitialize(VOID)
     RtlZeroMemory(&g_OperationRegistration, sizeof(g_OperationRegistration));
     g_OperationRegistration[0].ObjectType = PsProcessType;
     g_OperationRegistration[0].Operations = OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE;
-    g_OperationRegistration[0].PreOperation = BLACKBIRDProcessPreOperation;
+    g_OperationRegistration[0].PreOperation = BkchdlProcessPreOperation;
     g_OperationRegistration[0].PostOperation = NULL;
 
     g_OperationRegistration[1].ObjectType = PsThreadType;
     g_OperationRegistration[1].Operations = OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE;
-    g_OperationRegistration[1].PreOperation = BLACKBIRDProcessPreOperation;
+    g_OperationRegistration[1].PreOperation = BkchdlProcessPreOperation;
     g_OperationRegistration[1].PostOperation = NULL;
 
     RtlZeroMemory(&g_CallbackRegistration, sizeof(g_CallbackRegistration));
@@ -2435,17 +2850,16 @@ BLACKBIRDHandleMonitorInitialize(VOID)
     status = ObRegisterCallbacks(&g_CallbackRegistration, &g_ProcessObRegistrationHandle);
     if (!NT_SUCCESS(status))
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BLACKBIRD: ObRegisterCallbacks failed (0x%08X).\n",
-                   status);
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_ERROR_LEVEL, "BK: ObRegisterCallbacks failed (0x%08X).\n", status);
         return status;
     }
 
     g_HandleMonitorRegistered = TRUE;
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: process handle monitor initialized.\n");
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BK: process handle monitor initialized.\n");
     return STATUS_SUCCESS;
 }
 
-VOID BLACKBIRDHandleMonitorUninitialize(VOID)
+VOID BkchdlUninitialize(VOID)
 {
     LARGE_INTEGER waitInterval;
 
@@ -2474,8 +2888,7 @@ VOID BLACKBIRDHandleMonitorUninitialize(VOID)
         waitStatus = KeWaitForSingleObject(&g_HandleAllWorkDone, Executive, KernelMode, FALSE, &waitInterval);
         if (waitStatus == STATUS_TIMEOUT)
         {
-            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
-                       "BLACKBIRD: handle monitor draining (outstanding=%ld).\n",
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BK: handle monitor draining (outstanding=%ld).\n",
                        InterlockedCompareExchange(&g_HandleOutstandingWork, 0, 0));
         }
     }
@@ -2484,13 +2897,13 @@ VOID BLACKBIRDHandleMonitorUninitialize(VOID)
     RtlZeroMemory(g_DeepCache, sizeof(g_DeepCache));
     InterlockedExchange(&g_DeepCacheWriteIndex, -1);
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
-               "BLACKBIRD: process handle monitor uninitialized (dropped=%ld, stackCaptureFaults=%ld).\n",
+               "BK: process handle monitor uninitialized (dropped=%ld, stackCaptureFaults=%ld).\n",
                InterlockedCompareExchange(&g_HandleDroppedWork, 0, 0),
                InterlockedCompareExchange(&g_HandleStackCaptureFaults, 0, 0));
 }
 
 BOOLEAN
-BLACKBIRDHandleMonitorSelfCheck(VOID)
+BkchdlSelfCheck(VOID)
 {
     if (!g_HandleMonitorRegistered)
     {
@@ -2508,8 +2921,8 @@ BLACKBIRDHandleMonitorSelfCheck(VOID)
     {
         return FALSE;
     }
-    if (g_OperationRegistration[0].PreOperation != BLACKBIRDProcessPreOperation ||
-        g_OperationRegistration[1].PreOperation != BLACKBIRDProcessPreOperation)
+    if (g_OperationRegistration[0].PreOperation != BkchdlProcessPreOperation ||
+        g_OperationRegistration[1].PreOperation != BkchdlProcessPreOperation)
     {
         return FALSE;
     }

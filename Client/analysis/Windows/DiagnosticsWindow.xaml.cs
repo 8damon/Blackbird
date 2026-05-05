@@ -29,22 +29,27 @@ namespace BlackbirdInterface
         private readonly ObservableCollection<DiagnosticsEntryView> _degradedEntries = new();
         private readonly ObservableCollection<DiagnosticsEntryView> _healthyEntries = new();
         private readonly ObservableCollection<FeedEntryView> _outputFeedEntries = new();
+        private readonly ObservableCollection<FeedEntryView> _targetFeedEntries = new();
+        private readonly ObservableCollection<FeedEntryView> _exceptionFeedEntries = new();
         private readonly ObservableCollection<FeedEntryView> _controllerFeedEntries = new();
+        private readonly ObservableCollection<ComponentEntryView> _componentEntries = new();
         private long _controllerLogOffset;
 
         public DiagnosticsWindow(int pid)
         {
             InitializeComponent();
-            WindowThemeHelper.ApplyDarkTitleBar(this);
+            WindowThemeHelper.WireThemeAwareTitleBar(this);
 
             _targetPid = pid > 0 ? pid : Environment.ProcessId;
-            TargetBlock.Text = $"PID {_targetPid}";
+            TargetBlock.Text = _targetPid > 0 ? $"Target {_targetPid}" : "No target";
             ProblemItemsControl.ItemsSource = _problemEntries;
             DisabledItemsControl.ItemsSource = _disabledEntries;
             DegradedItemsControl.ItemsSource = _degradedEntries;
             HealthyItemsControl.ItemsSource = _healthyEntries;
+            ComponentItemsControl.ItemsSource = _componentEntries;
             LoadOutputSnapshot();
             RefreshState();
+            _ = LoadComponentIdentityAsync();
 
             _stateTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _stateTimer.Tick += (_, __) => RefreshState();
@@ -68,10 +73,14 @@ namespace BlackbirdInterface
         private void LoadOutputSnapshot()
         {
             _outputFeedEntries.Clear();
+            _targetFeedEntries.Clear();
+            _exceptionFeedEntries.Clear();
             ClearFeedBox(OutputFeedBox);
+            ClearFeedBox(TargetFeedBox);
+            ClearFeedBox(ExceptionsFeedBox);
             foreach (DebugConsoleEntry entry in DebugConsoleService.Snapshot())
             {
-                AppendFeedEntry(_outputFeedEntries, FeedEntryView.FromDebugConsole(entry), OutputFeedBox);
+                AppendDebugConsoleEntry(entry);
             }
         }
 
@@ -94,10 +103,6 @@ namespace BlackbirdInterface
             ReplaceCollection(_disabledEntries, views.Where(x => x.StateGroup == DiagnosticsStateGroup.Disabled));
             ReplaceCollection(_degradedEntries, views.Where(x => x.StateGroup == DiagnosticsStateGroup.Degraded));
             ReplaceCollection(_healthyEntries, views.Where(x => x.StateGroup == DiagnosticsStateGroup.Healthy));
-
-            SummaryBlock.Text =
-                $"Problems {_problemEntries.Count}  |  Disabled {_disabledEntries.Count}  |  Degraded {_degradedEntries.Count}  |  Healthy {_healthyEntries.Count}";
-            UpdatedBlock.Text = $"Updated {DateTime.Now:HH:mm:ss}";
         }
 
         private static List<DiagnosticsStateEntry> BuildSubsystemEntries(IReadOnlyDictionary<string, string> values)
@@ -106,7 +111,7 @@ namespace BlackbirdInterface
             AddProjected(projected, "Interface->Controller IPC",
                          ResolveFirst(values, "Interface->Controller IPC", "Connectivity"));
             AddProjected(projected, "HookDLL->Controller IPC", ResolveHookIpc(values));
-            AddProjected(projected, "HookDLL Hooks Set", ResolveFirst(values, "HookDLL Hooks Set", "Usermode Hooks"));
+            AddProjected(projected, "HookDLL Hooks Set", ResolveHookDllHooksSet(values));
             AddProjected(projected, "DACLs", ResolveDacls(values));
             AddProjected(projected, "Controller<->Driver Comms",
                          ResolveFirst(values, "Controller<->Driver Comms", "DriverProxy"));
@@ -118,12 +123,20 @@ namespace BlackbirdInterface
             AddProjected(projected, "Signature Intel", ResolveFirst(values, "Signature Intel"));
             AddProjected(projected, "Capture Store", ResolveFirst(values, "Capture Store"));
             AddProjected(projected, "RuntimeConfig", ResolveFirst(values, "RuntimeConfig"));
+            AddProjected(projected, "PID Coverage", ResolveFirst(values, "PID Coverage"));
             AddProjected(projected, "Driver Queue", ResolveFirst(values, "Driver Queue"));
+            AddProjected(projected, "Driver Health", ResolveFirst(values, "Driver Health"));
+            AddProjected(projected, "Driver Tamper", ResolveDriverTamper(values));
+            AddProjected(projected, "SR71 Hook Ready", ResolveSr71HookReady(values));
+            AddProjected(projected, "SR71 Instrumentation", ResolveSr71Instrumentation(values));
+            AddProjected(projected, "Ntdll Mirror", ResolveFirst(values, "Ntdll Mirror"));
             AddProjected(projected, "Tempus", ResolveFirst(values, "Tempus"));
             AddProjected(projected, "API Graph", ResolveFirst(values, "API Graph"));
             AddProjected(projected, "Driver Service", ResolveFirst(values, "Driver Service"));
             AddProjected(projected, "Controller Service", ResolveFirst(values, "Controller Service"));
             AddProjected(projected, "HookDLL Presence", ResolveHookDllPresence(values));
+            AddProjected(projected, "Disassembly Engine", ResolveFirst(values, "Disassembly Engine"));
+            AddProjected(projected, "Last Fault", ResolveFirst(values, "Last Fault"));
             return projected;
         }
 
@@ -153,20 +166,26 @@ namespace BlackbirdInterface
         private static string? ResolveHookIpc(IReadOnlyDictionary<string, string> values)
         {
             string? explicitValue = ResolveFirst(values, "HookDLL->Controller IPC");
-            if (!string.IsNullOrWhiteSpace(explicitValue))
+            if (IsGoodStatus(explicitValue))
             {
                 return explicitValue;
             }
 
             string? hooks = ResolveFirst(values, "Usermode Hooks");
-            if (string.IsNullOrWhiteSpace(hooks))
-            {
-                return null;
-            }
-
-            if (hooks.IndexOf("Active", StringComparison.OrdinalIgnoreCase) >= 0)
+            string? hookReady = ResolveSr71HookReady(values);
+            if (IsGoodStatus(hooks) || IsGoodStatus(hookReady))
             {
                 return "Ready";
+            }
+
+            if (!string.IsNullOrWhiteSpace(explicitValue) && !IsPendingStatus(explicitValue))
+            {
+                return explicitValue;
+            }
+
+            if (string.IsNullOrWhiteSpace(hooks))
+            {
+                return explicitValue;
             }
 
             if (hooks.IndexOf("Awaiting", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -180,6 +199,29 @@ namespace BlackbirdInterface
             }
 
             return hooks;
+        }
+
+        private static string? ResolveHookDllHooksSet(IReadOnlyDictionary<string, string> values)
+        {
+            string? explicitValue = ResolveFirst(values, "HookDLL Hooks Set");
+            if (IsGoodStatus(explicitValue) || IsBadStatus(explicitValue) || IsDisabledStatus(explicitValue))
+            {
+                return explicitValue;
+            }
+
+            string? hooks = ResolveFirst(values, "Usermode Hooks");
+            if (IsGoodStatus(hooks))
+            {
+                return hooks;
+            }
+
+            string? hookReady = ResolveSr71HookReady(values);
+            if (IsGoodStatus(hookReady))
+            {
+                return "OK";
+            }
+
+            return explicitValue ?? hooks;
         }
 
         private static string? ResolveDacls(IReadOnlyDictionary<string, string> values)
@@ -249,15 +291,17 @@ namespace BlackbirdInterface
         private static string? ResolveIntegrityStatus(IReadOnlyDictionary<string, string> values, string key)
         {
             string? explicitValue = ResolveFirst(values, key);
-            if (!string.IsNullOrWhiteSpace(explicitValue) &&
-                !string.Equals(explicitValue, "Unknown", StringComparison.OrdinalIgnoreCase))
+            if (IsBadStatus(explicitValue) || IsGoodStatus(explicitValue) || IsDisabledStatus(explicitValue))
             {
                 return explicitValue;
             }
 
             string? hooks = ResolveFirst(values, "Usermode Hooks");
-            if (key.Equals("Hook Integrity", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(hooks) &&
-                hooks.Contains("Active", StringComparison.OrdinalIgnoreCase))
+            string? hookReady = ResolveSr71HookReady(values);
+            bool hookPathReady =
+                IsGoodStatus(hookReady) ||
+                (!string.IsNullOrWhiteSpace(hooks) && hooks.Contains("Active", StringComparison.OrdinalIgnoreCase));
+            if (key.Equals("Hook Integrity", StringComparison.OrdinalIgnoreCase) && hookPathReady)
             {
                 return "OK";
             }
@@ -270,13 +314,81 @@ namespace BlackbirdInterface
                 return "OK";
             }
 
-            if (key.Equals("AMSI Integrity", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(hooks) &&
-                hooks.Contains("Active", StringComparison.OrdinalIgnoreCase))
+            if (key.Equals("AMSI Integrity", StringComparison.OrdinalIgnoreCase) && hookPathReady)
             {
                 return "OK";
             }
 
             return explicitValue;
+        }
+
+        private static string? ResolveDriverTamper(IReadOnlyDictionary<string, string> values)
+        {
+            string? value = ResolveFirst(values, "Driver Tamper");
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return null;
+            }
+
+            if (TryReadHexToken(value, "mask", out uint mask))
+            {
+                return mask == 0 ? "OK mask=0x00000000" : $"DEGRADED mask=0x{mask:X8}";
+            }
+
+            return value;
+        }
+
+        private static string? ResolveSr71HookReady(IReadOnlyDictionary<string, string> values)
+        {
+            string? value = ResolveFirst(values, "SR71 Hook Ready");
+            string? hooks = ResolveFirst(values, "Usermode Hooks", "HookDLL Hooks Set");
+            if (IsGoodStatus(value) || IsBadStatus(value) || IsDisabledStatus(value))
+            {
+                return value;
+            }
+
+            if (IsGoodStatus(hooks))
+            {
+                return "OK observed via SR71 telemetry";
+            }
+
+            if (!string.IsNullOrWhiteSpace(value) && TryReadHexToken(value, "mask", out uint observed) &&
+                TryReadHexToken(value, "required", out uint required))
+            {
+                if (required == 0)
+                {
+                    return observed == 0 ? "Inactive mask=0x00000000" : $"OK mask=0x{observed:X8}";
+                }
+
+                uint missing = required & ~observed;
+                return missing == 0 ? $"OK mask=0x{observed:X8}"
+                                    : $"Awaiting hook-ready mask=0x{observed:X8} missing=0x{missing:X8}";
+            }
+
+            return value;
+        }
+
+        private static string? ResolveSr71Instrumentation(IReadOnlyDictionary<string, string> values)
+        {
+            string? value = ResolveFirst(values, "SR71 Instrumentation");
+            if (IsGoodStatus(value) || IsBadStatus(value) || IsDisabledStatus(value))
+            {
+                return value;
+            }
+
+            if (TryReadUIntToken(value, "ranges", out uint ranges) && ranges > 0)
+            {
+                return value!.Contains("OK", StringComparison.OrdinalIgnoreCase) ? value : $"OK {value}";
+            }
+
+            string? hookReady = ResolveSr71HookReady(values);
+            string? hooks = ResolveFirst(values, "Usermode Hooks", "HookDLL Hooks Set");
+            if (IsGoodStatus(hookReady) || IsGoodStatus(hooks))
+            {
+                return "OK observed via SR71 telemetry";
+            }
+
+            return value;
         }
 
         private static string? ResolveHookDllPresence(IReadOnlyDictionary<string, string> values)
@@ -291,6 +403,128 @@ namespace BlackbirdInterface
             return ResolveFirst(values, "HookDLL Presence", "Hook DLL", "HookDLL");
         }
 
+        private static bool IsGoodStatus(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value) || IsBadStatus(value) || IsDisabledStatus(value) ||
+                IsPendingStatus(value))
+            {
+                return false;
+            }
+
+            return value.Contains("OK", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("Running", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("Enabled", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("Open", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("Found", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("Active", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("Connected", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("Established", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("Initialized", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("Ready", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsBadStatus(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            return value.Contains("TAMPERED", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("FAILED", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("MISSING", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("OPEN FAILED", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("TIMED OUT", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("STOPPED", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("ERROR", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("ACCESS DENIED", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsDisabledStatus(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            return value.Contains("DISABLED", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("INACTIVE", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("DEFERRED", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("CLOSED", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsPendingStatus(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            return value.Contains("DEGRADED", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("UNKNOWN", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("AWAITING", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("REVIEW", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("NO DATA", StringComparison.OrdinalIgnoreCase) ||
+                   value.Contains("UNSUPPORTED", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TryReadHexToken(string? value, string token, out uint parsed)
+        {
+            parsed = 0;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            string prefix = token + "=";
+            int start = value.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
+            if (start < 0)
+            {
+                return false;
+            }
+
+            start += prefix.Length;
+            if (start + 2 <= value.Length && value.AsSpan(start).StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                start += 2;
+            }
+
+            int end = start;
+            while (end < value.Length && Uri.IsHexDigit(value[end]))
+            {
+                end += 1;
+            }
+
+            return end > start && uint.TryParse(value.AsSpan(start, end - start), NumberStyles.HexNumber,
+                                                CultureInfo.InvariantCulture, out parsed);
+        }
+
+        private static bool TryReadUIntToken(string? value, string token, out uint parsed)
+        {
+            parsed = 0;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            string prefix = token + "=";
+            int start = value.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
+            if (start < 0)
+            {
+                return false;
+            }
+
+            start += prefix.Length;
+            int end = start;
+            while (end < value.Length && char.IsDigit(value[end]))
+            {
+                end += 1;
+            }
+
+            return end > start && uint.TryParse(value.AsSpan(start, end - start), NumberStyles.Integer,
+                                                CultureInfo.InvariantCulture, out parsed);
+        }
+
         private static void ReplaceCollection<T>(ObservableCollection<T> target, IEnumerable<T> values)
         {
             target.Clear();
@@ -302,16 +536,41 @@ namespace BlackbirdInterface
 
         private void DebugConsoleService_EntryReceived(DebugConsoleEntry entry)
         {
-            _ = Dispatcher.BeginInvoke(
-                new Action(
-                    () =>
-                    { AppendFeedEntry(_outputFeedEntries, FeedEntryView.FromDebugConsole(entry), OutputFeedBox); }),
-                DispatcherPriority.Background);
+            _ = Dispatcher.BeginInvoke(new Action(() =>
+                                                  { AppendDebugConsoleEntry(entry); }),
+                                       DispatcherPriority.Background);
+        }
+
+        private void AppendDebugConsoleEntry(DebugConsoleEntry entry)
+        {
+            FeedEntryView parsed = FeedEntryView.FromDebugConsole(entry);
+            AppendFeedEntry(_outputFeedEntries, parsed, OutputFeedBox);
+
+            if (IsTargetFeedEntry(entry))
+            {
+                AppendFeedEntry(_targetFeedEntries, parsed, TargetFeedBox);
+            }
+
+            if (IsVehExceptionEntry(entry))
+            {
+                AppendFeedEntry(_exceptionFeedEntries, parsed, ExceptionsFeedBox);
+            }
         }
 
         private void LoadControllerLogInitial()
         {
             _controllerFeedEntries.Clear();
+            ClearFeedBox(ControllerFeedBox);
+            if (!EnsureControllerLogFile())
+            {
+                AppendFeedEntry(_controllerFeedEntries,
+                                FeedEntryView.Create(DateTime.Now, FeedLevel.Error, "CONTROLLER",
+                                                     "unable to prepare controller log",
+                                                     "CONTROLLER|ERROR|unable to prepare controller log"),
+                                ControllerFeedBox);
+                return;
+            }
+
             if (!File.Exists(ControllerLogPath))
             {
                 AppendFeedEntry(_controllerFeedEntries,
@@ -324,7 +583,6 @@ namespace BlackbirdInterface
 
             try
             {
-                ClearFeedBox(ControllerFeedBox);
                 using var fs = new FileStream(ControllerLogPath, FileMode.Open, FileAccess.Read,
                                               FileShare.ReadWrite | FileShare.Delete);
                 const int tail = 64 * 1024;
@@ -353,7 +611,7 @@ namespace BlackbirdInterface
 
         private void TailControllerLog()
         {
-            if (!File.Exists(ControllerLogPath))
+            if (!EnsureControllerLogFile())
             {
                 return;
             }
@@ -381,6 +639,26 @@ namespace BlackbirdInterface
             }
             catch
             {
+            }
+        }
+
+        private static bool EnsureControllerLogFile()
+        {
+            try
+            {
+                string? directory = Path.GetDirectoryName(ControllerLogPath);
+                if (!string.IsNullOrWhiteSpace(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                using FileStream _ = new FileStream(ControllerLogPath, FileMode.OpenOrCreate, FileAccess.ReadWrite,
+                                                    FileShare.ReadWrite | FileShare.Delete);
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -428,7 +706,75 @@ namespace BlackbirdInterface
         private void Clear_Click(object sender, RoutedEventArgs e)
         {
             _outputFeedEntries.Clear();
+            _targetFeedEntries.Clear();
+            _exceptionFeedEntries.Clear();
             ClearFeedBox(OutputFeedBox);
+            ClearFeedBox(TargetFeedBox);
+            ClearFeedBox(ExceptionsFeedBox);
+        }
+
+        private async System.Threading.Tasks.Task LoadComponentIdentityAsync()
+        {
+            IReadOnlyList<ComponentEntry> entries =
+                await System.Threading.Tasks.Task.Run(ComponentIdentityService.GetEntries);
+            _componentEntries.Clear();
+            foreach (ComponentEntry entry in entries)
+                _componentEntries.Add(ComponentEntryView.From(entry));
+        }
+
+        private async void RefreshComponents_Click(object sender, RoutedEventArgs e)
+        {
+            IReadOnlyList<ComponentEntry> entries =
+                await System.Threading.Tasks.Task.Run(ComponentIdentityService.Refresh);
+            _componentEntries.Clear();
+            foreach (ComponentEntry entry in entries)
+                _componentEntries.Add(ComponentEntryView.From(entry));
+        }
+
+        private void CopyComponents_Click(object sender, RoutedEventArgs e)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"{"Component",-14}  {"Description",-74}  {"Version",-24}  {"SHA-256",-64}  Path");
+            sb.AppendLine(new string('-', 230));
+            foreach (ComponentEntry entry in ComponentIdentityService.GetEntries())
+            {
+                string hash = string.IsNullOrEmpty(entry.HashHex) ? "(not found)" : entry.HashHex;
+                sb.AppendLine(
+                    $"{entry.Name,-14}  {entry.Description,-74}  {entry.Version,-24}  {hash,-64}  {entry.Path}");
+            }
+            try
+            {
+                Clipboard.SetText(sb.ToString());
+            }
+            catch
+            {
+            }
+        }
+
+        private bool IsTargetFeedEntry(DebugConsoleEntry entry)
+        {
+            if (_targetPid <= 0)
+            {
+                return false;
+            }
+
+            if (entry.ProcessId == _targetPid)
+            {
+                return true;
+            }
+
+            return entry.Source.EndsWith($":{_targetPid}", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool IsVehExceptionEntry(DebugConsoleEntry entry)
+        {
+            if (!IsTargetFeedEntry(entry))
+            {
+                return false;
+            }
+
+            return entry.Message.IndexOf("[VEH]", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   entry.Message.IndexOf("veh-exception", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private void Root_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -655,21 +1001,23 @@ namespace BlackbirdInterface
 
             private static DiagnosticsDomain Categorize(string key)
             {
-                return key.Trim() switch {
-                    "Interface->Controller IPC" or "HookDLL->Controller IPC" or "Controller<->Driver Comms" =>
-                        DiagnosticsDomain.Ipc,
+                return key.Trim() switch { "Interface->Controller IPC" or "HookDLL->Controller IPC" or
+                                           "Controller<->Driver Comms" => DiagnosticsDomain.Ipc,
 
-                    "HookDLL Hooks Set" or "Kernel Hooks" or "HookDLL Presence" => DiagnosticsDomain.Hooks,
+                                           "HookDLL Hooks Set" or "Kernel Hooks" or "HookDLL Presence" or
+                                           "SR71 Hook Ready" or "SR71 Instrumentation" or "Ntdll Mirror" =>
+                                               DiagnosticsDomain.Hooks,
 
-                    "Hook Integrity" or "AMSI Integrity" or "ETW Integrity" or "DACLs" => DiagnosticsDomain.Integrity,
+                                           "Hook Integrity" or "AMSI Integrity" or "ETW Integrity" or "DACLs" or
+                                           "Driver Health" or "Driver Tamper" => DiagnosticsDomain.Integrity,
 
-                    "Driver Service" or "Controller Service" => DiagnosticsDomain.Services,
+                                           "Driver Service" or "Controller Service" => DiagnosticsDomain.Services,
 
-                    "ETW Status" or "Signature Intel" or "Capture Store" or "RuntimeConfig" or "Driver Queue" or
-                    "Tempus" or "API Graph" => DiagnosticsDomain.Capture,
+                                           "ETW Status" or "Signature Intel" or "Capture Store" or "RuntimeConfig" or
+                                           "PID Coverage" or "Driver Queue" or "Tempus" or "API Graph" or
+                                           "Disassembly Engine" or "Last Fault" => DiagnosticsDomain.Capture,
 
-                    _ => DiagnosticsDomain.Other
-                };
+                                           _ => DiagnosticsDomain.Other };
             }
 
             private static int Sort(string key)
@@ -688,12 +1036,53 @@ namespace BlackbirdInterface
                                            "Signature Intel" => 11,
                                            "Capture Store" => 12,
                                            "RuntimeConfig" => 13,
-                                           "Driver Queue" => 14,
-                                           "Tempus" => 15,
-                                           "API Graph" => 16,
-                                           "Driver Service" => 17,
-                                           "Controller Service" => 18,
+                                           "PID Coverage" => 14,
+                                           "Driver Queue" => 15,
+                                           "Driver Health" => 16,
+                                           "Driver Tamper" => 17,
+                                           "SR71 Hook Ready" => 18,
+                                           "SR71 Instrumentation" => 19,
+                                           "Ntdll Mirror" => 20,
+                                           "Tempus" => 21,
+                                           "API Graph" => 22,
+                                           "Driver Service" => 23,
+                                           "Controller Service" => 24,
+                                           "Disassembly Engine" => 25,
+                                           "Last Fault" => 26,
                                            _ => 100 };
+            }
+        }
+
+        private sealed class ComponentEntryView
+        {
+            public string Name { get; init; } = string.Empty;
+            public string Description { get; init; } = string.Empty;
+            public string Version { get; init; } = string.Empty;
+            public string HashShort { get; init; } = string.Empty;
+            public string HashFull { get; init; } = string.Empty;
+            public string Path { get; init; } = string.Empty;
+            public Brush Background { get; init; } = Brushes.Transparent;
+            public Brush BorderBrush { get; init; } = Brushes.Transparent;
+            public Brush Foreground { get; init; } = Brushes.White;
+
+            internal static ComponentEntryView From(ComponentEntry e)
+            {
+                string short16 = string.IsNullOrEmpty(e.HashHex) ? "—" : e.HashHex[..Math.Min(16, e.HashHex.Length)];
+
+                return new ComponentEntryView {
+                    Name = e.Name,
+                    Description = e.Description,
+                    Version = e.Version,
+                    HashShort = short16,
+                    HashFull = string.IsNullOrEmpty(e.HashHex) ? "(no hash)" : e.HashHex,
+                    Path = e.Path,
+                    Background = e.Found ? new SolidColorBrush(Color.FromArgb(0x38, 0x15, 0x24, 0x36))
+                                         : new SolidColorBrush(Color.FromArgb(0x40, 0x3E, 0x16, 0x16)),
+                    BorderBrush = e.Found ? new SolidColorBrush(Color.FromRgb(0x2C, 0x38, 0x46))
+                                          : new SolidColorBrush(Color.FromRgb(0xDF, 0x63, 0x63)),
+                    Foreground = e.Found ? new SolidColorBrush(Color.FromRgb(0xE5, 0xEE, 0xFF))
+                                         : new SolidColorBrush(Color.FromRgb(0xFF, 0xC5, 0xC5))
+                };
             }
         }
 
@@ -936,7 +1325,7 @@ namespace BlackbirdInterface
             return level switch { FeedLevel.Warning => new SolidColorBrush(Color.FromRgb(0xFF, 0xE8, 0xAE)),
                                   FeedLevel.Error => new SolidColorBrush(Color.FromRgb(0xFF, 0xCF, 0xCF)),
                                   FeedLevel.Critical => new SolidColorBrush(Color.FromRgb(0xFF, 0xD4, 0xE4)),
-                                  _ => new SolidColorBrush(Color.FromRgb(0xE5, 0xEE, 0xFF)) };
+                                  _ => new SolidColorBrush(Color.FromRgb(0xE7, 0xE7, 0xE7)) };
         }
 
         private static Brush BuildFeedBackground(FeedLevel level)
@@ -944,7 +1333,7 @@ namespace BlackbirdInterface
             return level switch { FeedLevel.Warning => new SolidColorBrush(Color.FromArgb(0x45, 0x5E, 0x49, 0x12)),
                                   FeedLevel.Error => new SolidColorBrush(Color.FromArgb(0x45, 0x5E, 0x1E, 0x1E)),
                                   FeedLevel.Critical => new SolidColorBrush(Color.FromArgb(0x52, 0x55, 0x11, 0x2A)),
-                                  _ => new SolidColorBrush(Color.FromArgb(0x38, 0x15, 0x24, 0x36)) };
+                                  _ => new SolidColorBrush(Color.FromArgb(0x26, 0x14, 0x14, 0x14)) };
         }
 
         private static Brush BuildFeedLevelBackground(FeedLevel level)
@@ -952,7 +1341,7 @@ namespace BlackbirdInterface
             return level switch { FeedLevel.Warning => new SolidColorBrush(Color.FromArgb(0x1E, 0xF0, 0xC6, 0x48)),
                                   FeedLevel.Error => new SolidColorBrush(Color.FromArgb(0x22, 0xF0, 0x71, 0x78)),
                                   FeedLevel.Critical => new SolidColorBrush(Color.FromArgb(0x24, 0xFF, 0x5B, 0xA6)),
-                                  _ => new SolidColorBrush(Color.FromArgb(0x20, 0x6F, 0xB7, 0xFF)) };
+                                  _ => new SolidColorBrush(Color.FromArgb(0x20, 0x8A, 0x8A, 0x8A)) };
         }
 
         private static void ClearFeedBox(RichTextBox? box)
@@ -962,7 +1351,9 @@ namespace BlackbirdInterface
                 return;
             }
 
-            box.Document = new FlowDocument { PagePadding = new Thickness(0), TextAlignment = TextAlignment.Left };
+            box.Document = new FlowDocument { PagePadding = new Thickness(0), TextAlignment = TextAlignment.Left,
+                                              Background = new SolidColorBrush(Color.FromRgb(0x10, 0x10, 0x10)),
+                                              Foreground = new SolidColorBrush(Color.FromRgb(0xE7, 0xE7, 0xE7)) };
         }
 
         private static void RewriteFeedBox(RichTextBox? box, IEnumerable<FeedEntryView> entries)

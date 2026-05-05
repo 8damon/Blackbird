@@ -4,14 +4,14 @@
              Background="{DynamicResource WinPanelBrush}">
     <UserControl.Resources>
         <Style x:Key="FilesystemOperationFilterComboItemStyle" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
-            <Setter Property="Background" Value="{DynamicResource FilesystemHeaderBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
             <Setter Property="Padding" Value="6,2"/>
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
         <Style x:Key="FilesystemOperationFilterStyle" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
-            <Setter Property="Background" Value="{DynamicResource FilesystemHeaderBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
@@ -129,7 +129,7 @@
                       VerticalAlignment="Center"
                       IsEditable="False"
                       VerticalContentAlignment="Center"
-                      Background="{DynamicResource FilesystemHeaderBrush}"
+                      Background="{DynamicResource WinHeaderBrush}"
                       Foreground="{DynamicResource WinTextBrush}"
                       BorderBrush="{DynamicResource WinBorderBrush}"
                       Style="{StaticResource PaneFilterComboStyle}"
@@ -182,7 +182,16 @@
                           RowHeight="22"
                           ScrollViewer.VerticalScrollBarVisibility="Hidden"
                           ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                          PreviewMouseRightButtonDown="FilesystemGrid_PreviewMouseRightButtonDown"
                           MouseDoubleClick="FilesystemGrid_MouseDoubleClick">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Inspect File Activity" Click="FilesystemContextInspect_Click"/>
+                            <Separator/>
+                            <MenuItem Header="Copy Summary" Click="FilesystemContextCopySummary_Click"/>
+                            <MenuItem Header="Copy Details" Click="FilesystemContextCopyDetails_Click"/>
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
                     <DataGrid.RowStyle>
                         <Style TargetType="DataGridRow" BasedOn="{StaticResource AppDataGridRowStyle}">
                             <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>

@@ -13,10 +13,11 @@ namespace BlackbirdInterface
         public bool AutoOpenApiGraphWindow { get; }
         public bool UseEarlyBirdApcLaunch { get; }
 
-        public static LaunchHookOptions Capture(bool? useUsermodeHooksChecked, bool? autoOpenApiGraphChecked, bool? earlyBirdChecked, bool allowEarlyBird)
+        public static LaunchHookOptions Capture(bool? useUsermodeHooksChecked, bool? autoOpenApiGraphChecked,
+                                                bool? earlyBirdChecked, bool allowEarlyBird)
         {
             bool useUsermodeHooks = useUsermodeHooksChecked == true;
-            bool autoOpenApiGraphWindow = useUsermodeHooks && autoOpenApiGraphChecked != false;
+            bool autoOpenApiGraphWindow = useUsermodeHooks && autoOpenApiGraphChecked == true;
             bool useEarlyBirdApcLaunch = useUsermodeHooks && allowEarlyBird;
             return new LaunchHookOptions(useUsermodeHooks, autoOpenApiGraphWindow, useEarlyBirdApcLaunch);
         }

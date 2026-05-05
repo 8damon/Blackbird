@@ -25,8 +25,7 @@ namespace BlackbirdInterface.Capture
 
         internal int ColumnCount
         {
-            get
-            {
+            get {
                 EnsureOpen();
                 return SqliteNative.sqlite3_column_count(_statement);
             }
@@ -35,7 +34,8 @@ namespace BlackbirdInterface.Capture
         internal void BindInt64(int index, long value)
         {
             EnsureOpen();
-            _database.ThrowIfError(SqliteNative.sqlite3_bind_int64(_statement, index, value), "sqlite3_bind_int64 failed");
+            _database.ThrowIfError(SqliteNative.sqlite3_bind_int64(_statement, index, value),
+                                   "sqlite3_bind_int64 failed");
         }
 
         internal void BindText(int index, string? value)
@@ -77,12 +77,8 @@ namespace BlackbirdInterface.Capture
         {
             EnsureOpen();
             int rc = SqliteNative.sqlite3_step(_statement);
-            return rc switch
-            {
-                SqliteNative.Row => SqliteStepState.Row,
-                SqliteNative.Done => SqliteStepState.Done,
-                _ => throw BuildStepException(rc)
-            };
+            return rc switch { SqliteNative.Row => SqliteStepState.Row, SqliteNative.Done => SqliteStepState.Done,
+                               _ => throw BuildStepException(rc) };
         }
 
         internal void Reset()
@@ -181,4 +177,3 @@ namespace BlackbirdInterface.Capture
         }
     }
 }
-

@@ -138,7 +138,8 @@ namespace BlackbirdInterface
             return dst;
         }
 
-        private static int ReadExtendedLength(ReadOnlySpan<byte> compressed, ref int src, int length, bool includeBase = true)
+        private static int ReadExtendedLength(ReadOnlySpan<byte> compressed, ref int src, int length,
+                                              bool includeBase = true)
         {
             if (length < 15)
             {

@@ -13,7 +13,16 @@ namespace BlackbirdInterface.Capture
         ThreadLifecycle = 6,
         IoctlRaw = 7,
         EtwRaw = 8,
-        FilesystemRaw = 9
+        FilesystemRaw = 9,
+        RegistryRaw = 10,
+        RegistryGrouped = 11,
+        PerformanceSample = 12,
+        MemoryAttribution = 13,
+        ApiGraph = 14,
+        ExtendedActivity = 15,
+        ThreadStack = 16,
+        Diagnostic = 17,
+        EnterpriseRaw = 18
     }
 
     internal sealed class CaptureLoadedWorkspace
@@ -52,6 +61,18 @@ namespace BlackbirdInterface.Capture
         public int PerformanceSampleCount { get; set; }
         public int ThreadLifecycleCount { get; set; }
         public int ThreadStackHistoryCount { get; set; }
+        public List<CaptureSectionDescriptor> Sections { get; set; } = new();
+    }
+
+    internal sealed class CaptureSectionDescriptor
+    {
+        public string Name { get; set; } = string.Empty;
+        public string RelativePath { get; set; } = string.Empty;
+        public string ContentType { get; set; } = "application/json";
+        public string Codec { get; set; } = "lz4-block";
+        public int RecordCount { get; set; }
+        public long UncompressedBytes { get; set; }
+        public long CompressedBytes { get; set; }
     }
 
     internal sealed class CaptureTimelineBucket

@@ -6,8 +6,7 @@ namespace BlackbirdInterface.Capture
 {
     internal sealed class SqliteException : InvalidOperationException
     {
-        internal SqliteException(string message, int resultCode)
-            : base($"{message} (sqlite={resultCode})")
+        internal SqliteException(string message, int resultCode) : base($"{message} (sqlite={resultCode})")
         {
             ResultCode = resultCode;
         }
@@ -15,4 +14,3 @@ namespace BlackbirdInterface.Capture
         internal int ResultCode { get; }
     }
 }
-

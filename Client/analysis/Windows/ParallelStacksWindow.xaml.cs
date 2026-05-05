@@ -16,17 +16,32 @@ namespace BlackbirdInterface
     {
         private readonly int _pid;
         private readonly List<ThreadUsageRow> _threads;
+        private readonly Func<int, int, string, IReadOnlyList<ThreadStackSessionSnapshot>>? _historyProvider;
+        private readonly Func<DateTime>? _observationTimeUtcProvider;
+        private readonly Func<bool>? _liveCaptureAvailableProvider;
+        private readonly Func<IReadOnlyList<ThreadUsageRow>>? _threadSnapshotProvider;
+        private readonly Action<int, int, string, ThreadStackSessionSnapshot>? _onSnapshotCaptured;
         private readonly List<ParallelStackRow> _rows = new();
         private bool _refreshInFlight;
         private Border? _selectedCard;
 
-        public ParallelStacksWindow(int pid, IReadOnlyList<ThreadUsageRow> threads)
+        public ParallelStacksWindow(
+            int pid, IReadOnlyList<ThreadUsageRow> threads,
+            Func<int, int, string, IReadOnlyList<ThreadStackSessionSnapshot>>? historyProvider = null,
+            Func<DateTime>? observationTimeUtcProvider = null, Func<bool>? liveCaptureAvailableProvider = null,
+            Func<IReadOnlyList<ThreadUsageRow>>? threadSnapshotProvider = null,
+            Action<int, int, string, ThreadStackSessionSnapshot>? onSnapshotCaptured = null)
         {
             InitializeComponent();
-            WindowThemeHelper.ApplyDarkTitleBar(this);
+            WindowThemeHelper.WireThemeAwareTitleBar(this);
 
             _pid = pid;
             _threads = threads.Select(CloneThread).ToList();
+            _historyProvider = historyProvider;
+            _observationTimeUtcProvider = observationTimeUtcProvider;
+            _liveCaptureAvailableProvider = liveCaptureAvailableProvider;
+            _threadSnapshotProvider = threadSnapshotProvider;
+            _onSnapshotCaptured = onSnapshotCaptured;
             SubtitleBlock.Text = $"PID {_pid} | {_threads.Count} thread(s)";
 
             Loaded += async (_, __) => await RefreshStacksAsync();
@@ -42,8 +57,14 @@ namespace BlackbirdInterface
             _refreshInFlight = true;
             try
             {
+                RefreshThreadRowsFromProvider();
                 SummaryBlock.Text = $"Resolving {_threads.Count} thread stack(s)...";
-                List<ParallelStackRow> resolved = await Task.Run(() => ResolveRows());
+                /* Capture UI-thread values before entering Task.Run — the providers
+                   access WPF DependencyProperty getters which must run on the UI thread. */
+                DateTime capturedObservedUtc = _observationTimeUtcProvider?.Invoke() ?? DateTime.UtcNow;
+                bool capturedLiveCapture = _liveCaptureAvailableProvider?.Invoke() ?? true;
+                List<ParallelStackRow> resolved =
+                    await Task.Run(() => ResolveRows(capturedObservedUtc, capturedLiveCapture));
                 _rows.Clear();
                 _rows.AddRange(resolved);
 
@@ -67,7 +88,7 @@ namespace BlackbirdInterface
             }
         }
 
-        private List<ParallelStackRow> ResolveRows()
+        private List<ParallelStackRow> ResolveRows(DateTime observedUtc, bool liveCaptureAvailable)
         {
             var results = new ParallelStackRow?[_threads.Count];
             using var gate = new SemaphoreSlim(4);
@@ -76,24 +97,103 @@ namespace BlackbirdInterface
             for (int i = 0; i < _threads.Count; i += 1)
             {
                 int index = i;
-                tasks.Add(Task.Run(async () =>
-                {
-                    await gate.WaitAsync().ConfigureAwait(false);
-                    try
+                tasks.Add(Task.Run(
+                    async () =>
                     {
-                        ThreadUsageRow thread = _threads[index];
-                        ThreadStackResolveResult result = ThreadStackResolver.Resolve(_pid, thread.Tid, thread.State);
-                        results[index] = BuildRow(thread, result);
-                    }
-                    finally
-                    {
-                        gate.Release();
-                    }
-                }));
+                        await gate.WaitAsync().ConfigureAwait(false);
+                        try
+                        {
+                            ThreadUsageRow thread = _threads[index];
+                            IReadOnlyList<ThreadStackSessionSnapshot> history =
+                                _historyProvider?.Invoke(_pid, thread.Tid, thread.State) ??
+                                Array.Empty<ThreadStackSessionSnapshot>();
+                            ThreadStackSessionSnapshot? historical = history.Where(x => x.CapturedAtUtc <= observedUtc)
+                                                                         .OrderByDescending(x => x.CapturedAtUtc)
+                                                                         .FirstOrDefault();
+                            if (historical != null &&
+                                (!liveCaptureAvailable || observedUtc < historical.CapturedAtUtc.AddMilliseconds(750)))
+                            {
+                                results[index] = BuildRow(thread, historical.Clone());
+                            }
+                            else
+                            {
+                                ThreadStackResolveResult result =
+                                    ThreadStackResolver.Resolve(_pid, thread.Tid, thread.State);
+                                if (HasResolvedStackData(result))
+                                {
+                                    ThreadStackSessionSnapshot snapshot = CreateSnapshot(DateTime.UtcNow, result);
+                                    _onSnapshotCaptured?.Invoke(_pid, thread.Tid, thread.State, snapshot.Clone());
+                                    results[index] = BuildRow(thread, snapshot);
+                                }
+                                else if (historical != null)
+                                {
+                                    results[index] = BuildRow(thread, historical.Clone());
+                                }
+                                else
+                                {
+                                    results[index] = BuildRow(thread, result);
+                                }
+                            }
+                        }
+                        finally
+                        {
+                            gate.Release();
+                        }
+                    }));
             }
 
             Task.WaitAll(tasks.ToArray());
             return results.OfType<ParallelStackRow>().ToList();
+        }
+
+        private static bool HasResolvedStackData(ThreadStackResolveResult result)
+        {
+            return result.Frames.Count > 0 || result.StackPointer != 0 || result.TebAddress != 0 ||
+                   result.ContextSnapshot != null;
+        }
+
+        private void RefreshThreadRowsFromProvider()
+        {
+            IReadOnlyList<ThreadUsageRow>? currentRows = _threadSnapshotProvider?.Invoke();
+            if (currentRows == null || currentRows.Count == 0)
+            {
+                return;
+            }
+
+            _threads.Clear();
+            _threads.AddRange(currentRows.Select(CloneThread));
+            SubtitleBlock.Text = $"PID {_pid} | {_threads.Count} thread(s)";
+        }
+
+        private static ThreadStackSessionSnapshot CreateSnapshot(DateTime capturedAtUtc,
+                                                                 ThreadStackResolveResult result)
+        {
+            return new ThreadStackSessionSnapshot {
+                CapturedAtUtc = capturedAtUtc,
+                TebAddress = result.TebAddress,
+                StackBase = result.StackBase,
+                StackTop = result.StackTop,
+                TebFlags = result.TebFlags,
+                StackPointer = result.StackPointer,
+                ContextSnapshot = result.ContextSnapshot == null
+                                      ? null
+                                      : new ThreadStackSessionSnapshot { ContextSnapshot = result.ContextSnapshot }
+                                            .Clone()
+                                            .ContextSnapshot,
+                Frames = result.Frames.Select(CloneFrame).ToList()
+            };
+        }
+
+        private static StackFrameRow CloneFrame(StackFrameRow frame)
+        {
+            return new StackFrameRow { Index = frame.Index,
+                                       Address = frame.Address,
+                                       Module = frame.Module,
+                                       Symbol = frame.Symbol,
+                                       InstructionPointerRaw = frame.InstructionPointerRaw,
+                                       FramePointerRaw = frame.FramePointerRaw,
+                                       FrameSpanBytes = frame.FrameSpanBytes,
+                                       IsCurrent = frame.IsCurrent };
         }
 
         private void RenderStackMap()
@@ -106,10 +206,8 @@ namespace BlackbirdInterface
             const double spacingX = 318;
             const double spacingY = 248;
             int columns = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(Math.Max(1, _rows.Count))));
-            ParallelStackRow? mainThread = _rows
-                .OrderBy(row => row.StartTimeUtc ?? DateTime.MaxValue)
-                .ThenBy(row => row.Tid)
-                .FirstOrDefault();
+            ParallelStackRow? mainThread =
+                _rows.OrderBy(row => row.StartTimeUtc ?? DateTime.MaxValue).ThenBy(row => row.Tid).FirstOrDefault();
 
             for (int i = 0; i < _rows.Count; i += 1)
             {
@@ -175,91 +273,57 @@ namespace BlackbirdInterface
             double dx = Math.Abs(to.X - from.X);
             double controlOffset = Math.Max(42, dx * 0.22);
             var figure = new PathFigure { StartPoint = from, IsClosed = false, IsFilled = false };
-            figure.Segments.Add(new BezierSegment(
-                new Point(from.X + controlOffset, from.Y),
-                new Point(to.X - controlOffset, to.Y),
-                to,
-                true));
+            figure.Segments.Add(new BezierSegment(new Point(from.X + controlOffset, from.Y),
+                                                  new Point(to.X - controlOffset, to.Y), to, true));
 
             var geometry = new PathGeometry();
             geometry.Figures.Add(figure);
-            StacksCanvas.Children.Add(new Path
-            {
-                Data = geometry,
-                Stroke = highlighted
-                    ? new SolidColorBrush(Color.FromArgb(0x48, 0xD8, 0xD8, 0xD8))
-                    : new SolidColorBrush(Color.FromArgb(0x22, 0x9A, 0x9A, 0x9A)),
-                StrokeThickness = highlighted ? 1.6 : 1.0,
-                StrokeDashArray = new DoubleCollection { 7, 9 },
-                SnapsToDevicePixels = true
-            });
+            StacksCanvas.Children.Add(
+                new Path { Data = geometry,
+                           Stroke = highlighted ? new SolidColorBrush(Color.FromArgb(0x48, 0xD8, 0xD8, 0xD8))
+                                                : new SolidColorBrush(Color.FromArgb(0x22, 0x9A, 0x9A, 0x9A)),
+                           StrokeThickness = highlighted ? 1.6 : 1.0, StrokeDashArray = new DoubleCollection { 7, 9 },
+                           SnapsToDevicePixels = true });
         }
 
         private Border BuildCard(ParallelStackRow row, double width, double height)
         {
-            var border = new Border
-            {
+            var border = new Border {
                 Width = width,
                 Height = height,
                 Padding = new Thickness(10, 8, 10, 8),
                 CornerRadius = new CornerRadius(10),
                 BorderThickness = row.IsMainThread ? new Thickness(2) : new Thickness(1),
-                BorderBrush = row.IsMainThread
-                    ? new SolidColorBrush(Color.FromRgb(0xC8, 0xC8, 0xC8))
-                    : new SolidColorBrush(Color.FromRgb(0x46, 0x46, 0x46)),
+                BorderBrush = row.IsMainThread ? new SolidColorBrush(Color.FromRgb(0xC8, 0xC8, 0xC8))
+                                               : new SolidColorBrush(Color.FromRgb(0x46, 0x46, 0x46)),
                 Background = new SolidColorBrush(Color.FromRgb(0x1A, 0x1A, 0x1A)),
                 Cursor = Cursors.Hand,
                 Tag = row,
-                Effect = new System.Windows.Media.Effects.DropShadowEffect
-                {
-                    BlurRadius = 18,
-                    ShadowDepth = 0,
-                    Opacity = 0.32,
-                    Color = Color.FromRgb(0x00, 0x00, 0x00)
-                }
+                Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 18, ShadowDepth = 0,
+                                                                             Opacity = 0.32,
+                                                                             Color = Color.FromRgb(0x00, 0x00, 0x00) }
             };
 
             var stack = new StackPanel();
-            stack.Children.Add(new TextBlock
-            {
-                Text = row.IsMainThread ? $"TID {row.Tid}  MAIN" : $"TID {row.Tid}",
-                FontWeight = FontWeights.SemiBold,
-                FontSize = 13,
-                Foreground = Brushes.White
-            });
-            stack.Children.Add(new TextBlock
-            {
-                Text = row.State,
-                Margin = new Thickness(0, 2, 0, 0),
-                Foreground = new SolidColorBrush(Color.FromRgb(0xB9, 0xC2, 0xCC))
-            });
-            stack.Children.Add(new TextBlock
-            {
-                Text = row.Rip,
-                Margin = new Thickness(0, 6, 0, 0),
-                FontFamily = new FontFamily("Consolas"),
-                Foreground = new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0))
-            });
-            stack.Children.Add(new TextBlock
-            {
-                Text = $"{row.FrameCount} frame(s)",
-                Margin = new Thickness(0, 2, 0, 8),
-                Foreground = new SolidColorBrush(Color.FromRgb(0x90, 0x90, 0x90))
-            });
+            stack.Children.Add(new TextBlock { Text = row.IsMainThread ? $"TID {row.Tid}  MAIN" : $"TID {row.Tid}",
+                                               FontWeight = FontWeights.SemiBold, FontSize = 13,
+                                               Foreground = Brushes.White });
+            stack.Children.Add(new TextBlock { Text = row.State, Margin = new Thickness(0, 2, 0, 0),
+                                               Foreground = new SolidColorBrush(Color.FromRgb(0xB9, 0xC2, 0xCC)) });
+            stack.Children.Add(new TextBlock { Text = row.Rip, Margin = new Thickness(0, 6, 0, 0),
+                                               FontFamily = new FontFamily("Cascadia Mono, Cascadia Code, Consolas"),
+                                               Foreground = new SolidColorBrush(Color.FromRgb(0xD0, 0xD0, 0xD0)) });
+            stack.Children.Add(new TextBlock { Text = $"{row.FrameCount} frame(s)", Margin = new Thickness(0, 2, 0, 8),
+                                               Foreground = new SolidColorBrush(Color.FromRgb(0x90, 0x90, 0x90)) });
 
             for (int i = 0; i < row.FrameLines.Count; i += 1)
             {
-                stack.Children.Add(new TextBlock
-                {
-                    Text = row.FrameLines[i],
-                    Margin = new Thickness(0, i == 0 ? 0 : 4, 0, 0),
-                    TextWrapping = TextWrapping.Wrap,
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                    FontFamily = new FontFamily("Consolas"),
-                    Foreground = i == 0
-                        ? new SolidColorBrush(Color.FromRgb(0xF3, 0xF3, 0xF3))
-                        : new SolidColorBrush(Color.FromRgb(0xB7, 0xB7, 0xB7))
-                });
+                stack.Children.Add(
+                    new TextBlock { Text = row.FrameLines[i], Margin = new Thickness(0, i == 0 ? 0 : 4, 0, 0),
+                                    TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis,
+                                    FontFamily = new FontFamily("Cascadia Mono, Cascadia Code, Consolas"),
+                                    Foreground = i == 0 ? new SolidColorBrush(Color.FromRgb(0xF3, 0xF3, 0xF3))
+                                                        : new SolidColorBrush(Color.FromRgb(0xB7, 0xB7, 0xB7)) });
             }
 
             border.Child = stack;
@@ -270,11 +334,10 @@ namespace BlackbirdInterface
         private static ParallelStackRow BuildRow(ThreadUsageRow thread, ThreadStackResolveResult result)
         {
             StackFrameRow? top = result.Frames.FirstOrDefault();
-            string rip = top?.Address ??
-                         (result.ContextSnapshot?.Rip is ulong value && value != 0 ? $"0x{value:X}" : "N/A");
-            string topFrame = top == null
-                ? (string.IsNullOrWhiteSpace(result.Note) ? "No stack frames" : result.Note)
-                : $"{top.Module}!{top.Symbol}";
+            string rip =
+                top?.Address ?? (result.ContextSnapshot?.Rip is ulong value && value != 0 ? $"0x{value:X}" : "N/A");
+            string topFrame = top == null ? (string.IsNullOrWhiteSpace(result.Note) ? "No stack frames" : result.Note)
+                                          : $"{top.Module}!{top.Symbol}";
 
             var detail = new StringBuilder(2048);
             detail.Append("TID: ").AppendLine(thread.Tid.ToString());
@@ -287,9 +350,11 @@ namespace BlackbirdInterface
             }
             if (result.StackBase != 0 || result.StackTop != 0)
             {
-                detail.Append("Stack: 0x").Append(result.StackTop.ToString("X"))
-                      .Append(" -> 0x").Append(result.StackBase.ToString("X"))
-                      .AppendLine();
+                detail.Append("Stack: 0x")
+                    .Append(result.StackTop.ToString("X"))
+                    .Append(" -> 0x")
+                    .Append(result.StackBase.ToString("X"))
+                    .AppendLine();
             }
             if (!string.IsNullOrWhiteSpace(result.Note))
             {
@@ -306,39 +371,93 @@ namespace BlackbirdInterface
                 for (int i = 0; i < result.Frames.Count; i += 1)
                 {
                     StackFrameRow frame = result.Frames[i];
-                    detail.Append('[').Append(i).Append("] ")
-                          .Append(frame.Address).Append("  ")
-                          .Append(frame.Module).Append("  ")
-                          .AppendLine(frame.Symbol);
+                    detail.Append('[')
+                        .Append(i)
+                        .Append("] ")
+                        .Append(frame.Address)
+                        .Append("  ")
+                        .Append(frame.Module)
+                        .Append("  ")
+                        .AppendLine(frame.Symbol);
                 }
             }
 
-            return new ParallelStackRow
-            {
+            return new ParallelStackRow {
                 Tid = thread.Tid,
                 State = thread.State,
                 StartTimeUtc = thread.StartTimeUtc,
                 Rip = rip,
                 FrameCount = result.Frames.Count,
                 TopFrame = topFrame,
-                FrameLines = result.Frames.Take(6)
-                    .Select(frame => $"{frame.Module}!{frame.Symbol}")
-                    .ToList(),
+                FrameLines = result.Frames.Take(6).Select(frame => $"{frame.Module}!{frame.Symbol}").ToList(),
                 DetailText = detail.ToString().TrimEnd()
             };
         }
 
-        private static ThreadUsageRow CloneThread(ThreadUsageRow row)
-            => new(new ThreadUsageSample
+        private static ParallelStackRow BuildRow(ThreadUsageRow thread, ThreadStackSessionSnapshot snapshot)
+        {
+            StackFrameRow? top = snapshot.Frames.FirstOrDefault();
+            string rip =
+                top?.Address ?? (snapshot.ContextSnapshot?.Rip is ulong value && value != 0 ? $"0x{value:X}" : "N/A");
+            string topFrame = top == null ? "No stack frames" : $"{top.Module}!{top.Symbol}";
+
+            var detail = new StringBuilder(2048);
+            detail.Append("TID: ").AppendLine(thread.Tid.ToString());
+            detail.Append("State: ").AppendLine(thread.State);
+            detail.Append("Captured: ").AppendLine(snapshot.CapturedAtUtc.ToString("HH:mm:ss.fff"));
+            detail.Append("RIP: ").AppendLine(rip);
+            detail.Append("Frames: ").AppendLine(snapshot.Frames.Count.ToString());
+            if (snapshot.TebAddress != 0)
             {
-                Tid = row.Tid,
-                CpuMsDelta = row.CpuMs,
-                State = row.State,
-                WaitReason = row.IsSuspended ? "Suspended" : string.Empty,
-                Kind = row.ThreadKind,
-                StartTimeUtc = row.StartTimeUtc,
-                TargetSuspended = row.IsSuspended
-            });
+                detail.Append("TEB: 0x").Append(snapshot.TebAddress.ToString("X")).AppendLine();
+            }
+            if (snapshot.StackBase != 0 || snapshot.StackTop != 0)
+            {
+                detail.Append("Stack: 0x")
+                    .Append(snapshot.StackTop.ToString("X"))
+                    .Append(" -> 0x")
+                    .Append(snapshot.StackBase.ToString("X"))
+                    .AppendLine();
+            }
+
+            detail.AppendLine();
+            if (snapshot.Frames.Count == 0)
+            {
+                detail.AppendLine("No frames resolved.");
+            }
+            else
+            {
+                for (int i = 0; i < snapshot.Frames.Count; i += 1)
+                {
+                    StackFrameRow frame = snapshot.Frames[i];
+                    detail.Append('[')
+                        .Append(i)
+                        .Append("] ")
+                        .Append(frame.Address)
+                        .Append("  ")
+                        .Append(frame.Module)
+                        .Append("  ")
+                        .AppendLine(frame.Symbol);
+                }
+            }
+
+            return new ParallelStackRow {
+                Tid = thread.Tid,
+                State = thread.State,
+                StartTimeUtc = thread.StartTimeUtc,
+                Rip = rip,
+                FrameCount = snapshot.Frames.Count,
+                TopFrame = topFrame,
+                FrameLines = snapshot.Frames.Take(6).Select(frame => $"{frame.Module}!{frame.Symbol}").ToList(),
+                DetailText = detail.ToString().TrimEnd()
+            };
+        }
+
+        private static ThreadUsageRow CloneThread(ThreadUsageRow row) => new(new ThreadUsageSample {
+            Tid = row.Tid, CpuMsDelta = row.CpuMs, State = row.State,
+            WaitReason = row.IsSuspended ? "Suspended" : string.Empty, Kind = row.ThreadKind,
+            StartTimeUtc = row.StartTimeUtc, TargetSuspended = row.IsSuspended
+        });
 
         private async void Refresh_Click(object sender, RoutedEventArgs e)
         {

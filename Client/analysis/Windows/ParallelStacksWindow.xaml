@@ -132,7 +132,7 @@
                              BorderThickness="0"
                              Background="Transparent"
                              Foreground="{DynamicResource WinTextBrush}"
-                             FontFamily="Consolas"
+                             FontFamily="{DynamicResource AppMonoFontFamily}"
                              IsReadOnly="True"
                              TextWrapping="NoWrap"
                              AcceptsReturn="True"

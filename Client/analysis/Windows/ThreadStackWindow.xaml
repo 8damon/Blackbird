@@ -88,9 +88,9 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="PID" Foreground="{DynamicResource WinMutedTextBrush}" />
-                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="PidBlock" FontFamily="Consolas" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="PidBlock" FontFamily="{DynamicResource AppMonoFontFamily}" />
                             <TextBlock Grid.Row="1" Grid.Column="0" Text="TID" Foreground="{DynamicResource WinMutedTextBrush}" />
-                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="TidBlock" FontFamily="Consolas" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="TidBlock" FontFamily="{DynamicResource AppMonoFontFamily}" />
                             <TextBlock Grid.Row="2" Grid.Column="0" Text="State" Foreground="{DynamicResource WinMutedTextBrush}" />
                             <TextBlock Grid.Row="2" Grid.Column="1" x:Name="StateMetaBlock" />
                         </Grid>
@@ -122,19 +122,19 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="Base" Foreground="{DynamicResource WinMutedTextBrush}" />
-                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="StackBaseMetaBlock" FontFamily="Consolas" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="StackBaseMetaBlock" FontFamily="{DynamicResource AppMonoFontFamily}" />
                             <TextBlock Grid.Row="0" Grid.Column="2" Text="RIP" Foreground="{DynamicResource WinMutedTextBrush}" />
-                            <TextBlock Grid.Row="0" Grid.Column="3" x:Name="RipMetaBlock" FontFamily="Consolas" Text="N/A" />
+                            <TextBlock Grid.Row="0" Grid.Column="3" x:Name="RipMetaBlock" FontFamily="{DynamicResource AppMonoFontFamily}" Text="N/A" />
 
                             <TextBlock Grid.Row="1" Grid.Column="0" Text="Top" Foreground="{DynamicResource WinMutedTextBrush}" />
-                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="StackTopMetaBlock" FontFamily="Consolas" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="StackTopMetaBlock" FontFamily="{DynamicResource AppMonoFontFamily}" />
                             <TextBlock Grid.Row="1" Grid.Column="2" Text="RSP" Foreground="{DynamicResource WinMutedTextBrush}" />
-                            <TextBlock Grid.Row="1" Grid.Column="3" x:Name="RspMetaBlock" FontFamily="Consolas" Text="N/A" />
+                            <TextBlock Grid.Row="1" Grid.Column="3" x:Name="RspMetaBlock" FontFamily="{DynamicResource AppMonoFontFamily}" Text="N/A" />
 
                             <TextBlock Grid.Row="2" Grid.Column="0" Text="Span" Foreground="{DynamicResource WinMutedTextBrush}" />
-                            <TextBlock Grid.Row="2" Grid.Column="1" x:Name="StackSpanMetaBlock" FontFamily="Consolas" Text="N/A" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" x:Name="StackSpanMetaBlock" FontFamily="{DynamicResource AppMonoFontFamily}" Text="N/A" />
                             <TextBlock Grid.Row="2" Grid.Column="2" Text="Active" Foreground="{DynamicResource WinMutedTextBrush}" />
-                            <TextBlock Grid.Row="2" Grid.Column="3" x:Name="ActiveSpanMetaBlock" FontFamily="Consolas" Text="N/A" />
+                            <TextBlock Grid.Row="2" Grid.Column="3" x:Name="ActiveSpanMetaBlock" FontFamily="{DynamicResource AppMonoFontFamily}" Text="N/A" />
                         </Grid>
                     </StackPanel>
                 </Border>
@@ -161,11 +161,11 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="TEB" Foreground="{DynamicResource WinMutedTextBrush}" />
-                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="TebBlock" FontFamily="Consolas" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="TebBlock" FontFamily="{DynamicResource AppMonoFontFamily}" />
                             <TextBlock Grid.Row="1" Grid.Column="0" Text="TEB Flags" Foreground="{DynamicResource WinMutedTextBrush}" />
-                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="TebFlagsMetaBlock" FontFamily="Consolas" />
+                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="TebFlagsMetaBlock" FontFamily="{DynamicResource AppMonoFontFamily}" />
                             <TextBlock Grid.Row="2" Grid.Column="0" Text="EFLAGS" Foreground="{DynamicResource WinMutedTextBrush}" />
-                            <TextBlock Grid.Row="2" Grid.Column="1" x:Name="EFlagsMetaBlock" FontFamily="Consolas" Text="N/A" />
+                            <TextBlock Grid.Row="2" Grid.Column="1" x:Name="EFlagsMetaBlock" FontFamily="{DynamicResource AppMonoFontFamily}" Text="N/A" />
                         </Grid>
                     </StackPanel>
                 </Border>
@@ -202,7 +202,7 @@
                             <Style TargetType="DataGridCell">
                                 <Setter Property="BorderThickness" Value="0"/>
                                 <Setter Property="Padding" Value="6,2,6,2"/>
-                                <Setter Property="FontFamily" Value="Consolas"/>
+                                <Setter Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
                                 <Setter Property="VerticalContentAlignment" Value="Center"/>
                             </Style>
                             <Style TargetType="DataGridRow">
@@ -321,7 +321,7 @@
                                                         <TextBlock Text="{Binding ValueText}"
                                                                    ToolTip="{Binding ValueText}"
                                                                    TextTrimming="CharacterEllipsis"
-                                                                   FontFamily="Consolas"
+                                                                   FontFamily="{DynamicResource AppMonoFontFamily}"
                                                                    FontSize="11"/>
                                                     </StackPanel>
                                                 </Border>
@@ -344,7 +344,7 @@
                                                Foreground="{DynamicResource WinMutedTextBrush}"/>
                                     <UniformGrid Columns="2">
                                         <TextBlock Text="EFLAGS" Foreground="{DynamicResource WinMutedTextBrush}" />
-                                        <TextBlock x:Name="EFlagsDetailBlock" FontFamily="Consolas" Text="N/A" />
+                                        <TextBlock x:Name="EFlagsDetailBlock" FontFamily="{DynamicResource AppMonoFontFamily}" Text="N/A" />
                                     </UniformGrid>
                                     <TextBlock x:Name="EFlagsEnglishBlock"
                                                Margin="0,8,0,0"
@@ -367,7 +367,7 @@
                                                Foreground="{DynamicResource WinMutedTextBrush}"/>
 
                                     <TextBlock x:Name="DrxBitsBlock"
-                                               FontFamily="Consolas"
+                                               FontFamily="{DynamicResource AppMonoFontFamily}"
                                                FontSize="11"
                                                TextWrapping="Wrap"
                                                Text="N/A"/>

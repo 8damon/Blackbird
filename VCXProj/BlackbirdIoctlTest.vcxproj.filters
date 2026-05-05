@@ -11,63 +11,63 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\UserMode\sensor\tests\Blackbird_ioctl_test_env.c">
+    <ClCompile Include="..\UserMode\sensor\tests\ioctl_test_env.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\sensor\tests\Blackbird_ioctl_test_etw.c">
+    <ClCompile Include="..\UserMode\sensor\tests\ioctl_test_etw.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\sensor\tests\Blackbird_ioctl_test_intent.c">
+    <ClCompile Include="..\UserMode\sensor\tests\ioctl_test_intent.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\sensor\tests\Blackbird_ioctl_test_ioctl.c">
+    <ClCompile Include="..\UserMode\sensor\tests\ioctl_test_ioctl.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\sensor\tests\Blackbird_ioctl_test_main.c">
+    <ClCompile Include="..\UserMode\sensor\tests\ioctl_test_main.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\sensor\tests\Blackbird_ioctl_test_report.c">
+    <ClCompile Include="..\UserMode\sensor\tests\ioctl_test_report.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\sensor\Blackbird_event_printer.c">
+    <ClCompile Include="..\UserMode\sensor\event_printer.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\sensor\Blackbird_symbol_resolver.c">
+    <ClCompile Include="..\UserMode\sensor\symbol_resolver.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\sensor\Blackbird_symbol_common.c">
+    <ClCompile Include="..\UserMode\sensor\symbol_common.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\sensor\Blackbird_ioctl_test.c">
+    <ClCompile Include="..\UserMode\sensor\ioctl_test.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\sensor\Blackbird_test_report_html.c">
+    <ClCompile Include="..\UserMode\sensor\test_report_html.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\ABI\Blackbird_ipc.h">
+    <ClInclude Include="..\ABI\blackbird_ipc.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\ABI\blackbird_ioctl.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\UserMode\sensor\Blackbird_event_printer.h">
+    <ClInclude Include="..\UserMode\sensor\event_printer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\UserMode\sensor\Blackbird_sensor_core.h">
+    <ClInclude Include="..\UserMode\sensor\sensor_core.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\UserMode\sensor\Blackbird_symbol_resolver.h">
+    <ClInclude Include="..\UserMode\sensor\symbol_resolver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\UserMode\sensor\Blackbird_symbol_common.h">
+    <ClInclude Include="..\UserMode\sensor\symbol_common.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\UserMode\sensor\Blackbird_test_report_html.h">
+    <ClInclude Include="..\UserMode\sensor\test_report_html.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\UserMode\sensor\tests\Blackbird_ioctl_test_internal.h">
+    <ClInclude Include="..\UserMode\sensor\tests\ioctl_test_internal.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

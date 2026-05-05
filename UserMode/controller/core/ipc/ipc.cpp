@@ -80,8 +80,8 @@ static ULONGLONG ControllerClientBeginAnalysisSessionLocked(_Inout_ BK_CONTROLLE
         return 0;
     }
 
-    newSession = (!Client->AnalysisActive || Client->AnalysisRootProcessId != RootProcessId ||
-                  Client->AnalysisSessionId == 0);
+    newSession =
+        (!Client->AnalysisActive || Client->AnalysisRootProcessId != RootProcessId || Client->AnalysisSessionId == 0);
     if (newSession)
     {
         Client->AnalysisSessionId = ControllerNextAnalysisSessionId();
@@ -114,13 +114,14 @@ static BOOL ControllerClientStopAnalysisLocked(_Inout_ BK_CONTROLLER_CLIENT *Cli
         return FALSE;
     }
 
-    local.HadAnalysisLease = (Client->AnalysisActive || Client->AnalysisRootProcessId != 0 ||
-                              Client->AnalysisSessionId != 0 || Client->AnalysisLaunchOwned ||
-                              Client->PendingLaunchArmed || Client->PendingLaunchPid != 0);
+    local.HadAnalysisLease =
+        (Client->AnalysisActive || Client->AnalysisRootProcessId != 0 || Client->AnalysisSessionId != 0 ||
+         Client->AnalysisLaunchOwned || Client->PendingLaunchArmed || Client->PendingLaunchPid != 0);
     local.HadState = (local.HadAnalysisLease || Client->SubscriptionCount != 0 || Client->OwnedRangeCount != 0);
     local.LaunchOwned = Client->AnalysisLaunchOwned;
     local.PendingLaunchArmed = Client->PendingLaunchArmed;
-    local.RootProcessId = (Client->AnalysisRootProcessId != 0) ? Client->AnalysisRootProcessId : Client->PendingLaunchPid;
+    local.RootProcessId =
+        (Client->AnalysisRootProcessId != 0) ? Client->AnalysisRootProcessId : Client->PendingLaunchPid;
     local.SubscriptionCount = Client->SubscriptionCount;
     local.OwnedRangeCount = Client->OwnedRangeCount;
     local.SessionId = Client->AnalysisSessionId;
@@ -1039,9 +1040,9 @@ static DWORD ControllerClientSetPids(_Inout_ BK_CONTROLLER_CLIENT *Client, _In_ 
         }
     }
     appliedCount = Client->SubscriptionCount;
-    if (appliedCount != 0 && (Client->AnalysisActive || Client->AnalysisRootProcessId != 0 ||
-                              Client->AnalysisSessionId != 0 || Client->AnalysisLaunchOwned ||
-                              Client->PendingLaunchPid != 0))
+    if (appliedCount != 0 &&
+        (Client->AnalysisActive || Client->AnalysisRootProcessId != 0 || Client->AnalysisSessionId != 0 ||
+         Client->AnalysisLaunchOwned || Client->PendingLaunchPid != 0))
     {
         sessionId = ControllerClientBeginAnalysisSessionLocked(Client, primaryPid, FALSE);
     }

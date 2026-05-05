@@ -132,7 +132,7 @@ DWORD ControllerInjectionSuspendProcessHandle(_In_ HANDLE ProcessHandle);
 
 bool ControllerInjectionEnvironmentHasName(_In_opt_z_ PCWSTR Overrides, _In_z_ PCWSTR Name) noexcept;
 BOOL ControllerInjectionBuildDeferredLaunchGateEventName(_Out_writes_z_(EventNameChars) PWSTR EventName,
-                                                        _In_ size_t EventNameChars);
+                                                         _In_ size_t EventNameChars);
 HANDLE ControllerInjectionCreateDeferredLaunchGateEvent(_In_z_ PCWSTR EventName, _In_ DWORD ProcessId);
 BOOL ControllerInjectionBuildEnvironmentBlock(_In_opt_ HANDLE UserToken,
                                               _In_reads_or_z_(OverrideChars) PCWSTR Overrides,

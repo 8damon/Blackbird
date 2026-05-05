@@ -341,8 +341,8 @@ static DWORD BkscIpcCommandTimeoutMs(_In_ UINT32 Command)
     }
 }
 
-static BOOL BkscCompleteOverlappedPipeIo(_In_ HANDLE Device, _Inout_ OVERLAPPED *Overlapped,
-                                         _Out_ DWORD *BytesReturned, _In_ DWORD TimeoutMs)
+static BOOL BkscCompleteOverlappedPipeIo(_In_ HANDLE Device, _Inout_ OVERLAPPED *Overlapped, _Out_ DWORD *BytesReturned,
+                                         _In_ DWORD TimeoutMs)
 {
     DWORD waitResult;
     DWORD bytes = 0;

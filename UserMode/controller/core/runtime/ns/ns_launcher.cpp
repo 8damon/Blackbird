@@ -837,8 +837,8 @@ static VOID ControllerApplyReadableLogDirectorySecurity(_In_z_ PCWSTR LogDir)
         return;
     }
 
-    if (ConvertStringSecurityDescriptorToSecurityDescriptorW(
-            L"D:P(A;OICI;GA;;;SY)(A;OICI;GA;;;BA)(A;OICI;GRGW;;;BU)", SDDL_REVISION_1, &securityDescriptor, NULL) &&
+    if (ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:P(A;OICI;GA;;;SY)(A;OICI;GA;;;BA)(A;OICI;GRGW;;;BU)",
+                                                             SDDL_REVISION_1, &securityDescriptor, NULL) &&
         securityDescriptor != NULL)
     {
         (void)SetFileSecurityW(LogDir, DACL_SECURITY_INFORMATION, securityDescriptor);

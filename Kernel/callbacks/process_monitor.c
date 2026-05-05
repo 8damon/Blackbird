@@ -313,9 +313,12 @@ static VOID BkcprocClearProtectedPid(_In_ UINT32 ProcessId)
     if ((UINT32)InterlockedCompareExchange((volatile LONG *)&g_BlackbirdNetSvcPid, 0, 0) == ProcessId)
     {
         /* Do not call into WFP/Fwpm teardown from the process notify callback.
-           This callback runs on the terminating process path; blocking filter cleanup here can
-           make TerminateProcess succeed while the process never finishes exiting, which also
-           prevents driver unload. Controller explicit disarm and driver unload own WFP teardown. */
+           This callback runs on the
+         * terminating process path; blocking filter cleanup here can
+           make TerminateProcess succeed while the
+         * process never finishes exiting, which also
+           prevents driver unload. Controller explicit disarm and
+         * driver unload own WFP teardown. */
         InterlockedCompareExchange((volatile LONG *)&g_BlackbirdNetSvcPid, 0, (LONG)ProcessId);
         InterlockedExchange(&g_BlackbirdNetSvcReady, 0);
     }
@@ -916,8 +919,7 @@ BOOLEAN BkcprocIsTrustedProtectedCaller(_In_ UINT32 CallerPid, _In_ UINT32 Targe
     controllerPid = (UINT32)InterlockedCompareExchange((volatile LONG *)&g_BlackbirdControllerPid, 0, 0);
     netSvcPid = (UINT32)InterlockedCompareExchange((volatile LONG *)&g_BlackbirdNetSvcPid, 0, 0);
     servicesPid = (UINT32)InterlockedCompareExchange((volatile LONG *)&g_ServicesPid, 0, 0);
-    interfaceCreatorPid =
-        (UINT32)InterlockedCompareExchange(&g_BlackbirdInterfaceBootstrapCreatorPid, 0, 0);
+    interfaceCreatorPid = (UINT32)InterlockedCompareExchange(&g_BlackbirdInterfaceBootstrapCreatorPid, 0, 0);
     interfaceParentPid = (UINT32)InterlockedCompareExchange(&g_BlackbirdInterfaceBootstrapParentPid, 0, 0);
     interfaceBootstrapExpires = InterlockedCompareExchange64(&g_BlackbirdInterfaceBootstrapExpires100ns, 0, 0);
 
@@ -948,11 +950,15 @@ BOOLEAN BkcprocIsTrustedProtectedCaller(_In_ UINT32 CallerPid, _In_ UINT32 Targe
     {
         /*
          * Interface handle protection can be armed from a prior UI session.  On the
-         * next launch, the process-create caller must still receive usable initial
-         * process/thread handles so user-mode CreateProcess can finish bootstrap and
-         * resume the primary thread.  Controller/NetSvc avoid this by becoming
+         * next launch,
+         * the process-create caller must still receive usable initial
+         * process/thread handles so user-mode
+         * CreateProcess can finish bootstrap and
+         * resume the primary thread.  Controller/NetSvc avoid this by
+         * becoming
          * protected only after readiness; the interface is image-tracked, so give
-         * only its actual creator/parent a short startup allowance.
+         * only
+         * its actual creator/parent a short startup allowance.
          */
         return TRUE;
     }

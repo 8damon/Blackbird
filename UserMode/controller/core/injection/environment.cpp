@@ -73,7 +73,7 @@ static ULONGLONG ControllerInjectionRandom64(VOID)
 }
 
 BOOL ControllerInjectionBuildDeferredLaunchGateEventName(_Out_writes_z_(EventNameChars) PWSTR EventName,
-                                                        _In_ size_t EventNameChars)
+                                                         _In_ size_t EventNameChars)
 {
     ULONGLONG nonce0;
     ULONGLONG nonce1;
@@ -113,8 +113,8 @@ HANDLE ControllerInjectionCreateDeferredLaunchGateEvent(_In_z_ PCWSTR EventName,
     ZeroMemory(&securityAttributes, sizeof(securityAttributes));
     securityAttributes.nLength = sizeof(securityAttributes);
     if (ConvertStringSecurityDescriptorToSecurityDescriptorW(
-            L"D:P(A;;0x00100000;;;WD)(A;;0x001F0003;;;SY)(A;;0x001F0003;;;BA)(A;;0x001F0003;;;OW)",
-            SDDL_REVISION_1, &securityDescriptor, NULL))
+            L"D:P(A;;0x00100000;;;WD)(A;;0x001F0003;;;SY)(A;;0x001F0003;;;BA)(A;;0x001F0003;;;OW)", SDDL_REVISION_1,
+            &securityDescriptor, NULL))
     {
         securityAttributes.lpSecurityDescriptor = securityDescriptor;
     }
@@ -137,8 +137,8 @@ HANDLE ControllerInjectionCreateDeferredLaunchGateEvent(_In_z_ PCWSTR EventName,
 
     if (createError == ERROR_ALREADY_EXISTS)
     {
-        ControllerLog("[INJ][WARN] deferred launch gate event collision pid=%lu name=%ws\n",
-                      (unsigned long)ProcessId, EventName);
+        ControllerLog("[INJ][WARN] deferred launch gate event collision pid=%lu name=%ws\n", (unsigned long)ProcessId,
+                      EventName);
         CloseHandle(eventHandle);
         if (securityDescriptor != NULL)
         {

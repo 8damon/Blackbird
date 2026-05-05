@@ -136,8 +136,7 @@ NTSTATUS BkntkhHookInstall(_Inout_ PBK_NTAPI_HOOK Hook, _Outptr_opt_result_maybe
         return STATUS_SUCCESS;
     }
     if (Hook->Trampoline != NULL && Hook->RoutineAddress != NULL &&
-        Hook->ActiveOverwriteLength >= BK_NTAPI_PATCH_SIZE &&
-        Hook->ActiveOverwriteLength <= BK_NTAPI_MAX_OVERWRITE)
+        Hook->ActiveOverwriteLength >= BK_NTAPI_PATCH_SIZE && Hook->ActiveOverwriteLength <= BK_NTAPI_MAX_OVERWRITE)
     {
         status = BkntkhHookApplyPatch(Hook, Hook->ActiveOverwriteLength);
         if (NT_SUCCESS(status))
@@ -147,8 +146,8 @@ NTSTATUS BkntkhHookInstall(_Inout_ PBK_NTAPI_HOOK Hook, _Outptr_opt_result_maybe
                 *Original = Hook->Trampoline;
             }
             BK_HOOK_LOG(DPFLTR_INFO_LEVEL, "BK: ntapi hook reactivated api=%s routine=%p trampoline=%p len=%lu.\n",
-                        (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>",
-                        Hook->RoutineAddress, Hook->Trampoline, Hook->ActiveOverwriteLength);
+                        (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>", Hook->RoutineAddress,
+                        Hook->Trampoline, Hook->ActiveOverwriteLength);
         }
         return status;
     }

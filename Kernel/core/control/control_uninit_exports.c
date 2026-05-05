@@ -282,9 +282,10 @@ BkctlHasPidInterest(_In_ UINT32 PrimaryProcessId, _In_ UINT32 SecondaryProcessId
             LONG busyCount = InterlockedIncrement(&g_BkctlInterestLockBusyCounter);
             if (busyCount == 1 || ((busyCount & 0xFF) == 0))
             {
-                DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                           "BK: pid-interest client lock busy busyCount=%ld primaryPid=%lu secondaryPid=%lu streamMask=0x%08X client=0x%p.\n",
-                           busyCount, PrimaryProcessId, SecondaryProcessId, StreamMask, client);
+                DbgPrintEx(
+                    DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+                    "BK: pid-interest client lock busy busyCount=%ld primaryPid=%lu secondaryPid=%lu streamMask=0x%08X client=0x%p.\n",
+                    busyCount, PrimaryProcessId, SecondaryProcessId, StreamMask, client);
             }
             BkctlClientRelease(client);
             continue;

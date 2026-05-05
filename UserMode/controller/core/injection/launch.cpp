@@ -432,10 +432,10 @@ BOOL ControllerInjectionLaunchTargetProcess(_In_ HANDLE ClientPipe,
         }
     }
 
-    if (!ControllerInjectionBuildEnvironmentBlock(
-            clientToken, Request->EnvironmentOverrides, TRUE,
-            (Request->Flags & BKIPC_USER_HOOK_FLAG_DEFER_LAUNCH_GATE_RELEASE) != 0, DeferredLaunchGateEventName,
-            &environmentBlock))
+    if (!ControllerInjectionBuildEnvironmentBlock(clientToken, Request->EnvironmentOverrides, TRUE,
+                                                  (Request->Flags & BKIPC_USER_HOOK_FLAG_DEFER_LAUNCH_GATE_RELEASE) !=
+                                                      0,
+                                                  DeferredLaunchGateEventName, &environmentBlock))
     {
         err = GetLastError();
         goto Cleanup;

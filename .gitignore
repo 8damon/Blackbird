@@ -63,6 +63,9 @@ TITAN Softwork Solutions.pfx
 Cockpit.ps1
 StingerInitDbgX.txt
 
+# Private fuzzing harnesses and findings
+/fuzzer/
+
 # Local .NET SDK caches / test sandboxes
 .dotnet/
 .dotnet_home/
@@ -73,14 +76,41 @@ RuntimeTest/
 BK_HOOKING.md
 FUTURE.md
 /docs/
+/Docs/
 /.hypervisor/
 /hypervisor/
 /.publish/
 /.vscode/
+*.code-workspace
 *_wpftmp.csproj
 
 /SVR
 ./SVR
+
+Server/target/
+Server/data*/
+Server/*.log
+
+# Closed-source Blackbird components
+/Blackbird.private.slnx
+/Server/
+/Lib/NetworkServiceLayer/
+/UserMode/netsvc/
+/Usermode/netsvc/
+/Kernel/network/
+/Kernel/core/crashdump.c
+/Kernel/monitors/bugcheck_monitor.c
+/Kernel/monitors/bugcheck_monitor.h
+/VCXProj/BlackbirdNetSvc.vcxproj
+/VCXProj/BlackbirdNetSvc.vcxproj.filters
+
+# External/local detection rule packs
+/Yara/
+/Client/analysis/Rules/SignatureIntel/Bundled/
+/Client/analysis/Rules/SignatureIntel/default-sigma.yml
+
+# Local build scratch
+/.build/
 
 
 SimpleVisor-master.zip

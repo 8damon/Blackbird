@@ -6,10 +6,8 @@ namespace BlackbirdInterface
 {
     internal static class WindowChromeBehavior
     {
-        internal static void HandleTitleBarMouseLeftButtonDown(
-            Window window,
-            MouseButtonEventArgs e,
-            Action<Exception>? onDragMoveError = null)
+        internal static void HandleTitleBarMouseLeftButtonDown(Window window, MouseButtonEventArgs e,
+                                                               Action<Exception>? onDragMoveError = null)
         {
             if (e.LeftButton != MouseButtonState.Pressed)
             {
@@ -55,9 +53,8 @@ namespace BlackbirdInterface
 
         internal static void ToggleMaximize(Window window)
         {
-            window.WindowState = window.WindowState == WindowState.Maximized
-                ? WindowState.Normal
-                : WindowState.Maximized;
+            window.WindowState =
+                window.WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
         }
 
         internal static void Close(Window window)
@@ -66,4 +63,3 @@ namespace BlackbirdInterface
         }
     }
 }
-

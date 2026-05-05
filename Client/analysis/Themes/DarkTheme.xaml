@@ -28,8 +28,8 @@
     <Color x:Key="EtwTiHeaderColor">#FF4E3318</Color>
     <Color x:Key="HeuristicsHeaderColor">#FF4A2525</Color>
     <Color x:Key="FilesystemHeaderColor">#FF1E3C35</Color>
+    <Color x:Key="RegistryHeaderColor">#FF31254A</Color>
     <Color x:Key="ProcessRelationsHeaderColor">#FF474020</Color>
-    <Color x:Key="IpcUplinkHeaderColor">#FF1F3E43</Color>
     <Color x:Key="MessageBoxBgColor">#FF0C0C0C</Color>
     <Color x:Key="MessageBoxTextColor">#FFE6E6E6</Color>
     <Color x:Key="MessageBoxMutedTextColor">#FFB0B0B0</Color>
@@ -49,6 +49,26 @@
     <Color x:Key="ProcessRowSystemForegroundColor">#FFB8B8B8</Color>
     <Color x:Key="LaneRowEnabledColor">#2A285B2E</Color>
     <Color x:Key="LaneRowDisabledColor">#2A5B2828</Color>
+    <Color x:Key="MemoryThreadStackBackgroundColor">#FF1C2735</Color>
+    <Color x:Key="MemoryThreadStackForegroundColor">#FFD5ECFF</Color>
+    <Color x:Key="MemoryHeapBackgroundColor">#FF20301C</Color>
+    <Color x:Key="MemoryHeapForegroundColor">#FFD9F4CC</Color>
+    <Color x:Key="MemoryAnchorBackgroundColor">#FF31261A</Color>
+    <Color x:Key="MemoryAnchorForegroundColor">#FFF3D6B2</Color>
+    <Color x:Key="MemoryRuntimeBackgroundColor">#FF261F36</Color>
+    <Color x:Key="MemoryRuntimeForegroundColor">#FFE0D3FF</Color>
+    <Color x:Key="MemoryPrivateUnsignedBackgroundColor">#FF3F2418</Color>
+    <Color x:Key="MemoryPrivateUnsignedForegroundColor">#FFFFD9B8</Color>
+    <Color x:Key="MemoryPrivateExecutableBackgroundColor">#FF341A1A</Color>
+    <Color x:Key="MemoryPrivateExecutableForegroundColor">#FFFFC7C7</Color>
+    <Color x:Key="MemoryPrivateBackgroundColor">#FF1D2438</Color>
+    <Color x:Key="MemoryPrivateForegroundColor">#FFC9D8FF</Color>
+    <Color x:Key="MemoryUnsignedBackgroundColor">#FF322715</Color>
+    <Color x:Key="MemoryUnsignedForegroundColor">#FFFFE1A8</Color>
+    <Color x:Key="MemoryImageBackgroundColor">#FF25311B</Color>
+    <Color x:Key="MemoryImageForegroundColor">#FFD3F2B0</Color>
+    <Color x:Key="MemoryMappedBackgroundColor">#FF241E35</Color>
+    <Color x:Key="MemoryMappedForegroundColor">#FFD4C8FF</Color>
 
     <SolidColorBrush x:Key="PaneBorderBrush" Color="{StaticResource PaneBorderColor}"/>
     <SolidColorBrush x:Key="WinBgBrush" Color="{StaticResource WinBgColor}"/>
@@ -77,8 +97,8 @@
     <SolidColorBrush x:Key="EtwTiHeaderBrush" Color="{StaticResource EtwTiHeaderColor}"/>
     <SolidColorBrush x:Key="HeuristicsHeaderBrush" Color="{StaticResource HeuristicsHeaderColor}"/>
     <SolidColorBrush x:Key="FilesystemHeaderBrush" Color="{StaticResource FilesystemHeaderColor}"/>
+    <SolidColorBrush x:Key="RegistryHeaderBrush" Color="{StaticResource RegistryHeaderColor}"/>
     <SolidColorBrush x:Key="ProcessRelationsHeaderBrush" Color="{StaticResource ProcessRelationsHeaderColor}"/>
-    <SolidColorBrush x:Key="IpcUplinkHeaderBrush" Color="{StaticResource IpcUplinkHeaderColor}"/>
     <SolidColorBrush x:Key="MessageBoxBgBrush" Color="{StaticResource MessageBoxBgColor}"/>
     <SolidColorBrush x:Key="MessageBoxTextBrush" Color="{StaticResource MessageBoxTextColor}"/>
     <SolidColorBrush x:Key="MessageBoxMutedTextBrush" Color="{StaticResource MessageBoxMutedTextColor}"/>
@@ -98,6 +118,26 @@
     <SolidColorBrush x:Key="ProcessRowSystemForegroundBrush" Color="{StaticResource ProcessRowSystemForegroundColor}"/>
     <SolidColorBrush x:Key="LaneRowEnabledBrush" Color="{StaticResource LaneRowEnabledColor}"/>
     <SolidColorBrush x:Key="LaneRowDisabledBrush" Color="{StaticResource LaneRowDisabledColor}"/>
+    <SolidColorBrush x:Key="MemoryThreadStackBackgroundBrush" Color="{StaticResource MemoryThreadStackBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryThreadStackForegroundBrush" Color="{StaticResource MemoryThreadStackForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryHeapBackgroundBrush" Color="{StaticResource MemoryHeapBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryHeapForegroundBrush" Color="{StaticResource MemoryHeapForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryAnchorBackgroundBrush" Color="{StaticResource MemoryAnchorBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryAnchorForegroundBrush" Color="{StaticResource MemoryAnchorForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryRuntimeBackgroundBrush" Color="{StaticResource MemoryRuntimeBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryRuntimeForegroundBrush" Color="{StaticResource MemoryRuntimeForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryPrivateUnsignedBackgroundBrush" Color="{StaticResource MemoryPrivateUnsignedBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryPrivateUnsignedForegroundBrush" Color="{StaticResource MemoryPrivateUnsignedForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryPrivateExecutableBackgroundBrush" Color="{StaticResource MemoryPrivateExecutableBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryPrivateExecutableForegroundBrush" Color="{StaticResource MemoryPrivateExecutableForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryPrivateBackgroundBrush" Color="{StaticResource MemoryPrivateBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryPrivateForegroundBrush" Color="{StaticResource MemoryPrivateForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryUnsignedBackgroundBrush" Color="{StaticResource MemoryUnsignedBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryUnsignedForegroundBrush" Color="{StaticResource MemoryUnsignedForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryImageBackgroundBrush" Color="{StaticResource MemoryImageBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryImageForegroundBrush" Color="{StaticResource MemoryImageForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryMappedBackgroundBrush" Color="{StaticResource MemoryMappedBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryMappedForegroundBrush" Color="{StaticResource MemoryMappedForegroundColor}"/>
 
     <SolidColorBrush x:Key="ExplorerPreviewBackgroundBrush" Color="#FF111111"/>
     <SolidColorBrush x:Key="ExplorerOverlayBrush" Color="#D0181818"/>
@@ -116,17 +156,20 @@
     <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#FF161616"/>
     <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="#FFE2E2E2"/>
 
+    <FontFamily x:Key="AppUiFontFamily">Segoe UI Variable Text, Segoe UI, Aptos</FontFamily>
+    <FontFamily x:Key="AppMonoFontFamily">Cascadia Mono, Cascadia Code, Consolas</FontFamily>
+
     <Style TargetType="Window">
         <Setter Property="Background" Value="{StaticResource WinBgBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource WinTextBrush}"/>
-        <Setter Property="FontFamily" Value="Aptos, Segoe UI Variable Text, Segoe UI"/>
+        <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/>
         <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
         <Setter Property="UseLayoutRounding" Value="True"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
     </Style>
 
     <Style TargetType="Control">
-        <Setter Property="FontFamily" Value="Aptos, Segoe UI Variable Text, Segoe UI"/>
+        <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/>
     </Style>
 
     <Style TargetType="ToolTip">
@@ -239,9 +282,9 @@
     </Style>
 
     <Style TargetType="ProgressBar">
-        <Setter Property="Background" Value="{StaticResource WinHeaderBrush}"/>
-        <Setter Property="Foreground" Value="{StaticResource WinAccentBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource WinBorderBrush}"/>
+        <Setter Property="Background" Value="#FF101513"/>
+        <Setter Property="Foreground" Value="#FF6FD3A8"/>
+        <Setter Property="BorderBrush" Value="#FF29443C"/>
         <Setter Property="BorderThickness" Value="1"/>
     </Style>
 

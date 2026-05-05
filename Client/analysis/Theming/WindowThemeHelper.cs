@@ -7,6 +7,20 @@ namespace BlackbirdInterface
 {
     internal static class WindowThemeHelper
     {
+        public static void WireThemeAwareTitleBar(Window window)
+        {
+            if (window == null)
+            {
+                return;
+            }
+
+            void Apply(bool useDark) => ApplyTitleBarTheme(window, useDark);
+
+            Apply(App.IsDarkTheme);
+            App.ThemeChanged += Apply;
+            window.Closed += (_, __) => App.ThemeChanged -= Apply;
+        }
+
         public static void ApplyDarkTitleBar(Window window)
         {
             bool useDark = App.IsDarkTheme;
@@ -42,7 +56,7 @@ namespace BlackbirdInterface
         }
 
         [DllImport("dwmapi.dll", SetLastError = true)]
-        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
+        private static extern int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute,
+                                                        int cbAttribute);
     }
 }
-

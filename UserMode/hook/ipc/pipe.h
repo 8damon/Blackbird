@@ -1,12 +1,24 @@
 #pragma once
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
+#ifndef _WINSOCKAPI_
+#define _WINSOCKAPI_
+#endif
+
 #include <windows.h>
 #include <cstdint>
 #include "../../../abi/blackbird_ipc.h"
 
 namespace BKIPC
 {
-    inline constexpr const wchar_t *PIPE_NAME = BLACKBIRD_IPC_HOOK_PIPE_NAME;
+    inline constexpr const wchar_t *PIPE_NAME = BKIPC_HOOK_PIPE_NAME;
     inline constexpr DWORD PIPE_DEFAULT_TIMEOUT_MS = 5000;
 
     struct WinsockEventHeader
@@ -38,8 +50,15 @@ namespace BKIPC
 
     bool WriteRaw(const void *data, DWORD size);
     bool ReadRaw(void *buffer, DWORD size, DWORD &bytesRead);
-    bool PublishHookEvent(const BLACKBIRD_IPC_HOOK_EVENT &eventRecord);
-    bool NotifyHookReady(UINT32 readyMask, UINT32 *observedMaskOut = nullptr);
+    bool PublishHookEvent(const BKIPC_HOOK_EVENT &eventRecord);
+    UINT32 DrainPendingHookEventsSynchronously(UINT32 maxEvents = 64) noexcept;
+    bool NotifyHookReady(UINT32 readyMask, UINT32 *observedMaskOut = nullptr, UINT32 *pendingCommandOut = nullptr);
+    /* Registers a memory range as BK/SR71-owned instrumentation so the
+       controller excludes it from heuristics and annotates it in the UI. */
+    bool RegisterInstrumentationRange(UINT64 baseAddress, UINT64 regionSize, UINT32 flags, const char *tag) noexcept;
+    bool RegisterHookPatch(UINT64 patchAddress, UINT32 patchSize, const UINT8 *originalBytes, UINT32 originalSize,
+                           UINT32 flags, const char *tag) noexcept;
+    bool IsProtectedIpcHandleValue(UINT64 handleValue) noexcept;
 
     template <typename T> bool SendMessage(const T &msg)
     {

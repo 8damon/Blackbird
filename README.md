@@ -21,14 +21,6 @@
   <img src="https://titansoftwork.com/content/capabilities/blackbird/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
 </p>
 
-Blackbird is an on-prem defensive software reverse-engineering (SRE) / IDS-style malware analysis platform designed for samples that evade conventional sandboxes. It combines targeted kernel instrumentation, early usermode sensors, anti-evasion controls, ETW/IOCTL capture, behavioral correlation, and portable capture files so security teams can run malware safely inside managed VMs without sending data to a third party.
-
-Blackbird is intended for authorized security research, malware reverse engineering, incident response, detection engineering, and controlled lab analysis. It is not provided as offensive tooling, malware, an intrusion platform, a remote access capability, or a cyber weapon. Some components necessarily use low-level kernel monitoring, usermode instrumentation, process-control, and protected telemetry paths so that analysts can observe hostile samples; those mechanisms must only be used in isolated environments and on systems you own or are explicitly authorized to test.
-
-Public visibility of this repository does not grant permission to use Blackbird against third-party systems, to develop or validate evasion for unauthorized activity, to bypass security controls outside a defensive lab, or to conduct offensive cyber operations. Users are responsible for complying with applicable law, export-control rules, organizational policy, and any permit or authorization requirements before using, modifying, distributing, or publishing derivative work.
-
-The public repository is the local defensive analysis stack. Remote node service/server code, WFP endpoint protection, active bugcheck monitoring, secondary crash-dump callback code, and external third-party rule packs are private optional extensions unless explicitly included in a release.
-
 ## REQUIREMENTS
 
 A virtual machine on Windows 10 22H2 or higher, 64-bit.

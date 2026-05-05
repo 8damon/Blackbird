@@ -28,6 +28,9 @@
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <ProjectName>BlackbirdSensorCore</ProjectName>
     <TargetName>J58</TargetName>
+    <BlackbirdFileDescription>Blackbird user-mode ABI and control bridge</BlackbirdFileDescription>
+    <BlackbirdInternalName>J58</BlackbirdInternalName>
+    <BlackbirdOriginalFilename>J58.dll</BlackbirdOriginalFilename>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
@@ -95,7 +98,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <PreprocessorDefinitions>BLACKBIRDSC_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>BKSC_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -112,7 +115,7 @@
       <BufferSecurityCheck>true</BufferSecurityCheck>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>BLACKBIRDSC_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>BKSC_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <OmitFramePointers>false</OmitFramePointers>
     </ClCompile>
@@ -138,7 +141,7 @@
       <BufferSecurityCheck>true</BufferSecurityCheck>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>BLACKBIRDSC_EXPORTS;TEMPUS_DEBUG=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>BKSC_EXPORTS;TEMPUS_DEBUG=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -154,7 +157,7 @@
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <PreprocessorDefinitions>BLACKBIRDSC_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>BKSC_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
@@ -171,7 +174,7 @@
       <BufferSecurityCheck>true</BufferSecurityCheck>
       <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>BLACKBIRDSC_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>BKSC_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -182,17 +185,17 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\UserMode\sensor\core\Blackbird_sensor_core_etw.c" />
-    <ClCompile Include="..\UserMode\sensor\core\Blackbird_sensor_core_protocol.c" />
-    <ClCompile Include="..\UserMode\sensor\Blackbird_etw_props.c" />
-    <ClCompile Include="..\UserMode\sensor\Blackbird_sensor_core.c" />
+    <ClCompile Include="..\UserMode\sensor\core\sensor_core_etw.c" />
+    <ClCompile Include="..\UserMode\sensor\core\sensor_core_protocol.c" />
+    <ClCompile Include="..\UserMode\sensor\etw_props.c" />
+    <ClCompile Include="..\UserMode\sensor\sensor_core.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\ABI\Blackbird_ipc.h" />
+    <ClInclude Include="..\ABI\blackbird_ipc.h" />
     <ClInclude Include="..\ABI\blackbird_ioctl.h" />
-    <ClInclude Include="..\UserMode\sensor\core\Blackbird_sensor_core_internal.h" />
-    <ClInclude Include="..\UserMode\sensor\Blackbird_etw_props.h" />
-    <ClInclude Include="..\UserMode\sensor\Blackbird_sensor_core.h" />
+    <ClInclude Include="..\UserMode\sensor\core\sensor_core_internal.h" />
+    <ClInclude Include="..\UserMode\sensor\etw_props.h" />
+    <ClInclude Include="..\UserMode\sensor\sensor_core.h" />
   </ItemGroup>
   <Import Project="Blackbird.UserMode.Common.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

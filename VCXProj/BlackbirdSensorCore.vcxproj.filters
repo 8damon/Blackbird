@@ -11,33 +11,33 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\UserMode\sensor\core\Blackbird_sensor_core_etw.c">
+    <ClCompile Include="..\UserMode\sensor\core\sensor_core_etw.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\sensor\core\Blackbird_sensor_core_protocol.c">
+    <ClCompile Include="..\UserMode\sensor\core\sensor_core_protocol.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\sensor\Blackbird_etw_props.c">
+    <ClCompile Include="..\UserMode\sensor\etw_props.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\sensor\Blackbird_sensor_core.c">
+    <ClCompile Include="..\UserMode\sensor\sensor_core.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\ABI\Blackbird_ipc.h">
+    <ClInclude Include="..\ABI\blackbird_ipc.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="..\ABI\blackbird_ioctl.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\UserMode\sensor\Blackbird_sensor_core.h">
+    <ClInclude Include="..\UserMode\sensor\sensor_core.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\UserMode\sensor\Blackbird_etw_props.h">
+    <ClInclude Include="..\UserMode\sensor\etw_props.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\UserMode\sensor\core\Blackbird_sensor_core_internal.h">
+    <ClInclude Include="..\UserMode\sensor\core\sensor_core_internal.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

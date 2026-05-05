@@ -1,4 +1,5 @@
 #include "ws.h"
+#include "../../../ABI/blackbird_ipc.h"
 
 #ifndef _WINSOCKAPI_
 #define _WINSOCKAPI_
@@ -55,14 +56,81 @@ namespace
     static bool g_HooksInstalled = false;
     static __declspec(thread) bool g_InHook = false;
 
+    /* Rotating ring that maps socket handles to their last connected remote endpoint.
+       Populated at connect time; looked up by send/recv hooks to embed endpoint context
+       without calling getpeername (extra syscall) on every I/O operation. */
+    struct SocketEndpointEntry
+    {
+        SOCKET socket;
+        UINT16 family;  /* AF_INET=2, AF_INET6=23 */
+        UINT16 port;    /* host byte order */
+        UINT32 addrNbo; /* IPv4 only: network byte order */
+    };
+
+    static constexpr std::size_t kEndpointCacheSlots = 64;
+    static SocketEndpointEntry g_EndpointCache[kEndpointCacheSlots]{};
+    static std::size_t g_EndpointCacheHead = 0;
+
+    static void EndpointCacheStore(SOCKET s, const sockaddr *name, int nameLen) noexcept
+    {
+        if (s == INVALID_SOCKET || name == nullptr || nameLen < 4)
+            return;
+
+        SocketEndpointEntry entry{};
+        entry.socket = s;
+        entry.family = static_cast<UINT16>(name->sa_family);
+
+        if (name->sa_family == AF_INET && nameLen >= static_cast<int>(sizeof(sockaddr_in)))
+        {
+            const auto *sin = reinterpret_cast<const sockaddr_in *>(name);
+            /* Inline byte swap — avoids depending on ntohs from ws2_32.lib which is not linked
+               directly in the hook DLL (Winsock is resolved through IAT patching, not the import lib). */
+            const auto netPort = sin->sin_port;
+            entry.port = static_cast<UINT16>(((netPort & 0x00FFu) << 8) | ((netPort & 0xFF00u) >> 8));
+            entry.addrNbo = sin->sin_addr.s_addr;
+        }
+
+        g_EndpointCache[g_EndpointCacheHead % kEndpointCacheSlots] = entry;
+        g_EndpointCacheHead = (g_EndpointCacheHead + 1) % kEndpointCacheSlots;
+    }
+
+    static bool EndpointCacheLookup(SOCKET s, SocketEndpointEntry *out) noexcept
+    {
+        if (s == INVALID_SOCKET || out == nullptr)
+            return false;
+        for (std::size_t i = 0; i < kEndpointCacheSlots; ++i)
+        {
+            if (g_EndpointCache[i].socket == s && g_EndpointCache[i].family != 0)
+            {
+                *out = g_EndpointCache[i];
+                return true;
+            }
+        }
+        return false;
+    }
+
     struct PatchedIatSlot
     {
         ULONG_PTR *Slot;
+        ULONG_PTR OriginalValue;
         void *HookFunction;
+        const char *FunctionName;
     };
 
     static PatchedIatSlot g_PatchedSlots[512]{};
     static std::size_t g_PatchedSlotCount = 0;
+
+    struct WinsockInlinePatchSlot
+    {
+        void *Target;
+        std::size_t PatchSize;
+        std::uint8_t OriginalBytes[16];
+        const char *FunctionName;
+        bool Active;
+    };
+
+    static WinsockInlinePatchSlot g_InlinePatchSlots[16]{};
+    static std::size_t g_InlinePatchSlotCount = 0;
 
     static bool ModuleImportsWinsock(HMODULE moduleHandle)
     {
@@ -105,7 +173,7 @@ namespace
         return false;
     }
 
-    static void TrackPatchedSlot(ULONG_PTR *slot, void *hookFunction)
+    static void TrackPatchedSlot(ULONG_PTR *slot, ULONG_PTR originalValue, void *hookFunction, const char *functionName)
     {
         if (slot == nullptr || hookFunction == nullptr)
         {
@@ -116,7 +184,12 @@ namespace
         {
             if (g_PatchedSlots[i].Slot == slot)
             {
+                if (g_PatchedSlots[i].OriginalValue == 0)
+                {
+                    g_PatchedSlots[i].OriginalValue = originalValue;
+                }
                 g_PatchedSlots[i].HookFunction = hookFunction;
+                g_PatchedSlots[i].FunctionName = functionName;
                 return;
             }
         }
@@ -124,8 +197,51 @@ namespace
         if (g_PatchedSlotCount < RTL_NUMBER_OF(g_PatchedSlots))
         {
             g_PatchedSlots[g_PatchedSlotCount].Slot = slot;
+            g_PatchedSlots[g_PatchedSlotCount].OriginalValue = originalValue;
             g_PatchedSlots[g_PatchedSlotCount].HookFunction = hookFunction;
+            g_PatchedSlots[g_PatchedSlotCount].FunctionName = functionName;
             ++g_PatchedSlotCount;
+        }
+    }
+
+    static void TrackInlinePatch(void *target, std::size_t patchSize, const std::uint8_t *originalBytes,
+                                 const char *functionName) noexcept
+    {
+        if (target == nullptr || patchSize == 0 || patchSize > 16 || originalBytes == nullptr)
+        {
+            return;
+        }
+
+        for (std::size_t i = 0; i < g_InlinePatchSlotCount; ++i)
+        {
+            if (g_InlinePatchSlots[i].Target == target)
+            {
+                g_InlinePatchSlots[i].PatchSize = patchSize;
+                std::memcpy(g_InlinePatchSlots[i].OriginalBytes, originalBytes, patchSize);
+                g_InlinePatchSlots[i].FunctionName = functionName;
+                g_InlinePatchSlots[i].Active = true;
+                return;
+            }
+        }
+
+        if (g_InlinePatchSlotCount < RTL_NUMBER_OF(g_InlinePatchSlots))
+        {
+            g_InlinePatchSlots[g_InlinePatchSlotCount].Target = target;
+            g_InlinePatchSlots[g_InlinePatchSlotCount].PatchSize = patchSize;
+            std::memcpy(g_InlinePatchSlots[g_InlinePatchSlotCount].OriginalBytes, originalBytes, patchSize);
+            g_InlinePatchSlots[g_InlinePatchSlotCount].FunctionName = functionName;
+            g_InlinePatchSlots[g_InlinePatchSlotCount].Active = true;
+            ++g_InlinePatchSlotCount;
+        }
+    }
+
+    static void FillEndpointArgs(SOCKET s, WinsockHookContext &ctx) noexcept
+    {
+        SocketEndpointEntry ep{};
+        if (EndpointCacheLookup(s, &ep))
+        {
+            ctx.Args[1] = (static_cast<std::uint64_t>(ep.family) << 16) | ep.port;
+            ctx.Args[2] = static_cast<std::uint64_t>(ep.addrNbo);
         }
     }
 
@@ -154,6 +270,7 @@ namespace
                 context.Buffers = &bufferView;
                 context.BufferCount = 1U;
                 context.Caller = caller;
+                FillEndpointArgs(socketHandle, context);
 
                 g_ActiveCallback(context);
             }
@@ -214,6 +331,7 @@ namespace
                 context.Buffers = &bufferView;
                 context.BufferCount = 1U;
                 context.Caller = caller;
+                FillEndpointArgs(socketHandle, context);
 
                 g_ActiveCallback(context);
 
@@ -242,6 +360,7 @@ namespace
             context.Buffers = &bufferView;
             context.BufferCount = 1U;
             context.Caller = _ReturnAddress();
+            FillEndpointArgs(socketHandle, context);
 
             g_ActiveCallback(context);
 
@@ -279,6 +398,7 @@ namespace
             context.Buffers = &bufferView;
             context.BufferCount = 1U;
             context.Caller = _ReturnAddress();
+            FillEndpointArgs(socketHandle, context);
 
             g_ActiveCallback(context);
 
@@ -308,6 +428,8 @@ namespace
             context.Args[1] = static_cast<std::uint64_t>(nameLength);
 
             g_ActiveCallback(context);
+
+            EndpointCacheStore(socketHandle, name, nameLength);
 
             g_InHook = false;
         }
@@ -341,6 +463,8 @@ namespace
             context.Args[1] = static_cast<std::uint64_t>(nameLength);
 
             g_ActiveCallback(context);
+
+            EndpointCacheStore(socketHandle, name, nameLength);
 
             g_InHook = false;
         }
@@ -518,8 +642,9 @@ namespace
                             *hookEntry.OriginalFunction = reinterpret_cast<void *>(*functionSlot);
                         }
 
+                        ULONG_PTR originalValue = reinterpret_cast<ULONG_PTR>(*hookEntry.OriginalFunction);
                         *functionSlot = reinterpret_cast<ULONG_PTR>(hookEntry.HookFunction);
-                        TrackPatchedSlot(functionSlot, hookEntry.HookFunction);
+                        TrackPatchedSlot(functionSlot, originalValue, hookEntry.HookFunction, hookEntry.FunctionName);
                         anyPatched = true;
                     }
                     else
@@ -584,6 +709,7 @@ bool KeSetWinsockHook(WinsockHookCallback callback) noexcept
     }
 
     g_PatchedSlotCount = 0;
+    g_InlinePatchSlotCount = 0;
 
     const bool patched = PatchLoadedModules(true);
     if (!patched)
@@ -630,6 +756,7 @@ void KeRemoveWinsockHook() noexcept
     g_ActiveCallback = nullptr;
     g_HooksInstalled = false;
     g_PatchedSlotCount = 0;
+    g_InlinePatchSlotCount = 0;
 }
 
 bool KeCheckWinsockHookIntegrity(std::uint32_t *mismatchCount) noexcept
@@ -661,4 +788,124 @@ bool KeCheckWinsockHookIntegrity(std::uint32_t *mismatchCount) noexcept
     }
 
     return mismatches == 0;
+}
+
+bool KeInstallWinsockInlineHooks() noexcept
+{
+    /* Inline hook: write a 5-byte near JMP (0xE9 rel32) into the function prologue
+       of each WS2_32 export so that code calling the function directly (not through
+       the IAT) — e.g. shellcode in a hollowed process — is still intercepted.
+       Requires VirtualProtect to make the .text section temporarily writable.
+       Idempotent: already-patched slots are left untouched. */
+
+    static volatile LONG s_inlineInstalled = 0;
+    if (InterlockedCompareExchange(&s_inlineInstalled, 1, 0) != 0)
+    {
+        return true; /* already done */
+    }
+
+    if (!g_HooksInstalled || g_ActiveCallback == nullptr)
+    {
+        InterlockedExchange(&s_inlineInstalled, 0);
+        return false;
+    }
+
+    struct InlineEntry
+    {
+        const char *FunctionName;
+        void **OrigFn;
+        void *HookFn;
+    };
+
+    static const InlineEntry kEntries[] = {
+        {"connect", reinterpret_cast<void **>(&g_OriginalConnect), reinterpret_cast<void *>(&ConnectHook)},
+        {"WSAConnect", reinterpret_cast<void **>(&g_OriginalWsaConnect), reinterpret_cast<void *>(&WsaConnectHook)},
+        {"send", reinterpret_cast<void **>(&g_OriginalSend), reinterpret_cast<void *>(&SendHook)},
+        {"recv", reinterpret_cast<void **>(&g_OriginalRecv), reinterpret_cast<void *>(&RecvHook)},
+        {"WSASend", reinterpret_cast<void **>(&g_OriginalWsasend), reinterpret_cast<void *>(&WsasendHook)},
+        {"WSARecv", reinterpret_cast<void **>(&g_OriginalWsarecv), reinterpret_cast<void *>(&WsarecvHook)},
+        {"GetAddrInfoW", reinterpret_cast<void **>(&g_OriginalGetAddrInfoW),
+         reinterpret_cast<void *>(&GetAddrInfoWHook)},
+    };
+
+    bool anyFailed = false;
+
+    for (const auto &e : kEntries)
+    {
+        if (e.OrigFn == nullptr || *e.OrigFn == nullptr || e.HookFn == nullptr)
+        {
+            continue;
+        }
+
+        auto *target = static_cast<std::uint8_t *>(*e.OrigFn);
+
+        /* Skip if JMP is already present at the target */
+        if (target[0] == 0xE9u)
+        {
+            continue;
+        }
+
+        std::uint8_t originalBytes[16]{};
+        std::memcpy(originalBytes, target, 5);
+
+        DWORD old = 0;
+        if (!VirtualProtect(target, 5, PAGE_EXECUTE_READWRITE, &old))
+        {
+            anyFailed = true;
+            continue;
+        }
+
+        const std::ptrdiff_t rel = static_cast<std::uint8_t *>(e.HookFn) - (target + 5);
+        target[0] = 0xE9u;
+        *reinterpret_cast<std::int32_t *>(target + 1) = static_cast<std::int32_t>(rel);
+
+        VirtualProtect(target, 5, old, &old);
+        FlushInstructionCache(GetCurrentProcess(), target, 5);
+        TrackInlinePatch(target, 5, originalBytes, e.FunctionName);
+    }
+
+    return !anyFailed;
+}
+
+std::size_t KeCollectWinsockHookPatchInfos(WinsockHookPatchInfo *out, std::size_t capacity) noexcept
+{
+    if (out == nullptr || capacity == 0)
+    {
+        return 0;
+    }
+
+    std::size_t count = 0;
+    for (std::size_t i = 0; i < g_PatchedSlotCount && count < capacity; ++i)
+    {
+        if (g_PatchedSlots[i].Slot == nullptr || g_PatchedSlots[i].OriginalValue == 0)
+        {
+            continue;
+        }
+        out[count].PatchAddress = g_PatchedSlots[i].Slot;
+        out[count].PatchSize = sizeof(g_PatchedSlots[i].OriginalValue);
+        std::memset(out[count].OriginalBytes, 0, sizeof(out[count].OriginalBytes));
+        std::memcpy(out[count].OriginalBytes, &g_PatchedSlots[i].OriginalValue,
+                    sizeof(g_PatchedSlots[i].OriginalValue));
+        out[count].HookName = g_PatchedSlots[i].FunctionName;
+        out[count].Flags = BK_HOOK_PATCH_FLAG_WINSOCK_IAT;
+        ++count;
+    }
+
+    for (std::size_t i = 0; i < g_InlinePatchSlotCount && count < capacity; ++i)
+    {
+        if (!g_InlinePatchSlots[i].Active || g_InlinePatchSlots[i].Target == nullptr ||
+            g_InlinePatchSlots[i].PatchSize == 0)
+        {
+            continue;
+        }
+        out[count].PatchAddress = g_InlinePatchSlots[i].Target;
+        out[count].PatchSize = g_InlinePatchSlots[i].PatchSize;
+        std::memset(out[count].OriginalBytes, 0, sizeof(out[count].OriginalBytes));
+        std::memcpy(out[count].OriginalBytes, g_InlinePatchSlots[i].OriginalBytes, g_InlinePatchSlots[i].PatchSize);
+        out[count].HookName = g_InlinePatchSlots[i].FunctionName;
+        out[count].Flags = BK_HOOK_PATCH_FLAG_WINSOCK_INLINE;
+        ++count;
+    }
+
+    return count;
 }

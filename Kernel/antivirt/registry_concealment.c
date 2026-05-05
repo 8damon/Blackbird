@@ -3,17 +3,17 @@
 #include "..\core\runtime_config.h"
 #include "registry_concealment.h"
 
-BOOLEAN BLACKBIRDRegistryPathIsHighValue(_In_opt_ PCUNICODE_STRING Path)
+BOOLEAN BkavRegPathIsHighValue(_In_opt_ PCUNICODE_STRING Path)
 {
     if (Path == NULL || Path->Buffer == NULL)
     {
         return FALSE;
     }
 
-    if (BLACKBIRDUnicodeContainsInsensitive(Path, L"\\currentversion\\run", 19) ||
-        BLACKBIRDUnicodeContainsInsensitive(Path, L"\\currentversion\\runonce", 23) ||
-        BLACKBIRDUnicodeContainsInsensitive(Path, L"\\image file execution options", 29) ||
-        BLACKBIRDUnicodeContainsInsensitive(Path, L"\\system\\currentcontrolset\\services\\", 35))
+    if (BkstrUnicodeContainsInsensitive(Path, L"\\currentversion\\run", 19) ||
+        BkstrUnicodeContainsInsensitive(Path, L"\\currentversion\\runonce", 23) ||
+        BkstrUnicodeContainsInsensitive(Path, L"\\image file execution options", 29) ||
+        BkstrUnicodeContainsInsensitive(Path, L"\\system\\currentcontrolset\\services\\", 35))
     {
         return TRUE;
     }
@@ -21,60 +21,56 @@ BOOLEAN BLACKBIRDRegistryPathIsHighValue(_In_opt_ PCUNICODE_STRING Path)
     return FALSE;
 }
 
-BOOLEAN BLACKBIRDRegistryNullPath(_In_opt_ PCUNICODE_STRING Path)
+BOOLEAN BkavRegNullPath(_In_opt_ PCUNICODE_STRING Path)
 {
     if (Path == NULL || Path->Buffer == NULL)
     {
         return FALSE;
     }
 
-    if (BLACKBIRDRuntimeConfigIsAntiVirtualizationEnabled() &&
-        (BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vmicheartbeat", 23) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vmicvmsession", 23) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vmictimesync", 22) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vmicvss", 17)))
+    if (BkrtIsAntiVirtualizationEnabled() && (BkstrUnicodeContainsInsensitive(Path, L"\\services\\vmicheartbeat", 23) ||
+                                              BkstrUnicodeContainsInsensitive(Path, L"\\services\\vmicvmsession", 23) ||
+                                              BkstrUnicodeContainsInsensitive(Path, L"\\services\\vmictimesync", 22) ||
+                                              BkstrUnicodeContainsInsensitive(Path, L"\\services\\vmicvss", 17)))
     {
         return TRUE;
     }
 
-    if (BLACKBIRDRuntimeConfigIsAntiVirtualizationEnabled() &&
-        (BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vmhgfs", 16) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vmmouse", 17) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vmrawdsk", 18) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vmusbmouse", 20) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vmxnet", 16) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vmci", 14) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vsock", 15) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vmbus", 15) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\hyperkbd", 18) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\storflt", 17) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vmstorfl", 18)))
+    if (BkrtIsAntiVirtualizationEnabled() && (BkstrUnicodeContainsInsensitive(Path, L"\\services\\vmhgfs", 16) ||
+                                              BkstrUnicodeContainsInsensitive(Path, L"\\services\\vmmouse", 17) ||
+                                              BkstrUnicodeContainsInsensitive(Path, L"\\services\\vmrawdsk", 18) ||
+                                              BkstrUnicodeContainsInsensitive(Path, L"\\services\\vmusbmouse", 20) ||
+                                              BkstrUnicodeContainsInsensitive(Path, L"\\services\\vmxnet", 16) ||
+                                              BkstrUnicodeContainsInsensitive(Path, L"\\services\\vmci", 14) ||
+                                              BkstrUnicodeContainsInsensitive(Path, L"\\services\\vsock", 15) ||
+                                              BkstrUnicodeContainsInsensitive(Path, L"\\services\\vmbus", 15) ||
+                                              BkstrUnicodeContainsInsensitive(Path, L"\\services\\hyperkbd", 18) ||
+                                              BkstrUnicodeContainsInsensitive(Path, L"\\services\\storflt", 17) ||
+                                              BkstrUnicodeContainsInsensitive(Path, L"\\services\\vmstorfl", 18)))
     {
         return TRUE;
     }
 
-    if (BLACKBIRDRuntimeConfigIsAntiVirtualizationEnabled() &&
-        (BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vboxguest", 19) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vboxmouse", 19) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vboxservice", 21) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\services\\vboxsf", 16)))
+    if (BkrtIsAntiVirtualizationEnabled() && (BkstrUnicodeContainsInsensitive(Path, L"\\services\\vboxguest", 19) ||
+                                              BkstrUnicodeContainsInsensitive(Path, L"\\services\\vboxmouse", 19) ||
+                                              BkstrUnicodeContainsInsensitive(Path, L"\\services\\vboxservice", 21) ||
+                                              BkstrUnicodeContainsInsensitive(Path, L"\\services\\vboxsf", 16)))
     {
         return TRUE;
     }
 
-    if (BLACKBIRDRuntimeConfigIsAntiVirtualizationEnabled() &&
-        (BLACKBIRDUnicodeContainsInsensitive(Path, L"\\software\\vmware, inc.\\vmware tools", 34) ||
-         BLACKBIRDUnicodeContainsInsensitive(Path, L"\\enum\\pci\\ven_15ad", 19)))
+    if (BkrtIsAntiVirtualizationEnabled() &&
+        (BkstrUnicodeContainsInsensitive(Path, L"\\software\\vmware, inc.\\vmware tools", 34) ||
+         BkstrUnicodeContainsInsensitive(Path, L"\\enum\\pci\\ven_15ad", 19)))
     {
         return TRUE;
     }
 
     return FALSE;
 }
-VOID BLACKBIRDRegistryBuildPathForCompare(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOID RootObject,
-                                          _In_opt_ PCUNICODE_STRING CompleteName,
-                                          _Out_writes_z_(PathChars) PWSTR PathBuffer, _In_ SIZE_T PathChars,
-                                          _Out_ PUNICODE_STRING PathUs)
+VOID BkavRegBuildPathForCompare(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOID RootObject,
+                                _In_opt_ PCUNICODE_STRING CompleteName, _Out_writes_z_(PathChars) PWSTR PathBuffer,
+                                _In_ SIZE_T PathChars, _Out_ PUNICODE_STRING PathUs)
 {
     SIZE_T offsetChars = 0;
 
@@ -93,7 +89,7 @@ VOID BLACKBIRDRegistryBuildPathForCompare(_In_ PLARGE_INTEGER Cookie, _In_opt_ P
 
     if (CompleteName->Buffer[0] == L'\\' || RootObject == NULL)
     {
-        BLACKBIRDSafeCopyUnicode(CompleteName, PathBuffer, PathChars);
+        BkstrSafeCopyUnicode(CompleteName, PathBuffer, PathChars);
     }
     else
     {
@@ -102,7 +98,7 @@ VOID BLACKBIRDRegistryBuildPathForCompare(_In_ PLARGE_INTEGER Cookie, _In_opt_ P
 
         if (NT_SUCCESS(status) && rootName != NULL)
         {
-            BLACKBIRDSafeCopyUnicode(rootName, PathBuffer, PathChars);
+            BkstrSafeCopyUnicode(rootName, PathBuffer, PathChars);
             offsetChars = wcslen(PathBuffer);
             if (offsetChars > 0 && offsetChars < (PathChars - 1) && PathBuffer[offsetChars - 1] != L'\\')
             {
@@ -128,15 +124,15 @@ VOID BLACKBIRDRegistryBuildPathForCompare(_In_ PLARGE_INTEGER Cookie, _In_opt_ P
         }
         else
         {
-            BLACKBIRDSafeCopyUnicode(CompleteName, PathBuffer, PathChars);
+            BkstrSafeCopyUnicode(CompleteName, PathBuffer, PathChars);
         }
     }
 
     RtlInitUnicodeString(PathUs, PathBuffer);
 }
 
-static VOID BLACKBIRDBlindWideString(_Inout_updates_bytes_(DataLength) PUCHAR DataBytes, _In_ ULONG DataLength,
-                                     _In_z_ PCWSTR Replacement)
+static VOID BkavBlindWideString(_Inout_updates_bytes_(DataLength) PUCHAR DataBytes, _In_ ULONG DataLength,
+                                _In_z_ PCWSTR Replacement)
 {
     ULONG i = 0;
     ULONG maxChars;
@@ -164,7 +160,7 @@ static VOID BLACKBIRDBlindWideString(_Inout_updates_bytes_(DataLength) PUCHAR Da
 
 /* Replace the first 3 bytes (OUI) of a binary MAC address with the Intel Corporate
  * OUI 8C:8D:28, leaving the device-specific last 3 bytes intact. */
-static VOID BLACKBIRDBlindOuiBinary(_Inout_updates_bytes_(DataLength) PUCHAR DataBytes, _In_ ULONG DataLength)
+static VOID BkavBlindOuiBinary(_Inout_updates_bytes_(DataLength) PUCHAR DataBytes, _In_ ULONG DataLength)
 {
     if (DataBytes == NULL || DataLength < 6)
     {
@@ -177,7 +173,7 @@ static VOID BLACKBIRDBlindOuiBinary(_Inout_updates_bytes_(DataLength) PUCHAR Dat
 
 /* Replace the OUI portion of a REG_SZ MAC string ("XXXXXXXXXXXX", 12 wide chars minimum)
  * with the hex digits for Intel OUI 8C8D28. */
-static VOID BLACKBIRDBlindOuiString(_Inout_updates_bytes_(DataLength) PUCHAR DataBytes, _In_ ULONG DataLength)
+static VOID BkavBlindOuiString(_Inout_updates_bytes_(DataLength) PUCHAR DataBytes, _In_ ULONG DataLength)
 {
     static const WCHAR kOuiHex[] = L"8C8D28";
     PWCHAR dest;
@@ -198,8 +194,8 @@ static VOID BLACKBIRDBlindOuiString(_Inout_updates_bytes_(DataLength) PUCHAR Dat
     }
 }
 
-BOOLEAN BLACKBIRDRegistryBlindNicValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOID Object,
-                                       _In_ PREG_QUERY_VALUE_KEY_INFORMATION PreInfo)
+BOOLEAN BkavRegBlindNicValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOID Object,
+                             _In_ PREG_QUERY_VALUE_KEY_INFORMATION PreInfo)
 {
     /* Network Adapters device setup class GUID â€” all NIC miniport driver instances
      * are registered under this key in CurrentControlSet\Control\Class. */
@@ -231,15 +227,15 @@ BOOLEAN BLACKBIRDRegistryBlindNicValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOI
     {
         return FALSE;
     }
-    if (!BLACKBIRDRuntimeConfigIsAntiVirtualizationEnabled())
+    if (!BkrtIsAntiVirtualizationEnabled())
     {
         return FALSE;
     }
 
-    isDriverDesc = BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usDriverDesc, TRUE);
-    isProviderName = BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usProviderName, TRUE);
-    isHwAddr = BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usHwAddr, TRUE);
-    isNetAddr = BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usNetAddr, TRUE);
+    isDriverDesc = BkstrUnicodeEquals(PreInfo->ValueName, &usDriverDesc, TRUE);
+    isProviderName = BkstrUnicodeEquals(PreInfo->ValueName, &usProviderName, TRUE);
+    isHwAddr = BkstrUnicodeEquals(PreInfo->ValueName, &usHwAddr, TRUE);
+    isNetAddr = BkstrUnicodeEquals(PreInfo->ValueName, &usNetAddr, TRUE);
 
     if (!isDriverDesc && !isProviderName && !isHwAddr && !isNetAddr)
     {
@@ -253,7 +249,7 @@ BOOLEAN BLACKBIRDRegistryBlindNicValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOI
     }
 
     nicKeyPath = *keyNamePtr;
-    isNicPath = BLACKBIRDUnicodeContainsInsensitive(&nicKeyPath, kNicClassGuid, kNicClassGuidLen);
+    isNicPath = BkstrUnicodeContainsInsensitive(&nicKeyPath, kNicClassGuid, kNicClassGuidLen);
     CmCallbackReleaseKeyObjectIDEx(keyNamePtr);
 
     if (!isNicPath)
@@ -268,19 +264,19 @@ BOOLEAN BLACKBIRDRegistryBlindNicValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOI
         if ((isDriverDesc || isProviderName) && partialInfo->Type == REG_SZ && partialInfo->DataLength >= sizeof(WCHAR))
         {
             PCWSTR replacement = isDriverDesc ? L"Intel(R) Ethernet Connection (7) I219-V" : L"Intel";
-            BLACKBIRDBlindWideString(partialInfo->Data, partialInfo->DataLength, replacement);
+            BkavBlindWideString(partialInfo->Data, partialInfo->DataLength, replacement);
             return TRUE;
         }
 
         if (isHwAddr && partialInfo->Type == REG_BINARY && partialInfo->DataLength >= 6)
         {
-            BLACKBIRDBlindOuiBinary(partialInfo->Data, partialInfo->DataLength);
+            BkavBlindOuiBinary(partialInfo->Data, partialInfo->DataLength);
             return TRUE;
         }
 
         if (isNetAddr && partialInfo->Type == REG_SZ && partialInfo->DataLength >= 6 * sizeof(WCHAR))
         {
-            BLACKBIRDBlindOuiString(partialInfo->Data, partialInfo->DataLength);
+            BkavBlindOuiString(partialInfo->Data, partialInfo->DataLength);
             return TRUE;
         }
     }
@@ -291,8 +287,8 @@ BOOLEAN BLACKBIRDRegistryBlindNicValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOI
     return FALSE;
 }
 
-BOOLEAN BLACKBIRDRegistryBlindDisplayValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOID Object,
-                                           _In_ PREG_QUERY_VALUE_KEY_INFORMATION PreInfo)
+BOOLEAN BkavRegBlindDisplayValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOID Object,
+                                 _In_ PREG_QUERY_VALUE_KEY_INFORMATION PreInfo)
 {
     static const WCHAR kDisplayClassGuid[] = L"{4d36e968-e325-11ce-bfc1-08002be10318}";
     PKEY_VALUE_PARTIAL_INFORMATION partialInfo;
@@ -312,16 +308,16 @@ BOOLEAN BLACKBIRDRegistryBlindDisplayValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ 
     {
         return FALSE;
     }
-    if (!BLACKBIRDRuntimeConfigIsAntiVirtualizationEnabled())
+    if (!BkrtIsAntiVirtualizationEnabled())
     {
         return FALSE;
     }
 
-    if (BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usDriverDesc, TRUE))
+    if (BkstrUnicodeEquals(PreInfo->ValueName, &usDriverDesc, TRUE))
     {
         spoofValue = L"NVIDIA GeForce RTX 3070";
     }
-    else if (BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usProviderName, TRUE))
+    else if (BkstrUnicodeEquals(PreInfo->ValueName, &usProviderName, TRUE))
     {
         spoofValue = L"NVIDIA";
     }
@@ -337,7 +333,7 @@ BOOLEAN BLACKBIRDRegistryBlindDisplayValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ 
     }
 
     displayKeyPath = *keyNamePtr;
-    isDisplayPath = BLACKBIRDUnicodeContainsInsensitive(&displayKeyPath, kDisplayClassGuid, 38);
+    isDisplayPath = BkstrUnicodeContainsInsensitive(&displayKeyPath, kDisplayClassGuid, 38);
     CmCallbackReleaseKeyObjectIDEx(keyNamePtr);
 
     if (!isDisplayPath)
@@ -350,7 +346,7 @@ BOOLEAN BLACKBIRDRegistryBlindDisplayValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ 
         partialInfo = (PKEY_VALUE_PARTIAL_INFORMATION)PreInfo->KeyValueInformation;
         if (partialInfo->Type == REG_SZ && partialInfo->DataLength >= sizeof(WCHAR))
         {
-            BLACKBIRDBlindWideString(partialInfo->Data, partialInfo->DataLength, spoofValue);
+            BkavBlindWideString(partialInfo->Data, partialInfo->DataLength, spoofValue);
             return TRUE;
         }
     }
@@ -361,8 +357,8 @@ BOOLEAN BLACKBIRDRegistryBlindDisplayValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ 
     return FALSE;
 }
 
-BOOLEAN BLACKBIRDRegistryBlindScsiValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOID Object,
-                                        _In_ PREG_QUERY_VALUE_KEY_INFORMATION PreInfo)
+BOOLEAN BkavRegBlindScsiValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOID Object,
+                              _In_ PREG_QUERY_VALUE_KEY_INFORMATION PreInfo)
 {
     PKEY_VALUE_PARTIAL_INFORMATION partialInfo;
     PUNICODE_STRING keyNamePtr = NULL;
@@ -381,16 +377,16 @@ BOOLEAN BLACKBIRDRegistryBlindScsiValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVO
     {
         return FALSE;
     }
-    if (!BLACKBIRDRuntimeConfigIsAntiVirtualizationEnabled())
+    if (!BkrtIsAntiVirtualizationEnabled())
     {
         return FALSE;
     }
 
-    if (BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usIdentifier, TRUE))
+    if (BkstrUnicodeEquals(PreInfo->ValueName, &usIdentifier, TRUE))
     {
         spoofValue = L"Samsung SSD 970 EVO Plus";
     }
-    else if (BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usProductId, TRUE))
+    else if (BkstrUnicodeEquals(PreInfo->ValueName, &usProductId, TRUE))
     {
         spoofValue = L"Samsung SSD 970 EVO Plus";
     }
@@ -406,7 +402,7 @@ BOOLEAN BLACKBIRDRegistryBlindScsiValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVO
     }
 
     scsiKeyPath = *keyNamePtr;
-    isScsiPath = BLACKBIRDUnicodeContainsInsensitive(&scsiKeyPath, L"\\hardware\\devicemap\\scsi", 24);
+    isScsiPath = BkstrUnicodeContainsInsensitive(&scsiKeyPath, L"\\hardware\\devicemap\\scsi", 24);
     CmCallbackReleaseKeyObjectIDEx(keyNamePtr);
 
     if (!isScsiPath)
@@ -419,7 +415,7 @@ BOOLEAN BLACKBIRDRegistryBlindScsiValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVO
         partialInfo = (PKEY_VALUE_PARTIAL_INFORMATION)PreInfo->KeyValueInformation;
         if (partialInfo->Type == REG_SZ && partialInfo->DataLength >= sizeof(WCHAR))
         {
-            BLACKBIRDBlindWideString(partialInfo->Data, partialInfo->DataLength, spoofValue);
+            BkavBlindWideString(partialInfo->Data, partialInfo->DataLength, spoofValue);
             return TRUE;
         }
     }
@@ -430,8 +426,8 @@ BOOLEAN BLACKBIRDRegistryBlindScsiValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVO
     return FALSE;
 }
 
-BOOLEAN BLACKBIRDRegistryBlindBiosValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOID Object,
-                                        _In_ PREG_QUERY_VALUE_KEY_INFORMATION PreInfo)
+BOOLEAN BkavRegBlindBiosValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVOID Object,
+                              _In_ PREG_QUERY_VALUE_KEY_INFORMATION PreInfo)
 {
     PKEY_VALUE_PARTIAL_INFORMATION partialInfo;
     PUNICODE_STRING keyNamePtr = NULL;
@@ -448,7 +444,7 @@ BOOLEAN BLACKBIRDRegistryBlindBiosValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVO
     {
         return FALSE;
     }
-    if (!BLACKBIRDRuntimeConfigIsAntiVirtualizationEnabled())
+    if (!BkrtIsAntiVirtualizationEnabled())
     {
         return FALSE;
     }
@@ -460,23 +456,23 @@ BOOLEAN BLACKBIRDRegistryBlindBiosValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVO
         UNICODE_STRING usBoardProduct = RTL_CONSTANT_STRING(L"BaseBoardProduct");
         UNICODE_STRING usBoardMfg = RTL_CONSTANT_STRING(L"BaseBoardManufacturer");
 
-        if (BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usBiosVendor, TRUE))
+        if (BkstrUnicodeEquals(PreInfo->ValueName, &usBiosVendor, TRUE))
         {
             spoofValue = L"American Megatrends Inc.";
         }
-        else if (BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usSysMfg, TRUE))
+        else if (BkstrUnicodeEquals(PreInfo->ValueName, &usSysMfg, TRUE))
         {
             spoofValue = L"Dell Inc.";
         }
-        else if (BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usSysProd, TRUE))
+        else if (BkstrUnicodeEquals(PreInfo->ValueName, &usSysProd, TRUE))
         {
             spoofValue = L"XPS 8940";
         }
-        else if (BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usBoardProduct, TRUE))
+        else if (BkstrUnicodeEquals(PreInfo->ValueName, &usBoardProduct, TRUE))
         {
             spoofValue = L"0K3CM7";
         }
-        else if (BLACKBIRDUnicodeEquals(PreInfo->ValueName, &usBoardMfg, TRUE))
+        else if (BkstrUnicodeEquals(PreInfo->ValueName, &usBoardMfg, TRUE))
         {
             spoofValue = L"Dell Inc.";
         }
@@ -494,7 +490,7 @@ BOOLEAN BLACKBIRDRegistryBlindBiosValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVO
     }
 
     biosKeyPath = *keyNamePtr;
-    isBiosPath = BLACKBIRDUnicodeContainsInsensitive(&biosKeyPath, L"\\hardware\\description\\system\\bios", 33);
+    isBiosPath = BkstrUnicodeContainsInsensitive(&biosKeyPath, L"\\hardware\\description\\system\\bios", 33);
     CmCallbackReleaseKeyObjectIDEx(keyNamePtr);
 
     if (!isBiosPath)
@@ -507,7 +503,7 @@ BOOLEAN BLACKBIRDRegistryBlindBiosValue(_In_ PLARGE_INTEGER Cookie, _In_opt_ PVO
         partialInfo = (PKEY_VALUE_PARTIAL_INFORMATION)PreInfo->KeyValueInformation;
         if (partialInfo->Type == REG_SZ && partialInfo->DataLength >= sizeof(WCHAR))
         {
-            BLACKBIRDBlindWideString(partialInfo->Data, partialInfo->DataLength, spoofValue);
+            BkavBlindWideString(partialInfo->Data, partialInfo->DataLength, spoofValue);
             return TRUE;
         }
     }

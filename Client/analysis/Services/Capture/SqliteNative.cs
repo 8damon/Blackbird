@@ -25,33 +25,21 @@ namespace BlackbirdInterface.Capture
         internal static readonly IntPtr Transient = new(-1);
 
         [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int sqlite3_open_v2(
-            byte[] filename,
-            out IntPtr database,
-            int flags,
-            IntPtr vfs);
+        internal static extern int sqlite3_open_v2(byte[] filename, out IntPtr database, int flags, IntPtr vfs);
 
         [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern int sqlite3_close_v2(IntPtr database);
 
         [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int sqlite3_exec(
-            IntPtr database,
-            byte[] sql,
-            IntPtr callback,
-            IntPtr context,
-            out IntPtr errorMessage);
+        internal static extern int sqlite3_exec(IntPtr database, byte[] sql, IntPtr callback, IntPtr context,
+                                                out IntPtr errorMessage);
 
         [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void sqlite3_free(IntPtr pointer);
 
         [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
-        internal static extern int sqlite3_prepare16_v2(
-            IntPtr database,
-            string sql,
-            int sqlLengthBytes,
-            out IntPtr statement,
-            out IntPtr tail);
+        internal static extern int sqlite3_prepare16_v2(IntPtr database, string sql, int sqlLengthBytes,
+                                                        out IntPtr statement, out IntPtr tail);
 
         [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern int sqlite3_step(IntPtr statement);
@@ -69,20 +57,12 @@ namespace BlackbirdInterface.Capture
         internal static extern int sqlite3_bind_int64(IntPtr statement, int index, long value);
 
         [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode)]
-        internal static extern int sqlite3_bind_text16(
-            IntPtr statement,
-            int index,
-            string value,
-            int valueLengthBytes,
-            IntPtr destructor);
+        internal static extern int sqlite3_bind_text16(IntPtr statement, int index, string value, int valueLengthBytes,
+                                                       IntPtr destructor);
 
         [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)]
-        internal static extern int sqlite3_bind_blob(
-            IntPtr statement,
-            int index,
-            byte[] value,
-            int valueLength,
-            IntPtr destructor);
+        internal static extern int sqlite3_bind_blob(IntPtr statement, int index, byte[] value, int valueLength,
+                                                     IntPtr destructor);
 
         [DllImport("winsqlite3.dll", CallingConvention = CallingConvention.Cdecl)]
         internal static extern int sqlite3_bind_null(IntPtr statement, int index);
@@ -115,4 +95,3 @@ namespace BlackbirdInterface.Capture
         internal static extern int sqlite3_extended_errcode(IntPtr database);
     }
 }
-

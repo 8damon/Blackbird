@@ -68,15 +68,15 @@ namespace BlackbirdInterface.Capture
                 return;
             }
 
-            int rc = SqliteNative.sqlite3_exec(_handle, ToUtf8Z(sql), IntPtr.Zero, IntPtr.Zero, out IntPtr errorMessage);
+            int rc =
+                SqliteNative.sqlite3_exec(_handle, ToUtf8Z(sql), IntPtr.Zero, IntPtr.Zero, out IntPtr errorMessage);
             if (rc == SqliteNative.Ok)
             {
                 return;
             }
 
-            string message = errorMessage != IntPtr.Zero
-                ? MarshalSqliteStringAndFree(errorMessage)
-                : (TryGetError(_handle) ?? "sqlite3_exec failed");
+            string message = errorMessage != IntPtr.Zero ? MarshalSqliteStringAndFree(errorMessage)
+                                                         : (TryGetError(_handle) ?? "sqlite3_exec failed");
             throw new SqliteException(message, rc);
         }
 
@@ -131,8 +131,7 @@ namespace BlackbirdInterface.Capture
 
         internal IntPtr Handle
         {
-            get
-            {
+            get {
                 EnsureOpen();
                 return _handle;
             }
@@ -141,8 +140,8 @@ namespace BlackbirdInterface.Capture
         private SqliteException BuildException(int resultCode, string operation)
         {
             int code = resultCode != SqliteNative.Ok
-                ? resultCode
-                : (_handle == IntPtr.Zero ? resultCode : SqliteNative.sqlite3_extended_errcode(_handle));
+                           ? resultCode
+                           : (_handle == IntPtr.Zero ? resultCode : SqliteNative.sqlite3_extended_errcode(_handle));
             string message = TryGetError(_handle) ?? operation;
             return new SqliteException(message, code);
         }
@@ -170,9 +169,7 @@ namespace BlackbirdInterface.Capture
         {
             try
             {
-                return pointer == IntPtr.Zero
-                    ? "sqlite error"
-                    : (Marshal.PtrToStringUTF8(pointer) ?? "sqlite error");
+                return pointer == IntPtr.Zero ? "sqlite error" : (Marshal.PtrToStringUTF8(pointer) ?? "sqlite error");
             }
             finally
             {
@@ -192,4 +189,3 @@ namespace BlackbirdInterface.Capture
         }
     }
 }
-

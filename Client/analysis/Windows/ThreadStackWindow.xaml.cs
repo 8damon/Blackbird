@@ -16,7 +16,7 @@ namespace BlackbirdInterface
     public partial class ThreadStackWindow : Window
     {
         private const string MissingText = "N/A";
-        private const int MaxSnapshotHistory = 300;
+        private const int MaxSnapshotHistory = 128;
 
         public ObservableCollection<StackFrameRow> UserFrames { get; } = new();
         public ObservableCollection<RegisterEntry> GeneralRegs { get; } = new();
@@ -24,25 +24,25 @@ namespace BlackbirdInterface
 
         private readonly int _pid;
         private readonly int _tid;
-        private readonly string _state;
+        private string _state;
         private readonly Func<DateTime>? _observationTimeUtcProvider;
         private readonly Func<bool>? _liveCaptureAvailableProvider;
+        private readonly Func<int, string>? _threadStateProvider;
         private readonly Action<ThreadStackSessionSnapshot>? _onSnapshotCaptured;
         private readonly DispatcherTimer _refreshTimer;
         private readonly List<ThreadStackSessionSnapshot> _snapshotHistory = new();
         private bool _refreshInFlight;
+        private ThreadStackSessionSnapshot? _lastAppliedSnapshot;
 
-        public ThreadStackWindow(
-            int pid,
-            int tid,
-            string state,
-            IEnumerable<ThreadStackSessionSnapshot>? initialHistory = null,
-            Action<ThreadStackSessionSnapshot>? onSnapshotCaptured = null,
-            Func<DateTime>? observationTimeUtcProvider = null,
-            Func<bool>? liveCaptureAvailableProvider = null)
+        public ThreadStackWindow(int pid, int tid, string state,
+                                 IEnumerable<ThreadStackSessionSnapshot>? initialHistory = null,
+                                 Action<ThreadStackSessionSnapshot>? onSnapshotCaptured = null,
+                                 Func<DateTime>? observationTimeUtcProvider = null,
+                                 Func<bool>? liveCaptureAvailableProvider = null,
+                                 Func<int, string>? threadStateProvider = null)
         {
             InitializeComponent();
-            WindowThemeHelper.ApplyDarkTitleBar(this);
+            WindowThemeHelper.WireThemeAwareTitleBar(this);
 
             _pid = pid;
             _tid = tid;
@@ -50,10 +50,8 @@ namespace BlackbirdInterface
             _onSnapshotCaptured = onSnapshotCaptured;
             _observationTimeUtcProvider = observationTimeUtcProvider;
             _liveCaptureAvailableProvider = liveCaptureAvailableProvider;
-            _refreshTimer = new DispatcherTimer(DispatcherPriority.Background)
-            {
-                Interval = TimeSpan.FromSeconds(1)
-            };
+            _threadStateProvider = threadStateProvider;
+            _refreshTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(2) };
             _refreshTimer.Tick += async (_, __) => await RefreshDisplayAsync();
 
             HeaderBlock.Text = $"Thread {_tid} Stack";
@@ -64,9 +62,7 @@ namespace BlackbirdInterface
             GeneralRegsList.ItemsSource = GeneralRegs;
             if (initialHistory != null)
             {
-                _snapshotHistory.AddRange(initialHistory
-                    .Select(x => x.Clone())
-                    .OrderBy(x => x.CapturedAtUtc));
+                _snapshotHistory.AddRange(initialHistory.Select(x => x.Clone()).OrderBy(x => x.CapturedAtUtc));
             }
 
             SeedRegisterPlaceholders();
@@ -83,13 +79,8 @@ namespace BlackbirdInterface
             GeneralRegs.Clear();
             _generalRegByName.Clear();
 
-            string[] regs =
-            {
-                "RIP","RSP","RBP",
-                "RAX","RBX","RCX","RDX",
-                "RSI","RDI",
-                "R8","R9","R10","R11","R12","R13","R14","R15"
-            };
+            string[] regs = { "RIP", "RSP", "RBP", "RAX", "RBX", "RCX", "RDX", "RSI", "RDI",
+                              "R8",  "R9",  "R10", "R11", "R12", "R13", "R14", "R15" };
             foreach (var r in regs)
             {
                 var entry = new RegisterEntry(r, MissingText);
@@ -163,17 +154,19 @@ namespace BlackbirdInterface
             _refreshInFlight = true;
             try
             {
+                string currentState = RefreshCurrentState();
                 DateTime observedUtc = GetObservedUtc();
                 bool liveCaptureAvailable = _liveCaptureAvailableProvider?.Invoke() ?? true;
                 bool preferLive = ShouldResolveLive(observedUtc, liveCaptureAvailable);
+                ThreadStackResolveResult? liveResult = null;
 
                 if (preferLive)
                 {
                     NoteBlock.Text = "Resolving stack...";
-                    ThreadStackResolveResult result = await Task.Run(() => ThreadStackResolver.Resolve(_pid, _tid, _state));
-                    if (HasResolvedStackData(result))
+                    liveResult = await Task.Run(() => ThreadStackResolver.Resolve(_pid, _tid, currentState));
+                    if (HasResolvedStackData(liveResult))
                     {
-                        ThreadStackSessionSnapshot snapshot = CreateSnapshot(DateTime.UtcNow, result);
+                        ThreadStackSessionSnapshot snapshot = CreateSnapshot(DateTime.UtcNow, liveResult);
                         _snapshotHistory.Add(snapshot);
                         if (_snapshotHistory.Count > MaxSnapshotHistory)
                         {
@@ -193,14 +186,33 @@ namespace BlackbirdInterface
                     return;
                 }
 
-                string noDataReason = liveCaptureAvailable
-                    ? "No captured stack for the selected time."
-                    : "Thread is no longer live and no captured stack exists for the selected time.";
+                if (_lastAppliedSnapshot != null)
+                {
+                    NoteBlock.Text =
+                        $"Stale | {_lastAppliedSnapshot.CapturedAtUtc:HH:mm:ss.fff} | no newer stack available";
+                    return;
+                }
+
+                string noDataReason =
+                    liveCaptureAvailable
+                        ? "No captured stack for the selected time."
+                        : "Thread is no longer live and no captured stack exists for the selected time.";
+                if (!string.IsNullOrWhiteSpace(liveResult?.Note))
+                {
+                    noDataReason = liveResult.Note;
+                }
                 ApplyNoDataState(noDataReason);
             }
             catch
             {
-                ApplyNoDataState("Failed to resolve stack.");
+                if (_lastAppliedSnapshot != null)
+                {
+                    NoteBlock.Text = $"Stale | {_lastAppliedSnapshot.CapturedAtUtc:HH:mm:ss.fff} | refresh failed";
+                }
+                else
+                {
+                    ApplyNoDataState("Failed to resolve stack.");
+                }
             }
             finally
             {
@@ -208,8 +220,20 @@ namespace BlackbirdInterface
             }
         }
 
-        private DateTime GetObservedUtc()
-            => _observationTimeUtcProvider?.Invoke() ?? DateTime.UtcNow;
+        private DateTime GetObservedUtc() => _observationTimeUtcProvider?.Invoke() ?? DateTime.UtcNow;
+
+        private string RefreshCurrentState()
+        {
+            string? current = _threadStateProvider?.Invoke(_tid);
+            if (!string.IsNullOrWhiteSpace(current))
+            {
+                _state = current.Trim();
+            }
+
+            HeaderStateBlock.Text = string.IsNullOrWhiteSpace(_state) ? $"State: {MissingText}" : $"State: {_state}";
+            ApplyStateVisuals(_state);
+            return _state;
+        }
 
         private bool ShouldResolveLive(DateTime observedUtc, bool liveCaptureAvailable)
         {
@@ -229,37 +253,32 @@ namespace BlackbirdInterface
 
         private ThreadStackSessionSnapshot? FindHistoricalSnapshot(DateTime observedUtc)
         {
-            return _snapshotHistory
-                .Where(x => x.CapturedAtUtc <= observedUtc)
+            return _snapshotHistory.Where(x => x.CapturedAtUtc <= observedUtc)
                 .OrderByDescending(x => x.CapturedAtUtc)
                 .FirstOrDefault();
         }
 
         private static bool HasResolvedStackData(ThreadStackResolveResult result)
         {
-            return result.Frames.Count > 0 ||
-                   result.StackPointer != 0 ||
-                   result.TebAddress != 0 ||
+            return result.Frames.Count > 0 || result.StackPointer != 0 || result.TebAddress != 0 ||
                    result.ContextSnapshot != null;
         }
 
         private ThreadStackSessionSnapshot CreateSnapshot(DateTime capturedAtUtc, ThreadStackResolveResult result)
         {
-            return new ThreadStackSessionSnapshot
-            {
-                CapturedAtUtc = capturedAtUtc,
-                TebAddress = result.TebAddress,
-                StackBase = result.StackBase,
-                StackTop = result.StackTop,
-                TebFlags = result.TebFlags,
-                StackPointer = result.StackPointer,
-                ContextSnapshot = CloneContextSnapshot(result.ContextSnapshot),
-                Frames = result.Frames.Select(CloneFrame).ToList()
-            };
+            return new ThreadStackSessionSnapshot { CapturedAtUtc = capturedAtUtc,
+                                                    TebAddress = result.TebAddress,
+                                                    StackBase = result.StackBase,
+                                                    StackTop = result.StackTop,
+                                                    TebFlags = result.TebFlags,
+                                                    StackPointer = result.StackPointer,
+                                                    ContextSnapshot = CloneContextSnapshot(result.ContextSnapshot),
+                                                    Frames = result.Frames.Select(CloneFrame).ToList() };
         }
 
         private void ApplySnapshot(ThreadStackSessionSnapshot snapshot, string note)
         {
+            _lastAppliedSnapshot = snapshot.Clone();
             HideNoDataOverlay();
             ResetHeaderMetadata();
 
@@ -362,13 +381,11 @@ namespace BlackbirdInterface
                 return;
             }
 
-            (string Name, ulong Value)[] regs =
-            {
-                ("RAX", snapshot.Rax), ("RBX", snapshot.Rbx), ("RCX", snapshot.Rcx), ("RDX", snapshot.Rdx),
-                ("RSI", snapshot.Rsi), ("RDI", snapshot.Rdi), ("R8", snapshot.R8), ("R9", snapshot.R9),
-                ("R10", snapshot.R10), ("R11", snapshot.R11), ("R12", snapshot.R12), ("R13", snapshot.R13),
-                ("R14", snapshot.R14), ("R15", snapshot.R15)
-            };
+            (string Name, ulong Value)[] regs = { ("RAX", snapshot.Rax), ("RBX", snapshot.Rbx), ("RCX", snapshot.Rcx),
+                                                  ("RDX", snapshot.Rdx), ("RSI", snapshot.Rsi), ("RDI", snapshot.Rdi),
+                                                  ("R8", snapshot.R8),   ("R9", snapshot.R9),   ("R10", snapshot.R10),
+                                                  ("R11", snapshot.R11), ("R12", snapshot.R12), ("R13", snapshot.R13),
+                                                  ("R14", snapshot.R14), ("R15", snapshot.R15) };
             foreach (var reg in regs)
             {
                 SetReg(reg.Name, reg.Value);
@@ -382,18 +399,11 @@ namespace BlackbirdInterface
 
         private static string DecodeEFlags(uint eflags)
         {
-            string[] bits =
-            {
-                ((eflags & (1u << 0)) != 0) ? "CF" : "",
-                ((eflags & (1u << 2)) != 0) ? "PF" : "",
-                ((eflags & (1u << 4)) != 0) ? "AF" : "",
-                ((eflags & (1u << 6)) != 0) ? "ZF" : "",
-                ((eflags & (1u << 7)) != 0) ? "SF" : "",
-                ((eflags & (1u << 8)) != 0) ? "TF" : "",
-                ((eflags & (1u << 9)) != 0) ? "IF" : "",
-                ((eflags & (1u << 10)) != 0) ? "DF" : "",
-                ((eflags & (1u << 11)) != 0) ? "OF" : ""
-            };
+            string[] bits = { ((eflags & (1u << 0)) != 0) ? "CF" : "", ((eflags & (1u << 2)) != 0) ? "PF" : "",
+                              ((eflags & (1u << 4)) != 0) ? "AF" : "", ((eflags & (1u << 6)) != 0) ? "ZF" : "",
+                              ((eflags & (1u << 7)) != 0) ? "SF" : "", ((eflags & (1u << 8)) != 0) ? "TF" : "",
+                              ((eflags & (1u << 9)) != 0) ? "IF" : "", ((eflags & (1u << 10)) != 0) ? "DF" : "",
+                              ((eflags & (1u << 11)) != 0) ? "OF" : "" };
 
             string joined = string.Join(" ", bits.Where(x => !string.IsNullOrWhiteSpace(x)));
             if (string.IsNullOrWhiteSpace(joined))
@@ -449,12 +459,11 @@ namespace BlackbirdInterface
                 return;
             }
 
-            var points = UserFrames
-                .Select(x => x.FramePointerRaw)
-                .Where(v => v >= stackTop && v <= stackBase)
-                .Distinct()
-                .OrderByDescending(v => v)
-                .ToList();
+            var points = UserFrames.Select(x => x.FramePointerRaw)
+                             .Where(v => v >= stackTop && v <= stackBase)
+                             .Distinct()
+                             .OrderByDescending(v => v)
+                             .ToList();
 
             if (points.Count == 0)
             {
@@ -490,21 +499,19 @@ namespace BlackbirdInterface
 
         private static StackFrameRow CloneFrame(StackFrameRow frame)
         {
-            return new StackFrameRow
-            {
-                Index = frame.Index,
-                Address = frame.Address,
-                Module = frame.Module,
-                Symbol = frame.Symbol,
-                InstructionPointerRaw = frame.InstructionPointerRaw,
-                FramePointerRaw = frame.FramePointerRaw,
-                FrameSpanBytes = frame.FrameSpanBytes,
-                IsCurrent = frame.IsCurrent
-            };
+            return new StackFrameRow { Index = frame.Index,
+                                       Address = frame.Address,
+                                       Module = frame.Module,
+                                       Symbol = frame.Symbol,
+                                       InstructionPointerRaw = frame.InstructionPointerRaw,
+                                       FramePointerRaw = frame.FramePointerRaw,
+                                       FrameSpanBytes = frame.FrameSpanBytes,
+                                       IsCurrent = frame.IsCurrent };
         }
 
-        private static ThreadContextSnapshot? CloneContextSnapshot(ThreadContextSnapshot? snapshot)
-            => snapshot == null ? null : new ThreadStackSessionSnapshot { ContextSnapshot = snapshot }.Clone().ContextSnapshot;
+        private static ThreadContextSnapshot? CloneContextSnapshot(ThreadContextSnapshot? snapshot) =>
+            snapshot == null ? null
+                             : new ThreadStackSessionSnapshot { ContextSnapshot = snapshot }.Clone().ContextSnapshot;
     }
 
     public sealed class RegisterEntry : INotifyPropertyChanged
@@ -515,8 +522,7 @@ namespace BlackbirdInterface
         public string ValueText
         {
             get => _valueText;
-            set
-            {
+            set {
                 if (string.Equals(_valueText, value, StringComparison.Ordinal))
                 {
                     return;
@@ -534,22 +540,8 @@ namespace BlackbirdInterface
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
-        private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 
-    public sealed class StackFrameRow
-    {
-        public int Index { get; set; }
-        public string Address { get; set; } = "";
-        public string Module { get; set; } = "";
-        public string Symbol { get; set; } = "";
-        public ulong InstructionPointerRaw { get; set; }
-        public ulong FramePointerRaw { get; set; }
-        public long FrameSpanBytes { get; set; }
-        public bool IsCurrent { get; set; }
-        public string FramePointer => FramePointerRaw == 0 ? "N/A" : $"0x{FramePointerRaw:X}";
-        public string FrameSpan => FrameSpanBytes > 0 ? $"0x{FrameSpanBytes:X}" : "N/A";
-    }
 }
-

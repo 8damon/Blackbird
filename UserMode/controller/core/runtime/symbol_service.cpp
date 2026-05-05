@@ -1,74 +1,73 @@
-#include "../blackbird_controller_private.h"
+#include "../controller_private.h"
 
 #include <psapi.h>
 #include <tlhelp32.h>
 
 #pragma comment(lib, "psapi.lib")
 
-#define BLACKBIRD_CONTROLLER_SYMBOL_WORKER_THREADS 2u
-#define BLACKBIRD_CONTROLLER_SYMBOL_MAX_CACHE_ENTRIES 8192u
-#define BLACKBIRD_CONTROLLER_SYMBOL_MAX_PROCESS_CONTEXTS 64u
-#define BLACKBIRD_CONTROLLER_SYMBOL_MAX_MODULES_PER_PROCESS 192u
-#define BLACKBIRD_CONTROLLER_SYMBOL_MAX_KERNEL_MODULES 384u
-#define BLACKBIRD_CONTROLLER_SYMBOL_MAX_TEXT_CHARS 128u
-#define BLACKBIRD_CONTROLLER_SYMBOL_PROCESS_REFRESH_MS 3000u
-#define BLACKBIRD_CONTROLLER_SYMBOL_KERNEL_REFRESH_MS 5000u
-#define BLACKBIRD_CONTROLLER_SYMBOL_MAX_QUEUE_DEPTH 4096u
+#define BK_CONTROLLER_SYMBOL_WORKER_THREADS 2u
+#define BK_CONTROLLER_SYMBOL_MAX_CACHE_ENTRIES 8192u
+#define BK_CONTROLLER_SYMBOL_MAX_PROCESS_CONTEXTS 64u
+#define BK_CONTROLLER_SYMBOL_MAX_MODULES_PER_PROCESS 192u
+#define BK_CONTROLLER_SYMBOL_MAX_KERNEL_MODULES 384u
+#define BK_CONTROLLER_SYMBOL_MAX_TEXT_CHARS 128u
+#define BK_CONTROLLER_SYMBOL_PROCESS_REFRESH_MS 3000u
+#define BK_CONTROLLER_SYMBOL_KERNEL_REFRESH_MS 5000u
+#define BK_CONTROLLER_SYMBOL_MAX_QUEUE_DEPTH 4096u
 
-typedef struct _BLACKBIRD_CONTROLLER_SYMBOL_MODULE_ENTRY
+typedef struct _BK_CONTROLLER_SYMBOL_MODULE_ENTRY
 {
     UINT64 Base;
     UINT64 End;
     WCHAR Name[MAX_MODULE_NAME32 + 1];
     WCHAR Path[MAX_PATH];
-} BLACKBIRD_CONTROLLER_SYMBOL_MODULE_ENTRY, *PBLACKBIRD_CONTROLLER_SYMBOL_MODULE_ENTRY;
+} BK_CONTROLLER_SYMBOL_MODULE_ENTRY, *PBK_CONTROLLER_SYMBOL_MODULE_ENTRY;
 
-typedef struct _BLACKBIRD_CONTROLLER_SYMBOL_PROCESS_CONTEXT
+typedef struct _BK_CONTROLLER_SYMBOL_PROCESS_CONTEXT
 {
     BOOL Valid;
     DWORD ProcessId;
     ULONGLONG LastRefreshTick;
     DWORD ModuleCount;
-    BLACKBIRD_CONTROLLER_SYMBOL_MODULE_ENTRY Modules[BLACKBIRD_CONTROLLER_SYMBOL_MAX_MODULES_PER_PROCESS];
-} BLACKBIRD_CONTROLLER_SYMBOL_PROCESS_CONTEXT, *PBLACKBIRD_CONTROLLER_SYMBOL_PROCESS_CONTEXT;
+    BK_CONTROLLER_SYMBOL_MODULE_ENTRY Modules[BK_CONTROLLER_SYMBOL_MAX_MODULES_PER_PROCESS];
+} BK_CONTROLLER_SYMBOL_PROCESS_CONTEXT, *PBK_CONTROLLER_SYMBOL_PROCESS_CONTEXT;
 
-typedef struct _BLACKBIRD_CONTROLLER_SYMBOL_CACHE_ENTRY
+typedef struct _BK_CONTROLLER_SYMBOL_CACHE_ENTRY
 {
     BOOL Valid;
     DWORD ProcessId;
     UINT64 Address;
     ULONGLONG LastAccessTick;
-    WCHAR Text[BLACKBIRD_CONTROLLER_SYMBOL_MAX_TEXT_CHARS];
+    WCHAR Text[BK_CONTROLLER_SYMBOL_MAX_TEXT_CHARS];
     WCHAR Path[MAX_PATH];
-} BLACKBIRD_CONTROLLER_SYMBOL_CACHE_ENTRY, *PBLACKBIRD_CONTROLLER_SYMBOL_CACHE_ENTRY;
+} BK_CONTROLLER_SYMBOL_CACHE_ENTRY, *PBK_CONTROLLER_SYMBOL_CACHE_ENTRY;
 
-typedef struct _BLACKBIRD_CONTROLLER_SYMBOL_REQUEST
+typedef struct _BK_CONTROLLER_SYMBOL_REQUEST
 {
     DWORD ProcessId;
     UINT64 Address;
-} BLACKBIRD_CONTROLLER_SYMBOL_REQUEST, *PBLACKBIRD_CONTROLLER_SYMBOL_REQUEST;
+} BK_CONTROLLER_SYMBOL_REQUEST, *PBK_CONTROLLER_SYMBOL_REQUEST;
 
 static SRWLOCK g_SymbolServiceLock = SRWLOCK_INIT;
 static OwnedCriticalSection g_SymbolQueueLock;
 static UniqueHandle g_SymbolQueueEvent;
-static UniqueHandle g_SymbolWorkerThreads[BLACKBIRD_CONTROLLER_SYMBOL_WORKER_THREADS];
+static UniqueHandle g_SymbolWorkerThreads[BK_CONTROLLER_SYMBOL_WORKER_THREADS];
 static volatile LONG g_SymbolServiceStarted = 0;
 static volatile LONG g_SymbolQueueDepth = 0;
 static DWORD g_SymbolQueueHead = 0;
 static DWORD g_SymbolQueueTail = 0;
-static BLACKBIRD_CONTROLLER_SYMBOL_REQUEST g_SymbolQueue[BLACKBIRD_CONTROLLER_SYMBOL_MAX_QUEUE_DEPTH];
-static BLACKBIRD_CONTROLLER_SYMBOL_CACHE_ENTRY g_SymbolCache[BLACKBIRD_CONTROLLER_SYMBOL_MAX_CACHE_ENTRIES];
-static BLACKBIRD_CONTROLLER_SYMBOL_PROCESS_CONTEXT g_SymbolContexts[BLACKBIRD_CONTROLLER_SYMBOL_MAX_PROCESS_CONTEXTS];
-static BLACKBIRD_CONTROLLER_SYMBOL_PROCESS_CONTEXT g_KernelContext;
+static BK_CONTROLLER_SYMBOL_REQUEST g_SymbolQueue[BK_CONTROLLER_SYMBOL_MAX_QUEUE_DEPTH];
+static BK_CONTROLLER_SYMBOL_CACHE_ENTRY g_SymbolCache[BK_CONTROLLER_SYMBOL_MAX_CACHE_ENTRIES];
+static BK_CONTROLLER_SYMBOL_PROCESS_CONTEXT g_SymbolContexts[BK_CONTROLLER_SYMBOL_MAX_PROCESS_CONTEXTS];
+static BK_CONTROLLER_SYMBOL_PROCESS_CONTEXT g_KernelContext;
 
 static VOID ControllerSymbolServicePrimeAddress(_In_ DWORD ProcessId, _In_ UINT64 Address);
 static BOOL ControllerSymbolServiceResolveAddress(_In_ DWORD ProcessId, _In_ UINT64 Address,
                                                   _Out_writes_z_(TextChars) PWSTR Text, _In_ size_t TextChars,
                                                   _Out_opt_ PWSTR Path, _In_ size_t PathChars);
-static BOOL
-ControllerSymbolServiceFormatModuleSectionOffset(_In_ const BLACKBIRD_CONTROLLER_SYMBOL_MODULE_ENTRY *Module,
-                                                 _In_ UINT64 Address, _Out_writes_z_(TextChars) PWSTR Text,
-                                                 _In_ size_t TextChars);
+static BOOL ControllerSymbolServiceFormatModuleSectionOffset(_In_ const BK_CONTROLLER_SYMBOL_MODULE_ENTRY *Module,
+                                                             _In_ UINT64 Address, _Out_writes_z_(TextChars) PWSTR Text,
+                                                             _In_ size_t TextChars);
 
 static BOOL ControllerSymbolServiceIsKernelAddress(_In_ UINT64 Address)
 {
@@ -102,10 +101,10 @@ static VOID ControllerSymbolServiceAppendReasonToken(_Inout_updates_z_(ReasonCha
     }
 }
 
-static VOID ControllerSymbolServiceTryAppendStackFrameSymbol(_Inout_ BLACKBIRD_IPC_ETW_EVENT *Event,
-                                                             _In_ DWORD ProcessId, _In_ DWORD FrameIndex)
+static VOID ControllerSymbolServiceTryAppendStackFrameSymbol(_Inout_ BKIPC_ETW_EVENT *Event, _In_ DWORD ProcessId,
+                                                             _In_ DWORD FrameIndex)
 {
-    WCHAR text[BLACKBIRD_CONTROLLER_SYMBOL_MAX_TEXT_CHARS];
+    WCHAR text[BK_CONTROLLER_SYMBOL_MAX_TEXT_CHARS];
     WCHAR key[32];
 
     if (Event == NULL || FrameIndex >= Event->StackCount || FrameIndex >= RTL_NUMBER_OF(Event->Stack) ||
@@ -269,7 +268,7 @@ static VOID ControllerSymbolServicePrimeAddress(_In_ DWORD ProcessId, _In_ UINT6
     LeaveCriticalSection(g_SymbolQueueLock.get());
 }
 
-static BOOL ControllerSymbolServiceDequeue(_Out_ PBLACKBIRD_CONTROLLER_SYMBOL_REQUEST Request)
+static BOOL ControllerSymbolServiceDequeue(_Out_ PBK_CONTROLLER_SYMBOL_REQUEST Request)
 {
     BOOL found = FALSE;
 
@@ -320,11 +319,11 @@ static DWORD ControllerSymbolServiceChooseContextSlot(_In_ DWORD ProcessId)
 
 static VOID ControllerSymbolServiceRefreshKernelModules(VOID)
 {
-    LPVOID bases[BLACKBIRD_CONTROLLER_SYMBOL_MAX_KERNEL_MODULES];
+    LPVOID bases[BK_CONTROLLER_SYMBOL_MAX_KERNEL_MODULES];
     DWORD bytesNeeded = 0;
     DWORD count;
     DWORD i;
-    BLACKBIRD_CONTROLLER_SYMBOL_PROCESS_CONTEXT fresh;
+    BK_CONTROLLER_SYMBOL_PROCESS_CONTEXT fresh;
 
     ZeroMemory(&fresh, sizeof(fresh));
     fresh.Valid = TRUE;
@@ -337,9 +336,9 @@ static VOID ControllerSymbolServiceRefreshKernelModules(VOID)
     }
 
     count = bytesNeeded / sizeof(bases[0]);
-    if (count > BLACKBIRD_CONTROLLER_SYMBOL_MAX_KERNEL_MODULES)
+    if (count > BK_CONTROLLER_SYMBOL_MAX_KERNEL_MODULES)
     {
-        count = BLACKBIRD_CONTROLLER_SYMBOL_MAX_KERNEL_MODULES;
+        count = BK_CONTROLLER_SYMBOL_MAX_KERNEL_MODULES;
     }
 
     for (i = 0; i < count && fresh.ModuleCount < RTL_NUMBER_OF(fresh.Modules); ++i)
@@ -383,7 +382,7 @@ static BOOL ControllerSymbolServiceRefreshProcessContext(_In_ DWORD ProcessId)
 {
     HANDLE snapshot;
     MODULEENTRY32W me32;
-    BLACKBIRD_CONTROLLER_SYMBOL_PROCESS_CONTEXT fresh;
+    BK_CONTROLLER_SYMBOL_PROCESS_CONTEXT fresh;
     DWORD slot;
 
     if (ProcessId == 0)
@@ -438,7 +437,7 @@ static BOOL ControllerSymbolServiceRefreshProcessContext(_In_ DWORD ProcessId)
 }
 
 static BOOL ControllerSymbolServiceFindModule(_In_ DWORD ProcessId, _In_ UINT64 Address,
-                                              _Out_ BLACKBIRD_CONTROLLER_SYMBOL_MODULE_ENTRY *Module)
+                                              _Out_ BK_CONTROLLER_SYMBOL_MODULE_ENTRY *Module)
 {
     DWORD i;
     BOOL kernel = ControllerSymbolServiceIsKernelAddress(Address);
@@ -454,7 +453,7 @@ static BOOL ControllerSymbolServiceFindModule(_In_ DWORD ProcessId, _In_ UINT64 
     {
         AcquireSRWLockShared(&g_SymbolServiceLock);
         if (!g_KernelContext.Valid ||
-            nowTick - g_KernelContext.LastRefreshTick > BLACKBIRD_CONTROLLER_SYMBOL_KERNEL_REFRESH_MS)
+            nowTick - g_KernelContext.LastRefreshTick > BK_CONTROLLER_SYMBOL_KERNEL_REFRESH_MS)
         {
             ReleaseSRWLockShared(&g_SymbolServiceLock);
             ControllerSymbolServiceRefreshKernelModules();
@@ -482,7 +481,7 @@ static BOOL ControllerSymbolServiceFindModule(_In_ DWORD ProcessId, _In_ UINT64 
             continue;
         }
 
-        if (nowTick - g_SymbolContexts[i].LastRefreshTick > BLACKBIRD_CONTROLLER_SYMBOL_PROCESS_REFRESH_MS)
+        if (nowTick - g_SymbolContexts[i].LastRefreshTick > BK_CONTROLLER_SYMBOL_PROCESS_REFRESH_MS)
         {
             ReleaseSRWLockShared(&g_SymbolServiceLock);
             if (!ControllerSymbolServiceRefreshProcessContext(ProcessId))
@@ -542,7 +541,7 @@ static BOOL ControllerSymbolServiceResolveAddress(_In_ DWORD ProcessId, _In_ UIN
                                                   _Out_writes_z_(TextChars) PWSTR Text, _In_ size_t TextChars,
                                                   _Out_opt_ PWSTR Path, _In_ size_t PathChars)
 {
-    BLACKBIRD_CONTROLLER_SYMBOL_MODULE_ENTRY module;
+    BK_CONTROLLER_SYMBOL_MODULE_ENTRY module;
     UINT64 displacement;
 
     if (Text == NULL || TextChars == 0 || Address == 0)
@@ -582,10 +581,9 @@ static BOOL ControllerSymbolServiceResolveAddress(_In_ DWORD ProcessId, _In_ UIN
     return TRUE;
 }
 
-static BOOL
-ControllerSymbolServiceFormatModuleSectionOffset(_In_ const BLACKBIRD_CONTROLLER_SYMBOL_MODULE_ENTRY *Module,
-                                                 _In_ UINT64 Address, _Out_writes_z_(TextChars) PWSTR Text,
-                                                 _In_ size_t TextChars)
+static BOOL ControllerSymbolServiceFormatModuleSectionOffset(_In_ const BK_CONTROLLER_SYMBOL_MODULE_ENTRY *Module,
+                                                             _In_ UINT64 Address, _Out_writes_z_(TextChars) PWSTR Text,
+                                                             _In_ size_t TextChars)
 {
     HANDLE fileHandle = INVALID_HANDLE_VALUE;
     HANDLE mappingHandle = NULL;
@@ -693,7 +691,7 @@ VOID ControllerSymbolServicePrimeHookAddress(_In_ DWORD ProcessId, _In_ UINT64 A
     ControllerSymbolServicePrimeAddress(ProcessId, Address);
 }
 
-static DWORD ControllerSymbolServiceResolvePrimaryPid(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
+static DWORD ControllerSymbolServiceResolvePrimaryPid(_In_ const BKIPC_ETW_EVENT *Event)
 {
     if (Event == NULL)
     {
@@ -711,7 +709,7 @@ static DWORD ControllerSymbolServiceResolvePrimaryPid(_In_ const BLACKBIRD_IPC_E
     return Event->EventProcessId;
 }
 
-static DWORD ControllerSymbolServiceResolveExecutionPid(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
+static DWORD ControllerSymbolServiceResolveExecutionPid(_In_ const BKIPC_ETW_EVENT *Event)
 {
     DWORD pid;
 
@@ -721,7 +719,8 @@ static DWORD ControllerSymbolServiceResolveExecutionPid(_In_ const BLACKBIRD_IPC
     }
 
     if (Event->TargetPid != 0 && Event->TargetPid <= MAXDWORD &&
-        (Event->Family == BlackbirdIpcEtwFamilyThread || Event->Family == BlackbirdIpcEtwFamilyProcess))
+        (Event->Family == BlackbirdIpcEtwFamilyThread || Event->Family == BlackbirdIpcEtwFamilyProcess ||
+         (Event->Family == BlackbirdIpcEtwFamilyUserHook && Event->TargetPid != Event->ProcessId)))
     {
         return (DWORD)Event->TargetPid;
     }
@@ -730,10 +729,10 @@ static DWORD ControllerSymbolServiceResolveExecutionPid(_In_ const BLACKBIRD_IPC
     return pid;
 }
 
-static VOID ControllerSymbolServiceTryAppendHookArgSymbol(_Inout_ BLACKBIRD_IPC_ETW_EVENT *Event, _In_ DWORD ProcessId,
+static VOID ControllerSymbolServiceTryAppendHookArgSymbol(_Inout_ BKIPC_ETW_EVENT *Event, _In_ DWORD ProcessId,
                                                           _In_ UINT32 ArgIndex, _In_z_ PCWSTR TokenName)
 {
-    WCHAR text[BLACKBIRD_CONTROLLER_SYMBOL_MAX_TEXT_CHARS];
+    WCHAR text[BK_CONTROLLER_SYMBOL_MAX_TEXT_CHARS];
 
     if (Event == NULL || ProcessId == 0 || TokenName == NULL || TokenName[0] == L'\0' ||
         ArgIndex >= Event->HookArgCount || ArgIndex >= RTL_NUMBER_OF(Event->HookArgs) || Event->HookArgs[ArgIndex] == 0)
@@ -753,8 +752,8 @@ static VOID ControllerSymbolServiceTryAppendHookArgSymbol(_Inout_ BLACKBIRD_IPC_
 
 static DWORD WINAPI ControllerSymbolServiceWorkerProc(_In_ LPVOID Context)
 {
-    BLACKBIRD_CONTROLLER_SYMBOL_REQUEST request;
-    WCHAR text[BLACKBIRD_CONTROLLER_SYMBOL_MAX_TEXT_CHARS];
+    BK_CONTROLLER_SYMBOL_REQUEST request;
+    WCHAR text[BK_CONTROLLER_SYMBOL_MAX_TEXT_CHARS];
     WCHAR path[MAX_PATH];
 
     UNREFERENCED_PARAMETER(Context);
@@ -842,9 +841,9 @@ VOID ControllerSymbolServiceStop(VOID)
     g_SymbolQueueEvent.reset();
 }
 
-VOID ControllerSymbolServiceEnrichEvent(_Inout_ BLACKBIRD_IPC_ETW_EVENT *Event)
+VOID ControllerSymbolServiceEnrichEvent(_Inout_ BKIPC_ETW_EVENT *Event)
 {
-    WCHAR text[BLACKBIRD_CONTROLLER_SYMBOL_MAX_TEXT_CHARS];
+    WCHAR text[BK_CONTROLLER_SYMBOL_MAX_TEXT_CHARS];
     WCHAR path[MAX_PATH];
     DWORD originPid;
     DWORD execPid;
@@ -904,14 +903,21 @@ VOID ControllerSymbolServiceEnrichEvent(_Inout_ BLACKBIRD_IPC_ETW_EVENT *Event)
         {
             ControllerSymbolServiceTryAppendHookArgSymbol(Event, execPid, 3u, L"startRoutineSymbol");
         }
-        else if (lstrcmpiA(Event->Operation, "NtQueueApcThread") == 0 ||
-                 lstrcmpiA(Event->Operation, "NtQueueApcThreadEx") == 0)
+        else if (lstrcmpiA(Event->Operation, "NtQueueApcThread") == 0)
+        {
+            ControllerSymbolServiceTryAppendHookArgSymbol(Event, execPid, 1u, L"apcRoutineSymbol");
+        }
+        else if (lstrcmpiA(Event->Operation, "NtQueueApcThreadEx") == 0)
         {
             ControllerSymbolServiceTryAppendHookArgSymbol(Event, execPid, 2u, L"apcRoutineSymbol");
         }
+        else if (lstrcmpiA(Event->Operation, "NtQueueApcThreadEx2") == 0)
+        {
+            ControllerSymbolServiceTryAppendHookArgSymbol(Event, execPid, 3u, L"apcRoutineSymbol");
+        }
         else if (lstrcmpiA(Event->Operation, "NtMapViewOfSectionEx") == 0)
         {
-            ControllerSymbolServiceTryAppendHookArgSymbol(Event, execPid, 3u, L"sectionOffsetSymbol");
+            ControllerSymbolServiceTryAppendHookArgSymbol(Event, execPid, 2u, L"mappedBaseSymbol");
         }
     }
 }

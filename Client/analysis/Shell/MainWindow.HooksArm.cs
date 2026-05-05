@@ -29,7 +29,8 @@ namespace BlackbirdInterface
             // Disarming hooks forces anti-virtualization off
             if (!newArmed)
             {
-                mask |= BlackbirdNative.RuntimeFlagAntiVirtualization;
+                flags |= BlackbirdNative.RuntimeFlagQpcTimingDisabled;
+                mask |= BlackbirdNative.RuntimeFlagAntiVirtualization | BlackbirdNative.RuntimeFlagQpcTimingDisabled;
             }
 
             if (!TryApplyRuntimeConfig(flags, mask, out _, out string error))
@@ -44,7 +45,12 @@ namespace BlackbirdInterface
         internal void SetKernelHooksArmed(bool armed)
         {
             _kernelHooksArmed = armed;
+            if (_currentSession != null)
+            {
+                _currentSession.KernelHooksEnabled = armed;
+            }
             RefreshHooksButtonState();
+            RefreshSubsystemSegmentationDiagnostics();
         }
 
         private void RefreshHooksButtonState()

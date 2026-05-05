@@ -10,6 +10,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Threading;
 
 namespace BlackbirdInterface
@@ -29,12 +30,15 @@ namespace BlackbirdInterface
         internal static UiThemeMode CurrentThemeMode { get; private set; } = UiThemeMode.Dark;
         internal static event Action<bool>? ThemeChanged;
 
+        private static int _faultHandlerDepth;
+
         private sealed class StartupIntent
         {
             public bool StartLaunchFlow { get; init; }
             public string? SessionPath { get; init; }
             public bool EnableKernelHooks { get; init; } = true;
             public bool EnableAntiVirtualizationMasking { get; init; }
+            public bool EnableQpcTimingCompensation { get; init; } = true;
             public bool EnableControllerConcealment { get; init; }
             public bool EnableInterfaceProtectedAccess { get; init; }
             public bool EnableControllerProtectedAccess { get; init; }
@@ -50,9 +54,21 @@ namespace BlackbirdInterface
 
         protected override void OnStartup(StartupEventArgs e)
         {
+            // Wire global exception handlers before any other work so the interface
+            // survives unhandled exceptions — particularly important when protect-handles
+            // is active and the process cannot be externally terminated.
+            AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
+            DispatcherUnhandledException += OnDispatcherUnhandledException;
+            TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
             base.OnStartup(e);
+            if (!VerifyAdministratorTokenOrExit())
+            {
+                return;
+            }
+
             EnsureBackgroundThreadPoolFloor();
             StartupOptions options = ParseStartupOptions(e.Args);
             DebugConsoleService.Start(options.DebugConsole);
@@ -61,8 +77,38 @@ namespace BlackbirdInterface
                 DebugConsoleService.WriteLocal($"startup args: {string.Join(" ", e.Args)}");
             }
             EnforceSingleInstance();
-            ApplyTheme(UiThemeMode.Dark);
+            ApplyTheme(AnalystSettingsStore.LoadThemeMode());
             ContinueStartupSafe();
+        }
+
+        private bool VerifyAdministratorTokenOrExit()
+        {
+            bool elevated = false;
+            try
+            {
+                using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+                var principal = new WindowsPrincipal(identity);
+                elevated = principal.IsInRole(WindowsBuiltInRole.Administrator);
+            }
+            catch
+            {
+                elevated = false;
+            }
+
+            bool debugPrivilegeEnabled = Kernel32Native.EnableDebugPrivilege(out int debugPrivilegeError);
+            if (elevated && debugPrivilegeEnabled)
+            {
+                return true;
+            }
+
+            string detail =
+                !elevated ? "BlackbirdInterface is not running with an administrator token."
+                          : $"BlackbirdInterface could not enable SeDebugPrivilege (win32={debugPrivilegeError}).";
+            MessageBox.Show(
+                $"{detail}\n\nStart BlackbirdInterface as administrator. Direct target inspection, module enumeration, memory sampling, and thread stack walking require an elevated token with SeDebugPrivilege.",
+                "Blackbird Requires Administrator", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown();
+            return false;
         }
 
         protected override void OnExit(ExitEventArgs e)
@@ -96,9 +142,7 @@ namespace BlackbirdInterface
                 return;
             }
 
-            ThreadPool.SetMinThreads(
-                Math.Max(workerThreads, workerFloor),
-                Math.Max(completionPortThreads, ioFloor));
+            ThreadPool.SetMinThreads(Math.Max(workerThreads, workerFloor), Math.Max(completionPortThreads, ioFloor));
         }
 
         private async void ContinueStartupSafe()
@@ -122,39 +166,48 @@ namespace BlackbirdInterface
                 return;
             }
 
-            if (!await EnsureStartupSystemsReadyAsync())
-            {
-                Shutdown();
-                return;
-            }
-            EnsureStartMenuShortcut();
-
+            bool openingSession = !string.IsNullOrWhiteSpace(intent.SessionPath);
             var loading = new LoadingWindow();
-            loading.SetProgress(8, "Initializing startup...", "Preparing main interface.");
+            loading.SetProgress(6, "Preparing startup...",
+                                openingSession ? "Preparing offline capture session."
+                                               : "Starting Blackbird preflight.");
             loading.Show();
             var loadingShownAtUtc = DateTime.UtcNow;
 
-            loading.SetProgress(18, "Applying theme resources...", "Active theme resolved.");
+            if (!openingSession && !await EnsureStartupSystemsReadyAsync(loading))
+            {
+                loading.Close();
+                Shutdown();
+                return;
+            }
+            if (openingSession)
+            {
+                loading.SetProgress(16, "Opening session...",
+                                    "Skipping Blackbird component preflight for offline capture analysis.");
+                await YieldForUiFrameAsync();
+            }
+            EnsureStartMenuShortcut();
+
+            loading.SetProgress(18, "Initializing startup...", "Preparing main interface.");
+
+            loading.SetProgress(28, "Applying theme resources...", "Active theme resolved.");
             await YieldForUiFrameAsync();
 
-            loading.SetProgress(35, "Initializing diagnostics...", "Starting output capture and runtime logging.");
+            loading.SetProgress(40, "Initializing diagnostics...", "Starting output capture and runtime logging.");
             try
             {
                 OutputCapture.Initialize();
             }
             catch (Exception ex)
             {
-                loading.SetProgress(40, "Diagnostics degraded", "Continuing startup without output capture.");
+                loading.SetProgress(44, "Diagnostics degraded", "Continuing startup without output capture.");
                 Debug.WriteLine($"OutputCapture.Initialize failed: {ex}");
             }
             await YieldForUiFrameAsync();
 
-            loading.SetProgress(58, "Building interface resources...", "Constructing the main window and control tree.");
-            var main = new MainWindow
-            {
-                ShowInTaskbar = false,
-                Opacity = 0
-            };
+            loading.SetProgress(58, "Building interface resources...",
+                                "Constructing the main window and control tree.");
+            var main = new MainWindow { ShowInTaskbar = false, Opacity = 0 };
             main.WindowStartupLocation = WindowStartupLocation.Manual;
             main.WindowState = WindowState.Normal;
             main.Left = -32000;
@@ -187,23 +240,24 @@ namespace BlackbirdInterface
             await YieldForUiFrameAsync();
             loading.Close();
 
-            if (!main.ApplyStartupRuntimeSelections(intent.EnableKernelHooks, intent.EnableAntiVirtualizationMasking, intent.EnableControllerConcealment,
-                                                    intent.EnableInterfaceProtectedAccess, intent.EnableControllerProtectedAccess, out string startupRuntimeError))
+            if (!openingSession)
             {
-                ThemedMessageBox.Show(
-                    main,
-                    $"Failed to apply runtime configuration after shell startup.\n\n{startupRuntimeError}",
-                    "Runtime Configuration",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                if (!main.ApplyStartupRuntimeSelections(
+                        intent.EnableKernelHooks, intent.EnableAntiVirtualizationMasking,
+                        intent.EnableQpcTimingCompensation, intent.EnableControllerConcealment,
+                        intent.EnableInterfaceProtectedAccess, intent.EnableControllerProtectedAccess,
+                        out string startupRuntimeError))
+                {
+                    ThemedMessageBox.Show(
+                        main, $"Failed to apply runtime configuration after shell startup.\n\n{startupRuntimeError}",
+                        "Runtime Configuration", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+
+                main.ConfigureStartupSignatureIntel(intent.EnableSignatureIntel, intent.EnableSignatureIntelMemoryScan,
+                                                    intent.EnableSignatureIntelPageScan);
+
+                await ShowVirtualizationPreflightAsync(intent.EnableAntiVirtualizationMasking);
             }
-
-            main.ConfigureStartupSignatureIntel(
-                intent.EnableSignatureIntel,
-                intent.EnableSignatureIntelMemoryScan,
-                intent.EnableSignatureIntelPageScan);
-
-            await ShowVirtualizationPreflightAsync(intent.EnableAntiVirtualizationMasking);
 
             if (intent.StartLaunchFlow)
             {
@@ -211,14 +265,11 @@ namespace BlackbirdInterface
             }
             else if (!string.IsNullOrWhiteSpace(intent.SessionPath))
             {
-                if (!main.TryOpenSessionFromStartupPath(intent.SessionPath, out string openError))
+                string openError = await main.TryOpenSessionFromStartupPathAsync(intent.SessionPath);
+                if (!string.IsNullOrEmpty(openError))
                 {
-                    ThemedMessageBox.Show(
-                        main,
-                        $"Failed to open session.\n\n{openError}",
-                        "Open Session",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Error);
+                    ThemedMessageBox.Show(main, $"Failed to open session.\n\n{openError}", "Open Session",
+                                          MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
 
@@ -238,35 +289,136 @@ namespace BlackbirdInterface
                     "The host may still look virtualized here because this preflight reports the raw environment signals.";
             }
 
-            ThemedMessageBox.Show(
-                Current?.MainWindow,
-                message,
-                "Environment Preflight",
-                MessageBoxButton.OK,
-                icon);
+            ThemedMessageBox.Show(Current?.MainWindow, message, "Environment Preflight", MessageBoxButton.OK, icon);
         }
 
-        private static async Task<bool> EnsureStartupSystemsReadyAsync()
+        private static async Task<bool> EnsureStartupSystemsReadyAsync(LoadingWindow loading)
         {
+            int attempt = 0;
             for (;;)
             {
-                BlackbirdPreflightReport report = await Task.Run(() => BlackbirdPreflight.Run(0, ensureServicesRunning: true, requireDriverProxy: false));
+                attempt++;
+                loading.SetProgress(10, "Running startup preflight...",
+                                    $"Attempt {attempt}: checking driver, controller, SR71, and broker link.");
+                await YieldForUiFrameAsync();
+
+                BlackbirdPreflightReport report = await Task.Run(
+                    () => BlackbirdPreflight.Run(0, ensureServicesRunning: true, requireDriverProxy: false,
+                                                 progress: (percent, status, detail) =>
+                                                 {
+                                                     double scaledPercent = 10 + (Math.Clamp(percent, 0, 100) * 0.18);
+                                                     if (loading.Dispatcher.CheckAccess())
+                                                     {
+                                                         loading.SetProgress(scaledPercent, status, detail);
+                                                         return;
+                                                     }
+
+                                                     loading.Dispatcher.Invoke(
+                                                         () => loading.SetProgress(scaledPercent, status, detail));
+                                                 }));
                 DebugConsoleService.WriteLocal($"startup preflight ready={report.StartupReady}");
                 if (report.StartupReady)
                 {
+                    loading.SetProgress(16, "Startup preflight ready", report.Summary);
+                    await YieldForUiFrameAsync();
                     return true;
                 }
 
+                loading.SetProgress(16, "Startup preflight blocked", report.Summary);
+                await YieldForUiFrameAsync();
                 MessageBoxResult choice = ThemedMessageBox.Show(
-                    Current?.MainWindow,
-                    report.BuildStartupFailureMessage() + "\nRetry startup preflight?",
-                    "Startup System Preflight",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Error);
+                    Current?.MainWindow, report.BuildStartupFailureMessage() + "\nRetry startup preflight?",
+                    "Startup System Preflight", MessageBoxButton.YesNo, MessageBoxImage.Error);
                 if (choice != MessageBoxResult.Yes)
                 {
                     return false;
                 }
+            }
+        }
+
+        private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+        {
+            // Mark handled first — this keeps the WPF message pump alive regardless.
+            e.Handled = true;
+            HandleFault(e.Exception, "UI thread");
+        }
+
+        private static void OnDomainUnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            // CLR background-thread fault. IsTerminating=true means the runtime will exit
+            // after all handlers run — we cannot prevent it, but we can log and attempt to
+            // show a blocking dialog so the analyst has a chance to read the message.
+            Exception? ex = e.ExceptionObject as Exception;
+            string source = e.IsTerminating ? "background thread (FATAL)" : "background thread";
+            try
+            {
+                DebugConsoleService.WriteLocal($"[FAULT/{source}] {ex}");
+            }
+            catch
+            {
+            }
+            DiagnosticsState.SetValue("Last Fault", $"{ex?.GetType().Name ?? "error"}: {ex?.Message}");
+
+            if (e.IsTerminating)
+            {
+                try
+                {
+                    string msg = $"An unhandled exception on a background thread is terminating the interface.\n\n" +
+                                 $"{ex?.GetType().Name}: {ex?.Message}\n\n{ex?.StackTrace}";
+                    MessageBox.Show(msg, "Blackbird — Fatal Fault", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                catch
+                {
+                }
+            }
+            else
+            {
+                Current?.Dispatcher.BeginInvoke(new Action(() => ShowFaultWindow(source, ex)),
+                                                DispatcherPriority.ApplicationIdle);
+            }
+        }
+
+        private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+        {
+            e.SetObserved();
+            HandleFault(e.Exception, "async task");
+        }
+
+        private static void HandleFault(Exception? ex, string source)
+        {
+            try
+            {
+                DebugConsoleService.WriteLocal($"[FAULT/{source}] {ex}");
+            }
+            catch
+            {
+            }
+            DiagnosticsState.SetValue("Last Fault", $"{ex?.GetType().Name ?? "error"}: {ex?.Message}");
+
+            Application app = Current;
+            if (app == null)
+                return;
+
+            app.Dispatcher.BeginInvoke(new Action(() => ShowFaultWindow(source, ex)),
+                                       DispatcherPriority.ApplicationIdle);
+        }
+
+        private static void ShowFaultWindow(string source, Exception? ex)
+        {
+            // Re-entry guard: if building the fault window itself throws, don't recurse.
+            if (System.Threading.Interlocked.CompareExchange(ref _faultHandlerDepth, 1, 0) != 0)
+                return;
+            try
+            {
+                var window = new FaultNotificationWindow(source, ex);
+                window.Show();
+            }
+            catch
+            {
+            }
+            finally
+            {
+                System.Threading.Interlocked.Exchange(ref _faultHandlerDepth, 0);
             }
         }
 
@@ -278,21 +430,14 @@ namespace BlackbirdInterface
                 root = root.InnerException;
             }
 
-            string message =
-                $"Startup failed.\n\n" +
-                $"Top: {ex.GetType().Name}: {ex.Message}\n\n" +
-                $"Root: {root.GetType().Name}: {root.Message}\n\n" +
-                $"Top Stack:\n{ex.StackTrace}\n\n" +
-                $"Root Stack:\n{root.StackTrace}";
+            string message = $"Startup failed.\n\n" + $"Top: {ex.GetType().Name}: {ex.Message}\n\n" +
+                             $"Root: {root.GetType().Name}: {root.Message}\n\n" + $"Top Stack:\n{ex.StackTrace}\n\n" +
+                             $"Root Stack:\n{root.StackTrace}";
             try
             {
                 DebugConsoleService.WriteLocal($"startup failure: {ex}");
-                ThemedMessageBox.Show(
-                    Current?.MainWindow,
-                    message,
-                    "Blackbird Startup Failure",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                ThemedMessageBox.Show(Current?.MainWindow, message, "Blackbird Startup Failure", MessageBoxButton.OK,
+                                      MessageBoxImage.Error);
             }
             catch
             {
@@ -321,10 +466,7 @@ namespace BlackbirdInterface
                 }
             }
 
-            return new StartupOptions
-            {
-                DebugConsole = debugConsole
-            };
+            return new StartupOptions { DebugConsole = debugConsole };
         }
 
         private static void EnforceSingleInstance()
@@ -364,8 +506,7 @@ namespace BlackbirdInterface
                     {
                     }
 
-                    if (!string.IsNullOrWhiteSpace(currentPath) &&
-                        !string.IsNullOrWhiteSpace(candidatePath) &&
+                    if (!string.IsNullOrWhiteSpace(currentPath) && !string.IsNullOrWhiteSpace(candidatePath) &&
                         !string.Equals(candidatePath, currentPath, StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
@@ -389,7 +530,7 @@ namespace BlackbirdInterface
 
         private static uint GetPersistentRuntimeFlags()
         {
-            const string parametersPath = @"SYSTEM\CurrentControlSet\Services\blackbird\Parameters";
+            const string parametersPath = @"SYSTEM\CurrentControlSet\Services\BK\Parameters";
             uint flags = 0;
 
             try
@@ -421,25 +562,38 @@ namespace BlackbirdInterface
                 }
 
                 object? interfaceProtectedAccessValue = key.GetValue("EnableInterfaceProtectedAccess");
-                if (interfaceProtectedAccessValue is int interfaceProtectedAccessInt && interfaceProtectedAccessInt != 0)
+                if (interfaceProtectedAccessValue is int interfaceProtectedAccessInt &&
+                    interfaceProtectedAccessInt != 0)
                 {
                     flags |= BlackbirdNative.RuntimeFlagInterfaceProtectedAccess;
                 }
-                else if (interfaceProtectedAccessValue is long interfaceProtectedAccessLong && interfaceProtectedAccessLong != 0)
+                else if (interfaceProtectedAccessValue is long interfaceProtectedAccessLong &&
+                         interfaceProtectedAccessLong != 0)
                 {
                     flags |= BlackbirdNative.RuntimeFlagInterfaceProtectedAccess;
                 }
 
                 object? controllerProtectedAccessValue = key.GetValue("EnableControllerProtectedAccess");
-                if (controllerProtectedAccessValue is int controllerProtectedAccessInt && controllerProtectedAccessInt != 0)
+                if (controllerProtectedAccessValue is int controllerProtectedAccessInt &&
+                    controllerProtectedAccessInt != 0)
                 {
                     flags |= BlackbirdNative.RuntimeFlagControllerProtectedAccess;
                 }
-                else if (controllerProtectedAccessValue is long controllerProtectedAccessLong && controllerProtectedAccessLong != 0)
+                else if (controllerProtectedAccessValue is long controllerProtectedAccessLong &&
+                         controllerProtectedAccessLong != 0)
                 {
                     flags |= BlackbirdNative.RuntimeFlagControllerProtectedAccess;
                 }
 
+                object? qpcTimingDisabledValue = key.GetValue("DisableQpcTimingCompensation");
+                if (qpcTimingDisabledValue is int qpcTimingDisabledInt && qpcTimingDisabledInt != 0)
+                {
+                    flags |= BlackbirdNative.RuntimeFlagQpcTimingDisabled;
+                }
+                else if (qpcTimingDisabledValue is long qpcTimingDisabledLong && qpcTimingDisabledLong != 0)
+                {
+                    flags |= BlackbirdNative.RuntimeFlagQpcTimingDisabled;
+                }
             }
             catch
             {
@@ -453,10 +607,8 @@ namespace BlackbirdInterface
             while (true)
             {
                 uint persistentRuntimeFlags = GetPersistentRuntimeFlags();
-                var welcome = new StartupWelcomeWindow(persistentRuntimeFlags)
-                {
-                    WindowStartupLocation = WindowStartupLocation.CenterScreen
-                };
+                var welcome = new StartupWelcomeWindow(
+                    persistentRuntimeFlags) { WindowStartupLocation = WindowStartupLocation.CenterScreen };
                 welcome.ShowInTaskbar = true;
                 welcome.Topmost = true;
                 welcome.Activate();
@@ -471,13 +623,35 @@ namespace BlackbirdInterface
                 switch (welcome.SelectedAction)
                 {
                 case StartupWelcomeAction.Launch:
-                    return new StartupIntent { StartLaunchFlow = true, EnableKernelHooks = welcome.EnableKernelHooks, EnableAntiVirtualizationMasking = welcome.EnableAntiVirtualizationMasking, EnableControllerConcealment = welcome.EnableControllerConcealment, EnableInterfaceProtectedAccess = welcome.EnableInterfaceProtectedAccess, EnableControllerProtectedAccess = welcome.EnableControllerProtectedAccess, EnableSignatureIntel = welcome.EnableSignatureIntel, EnableSignatureIntelMemoryScan = welcome.EnableSignatureIntelMemoryScan, EnableSignatureIntelPageScan = welcome.EnableSignatureIntelPageScan };
+                    return new StartupIntent { StartLaunchFlow = true,
+                                               EnableKernelHooks = welcome.EnableKernelHooks,
+                                               EnableAntiVirtualizationMasking =
+                                                   welcome.EnableAntiVirtualizationMasking,
+                                               EnableQpcTimingCompensation = welcome.EnableQpcTimingCompensation,
+                                               EnableControllerConcealment = welcome.EnableControllerConcealment,
+                                               EnableInterfaceProtectedAccess = welcome.EnableInterfaceProtectedAccess,
+                                               EnableControllerProtectedAccess =
+                                                   welcome.EnableControllerProtectedAccess,
+                                               EnableSignatureIntel = welcome.EnableSignatureIntel,
+                                               EnableSignatureIntelMemoryScan = welcome.EnableSignatureIntelMemoryScan,
+                                               EnableSignatureIntelPageScan = welcome.EnableSignatureIntelPageScan };
                 case StartupWelcomeAction.OpenFile:
                 {
                     string? sessionPath = PromptForSessionFile();
                     if (!string.IsNullOrWhiteSpace(sessionPath))
                     {
-                        return new StartupIntent { SessionPath = sessionPath, EnableKernelHooks = welcome.EnableKernelHooks, EnableAntiVirtualizationMasking = welcome.EnableAntiVirtualizationMasking, EnableControllerConcealment = welcome.EnableControllerConcealment, EnableInterfaceProtectedAccess = welcome.EnableInterfaceProtectedAccess, EnableControllerProtectedAccess = welcome.EnableControllerProtectedAccess, EnableSignatureIntel = welcome.EnableSignatureIntel, EnableSignatureIntelMemoryScan = welcome.EnableSignatureIntelMemoryScan, EnableSignatureIntelPageScan = welcome.EnableSignatureIntelPageScan };
+                        return new StartupIntent {
+                            SessionPath = sessionPath,
+                            EnableKernelHooks = welcome.EnableKernelHooks,
+                            EnableAntiVirtualizationMasking = welcome.EnableAntiVirtualizationMasking,
+                            EnableQpcTimingCompensation = welcome.EnableQpcTimingCompensation,
+                            EnableControllerConcealment = welcome.EnableControllerConcealment,
+                            EnableInterfaceProtectedAccess = welcome.EnableInterfaceProtectedAccess,
+                            EnableControllerProtectedAccess = welcome.EnableControllerProtectedAccess,
+                            EnableSignatureIntel = welcome.EnableSignatureIntel,
+                            EnableSignatureIntelMemoryScan = welcome.EnableSignatureIntelMemoryScan,
+                            EnableSignatureIntelPageScan = welcome.EnableSignatureIntelPageScan
+                        };
                     }
                     break;
                 }
@@ -492,30 +666,22 @@ namespace BlackbirdInterface
         {
             try
             {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = GettingStartedUrl,
-                    UseShellExecute = true
-                });
+                Process.Start(new ProcessStartInfo { FileName = GettingStartedUrl, UseShellExecute = true });
             }
             catch (Exception ex)
             {
-                ThemedMessageBox.Show(
-                    owner,
-                    $"Failed to open Getting Started.\n\n{ex.Message}\n\nURL: {GettingStartedUrl}",
-                    "Getting Started",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                ThemedMessageBox.Show(owner,
+                                      $"Failed to open Getting Started.\n\n{ex.Message}\n\nURL: {GettingStartedUrl}",
+                                      "Getting Started", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
         private static string? PromptForSessionFile()
         {
-            var dialog = new OpenFileDialog
-            {
-                Filter = "Blackbird Capture Archive (*.bkcap)|*.bkcap|Legacy Blackbird Session Archive (*.swlkr;*.blackbird)|*.swlkr;*.blackbird|All files (*.*)|*.*",
-                CheckFileExists = true,
-                Multiselect = false
+            var dialog = new OpenFileDialog {
+                Filter =
+                    "Blackbird Capture Archive (*.bkcap)|*.bkcap|Legacy Blackbird Session Archive (*.swlkr;*.blackbird)|*.swlkr;*.blackbird|All files (*.*)|*.*",
+                CheckFileExists = true, Multiselect = false
             };
 
             return dialog.ShowDialog() == true ? dialog.FileName : null;
@@ -536,7 +702,9 @@ namespace BlackbirdInterface
 
         private static async Task YieldForUiFrameAsync()
         {
-            await Application.Current.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Render);
+            await Application.Current.Dispatcher.InvokeAsync(() =>
+                                                             {},
+                                                             DispatcherPriority.Render);
         }
 
         private static void EnsureStartMenuShortcut()
@@ -549,9 +717,8 @@ namespace BlackbirdInterface
                     return;
                 }
 
-                string programsDirectory = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.StartMenu),
-                    "Programs");
+                string programsDirectory =
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.StartMenu), "Programs");
                 Directory.CreateDirectory(programsDirectory);
 
                 string shortcutPath = Path.Combine(programsDirectory, "Blackbird.lnk");
@@ -572,22 +739,22 @@ namespace BlackbirdInterface
                         return;
                     }
 
-                    shortcut = shellType.InvokeMember(
-                        "CreateShortcut",
-                        BindingFlags.InvokeMethod,
-                        binder: null,
-                        target: shell,
-                        args: new object[] { shortcutPath });
+                    shortcut = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, binder: null,
+                                                      target: shell, args: new object[] { shortcutPath });
                     if (shortcut == null)
                     {
                         return;
                     }
 
                     Type shortcutType = shortcut.GetType();
-                    shortcutType.InvokeMember("TargetPath", BindingFlags.SetProperty, null, shortcut, new object[] { exePath });
-                    shortcutType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, shortcut, new object[] { Path.GetDirectoryName(exePath) ?? string.Empty });
-                    shortcutType.InvokeMember("Description", BindingFlags.SetProperty, null, shortcut, new object[] { "Blackbird analyst shell" });
-                    shortcutType.InvokeMember("IconLocation", BindingFlags.SetProperty, null, shortcut, new object[] { $"{exePath},0" });
+                    shortcutType.InvokeMember("TargetPath", BindingFlags.SetProperty, null, shortcut,
+                                              new object[] { exePath });
+                    shortcutType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, shortcut,
+                                              new object[] { Path.GetDirectoryName(exePath) ?? string.Empty });
+                    shortcutType.InvokeMember("Description", BindingFlags.SetProperty, null, shortcut,
+                                              new object[] { "Blackbird analyst shell" });
+                    shortcutType.InvokeMember("IconLocation", BindingFlags.SetProperty, null, shortcut,
+                                              new object[] { $"{exePath},0" });
                     shortcutType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortcut, Array.Empty<object>());
                 }
                 finally
@@ -641,6 +808,7 @@ namespace BlackbirdInterface
         {
             if (Current is App app)
             {
+                AnalystSettingsStore.SaveThemeMode(mode);
                 app.ApplyTheme(mode);
             }
         }
@@ -649,24 +817,25 @@ namespace BlackbirdInterface
         {
             CurrentThemeMode = mode;
             bool effectiveDark = ResolveEffectiveDarkMode(mode);
-            string themeSource = effectiveDark ? "Themes/DarkTheme.xaml" : "Themes/LightTheme.xaml";
 
             Resources.MergedDictionaries.Clear();
             try
             {
-                Resources.MergedDictionaries.Add(new ResourceDictionary
+                Resources.MergedDictionaries.Add(
+                    new ResourceDictionary { Source = new Uri("Themes/DarkTheme.xaml", UriKind.Relative) });
+
+                if (!effectiveDark)
                 {
-                    Source = new Uri(themeSource, UriKind.Relative)
-                });
+                    Resources.MergedDictionaries.Add(
+                        new ResourceDictionary { Source = new Uri("Themes/LightTheme.xaml", UriKind.Relative) });
+                }
             }
             catch
             {
                 effectiveDark = true;
                 Resources.MergedDictionaries.Clear();
-                Resources.MergedDictionaries.Add(new ResourceDictionary
-                {
-                    Source = new Uri("Themes/DarkTheme.xaml", UriKind.Relative)
-                });
+                Resources.MergedDictionaries.Add(
+                    new ResourceDictionary { Source = new Uri("Themes/DarkTheme.xaml", UriKind.Relative) });
             }
 
             IsDarkTheme = effectiveDark;
@@ -699,8 +868,8 @@ namespace BlackbirdInterface
         {
             try
             {
-                using RegistryKey? key = Registry.CurrentUser.OpenSubKey(
-                    @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+                using RegistryKey? key =
+                    Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
                 object? raw = key?.GetValue("AppsUseLightTheme");
                 if (raw is int intValue)
                 {
@@ -773,7 +942,5 @@ namespace BlackbirdInterface
                 }
             }
         }
-
     }
 }
-

@@ -26,14 +26,14 @@ namespace BlackbirdInterface
                 return FlattenGroupedDetails(groups);
             }
 
-            return category switch
-            {
-                IntelDetailsCategory.Etw => FlattenGroupedDetails(EtwPaneHost.SnapshotItems()),
-                IntelDetailsCategory.Heuristics => FlattenGroupedDetails(HeuristicsPaneHost.SnapshotItems()),
-                IntelDetailsCategory.Filesystem => FlattenGroupedDetails(FilesystemPaneHost.SnapshotItems()),
-                IntelDetailsCategory.ProcessRelations => FlattenGroupedDetails(ProcessRelationsPaneHost.SnapshotItems()),
-                _ => new List<GroupedEventDetailRow>()
-            };
+            return category switch { IntelDetailsCategory.Etw => FlattenGroupedDetails(EtwPaneHost.SnapshotItems()),
+                                     IntelDetailsCategory.Heuristics =>
+                                         FlattenGroupedDetails(HeuristicsPaneHost.SnapshotItems()),
+                                     IntelDetailsCategory.Filesystem =>
+                                         FlattenGroupedDetails(FilesystemPaneHost.SnapshotItems()),
+                                     IntelDetailsCategory.ProcessRelations =>
+                                         FlattenGroupedDetails(ProcessRelationsPaneHost.SnapshotItems()),
+                                     _ => new List<GroupedEventDetailRow>() };
         }
 
         string IIntelDetailsProvider.GetIntelScopeLabel()
@@ -71,8 +71,7 @@ namespace BlackbirdInterface
 
             int pid = _currentSession.Pid;
             DateTime now = DateTime.UtcNow;
-            if (_scopeStatusCachePid == pid &&
-                (now - _scopeStatusCacheUtc).TotalMilliseconds < 750)
+            if (_scopeStatusCachePid == pid && (now - _scopeStatusCacheUtc).TotalMilliseconds < 750)
             {
                 return _scopeStatusCache;
             }
@@ -147,10 +146,8 @@ namespace BlackbirdInterface
             return status;
         }
 
-        private bool TryGetIntelGroupedRowsFromSession(
-            int pid,
-            IntelDetailsCategory category,
-            out IReadOnlyList<GroupedEventRow> groups)
+        private bool TryGetIntelGroupedRowsFromSession(int pid, IntelDetailsCategory category,
+                                                       out IReadOnlyList<GroupedEventRow> groups)
         {
             groups = Array.Empty<GroupedEventRow>();
 
@@ -196,8 +193,7 @@ namespace BlackbirdInterface
 
         private static IReadOnlyList<GroupedEventDetailRow> FlattenGroupedDetails(IEnumerable<GroupedEventRow> groups)
         {
-            return groups
-                .SelectMany(x => x.Details)
+            return groups.SelectMany(x => x.Details)
                 .OrderByDescending(x => x.TimestampUtc)
                 .Take(50000)
                 .Select(x => x.Clone())
@@ -205,4 +201,3 @@ namespace BlackbirdInterface
         }
     }
 }
-

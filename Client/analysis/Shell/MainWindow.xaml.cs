@@ -3,14 +3,17 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Input;
 using System.Windows.Threading;
 
@@ -24,6 +27,10 @@ namespace BlackbirdInterface
         private readonly BoundedStringPool _telemetryTextPool = new(8192);
         private readonly HashSet<string> _knownLaneKeys = new(StringComparer.Ordinal);
         private const double DefaultTimelineViewDurationSeconds = 120;
+        private const int MaxControllerLaunchArgumentChars = 2048;
+        private const int HookControllerCallTimeoutSeconds = 30;
+        private static readonly TimeSpan HookControllerCallTimeout =
+            TimeSpan.FromSeconds(HookControllerCallTimeoutSeconds);
         private bool _viewportRefreshPending;
         private DateTime _latestEventTimestampUtc;
 
@@ -42,13 +49,10 @@ namespace BlackbirdInterface
         private bool _heuristicsPaneFloating;
         private bool _heuristicsOnTop;
 
-        // Lane focus key (optional)
         private string? _laneFocusKey;
 
-        // Performance sampler (system-wide for now, PID-aware if provided)
         private PerformanceSampler? _perf;
 
-        // Explorer items
         private readonly ObservableCollection<GraphExplorerItem> _explorer = new();
         private readonly ObservableCollection<ProcessSessionTab> _processTabs = new();
         private readonly int _defaultPid = Process.GetCurrentProcess().Id;
@@ -57,7 +61,6 @@ namespace BlackbirdInterface
         private int _samplerPid;
         private bool _performanceOnTop;
         private bool _hasPerformanceData;
-        private bool _hasIpcUplinkData;
         private bool _connectivityHealthy = true;
         private bool _draggingEventsPaneHeader;
         private bool _draggingPerformancePaneHeader;
@@ -69,20 +72,32 @@ namespace BlackbirdInterface
         private bool _pendingHookPreconfigured;
         private bool _pendingLaunchStartsSuspended;
         private bool _pendingLeaveSuspendedAfterReady;
-        private bool _pendingDeferredLaunchGateResume;
         private bool _pendingLaunchOwnedByInterface;
+        private bool _hookControllerCallInFlight;
+        private AnalysisOperationGuard? _activeAnalysisOperation;
+        private LiveAnalysisSessionLease? _liveAnalysisSession;
+        private ProcessSessionTab? _queuedSessionSwitchTab;
+        private bool _sessionSwitchQueued;
+        private LaunchTargetKind _pendingAnalysisSubjectKind = LaunchTargetKind.Executable;
+        private string _pendingAnalysisSubjectPath = string.Empty;
+        private string _pendingAnalysisHostPath = string.Empty;
         private bool _isMainWindowShuttingDown;
-        private bool _teardownProtectionDisarmAttempted;
         private BlackbirdBackendSession? _preparedLaunchBackendSession;
         private int _preparedLaunchBackendPid;
         private MainInterfaceViewMode _mainViewMode = MainInterfaceViewMode.Telemetry;
         private readonly BulkObservableCollection<ApiCallGraphMainRowView> _apiViewRows = new();
+        private readonly BulkObservableCollection<ExtendedActivityRowSnapshot> _extendedViewRows = new();
+        private readonly BulkObservableCollection<ExtendedActivityRowSnapshot> _extendedComRows = new();
+        private readonly BulkObservableCollection<ExtendedActivityRowSnapshot> _extendedEtwRows = new();
+        private readonly BulkObservableCollection<ExtendedActivityRowSnapshot> _extendedJobRows = new();
+        private readonly BulkObservableCollection<ExtendedActivityRowSnapshot> _extendedYaraRows = new();
         private Process? _targetExitWatchProcess;
         private int _targetExitWatchPid;
         private Vector _floatingPaneDragOffset;
         private readonly DispatcherTimer _detachedEventLogRefreshTimer;
         private readonly DispatcherTimer _processStateRefreshTimer;
         private readonly DispatcherTimer _apiGraphRefreshTimer;
+        private readonly DispatcherTimer _extendedViewRefreshTimer;
         private readonly DispatcherTimer _childProcessGraphRefreshTimer;
         private readonly DispatcherTimer _timelineLiveTickTimer;
         private bool _scrollSyncPending;
@@ -93,8 +108,12 @@ namespace BlackbirdInterface
         private EventSelectionKey? _selectedEventAnchor;
         private double _pendingScrollStartSeconds;
         private bool _targetExecutionSuspended;
+        private bool _signatureIntelEnabled = true;
+        private bool _signatureIntelMemoryScanEnabled;
+        private bool _signatureIntelPageScanEnabled;
         private readonly List<ApiCallGraphMainRowView> _apiViewSnapshotRows = new();
         private readonly List<ApiCallGraphRowSnapshot> _apiGraphSnapshotRows = new();
+        private ApiViewPresentationMode _apiViewPresentationMode;
         private DateTime _scopeStatusCacheUtc;
         private int _scopeStatusCachePid;
         private IntelScopeStatus _scopeStatusCache = IntelScopeStatus.Unknown;
@@ -144,16 +163,37 @@ namespace BlackbirdInterface
         private enum MainInterfaceViewMode
         {
             Telemetry = 0,
-            Api = 1
+            Api = 1,
+            Extended = 2
+        }
+
+        private enum ApiViewPresentationMode
+        {
+            CallGraph = 0,
+            ThreadTimeline = 1
         }
 
         public MainWindow()
         {
             InitializeComponent();
+            if (Kernel32Native.EnableDebugPrivilege(out int debugPrivilegeError))
+            {
+                DiagnosticsState.SetValue("Target Handle Access", "SeDebugPrivilege enabled");
+            }
+            else
+            {
+                DiagnosticsState.SetValue("Target Handle Access",
+                                          $"SeDebugPrivilege unavailable win32={debugPrivilegeError}");
+            }
+            if (ApiViewModeBox != null)
+            {
+                ApiViewModeBox.SelectedIndex = 0;
+            }
             InitializeSignatureIntelSubsystem();
+            InitializeInterfaceSettings();
             SetResourceReference(BackgroundProperty, "WinBgBrush");
             RootGrid.SetResourceReference(Panel.BackgroundProperty, "WinBgBrush");
-            WindowThemeHelper.ApplyDarkTitleBar(this);
+            WindowThemeHelper.WireThemeAwareTitleBar(this);
             _detachedEventLogRefreshTimer =
                 new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(110) };
             _detachedEventLogRefreshTimer.Tick += DetachedEventLogRefreshTimer_Tick;
@@ -167,6 +207,9 @@ namespace BlackbirdInterface
             _apiGraphRefreshTimer =
                 new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(180) };
             _apiGraphRefreshTimer.Tick += ApiGraphRefreshTimer_Tick;
+            _extendedViewRefreshTimer =
+                new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(220) };
+            _extendedViewRefreshTimer.Tick += (_, __) => FlushExtendedActivitySnapshot();
             _childProcessGraphRefreshTimer =
                 new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(140) };
             _childProcessGraphRefreshTimer.Tick += ChildProcessGraphRefreshTimer_Tick;
@@ -196,28 +239,22 @@ namespace BlackbirdInterface
             _captureStartUtc = AnchorCaptureStartUtc(DefaultTimelineViewDurationSeconds);
             _latestEventTimestampUtc = _captureStartUtc;
 
-            // Bind grid to focused items
             EventsPaneHost.Grid.ItemsSource = _focusedEvents;
             EventsPaneHost.SetHasData(false);
             EventsPaneHost.SetEventLogDetached(false);
 
-            // Timeline init
             EventsPaneHost.Timeline.CaptureStartUtc = _captureStartUtc;
             EventsPaneHost.Timeline.ViewDurationSeconds = DefaultTimelineViewDurationSeconds;
             EventsPaneHost.Timeline.ViewStartSeconds = 0;
 
-            // Timeline interactions
             EventsPaneHost.Timeline.LaneInteraction += Timeline_LaneInteraction;
             EventsPaneHost.Timeline.SelectedEventChanged += Timeline_SelectedEventChanged;
             EventsPaneHost.Timeline.EventDoubleClicked += Timeline_EventDoubleClicked;
 
-            // Grid selection sync
             EventsPaneHost.Grid.SelectionChanged += Grid_SelectionChanged;
 
-            // Scrollbar sync
             EventsPaneHost.Scroll.ValueChanged += Scroll_ValueChanged;
 
-            // Pane header buttons
             EventsPaneHost.CloseRequested += (_, __) => HideEventsPane();
             EventsPaneHost.FloatRequested += (_, __) => ToggleFloatDock();
             EventsPaneHost.LogPopoutRequested += (_, __) => ToggleEventLogDock();
@@ -231,6 +268,7 @@ namespace BlackbirdInterface
             PerformancePaneHost.ReorderRequested += (_, __) => TogglePaneOrder();
             PerformancePaneHost.FloatRequested += (_, __) => TogglePerformanceFloatDock();
             PerformancePaneHost.ThreadDoubleClicked += PerformancePaneHost_ThreadDoubleClicked;
+            PerformancePaneHost.DisassemblyRequested += PerformancePaneHost_DisassemblyRequested;
             PerformancePaneHost.ParallelStacksRequested += (_, __) => OpenParallelStacksWindow();
             PerformancePaneHost.HeaderDragStarted += (_, a) =>
                 BeginPaneHeaderDrag(isEventsPane: false, a.ScreenPosition);
@@ -248,16 +286,36 @@ namespace BlackbirdInterface
             HeuristicsPaneHost.InspectRequested += (_, __) => OpenHeuristicsInspector();
             FilesystemPaneHost.CloseRequested += (_, __) => HideFilesystemPane();
             FilesystemPaneHost.InspectRequested += (_, __) => OpenFilesystemInspector();
+            RegistryPaneHost.CloseRequested += (_, __) => HideRegistryPane();
+            RegistryPaneHost.InspectRequested += (_, __) => OpenRegistryInspector();
             ProcessRelationsPaneHost.CloseRequested += (_, __) => HideProcessRelationsPane();
             ProcessRelationsPaneHost.InspectRequested += (_, __) => OpenProcessRelationsInspector();
             ProcessRelationsPaneHost.GraphStateChanged += ProcessRelationsPaneHost_GraphStateChanged;
-            IpcUplinkPaneHost.CloseRequested += (_, __) => HideIpcUplinkPane();
-            // Explorer setup
             SetupExplorer();
             SetupProcessTabs();
             InitializeBackendUi();
             InitializeRuntimeConfigDefaults();
             ApiViewDataGrid.ItemsSource = _apiViewRows;
+            if (ExtendedViewDataGrid != null)
+            {
+                ExtendedViewDataGrid.ItemsSource = _extendedViewRows;
+            }
+            if (ExtendedComDataGrid != null)
+            {
+                ExtendedComDataGrid.ItemsSource = _extendedComRows;
+            }
+            if (ExtendedEtwDataGrid != null)
+            {
+                ExtendedEtwDataGrid.ItemsSource = _extendedEtwRows;
+            }
+            if (ExtendedJobDataGrid != null)
+            {
+                ExtendedJobDataGrid.ItemsSource = _extendedJobRows;
+            }
+            if (ExtendedYaraDataGrid != null)
+            {
+                ExtendedYaraDataGrid.ItemsSource = _extendedYaraRows;
+            }
             ApiViewDataGrid.SelectedIndex = -1;
             UpdateApiViewSelection(null);
             SetMainInterfaceViewMode(MainInterfaceViewMode.Telemetry);
@@ -268,11 +326,9 @@ namespace BlackbirdInterface
             UpdateTopTimeTravelBar();
             RebuildToolbarViewMenuOptions();
 
-            // Performance sampler + UI sync
             _perf = new PerformanceSampler();
             _perf.SampleArrived += Perf_SampleArrived;
 
-            // Make performance pane aware of capture start immediately
             PerformancePaneHost.SetCaptureStart(_captureStartUtc);
             PerformancePaneHost.SetPid(TryGetPid());
             PerformancePaneHost.SetProcessLiveDataAvailable(false);
@@ -302,18 +358,19 @@ namespace BlackbirdInterface
                 return;
             }
 
-            DisarmTeardownProtectionBestEffort();
+            _isMainWindowShuttingDown = true;
+            CancelActiveAnalysisOperationForShutdown();
         }
 
         private void OnClosed(object? sender, EventArgs e)
         {
             _isMainWindowShuttingDown = true;
+            CancelActiveAnalysisOperationForShutdown();
             DisposeSignatureIntelSubsystem();
             _detachedEventLogRefreshTimer.Stop();
             _processStateRefreshTimer.Stop();
             _apiGraphRefreshTimer.Stop();
             _timelineLiveTickTimer.Stop();
-            TerminateLaunchOwnedTargetsOnShutdown();
 
             if (_perf != null)
             {
@@ -382,9 +439,9 @@ namespace BlackbirdInterface
             ProcessRelationsPaneHost.GraphStateChanged -= ProcessRelationsPaneHost_GraphStateChanged;
             _childProcessGraphRefreshTimer.Stop();
             SaveIntelSessionState(_currentSession?.Pid ?? 0);
-            StopTargetExitWatcher();
+            StopLiveAnalysisSession(LiveAnalysisStopReason.Shutdown, fastTeardown: true, stopPerformance: true);
             DisposePreparedLaunchBackendSession();
-            StopBackendSession();
+            TerminateLaunchOwnedTargetsOnShutdown();
             HideDockPreview();
             CleanupTemporarySessionBackingStores();
         }
@@ -404,10 +461,9 @@ namespace BlackbirdInterface
             _explorer.Add(new GraphExplorerItem(
                 "Filesystem", new SolidColorBrush(Color.FromRgb(0x45, 0x8E, 0x7A))) { IsEnabled = true });
             _explorer.Add(new GraphExplorerItem(
+                "Registry", new SolidColorBrush(Color.FromRgb(0x7A, 0x5E, 0xA8))) { IsEnabled = true });
+            _explorer.Add(new GraphExplorerItem(
                 "Process Relations", new SolidColorBrush(Color.FromRgb(0xD2, 0xB8, 0x55))) { IsEnabled = true });
-            _explorer.Add(new GraphExplorerItem("IPC Uplink", new SolidColorBrush(Color.FromRgb(0x52, 0xA9, 0xB3))) {
-                IsEnabled = false, ShowDetails = false, DetailPrimary = "", DetailSecondary = ""
-            });
 
             GraphExplorer.ItemsSource = _explorer;
 
@@ -451,17 +507,16 @@ namespace BlackbirdInterface
             SetExplorerHasData("Heuristics", HeuristicsPaneHost.ItemCount > 0);
             SetExplorerHasData("Filesystem", FilesystemPaneHost.ItemCount > 0);
             SetExplorerHasData("Process Relations", ProcessRelationsPaneHost.ItemCount > 0);
-            SetExplorerHasData("IPC Uplink", _hasIpcUplinkData);
         }
 
         private void ApplyDockVisibilityFromExplorer()
         {
             bool showEvents = _explorer.FirstOrDefault(x => x.Name == "Events")?.IsEnabled ?? true;
             bool showPerf = _explorer.FirstOrDefault(x => x.Name == "Performance")?.IsEnabled ?? true;
-            bool showIpcUplink = _explorer.FirstOrDefault(x => x.Name == "IPC Uplink")?.IsEnabled ?? false;
             bool showEtw = _explorer.FirstOrDefault(x => x.Name == "ETW")?.IsEnabled ?? true;
             bool showHeuristics = _explorer.FirstOrDefault(x => x.Name == "Heuristics")?.IsEnabled ?? true;
             bool showFilesystem = _explorer.FirstOrDefault(x => x.Name == "Filesystem")?.IsEnabled ?? true;
+            bool showRegistry = _explorer.FirstOrDefault(x => x.Name == "Registry")?.IsEnabled ?? true;
             bool showRelations = _explorer.FirstOrDefault(x => x.Name == "Process Relations")?.IsEnabled ?? true;
 
             if (!showEvents && _eventsFloatWindow != null)
@@ -480,6 +535,7 @@ namespace BlackbirdInterface
             bool showEtwContent = showEtw && !_etwPaneFloating;
             bool showHeuristicsContent = showHeuristics && !_heuristicsPaneFloating;
             bool showFilesystemContent = showFilesystem;
+            bool showRegistryContent = showRegistry;
             bool showRelationsContent = showRelations;
 
             EventsDockBorder.Visibility = showEventsContent ? Visibility.Visible : Visibility.Collapsed;
@@ -509,18 +565,16 @@ namespace BlackbirdInterface
             EtwDockBorder.Visibility = showEtwContent ? Visibility.Visible : Visibility.Collapsed;
             HeuristicsDockBorder.Visibility = showHeuristicsContent ? Visibility.Visible : Visibility.Collapsed;
             FilesystemDockBorder.Visibility = showFilesystemContent ? Visibility.Visible : Visibility.Collapsed;
+            RegistryDockBorder.Visibility = showRegistryContent ? Visibility.Visible : Visibility.Collapsed;
             ProcessRelationsDockBorder.Visibility = showRelationsContent ? Visibility.Visible : Visibility.Collapsed;
-            IpcUplinkDockBorder.Visibility = showIpcUplink ? Visibility.Visible : Visibility.Collapsed;
-            IpcUplinkColumn.Width = showIpcUplink ? new GridLength(380) : new GridLength(0);
-            IpcUplinkSplitterColumn.Width = showIpcUplink ? new GridLength(2) : new GridLength(0);
-            IpcUplinkSplitter.Visibility = showIpcUplink ? Visibility.Visible : Visibility.Collapsed;
 
             bool row0Visible = (Grid.GetRow(EtwDockBorder) == 0 && showEtwContent) ||
                                (Grid.GetRow(HeuristicsDockBorder) == 0 && showHeuristicsContent);
             bool row2Visible = (Grid.GetRow(EtwDockBorder) == 2 && showEtwContent) ||
                                (Grid.GetRow(HeuristicsDockBorder) == 2 && showHeuristicsContent);
             bool row4Visible = showFilesystemContent;
-            bool row6Visible = showRelationsContent;
+            bool row6Visible = showRegistryContent;
+            bool row8Visible = showRelationsContent;
             IntelligenceDock.RowDefinitions[0].Height =
                 row0Visible ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
             IntelligenceDock.RowDefinitions[2].Height =
@@ -529,15 +583,19 @@ namespace BlackbirdInterface
                 row4Visible ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
             IntelligenceDock.RowDefinitions[6].Height =
                 row6Visible ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+            IntelligenceDock.RowDefinitions[8].Height =
+                row8Visible ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
             IntelligenceDock.RowDefinitions[1].Height =
                 (row0Visible && row2Visible) ? new GridLength(2) : new GridLength(0);
             IntelligenceDock.RowDefinitions[3].Height =
                 (row2Visible && row4Visible) ? new GridLength(2) : new GridLength(0);
             IntelligenceDock.RowDefinitions[5].Height =
                 (row4Visible && row6Visible) ? new GridLength(2) : new GridLength(0);
+            IntelligenceDock.RowDefinitions[7].Height =
+                (row6Visible && row8Visible) ? new GridLength(2) : new GridLength(0);
 
-            bool showIntel = row0Visible || row2Visible || row4Visible || row6Visible;
-            if (_mainViewMode == MainInterfaceViewMode.Api)
+            bool showIntel = row0Visible || row2Visible || row4Visible || row6Visible || row8Visible;
+            if (_mainViewMode != MainInterfaceViewMode.Telemetry)
             {
                 showIntel = false;
             }
@@ -571,31 +629,28 @@ namespace BlackbirdInterface
 
             if (_currentSession != null)
             {
+                _captureProjection?.ObservePerformance(e);
                 _currentSession.PerformanceHistory.Add(ClonePerformanceSample(e));
                 if (_currentSession.PerformanceHistory.Count > 4000)
                     _currentSession.PerformanceHistory.RemoveRange(0, _currentSession.PerformanceHistory.Count - 4000);
             }
 
-            // Update explorer mini previews
-            // Events preview: events count in view window (cheap approximation)
             var evCount = _focusedEvents.Count;
             var eventsItem = _explorer.FirstOrDefault(x => x.Name == "Events");
             eventsItem?.PushPreviewValue(evCount);
 
-            // Performance preview: CPU %
             var perfItem = _explorer.FirstOrDefault(x => x.Name == "Performance");
             perfItem?.PushPreviewValue(e.CpuPercent);
             _hasPerformanceData = true;
             SetExplorerHasData("Performance", true);
 
-            // Feed performance pane
             PerformancePaneHost.PushSample(e);
 
-            // Keep performance view aligned to timeline window
             SyncPerformanceViewToTimeline();
         }
 
-        private void StartLiveCaptureForPid(int pid, bool useUsermodeHooks, bool launchStartsSuspended = false)
+        private void StartLiveCaptureForPid(int pid, bool useUsermodeHooks, bool launchStartsSuspended = false,
+                                            bool fastBackendRestart = false)
         {
             if (pid <= 0 || _perf == null)
                 return;
@@ -627,18 +682,21 @@ namespace BlackbirdInterface
             _samplerPid = pid;
             PerformancePaneHost.SetProcessLiveDataAvailable(true);
             PerformancePaneHost.SetTargetSuspended(launchStartsSuspended);
+            PerformancePaneHost.RefreshLiveProcessDetails();
             StartTargetExitWatcher(pid);
             EnsureLiveCaptureStoreForCurrentSession(pid);
-            StartBackendForPid(pid, useUsermodeHooks);
+            StartBackendForPid(pid, useUsermodeHooks, fastStopExistingSession: fastBackendRestart);
+            if (_backendSession != null)
+            {
+                TrackLiveAnalysisSession(pid, _currentSession);
+            }
             bool autoOpenApiGraph = _currentSession?.AutoOpenApiGraphOnNextStart == true;
             if (_currentSession != null)
             {
                 _currentSession.AutoOpenApiGraphOnNextStart = false;
             }
-            if (useUsermodeHooks && autoOpenApiGraph)
-            {
-                SetMainInterfaceViewMode(MainInterfaceViewMode.Api);
-            }
+            SetMainInterfaceViewMode(useUsermodeHooks && autoOpenApiGraph ? MainInterfaceViewMode.Api
+                                                                          : MainInterfaceViewMode.Telemetry);
             StatusBlock.Text = $"LIVE CAPTURE: {NormalizeSessionTitle(_currentSession?.Title ?? $"PID {pid}")}";
             RefreshProcessStateBadge();
         }
@@ -660,7 +718,7 @@ namespace BlackbirdInterface
                 process = null; // ownership transferred to _targetExitWatchProcess
                 if (_targetExitWatchProcess.HasExited)
                 {
-                    HandleTargetProcessExit(pid);
+                    HandleTargetProcessExit(pid, BuildProcessExitReason(_targetExitWatchProcess));
                 }
             }
             catch
@@ -702,11 +760,13 @@ namespace BlackbirdInterface
         private void TargetExitWatchProcess_Exited(object? sender, EventArgs e)
         {
             int pid = 0;
+            string exitReason = string.Empty;
             if (sender is Process p)
             {
                 try
                 {
                     pid = p.Id;
+                    exitReason = BuildProcessExitReason(p);
                 }
                 catch
                 {
@@ -717,10 +777,22 @@ namespace BlackbirdInterface
             if (pid <= 0)
                 pid = _targetExitWatchPid;
 
-            Dispatcher.BeginInvoke(new Action(() => HandleTargetProcessExit(pid)));
+            Dispatcher.BeginInvoke(new Action(() => HandleTargetProcessExit(pid, exitReason)));
         }
 
-        private void HandleTargetProcessExit(int pid)
+        private static string BuildProcessExitReason(Process process)
+        {
+            try
+            {
+                return $"process exited exitCode=0x{unchecked((uint)process.ExitCode):X8}";
+            }
+            catch
+            {
+                return "process exited; exit code unavailable";
+            }
+        }
+
+        private void HandleTargetProcessExit(int pid, string? observedReason = null)
         {
             if (pid <= 0)
                 return;
@@ -730,6 +802,13 @@ namespace BlackbirdInterface
                 return;
 
             exitedTab.TargetExited = true;
+            _targetExitReasonByPid.TryGetValue(unchecked((uint)pid), out string? remembered);
+            string exitReason = !string.IsNullOrWhiteSpace(remembered)
+                                    ? remembered
+                                    : (!string.IsNullOrWhiteSpace(observedReason)
+                                           ? observedReason.Trim()
+                                           : "process exited; cause not observed before teardown");
+            exitedTab.TargetExitReason = exitReason;
             MarkSessionExited(exitedTab);
 
             if (!ReferenceEquals(_currentSession, exitedTab))
@@ -748,15 +827,10 @@ namespace BlackbirdInterface
 
             AppendEvent(new TelemetryEvent { TimestampUtc = DateTime.UtcNow, PID = pid, TID = 0, Group = "Session",
                                              SubType = "ProcessExit", Summary = "TARGET PROCESS EXITED",
-                                             Details = "Data capture stopped for this tab." });
+                                             Details = $"{exitReason}. Data capture stopped for this tab." });
 
-            StopTargetExitWatcher();
-            StopBackendSession(preserveApiGraphSnapshot: true);
-            _perf?.Stop();
-            _samplerPid = 0;
-            PerformancePaneHost.SetProcessLiveDataAvailable(false);
-            PerformancePaneHost.SetTargetSuspended(false);
-            _targetExecutionSuspended = false;
+            StopLiveAnalysisSession(LiveAnalysisStopReason.TargetExited, preserveApiGraphSnapshot: true,
+                                    fastTeardown: true, stopPerformance: true);
             if (exitedTab.ActivePauseStartUtc.HasValue)
             {
                 exitedTab.PausedTimelineSpans.Add(
@@ -767,11 +841,10 @@ namespace BlackbirdInterface
             SyncCurrentSessionStateToMemory();
             _ = TryPersistCurrentSessionAfterStop();
 
-            StatusBlock.Text = $"Target {pid} exited. Capture stopped.";
+            StatusBlock.Text = $"Capture stopped; target exited: {exitReason}";
             RefreshProcessStateBadge();
-            ThemedMessageBox.ShowToast(this,
-                                       $"Target process {pid} exited. Data capture has been stopped for this tab.",
-                                       "Target Exited", MessageBoxImage.Warning, durationMs: 5000);
+            ThemedMessageBox.ShowToast(this, $"Target process {pid} exited: {exitReason}", "Target Exited",
+                                       MessageBoxImage.Warning, durationMs: 5000);
         }
 
         private void ValidateCurrentSessionState()
@@ -827,10 +900,13 @@ namespace BlackbirdInterface
             }
             catch (Win32Exception ex)
             {
-                accessDenied = ex.NativeErrorCode == 5;
-                failure = accessDenied ? $"ACCESS DENIED TO PID {pid}"
-                                       : $"FAILED TO OPEN PID {pid} (WIN32 {ex.NativeErrorCode})";
-                return false;
+                if (ex.NativeErrorCode != 5)
+                {
+                    failure = $"FAILED TO OPEN PID {pid} (WIN32 {ex.NativeErrorCode})";
+                    return false;
+                }
+
+                processName = $"PID {pid}";
             }
             finally
             {
@@ -843,8 +919,8 @@ namespace BlackbirdInterface
                 }
             }
 
-            IntPtr handle = Kernel32Native.OpenProcess(
-                ProcessQueryLimitedInformation | ProcessVmRead | ProcessSynchronize, false, unchecked((uint)pid));
+            IntPtr handle = Kernel32Native.OpenProcess(ProcessQueryLimitedInformation | ProcessSynchronize, false,
+                                                       unchecked((uint)pid));
             if (handle == IntPtr.Zero)
             {
                 int err = Marshal.GetLastWin32Error();
@@ -874,12 +950,32 @@ namespace BlackbirdInterface
             try
             {
                 using var p = Process.GetProcessById(pid);
-                return $"{p.ProcessName} ({pid})";
+                return $"{p.ProcessName} (Silo)";
             }
             catch
             {
-                return $"PID {pid}";
+                return $"PID {pid} (Silo)";
             }
+        }
+
+        private void FlashSwitchToast(string label)
+        {
+            SwitchToastText.Text = label;
+            SwitchToastBorder.Visibility = Visibility.Visible;
+
+            var fadeIn = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(120));
+            var fadeOut = new DoubleAnimation(
+                1, 0, TimeSpan.FromMilliseconds(300)) { BeginTime = TimeSpan.FromMilliseconds(900) };
+            fadeOut.Completed += (_, __) => SwitchToastBorder.Visibility = Visibility.Collapsed;
+
+            var storyboard = new Storyboard();
+            Storyboard.SetTarget(fadeIn, SwitchToastBorder);
+            Storyboard.SetTargetProperty(fadeIn, new PropertyPath(OpacityProperty));
+            Storyboard.SetTarget(fadeOut, SwitchToastBorder);
+            Storyboard.SetTargetProperty(fadeOut, new PropertyPath(OpacityProperty));
+            storyboard.Children.Add(fadeIn);
+            storyboard.Children.Add(fadeOut);
+            storyboard.Begin();
         }
 
         private ProcessSessionTab AddOrSelectProcessTab(int pid, string title, bool select)
@@ -890,9 +986,15 @@ namespace BlackbirdInterface
                 double initialDuration = EventsPaneHost?.Timeline != null
                                              ? Math.Clamp(EventsPaneHost.Timeline.ViewDurationSeconds, 1, 120)
                                              : DefaultTimelineViewDurationSeconds;
-                existing = new ProcessSessionTab { Pid = pid, Title = NormalizeSessionTitle(title),
+                existing = new ProcessSessionTab { Pid = pid,
+                                                   Title = NormalizeSessionTitle(title),
                                                    CaptureStartUtc = AnchorCaptureStartUtc(initialDuration),
-                                                   ViewDurationSeconds = initialDuration, ViewStartSeconds = 0 };
+                                                   ViewDurationSeconds = initialDuration,
+                                                   ViewStartSeconds = 0,
+                                                   KernelHooksEnabled = _kernelHooksArmed,
+                                                   SignatureIntelEnabled = _signatureIntelEnabled,
+                                                   SignatureIntelMemoryScanEnabled = _signatureIntelMemoryScanEnabled,
+                                                   SignatureIntelPageScanEnabled = _signatureIntelPageScanEnabled };
                 _processTabs.Add(existing);
             }
             else
@@ -921,7 +1023,7 @@ namespace BlackbirdInterface
             return value;
         }
 
-        private void SyncCurrentSessionStateToMemory()
+        private void SyncCurrentSessionViewportStateToMemory()
         {
             if (_currentSession == null)
                 return;
@@ -930,10 +1032,39 @@ namespace BlackbirdInterface
             _currentSession.LaneFocusKey = _laneFocusKey;
             _currentSession.ViewDurationSeconds = EventsPaneHost.Timeline.ViewDurationSeconds;
             _currentSession.ViewStartSeconds = EventsPaneHost.Timeline.ViewStartSeconds;
-
-            _currentSession.Events.Clear();
-            _currentSession.Events.AddRange(_allEvents.Select(CloneTelemetryEvent));
             SaveIntelSessionState(_currentSession.Pid);
+        }
+
+        private void SyncCurrentSessionStateToMemory()
+        {
+            if (_currentSession == null)
+                return;
+
+            SyncCurrentSessionViewportStateToMemory();
+            if (!CurrentSessionEventMirrorLooksCurrent())
+            {
+                _currentSession.Events.Clear();
+                _currentSession.Events.AddRange(_allEvents.Select(CloneTelemetryEvent));
+            }
+        }
+
+        private bool CurrentSessionEventMirrorLooksCurrent()
+        {
+            if (_currentSession == null || _currentSession.Events.Count != _allEvents.Count)
+            {
+                return false;
+            }
+
+            if (_allEvents.Count == 0)
+            {
+                return true;
+            }
+
+            TelemetryEvent mirrored = _currentSession.Events[^1];
+            TelemetryEvent live = _allEvents[^1];
+            return mirrored.TimestampUtc == live.TimestampUtc && mirrored.PID == live.PID &&
+                   mirrored.TID == live.TID && string.Equals(mirrored.Group, live.Group, StringComparison.Ordinal) &&
+                   string.Equals(mirrored.SubType, live.SubType, StringComparison.Ordinal);
         }
 
         private void SaveCurrentSessionState()
@@ -992,7 +1123,9 @@ namespace BlackbirdInterface
             EventsPaneHost.Timeline.ClearAllLaneFilters();
             ClearSelectedEvent();
 
-            foreach (var ev in tab.Events.OrderBy(x => x.TimestampUtc))
+            IEnumerable<TelemetryEvent> restoreEvents =
+                TelemetryEventsAreTimestampSorted(tab.Events) ? tab.Events : tab.Events.OrderBy(x => x.TimestampUtc);
+            foreach (var ev in restoreEvents)
             {
                 _allEvents.Add(NormalizeTelemetryEventForStore(ev));
             }
@@ -1009,9 +1142,15 @@ namespace BlackbirdInterface
 
             PerformancePaneHost.SetCaptureStart(_captureStartUtc);
             PerformancePaneHost.SetPid(tab.Pid);
+            PerformancePaneHost.SetAnalysisSubject(tab.AnalysisSubjectPath, tab.AnalysisHostPath);
+            DiagnosticsState.SetValue("Analysis Subject", tab.AnalysisSubjectKind == LaunchTargetKind.Dll &&
+                                                                  !string.IsNullOrWhiteSpace(tab.AnalysisSubjectPath)
+                                                              ? tab.AnalysisSubjectPath
+                                                              : "Process image");
             PerformancePaneHost.LoadHistory(tab.PerformanceHistory);
             PerformancePaneHost.LoadMemoryRegionAttributionHistory(tab.MemoryRegionAttributionHistory);
             PerformancePaneHost.LoadThreadLifecycleHistory(tab.ThreadLifecycleHistory);
+            PerformancePaneHost.LoadThreadStackHistory(tab.ThreadStackHistories);
             RestoreIntelSessionState(tab.Pid);
             SyncPerformanceViewToTimeline();
             _hasPerformanceData = tab.PerformanceHistory.Count > 0;
@@ -1023,26 +1162,29 @@ namespace BlackbirdInterface
 
         private void SwitchToSession(ProcessSessionTab tab)
         {
+            if (ReferenceEquals(_currentSession, tab))
+            {
+                return;
+            }
+
             if (_currentSession != null && !ReferenceEquals(_currentSession, tab))
             {
                 SaveChildProcessGraphStateToSession(_currentSession);
-                SaveCurrentSessionState();
+                SyncCurrentSessionViewportStateToMemory();
+                FlashSwitchToast($"Switched to {tab.Title}");
             }
 
             _currentSession = tab;
             PidBox.Text = tab.Pid.ToString();
+            RefreshSubsystemSegmentationDiagnostics();
             RestoreChildProcessGraphStateFromSession(tab);
 
             RestoreSessionState(tab);
 
             if (tab.OfflineSnapshot)
             {
-                StopTargetExitWatcher();
-                StopBackendSession(preserveApiGraphSnapshot: true);
-                _perf?.Stop();
-                _samplerPid = 0;
-                PerformancePaneHost.SetProcessLiveDataAvailable(false);
-                PerformancePaneHost.SetTargetSuspended(false);
+                StopLiveAnalysisSession(LiveAnalysisStopReason.SessionSwitch, preserveApiGraphSnapshot: true,
+                                        fastTeardown: true, stopPerformance: true);
                 StatusBlock.Text = $"OFFLINE SESSION: {tab.Title}";
                 RefreshProcessStateBadge();
                 return;
@@ -1050,42 +1192,56 @@ namespace BlackbirdInterface
 
             if (tab.TargetExited)
             {
-                StopTargetExitWatcher();
-                StopBackendSession(preserveApiGraphSnapshot: true);
-                _perf?.Stop();
-                _samplerPid = 0;
-                PerformancePaneHost.SetProcessLiveDataAvailable(false);
-                PerformancePaneHost.SetTargetSuspended(false);
-                StatusBlock.Text = $"Target {tab.Pid} exited. Capture stopped.";
+                StopLiveAnalysisSession(LiveAnalysisStopReason.SessionSwitch, preserveApiGraphSnapshot: true,
+                                        fastTeardown: true, stopPerformance: true);
+                StatusBlock.Text = "Capture stopped; historical data remains available.";
                 RefreshProcessStateBadge();
                 return;
             }
 
+            bool allowPreparedProtectedAttach =
+                _preparedLaunchBackendSession != null && _preparedLaunchBackendPid == tab.Pid && tab.UseUsermodeHooks;
+
             if (!TryOpenTargetProcess(tab.Pid, out _, out var failure, out var accessDenied))
             {
-                StopTargetExitWatcher();
-                StopBackendSession(preserveApiGraphSnapshot: true);
-                _perf?.Stop();
-                _samplerPid = 0;
-                PerformancePaneHost.SetProcessLiveDataAvailable(false);
-                PerformancePaneHost.SetTargetSuspended(false);
-                if (!accessDenied)
+                if (!allowPreparedProtectedAttach)
                 {
-                    tab.TargetExited = true;
-                    MarkSessionExited(tab);
-                    StatusBlock.Text = $"Target {tab.Pid} exited. Capture stopped.";
+                    StopLiveAnalysisSession(LiveAnalysisStopReason.SessionSwitch, preserveApiGraphSnapshot: true,
+                                            fastTeardown: true, stopPerformance: true);
+                    if (!accessDenied)
+                    {
+                        tab.TargetExited = true;
+                        MarkSessionExited(tab);
+                        StatusBlock.Text = "Capture stopped; historical data remains available.";
+                    }
+                    else
+                    {
+                        StatusBlock.Text = $"Access denied to PID {tab.Pid}. Capture stopped.";
+                    }
+                    RefreshProcessStateBadge();
+                    return;
                 }
-                else
-                {
-                    StatusBlock.Text = $"Access denied to PID {tab.Pid}. Capture stopped.";
-                }
-                RefreshProcessStateBadge();
-                return;
+
+                OutputCapture.AppendLine(
+                    $"Protected launch session accepted without direct process-open access: PID {tab.Pid}");
             }
 
             bool launchStartsSuspended = tab.LaunchStartsSuspendedPending;
             tab.LaunchStartsSuspendedPending = false;
-            StartLiveCaptureForPid(tab.Pid, tab.UseUsermodeHooks, launchStartsSuspended);
+            StartLiveCaptureForPid(tab.Pid, tab.UseUsermodeHooks, launchStartsSuspended, fastBackendRestart: true);
+        }
+
+        private static bool TelemetryEventsAreTimestampSorted(IReadOnlyList<TelemetryEvent> events)
+        {
+            for (int i = 1; i < events.Count; i += 1)
+            {
+                if (events[i].TimestampUtc < events[i - 1].TimestampUtc)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private void SyncPerformanceViewToTimeline()
@@ -1123,9 +1279,6 @@ namespace BlackbirdInterface
             SyncPerformanceViewToTimeline();
         }
 
-        // -------------------------------
-        // Core: Append events from your DLL pump
-        // -------------------------------
         private void AppendEvent(TelemetryEvent ev)
         {
             AppendEvents(new[] { ev });
@@ -1143,6 +1296,7 @@ namespace BlackbirdInterface
             {
                 TelemetryEvent ev = NormalizeTelemetryEventForStore(events[i]);
                 _allEvents.Add(ev);
+                _currentSession?.Events.Add(ev);
                 if (ev.TimestampUtc > _latestEventTimestampUtc)
                 {
                     _latestEventTimestampUtc = ev.TimestampUtc;
@@ -1204,15 +1358,15 @@ namespace BlackbirdInterface
             }
             else if (_currentSession.TargetExited)
             {
-                sessionLabel = $"CAPTURE STOPPED: PID {_currentSession.Pid}";
+                sessionLabel = $"[CAPTURE {_currentSession.Pid} — STOPPED]";
             }
             else
             {
                 string captureTitle = NormalizeSessionTitle(_currentSession.Title ?? $"PID {_currentSession.Pid}");
-                sessionLabel = $"LIVE CAPTURE: {captureTitle}";
+                sessionLabel = $"[CAPTURE {_currentSession.Pid} {captureTitle}]";
             }
 
-            string newTitle = $"{WindowTitleBase} | {sessionLabel}";
+            string newTitle = $"{WindowTitleBase} {sessionLabel}";
             if (!string.Equals(Title, newTitle, StringComparison.Ordinal))
             {
                 Title = newTitle;
@@ -1246,7 +1400,10 @@ namespace BlackbirdInterface
 
             if (_currentSession.TargetExited)
             {
-                SetProcessStateVisual($"{labelPrefix} • Exited (capture available)", ProcessStateExitedBackground,
+                string reason = string.IsNullOrWhiteSpace(_currentSession.TargetExitReason)
+                                    ? "capture available"
+                                    : _currentSession.TargetExitReason;
+                SetProcessStateVisual($"{labelPrefix} • Exited ({reason})", ProcessStateExitedBackground,
                                       ProcessStateExitedBorder, ProcessStateExitedForeground);
                 return;
             }
@@ -1326,9 +1483,6 @@ namespace BlackbirdInterface
             glyph.Background = enabled ? activeForeground : ToolbarInactiveForeground;
         }
 
-        // -------------------------------
-        // Scroll / viewport
-        // -------------------------------
         private void Scroll_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
             double viewport = Math.Max(1, EventsPaneHost.Scroll.ViewportSize);
@@ -1402,12 +1556,12 @@ namespace BlackbirdInterface
             var selectedAnchor = CaptureSelectedEventAnchor();
 
             double durationSeconds = Math.Max(1, (viewEnd - viewStart).TotalSeconds);
-            RangeBlock.Text = $"Range {viewStart:HH:mm:ss} | {viewEnd:HH:mm:ss}  ({durationSeconds:0}s)";
+            RangeBlock.Text = $"Window {viewStart:HH:mm:ss}-{viewEnd:HH:mm:ss}  {durationSeconds:0}s";
 
-            EventsPaneHost.Timeline.ReplaceItems(Array.Empty<TelemetryEvent>());
             if (_allEvents.Count == 0)
             {
                 _focusedEvents.ReplaceAll(Array.Empty<TelemetryEvent>());
+                EventsPaneHost.Timeline.ReplaceItems(_focusedEvents);
                 SetExplorerHasData("Events", false);
                 EventsPaneHost.SetHeaderStats("View 0 | Total 0 | 0.0/s");
                 ClearSelectedEvent();
@@ -1542,7 +1696,7 @@ namespace BlackbirdInterface
                                                      Summary = summary,
                                                      Details = details };
 
-                _focusedClusterMembers[new EventSelectionKey(clustered)] = members.ToList();
+                _focusedClusterMembers[new EventSelectionKey(clustered)] = members;
                 displayEvents.Add(clustered);
             }
 
@@ -1614,7 +1768,7 @@ namespace BlackbirdInterface
 
             DateTime viewStart = _captureStartUtc + TimeSpan.FromSeconds(start);
             DateTime viewEnd = viewStart + TimeSpan.FromSeconds(viewport);
-            TopTimeTravelRangeBlock.Text = $"{viewStart:HH:mm:ss} | {viewEnd:HH:mm:ss}";
+            TopTimeTravelRangeBlock.Text = $"{viewStart:HH:mm:ss}-{viewEnd:HH:mm:ss}";
         }
 
         private void TopTimeTravelSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -1767,15 +1921,11 @@ namespace BlackbirdInterface
             if (string.IsNullOrWhiteSpace(_laneFocusKey))
                 return true;
 
-            // lane key is either "Group" or "Group/SubType"
             string key = string.IsNullOrWhiteSpace(ev.SubType) ? ev.Group : $"{ev.Group}/{ev.SubType}";
             return string.Equals(key, _laneFocusKey, StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(ev.Group, _laneFocusKey, StringComparison.OrdinalIgnoreCase);
         }
 
-        // -------------------------------
-        // Timeline lane interactions
-        // -------------------------------
         private void Timeline_LaneInteraction(object? sender, LaneInteractionEventArgs e)
         {
             if (e.Button == System.Windows.Input.MouseButton.Left && !e.IsArrow)
@@ -1836,9 +1986,6 @@ namespace BlackbirdInterface
             menu.IsOpen = true;
         }
 
-        // -------------------------------
-        // Selection sync
-        // -------------------------------
         private void Timeline_EventDoubleClicked(object? sender, TelemetryEventSelectedEventArgs e)
         {
             _ = sender;
@@ -1984,9 +2131,6 @@ namespace BlackbirdInterface
             }
         }
 
-        // -------------------------------
-        // Pane: hide/collapse/float/dock/reset
-        // -------------------------------
         private void HideEventsPane()
         {
             _eventsPaneVisible = false;
@@ -2021,19 +2165,19 @@ namespace BlackbirdInterface
             ApplyDockVisibilityFromExplorer();
         }
 
-        private void HideIpcUplinkPane()
-        {
-            var ipc = FindExplorerItem("IPC Uplink");
-            if (ipc != null)
-                ipc.IsEnabled = false;
-            ApplyDockVisibilityFromExplorer();
-        }
-
         private void HideFilesystemPane()
         {
             var fs = FindExplorerItem("Filesystem");
             if (fs != null)
                 fs.IsEnabled = false;
+            ApplyDockVisibilityFromExplorer();
+        }
+
+        private void HideRegistryPane()
+        {
+            var reg = FindExplorerItem("Registry");
+            if (reg != null)
+                reg.IsEnabled = false;
             ApplyDockVisibilityFromExplorer();
         }
 
@@ -2066,15 +2210,15 @@ namespace BlackbirdInterface
             ApplyDockVisibilityFromExplorer();
         }
 
-        private void ShowIpcUplinkPane()
-        {
-            SetExplorerPaneEnabled("IPC Uplink", true);
-            ApplyDockVisibilityFromExplorer();
-        }
-
         private void ShowFilesystemPane()
         {
             SetExplorerPaneEnabled("Filesystem", true);
+            ApplyDockVisibilityFromExplorer();
+        }
+
+        private void ShowRegistryPane()
+        {
+            SetExplorerPaneEnabled("Registry", true);
             ApplyDockVisibilityFromExplorer();
         }
 
@@ -2146,17 +2290,13 @@ namespace BlackbirdInterface
                 ApiViewBorder.Visibility =
                     mode == MainInterfaceViewMode.Api ? Visibility.Visible : Visibility.Collapsed;
             }
+            if (ExtendedViewBorder != null)
+            {
+                ExtendedViewBorder.Visibility =
+                    mode == MainInterfaceViewMode.Extended ? Visibility.Visible : Visibility.Collapsed;
+            }
             ApplyDockVisibilityFromExplorer();
-            if (SwitchViewMenuItem != null)
-            {
-                SwitchViewMenuItem.Header =
-                    mode == MainInterfaceViewMode.Api ? "Switch View (Telemetry)" : "Switch View (API)";
-            }
-            if (SwitchViewButtonLabel != null)
-            {
-                SwitchViewButtonLabel.Text =
-                    mode == MainInterfaceViewMode.Api ? "Switch to Main View" : "Switch to API View";
-            }
+            UpdateMainViewButtons(mode);
 
             if (IsLoaded)
             {
@@ -2164,24 +2304,55 @@ namespace BlackbirdInterface
             }
         }
 
-        private void ToggleMainInterfaceViewMode()
+        private void UpdateMainViewButtons(MainInterfaceViewMode mode)
         {
-            SetMainInterfaceViewMode(_mainViewMode == MainInterfaceViewMode.Telemetry
-                                         ? MainInterfaceViewMode.Api
-                                         : MainInterfaceViewMode.Telemetry);
+            SetMainViewButtonSelected(MainViewButton, mode == MainInterfaceViewMode.Telemetry);
+            SetMainViewButtonSelected(ApiViewButton, mode == MainInterfaceViewMode.Api);
+            SetMainViewButtonSelected(ExtendedViewButton, mode == MainInterfaceViewMode.Extended);
         }
 
-        private void SwitchView_Click(object sender, RoutedEventArgs e)
+        private static void SetMainViewButtonSelected(Button? button, bool selected)
+        {
+            if (button == null)
+            {
+                return;
+            }
+            button.IsEnabled = !selected;
+            button.Opacity = selected ? 0.72 : 1.0;
+        }
+
+        private void MainView_Click(object sender, RoutedEventArgs e)
         {
             _ = sender;
             _ = e;
-            ToggleMainInterfaceViewMode();
+            SetMainInterfaceViewMode(MainInterfaceViewMode.Telemetry);
+        }
+
+        private void ApiView_Click(object sender, RoutedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            SetMainInterfaceViewMode(MainInterfaceViewMode.Api);
+        }
+
+        private void ExtendedView_Click(object sender, RoutedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            SetMainInterfaceViewMode(MainInterfaceViewMode.Extended);
         }
 
         private void OpenDiagnosticsWindow()
         {
             var w = new DiagnosticsWindow(TryGetPid()) { Owner = this };
             w.Show();
+        }
+
+        private void SignatureIntelRules_Click(object sender, RoutedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            OpenSignatureIntelRulesWindow();
         }
 
         private void ProcessRelationsPaneHost_GraphStateChanged(object? sender, EventArgs e)
@@ -2381,19 +2552,16 @@ namespace BlackbirdInterface
             case "filesystem":
                 ShowFilesystemPane();
                 break;
+            case "registry":
+                ShowRegistryPane();
+                break;
             case "process-relations":
                 ShowProcessRelationsPane();
-                break;
-            case "ipc-uplink":
-                ShowIpcUplinkPane();
                 break;
             case "event-log":
                 SetExplorerPaneEnabled("Events", true);
                 ShowEventsPane();
                 OpenOrActivateEventLogWindow();
-                break;
-            case "switch-view":
-                ToggleMainInterfaceViewMode();
                 break;
             case "inspector-etw":
                 ShowEtwPane();
@@ -2407,12 +2575,19 @@ namespace BlackbirdInterface
                 ShowFilesystemPane();
                 OpenFilesystemInspector();
                 break;
+            case "inspector-registry":
+                ShowRegistryPane();
+                OpenRegistryInspector();
+                break;
             case "inspector-relations":
                 ShowProcessRelationsPane();
                 OpenProcessRelationsInspector();
                 break;
             case "diagnostics":
                 OpenDiagnosticsWindow();
+                break;
+            case "signature-intel-rules":
+                OpenSignatureIntelRulesWindow();
                 break;
             case "child-process-graph":
                 OpenOrActivateChildProcessGraphWindow();
@@ -2446,23 +2621,24 @@ namespace BlackbirdInterface
             AddToolbarViewOptionIfClosed("ETW Pane", "etw", IsEtwPaneOpen());
             AddToolbarViewOptionIfClosed("Heuristics Pane", "heuristics", IsHeuristicsPaneOpen());
             AddToolbarViewOptionIfClosed("Filesystem Pane", "filesystem", IsFilesystemPaneOpen());
+            AddToolbarViewOptionIfClosed("Registry Pane", "registry", IsRegistryPaneOpen());
             AddToolbarViewOptionIfClosed("Process Relations Pane", "process-relations", IsRelationsPaneOpen());
-            AddToolbarViewOptionIfClosed("IPC Uplink Pane", "ipc-uplink", IsIpcUplinkPaneOpen());
             AddToolbarViewOptionIfClosed("Event Log Window", "event-log",
                                          _eventLogWindow != null && _eventLogWindow.IsVisible);
-            AddToolbarViewOptionIfClosed(_mainViewMode == MainInterfaceViewMode.Api ? "Switch View: Telemetry"
-                                                                                    : "Switch View: API",
-                                         "switch-view", isOpen: false);
             AddToolbarViewOptionIfClosed("ETW Inspector", "inspector-etw", IsWindowOpenByTitle("ETW Inspector"));
             AddToolbarViewOptionIfClosed("Heuristics Inspector", "inspector-heuristics",
                                          IsWindowOpenByTitle("Detection Chain"));
             AddToolbarViewOptionIfClosed("Filesystem Inspector", "inspector-filesystem",
                                          IsWindowOpenByTitle("Filesystem"));
+            AddToolbarViewOptionIfClosed("Registry Inspector", "inspector-registry", IsWindowOpenByTitle("Registry"));
             AddToolbarViewOptionIfClosed("Process Relations Inspector", "inspector-relations",
                                          IsWindowOpenByTitle("Process Relations"));
             AddToolbarViewOptionIfClosed(
                 "Diagnostics Window", "diagnostics",
                 Application.Current.Windows.OfType<Window>().Any(w => w is DiagnosticsWindow && w.IsVisible));
+            AddToolbarViewOptionIfClosed(
+                "Rules Intel", "signature-intel-rules",
+                Application.Current.Windows.OfType<Window>().Any(w => w is SignatureIntelRulesWindow && w.IsVisible));
             AddToolbarViewOptionIfClosed("Child Process Graph", "child-process-graph",
                                          _childProcessGraphWindow != null && _childProcessGraphWindow.IsVisible);
 
@@ -2493,9 +2669,9 @@ namespace BlackbirdInterface
 
         private bool IsFilesystemPaneOpen() => (FindExplorerItem("Filesystem")?.IsEnabled ?? true);
 
-        private bool IsRelationsPaneOpen() => (FindExplorerItem("Process Relations")?.IsEnabled ?? true);
+        private bool IsRegistryPaneOpen() => (FindExplorerItem("Registry")?.IsEnabled ?? true);
 
-        private bool IsIpcUplinkPaneOpen() => (FindExplorerItem("IPC Uplink")?.IsEnabled ?? false);
+        private bool IsRelationsPaneOpen() => (FindExplorerItem("Process Relations")?.IsEnabled ?? true);
 
         private static bool IsWindowOpenByTitle(string title) =>
             Application.Current?.Windows.OfType<Window>().Any(w => w.IsVisible &&
@@ -2780,9 +2956,6 @@ namespace BlackbirdInterface
             OpenOrActivateChildProcessGraphWindow();
         }
 
-        // -------------------------------
-        // Settings / diagnostics
-        // -------------------------------
         private void OpenLaneSettings()
         {
             var w = new LaneSettingsWindow(this);
@@ -2797,6 +2970,69 @@ namespace BlackbirdInterface
             OpenDiagnosticsWindow();
         }
 
+        private void ExtendedActivityCopySummary_Click(object sender, RoutedEventArgs e)
+        {
+            if (TryGetSelectedExtendedActivityRow(sender, out ExtendedActivityRowSnapshot? row))
+            {
+                Clipboard.SetText(
+                    $"{row.LastSeenUtc:O} {row.TypeLabel} {row.ActorLabel}->{row.TargetLabel} {row.SubjectLabel} {row.OperationLabel} hits={row.Hits}");
+            }
+        }
+
+        private void ExtendedActivityCopyDetails_Click(object sender, RoutedEventArgs e)
+        {
+            if (TryGetSelectedExtendedActivityRow(sender, out ExtendedActivityRowSnapshot? row))
+            {
+                Clipboard.SetText(string.Join(
+                    Environment.NewLine,
+                    new[] { $"Type: {row.TypeLabel}", $"Actor: {row.ActorLabel}", $"Target: {row.TargetLabel}",
+                            $"Subject: {row.SubjectLabel}", $"Operation: {row.OperationLabel}",
+                            $"Last Seen: {row.LastSeenUtc:O}", $"Hits: {row.Hits}", $"Details: {row.DetailLabel}" }));
+            }
+        }
+
+        private void ExtendedActivityGrid_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            DataGridRow? row = FindAncestor<DataGridRow>(e.OriginalSource as DependencyObject);
+            if (row == null)
+            {
+                return;
+            }
+
+            row.IsSelected = true;
+            row.Focus();
+        }
+
+        private static bool TryGetSelectedExtendedActivityRow(object sender,
+                                                              [NotNullWhen(true)] out ExtendedActivityRowSnapshot? row)
+        {
+            row = null;
+            if (sender is MenuItem { Parent : ContextMenu { PlacementTarget : DataGrid grid } } &&
+                grid.SelectedItem is ExtendedActivityRowSnapshot selected)
+            {
+                row = selected;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static T? FindAncestor<T>(DependencyObject? source)
+            where T : DependencyObject
+        {
+            while (source != null)
+            {
+                if (source is T match)
+                {
+                    return match;
+                }
+
+                source = VisualTreeHelper.GetParent(source);
+            }
+
+            return null;
+        }
+
         private void PerformancePaneHost_ThreadDoubleClicked(object? sender, ThreadUsageRow row)
         {
             int pid = _currentSession?.Pid ?? TryGetPid();
@@ -2805,8 +3041,19 @@ namespace BlackbirdInterface
                 onSnapshotCaptured: snapshot => PersistThreadStackSnapshot(pid, row.Tid, row.State, snapshot),
                 observationTimeUtcProvider: GetCurrentObservedUtc,
                 liveCaptureAvailableProvider: () => _currentSession != null && _currentSession.Pid == pid &&
-                                                    !_currentSession.TargetExited &&
-                                                    !_currentSession.OfflineSnapshot) { Owner = this };
+                                                    !_currentSession.TargetExited && !_currentSession.OfflineSnapshot,
+                threadStateProvider: tid =>
+                    PerformancePaneHost.SnapshotTopThreads().FirstOrDefault(x => x.Tid == tid)?.State ??
+                    row.State) { Owner = this };
+            w.Show();
+        }
+
+        private void PerformancePaneHost_DisassemblyRequested(object? sender, MemoryDisassemblyRequestedEventArgs e)
+        {
+            if (_backendSession == null || !BkdcNative.IsAvailable)
+                return;
+            var w = new DisassemblyWindow(_backendSession, e.ProcessId, e.BaseAddress, e.RegionSize, e.Label,
+                                          e.SnapshotBytes, e.SnapshotOffset) { Owner = this };
             w.Show();
         }
 
@@ -2816,12 +3063,22 @@ namespace BlackbirdInterface
             IReadOnlyList<ThreadUsageRow> rows = PerformancePaneHost.SnapshotTopThreads();
             if (pid <= 0 || rows.Count == 0)
             {
-                ThemedMessageBox.Show(this, "No thread rows are available for stack comparison.", "Parallel Stacks",
-                                      MessageBoxButton.OK, MessageBoxImage.Information);
+                string reason =
+                    PerformancePaneHost.IsTargetSuspended
+                        ? "The target process is launch-suspended — thread sampling has not run yet. Resume the process first, then open parallel stacks."
+                        : "No thread rows are available for stack comparison.";
+                ThemedMessageBox.Show(this, reason, "Parallel Stacks", MessageBoxButton.OK,
+                                      MessageBoxImage.Information);
                 return;
             }
 
-            var window = new ParallelStacksWindow(pid, rows) { Owner = this };
+            var window = new ParallelStacksWindow(
+                pid, rows, historyProvider: GetThreadStackHistory, observationTimeUtcProvider: GetCurrentObservedUtc,
+                liveCaptureAvailableProvider: () => _currentSession != null && _currentSession.Pid == pid &&
+                                                    !_currentSession.TargetExited && !_currentSession.OfflineSnapshot,
+                threadSnapshotProvider: () => PerformancePaneHost.SnapshotTopThreads(),
+                onSnapshotCaptured: (processId, tid, state, snapshot) =>
+                    PersistThreadStackSnapshot(processId, tid, state, snapshot)) { Owner = this };
             window.Show();
         }
 
@@ -2870,8 +3127,28 @@ namespace BlackbirdInterface
             if (ProcessTabs.SelectedItem is not ProcessSessionTab tab)
                 return;
 
-            SwitchToSession(tab);
-            RefreshProcessStateBadge();
+            _queuedSessionSwitchTab = tab;
+            if (_sessionSwitchQueued)
+            {
+                return;
+            }
+
+            _sessionSwitchQueued = true;
+            Dispatcher.BeginInvoke(new Action(
+                () =>
+                {
+                    _sessionSwitchQueued = false;
+                    ProcessSessionTab? pending = _queuedSessionSwitchTab;
+                    _queuedSessionSwitchTab = null;
+                    if (pending == null || !ReferenceEquals(ProcessTabs.SelectedItem, pending) ||
+                        _isMainWindowShuttingDown)
+                    {
+                        return;
+                    }
+
+                    SwitchToSession(pending);
+                    RefreshProcessStateBadge();
+                }), DispatcherPriority.Background);
         }
 
         private DateTime GetCurrentObservedUtc()
@@ -2896,13 +3173,114 @@ namespace BlackbirdInterface
             return Path.Combine(baseDirectory, "SR71.dll");
         }
 
+        private static string ResolveDllHostPathFromInterfaceDirectory()
+        {
+            string baseDirectory = AppContext.BaseDirectory;
+            if (string.IsNullOrWhiteSpace(baseDirectory))
+            {
+                baseDirectory = Environment.CurrentDirectory;
+            }
+
+            return Path.Combine(baseDirectory, "BlackbirdDllHost.exe");
+        }
+
+        private static string QuoteCommandLineArgument(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return "\"\"";
+            }
+
+            var builder = new System.Text.StringBuilder();
+            builder.Append('"');
+            int backslashes = 0;
+            foreach (char ch in value)
+            {
+                if (ch == '\\')
+                {
+                    backslashes += 1;
+                    continue;
+                }
+
+                if (ch == '"')
+                {
+                    builder.Append('\\', backslashes * 2 + 1);
+                    builder.Append('"');
+                    backslashes = 0;
+                    continue;
+                }
+
+                if (backslashes > 0)
+                {
+                    builder.Append('\\', backslashes);
+                    backslashes = 0;
+                }
+                builder.Append(ch);
+            }
+
+            if (backslashes > 0)
+            {
+                builder.Append('\\', backslashes * 2);
+            }
+            builder.Append('"');
+            return builder.ToString();
+        }
+
+        private static string BuildDllHostCommandLineArguments(LaunchProfile launchProfile)
+        {
+            var args = new List<string> {
+                "--dll",
+                QuoteCommandLineArgument(launchProfile.AnalysisSubjectPath),
+                "--mode",
+                launchProfile.DllMode switch { DllLaunchMode.Export => "export", DllLaunchMode.Rundll => "rundll",
+                                               DllLaunchMode.Register => "register",
+                                               DllLaunchMode.Unregister => "unregister",
+                                               DllLaunchMode.Install => "install",
+                                               _ => "load" },
+                "--wait-ms",
+                launchProfile.DllWaitMilliseconds.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            };
+
+            if (launchProfile.HasDllExportName)
+            {
+                args.Add("--export");
+                args.Add(QuoteCommandLineArgument(launchProfile.DllExportName));
+            }
+            if (launchProfile.HasDllExportOrdinal)
+            {
+                args.Add("--ordinal");
+                args.Add(launchProfile.DllExportOrdinal.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
+            if (launchProfile.HasDllArgument)
+            {
+                args.Add("--arg");
+                args.Add(QuoteCommandLineArgument(launchProfile.DllArgument));
+            }
+            if (launchProfile.HasDllLoadFlags)
+            {
+                args.Add("--load-flags");
+                args.Add("0x" +
+                         launchProfile.DllLoadFlags.ToString("X", System.Globalization.CultureInfo.InvariantCulture));
+            }
+            if (launchProfile.DllFreeOnExit)
+            {
+                args.Add("--free-on-exit");
+            }
+            if (launchProfile.DllInstallDisable)
+            {
+                args.Add("--install-disable");
+            }
+
+            return string.Join(" ", args);
+        }
+
         private bool TrySendUserHookRequest(uint mode, uint processId, uint flags, string? imagePath,
                                             out BlackbirdNative.BkSetUserHookTargetResponse response, out string error)
         {
             response = default;
             error = string.Empty;
 
-            if (!BlackbirdControlDeviceSession.TryOpen(out var control, out error))
+            if (!BkctlDeviceSession.TryOpen(out var control, out error))
             {
                 return false;
             }
@@ -2916,11 +3294,12 @@ namespace BlackbirdInterface
                     return false;
                 }
 
-                if (!BlackbirdNative.SetUserHookTarget(control.Handle, mode, processId, flags, imagePath, hookPath,
+                if (!BlackbirdNative.SetUserHookTarget(control.Handle, mode, processId, flags, imagePath,
+                                                       BlackbirdNative.AnalysisSubjectKindProcess, null, hookPath, null,
                                                        null, null, 0, 0, 0, false,
                                                        BlackbirdNative.LaunchIntegrityDefault, out response))
                 {
-                    error = BlackbirdControlDeviceSession.FormatUserHookOperationError(
+                    error = BkctlDeviceSession.FormatUserHookOperationError(
                         "SetUserHookTarget", BlackbirdNative.LastError("SetUserHookTarget failed"), hookPath);
                     return false;
                 }
@@ -2948,6 +3327,313 @@ namespace BlackbirdInterface
             return true;
         }
 
+        private bool EnsureNoHookControllerCallInFlight(string operation)
+        {
+            if (!_hookControllerCallInFlight)
+            {
+                return true;
+            }
+
+            string message =
+                "A hook launch or attach request is still waiting for the controller to return. " +
+                "Blackbird will not start another hook operation until that call unwinds.";
+            StatusBlock.Text = "HOOK CONTROLLER REQUEST STILL IN PROGRESS";
+            OutputCapture.AppendLine($"Blocked overlapping hook operation ({operation}): previous request in-flight.");
+            ThemedMessageBox.Show(this, message, "Hook Operation In Progress", MessageBoxButton.OK,
+                                  MessageBoxImage.Warning);
+            return false;
+        }
+
+        private AnalysisOperationGuard BeginAnalysisOperation(string operation)
+        {
+            var guard = new AnalysisOperationGuard(this, operation);
+            _activeAnalysisOperation = guard;
+            return guard;
+        }
+
+        private void CancelActiveAnalysisOperationForShutdown()
+        {
+            AnalysisOperationGuard? guard = _activeAnalysisOperation;
+            if (guard != null)
+            {
+                guard.Cancel();
+                guard.CleanupAfterAbort();
+            }
+
+            CompleteHookControllerCall();
+            _openingProcessPicker = false;
+            _connectInProgress = false;
+        }
+
+        private void CleanupAbortedAnalysisOperation(AnalysisOperationGuard guard)
+        {
+            DisposePreparedLaunchBackendSession();
+            ClearPendingLaunchOptions();
+
+            if (guard.SessionStartAttempted || _isMainWindowShuttingDown)
+            {
+                StopLiveAnalysisSession(LiveAnalysisStopReason.OperationAbort, preserveApiGraphSnapshot: true,
+                                        fastTeardown: true, stopPerformance: true);
+            }
+
+            if (guard.LaunchOwnedPid > 0)
+            {
+                if (TryTerminateTargetProcess(guard.LaunchOwnedPid, out string terminateError))
+                {
+                    AppendOutputFromAnyThread(
+                        $"Analysis operation cleanup terminated launch-owned target: PID {guard.LaunchOwnedPid}");
+                }
+                else
+                {
+                    AppendOutputFromAnyThread(
+                        $"Analysis operation cleanup could not terminate PID {guard.LaunchOwnedPid}: {terminateError}");
+                }
+            }
+        }
+
+        private void CompleteHookControllerCall()
+        {
+            _hookControllerCallInFlight = false;
+        }
+
+        private void TrackLiveAnalysisSession(int pid, ProcessSessionTab? tab)
+        {
+            _liveAnalysisSession = new LiveAnalysisSessionLease(pid, tab, tab?.LaunchOwnedByInterface == true);
+        }
+
+        private void StopLiveAnalysisSession(LiveAnalysisStopReason reason, bool preserveApiGraphSnapshot = false,
+                                             bool fastTeardown = false, bool stopPerformance = false)
+        {
+            LiveAnalysisSessionLease? lease = _liveAnalysisSession;
+            if (lease != null && !lease.TryBeginTeardown())
+            {
+                lease = null;
+            }
+            _liveAnalysisSession = null;
+
+            StopTargetExitWatcher();
+            StopBackendSession(preserveApiGraphSnapshot, fastTeardown);
+
+            if (stopPerformance)
+            {
+                _perf?.Stop();
+                _samplerPid = 0;
+                if (PerformancePaneHost != null)
+                {
+                    PerformancePaneHost.SetProcessLiveDataAvailable(false);
+                    PerformancePaneHost.SetTargetSuspended(false);
+                }
+                _targetExecutionSuspended = false;
+            }
+
+            string reasonText = reason switch { LiveAnalysisStopReason.Shutdown => "shutdown",
+                                                LiveAnalysisStopReason.TargetExited => "target-exit",
+                                                LiveAnalysisStopReason.OperationAbort => "operation-abort",
+                                                LiveAnalysisStopReason.SessionSwitch => "session-switch",
+                                                _ => "teardown" };
+            if (lease != null)
+            {
+                AppendOutputFromAnyThread(
+                    $"Live analysis session detached pid={lease.Pid} reason={reasonText} launchOwned={lease.LaunchOwnedByInterface}");
+            }
+        }
+
+        private enum LiveAnalysisStopReason
+        {
+            SessionSwitch,
+            TargetExited,
+            OperationAbort,
+            Shutdown
+        }
+
+        private sealed class LiveAnalysisSessionLease
+        {
+            private int _teardownStarted;
+
+            internal LiveAnalysisSessionLease(int pid, ProcessSessionTab? tab, bool launchOwnedByInterface)
+            {
+                Pid = pid;
+                Tab = tab;
+                LaunchOwnedByInterface = launchOwnedByInterface;
+            }
+
+            internal int Pid { get; }
+            internal ProcessSessionTab? Tab { get; }
+            internal bool LaunchOwnedByInterface { get; }
+
+            internal bool TryBeginTeardown()
+            {
+                return Interlocked.Exchange(ref _teardownStarted, 1) == 0;
+            }
+        }
+
+        private sealed class AnalysisOperationGuard : IDisposable
+        {
+            private readonly MainWindow _owner;
+            private int _disposed;
+            private int _cleanupStarted;
+            private bool _completed;
+
+            internal AnalysisOperationGuard(MainWindow owner, string operation)
+            {
+                _owner = owner;
+                Operation = operation;
+                Cancellation = new CancellationTokenSource();
+            }
+
+            internal string Operation { get; }
+            internal CancellationTokenSource Cancellation { get; }
+            internal CancellationToken Token => Cancellation.Token;
+            internal int LaunchOwnedPid { get; private set; }
+            internal bool SessionStartAttempted { get; private set; }
+
+            internal void TrackLaunchOwnedPid(int pid)
+            {
+                if (pid > 0)
+                {
+                    LaunchOwnedPid = pid;
+                }
+            }
+
+            internal void MarkSessionStartAttempted()
+            {
+                SessionStartAttempted = true;
+            }
+
+            internal void Complete()
+            {
+                _completed = true;
+            }
+
+            internal void Cancel()
+            {
+                try
+                {
+                    Cancellation.Cancel();
+                }
+                catch
+                {
+                }
+            }
+
+            internal void CleanupAfterAbort()
+            {
+                if (_completed || Interlocked.Exchange(ref _cleanupStarted, 1) != 0)
+                {
+                    return;
+                }
+
+                _owner.CleanupAbortedAnalysisOperation(this);
+            }
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                {
+                    return;
+                }
+
+                if (ReferenceEquals(_owner._activeAnalysisOperation, this))
+                {
+                    _owner._activeAnalysisOperation = null;
+                }
+
+                CleanupAfterAbort();
+                Cancellation.Dispose();
+            }
+        }
+
+        private void AppendOutputFromAnyThread(string message)
+        {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+            {
+                return;
+            }
+
+            if (Dispatcher.CheckAccess())
+            {
+                OutputCapture.AppendLine(message);
+                return;
+            }
+
+            Dispatcher.BeginInvoke(new Action(() => OutputCapture.AppendLine(message)), DispatcherPriority.Background);
+        }
+
+        private void CompleteHookControllerCallFromWorker<T>(Task<T> task, Action<T>? lateResultCleanup)
+        {
+            Exception? cleanupError = null;
+            if (task.Status == TaskStatus.RanToCompletion)
+            {
+                try
+                {
+                    lateResultCleanup?.Invoke(task.Result);
+                }
+                catch (Exception ex)
+                {
+                    cleanupError = ex;
+                }
+            }
+            else if (task.IsFaulted)
+            {
+                _ = task.Exception;
+            }
+
+            if (cleanupError != null)
+            {
+                AppendOutputFromAnyThread($"Late hook controller cleanup failed: {cleanupError.Message}");
+            }
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+            {
+                return;
+            }
+
+            Dispatcher.BeginInvoke(new Action(CompleteHookControllerCall), DispatcherPriority.Background);
+        }
+
+        private async Task<(bool Completed, T Result)> RunHookControllerCallWithTimeoutAsync<T>(
+            Func<T> operation, LoadingWindow loading, string timeoutStatus, string timeoutDetail,
+            Action<T>? lateResultCleanup = null, CancellationToken cancellationToken = default)
+        {
+            _hookControllerCallInFlight = true;
+            Task<T> operationTask = Task.Run(operation);
+            loading.StartTimeout(HookControllerCallTimeout);
+
+            Task delayTask = Task.Delay(HookControllerCallTimeout, cancellationToken);
+            Task completed = await Task.WhenAny(operationTask, delayTask);
+            if (!ReferenceEquals(completed, operationTask))
+            {
+                if (!cancellationToken.IsCancellationRequested && !_isMainWindowShuttingDown)
+                {
+                    loading.SetTimedOut(timeoutStatus, timeoutDetail, HookControllerCallTimeout);
+                    OutputCapture.AppendLine(
+                        $"Hook controller request timed out after {HookControllerCallTimeoutSeconds}s; waiting for native IPC unwind.");
+                }
+                else
+                {
+                    AppendOutputFromAnyThread("Hook controller request cancelled during interface teardown.");
+                }
+                _ = operationTask.ContinueWith(task => CompleteHookControllerCallFromWorker(task, lateResultCleanup),
+                                               CancellationToken.None,
+                                               TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                if (!cancellationToken.IsCancellationRequested && !_isMainWindowShuttingDown)
+                {
+                    await Task.Delay(700);
+                }
+                return (false, default!);
+            }
+
+            try
+            {
+                T result = await operationTask;
+                return (true, result);
+            }
+            finally
+            {
+                loading.StopTimeout();
+                CompleteHookControllerCall();
+            }
+        }
+
         private bool TryLaunchWithUsermodeHooksAndPrepareSession(string imagePath, bool useEarlyBirdApc,
                                                                  LaunchProfile launchProfile, out int pid,
                                                                  out BlackbirdBackendSession? preparedSession,
@@ -2961,8 +3647,15 @@ namespace BlackbirdInterface
                 error = "Launch path is empty.";
                 return false;
             }
+            if (launchProfile.HasCommandLineArguments &&
+                launchProfile.CommandLineArguments.Length >= MaxControllerLaunchArgumentChars)
+            {
+                error =
+                    $"Launch arguments are too long for the controller IPC limit ({MaxControllerLaunchArgumentChars - 1} characters).";
+                return false;
+            }
 
-            uint flags = BlackbirdNative.IpcUserHookFlagLaunchEarlybirdApc;
+            uint flags = useEarlyBirdApc ? BlackbirdNative.IpcUserHookFlagLaunchEarlybirdApc : 0;
             if (launchProfile.LeaveSuspendedAfterReady)
             {
                 flags |= BlackbirdNative.IpcUserHookFlagDeferredLaunchGateRelease;
@@ -2970,7 +3663,7 @@ namespace BlackbirdInterface
 
             try
             {
-                if (!BlackbirdControlDeviceSession.TryOpen(out var control, out error))
+                if (!BkctlDeviceSession.TryOpen(out var control, out error))
                 {
                     return false;
                 }
@@ -2985,21 +3678,20 @@ namespace BlackbirdInterface
                     }
 
                     string environmentOverrides = launchProfile.ToIpcEnvironmentOverrideBlock();
-                    if (launchProfile.LeaveSuspendedAfterReady)
-                    {
-                        environmentOverrides = AppendEnvironmentOverride(environmentOverrides,
-                                                                         "BLACKBIRD_HOOK_LAUNCH_GATE_DEFER_OPEN=1");
-                    }
                     if (!BlackbirdNative.SetUserHookTarget(
-                            control.Handle, BlackbirdNative.IpcUserHookTargetLaunch, 0, flags, imagePath, hookPath,
+                            control.Handle, BlackbirdNative.IpcUserHookTargetLaunch, 0, flags, imagePath,
+                            launchProfile.HasAnalysisSubject ? BlackbirdNative.AnalysisSubjectKindDll
+                                                             : BlackbirdNative.AnalysisSubjectKindProcess,
+                            launchProfile.HasAnalysisSubject ? launchProfile.AnalysisSubjectPath : null, hookPath,
                             launchProfile.HasWorkingDirectory ? launchProfile.WorkingDirectory : null,
                             string.IsNullOrWhiteSpace(environmentOverrides) ? null : environmentOverrides,
+                            launchProfile.HasCommandLineArguments ? launchProfile.CommandLineArguments : null,
                             launchProfile.ParentProcessId, MapLaunchPriorityClass(launchProfile.Priority),
                             launchProfile.AffinityMask, launchProfile.InheritHandles,
                             (uint)launchProfile.IntegrityLevel,
                             out BlackbirdNative.BkSetUserHookTargetResponse response))
                     {
-                        error = BlackbirdControlDeviceSession.FormatUserHookOperationError(
+                        error = BkctlDeviceSession.FormatUserHookOperationError(
                             "SetUserHookTarget(launch)", BlackbirdNative.LastError("SetUserHookTarget(launch) failed"),
                             hookPath);
                         return false;
@@ -3017,7 +3709,9 @@ namespace BlackbirdInterface
                     _ = control.DetachHandle();
 
                     OutputCapture.AppendLine(
-                        $"Hook launch via controller (earlybird-apc): {imagePath} \u2192 PID {pid} (pre-armed session)");
+                        launchProfile.HasAnalysisSubject
+                            ? $"Hook launch via controller (earlybird-apc): host={imagePath} subject={launchProfile.AnalysisSubjectPath} \u2192 PID {pid} (pre-armed session)"
+                            : $"Hook launch via controller (earlybird-apc): {imagePath} \u2192 PID {pid} (pre-armed session)");
                     return true;
                 }
             }
@@ -3036,12 +3730,20 @@ namespace BlackbirdInterface
             }
         }
 
-        // -------------------------------
-        // Stub buttons
-        // -------------------------------
         private async void Connect_Click(object sender, RoutedEventArgs e)
         {
-            if (_connectInProgress)
+            using AnalysisOperationGuard operation = BeginAnalysisOperation("attach/analyze");
+            await ConnectToCurrentPidAsync(operation.Token, operation);
+            if (operation.SessionStartAttempted && !operation.Token.IsCancellationRequested && !_isMainWindowShuttingDown)
+            {
+                operation.Complete();
+            }
+        }
+
+        private async Task ConnectToCurrentPidAsync(CancellationToken cancellationToken,
+                                                    AnalysisOperationGuard? operationGuard = null)
+        {
+            if (_connectInProgress || cancellationToken.IsCancellationRequested || _isMainWindowShuttingDown)
             {
                 return;
             }
@@ -3059,40 +3761,73 @@ namespace BlackbirdInterface
                     return;
                 }
 
-                if (!TryOpenTargetProcess(pid, out var processName, out var failure, out var accessDenied))
+                bool hookPreconfigured = _pendingHookPreconfigured;
+                bool allowPreparedLaunchAttach =
+                    hookPreconfigured && _preparedLaunchBackendSession != null && _preparedLaunchBackendPid == pid;
+                if (_pendingLaunchOwnedByInterface)
                 {
-                    DisposePreparedLaunchBackendSession();
-                    ClearPendingLaunchOptions();
-                    StatusBlock.Text = failure;
-                    if (accessDenied)
-                    {
-                        ThemedMessageBox.Show(
-                            this,
-                            $"Access denied while opening PID {pid}. The process handle could not be opened with required access rights.",
-                            "Target Attach Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    }
-
-                    RefreshProcessStateBadge();
-                    return;
+                    operationGuard?.TrackLaunchOwnedPid(pid);
                 }
 
-                StatusBlock.Text = $"CONNECTED TO {processName} ({pid})";
+                if (!TryOpenTargetProcess(pid, out var processName, out var failure, out var accessDenied))
+                {
+                    if (!allowPreparedLaunchAttach)
+                    {
+                        DisposePreparedLaunchBackendSession();
+                        ClearPendingLaunchOptions();
+                        StatusBlock.Text = failure;
+                        if (accessDenied)
+                        {
+                            ThemedMessageBox.Show(
+                                this,
+                                $"Access denied while opening PID {pid}. The process handle could not be opened with required access rights.",
+                                "Target Attach Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        }
+
+                        RefreshProcessStateBadge();
+                        return;
+                    }
+
+                    processName = $"PID {pid}";
+                    StatusBlock.Text = $"CONNECTED TO PROTECTED TARGET ({pid})";
+                    OutputCapture.AppendLine(
+                        $"Protected launch attach accepted via prepared controller session: PID {pid}");
+                }
+                else
+                {
+                    StatusBlock.Text = $"CONNECTED TO {processName} ({pid})";
+                }
+
                 var tab = AddOrSelectProcessTab(pid, $"{processName} ({pid})", select: true);
                 if (_pendingLaunchOptions)
                 {
                     tab.LaunchOwnedByInterface = _pendingLaunchOwnedByInterface;
                 }
-                bool hookPreconfigured = _pendingHookPreconfigured;
+                if (_pendingAnalysisSubjectKind == LaunchTargetKind.Dll &&
+                    !string.IsNullOrWhiteSpace(_pendingAnalysisSubjectPath))
+                {
+                    tab.AnalysisSubjectKind = LaunchTargetKind.Dll;
+                    tab.AnalysisSubjectPath = _pendingAnalysisSubjectPath;
+                    tab.AnalysisHostPath = _pendingAnalysisHostPath;
+                    string subjectName = Path.GetFileName(_pendingAnalysisSubjectPath);
+                    tab.Title = NormalizeSessionTitle(
+                        $"{(string.IsNullOrWhiteSpace(subjectName) ? "DLL" : subjectName)} via BlackbirdDllHost ({pid})");
+                    DiagnosticsState.SetValue("Analysis Subject", tab.AnalysisSubjectPath);
+                }
                 bool launchStartsSuspended = _pendingLaunchStartsSuspended;
                 bool leaveSuspendedAfterReady = _pendingLeaveSuspendedAfterReady;
-                bool deferredLaunchGateResume = _pendingDeferredLaunchGateResume;
+                if (hookPreconfigured)
+                {
+                    OutputCapture.AppendLine(
+                        $"Protected launch attach state: pid={pid} backendPrepared={allowPreparedLaunchAttach} leaveSuspended={leaveSuspendedAfterReady} uiStartsSuspended={launchStartsSuspended}");
+                }
                 if (_pendingLaunchOptions)
                 {
                     tab.UseUsermodeHooks = _pendingUseUsermodeHooks;
                     tab.AutoOpenApiGraphOnNextStart = _pendingAutoOpenApiGraph;
                 }
                 tab.LaunchStartsSuspendedPending = launchStartsSuspended;
-                tab.DeferredLaunchGateResumePending = deferredLaunchGateResume;
+                tab.DeferredLaunchGateResumePending = false;
                 ClearPendingLaunchOptions();
 
                 if (tab.UseUsermodeHooks && !hookPreconfigured)
@@ -3100,19 +3835,53 @@ namespace BlackbirdInterface
                     LoadingWindow? hookLoading = null;
                     try
                     {
+                        if (cancellationToken.IsCancellationRequested || _isMainWindowShuttingDown)
+                        {
+                            DisposePreparedLaunchBackendSession();
+                            return;
+                        }
+                        if (!EnsureNoHookControllerCallInFlight("attach usermode hooks"))
+                        {
+                            DisposePreparedLaunchBackendSession();
+                            return;
+                        }
+
                         hookLoading = new LoadingWindow { Owner = this };
                         hookLoading.SetProgress(38, "Attaching usermode hooks...",
-                                                $"Injecting SR71.dll into PID {pid}.");
+                                                $"Injecting SR71.dll into PID {pid}. UI timeout is {HookControllerCallTimeoutSeconds}s.");
                         hookLoading.Show();
                         await Dispatcher.InvokeAsync(() =>
                                                      {},
                                                      DispatcherPriority.Render);
 
-                        var hookResult = await Task.Run(() =>
-                                                        {
-                                                            bool ok = TryAttachUsermodeHooks(pid, out string err);
-                                                            return (ok, err);
-                                                        });
+                        var hookWait = await RunHookControllerCallWithTimeoutAsync(
+                                           () =>
+                                           {
+                                               bool ok = TryAttachUsermodeHooks(pid, out string err);
+                                               return (ok, err);
+                                           },
+                                           hookLoading,
+                                           "Hook attach timed out",
+                                           $"The controller did not complete SR71 attach for PID {pid} within {HookControllerCallTimeoutSeconds}s.",
+                                           cancellationToken: cancellationToken);
+
+                        if (!hookWait.Completed)
+                        {
+                            DisposePreparedLaunchBackendSession();
+                            if (cancellationToken.IsCancellationRequested || _isMainWindowShuttingDown)
+                            {
+                                return;
+                            }
+                            StatusBlock.Text = $"HOOK ATTACH TIMED OUT FOR PID {pid}";
+                            ThemedMessageBox.Show(
+                                this,
+                                $"Timed out attaching usermode hooks to PID {pid}. The controller IPC call is still being allowed to unwind, and overlapping hook operations are blocked until it returns.",
+                                "Hook Attach Timed Out", MessageBoxButton.OK, MessageBoxImage.Error);
+                            RefreshProcessStateBadge();
+                            return;
+                        }
+
+                        var hookResult = hookWait.Result;
 
                         if (!hookResult.ok)
                         {
@@ -3140,21 +3909,32 @@ namespace BlackbirdInterface
                     }
                 }
 
+                if (cancellationToken.IsCancellationRequested || _isMainWindowShuttingDown)
+                {
+                    DisposePreparedLaunchBackendSession();
+                    return;
+                }
+
                 tab.TargetExited = false;
+                tab.TargetExitReason = string.Empty;
                 tab.OfflineSnapshot = false;
                 if (!ReferenceEquals(_currentSession, tab))
                 {
+                    operationGuard?.MarkSessionStartAttempted();
                     SwitchToSession(tab);
                 }
                 else
                 {
+                    operationGuard?.MarkSessionStartAttempted();
                     StartLiveCaptureForPid(pid, tab.UseUsermodeHooks, launchStartsSuspended);
                 }
 
                 if (hookPreconfigured && !leaveSuspendedAfterReady)
                 {
+                    OutputCapture.AppendLine($"Protected launch auto-resume requested: PID {pid}");
                     if (!TryControlTargetExecution(suspend: false, out string resumeError))
                     {
+                        OutputCapture.AppendLine($"Protected launch auto-resume failed: PID {pid} error={resumeError}");
                         _targetExecutionSuspended = true;
                         PerformancePaneHost.SetTargetSuspended(true);
                         StatusBlock.Text = $"SESSION READY, TARGET STILL SUSPENDED: PID {pid}";
@@ -3171,9 +3951,14 @@ namespace BlackbirdInterface
                     PerformancePaneHost.SetTargetSuspended(false);
                     StatusBlock.Text =
                         $"LIVE CAPTURE READY: {NormalizeSessionTitle(_currentSession?.Title ?? $"PID {pid}")}";
+                    OutputCapture.AppendLine($"Protected launch auto-resume completed: PID {pid}");
                 }
                 else if (launchStartsSuspended)
                 {
+                    if (hookPreconfigured)
+                    {
+                        OutputCapture.AppendLine($"Protected launch left suspended by operator option: PID {pid}");
+                    }
                     _targetExecutionSuspended = true;
                     PerformancePaneHost.SetTargetSuspended(true);
                     StatusBlock.Text =
@@ -3213,9 +3998,16 @@ namespace BlackbirdInterface
 
                 var picker = new ProcessPickerWindow { Owner = this, ShowLaunchOptions = showLaunchOptions };
 
+                loading.SetProgress(62, "Preparing process list...", "Enumerating launch targets before showing picker.");
+                await Dispatcher.InvokeAsync(() =>
+                                             {},
+                                             DispatcherPriority.Render);
+                picker.PrimeForFirstShow();
                 loading.SetProgress(100, "Opening picker...",
-                                    "Process picker will stream process metadata after opening.");
-                await Task.Delay(90);
+                                    "Process picker is ready.");
+                await Dispatcher.InvokeAsync(() =>
+                                             {},
+                                             DispatcherPriority.Render);
                 loading.Close();
                 loading = null;
 
@@ -3228,11 +4020,13 @@ namespace BlackbirdInterface
                 bool useUsermodeHooks = false;
                 bool autoOpenApiGraph = false;
                 bool useEarlyBirdApcLaunch = false;
+                LaunchTargetKind launchTargetKind =
+                    picker.LaunchSelectedImage ? picker.SelectedLaunchTargetKind : LaunchTargetKind.Executable;
                 LaunchProfile launchProfile = new();
                 if (showLaunchOptions && (picker.LaunchSelectedImage || selectedPid > 0))
                 {
-                    var parametersWindow =
-                        new LaunchParametersWindow(isLaunchTarget: picker.LaunchSelectedImage) { Owner = this };
+                    var parametersWindow = new LaunchParametersWindow(isLaunchTarget: picker.LaunchSelectedImage,
+                                                                      targetKind: launchTargetKind) { Owner = this };
                     bool? parametersAccepted = parametersWindow.ShowDialog();
                     if (parametersAccepted != true)
                     {
@@ -3243,16 +4037,47 @@ namespace BlackbirdInterface
                     autoOpenApiGraph = parametersWindow.AutoOpenApiGraphWindow;
                     useEarlyBirdApcLaunch = parametersWindow.UseEarlyBirdApcLaunch;
                     launchProfile = parametersWindow.LaunchProfile;
+                    launchProfile.TargetKind = launchTargetKind;
                 }
+
+                using AnalysisOperationGuard operation =
+                    BeginAnalysisOperation(showLaunchOptions && picker.LaunchSelectedImage
+                                               ? "launch/analyze"
+                                               : "attach/analyze");
 
                 if (showLaunchOptions && picker.LaunchSelectedImage)
                 {
-                    string launchImagePath = picker.LaunchImagePath?.Trim() ?? string.Empty;
-                    if (string.IsNullOrWhiteSpace(launchImagePath))
+                    string selectedImagePath = picker.LaunchImagePath?.Trim() ?? string.Empty;
+                    if (string.IsNullOrWhiteSpace(selectedImagePath))
                     {
                         ThemedMessageBox.Show(this, "Launch path is empty.", "Launch failed", MessageBoxButton.OK,
                                               MessageBoxImage.Error);
                         return;
+                    }
+
+                    string launchImagePath = selectedImagePath;
+                    if (launchTargetKind == LaunchTargetKind.Dll)
+                    {
+                        string dllHostPath = ResolveDllHostPathFromInterfaceDirectory();
+                        if (!File.Exists(dllHostPath))
+                        {
+                            ThemedMessageBox.Show(
+                                this, $"DLL launch failed because the DLL host is missing: '{dllHostPath}'.",
+                                "DLL launch failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                            return;
+                        }
+
+                        launchProfile.TargetKind = LaunchTargetKind.Dll;
+                        launchProfile.AnalysisSubjectPath = selectedImagePath;
+                        launchProfile.AnalysisHostPath = dllHostPath;
+                        launchProfile.CommandLineArguments = BuildDllHostCommandLineArguments(launchProfile);
+                        if (!launchProfile.HasWorkingDirectory)
+                        {
+                            launchProfile.WorkingDirectory = Path.GetDirectoryName(selectedImagePath) ?? string.Empty;
+                        }
+                        launchImagePath = dllHostPath;
+                        useUsermodeHooks = true;
+                        useEarlyBirdApcLaunch = true;
                     }
 
                     if (useUsermodeHooks)
@@ -3264,17 +4089,71 @@ namespace BlackbirdInterface
                         string launchError = string.Empty;
                         try
                         {
+                            if (!EnsureNoHookControllerCallInFlight("launch target with hooks"))
+                            {
+                                return;
+                            }
+
                             launchLoading = new LoadingWindow { Owner = this };
                             launchLoading.SetProgress(42, "Launching target with hooks...",
-                                                      "Submitting launch + SR71 staging request.");
+                                                      "Submitting launch + SR71 staging request. UI timeout is " +
+                                                      HookControllerCallTimeoutSeconds + "s.");
                             launchLoading.Show();
                             await Dispatcher.InvokeAsync(() =>
                                                          {},
                                                          DispatcherPriority.Render);
 
-                            launchOk = await Task.Run(() => TryLaunchWithUsermodeHooksAndPrepareSession(
-                                                          launchImagePath, useEarlyBirdApcLaunch, launchProfile,
-                                                          out launchedPid, out preparedSession, out launchError));
+                            var launchWait = await RunHookControllerCallWithTimeoutAsync(
+                                                 () =>
+                                                 {
+                                                     bool ok = TryLaunchWithUsermodeHooksAndPrepareSession(
+                                                         launchImagePath, useEarlyBirdApcLaunch, launchProfile,
+                                                         out int taskPid, out BlackbirdBackendSession? taskSession,
+                                                         out string taskError);
+                                                     return (ok, taskPid, taskSession, taskError);
+                                                 },
+                                                 launchLoading,
+                                                 "Hook launch timed out",
+                                                 "The controller did not return from target launch and SR71 readiness " +
+                                                 $"within {HookControllerCallTimeoutSeconds}s.",
+                                                 lateResult =>
+                                                 {
+                                                     lateResult.taskSession?.Dispose();
+                                                     if (lateResult.taskPid > 0)
+                                                     {
+                                                         if (TryTerminateTargetProcess(lateResult.taskPid,
+                                                                                       out string terminateError))
+                                                         {
+                                                             AppendOutputFromAnyThread(
+                                                                 $"Late hook launch result was terminated fail-closed: PID {lateResult.taskPid}");
+                                                         }
+                                                         else
+                                                         {
+                                                             AppendOutputFromAnyThread(
+                                                                 $"Late hook launch result cleanup could not terminate PID {lateResult.taskPid}: {terminateError}");
+                                                         }
+                                                     }
+                                                 },
+                                                 cancellationToken: operation.Token);
+
+                            if (!launchWait.Completed)
+                            {
+                                launchOk = false;
+                                launchError =
+                                    $"Controller hook launch did not return within {HookControllerCallTimeoutSeconds} seconds. " +
+                                    "Blackbird has blocked overlapping hook launches until the native IPC call unwinds.";
+                            }
+                            else
+                            {
+                                launchOk = launchWait.Result.ok;
+                                launchedPid = launchWait.Result.taskPid;
+                                preparedSession = launchWait.Result.taskSession;
+                                launchError = launchWait.Result.taskError;
+                                if (launchedPid > 0)
+                                {
+                                    operation.TrackLaunchOwnedPid(launchedPid);
+                                }
+                            }
                         }
                         finally
                         {
@@ -3297,12 +4176,18 @@ namespace BlackbirdInterface
                                 }
                             }
 
+                            if (operation.Token.IsCancellationRequested || _isMainWindowShuttingDown)
+                            {
+                                return;
+                            }
+
                             ThemedMessageBox.Show(this, launchError, "Hook launch failed", MessageBoxButton.OK,
                                                   MessageBoxImage.Error);
                             return;
                         }
 
                         selectedPid = launchedPid;
+                        operation.TrackLaunchOwnedPid(selectedPid);
                         _preparedLaunchBackendSession = preparedSession;
                         _preparedLaunchBackendPid = selectedPid;
                         hookPreconfigured = true;
@@ -3316,6 +4201,8 @@ namespace BlackbirdInterface
                                                   MessageBoxImage.Error);
                             return;
                         }
+
+                        operation.TrackLaunchOwnedPid(selectedPid);
                     }
                 }
 
@@ -3328,15 +4215,26 @@ namespace BlackbirdInterface
                 _pendingUseUsermodeHooks = showLaunchOptions && useUsermodeHooks;
                 _pendingAutoOpenApiGraph = showLaunchOptions && autoOpenApiGraph;
                 _pendingHookPreconfigured = hookPreconfigured;
-                _pendingLaunchStartsSuspended = showLaunchOptions && picker.LaunchSelectedImage &&
-                                                (hookPreconfigured || launchProfile.LeaveSuspendedAfterReady);
+                _pendingLaunchStartsSuspended =
+                    showLaunchOptions && picker.LaunchSelectedImage && launchProfile.LeaveSuspendedAfterReady;
                 _pendingLeaveSuspendedAfterReady =
                     showLaunchOptions && picker.LaunchSelectedImage && launchProfile.LeaveSuspendedAfterReady;
-                _pendingDeferredLaunchGateResume =
-                    showLaunchOptions && picker.LaunchSelectedImage && launchProfile.LeaveSuspendedAfterReady;
                 _pendingLaunchOwnedByInterface = showLaunchOptions && picker.LaunchSelectedImage;
+                _pendingAnalysisSubjectKind = launchProfile.TargetKind;
+                _pendingAnalysisSubjectPath =
+                    launchProfile.HasAnalysisSubject ? launchProfile.AnalysisSubjectPath : string.Empty;
+                _pendingAnalysisHostPath =
+                    !string.IsNullOrWhiteSpace(launchProfile.AnalysisHostPath)
+                        ? launchProfile.AnalysisHostPath
+                        : (launchProfile.HasAnalysisSubject ? ResolveDllHostPathFromInterfaceDirectory()
+                                                            : string.Empty);
                 PidBox.Text = selectedPid.ToString();
-                Connect_Click(this, new RoutedEventArgs());
+                await ConnectToCurrentPidAsync(operation.Token, operation);
+                if (operation.SessionStartAttempted && !operation.Token.IsCancellationRequested &&
+                    !_isMainWindowShuttingDown)
+                {
+                    operation.Complete();
+                }
             }
             finally
             {
@@ -3416,8 +4314,10 @@ namespace BlackbirdInterface
             _pendingHookPreconfigured = false;
             _pendingLaunchStartsSuspended = false;
             _pendingLeaveSuspendedAfterReady = false;
-            _pendingDeferredLaunchGateResume = false;
             _pendingLaunchOwnedByInterface = false;
+            _pendingAnalysisSubjectKind = LaunchTargetKind.Executable;
+            _pendingAnalysisSubjectPath = string.Empty;
+            _pendingAnalysisHostPath = string.Empty;
         }
 
         private static uint MapLaunchPriorityClass(LaunchPriorityPreset priority) => priority switch {
@@ -3430,9 +4330,9 @@ namespace BlackbirdInterface
             _ => 0u
         };
 
-        internal bool TryOpenSessionFromStartupPath(string path, out string error)
+        internal async Task<string> TryOpenSessionFromStartupPathAsync(string path)
         {
-            return TryOpenSessionArchivePath(path, merge: false, out error);
+            return await TryOpenSessionArchivePathAsync(path, merge: false);
         }
 
         private void Suspend_Click(object sender, RoutedEventArgs e)
@@ -3452,6 +4352,7 @@ namespace BlackbirdInterface
             _perf?.Stop();
             PerformancePaneHost.SetTargetSuspended(true);
             PerformancePaneHost.SetProcessLiveDataAvailable(false);
+            PerformancePaneHost.RefreshLiveProcessDetails();
             ApplyPausedTimelineRanges();
             SetIntegrityDiagnosticsForSuspension();
             StatusBlock.Text = $"TARGET PAUSED: PID {TryGetPid()}";
@@ -3461,23 +4362,6 @@ namespace BlackbirdInterface
 
         private void Resume_Click(object sender, RoutedEventArgs e)
         {
-            if (_currentSession?.DeferredLaunchGateResumePending == true &&
-                !TryReleaseDeferredLaunchGateResume(_currentSession.Pid, out string releaseError))
-            {
-                if (releaseError.Contains("win32=2", StringComparison.OrdinalIgnoreCase))
-                {
-                    _currentSession.DeferredLaunchGateResumePending = false;
-                    OutputCapture.AppendLine(
-                        $"Deferred launch gate event missing for PID {_currentSession.Pid}; falling back to normal resume.");
-                }
-                else
-                {
-                    ThemedMessageBox.Show(this, releaseError, "Resume Target", MessageBoxButton.OK,
-                                          MessageBoxImage.Error);
-                    return;
-                }
-            }
-
             if (!TryControlTargetExecution(suspend: false, out string error))
             {
                 ThemedMessageBox.Show(this, error, "Resume Target", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -3512,12 +4396,46 @@ namespace BlackbirdInterface
                 _perf != null)
             {
                 _perf.SetTargetPid(_currentSession.Pid);
+                _perf.ResetBaselines();
                 _perf.Start();
+                _perf.RequestImmediateSample();
             }
             PerformancePaneHost.SetProcessLiveDataAvailable(true);
+            PerformancePaneHost.RefreshLiveProcessDetails();
+            SchedulePostResumeProcessRefresh(pid: _currentSession?.Pid ?? TryGetPid());
             StatusBlock.Text = $"TARGET RESUMED: PID {TryGetPid()}";
             RefreshProcessStateBadge();
             RefreshToolbarCommandState();
+        }
+
+        private void SchedulePostResumeProcessRefresh(int pid)
+        {
+            if (pid <= 0)
+            {
+                return;
+            }
+
+            _ = Task.Run(async () =>
+                         {
+                             await Task.Delay(250).ConfigureAwait(false);
+                             await Dispatcher.InvokeAsync(
+                                 () =>
+                                 {
+                                     ProcessSessionTab? session = _currentSession;
+                                     if (_targetExecutionSuspended || session == null || session.Pid != pid ||
+                                         session.TargetExited)
+                                     {
+                                         return;
+                                     }
+
+                                     _perf?.RequestImmediateSample();
+                                     PerformancePaneHost.SetProcessLiveDataAvailable(true);
+                                     PerformancePaneHost.RefreshLiveProcessDetails();
+                                     RefreshProcessStateBadge();
+                                     RefreshToolbarCommandState();
+                                 },
+                                 DispatcherPriority.Background);
+                         });
         }
 
         private static readonly string[] _integrityDiagnosticKeys =
@@ -3528,12 +4446,21 @@ namespace BlackbirdInterface
             foreach (string key in _integrityDiagnosticKeys)
             {
                 string? current = DiagnosticsState.GetValue(key);
+                if (current != null && current.Contains("Disabled", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 if (current == null || !current.Contains("TAMPERED", StringComparison.OrdinalIgnoreCase))
                 {
                     DiagnosticsState.SetValue(key, "INACTIVE (target suspended)");
                 }
             }
-            DiagnosticsState.SetValue("Usermode Hooks", "INACTIVE (target suspended)");
+            if (DiagnosticsState.GetValue("Usermode Hooks")?.Contains("Disabled", StringComparison.OrdinalIgnoreCase) !=
+                true)
+            {
+                DiagnosticsState.SetValue("Usermode Hooks", "INACTIVE (target suspended)");
+            }
         }
 
         private static void ClearIntegrityDiagnosticsForSuspension()
@@ -3651,8 +4578,6 @@ namespace BlackbirdInterface
             return true;
         }
 
-        private static string GetDeferredLaunchGateEventName(int pid) => $"Local\\BlackbirdLaunchGateRelease.{pid}";
-
         private static string AppendEnvironmentOverride(string existing, string line)
         {
             if (string.IsNullOrWhiteSpace(line))
@@ -3665,10 +4590,9 @@ namespace BlackbirdInterface
                 return line;
             }
 
-            string[] entries = existing
-                .Replace("\r\n", "\n", StringComparison.Ordinal)
-                .Replace('\r', '\n')
-                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            string[] entries = existing.Replace("\r\n", "\n", StringComparison.Ordinal)
+                                   .Replace('\r', '\n')
+                                   .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
             int separator = line.IndexOf('=');
             if (separator > 0)
@@ -3686,41 +4610,6 @@ namespace BlackbirdInterface
             }
 
             return existing + "\n" + line;
-        }
-
-        private static bool TryReleaseDeferredLaunchGateResume(int pid, out string error)
-        {
-            error = string.Empty;
-            if (pid <= 0)
-            {
-                error = "Invalid PID for deferred launch gate release.";
-                return false;
-            }
-
-            IntPtr handle = Kernel32Native.OpenEvent(
-                Kernel32Native.EventModifyState | Kernel32Native.Synchronize, false, GetDeferredLaunchGateEventName(pid));
-            if (handle == IntPtr.Zero)
-            {
-                int openErr = Marshal.GetLastWin32Error();
-                error = $"Failed to open deferred launch gate event for PID {pid} (win32={openErr}).";
-                return false;
-            }
-
-            try
-            {
-                if (!Kernel32Native.SetEvent(handle))
-                {
-                    int setErr = Marshal.GetLastWin32Error();
-                    error = $"Failed to release deferred launch gate for PID {pid} (win32={setErr}).";
-                    return false;
-                }
-
-                return true;
-            }
-            finally
-            {
-                _ = Kernel32Native.CloseHandle(handle);
-            }
         }
 
         private bool TryTerminateTargetProcess(int pid, out string error)
@@ -3752,9 +4641,6 @@ namespace BlackbirdInterface
             }
         }
 
-        // -------------------------------
-        // Demo feed
-        // -------------------------------
         private void SeedFake()
         {
             var t0 = _captureStartUtc;
@@ -4049,6 +4935,15 @@ namespace BlackbirdInterface
             RefreshApiViewPresentation();
         }
 
+        private void ApiViewMode_Changed(object sender, SelectionChangedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            _apiViewPresentationMode = ApiViewModeBox?.SelectedIndex == 1 ? ApiViewPresentationMode.ThreadTimeline
+                                                                          : ApiViewPresentationMode.CallGraph;
+            RefreshApiViewPresentation();
+        }
+
         private void ApiViewClearFilters_Click(object sender, RoutedEventArgs e)
         {
             _ = sender;
@@ -4113,7 +5008,7 @@ namespace BlackbirdInterface
 
             ApiViewSelectedTitleBlock.Text = selected.ApiName;
             ApiViewSelectedMetaBlock.Text =
-                $"Caller {selected.SourceLabel}  |  Target {selected.TargetLabel}  |  Thread {selected.ThreadLabel}  |  Hits {selected.Hits}  |  Last Seen {selected.LastSeen}" +
+                $"Caller {selected.SourceLabel}  |  Target {selected.TargetLabel}  |  Thread {selected.ThreadLabel}  |  Hits {selected.Hits}  |  First Seen {selected.FirstSeen}  |  Last Seen {selected.LastSeen}" +
                 (string.IsNullOrWhiteSpace(selected.AbsoluteLastSeen) ? string.Empty
                                                                       : $" ({selected.AbsoluteLastSeen})");
             ApiViewSelectedActionValue.Text = selected.ActionLabel;
@@ -4374,20 +5269,44 @@ namespace BlackbirdInterface
                 TopThreads = src.TopThreads
                                  .Select(t => new ThreadUsageSample { Tid = t.Tid, CpuMsDelta = t.CpuMsDelta,
                                                                       State = t.State, WaitReason = t.WaitReason,
-                                                                      Kind = t.Kind, StartTimeUtc = t.StartTimeUtc })
+                                                                      Kind = t.Kind, StartTimeUtc = t.StartTimeUtc,
+                                                                      TargetSuspended = t.TargetSuspended })
                                  .ToList(),
+                CoreUsage = src.CoreUsage
+                                .Select(c => new CoreUsageSample { CoreIndex = c.CoreIndex, BusyPercent = c.BusyPercent,
+                                                                   DominantTid = c.DominantTid,
+                                                                   DominantThreadKind = c.DominantThreadKind,
+                                                                   DominantThreadCpuMs = c.DominantThreadCpuMs,
+                                                                   ThreadCount = c.ThreadCount })
+                                .ToList(),
                 MemoryMetrics = src.MemoryMetrics
                                     .Select(m => new MemoryMetricSample { Metric = m.Metric, Value = m.Value,
                                                                           BytesValue = m.BytesValue })
                                     .ToList(),
                 MemoryPages = src.MemoryPages
-                                  .Select(m => new MemoryPageSample {
-                                      BaseAddress = m.BaseAddress, AllocationBase = m.AllocationBase,
-                                      RegionSize = m.RegionSize, State = m.State, Protect = m.Protect,
-                                      AllocationProtect = m.AllocationProtect, Type = m.Type, StateLabel = m.StateLabel,
-                                      ProtectLabel = m.ProtectLabel, TypeLabel = m.TypeLabel, Category = m.Category,
-                                      BackingPath = m.BackingPath, ModulePath = m.ModulePath
-                                  })
+                                  .Select(m => new MemoryPageSample { BaseAddress = m.BaseAddress,
+                                                                      AllocationBase = m.AllocationBase,
+                                                                      RegionSize = m.RegionSize,
+                                                                      State = m.State,
+                                                                      Protect = m.Protect,
+                                                                      AllocationProtect = m.AllocationProtect,
+                                                                      Type = m.Type,
+                                                                      StateLabel = m.StateLabel,
+                                                                      ProtectLabel = m.ProtectLabel,
+                                                                      TypeLabel = m.TypeLabel,
+                                                                      Category = m.Category,
+                                                                      SpecialUse = m.SpecialUse,
+                                                                      BackingPath = m.BackingPath,
+                                                                      ModulePath = m.ModulePath,
+                                                                      Sr71Owned = m.Sr71Owned,
+                                                                      Sr71OwnerTag = m.Sr71OwnerTag,
+                                                                      WorkingSetValid = m.WorkingSetValid,
+                                                                      WorkingSetShared = m.WorkingSetShared,
+                                                                      WorkingSetShareCount = m.WorkingSetShareCount,
+                                                                      WorkingSetLocked = m.WorkingSetLocked,
+                                                                      WorkingSetLargePage = m.WorkingSetLargePage,
+                                                                      SnapshotOffset = m.SnapshotOffset,
+                                                                      SnapshotBytes = m.SnapshotBytes?.ToArray() })
                                   .ToList()
             };
         }
@@ -4409,44 +5328,69 @@ namespace BlackbirdInterface
         private static MemoryRegionAttributionSample
         CloneMemoryRegionAttributionSample(MemoryRegionAttributionSample src)
         {
-            return new MemoryRegionAttributionSample {
-                TimestampUtc = src.TimestampUtc,
-                ProcessStartKey = src.ProcessStartKey,
-                TargetPid = src.TargetPid,
-                ActorPid = src.ActorPid,
-                ActorTid = src.ActorTid,
-                AllocationBase = src.AllocationBase,
-                BaseAddress = src.BaseAddress,
-                RegionSize = src.RegionSize,
-                ApiName = src.ApiName,
-                EventKind = src.EventKind,
-                RegionKind = src.RegionKind,
-                RegionIdentity = src.RegionIdentity,
-                OriginPath = src.OriginPath,
-                CallerOrigin = src.CallerOrigin,
-                FirstUserFrame = src.FirstUserFrame,
-                FirstUserFrameModule = src.FirstUserFrameModule,
-                FrameSummary = src.FrameSummary,
-                UnwindClean = src.UnwindClean,
-                FrameChainHadGaps = src.FrameChainHadGaps,
-                InitialProtection = src.InitialProtection,
-                CurrentProtection = src.CurrentProtection,
-                PreviousProtection = src.PreviousProtection,
-                FirstExecutableTransition = src.FirstExecutableTransition,
-                ThreadStartObserved = src.ThreadStartObserved,
-                ThreadId = src.ThreadId,
-                ThreadStartAddress = src.ThreadStartAddress,
-                FunctionTableRegistered = src.FunctionTableRegistered,
-                FunctionTablePointer = src.FunctionTablePointer,
-                SignatureLevel = src.SignatureLevel,
-                SignatureType = src.SignatureType
-            };
+            return new MemoryRegionAttributionSample { TimestampUtc = src.TimestampUtc,
+                                                       ProcessStartKey = src.ProcessStartKey,
+                                                       TargetPid = src.TargetPid,
+                                                       ActorPid = src.ActorPid,
+                                                       ActorTid = src.ActorTid,
+                                                       AllocationBase = src.AllocationBase,
+                                                       BaseAddress = src.BaseAddress,
+                                                       RegionSize = src.RegionSize,
+                                                       ApiName = src.ApiName,
+                                                       EventKind = src.EventKind,
+                                                       RegionKind = src.RegionKind,
+                                                       RegionIdentity = src.RegionIdentity,
+                                                       OriginPath = src.OriginPath,
+                                                       SourceFamily = src.SourceFamily,
+                                                       ExecutionContext = src.ExecutionContext,
+                                                       CallerOrigin = src.CallerOrigin,
+                                                       FirstUserFrame = src.FirstUserFrame,
+                                                       FirstUserFrameModule = src.FirstUserFrameModule,
+                                                       FrameSummary = src.FrameSummary,
+                                                       UnwindClean = src.UnwindClean,
+                                                       FrameChainHadGaps = src.FrameChainHadGaps,
+                                                       ObservedByKernel = src.ObservedByKernel,
+                                                       ObservedByUserHook = src.ObservedByUserHook,
+                                                       BlackbirdOwned = src.BlackbirdOwned,
+                                                       CrossProcess = src.CrossProcess,
+                                                       ImageBacked = src.ImageBacked,
+                                                       InitialProtection = src.InitialProtection,
+                                                       CurrentProtection = src.CurrentProtection,
+                                                       PreviousProtection = src.PreviousProtection,
+                                                       FirstExecutableTransition = src.FirstExecutableTransition,
+                                                       MapCount = src.MapCount,
+                                                       WriteCount = src.WriteCount,
+                                                       ProtectCount = src.ProtectCount,
+                                                       ThreadStartCount = src.ThreadStartCount,
+                                                       ProtectFlipCount = src.ProtectFlipCount,
+                                                       RapidProtectFlipCount = src.RapidProtectFlipCount,
+                                                       ExecutableFlipCount = src.ExecutableFlipCount,
+                                                       GuardNoAccessFlipCount = src.GuardNoAccessFlipCount,
+                                                       WritableExecutableFlipCount = src.WritableExecutableFlipCount,
+                                                       ProtectionTransition = src.ProtectionTransition,
+                                                       EntropyBits = src.EntropyBits,
+                                                       MaxEntropyBits = src.MaxEntropyBits,
+                                                       EntropyFlipCount = src.EntropyFlipCount,
+                                                       RapidEntropyFlipCount = src.RapidEntropyFlipCount,
+                                                       HighEntropyWriteCount = src.HighEntropyWriteCount,
+                                                       SampleBytes = src.SampleBytes,
+                                                       LifecycleSummary = src.LifecycleSummary,
+                                                       ThreadStartObserved = src.ThreadStartObserved,
+                                                       ThreadId = src.ThreadId,
+                                                       ThreadStartAddress = src.ThreadStartAddress,
+                                                       FunctionTableRegistered = src.FunctionTableRegistered,
+                                                       FunctionTablePointer = src.FunctionTablePointer,
+                                                       SignatureLevel = src.SignatureLevel,
+                                                       SignatureType = src.SignatureType };
         }
 
         private sealed class ApiCallGraphMainRowView
         {
             public string GraphKey { get; set; } = string.Empty;
+            public string ThreadGroupKey { get; set; } = string.Empty;
+            public string ViewModeKey { get; set; } = "call";
             public string ApiName { get; set; } = string.Empty;
+            public string OriginModule { get; set; } = string.Empty;
             public string ActionLabel { get; set; } = string.Empty;
             public string SensorLabel { get; set; } = string.Empty;
             public string CallerOriginKey { get; set; } = string.Empty;
@@ -4473,6 +5417,9 @@ namespace BlackbirdInterface
             public string ProtectLabel { get; set; } = string.Empty;
             public string LastSeen { get; set; } = string.Empty;
             public string AbsoluteLastSeen { get; set; } = string.Empty;
+            public string FirstSeen { get; set; } = string.Empty;
+            public string AbsoluteFirstSeen { get; set; } = string.Empty;
+            public DateTime FirstSeenUtc { get; set; }
             public DateTime LastSeenUtc { get; set; }
             public int Hits { get; set; }
             public double HeatPercent { get; set; }
@@ -4480,7 +5427,6 @@ namespace BlackbirdInterface
             public string DetailFull { get; set; } = string.Empty;
         }
 
-        // Lane focus API used by LaneSettingsWindow
         public void SetLaneFocus(string? laneKey)
         {
             _laneFocusKey = string.IsNullOrWhiteSpace(laneKey) ? null : laneKey;
@@ -4511,11 +5457,19 @@ namespace BlackbirdInterface
         public double ViewStartSeconds { get; set; }
         public string? LaneFocusKey { get; set; }
         public bool UseUsermodeHooks { get; set; }
+        public bool KernelHooksEnabled { get; set; } = true;
+        public bool SignatureIntelEnabled { get; set; } = true;
+        public bool SignatureIntelMemoryScanEnabled { get; set; }
+        public bool SignatureIntelPageScanEnabled { get; set; }
         public bool AutoOpenApiGraphOnNextStart { get; set; }
         public bool LaunchStartsSuspendedPending { get; set; }
         public bool DeferredLaunchGateResumePending { get; set; }
         public bool LaunchOwnedByInterface { get; set; }
+        public LaunchTargetKind AnalysisSubjectKind { get; set; } = LaunchTargetKind.Executable;
+        public string AnalysisSubjectPath { get; set; } = string.Empty;
+        public string AnalysisHostPath { get; set; } = string.Empty;
         public bool TargetExited { get; set; }
+        public string TargetExitReason { get; set; } = string.Empty;
         public bool OfflineSnapshot { get; set; }
         public string? BackingStorePath { get; set; }
         public List<PausedTimelineSpan> PausedTimelineSpans { get; } = new();
@@ -4544,6 +5498,7 @@ namespace BlackbirdInterface
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
+
         private void OnPropertyChanged([CallerMemberName] string? prop = null) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(prop));
     }

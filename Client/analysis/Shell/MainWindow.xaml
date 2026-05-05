@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:BlackbirdInterface"
+        xmlns:pane="clr-namespace:BlackbirdInterface;assembly=BlackbirdInterface"
         Title="Blackbird | Idle"
         Height="908"
         Width="1494"
@@ -44,15 +45,15 @@
         </Style>
 
         <Style x:Key="CommandBarPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource CommandBarButtonStyle}">
-            <Setter Property="Background" Value="#FF202020"/>
-            <Setter Property="BorderBrush" Value="#FF9DA7B2"/>
+            <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource WinSubtleBorderBrush}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
 
         <Style x:Key="CommandBarAccentButtonStyle" TargetType="Button" BasedOn="{StaticResource CommandBarButtonStyle}">
-            <Setter Property="Background" Value="#FF173A5A"/>
-            <Setter Property="BorderBrush" Value="#FF57A7FF"/>
-            <Setter Property="Foreground" Value="#FFF4F8FC"/>
+            <Setter Property="Background" Value="{DynamicResource PerformanceHeaderBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource PerformanceHeaderAccentBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
 
@@ -82,7 +83,7 @@
             <Setter Property="Height" Value="16"/>
             <Setter Property="Margin" Value="0,0,7,0"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Background" Value="#FFF4F4F4"/>
+            <Setter Property="Background" Value="{DynamicResource WinTextBrush}"/>
             <Setter Property="SnapsToDevicePixels" Value="True"/>
         </Style>
 
@@ -272,7 +273,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RepeatButton">
-                        <Border Background="#FF202020"/>
+                        <Border Background="{DynamicResource WinHeaderBrush}"/>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -284,8 +285,8 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Thumb">
-                        <Border Background="#FFB8B8B8"
-                                BorderBrush="#FF5A5A5A"
+                        <Border Background="{DynamicResource WinTextBrush}"
+                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
                                 BorderThickness="1"/>
                     </ControlTemplate>
                 </Setter.Value>
@@ -320,6 +321,7 @@
         <Grid x:Name="RootGrid" Background="{DynamicResource WinBgBrush}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="0"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
@@ -360,20 +362,25 @@
                             <MenuItem Header="Import Session..." Click="ImportSession_Click"/>
                             <MenuItem Header="Save Session As..." Click="SaveSessionAs_Click"/>
                             <MenuItem Header="Export Session..." Click="ExportSession_Click"/>
+                            <MenuItem Header="Export Detections..." Click="ExportDetections_Click"/>
                         </MenuItem>
                         <MenuItem Header="Home">
                             <MenuItem Header="Select Target..." Click="FindProcess_Click"/>
                             <MenuItem Header="Connect" Click="Connect_Click"/>
                             <MenuItem Header="Launch" Click="Launch_Click"/>
                             <Separator/>
+                            <MenuItem Header="Prepare VM Enrollment..." Click="RegisterVm_Click"/>
                             <MenuItem Header="Preflight" Click="Preflight_Click"/>
                             <MenuItem Header="Driver Start" Click="DriverStart_Click"/>
                             <MenuItem Header="Driver Stop" Click="DriverStop_Click"/>
                             <MenuItem Header="Controller Restart" Click="ControllerRestart_Click"/>
                         </MenuItem>
                         <MenuItem Header="View">
-                            <MenuItem x:Name="SwitchViewMenuItem" Header="Switch View (API)" Click="SwitchView_Click"/>
+                            <MenuItem Header="Main View" Click="MainView_Click"/>
+                            <MenuItem Header="API View" Click="ApiView_Click"/>
+                            <MenuItem Header="Extended View" Click="ExtendedView_Click"/>
                             <MenuItem Header="Diagnostics" Click="Diagnostics_Click"/>
+                            <MenuItem Header="Rules Intel" Click="SignatureIntelRules_Click"/>
                             <MenuItem Header="Child Process View" Click="ChildProcessView_Click"/>
                         </MenuItem>
                     </Menu>
@@ -510,6 +517,14 @@
                                                        Text="Hooks ARMED"
                                                        VerticalAlignment="Center"/>
                                         </Button>
+                                        <Button x:Name="InterfaceSettingsButton"
+                                                Style="{DynamicResource CommandBarButtonStyle}"
+                                                Margin="8,0,0,0"
+                                                Click="InterfaceSettings_Click"
+                                                ToolTip="Open interface settings and shortcut rebinding.">
+                                            <TextBlock Text="Settings"
+                                                       VerticalAlignment="Center"/>
+                                        </Button>
                                     </StackPanel>
                                 </ScrollViewer>
                             </TabItem>
@@ -537,13 +552,13 @@
                                             <ComboBoxItem Content="Heuristics Pane" Tag="heuristics"/>
                                             <ComboBoxItem Content="Filesystem Pane" Tag="filesystem"/>
                                             <ComboBoxItem Content="Process Relations Pane" Tag="process-relations"/>
-                                            <ComboBoxItem Content="IPC Uplink Pane" Tag="ipc-uplink"/>
                                             <ComboBoxItem Content="Event Log Window" Tag="event-log"/>
                                             <ComboBoxItem Content="ETW Inspector" Tag="inspector-etw"/>
                                             <ComboBoxItem Content="Heuristics Inspector" Tag="inspector-heuristics"/>
                                             <ComboBoxItem Content="Filesystem Inspector" Tag="inspector-filesystem"/>
                                             <ComboBoxItem Content="Process Relations Inspector" Tag="inspector-relations"/>
                                             <ComboBoxItem Content="Diagnostics Window" Tag="diagnostics"/>
+                                            <ComboBoxItem Content="Rules Intel" Tag="signature-intel-rules"/>
                                             <ComboBoxItem Content="Child Process Graph" Tag="child-process-graph"/>
                                         </ComboBox>
                                         <ComboBox x:Name="LayoutsComboBox"
@@ -559,23 +574,20 @@
                                             <ComboBoxItem Content="Advanced" Tag="layout-advanced"/>
                                         </ComboBox>
                                         <Border Style="{StaticResource CommandBarSectionDividerStyle}"/>
-                                        <Button x:Name="SwitchViewButton"
-                                                Style="{DynamicResource CommandBarIconButtonStyle}"
-                                                Click="SwitchView_Click">
-                                            <StackPanel Orientation="Horizontal">
-                                                <Border Style="{StaticResource CommandBarWhiteGlyphHostStyle}">
-                                                    <Border.OpacityMask>
-                                                        <ImageBrush ImageSource="pack://application:,,,/BlackbirdInterface;component/resources/switchview.png"
-                                                                    Stretch="Uniform"/>
-                                                    </Border.OpacityMask>
-                                                </Border>
-                                                <TextBlock x:Name="SwitchViewButtonLabel"
-                                                           Text="Switch to API View"
-                                                           VerticalAlignment="Center"
-                                                           Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
-                                            </StackPanel>
-                                        </Button>
+                                        <Button x:Name="MainViewButton"
+                                                Style="{DynamicResource CommandBarButtonStyle}"
+                                                Content="Main"
+                                                Click="MainView_Click"/>
+                                        <Button x:Name="ApiViewButton"
+                                                Style="{DynamicResource CommandBarButtonStyle}"
+                                                Content="API"
+                                                Click="ApiView_Click"/>
+                                        <Button x:Name="ExtendedViewButton"
+                                                Style="{DynamicResource CommandBarButtonStyle}"
+                                                Content="Extended"
+                                                Click="ExtendedView_Click"/>
                                         <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Diagnostics" Click="Diagnostics_Click"/>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Rules Intel" Click="SignatureIntelRules_Click"/>
                                         <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Child Process View" Click="ChildProcessView_Click"/>
                                     </StackPanel>
                                 </ScrollViewer>
@@ -615,7 +627,7 @@
                                                     Click="TopTimeTravelForward10_Click"/>
                                             <Border Style="{StaticResource CommandBarSectionDividerStyle}"/>
                                             <TextBlock x:Name="TopTimeTravelRangeBlock"
-                                                       Text="Range: --"
+                                                       Text="--:--:--- --:--:--"
                                                        Margin="10,0,0,0"
                                                        VerticalAlignment="Center"
                                                        Foreground="{DynamicResource WinMutedTextBrush}"/>
@@ -665,8 +677,22 @@
                                                            Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
                                             </StackPanel>
                                         </Button>
+                                        <Button Style="{DynamicResource CommandBarIconButtonStyle}" Click="ExportDetections_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Export Detections"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                            </StackPanel>
+                                        </Button>
                                     </StackPanel>
                                 </ScrollViewer>
+                            </TabItem>
+                            <TabItem Header="Server">
+                                <WrapPanel Margin="8,6,8,6" VerticalAlignment="Center">
+                                    <Button Style="{DynamicResource CommandBarButtonStyle}"
+                                            Content="Prepare VM Enrollment"
+                                            Click="RegisterVm_Click"/>
+                                </WrapPanel>
                             </TabItem>
                         </TabControl>
                         </Grid>
@@ -751,7 +777,7 @@
                                     Padding="8,3"
                                     Background="{DynamicResource WinPanelBrush}">
                                 <TextBlock x:Name="RangeBlock"
-                                           Text="Range:"
+                                           Text="Window:"
                                            VerticalAlignment="Center"
                                            FontSize="11"
                                            TextTrimming="CharacterEllipsis"
@@ -763,7 +789,26 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Row="2" Margin="0">
+        <!-- Process selector bar: shows all monitored PIDs in the active session; click to filter panes -->
+        <Border Grid.Row="2"
+                x:Name="ProcessSelectorBarBorder"
+                Background="{DynamicResource CommandBarBackgroundBrush}"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Visibility="Collapsed">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Disabled"
+                          Height="28">
+                <StackPanel x:Name="ProcessSelectorBarPanel"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="4,0">
+                    <!-- chips injected from code-behind -->
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <Grid Grid.Row="3" Margin="0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="250" MinWidth="220"/>
                 <ColumnDefinition Width="2"/>
@@ -890,33 +935,12 @@
 
             <Grid Grid.Column="2">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition x:Name="IpcUplinkColumn" Width="0"/>
-                    <ColumnDefinition x:Name="IpcUplinkSplitterColumn" Width="0"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition x:Name="IntelligenceSplitterColumn" Width="2"/>
                     <ColumnDefinition x:Name="IntelligenceColumn" Width="560"/>
                 </Grid.ColumnDefinitions>
 
-                <Border Grid.Column="0"
-                        x:Name="IpcUplinkDockBorder"
-                        BorderBrush="{DynamicResource PaneBorderBrush}"
-                        BorderThickness="1,1,0,1"
-                        MinWidth="360"
-                        Margin="0,0,0,0"
-                        Background="{DynamicResource WinPanelBrush}"
-                        Visibility="Collapsed">
-                    <local:IpcUplinkPane x:Name="IpcUplinkPaneHost"/>
-                </Border>
-
-                <GridSplitter Grid.Column="1"
-                              x:Name="IpcUplinkSplitter"
-                              Width="2"
-                              Background="{DynamicResource WinSubtleBorderBrush}"
-                              HorizontalAlignment="Stretch"
-                              VerticalAlignment="Stretch"
-                              Visibility="Collapsed"/>
-
-                <Grid Grid.Column="2">
+                <Grid Grid.Column="0">
                     <Grid x:Name="DockGrid">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="4*"/>
@@ -1029,6 +1053,17 @@
                                     Padding="8,4"
                                     Margin="0,0,0,8">
                                 <DockPanel LastChildFill="False">
+                                    <ComboBox x:Name="ApiViewModeBox"
+                                              DockPanel.Dock="Right"
+                                              Width="148"
+                                              Height="24"
+                                              Margin="12,0,0,0"
+                                              VerticalAlignment="Center"
+                                              SelectionChanged="ApiViewMode_Changed"
+                                              Style="{StaticResource ToolbarOpenWindowComboStyle}">
+                                        <ComboBoxItem Content="Call Graph"/>
+                                        <ComboBoxItem Content="Thread Timeline"/>
+                                    </ComboBox>
                                     <TextBlock Text="BlackbirdHook/Sensor API View"
                                                FontWeight="SemiBold"
                                                VerticalAlignment="Center"/>
@@ -1336,11 +1371,11 @@
                                                 <DataGridTemplateColumn.CellTemplate>
                                                     <DataTemplate>
                                                         <StackPanel Margin="6,0,6,0" VerticalAlignment="Center">
-                                                            <TextBlock Text="{Binding SizeLabel}" FontFamily="Consolas"/>
+                                                            <TextBlock Text="{Binding SizeLabel}" FontFamily="{DynamicResource AppMonoFontFamily}"/>
                                                             <TextBlock Text="{Binding SizeLabel}"
                                                                        Margin="0,1,0,0"
                                                                        Foreground="{DynamicResource WinMutedTextBrush}"
-                                                                       FontFamily="Consolas"
+                                                                       FontFamily="{DynamicResource AppMonoFontFamily}"
                                                                        Visibility="Collapsed"/>
                                                         </StackPanel>
                                                     </DataTemplate>
@@ -1418,8 +1453,8 @@
                                         </Border>
 
                                         <ScrollViewer Grid.Row="1"
-                                                      HorizontalScrollBarVisibility="Hidden"
-                                                      VerticalScrollBarVisibility="Hidden"
+                                                      HorizontalScrollBarVisibility="Auto"
+                                                      VerticalScrollBarVisibility="Auto"
                                                       Background="{DynamicResource WinPanelBrush}">
                                             <Canvas x:Name="ApiViewGraphCanvas"
                                                     Width="540"
@@ -1529,7 +1564,7 @@
                                                     <Border Margin="0,0,8,0" Padding="8,6" BorderBrush="{DynamicResource WinSubtleBorderBrush}" BorderThickness="1" Background="{DynamicResource WinHeaderBrush}">
                                                         <StackPanel>
                                                             <TextBlock x:Name="ApiViewSelectedField2Label" Text="Context" Foreground="{DynamicResource WinMutedTextBrush}"/>
-                                                            <TextBlock x:Name="ApiViewSelectedSizeValue" Margin="0,2,0,0" FontFamily="Consolas" FontWeight="SemiBold" Text=""/>
+                                                            <TextBlock x:Name="ApiViewSelectedSizeValue" Margin="0,2,0,0" FontFamily="{DynamicResource AppMonoFontFamily}" FontWeight="SemiBold" Text=""/>
                                                         </StackPanel>
                                                     </Border>
                                                     <Border Margin="0,0,0,0" Padding="8,6" BorderBrush="{DynamicResource WinSubtleBorderBrush}" BorderThickness="1" Background="{DynamicResource WinHeaderBrush}">
@@ -1590,17 +1625,261 @@
                             </Grid>
                         </Grid>
                     </Border>
+
+                    <Border Grid.Row="1"
+                            x:Name="ExtendedViewBorder"
+                            Visibility="Collapsed"
+                            BorderBrush="{DynamicResource PaneBorderBrush}"
+                            BorderThickness="1"
+                            Background="{DynamicResource WinPanelBrush}">
+                        <Grid Margin="8">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0"
+                                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                    BorderThickness="0,0,0,1"
+                                    Background="{DynamicResource WinHeaderBrush}"
+                                    Padding="8,4"
+                                    Margin="0,0,0,8">
+                                <DockPanel LastChildFill="False">
+                                    <TextBlock Text="Extended View"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="ExtendedViewSummaryBlock"
+                                               Margin="14,0,0,0"
+                                               VerticalAlignment="Center"
+                                               FontWeight="SemiBold"
+                                               Text="No extended activity yet"/>
+                                </DockPanel>
+                            </Border>
+
+                            <TabControl Grid.Row="1"
+                                        Background="Transparent"
+                                        BorderThickness="0">
+                                <TabItem Header="All">
+                                    <DataGrid x:Name="ExtendedViewDataGrid"
+                                              Style="{StaticResource AppDataGridStyle}"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              CanUserReorderColumns="False"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="26"
+                                              BorderThickness="0"
+                                              GridLinesVisibility="None"
+                                              PreviewMouseRightButtonDown="ExtendedActivityGrid_PreviewMouseRightButtonDown">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Copy Summary" Click="ExtendedActivityCopySummary_Click"/>
+                                                <MenuItem Header="Copy Details" Click="ExtendedActivityCopyDetails_Click"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Type" Width="176" Binding="{Binding TypeLabel}"/>
+                                            <DataGridTextColumn Header="Actor" Width="96" Binding="{Binding ActorLabel}"/>
+                                            <DataGridTextColumn Header="Target" Width="104" Binding="{Binding TargetLabel}"/>
+                                            <DataGridTextColumn Header="Subject" Width="180" Binding="{Binding SubjectLabel}"/>
+                                            <DataGridTextColumn Header="Operation" Width="176" Binding="{Binding OperationLabel}"/>
+                                            <DataGridTextColumn Header="Last Seen" Width="120" Binding="{Binding LastSeenLabel}"/>
+                                            <DataGridTextColumn Header="Hits" Width="60" Binding="{Binding Hits}"/>
+                                            <DataGridTemplateColumn Header="Detail" Width="*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding DetailLabel}"
+                                                                   Margin="8,0"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                                <TabItem Header="COM / WMI">
+                                    <DataGrid x:Name="ExtendedComDataGrid"
+                                              Style="{StaticResource AppDataGridStyle}"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              CanUserReorderColumns="False"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="26"
+                                              BorderThickness="0"
+                                              GridLinesVisibility="None"
+                                              PreviewMouseRightButtonDown="ExtendedActivityGrid_PreviewMouseRightButtonDown">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Copy Summary" Click="ExtendedActivityCopySummary_Click"/>
+                                                <MenuItem Header="Copy Details" Click="ExtendedActivityCopyDetails_Click"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Type" Width="176" Binding="{Binding TypeLabel}"/>
+                                            <DataGridTextColumn Header="Actor" Width="96" Binding="{Binding ActorLabel}"/>
+                                            <DataGridTextColumn Header="Target" Width="104" Binding="{Binding TargetLabel}"/>
+                                            <DataGridTextColumn Header="Subject" Width="180" Binding="{Binding SubjectLabel}"/>
+                                            <DataGridTextColumn Header="Operation" Width="176" Binding="{Binding OperationLabel}"/>
+                                            <DataGridTextColumn Header="Last Seen" Width="120" Binding="{Binding LastSeenLabel}"/>
+                                            <DataGridTextColumn Header="Hits" Width="60" Binding="{Binding Hits}"/>
+                                            <DataGridTemplateColumn Header="Detail" Width="*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding DetailLabel}"
+                                                                   Margin="8,0"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                                <TabItem Header="ETW">
+                                    <DataGrid x:Name="ExtendedEtwDataGrid"
+                                              Style="{StaticResource AppDataGridStyle}"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              CanUserReorderColumns="False"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="26"
+                                              BorderThickness="0"
+                                              GridLinesVisibility="None"
+                                              PreviewMouseRightButtonDown="ExtendedActivityGrid_PreviewMouseRightButtonDown">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Copy Summary" Click="ExtendedActivityCopySummary_Click"/>
+                                                <MenuItem Header="Copy Details" Click="ExtendedActivityCopyDetails_Click"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Type" Width="176" Binding="{Binding TypeLabel}"/>
+                                            <DataGridTextColumn Header="Actor" Width="96" Binding="{Binding ActorLabel}"/>
+                                            <DataGridTextColumn Header="Target" Width="104" Binding="{Binding TargetLabel}"/>
+                                            <DataGridTextColumn Header="Subject" Width="180" Binding="{Binding SubjectLabel}"/>
+                                            <DataGridTextColumn Header="Operation" Width="176" Binding="{Binding OperationLabel}"/>
+                                            <DataGridTextColumn Header="Last Seen" Width="120" Binding="{Binding LastSeenLabel}"/>
+                                            <DataGridTextColumn Header="Hits" Width="60" Binding="{Binding Hits}"/>
+                                            <DataGridTemplateColumn Header="Detail" Width="*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding DetailLabel}"
+                                                                   Margin="8,0"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                                <TabItem Header="Jobs">
+                                    <DataGrid x:Name="ExtendedJobDataGrid"
+                                              Style="{StaticResource AppDataGridStyle}"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              CanUserReorderColumns="False"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="26"
+                                              BorderThickness="0"
+                                              GridLinesVisibility="None"
+                                              PreviewMouseRightButtonDown="ExtendedActivityGrid_PreviewMouseRightButtonDown">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Copy Summary" Click="ExtendedActivityCopySummary_Click"/>
+                                                <MenuItem Header="Copy Details" Click="ExtendedActivityCopyDetails_Click"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Type" Width="176" Binding="{Binding TypeLabel}"/>
+                                            <DataGridTextColumn Header="Actor" Width="96" Binding="{Binding ActorLabel}"/>
+                                            <DataGridTextColumn Header="Target" Width="104" Binding="{Binding TargetLabel}"/>
+                                            <DataGridTextColumn Header="Subject" Width="180" Binding="{Binding SubjectLabel}"/>
+                                            <DataGridTextColumn Header="Operation" Width="176" Binding="{Binding OperationLabel}"/>
+                                            <DataGridTextColumn Header="Last Seen" Width="120" Binding="{Binding LastSeenLabel}"/>
+                                            <DataGridTextColumn Header="Hits" Width="60" Binding="{Binding Hits}"/>
+                                            <DataGridTemplateColumn Header="Detail" Width="*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding DetailLabel}"
+                                                                   Margin="8,0"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                                <TabItem Header="Rules">
+                                    <DataGrid x:Name="ExtendedYaraDataGrid"
+                                              Style="{StaticResource AppDataGridStyle}"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              CanUserReorderColumns="False"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="26"
+                                              BorderThickness="0"
+                                              GridLinesVisibility="None"
+                                              PreviewMouseRightButtonDown="ExtendedActivityGrid_PreviewMouseRightButtonDown">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Copy Summary" Click="ExtendedActivityCopySummary_Click"/>
+                                                <MenuItem Header="Copy Details" Click="ExtendedActivityCopyDetails_Click"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Type" Width="176" Binding="{Binding TypeLabel}"/>
+                                            <DataGridTextColumn Header="Actor" Width="96" Binding="{Binding ActorLabel}"/>
+                                            <DataGridTextColumn Header="Target" Width="104" Binding="{Binding TargetLabel}"/>
+                                            <DataGridTextColumn Header="Subject" Width="180" Binding="{Binding SubjectLabel}"/>
+                                            <DataGridTextColumn Header="Operation" Width="176" Binding="{Binding OperationLabel}"/>
+                                            <DataGridTextColumn Header="Last Seen" Width="120" Binding="{Binding LastSeenLabel}"/>
+                                            <DataGridTextColumn Header="Hits" Width="60" Binding="{Binding Hits}"/>
+                                            <DataGridTemplateColumn Header="Detail" Width="*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding DetailLabel}"
+                                                                   Margin="8,0"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                            </TabControl>
+                        </Grid>
+                    </Border>
                 </Grid>
 
-                <GridSplitter Grid.Column="3"
+                <GridSplitter Grid.Column="1"
                               x:Name="IntelligenceSplitter"
                               Width="2"
                               Background="{DynamicResource WinSubtleBorderBrush}"
                               HorizontalAlignment="Stretch"
                               VerticalAlignment="Stretch"/>
 
-                <Grid Grid.Column="4" x:Name="IntelligenceDock">
+                <Grid Grid.Column="2" x:Name="IntelligenceDock">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="2"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="2"/>
                         <RowDefinition Height="*"/>
@@ -1653,6 +1932,20 @@
                                   VerticalAlignment="Stretch"/>
 
                     <Border Grid.Row="6"
+                            x:Name="RegistryDockBorder"
+                            BorderBrush="{DynamicResource WinBorderBrush}"
+                            BorderThickness="1,0,1,0"
+                            Background="{DynamicResource WinPanelBrush}">
+                        <local:RegistryPane x:Name="RegistryPaneHost"/>
+                    </Border>
+
+                    <GridSplitter Grid.Row="7"
+                                  Height="2"
+                                  Background="{DynamicResource WinSubtleBorderBrush}"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch"/>
+
+                    <Border Grid.Row="8"
                             x:Name="ProcessRelationsDockBorder"
                             BorderBrush="{DynamicResource WinBorderBrush}"
                             BorderThickness="1,0,1,1"
@@ -1662,6 +1955,27 @@
                 </Grid>
             </Grid>
         </Grid>
+
+        <!-- Target switch toast: flashes briefly when switching between sessions -->
+        <Border x:Name="SwitchToastBorder"
+                Grid.Row="0"
+                Grid.RowSpan="4"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Padding="28,14"
+                CornerRadius="4"
+                Background="#CC101010"
+                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                BorderThickness="1"
+                IsHitTestVisible="False"
+                Opacity="0"
+                Visibility="Collapsed">
+            <TextBlock x:Name="SwitchToastText"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource WinTextBrush}"
+                       TextAlignment="Center"/>
+        </Border>
 
     </Grid>
 </Window>

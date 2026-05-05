@@ -1,10 +1,55 @@
 © 2026 TITAN Softwork Solutions / 8.damon
 
-Licensed under the PolyForm Noncommercial 1.0.0 license.
-You may use, study, modify, and share this software for noncommercial purposes only.
-Commercial use requires prior written permission.
+Licensed under the PolyForm Noncommercial 1.0.0 license with the
+Blackbird Defensive Use Addendum below.
+
+You may use, study, modify, and share this software only for noncommercial,
+authorized, defensive security purposes. Commercial use requires prior written
+permission. Any use outside the defensive scope below is not a permitted purpose
+under this license.
 
 Required Notice: © 2026 TITAN Softwork Solutions / 8.damon
+
+# Blackbird Defensive Use Addendum
+
+Blackbird is a defensive software reverse-engineering (SRE) / IDS-style malware
+analysis and endpoint instrumentation system. It is provided for authorized
+security research, malware reverse engineering, incident response, detection
+engineering, lab validation, and defensive education.
+
+For this distribution, "permitted purpose" means a noncommercial purpose that is
+also authorized, defensive, and lawful. The permissions in the PolyForm
+Noncommercial License below apply only to those permitted purposes.
+
+You may not use, modify, distribute, operate, or publish derivative works of this
+software for any of the following purposes:
+
+- unauthorized access to, monitoring of, control of, persistence on, or
+  interference with any third-party system, account, network, device, service,
+  or data;
+- offensive cyber operations, intrusion campaigns, cyber command and control,
+  credential theft, data theft, extortion, destructive activity, or deployment
+  against systems without explicit authorization;
+- developing, testing, validating, or improving malware, evasion, stealth,
+  persistence, anti-analysis, bypass, or post-exploitation capabilities for
+  unauthorized activity;
+- operating the software as a remote access tool, implant, loader, dropper,
+  botnet component, exploit delivery mechanism, or unauthorized surveillance
+  system;
+- removing, weakening, or misrepresenting this addendum, required notices,
+  safety warnings, or defensive-use limitations when sharing the software or
+  derivative works.
+
+You are responsible for complying with all applicable laws, sanctions,
+export-control requirements, government procurement rules, organizational
+policies, and authorization boundaries before using, modifying, distributing,
+exporting, supplying, or publishing this software or related technical
+information. No license is granted for any use that requires a permit,
+authorization, approval, or exemption that you do not have.
+
+If any term in the PolyForm Noncommercial License appears to permit a broader
+use than this addendum, this addendum narrows the permission for this
+distribution. All other PolyForm Noncommercial terms continue to apply.
 
 # PolyForm Noncommercial License 1.0.0
 

@@ -1,165 +1,104 @@
 <h1 align="center">BLACKBIRD</h1>
-<p align="center"><b>EDR-class kernel sensor and analyst platform for single-target Windows process instrumentation</b></p>
+<p align="center"><b>A defensive software reverse-engineering (SRE) / IDS and real-time malware analysis platform</b></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/-00599C?logo=c&logoColor=white&style=for-the-badge" />
-  <img src="https://img.shields.io/badge/-00599C?logo=c%2B%2B&logoColor=white&style=for-the-badge" />
+  <a href="https://titansoftwork.com/capability/blackbird/download/">
+    <img src="https://img.shields.io/badge/Download-3C8D40?style=for-the-badge&logo=microsoft&logoColor=white" />
+  </a>
+  <a href="https://titansoftwork.com/blackbird">
+    <img src="https://img.shields.io/badge/Website-0A0A0A?style=for-the-badge&logo=google-chrome&logoColor=white" />
+  </a>
+  <a href="https://github.com/users/8damon/projects/3/views/1">
+    <img src="https://img.shields.io/badge/Project%20Board-6B7280?style=for-the-badge&logo=githubprojects&logoColor=white" />
+  </a>
   <img src="https://img.shields.io/badge/.NET-512BD4?style=for-the-badge" />
   <img src="https://img.shields.io/badge/KMDF-000000?style=for-the-badge" />
-  <a href="https://discord.gg/yUWyvT9JyP">
-    <img src="https://img.shields.io/discord/1240608336005828668?label=TITAN%20Softworks&logo=discord&color=5865F2&style=for-the-badge" />
-  </a>
+  <img src="https://img.shields.io/badge/-00599C?logo=c&logoColor=white&style=for-the-badge" />
+  <img src="https://img.shields.io/badge/-00599C?logo=c%2B%2B&logoColor=white&style=for-the-badge" />
 </p>
 
 <p align="center">
   <img src="https://titansoftwork.com/content/capabilities/blackbird/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
 </p>
 
-# [BLACKBIRD](https://titansoftwork.com/capability/blackbird/)
+Blackbird is an on-prem defensive software reverse-engineering (SRE) / IDS-style malware analysis platform designed for samples that evade conventional sandboxes. It combines targeted kernel instrumentation, early usermode sensors, anti-evasion controls, ETW/IOCTL capture, behavioral correlation, and portable capture files so security teams can run malware safely inside managed VMs without sending data to a third party.
 
-Blackbird is a signed KMDF kernel driver and analyst platform that instruments a target process with EDR-class depth: eight OS notification callback types, a WFP network callout, real-time ETW streaming, and an injected hook DLL covering NT API, Winsock, and exception dispatch — running as three independent telemetry paths with kernel-side trampoline integrity verification.
+Blackbird is intended for authorized security research, malware reverse engineering, incident response, detection engineering, and controlled lab analysis. It is not provided as offensive tooling, malware, an intrusion platform, a remote access capability, or a cyber weapon. Some components necessarily use low-level kernel monitoring, usermode instrumentation, process-control, and protected telemetry paths so that analysts can observe hostile samples; those mechanisms must only be used in isolated environments and on systems you own or are explicitly authorized to test.
 
-It is not a sandbox or an ETW wrapper. Blackbird operates at the same instrumentation layer as commercial EDR products — kernel callbacks, per-client IOCTL queues, in-kernel correlation, process execution control, and kernel-enforced process protection — but targets a single process or small process set for deep behavioral analysis rather than fleet-wide endpoint coverage. There is no response component, no cloud telemetry, and no automated remediation. All signal goes directly to the analyst.
+Public visibility of this repository does not grant permission to use Blackbird against third-party systems, to develop or validate evasion for unauthorized activity, to bypass security controls outside a defensive lab, or to conduct offensive cyber operations. Users are responsible for complying with applicable law, export-control rules, organizational policy, and any permit or authorization requirements before using, modifying, distributing, or publishing derivative work.
 
----
+The public repository is the local defensive analysis stack. Remote node service/server code, WFP endpoint protection, active bugcheck monitoring, secondary crash-dump callback code, and external third-party rule packs are private optional extensions unless explicitly included in a release.
 
-## ARCHITECTURE
+## REQUIREMENTS
 
-Blackbird is composed of six binaries across the kernel and user-mode layers:
+A virtual machine on Windows 10 22H2 or higher, 64-bit.
 
-| Binary | Layer | Role |
-|---|---|---|
-| `blackbird.sys` | Kernel | Signed KMDF driver. Root of trust. OS callbacks, IOCTL surface, per-client event queues, process control, process protection, hook integrity verification, hollowing detection engine. |
-| `BlackbirdController.exe` | User-mode | IPC broker. ETW consumer. Hook injection host. Launch gate. Multi-source event correlation. |
-| `SR71.dll` | User-mode (injected) | Hook DLL injected into target. NT API, Winsock, KiUserExceptionDispatcher, and module hooks. Launch gate runtime. Integrity watchdog. |
-| `J58.dll` | User-mode | Shared IOCTL/ETW sensor library used by controller, test harness, and tooling. |
-| `BlackbirdInterface.exe` | User-mode | WPF analyst workstation. Unified event surface, time-travel controls, YARA/SignatureIntel scanning, session export. |
-| `BlackbirdOperator.exe` | User-mode | Optional. Multi-node remote orchestration with AES-256-GCM + ECDH + ECDSA transport. |
+> [!IMPORTANT]
+> Blackbird performs kernel-level instrumentation and may affect system stability depending on configuration.
+> Always use it within a controlled virtual machine environment and not on systems containing important data.
 
-### Kernel Driver (`blackbird.sys`)
+## FEATURES
 
-The driver registers eight OS notification callback types and a WFP callout, maintaining a per-client circular event queue (1024 depth) across up to 256 concurrent subscribers:
+- Fully fledged analysis interface
+- Kernel-backed
+- Integrated heuristics & detections
+- Detailed overview and inspection of process-activity
+- WPA-like event-viewing graph
+- Target execution control
+- Target API hooking
+- API call analyzer & graph
+- API call argument observation
+- Full symbol resolution
+- Thread & Thread-stack analyzers
+- Memory analyzer & Disassembler
+- Registry activity overview
+- File activity overview
+- Process-relations & child processes overview
+- Handles overview
+- Network overview
+- ETW overview
+- COM overview
+- Performance analytics
+- Configurable/importable local rules with SIEM detection exports
+- Diagnostics suite
+- Optional private remote control via the self-hosted server
+- Optional private self-hosted server for VM enrollment, node inventory, artifact jobs, captures, RBAC, SSO, and audit
 
-- `PsSetCreateProcessNotifyRoutineEx` — process create/terminate, launch-bootstrap PID ring
-- `PsSetCreateThreadNotifyRoutine` — thread create/terminate, creator/start address
-- `ObRegisterCallbacks` — handle open, duplicate, query; access mask; caller stack
-- `PsSetLoadImageNotifyRoutine` — image load, module base, path, hash
-- FltMgr minifilter — file create/read/write/rename/delete
-- `CmRegisterCallback` — registry key/value create, delete, rename, set
-- Kernel APC callbacks — APCs queued against foreign threads
-- WFP callout (`FwpmCalloutAdd`) — inbound/outbound connect, send, recv
+## BUGS & ENHANCEMENTS
 
-Beyond telemetry, the driver exposes 15 IOCTL codes covering subscription management, process execution control (suspend/resume any PID), kernel-enforced process protection (DACL on controller and interface processes), hook page registration for trampoline integrity verification, and runtime configuration: self-hide, anti-virtualization, network sinkhole/quarantine, and NTAPI hooks disarm.
-
-An in-kernel intent store and process hollowing detection engine correlate event sequences without relying on user-mode components.
-
-### Three Telemetry Paths
-
-Kernel IOCTL, ETW, and hook telemetry operate independently — a failure or evasion in any one path does not blind the sensor:
-
-- **Path A (kernel → interface):** Direct IOCTL poll of `GET_EVENT`. Authoritative.
-- **Path B (kernel + ETW → controller → interface):** Controller merges IOCTL-sourced, ETW-sourced, and hook-sourced events into a unified correlated ring delivered over `\\.\pipe\BlackbirdController`.
-- **Path C (SR71.dll → controller):** Hook DLL publishes structured records to `\\.\pipe\BlackbirdHookIngest` on every intercepted call; controller classifies caller origin and merges into the broker stream.
-
-### Hook Library (`SR71.dll`)
-
-SR71.dll is injected into the target process and installs hooks on:
-
-- `NtAllocateVirtualMemory`, `NtWriteVirtualMemory`, `NtProtectVirtualMemory` — memory operations
-- `NtCreateThreadEx`, `NtQueueApcThread` — remote thread and APC injection
-- `NtOpenProcess` — sensitive process access
-- `connect`, `send`, `recv` (Winsock) — network activity
-- `KiUserExceptionDispatcher` — exception chain interception
-- Module load/unlink — image-backed integrity tracking
-
-Each hook reports: caller address, resolved module, SSN (direct syscall number if applicable), stack frames (up to 8), and a 64-byte memory sample at the call site. The kernel verifies hook trampoline bytes via `REGISTER_HOOK_PAGES` — hook reports are advisory, kernel telemetry is authoritative.
-
-The launch gate (v1.9) arms a deferred-entry page before the target's first user-mode instruction, enabling pre-execution control and deferred open via `ARM_PENDING_LAUNCH`.
-
----
-
-## OPERATOR PANEL
-
-The analyst interface consolidates all telemetry into one shell:
-
-- Events & event log (with grouped event compaction)
-- ETW feed
-- Heuristics and detection lanes
-- Filesystem events
-- Process relations
-- API call graph with hook origin validation
-- Performance counters and Tempus timing breakdown
-- Network observation
-- Thread observation
-- Memory observation, inspector (floating) & treemap
-- Module and PE information
-- Uplink / IPC diagnostics
-- Child process graph
-- SignatureIntel / YARA scanning
-
----
-
-## EVIDENCE & INSPECTOR VIEWS
-
-Double-clicking grouped detections opens dedicated inspector windows:
-
-- **ETW Inspector** — grouped ETW occurrences with enriched detail fields
-- **Handle Evidence** — handle activity, access masks, origin context, stack frames, memory region metadata
-- **Thread Stack** — register state, resolved stack frames; live and historical snapshot modes
-- **Process Relations** — actor-to-target relationships: handle opens, remote threads, injection intent chains
-- **Detection Chain** — correlated detection evidence grouped by event key and detection key
-- **Direct Syscall Suspects** — per-syscall drill-down with call-site disassembly
-- **Memory Inspector** — memory region inspection for flagged allocations (v1.9)
-- **Child Process Graph** — process DAG visualization for spawn and injection trees
-- **Parallel Stacks** — multi-thread stack comparison
-
----
-
-## DETECTION COVERAGE
-
-Representative detections:
-
-- Direct syscalls (SSN-based origin detection outside `ntdll.exe` export range)
-- Handle open, memory query, cross-process read/write
-- RWX allocation, W→X protection flip
-- Manual mapping and unbacked executable regions
-- AMSI/ETW patch detection
-- Hook trampoline integrity violations
-- Remote thread creation, remote APC queuing
-- Thread hijack and thread-context abuse
-- Process hollowing and injection intent chains
-- Suspicious `ntdll` image path or multiple `ntdll` mappings
-- File drop, open, create, read, special attribute operations
-- Registry activity (key/value create, delete, rename, set)
-- Stack integrity anomalies (non-image-backed return addresses)
-
----
+Please use [this](https://github.com/users/8damon/projects/3) project board to open issues & enhancements. This also loosely tracks live-development.
 
 ## DOCUMENTATION
 
+The introduction, installation, architecture, security, optional server operations, and UI manual are provided here:
+
 - [Blackbird Docs](https://docs.titansoftwork.com/blackbird/)
+- Local engineering docs under `Docs/` when included in an internal working tree
+- Private self-hosted server docs when the optional server tree is included
 
-Repository docs:
+Session archives are stored as `.bkcap` (SQLite + LZ4). Detections can be exported as SIEM JSON Lines, Splunk HEC JSON, Elastic ECS NDJSON, CEF, or CSV. Detection reference scenarios are in `DetectionExamples.exe`.
 
-- [SECURITY.md](./SECURITY.md) — security policy and disclosure process
-- [API.md](./API.md) — ABI reference bridge and source file pointers
-- [UserMode/sensor/README.md](./UserMode/sensor/README.md) — sensor component notes
-- [UserMode/controller/core/README.md](./UserMode/controller/core/README.md) — controller core notes
+## COMPILATION
 
-Session archives are stored as `.bkcap` (SQLite + LZ4). Detection reference scenarios are in `DetectionExamples.exe`.
+You need **Visual Studio 2022+** with **Windows Driver Kit (WDK)** and **.NET (Desktop Development)**.
 
-<p align="center">
-  <img src="https://titansoftwork.com/content/capabilities/blackbird/BLACKBIRD_DIAGRAM.png" width="980" alt="Blackbird platform diagram" />
-</p>
+Clone Blackbird:
+
+``git clone https://github.com/8damon/Blackbird``
+
+Open the ``Blackbird.slnx`` file & select ``Release`` & build.
 
 ## KNOWN ISSUES
 
-- `BlackbirdOperator.exe` is WIP. Communications channel is currently in-dev & not supported.
+- The optional private self-hosted server and operator transport use the secure node command channel. Discovery/status metadata is not identity proof; secure control requires pinned node identity and VM enrollment/trusted operator fingerprints.
 
-- YARA, MITRE & SIGMA rules + memory scanning for YARA are WIP, currently not supported.
+- Rules Intel supports local rule evaluation, MITRE attribution where available, and memory/page sample scanning in the analysis interface. External third-party rule packs are not part of the public tree until reviewed.
 
 - Some executables when launched present with `ERROR_BAD_IMPERSONATION_LEVEL (1346)`, this is a known bug and the root cause is being identified.
 
-- "Uplink Failed" / "Service Not Found", this is due to you not running the installer script `Installer.ps1`, this is required to start the service & install the driver.
+- "Uplink Failed" / "Service Not Found", this is due to you not running the installer script `Scripts\installer.ps1`, which installs and starts the driver and controller services.
 
-- Memory page inspector is WIP. File-backings & some visual bugs are present.
+- Memory attribution is heuristic when direct allocator telemetry is unavailable. Thread execution through a region is shown as an ownership clue, not definitive ownership proof.
+
+> [!NOTE]
+> Some instability or unexpected behavior may occur due to the low-level nature of the platform. This is expected during development.

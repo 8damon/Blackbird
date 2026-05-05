@@ -1,4 +1,4 @@
-#include "core/blackbird_controller_private.h"
+#include "core/controller_private.h"
 
 #pragma comment(lib, "advapi32.lib")
 #pragma comment(lib, "tdh.lib")
@@ -26,7 +26,6 @@ class ControllerLogger
         CHAR rotatePath[MAX_PATH];
         CHAR intermediate[MAX_PATH];
         DWORD expanded;
-        LARGE_INTEGER fileSize;
 
         ScopedCriticalSection guard(m_lock);
 
@@ -52,6 +51,7 @@ class ControllerLogger
             return;
         }
         CreateDirectoryA(logDir, NULL);
+        ApplyLogDirectoryAcl(logDir);
 
         (void)StringCchPrintfA(logPath, RTL_NUMBER_OF(logPath), "%s\\controller.log", logDir);
         (void)StringCchPrintfA(rotatePath, RTL_NUMBER_OF(rotatePath), "%s\\controller.log.1", logDir);
@@ -60,19 +60,17 @@ class ControllerLogger
                                    OPEN_EXISTING, 0, NULL);
         if (probe != INVALID_HANDLE_VALUE)
         {
-            if (GetFileSizeEx(probe, &fileSize) && fileSize.QuadPart > (4LL * 1024 * 1024))
-            {
-                CloseHandle(probe);
-                (void)MoveFileExA(logPath, rotatePath, MOVEFILE_REPLACE_EXISTING);
-            }
-            else
-            {
-                CloseHandle(probe);
-            }
+            CloseHandle(probe);
+            (void)MoveFileExA(logPath, rotatePath, MOVEFILE_REPLACE_EXISTING);
         }
 
-        m_file = CreateFileA(logPath, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_ALWAYS,
-                             FILE_ATTRIBUTE_NORMAL, NULL);
+        m_file = CreateFileA(logPath, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL,
+                             CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        if (m_file != INVALID_HANDLE_VALUE)
+        {
+            LARGE_INTEGER end = {};
+            (void)SetFilePointerEx(m_file, end, NULL, FILE_END);
+        }
     }
 
     void Close() noexcept
@@ -86,17 +84,126 @@ class ControllerLogger
         }
     }
 
+    static bool TagEquals(_In_reads_(tagLen) PCSTR tag, _In_ SIZE_T tagLen, _In_z_ PCSTR expected) noexcept
+    {
+        SIZE_T expectedLen = strlen(expected);
+        return tagLen == expectedLen && _strnicmp(tag, expected, expectedLen) == 0;
+    }
+
+    static bool IsSeverityTag(_In_reads_(tagLen) PCSTR tag, _In_ SIZE_T tagLen) noexcept
+    {
+        return TagEquals(tag, tagLen, "WARN") || TagEquals(tag, tagLen, "ERR") || TagEquals(tag, tagLen, "ERROR") ||
+               TagEquals(tag, tagLen, "INFO") || TagEquals(tag, tagLen, "DIAG") || TagEquals(tag, tagLen, "PANIC");
+    }
+
+    static PCSTR ComponentForTag(_In_reads_(tagLen) PCSTR tag, _In_ SIZE_T tagLen) noexcept
+    {
+        if (TagEquals(tag, tagLen, "DRIVER"))
+        {
+            return "blackbird.sys";
+        }
+        if (TagEquals(tag, tagLen, "NETSVC") || TagEquals(tag, tagLen, "NODE"))
+        {
+            return "BlackbirdNetSvc.exe";
+        }
+        if (TagEquals(tag, tagLen, "INJ") || TagEquals(tag, tagLen, "HOOK"))
+        {
+            return "SR71.dll";
+        }
+        if (TagEquals(tag, tagLen, "IPC") || TagEquals(tag, tagLen, "ETW") || TagEquals(tag, tagLen, "MON") ||
+            TagEquals(tag, tagLen, "MITIGATION") || TagEquals(tag, tagLen, "WARN") || TagEquals(tag, tagLen, "ERR") ||
+            TagEquals(tag, tagLen, "ERROR") || TagEquals(tag, tagLen, "INFO") || TagEquals(tag, tagLen, "*") ||
+            TagEquals(tag, tagLen, "-"))
+        {
+            return "BlackbirdController.exe";
+        }
+
+        return NULL;
+    }
+
+    static void ApplyLogDirectoryAcl(_In_z_ PCSTR logDir) noexcept
+    {
+        PSECURITY_DESCRIPTOR securityDescriptor = NULL;
+
+        if (logDir == NULL || logDir[0] == '\0')
+        {
+            return;
+        }
+
+        if (ConvertStringSecurityDescriptorToSecurityDescriptorA(
+                "D:P(A;OICI;GA;;;SY)(A;OICI;GA;;;BA)(A;OICI;GRGW;;;BU)", SDDL_REVISION_1, &securityDescriptor,
+                NULL) &&
+            securityDescriptor != NULL)
+        {
+            (void)SetFileSecurityA(logDir, DACL_SECURITY_INFORMATION, securityDescriptor);
+            LocalFree(securityDescriptor);
+        }
+    }
+
+    static void NormalizeComponentPrefix(_In_z_ PCSTR message, _Out_writes_z_(normalizedChars) PSTR normalized,
+                                         _In_ SIZE_T normalizedChars) noexcept
+    {
+        PCSTR close;
+        PCSTR component;
+        PCSTR tail;
+        SIZE_T tagLen;
+
+        if (normalized == NULL || normalizedChars == 0)
+        {
+            return;
+        }
+        normalized[0] = '\0';
+
+        if (message == NULL || message[0] != '[')
+        {
+            (void)StringCchCopyA(normalized, normalizedChars, message != NULL ? message : "");
+            return;
+        }
+
+        close = strchr(message + 1, ']');
+        if (close == NULL || close == message + 1)
+        {
+            (void)StringCchCopyA(normalized, normalizedChars, message);
+            return;
+        }
+
+        tagLen = (SIZE_T)(close - (message + 1));
+        component = ComponentForTag(message + 1, tagLen);
+        if (component == NULL)
+        {
+            (void)StringCchCopyA(normalized, normalizedChars, message);
+            return;
+        }
+        tail = close + 1;
+        if (_stricmp(component, "BlackbirdController.exe") == 0 && _strnicmp(tail, " BlackbirdController:", 21) == 0)
+        {
+            tail += 21;
+        }
+
+        if (IsSeverityTag(message + 1, tagLen))
+        {
+            (void)StringCchPrintfA(normalized, normalizedChars, "[%s][%.*s]%s", component, (int)tagLen, message + 1,
+                                   tail);
+        }
+        else
+        {
+            (void)StringCchPrintfA(normalized, normalizedChars, "[%s]%s", component, tail);
+        }
+    }
+
     void Log(_In_z_ _Printf_format_string_ PCSTR fmt, va_list args) noexcept
     {
-        char message[1024];
-        char stamped[1080];
+        char message[2048];
+        char normalized[2048];
+        char stamped[2200];
         SYSTEMTIME st;
         DWORD written;
 
         (void)StringCchVPrintfA(message, RTL_NUMBER_OF(message), fmt, args);
+        NormalizeComponentPrefix(message, normalized, RTL_NUMBER_OF(normalized));
 
-        (void)OutputDebugStringA(message);
-        (void)printf("%s", message);
+        (void)OutputDebugStringA(normalized);
+        (void)printf("%s", normalized);
 
         if (m_file == INVALID_HANDLE_VALUE)
         {
@@ -104,18 +211,21 @@ class ControllerLogger
         }
 
         GetLocalTime(&st);
-        SIZE_T msgLen = strlen(message);
-        while (msgLen > 0 && (message[msgLen - 1] == '\n' || message[msgLen - 1] == '\r'))
+        SIZE_T msgLen = strlen(normalized);
+        while (msgLen > 0 && (normalized[msgLen - 1] == '\n' || normalized[msgLen - 1] == '\r'))
         {
-            message[--msgLen] = '\0';
+            normalized[--msgLen] = '\0';
         }
-        (void)StringCchPrintfA(stamped, RTL_NUMBER_OF(stamped), "[%04u-%02u-%02u %02u:%02u:%02u] %s\r\n", st.wYear,
-                               st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, message);
+        (void)StringCchPrintfA(stamped, RTL_NUMBER_OF(stamped),
+                               "[%04u-%02u-%02u %02u:%02u:%02u pid=%lu tid=%lu] %s\r\n", st.wYear, st.wMonth, st.wDay,
+                               st.wHour, st.wMinute, st.wSecond, GetCurrentProcessId(), GetCurrentThreadId(),
+                               normalized);
 
         ScopedCriticalSection guard(m_lock);
         if (m_file != INVALID_HANDLE_VALUE)
         {
             (void)WriteFile(m_file, stamped, (DWORD)strlen(stamped), &written, NULL);
+            (void)FlushFileBuffers(m_file);
         }
     }
 
@@ -130,7 +240,7 @@ HANDLE g_ServerThread = NULL;
 HANDLE g_DriverPumpThread = NULL;
 HANDLE g_EtwThread = NULL;
 HANDLE g_DriverHandle = INVALID_HANDLE_VALUE;
-BLACKBIRDSC_ETW_SESSION *g_EtwSession = NULL;
+BKSC_ETW_SESSION *g_EtwSession = NULL;
 BOOL g_ThreatIntelEnabled = FALSE;
 DWORD g_ThreatIntelEnableError = ERROR_SUCCESS;
 volatile LONG g_EtwDetectionEvents = 0;
@@ -139,15 +249,15 @@ OwnedCriticalSection g_ClientListLock;
 OwnedCriticalSection g_DriverLock;
 OwnedCriticalSection g_DriverConfigLock;
 volatile LONG g_DriverSubscriptionsDirty = 0;
-PBLACKBIRD_CONTROLLER_CLIENT g_ClientList = NULL;
-PBLACKBIRD_CONTROLLER_CLIENT g_ClientSlots[BLACKBIRD_CONTROLLER_MAX_CLIENTS];
+PBK_CONTROLLER_CLIENT g_ClientList = NULL;
+PBK_CONTROLLER_CLIENT g_ClientSlots[BK_CONTROLLER_MAX_CLIENTS];
 DWORD g_ClientCount = 0;
-DWORD g_ProgrammedPids[BLACKBIRD_MAX_PID_LIST];
+DWORD g_ProgrammedPids[BK_MAX_PID_LIST];
 DWORD g_ProgrammedPidCount = 0;
-BLACKBIRD_CONTROLLER_PID_INDEX_ENTRY g_PidIndex[BLACKBIRD_MAX_PID_LIST];
+BK_CONTROLLER_PID_INDEX_ENTRY g_PidIndex[BK_MAX_PID_LIST];
 DWORD g_PidIndexCount = 0;
 SRWLOCK g_HollowLock = SRWLOCK_INIT;
-BLACKBIRD_CONTROLLER_HOLLOW_ENTRY g_HollowEntries[BLACKBIRD_CONTROLLER_HOLLOW_MAX_ENTRIES];
+BK_CONTROLLER_HOLLOW_ENTRY g_HollowEntries[BK_CONTROLLER_HOLLOW_MAX_ENTRIES];
 
 VOID ControllerLogInit(VOID)
 {
@@ -165,6 +275,45 @@ VOID ControllerLog(_In_z_ _Printf_format_string_ PCSTR Format, ...)
     va_start(args, Format);
     g_Log.Log(Format, args);
     va_end(args);
+}
+
+VOID ControllerApplyProcessMitigations(VOID)
+{
+    PROCESS_MITIGATION_DYNAMIC_CODE_POLICY dynamicCode = {};
+    PROCESS_MITIGATION_EXTENSION_POINT_DISABLE_POLICY extensionPoints = {};
+    PROCESS_MITIGATION_STRICT_HANDLE_CHECK_POLICY strictHandles = {};
+    PROCESS_MITIGATION_IMAGE_LOAD_POLICY imageLoad = {};
+
+    SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
+
+    dynamicCode.ProhibitDynamicCode = 1;
+    dynamicCode.AllowThreadOptOut = 0;
+    dynamicCode.AllowRemoteDowngrade = 0;
+    if (!SetProcessMitigationPolicy(ProcessDynamicCodePolicy, &dynamicCode, sizeof(dynamicCode)))
+    {
+        ControllerLog("[MITIGATION][WARN] dynamic-code mitigation failed err=%lu\n", GetLastError());
+    }
+
+    extensionPoints.DisableExtensionPoints = 1;
+    if (!SetProcessMitigationPolicy(ProcessExtensionPointDisablePolicy, &extensionPoints, sizeof(extensionPoints)))
+    {
+        ControllerLog("[MITIGATION][WARN] extension-point mitigation failed err=%lu\n", GetLastError());
+    }
+
+    strictHandles.RaiseExceptionOnInvalidHandleReference = 1;
+    strictHandles.HandleExceptionsPermanentlyEnabled = 1;
+    if (!SetProcessMitigationPolicy(ProcessStrictHandleCheckPolicy, &strictHandles, sizeof(strictHandles)))
+    {
+        ControllerLog("[MITIGATION][WARN] strict-handle mitigation failed err=%lu\n", GetLastError());
+    }
+
+    imageLoad.NoRemoteImages = 1;
+    imageLoad.NoLowMandatoryLabelImages = 1;
+    imageLoad.PreferSystem32Images = 1;
+    if (!SetProcessMitigationPolicy(ProcessImageLoadPolicy, &imageLoad, sizeof(imageLoad)))
+    {
+        ControllerLog("[MITIGATION][WARN] image-load mitigation failed err=%lu\n", GetLastError());
+    }
 }
 
 VOID ControllerUpdateServiceStatus(_In_ DWORD CurrentState, _In_ DWORD Win32ExitCode, _In_ DWORD WaitHint)
@@ -210,7 +359,7 @@ VOID ControllerStopEtwSessionByNameBestEffort(_In_z_ PCWSTR SessionName, _In_z_ 
         return;
     }
 
-    status = BLACKBIRDSCStopSessionByName(SessionName);
+    status = BkscStopSessionByName(SessionName);
     if (status == ERROR_SUCCESS)
     {
         ControllerLog("[ETW] stopped session reason=%s name=%ws\n", Reason, SessionName);
@@ -223,5 +372,5 @@ VOID ControllerStopEtwSessionByNameBestEffort(_In_z_ PCWSTR SessionName, _In_z_ 
 
 VOID ControllerCleanupStaleEtwSessions(VOID)
 {
-    ControllerStopEtwSessionByNameBestEffort(BLACKBIRD_CONTROLLER_ETW_SESSION_NAMEW, "pre-start");
+    ControllerStopEtwSessionByNameBestEffort(BK_CONTROLLER_ETW_SESSION_NAMEW, "pre-start");
 }

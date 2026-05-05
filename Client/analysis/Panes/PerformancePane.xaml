@@ -125,7 +125,60 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <local:PerformanceChartControl x:Name="CpuChart" Grid.Column="0" Title="CPU" Margin="0,0,6,0"/>
+                <Border Grid.Column="0"
+                        Margin="0,0,6,0"
+                        BorderThickness="1"
+                        BorderBrush="{DynamicResource WinBorderBrush}"
+                        Background="{DynamicResource WinPanelBrush}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="72"/>
+                        </Grid.RowDefinitions>
+                        <local:PerformanceChartControl x:Name="CpuChart" Grid.Row="0" Title="CPU"/>
+                        <Border Grid.Row="1"
+                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                BorderThickness="0,1,0,0"
+                                Padding="6">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="Core Heat"
+                                           FontSize="10"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                <ItemsControl x:Name="CoreHeatGrid"
+                                              Grid.Row="1"
+                                              ItemsSource="{Binding CoreUsageRows, RelativeSource={RelativeSource AncestorType=UserControl}}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Width="22"
+                                                    Height="18"
+                                                    Margin="1"
+                                                    Background="{Binding Fill}"
+                                                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                    BorderThickness="1"
+                                                    ToolTip="{Binding ToolTip}">
+                                                <TextBlock Text="{Binding CoreLabel}"
+                                                           FontSize="9"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource WinTextBrush}"/>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Border>
                 <local:PerformanceChartControl x:Name="DiskChart" Grid.Column="1" Title="Disk IO" Margin="0,0,6,0"/>
                 <local:PerformanceChartControl x:Name="RamChart" Grid.Column="2" Title="RAM" Margin="0,0,6,0"/>
                 <Border Grid.Column="3"
@@ -179,12 +232,16 @@
                                       RowHeight="22"
                                       Visibility="Collapsed">
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Local Socket" Width="150" Binding="{Binding LocalEndpoint}"/>
                                     <DataGridTextColumn Header="Remote Socket" Width="170" Binding="{Binding RemoteEndpoint}"/>
                                     <DataGridTextColumn Header="DNS" Width="200" Binding="{Binding DnsName}"/>
-                                    <DataGridTextColumn Header="Proto" Width="70" Binding="{Binding Protocol}"/>
-                                    <DataGridTextColumn Header="State" Width="120" Binding="{Binding State}"/>
-                                    <DataGridTextColumn Header="Hits" Width="70" Binding="{Binding ConnectionCount}"/>
+                                    <DataGridTextColumn Header="Proto" Width="60" Binding="{Binding Protocol}"/>
+                                    <DataGridTextColumn Header="State" Width="100" Binding="{Binding State}"/>
+                                    <DataGridTextColumn Header="Hits" Width="50" Binding="{Binding ConnectionCount}"/>
+                                    <DataGridTextColumn Header="Sent (B)" Width="80" Binding="{Binding BytesSent}"/>
+                                    <DataGridTextColumn Header="Recv (B)" Width="80" Binding="{Binding BytesRecv}"/>
+                                    <DataGridTextColumn Header="First Seen" Width="140" Binding="{Binding FirstSeen, StringFormat=\{0:HH:mm:ss.fff\}}"/>
+                                    <DataGridTextColumn Header="Last Seen" Width="140" Binding="{Binding LastSeen, StringFormat=\{0:HH:mm:ss.fff\}}"/>
+                                    <DataGridTextColumn Header="Src" Width="60" Binding="{Binding Source}"/>
                                 </DataGrid.Columns>
                             </DataGrid>
 
@@ -240,7 +297,7 @@
                                 BorderThickness="0,0,0,1"
                                 Padding="8,0">
                             <DockPanel LastChildFill="True" VerticalAlignment="Center">
-                                <TextBlock Text="Top Threads" FontWeight="SemiBold"/>
+                                <TextBlock Text="Threads" FontWeight="SemiBold"/>
                                 <Button x:Name="ParallelStacksButton"
                                         DockPanel.Dock="Right"
                                         Margin="8,0,0,0"
@@ -261,7 +318,8 @@
                                               VerticalAlignment="Center"
                                               Checked="ThreadLifecycleToggle_Checked"
                                               Unchecked="ThreadLifecycleToggle_Unchecked"
-                                              Content="Lifecycle"/>
+                                              Content="Lifecycle"
+                                              Visibility="Collapsed"/>
                             </DockPanel>
                         </Border>
 
@@ -275,7 +333,16 @@
                                       ColumnHeaderHeight="24"
                                       RowHeight="22"
                                       CanUserResizeRows="False"
+                                      PreviewMouseRightButtonDown="DataGridRow_PreviewMouseRightButtonDown"
                                       MouseDoubleClick="ThreadsGrid_MouseDoubleClick">
+                                <DataGrid.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Open Thread Stack" Click="ThreadContextOpenStack_Click"/>
+                                        <MenuItem Header="Open Parallel Stacks" Click="ThreadContextParallelStacks_Click"/>
+                                        <Separator/>
+                                        <MenuItem Header="Copy Thread ID" Click="ThreadContextCopyTid_Click"/>
+                                    </ContextMenu>
+                                </DataGrid.ContextMenu>
                                 <DataGrid.RowStyle>
                                     <Style TargetType="DataGridRow">
                                         <Style.Triggers>
@@ -385,9 +452,19 @@
                                               RowHeight="22"
                                               ScrollViewer.VerticalScrollBarVisibility="Hidden"
                                               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                              PreviewMouseRightButtonDown="DataGridRow_PreviewMouseRightButtonDown"
                                               MouseDoubleClick="ModulesGrid_MouseDoubleClick">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Open PE View" Click="ModuleContextOpenPe_Click"/>
+                                                <Separator/>
+                                                <MenuItem Header="Copy Path" Click="ModuleContextCopyPath_Click"/>
+                                                <MenuItem Header="Copy Base Address" Click="ModuleContextCopyBase_Click"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
                                         <DataGrid.Columns>
                                             <DataGridTextColumn Header="Module" Binding="{Binding Name}" Width="170"/>
+                                            <DataGridTextColumn Header="Role" Binding="{Binding Role}" Width="78"/>
                                             <DataGridTextColumn Header="Base" Binding="{Binding BaseAddress}" Width="130"/>
                                             <DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="85"/>
                                             <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="*"/>
@@ -486,7 +563,17 @@
                                               CanUserResizeRows="False"
                                               ColumnHeaderHeight="24"
                                               RowHeight="22"
-                                              Visibility="Collapsed">
+                                              Visibility="Collapsed"
+                                              PreviewMouseRightButtonDown="DataGridRow_PreviewMouseRightButtonDown"
+                                              MouseDoubleClick="MemoryInspectorGrid_MouseDoubleClick">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Open Thread Stack" Click="MemoryContextOpenStack_Click"/>
+                                                <MenuItem Header="Open Disassembly" Click="MemoryContextOpenDisassembly_Click"/>
+                                                <Separator/>
+                                                <MenuItem Header="Copy Base Address" Click="MemoryContextCopyBase_Click"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
                                         <DataGrid.CellStyle>
                                             <Style TargetType="DataGridCell">
                                                 <Setter Property="Background" Value="Transparent"/>
@@ -502,43 +589,73 @@
                                                 <Setter Property="FontWeight" Value="Normal"/>
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding PriorityBand}" Value="PrivateUnsigned">
-                                                        <Setter Property="Background" Value="#3F2418"/>
-                                                        <Setter Property="Foreground" Value="#FFD9B8"/>
+                                                        <Setter Property="Background" Value="{DynamicResource MemoryPrivateUnsignedBackgroundBrush}"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource MemoryPrivateUnsignedForegroundBrush}"/>
                                                         <Setter Property="FontWeight" Value="SemiBold"/>
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding PriorityBand}" Value="PrivateExecutable">
-                                                        <Setter Property="Background" Value="#341A1A"/>
-                                                        <Setter Property="Foreground" Value="#FFC7C7"/>
+                                                        <Setter Property="Background" Value="{DynamicResource MemoryPrivateExecutableBackgroundBrush}"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource MemoryPrivateExecutableForegroundBrush}"/>
                                                         <Setter Property="FontWeight" Value="SemiBold"/>
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding PriorityBand}" Value="Private">
-                                                        <Setter Property="Background" Value="#1D2438"/>
-                                                        <Setter Property="Foreground" Value="#C9D8FF"/>
+                                                        <Setter Property="Background" Value="{DynamicResource MemoryPrivateBackgroundBrush}"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource MemoryPrivateForegroundBrush}"/>
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding PriorityBand}" Value="Unsigned">
-                                                        <Setter Property="Background" Value="#322715"/>
-                                                        <Setter Property="Foreground" Value="#FFE1A8"/>
+                                                        <Setter Property="Background" Value="{DynamicResource MemoryUnsignedBackgroundBrush}"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource MemoryUnsignedForegroundBrush}"/>
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding PriorityBand}" Value="Image">
-                                                        <Setter Property="Background" Value="#25311B"/>
-                                                        <Setter Property="Foreground" Value="#D3F2B0"/>
+                                                        <Setter Property="Background" Value="{DynamicResource MemoryImageBackgroundBrush}"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource MemoryImageForegroundBrush}"/>
                                                     </DataTrigger>
                                                     <DataTrigger Binding="{Binding PriorityBand}" Value="Mapped">
-                                                        <Setter Property="Background" Value="#241E35"/>
-                                                        <Setter Property="Foreground" Value="#D4C8FF"/>
+                                                        <Setter Property="Background" Value="{DynamicResource MemoryMappedBackgroundBrush}"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource MemoryMappedForegroundBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding HighlightBand}" Value="ThreadStack">
+                                                        <Setter Property="Background" Value="{DynamicResource MemoryThreadStackBackgroundBrush}"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource MemoryThreadStackForegroundBrush}"/>
+                                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding HighlightBand}" Value="Heap">
+                                                        <Setter Property="Background" Value="{DynamicResource MemoryHeapBackgroundBrush}"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource MemoryHeapForegroundBrush}"/>
+                                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding HighlightBand}" Value="Anchor">
+                                                        <Setter Property="Background" Value="{DynamicResource MemoryAnchorBackgroundBrush}"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource MemoryAnchorForegroundBrush}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding HighlightBand}" Value="Runtime">
+                                                        <Setter Property="Background" Value="{DynamicResource MemoryRuntimeBackgroundBrush}"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource MemoryRuntimeForegroundBrush}"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </DataGrid.RowStyle>
                                         <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Tag" Binding="{Binding HighlightLabel}" Width="74">
+                                                <DataGridTextColumn.CellStyle>
+                                                    <Style TargetType="DataGridCell">
+                                                        <Setter Property="Background" Value="Transparent"/>
+                                                        <Setter Property="BorderBrush" Value="{DynamicResource WinSubtleBorderBrush}"/>
+                                                        <Setter Property="BorderThickness" Value="0,0,1,0"/>
+                                                        <Setter Property="Padding" Value="6,0"/>
+                                                    </Style>
+                                                </DataGridTextColumn.CellStyle>
+                                            </DataGridTextColumn>
                                             <DataGridTextColumn Header="Base" Binding="{Binding BaseAddress}" Width="132"/>
                                             <DataGridTextColumn Header="Size" Binding="{Binding Size}" Width="92"/>
                                             <DataGridTextColumn Header="State" Binding="{Binding State}" Width="82"/>
                                             <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="82"/>
                                             <DataGridTextColumn Header="Protect" Binding="{Binding Protect}" Width="170"/>
-                                            <DataGridTextColumn Header="Class" Binding="{Binding Category}" Width="140"/>
-                                            <DataGridTextColumn Header="Allocator" Binding="{Binding Allocator}" Width="190"/>
-                                            <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="120"/>
+                                            <DataGridTextColumn Header="Class" Binding="{Binding Category}" Width="180"/>
+                                            <DataGridTextColumn Header="Allocator / Thread" Binding="{Binding Allocator}" Width="230"/>
+                                            <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="130"/>
+                                            <DataGridTextColumn Header="Context" Binding="{Binding Context}" Width="190"/>
+                                            <DataGridTextColumn Header="Lifecycle" Binding="{Binding Lifecycle}" Width="190"/>
                                             <DataGridTextColumn Header="Trust" Binding="{Binding Trust}" Width="86"/>
                                         </DataGrid.Columns>
                                     </DataGrid>

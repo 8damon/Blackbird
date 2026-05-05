@@ -64,13 +64,12 @@ namespace BK_RUNTIME_INTERNAL
             return;
         }
 
-        BkDbgLog(
-            "EnsureCoreHookControllersReady: NtHook fault=%s function=%s address=%p redirect=%p syscall=%lu "
-            "sample=%02X %02X %02X %02X %02X %02X %02X %02X",
-            DescribeNtHookInitFaultCode(fault.Code), fault.FunctionName != nullptr ? fault.FunctionName : "",
-            fault.Address, fault.RedirectTarget, static_cast<unsigned long>(fault.SyscallIndex), fault.Sample[0],
-            fault.Sample[1], fault.Sample[2], fault.Sample[3], fault.Sample[4], fault.Sample[5], fault.Sample[6],
-            fault.Sample[7]);
+        BkDbgLog("EnsureCoreHookControllersReady: NtHook fault=%s function=%s address=%p redirect=%p syscall=%lu "
+                 "sample=%02X %02X %02X %02X %02X %02X %02X %02X",
+                 DescribeNtHookInitFaultCode(fault.Code), fault.FunctionName != nullptr ? fault.FunctionName : "",
+                 fault.Address, fault.RedirectTarget, static_cast<unsigned long>(fault.SyscallIndex), fault.Sample[0],
+                 fault.Sample[1], fault.Sample[2], fault.Sample[3], fault.Sample[4], fault.Sample[5], fault.Sample[6],
+                 fault.Sample[7]);
         BkRuntimeReportFault(BkRuntimeFaultCode::NtHookInitFault, reinterpret_cast<std::uint64_t>(fault.Address),
                              static_cast<std::uint64_t>(fault.Code));
     }
@@ -83,13 +82,12 @@ namespace BK_RUNTIME_INTERNAL
             return;
         }
 
-        BkDbgLog(
-            "EnsureCoreHookControllersReady: ModuleHook fault=%s module=%ws export=%s address=%p redirect=%p "
-            "sample=%02X %02X %02X %02X %02X %02X %02X %02X",
-            DescribeModuleHookInitFaultCode(fault.Code), fault.ModuleName != nullptr ? fault.ModuleName : L"",
-            fault.ExportName != nullptr ? fault.ExportName : "", fault.Address, fault.RedirectTarget, fault.Sample[0],
-            fault.Sample[1], fault.Sample[2], fault.Sample[3], fault.Sample[4], fault.Sample[5], fault.Sample[6],
-            fault.Sample[7]);
+        BkDbgLog("EnsureCoreHookControllersReady: ModuleHook fault=%s module=%ws export=%s address=%p redirect=%p "
+                 "sample=%02X %02X %02X %02X %02X %02X %02X %02X",
+                 DescribeModuleHookInitFaultCode(fault.Code), fault.ModuleName != nullptr ? fault.ModuleName : L"",
+                 fault.ExportName != nullptr ? fault.ExportName : "", fault.Address, fault.RedirectTarget,
+                 fault.Sample[0], fault.Sample[1], fault.Sample[2], fault.Sample[3], fault.Sample[4], fault.Sample[5],
+                 fault.Sample[6], fault.Sample[7]);
         BkRuntimeReportFault(BkRuntimeFaultCode::ModuleHookInitFault, reinterpret_cast<std::uint64_t>(fault.Address),
                              static_cast<std::uint64_t>(fault.Code));
     }
@@ -110,8 +108,7 @@ namespace BK_RUNTIME_INTERNAL
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
                 g_NtInitialized = false;
-                BkDbgLog("EnsureCoreHookControllersReady: NtHook exception=0x%08lX",
-                                  (unsigned long)GetExceptionCode());
+                BkDbgLog("EnsureCoreHookControllersReady: NtHook exception=0x%08lX", (unsigned long)GetExceptionCode());
             }
         }
         if (!g_KiInitialized)
@@ -124,8 +121,7 @@ namespace BK_RUNTIME_INTERNAL
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
                 g_KiInitialized = false;
-                BkDbgLog("EnsureCoreHookControllersReady: KiHook exception=0x%08lX",
-                                  (unsigned long)GetExceptionCode());
+                BkDbgLog("EnsureCoreHookControllersReady: KiHook exception=0x%08lX", (unsigned long)GetExceptionCode());
             }
             if (!g_KiInitialized && !KeIsKiHookSupported())
             {
@@ -148,7 +144,7 @@ namespace BK_RUNTIME_INTERNAL
             {
                 g_ModuleInitialized = false;
                 BkDbgLog("EnsureCoreHookControllersReady: ModuleHook exception=0x%08lX",
-                                  (unsigned long)GetExceptionCode());
+                         (unsigned long)GetExceptionCode());
             }
         }
 
@@ -190,11 +186,15 @@ namespace BK_RUNTIME_INTERNAL
         if (worker == nullptr)
         {
             g_RuntimeWorkerStarted.store(false, std::memory_order_release);
-            BkDbgLog("EnsureRuntimeWorkerThreadStarted: CreateThread failed gle=%lu",
-                              (unsigned long)GetLastError());
+            BkDbgLog("EnsureRuntimeWorkerThreadStarted: CreateThread failed gle=%lu", (unsigned long)GetLastError());
             return false;
         }
 
+        DWORD tid = GetThreadId(worker);
+        if (tid != 0)
+        {
+            KeRegisterConcealedThread(tid);
+        }
         BkDbgLog("EnsureRuntimeWorkerThreadStarted: started handle=%p", worker);
         NativeCloseHandle(worker);
         return true;
@@ -222,7 +222,7 @@ namespace BK_RUNTIME_INTERNAL
             return false;
         }
 
-        constexpr std::uint32_t kTransportReadyMask = BLACKBIRD_IPC_HOOK_READY_FLAG_IPC_CONNECTED;
+        constexpr std::uint32_t kTransportReadyMask = BKIPC_HOOK_READY_FLAG_IPC_CONNECTED;
         if (!NotifyHookReadyWithRetry(kTransportReadyMask))
         {
             BkDbgLog("EnsureRuntimeInitializedForLaunch: initial transport notify failed");
@@ -238,13 +238,18 @@ namespace BK_RUNTIME_INTERNAL
 
         bool coreReady = EnsureCoreHookControllersReady();
         BkDbgLog("EnsureRuntimeInitializedForLaunch: coreReady=%u readyMask=0x%08lX", coreReady ? 1u : 0u,
-                          (unsigned long)BuildHookReadyMask(true));
+                 (unsigned long)BuildHookReadyMask(true));
         if (!coreReady)
         {
             BkRuntimeReportFault(BkRuntimeFaultCode::CoreHookInitFailed, BuildHookReadyMask(true));
         }
         (void)MaybeInitializeWinsockHookController();
         PublishCurrentHookReadyMaskBestEffort();
+
+        /* Register all SR71-owned pages with the controller so they are
+           excluded from heuristics and surfaced as "BK Instrumentation"
+           in the UI instead of being flagged as suspicious RWX/syscall stubs. */
+        RegisterSr71OwnedRanges();
 
         g_RuntimeInitialized.store(true, std::memory_order_release);
 
@@ -263,7 +268,8 @@ namespace BK_RUNTIME_INTERNAL
             return true;
         }
 
-        if (FindLoadedModuleBaseByName(L"ws2_32.dll") == nullptr && FindLoadedModuleBaseByName(L"wsock32.dll") == nullptr)
+        if (FindLoadedModuleBaseByName(L"ws2_32.dll") == nullptr &&
+            FindLoadedModuleBaseByName(L"wsock32.dll") == nullptr)
         {
             return false;
         }
@@ -285,23 +291,23 @@ namespace BK_RUNTIME_INTERNAL
         std::uint32_t mask = 0;
         if (ipcConnected)
         {
-            mask |= BLACKBIRD_IPC_HOOK_READY_FLAG_IPC_CONNECTED;
+            mask |= BKIPC_HOOK_READY_FLAG_IPC_CONNECTED;
         }
         if (g_WinsockInitialized)
         {
-            mask |= BLACKBIRD_IPC_HOOK_READY_FLAG_WINSOCK;
+            mask |= BKIPC_HOOK_READY_FLAG_WINSOCK;
         }
         if (g_NtInitialized)
         {
-            mask |= BLACKBIRD_IPC_HOOK_READY_FLAG_NT;
+            mask |= BKIPC_HOOK_READY_FLAG_NT;
         }
         if (g_KiInitialized)
         {
-            mask |= BLACKBIRD_IPC_HOOK_READY_FLAG_KI;
+            mask |= BKIPC_HOOK_READY_FLAG_KI;
         }
         if (g_ModuleInitialized)
         {
-            mask |= BLACKBIRD_IPC_HOOK_READY_FLAG_MODULE;
+            mask |= BKIPC_HOOK_READY_FLAG_MODULE;
         }
         return mask;
     }
@@ -316,14 +322,14 @@ namespace BK_RUNTIME_INTERNAL
             if (BKIPC::Initialize(kIpcInitAttemptTimeoutMs))
             {
                 BkDbgLog("InitializeIpcWithRetry: success elapsedMs=%llu",
-                                  (unsigned long long)(GetTickCount64() - startTick));
+                         (unsigned long long)(GetTickCount64() - startTick));
                 return true;
             }
 
             if ((GetTickCount64() - startTick) >= kIpcInitMaxWaitMs)
             {
                 BkDbgLog("InitializeIpcWithRetry: timeout elapsedMs=%llu",
-                                  (unsigned long long)(GetTickCount64() - startTick));
+                         (unsigned long long)(GetTickCount64() - startTick));
                 BkRuntimeReportFault(BkRuntimeFaultCode::IpcInitializeTimedOut,
                                      static_cast<std::uint64_t>(GetTickCount64() - startTick));
                 return false;
@@ -351,15 +357,15 @@ namespace BK_RUNTIME_INTERNAL
             if (BKIPC::NotifyHookReady(localMask, &observedMask))
             {
                 BkDbgLog("NotifyHookReadyWithRetry: success localMask=0x%08lX observedMask=0x%08lX elapsedMs=%llu",
-                                  (unsigned long)localMask, (unsigned long)observedMask,
-                                  (unsigned long long)(GetTickCount64() - startTick));
+                         (unsigned long)localMask, (unsigned long)observedMask,
+                         (unsigned long long)(GetTickCount64() - startTick));
                 return true;
             }
 
             if ((GetTickCount64() - startTick) >= kHookReadyNotifyMaxWaitMs)
             {
-                BkDbgLog("NotifyHookReadyWithRetry: timeout localMask=0x%08lX elapsedMs=%llu",
-                                  (unsigned long)localMask, (unsigned long long)(GetTickCount64() - startTick));
+                BkDbgLog("NotifyHookReadyWithRetry: timeout localMask=0x%08lX elapsedMs=%llu", (unsigned long)localMask,
+                         (unsigned long long)(GetTickCount64() - startTick));
                 BkRuntimeReportFault(BkRuntimeFaultCode::HookReadyTimedOut, localMask,
                                      static_cast<std::uint64_t>(GetTickCount64() - startTick));
                 return false;
@@ -369,6 +375,8 @@ namespace BK_RUNTIME_INTERNAL
             NativeDelayMs(kHookReadyNotifyRetrySleepMs);
         }
     }
+
+    void RegisterSr71HookPatchOverlays() noexcept;
 
     void PublishCurrentHookReadyMaskBestEffort() noexcept
     {
@@ -385,13 +393,268 @@ namespace BK_RUNTIME_INTERNAL
         }
 
         std::uint32_t observedMask = 0;
-        if (!BKIPC::NotifyHookReady(localMask, &observedMask))
+        std::uint32_t pendingCmd = 0;
+        if (!BKIPC::NotifyHookReady(localMask, &observedMask, &pendingCmd))
         {
             return;
         }
 
         g_LastPublishedHookReadyMask.store(localMask, std::memory_order_release);
-        BkDbgLog("PublishCurrentHookReadyMaskBestEffort: localMask=0x%08lX observedMask=0x%08lX",
-                          (unsigned long)localMask, (unsigned long)observedMask);
+        BkDbgLog("PublishCurrentHookReadyMaskBestEffort: localMask=0x%08lX observedMask=0x%08lX pendingCmd=%lu",
+                 (unsigned long)localMask, (unsigned long)observedMask, (unsigned long)pendingCmd);
+
+        if (pendingCmd == BlackbirdIpcCommandUpgradeWinsockHooks)
+        {
+            BkDbgLog("PublishCurrentHookReadyMaskBestEffort: controller requested inline Winsock hook upgrade");
+            if (KeInstallWinsockInlineHooks())
+            {
+                RegisterSr71HookPatchOverlays();
+            }
+        }
+    }
+    /* ── SR71 ownership registration ──────────────────────────────────────
+     * Sends every BK-allocated page to the controller exactly once so
+     * the controller can suppress heuristics and mark them in the UI as
+     * "BK Instrumentation" instead of flagging them as suspicious
+     * RWX/direct-syscall regions.
+     * ─────────────────────────────────────────────────────────────────── */
+    static volatile LONG g_InstrumentationRangesRegistered = 0;
+
+    static bool TryGetImageSize(void *moduleBase, std::uint64_t &imageSize) noexcept
+    {
+        imageSize = 0;
+        if (moduleBase == nullptr)
+        {
+            return false;
+        }
+
+        auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(moduleBase);
+        __try
+        {
+            if (dos->e_magic != IMAGE_DOS_SIGNATURE)
+            {
+                return false;
+            }
+
+            auto *nt = reinterpret_cast<const IMAGE_NT_HEADERS *>(reinterpret_cast<const std::uint8_t *>(moduleBase) +
+                                                                  dos->e_lfanew);
+            if (nt->Signature != IMAGE_NT_SIGNATURE || nt->OptionalHeader.SizeOfImage == 0)
+            {
+                return false;
+            }
+
+            imageSize = nt->OptionalHeader.SizeOfImage;
+            return true;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            imageSize = 0;
+            return false;
+        }
+    }
+
+    static bool PublishSr71InstrumentationRange(void *base, std::uint64_t size, std::uint32_t instrumentationFlags,
+                                                const char *tag) noexcept
+    {
+        std::uint32_t ihrFlags = kSr71IhrFlagSr71Owned;
+        if ((instrumentationFlags & BK_INSTRUMENTATION_FLAG_SYSCALL_STUB) != 0 ||
+            (instrumentationFlags & BK_INSTRUMENTATION_FLAG_LAUNCH_GATE) != 0)
+        {
+            ihrFlags |= kSr71IhrFlagExecutable;
+        }
+        if ((instrumentationFlags & BK_INSTRUMENTATION_FLAG_LAUNCH_GATE) != 0)
+        {
+            ihrFlags |= kSr71IhrFlagGuarded;
+        }
+
+        Sr71IhrToken token = RegisterIndirectHandle(base, size, Sr71IhrType::InstrumentationRange, ihrFlags, tag);
+        Sr71IhrResolved resolved{};
+        if (token == 0 || !ResolveIndirectHandle(token, Sr71IhrType::InstrumentationRange, resolved))
+        {
+            return false;
+        }
+
+        bool ok = BKIPC::RegisterInstrumentationRange(reinterpret_cast<UINT64>(resolved.Pointer), resolved.Size,
+                                                      instrumentationFlags, tag);
+        if (!ok)
+        {
+            BkRuntimeReportFault(BkRuntimeFaultCode::InstrumentationRangeRegisterFailed,
+                                 reinterpret_cast<std::uint64_t>(resolved.Pointer), resolved.Size);
+        }
+        return ok;
+    }
+
+    static void BuildHookPatchTag(const char *prefix, const char *name, char tag[BK_HOOK_PATCH_TAG_CHARS]) noexcept
+    {
+        std::size_t p = 0;
+        if (prefix != nullptr)
+        {
+            while (prefix[p] && p < BK_HOOK_PATCH_TAG_CHARS - 1)
+            {
+                tag[p] = prefix[p];
+                ++p;
+            }
+        }
+        if (name != nullptr)
+        {
+            std::size_t n = 0;
+            while (name[n] && p < BK_HOOK_PATCH_TAG_CHARS - 1)
+            {
+                tag[p++] = name[n++];
+            }
+        }
+        tag[p] = '\0';
+    }
+
+    static void PublishSr71HookPatch(void *patchAddress, std::size_t patchSize, const std::uint8_t originalBytes[16],
+                                     std::uint32_t flags, const char *tagPrefix, const char *hookName) noexcept
+    {
+        if (patchAddress == nullptr || patchSize == 0 || patchSize > BK_MAX_HOOK_PATCH_BYTES ||
+            originalBytes == nullptr)
+        {
+            return;
+        }
+
+        char tag[BK_HOOK_PATCH_TAG_CHARS]{};
+        BuildHookPatchTag(tagPrefix, hookName, tag);
+        if (!BKIPC::RegisterHookPatch(reinterpret_cast<UINT64>(patchAddress), static_cast<UINT32>(patchSize),
+                                      originalBytes, BK_MAX_HOOK_PATCH_BYTES, flags, tag))
+        {
+            BkRuntimeReportFault(BkRuntimeFaultCode::HookPatchRegisterFailed,
+                                 reinterpret_cast<std::uint64_t>(patchAddress), static_cast<std::uint64_t>(patchSize));
+        }
+    }
+
+    void RegisterSr71HookPatchOverlays() noexcept
+    {
+        std::size_t totalCount = 0;
+
+        constexpr std::size_t kMaxNtPatches = 64;
+        NtHookPatchInfo ntPatches[kMaxNtPatches]{};
+        std::size_t ntPatchCount = KeCollectNtHookPatchInfos(ntPatches, kMaxNtPatches);
+        for (std::size_t i = 0; i < ntPatchCount; ++i)
+        {
+            PublishSr71HookPatch(ntPatches[i].PatchAddress, ntPatches[i].PatchSize, ntPatches[i].OriginalBytes,
+                                 BK_HOOK_PATCH_FLAG_NT_INLINE, "BK Inst.NtPatch.", ntPatches[i].HookName);
+        }
+        totalCount += ntPatchCount;
+
+        constexpr std::size_t kMaxWinsockPatches = 640;
+        WinsockHookPatchInfo winsockPatches[kMaxWinsockPatches]{};
+        std::size_t winsockPatchCount = KeCollectWinsockHookPatchInfos(winsockPatches, kMaxWinsockPatches);
+        for (std::size_t i = 0; i < winsockPatchCount; ++i)
+        {
+            const char *prefix =
+                (winsockPatches[i].Flags == BK_HOOK_PATCH_FLAG_WINSOCK_INLINE) ? "BK Inst.WsInline." : "BK Inst.WsIAT.";
+            PublishSr71HookPatch(winsockPatches[i].PatchAddress, winsockPatches[i].PatchSize,
+                                 winsockPatches[i].OriginalBytes, winsockPatches[i].Flags, prefix,
+                                 winsockPatches[i].HookName);
+        }
+        totalCount += winsockPatchCount;
+
+        constexpr std::size_t kMaxKiPatches = 4;
+        KiHookPatchInfo kiPatches[kMaxKiPatches]{};
+        std::size_t kiPatchCount = KeCollectKiHookPatchInfos(kiPatches, kMaxKiPatches);
+        for (std::size_t i = 0; i < kiPatchCount; ++i)
+        {
+            PublishSr71HookPatch(kiPatches[i].PatchAddress, kiPatches[i].PatchSize, kiPatches[i].OriginalBytes,
+                                 kiPatches[i].Flags, "BK Inst.KiSlot.", kiPatches[i].HookName);
+        }
+        totalCount += kiPatchCount;
+
+        constexpr std::size_t kMaxModulePatches = 64;
+        ModuleHookPatchInfo modulePatches[kMaxModulePatches]{};
+        std::size_t modulePatchCount = KeCollectModuleHookPatchInfos(modulePatches, kMaxModulePatches);
+        for (std::size_t i = 0; i < modulePatchCount; ++i)
+        {
+            PublishSr71HookPatch(modulePatches[i].PatchAddress, modulePatches[i].PatchSize,
+                                 modulePatches[i].OriginalBytes, modulePatches[i].Flags, "BK Inst.Module.",
+                                 modulePatches[i].HookName);
+        }
+        totalCount += modulePatchCount;
+
+        BkDbgLog("RegisterSr71HookPatchOverlays: registered nt=%zu winsock=%zu ki=%zu module=%zu total=%zu",
+                 ntPatchCount, winsockPatchCount, kiPatchCount, modulePatchCount, totalCount);
+    }
+
+    void RegisterSr71OwnedRanges() noexcept
+    {
+        if (InterlockedCompareExchange(&g_InstrumentationRangesRegistered, 1, 0) != 0)
+            return; /* idempotent — only register once even if called multiple times */
+
+        MEMORY_BASIC_INFORMATION selfMbi{};
+        void *sr71Base = nullptr;
+        if (VirtualQuery(reinterpret_cast<const void *>(&RegisterSr71OwnedRanges), &selfMbi, sizeof(selfMbi)) ==
+            sizeof(selfMbi))
+        {
+            sr71Base = selfMbi.AllocationBase;
+        }
+        if (sr71Base == nullptr)
+        {
+            sr71Base = FindLoadedModuleBaseByName(L"SR71.dll");
+        }
+        std::uint64_t sr71ImageSize = 0;
+        if (TryGetImageSize(sr71Base, sr71ImageSize))
+        {
+            (void)PublishSr71InstrumentationRange(sr71Base, sr71ImageSize, 0u, "SR71 Instrumentation");
+        }
+
+        /* 1. NT-hook syscall stubs — one 16-byte PAGE_EXECUTE_READWRITE allocation
+              per hooked NT API, created by BuildSyscallStub() inside nt.cpp. */
+        constexpr std::size_t kMaxStubs = 64;
+        NtHookStubInfo stubs[kMaxStubs]{};
+        std::size_t stubCount = KeCollectNtHookStubInfos(stubs, kMaxStubs);
+
+        for (std::size_t i = 0; i < stubCount; ++i)
+        {
+            if (stubs[i].StubBase == nullptr || stubs[i].StubSize == 0)
+                continue;
+
+            /* Build a tag like "BK Instrument.NtHook.NtCreateThreadEx" */
+            char tag[BK_MAX_INSTRUMENTATION_TAG]{};
+            const char *prefix = "BK Instrument.NtHook.";
+            std::size_t p = 0;
+            while (prefix[p] && p < BK_MAX_INSTRUMENTATION_TAG - 1)
+            {
+                tag[p] = prefix[p];
+                ++p;
+            }
+            if (stubs[i].HookName)
+            {
+                std::size_t n = 0;
+                while (stubs[i].HookName[n] && p < BK_MAX_INSTRUMENTATION_TAG - 1)
+                {
+                    tag[p++] = stubs[i].HookName[n++];
+                }
+            }
+            tag[p] = '\0';
+
+            (void)PublishSr71InstrumentationRange(stubs[i].StubBase, static_cast<UINT64>(stubs[i].StubSize),
+                                                  BK_INSTRUMENTATION_FLAG_SYSCALL_STUB, tag);
+        }
+
+        BkDbgLog("RegisterSr71OwnedRanges: registered %zu NT-hook stubs", stubCount);
+
+        RegisterSr71HookPatchOverlays();
+
+        /* 2. Launch-gate pages — RWX guard pages used to trap and redirect the
+              target thread's initial IP before user code runs.
+              g_LaunchGatePages is defined in runtime_launch_gate.cpp. */
+        for (std::size_t i = 0; i < g_LaunchGatePageCount; ++i)
+        {
+            const LaunchGatePage &page = g_LaunchGatePages[i];
+            Sr71IhrResolved resolved{};
+            if (!ResolveIndirectHandle(page.BaseToken, Sr71IhrType::LaunchGatePage, resolved))
+                continue;
+            if (!BKIPC::RegisterInstrumentationRange(
+                    reinterpret_cast<UINT64>(resolved.Pointer), resolved.Size ? resolved.Size : 4096u,
+                    BK_INSTRUMENTATION_FLAG_LAUNCH_GATE,
+                    page.TrapKind == 2u ? "BK Instrument.TLS Callback" : "BK Instrument.Entry"))
+            {
+                BkRuntimeReportFault(BkRuntimeFaultCode::InstrumentationRangeRegisterFailed,
+                                     reinterpret_cast<std::uint64_t>(resolved.Pointer),
+                                     resolved.Size ? resolved.Size : 4096u);
+            }
+        }
     }
 } // namespace BK_RUNTIME_INTERNAL

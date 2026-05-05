@@ -10,17 +10,14 @@ namespace BlackbirdInterface
 {
     public sealed class SparklinePreviewControl : FrameworkElement
     {
-        public static readonly DependencyProperty ValuesProperty =
-            DependencyProperty.Register(nameof(Values),
-                typeof(INotifyCollectionChanged),
-                typeof(SparklinePreviewControl),
-                new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnValuesChanged));
+        public static readonly DependencyProperty ValuesProperty = DependencyProperty.Register(
+            nameof(Values), typeof(INotifyCollectionChanged), typeof(SparklinePreviewControl),
+            new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender, OnValuesChanged));
 
-        public static readonly DependencyProperty StrokeProperty =
-            DependencyProperty.Register(nameof(Stroke),
-                typeof(Brush),
-                typeof(SparklinePreviewControl),
-                new FrameworkPropertyMetadata(new SolidColorBrush(Color.FromRgb(0x97, 0xA1, 0xAD)), FrameworkPropertyMetadataOptions.AffectsRender));
+        public static readonly DependencyProperty StrokeProperty = DependencyProperty.Register(
+            nameof(Stroke), typeof(Brush), typeof(SparklinePreviewControl),
+            new FrameworkPropertyMetadata(new SolidColorBrush(Color.FromRgb(0x97, 0xA1, 0xAD)),
+                                          FrameworkPropertyMetadataOptions.AffectsRender));
 
         public INotifyCollectionChanged? Values
         {
@@ -36,7 +33,8 @@ namespace BlackbirdInterface
 
         private static void OnValuesChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
-            if (d is not SparklinePreviewControl c) return;
+            if (d is not SparklinePreviewControl c)
+                return;
 
             if (e.OldValue is INotifyCollectionChanged oldObs)
                 oldObs.CollectionChanged -= c.OnCollectionChanged;
@@ -85,14 +83,17 @@ namespace BlackbirdInterface
 
         private static void Draw(DrawingContext dc, double w, double h, IList<double> vals, Brush stroke)
         {
-            if (vals.Count < 2) return;
+            if (vals.Count < 2)
+                return;
 
             double min = double.MaxValue, max = double.MinValue;
             for (int i = 0; i < vals.Count; i++)
             {
                 var v = vals[i];
-                if (v < min) min = v;
-                if (v > max) max = v;
+                if (v < min)
+                    min = v;
+                if (v > max)
+                    max = v;
             }
             if (Math.Abs(max - min) < 1e-9)
             {
@@ -112,8 +113,10 @@ namespace BlackbirdInterface
                     double t = (vals[i] - min) / (max - min);
                     double y = (1.0 - t) * (h - 2) + 1;
 
-                    if (i == 0) g.BeginFigure(new Point(x, y), false, false);
-                    else g.LineTo(new Point(x, y), true, false);
+                    if (i == 0)
+                        g.BeginFigure(new Point(x, y), false, false);
+                    else
+                        g.LineTo(new Point(x, y), true, false);
                 }
             }
             geo.Freeze();
@@ -122,5 +125,3 @@ namespace BlackbirdInterface
         }
     }
 }
-
-

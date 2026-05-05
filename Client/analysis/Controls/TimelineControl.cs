@@ -24,9 +24,9 @@ namespace BlackbirdInterface
 
     public sealed class LaneInteractionEventArgs : EventArgs
     {
-        public string LaneKey { get; }          // "Execution" or "Execution/CreateProcess"
-        public bool IsArrow { get; }            // clicked the dropdown arrow region
-        public MouseButton Button { get; }      // left/right click
+        public string LaneKey { get; }     // "Execution" or "Execution/CreateProcess"
+        public bool IsArrow { get; }       // clicked the dropdown arrow region
+        public MouseButton Button { get; } // left/right click
 
         public LaneInteractionEventArgs(string laneKey, bool isArrow, MouseButton button)
         {
@@ -80,36 +80,36 @@ namespace BlackbirdInterface
             get => (DateTime)GetValue(CaptureStartUtcProperty);
             set => SetValue(CaptureStartUtcProperty, value);
         }
-        public static readonly DependencyProperty CaptureStartUtcProperty =
-            DependencyProperty.Register(nameof(CaptureStartUtc), typeof(DateTime), typeof(TimelineControl),
-                new FrameworkPropertyMetadata(DateTime.UtcNow, FrameworkPropertyMetadataOptions.AffectsRender));
+        public static readonly DependencyProperty CaptureStartUtcProperty = DependencyProperty.Register(
+            nameof(CaptureStartUtc), typeof(DateTime), typeof(TimelineControl),
+            new FrameworkPropertyMetadata(DateTime.UtcNow, FrameworkPropertyMetadataOptions.AffectsRender));
 
         public double ViewDurationSeconds
         {
             get => (double)GetValue(ViewDurationSecondsProperty);
             set => SetValue(ViewDurationSecondsProperty, value);
         }
-        public static readonly DependencyProperty ViewDurationSecondsProperty =
-            DependencyProperty.Register(nameof(ViewDurationSeconds), typeof(double), typeof(TimelineControl),
-                new FrameworkPropertyMetadata(120d, FrameworkPropertyMetadataOptions.AffectsRender));
+        public static readonly DependencyProperty ViewDurationSecondsProperty = DependencyProperty.Register(
+            nameof(ViewDurationSeconds), typeof(double), typeof(TimelineControl),
+            new FrameworkPropertyMetadata(120d, FrameworkPropertyMetadataOptions.AffectsRender));
 
         public double ViewStartSeconds
         {
             get => (double)GetValue(ViewStartSecondsProperty);
             set => SetValue(ViewStartSecondsProperty, value);
         }
-        public static readonly DependencyProperty ViewStartSecondsProperty =
-            DependencyProperty.Register(nameof(ViewStartSeconds), typeof(double), typeof(TimelineControl),
-                new FrameworkPropertyMetadata(0d, FrameworkPropertyMetadataOptions.AffectsRender));
+        public static readonly DependencyProperty ViewStartSecondsProperty = DependencyProperty.Register(
+            nameof(ViewStartSeconds), typeof(double), typeof(TimelineControl),
+            new FrameworkPropertyMetadata(0d, FrameworkPropertyMetadataOptions.AffectsRender));
 
         public double VerticalOffset
         {
             get => (double)GetValue(VerticalOffsetProperty);
             set => SetValue(VerticalOffsetProperty, value);
         }
-        public static readonly DependencyProperty VerticalOffsetProperty =
-            DependencyProperty.Register(nameof(VerticalOffset), typeof(double), typeof(TimelineControl),
-                new FrameworkPropertyMetadata(0d, FrameworkPropertyMetadataOptions.AffectsRender));
+        public static readonly DependencyProperty VerticalOffsetProperty = DependencyProperty.Register(
+            nameof(VerticalOffset), typeof(double), typeof(TimelineControl),
+            new FrameworkPropertyMetadata(0d, FrameworkPropertyMetadataOptions.AffectsRender));
 
         public double VerticalExtent => _verticalExtent;
         public double VerticalViewport => _verticalViewport;
@@ -119,9 +119,9 @@ namespace BlackbirdInterface
             get => (TelemetryEvent?)GetValue(SelectedEventProperty);
             set => SetValue(SelectedEventProperty, value);
         }
-        public static readonly DependencyProperty SelectedEventProperty =
-            DependencyProperty.Register(nameof(SelectedEvent), typeof(TelemetryEvent), typeof(TimelineControl),
-                new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+        public static readonly DependencyProperty SelectedEventProperty = DependencyProperty.Register(
+            nameof(SelectedEvent), typeof(TelemetryEvent), typeof(TimelineControl),
+            new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
 
         public event EventHandler<LaneInteractionEventArgs>? LaneInteraction;
         public event EventHandler<TelemetryEventSelectedEventArgs>? SelectedEventChanged;
@@ -218,16 +218,19 @@ namespace BlackbirdInterface
 
             _renderQueued = true;
             Dispatcher.BeginInvoke(new Action(() =>
-            {
-                _renderQueued = false;
-                InvalidateVisual();
-            }), System.Windows.Threading.DispatcherPriority.Render);
+                                              {
+                                                  _renderQueued = false;
+                                                  InvalidateVisual();
+                                              }),
+                                   System.Windows.Threading.DispatcherPriority.Render);
         }
 
         public void SetLaneVisible(string laneKey, bool visible)
         {
-            if (visible) _hiddenLaneKeys.Remove(laneKey);
-            else _hiddenLaneKeys.Add(laneKey);
+            if (visible)
+                _hiddenLaneKeys.Remove(laneKey);
+            else
+                _hiddenLaneKeys.Add(laneKey);
             RequestRender();
         }
 
@@ -241,8 +244,10 @@ namespace BlackbirdInterface
 
         public void SetGroupExpanded(string group, bool expanded)
         {
-            if (expanded) _collapsedGroups.Remove(group);
-            else _collapsedGroups.Add(group);
+            if (expanded)
+                _collapsedGroups.Remove(group);
+            else
+                _collapsedGroups.Add(group);
             _laneRowsDirty = true;
             RequestRender();
         }
@@ -265,16 +270,10 @@ namespace BlackbirdInterface
             if (_brushByKey.TryGetValue(laneKey, out var b))
                 return b;
 
-            Color[] palette =
-            {
-                Color.FromRgb(0x4C,0x8F,0xD2),
-                Color.FromRgb(0x6C,0xA4,0xDE),
-                Color.FromRgb(0x8A,0xB9,0xE9),
-                Color.FromRgb(0x3E,0x76,0xAF),
-                Color.FromRgb(0x58,0xB6,0x58),
-                Color.FromRgb(0x7B,0xC7,0x7B),
-                Color.FromRgb(0x8D,0x97,0xA3),
-                Color.FromRgb(0x6D,0x7A,0x84),
+            Color[] palette = {
+                Color.FromRgb(0x4C, 0x8F, 0xD2), Color.FromRgb(0x6C, 0xA4, 0xDE), Color.FromRgb(0x8A, 0xB9, 0xE9),
+                Color.FromRgb(0x3E, 0x76, 0xAF), Color.FromRgb(0x58, 0xB6, 0x58), Color.FromRgb(0x7B, 0xC7, 0x7B),
+                Color.FromRgb(0x8D, 0x97, 0xA3), Color.FromRgb(0x6D, 0x7A, 0x84),
             };
 
             int h = laneKey.GetHashCode();
@@ -314,8 +313,7 @@ namespace BlackbirdInterface
             Point previousMouse = _mouse;
             TimelineEventCluster? previousHoveredCluster = _hoveredCluster;
             _mouse = e.GetPosition(this);
-            bool mousePixelChanged = (int)previousMouse.X != (int)_mouse.X ||
-                                     (int)previousMouse.Y != (int)_mouse.Y;
+            bool mousePixelChanged = (int)previousMouse.X != (int)_mouse.X || (int)previousMouse.Y != (int)_mouse.Y;
 
             _hoveredCluster = HitTestCluster(_mouse);
             base.OnMouseMove(e);
@@ -405,7 +403,8 @@ namespace BlackbirdInterface
                 {
                     var (pps, chartLeft, chartRight, _) = ComputeScale();
                     double cursorSec = ViewStartSeconds + Math.Max(0, _mouse.X - chartLeft) / Math.Max(1, pps);
-                    double cursorFrac = Math.Max(0, Math.Min(1, (_mouse.X - chartLeft) / Math.Max(1, chartRight - chartLeft)));
+                    double cursorFrac =
+                        Math.Max(0, Math.Min(1, (_mouse.X - chartLeft) / Math.Max(1, chartRight - chartLeft)));
                     ViewStartSeconds = Math.Max(0, cursorSec - newDuration * cursorFrac);
                     ViewDurationSeconds = newDuration;
                     e.Handled = true;
@@ -436,7 +435,8 @@ namespace BlackbirdInterface
                 if (Math.Abs(newDuration - ViewDurationSeconds) > 0.01)
                 {
                     var (pps, chartLeft, chartRight, _) = ComputeScale();
-                    double cursorFrac = Math.Max(0, Math.Min(1, (_mouse.X - chartLeft) / Math.Max(1, chartRight - chartLeft)));
+                    double cursorFrac =
+                        Math.Max(0, Math.Min(1, (_mouse.X - chartLeft) / Math.Max(1, chartRight - chartLeft)));
                     double cursorSec = ViewStartSeconds + ViewDurationSeconds * cursorFrac;
                     ViewStartSeconds = Math.Max(0, cursorSec - newDuration * cursorFrac);
                     ViewDurationSeconds = newDuration;
@@ -447,7 +447,7 @@ namespace BlackbirdInterface
             base.OnMouseWheel(e);
         }
 
-private (double pps, double chartLeft, double chartRight, double axisTop) ComputeScale()
+        private (double pps, double chartLeft, double chartRight, double axisTop) ComputeScale()
         {
             double w = Math.Max(1, ActualWidth);
             double chartLeft = LeftGutterWidth;
@@ -476,10 +476,11 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
                 var axisViewStart = CaptureStartUtc + TimeSpan.FromSeconds(ViewStartSeconds);
                 var axisViewEnd = axisViewStart + TimeSpan.FromSeconds(ViewDurationSeconds);
                 var axisDpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-                var axisTypeface = new Typeface("Segoe UI");
+                var axisTypeface = new Typeface("Segoe UI Variable Text, Segoe UI, Aptos");
                 double savedAxisHeight = AxisHeight;
                 AxisHeight = axisH;
-                DrawTimeGridAndAxis(dc, axisViewStart, axisViewEnd, axisPps, axisChartLeft, axisChartRight, 0, axisDpi, axisTypeface);
+                DrawTimeGridAndAxis(dc, axisViewStart, axisViewEnd, axisPps, axisChartLeft, axisChartRight, 0, axisDpi,
+                                    axisTypeface);
                 AxisHeight = savedAxisHeight;
                 return;
             }
@@ -487,7 +488,7 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
             _hitRects.Clear();
 
             var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-            var typeface = new Typeface("Segoe UI");
+            var typeface = new Typeface("Segoe UI Variable Text, Segoe UI, Aptos");
 
             var (pps, chartLeft, chartRight, axisTop) = ComputeScale();
 
@@ -495,7 +496,8 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
             var viewEndUtc = viewStartUtc + TimeSpan.FromSeconds(ViewDurationSeconds);
 
             EnsureLaneRows();
-            double contentHeight = Math.Max(1, (_laneRows.Count == 0 ? 0 : _laneRows[^1].Y + _laneRows[^1].Height) - TopPadding);
+            double contentHeight =
+                Math.Max(1, (_laneRows.Count == 0 ? 0 : _laneRows[^1].Y + _laneRows[^1].Height) - TopPadding);
             double viewportHeight = Math.Max(1, axisTop - TopPadding);
             double maxVerticalOffset = Math.Max(0, contentHeight - viewportHeight);
             double effectiveVerticalOffset = Math.Max(0, Math.Min(maxVerticalOffset, VerticalOffset));
@@ -571,7 +573,8 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
                     }
 
                     double hitPadding = cluster.Count > 1 ? 5 : 3;
-                    var hitRect = new Rect(rect.X - hitPadding, rect.Y - hitPadding, rect.Width + (hitPadding * 2), rect.Height + (hitPadding * 2));
+                    var hitRect = new Rect(rect.X - hitPadding, rect.Y - hitPadding, rect.Width + (hitPadding * 2),
+                                           rect.Height + (hitPadding * 2));
                     _hitRects.Add((hitRect, cluster));
                 }
             }
@@ -587,19 +590,14 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
                 dc.DrawLine(crossPen, new Point(_mouse.X, 0), new Point(_mouse.X, axisTop));
 
                 double hoverSeconds = ViewStartSeconds + (_mouse.X - chartLeft) / pps;
-                if (hoverSeconds < 0) hoverSeconds = 0;
+                if (hoverSeconds < 0)
+                    hoverSeconds = 0;
 
                 var hoverUtc = CaptureStartUtc + TimeSpan.FromSeconds(hoverSeconds);
                 string tLabel = hoverUtc.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture) + "Z";
 
-                var ft = new FormattedText(
-                    tLabel,
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    typeface,
-                    11,
-                    UiPalette.TextBrush,
-                    dpi);
+                var ft = new FormattedText(tLabel, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, typeface,
+                                           11, UiPalette.TextBrush, dpi);
 
                 double labelX = Math.Min(chartRight - ft.Width - 14, Math.Max(chartLeft + 4, _mouse.X + 8));
                 double labelY = axisTop + Math.Max(2, (AxisHeight - ft.Height - 6) / 2);
@@ -612,7 +610,6 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
             {
                 DrawHoverEventCard(dc, _hoveredCluster, _mouse, axisTop, chartLeft, chartRight, dpi, typeface);
             }
-
         }
 
         private static StreamGeometry CreateDiamondGeometry(double x, double centerY, double radius)
@@ -649,34 +646,16 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
             return clone;
         }
 
-        private static void DrawHoverEventCard(
-            DrawingContext dc,
-            TimelineEventCluster cluster,
-            Point mouse,
-            double axisTop,
-            double chartLeft,
-            double chartRight,
-            double dpi,
-            Typeface typeface)
+        private static void DrawHoverEventCard(DrawingContext dc, TimelineEventCluster cluster, Point mouse,
+                                               double axisTop, double chartLeft, double chartRight, double dpi,
+                                               Typeface typeface)
         {
             string title = BuildHoverTitle(cluster);
             string detail = BuildHoverDetail(cluster);
-            var titleFt = new FormattedText(
-                title,
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                typeface,
-                11,
-                UiPalette.TextBrush,
-                dpi);
-            var detailFt = new FormattedText(
-                detail,
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                typeface,
-                10,
-                UiPalette.MutedTextBrush,
-                dpi);
+            var titleFt = new FormattedText(title, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, typeface,
+                                            11, UiPalette.TextBrush, dpi);
+            var detailFt = new FormattedText(detail, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, typeface,
+                                             10, UiPalette.MutedTextBrush, dpi);
 
             double width = Math.Min(420, Math.Max(260, Math.Max(titleFt.Width, detailFt.Width) + 18));
             double height = titleFt.Height + detailFt.Height + 12;
@@ -688,12 +667,14 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
             }
             y = Math.Max(4, Math.Min(axisTop - height - 4, y));
 
-            dc.DrawRectangle(UiPalette.SurfaceAltBrush, new Pen(UiPalette.BorderBrush, 1), new Rect(x, y, width, height));
+            dc.DrawRectangle(UiPalette.SurfaceAltBrush, new Pen(UiPalette.BorderBrush, 1),
+                             new Rect(x, y, width, height));
             dc.DrawText(titleFt, new Point(x + 7, y + 3));
             dc.DrawText(detailFt, new Point(x + 7, y + 5 + titleFt.Height));
         }
 
-        private void DrawPauseRanges(DrawingContext dc, DateTime viewStartUtc, DateTime viewEndUtc, double pps, double chartLeft, double axisTop)
+        private void DrawPauseRanges(DrawingContext dc, DateTime viewStartUtc, DateTime viewEndUtc, double pps,
+                                     double chartLeft, double axisTop)
         {
             if (_pauseRanges.Count == 0)
             {
@@ -749,9 +730,10 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
 
             if (cluster.Count > 1)
             {
-                string span = cluster.FirstTimestampUtc == cluster.LastTimestampUtc
-                    ? cluster.FirstTimestampUtc.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture) + "Z"
-                    : $"{cluster.FirstTimestampUtc:HH:mm:ss.fff}Z \u2192 {cluster.LastTimestampUtc:HH:mm:ss.fff}Z";
+                string span =
+                    cluster.FirstTimestampUtc == cluster.LastTimestampUtc
+                        ? cluster.FirstTimestampUtc.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture) + "Z"
+                        : $"{cluster.FirstTimestampUtc:HH:mm:ss.fff}Z \u2192 {cluster.LastTimestampUtc:HH:mm:ss.fff}Z";
                 return $"PID {ev.PID}  TID {ev.TID}  {span}  {summary}";
             }
 
@@ -774,36 +756,27 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
             _laneRows.Clear();
 
             // Groups and subtypes currently observed
-            var groups = Items
-                .GroupBy(e => e.Group ?? "Other", StringComparer.OrdinalIgnoreCase)
-                .OrderBy(g => GroupSortRank(g.Key))
-                .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var groups = Items.GroupBy(e => e.Group ?? "Other", StringComparer.OrdinalIgnoreCase)
+                             .OrderBy(g => GroupSortRank(g.Key))
+                             .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                             .ToList();
 
             double y = TopPadding;
             foreach (var g in groups)
             {
-                var subTypes = g
-                    .Select(e => e.SubType ?? "")
-                    .Where(s => !string.IsNullOrWhiteSpace(s))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
+                var subTypes = g.Select(e => e.SubType ?? "")
+                                   .Where(s => !string.IsNullOrWhiteSpace(s))
+                                   .Distinct(StringComparer.OrdinalIgnoreCase)
+                                   .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+                                   .ToList();
 
                 bool hasChildren = subTypes.Count > 0;
                 bool expanded = hasChildren && !_collapsedGroups.Contains(g.Key);
 
                 // Group header row
-                var header = new LaneRow
-                {
-                    Key = g.Key,
-                    Label = g.Key,
-                    IsGroupHeader = true,
-                    HasChildren = hasChildren,
-                    Indent = 0,
-                    Y = y,
-                    Height = GroupHeaderHeight
-                };
+                var header =
+                    new LaneRow { Key = g.Key, Label = g.Key, IsGroupHeader = true,      HasChildren = hasChildren,
+                                  Indent = 0,  Y = y,         Height = GroupHeaderHeight };
                 header.Rect = new Rect(0, y, LeftGutterWidth, header.Height);
                 _laneRows.Add(header);
                 y += header.Height;
@@ -811,16 +784,8 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
                 if (!expanded)
                 {
                     // Collapsed: show aggregate lane (same key as group)
-                    var lane = new LaneRow
-                    {
-                        Key = g.Key,
-                        Label = "All",
-                        IsGroupHeader = false,
-                        HasChildren = false,
-                        Indent = 14,
-                        Y = y,
-                        Height = LaneHeight
-                    };
+                    var lane = new LaneRow { Key = g.Key, Label = "All", IsGroupHeader = false, HasChildren = false,
+                                             Indent = 14, Y = y,         Height = LaneHeight };
                     lane.Rect = new Rect(0, y, LeftGutterWidth, lane.Height);
                     _laneRows.Add(lane);
                     y += lane.Height;
@@ -831,16 +796,8 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
                     foreach (var st in subTypes)
                     {
                         var laneKey = $"{g.Key}/{st}";
-                        var lane = new LaneRow
-                        {
-                            Key = laneKey,
-                            Label = st,
-                            IsGroupHeader = false,
-                            HasChildren = false,
-                            Indent = 18,
-                            Y = y,
-                            Height = LaneHeight
-                        };
+                        var lane = new LaneRow { Key = laneKey, Label = st, IsGroupHeader = false, HasChildren = false,
+                                                 Indent = 18,   Y = y,      Height = LaneHeight };
                         lane.Rect = new Rect(0, y, LeftGutterWidth, lane.Height);
                         _laneRows.Add(lane);
                         y += lane.Height;
@@ -859,9 +816,13 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
             return group.StartsWith("Filesystem", StringComparison.OrdinalIgnoreCase) ? 200 : 100;
         }
 
-        private Dictionary<string, List<TimelineEventCluster>> BuildVisibleLaneClusters(DateTime viewStartUtc, DateTime viewEndUtc, double pps, double chartLeft, double chartRight)
+        private Dictionary<string, List<TimelineEventCluster>> BuildVisibleLaneClusters(DateTime viewStartUtc,
+                                                                                        DateTime viewEndUtc, double pps,
+                                                                                        double chartLeft,
+                                                                                        double chartRight)
         {
-            var byLane = new Dictionary<string, Dictionary<int, TimelineEventCluster>>(StringComparer.OrdinalIgnoreCase);
+            var byLane =
+                new Dictionary<string, Dictionary<int, TimelineEventCluster>>(StringComparer.OrdinalIgnoreCase);
             double clusterWidth = Math.Max(1, ClusterPixelWidth);
 
             foreach (var ev in Items)
@@ -884,13 +845,12 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
                 }
             }
 
-            return byLane.ToDictionary(
-                pair => pair.Key,
-                pair => pair.Value.Values.OrderBy(x => x.RenderX).ToList(),
-                StringComparer.OrdinalIgnoreCase);
+            return byLane.ToDictionary(pair => pair.Key, pair => pair.Value.Values.OrderBy(x => x.RenderX).ToList(),
+                                       StringComparer.OrdinalIgnoreCase);
         }
 
-        private static void AddCluster(Dictionary<string, Dictionary<int, TimelineEventCluster>> byLane, string laneKey, int pixelBucket, double rawX, TelemetryEvent ev, bool containsSelected)
+        private static void AddCluster(Dictionary<string, Dictionary<int, TimelineEventCluster>> byLane, string laneKey,
+                                       int pixelBucket, double rawX, TelemetryEvent ev, bool containsSelected)
         {
             if (!byLane.TryGetValue(laneKey, out Dictionary<int, TimelineEventCluster>? laneClusters))
             {
@@ -900,15 +860,12 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
 
             if (!laneClusters.TryGetValue(pixelBucket, out TimelineEventCluster? cluster))
             {
-                laneClusters[pixelBucket] = new TimelineEventCluster
-                {
-                    Representative = ev,
-                    Count = 1,
-                    FirstTimestampUtc = ev.TimestampUtc,
-                    LastTimestampUtc = ev.TimestampUtc,
-                    RenderX = rawX,
-                    ContainsSelected = containsSelected
-                };
+                laneClusters[pixelBucket] = new TimelineEventCluster { Representative = ev,
+                                                                       Count = 1,
+                                                                       FirstTimestampUtc = ev.TimestampUtc,
+                                                                       LastTimestampUtc = ev.TimestampUtc,
+                                                                       RenderX = rawX,
+                                                                       ContainsSelected = containsSelected };
                 return;
             }
 
@@ -937,7 +894,8 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
             cluster.ContainsSelected |= containsSelected;
         }
 
-        private void DrawLaneGutter(DrawingContext dc, double axisTop, double verticalOffset, double dpi, Typeface typeface)
+        private void DrawLaneGutter(DrawingContext dc, double axisTop, double verticalOffset, double dpi,
+                                    Typeface typeface)
         {
             var sepPen = new Pen(UiPalette.GridBrush, 1);
             sepPen.Freeze();
@@ -960,14 +918,8 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
 
                 // Label text
                 var color = row.IsGroupHeader ? UiPalette.Text : UiPalette.MutedText;
-                var ft = new FormattedText(
-                    row.Label,
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    typeface,
-                    row.IsGroupHeader ? 12 : 11,
-                    new SolidColorBrush(color),
-                    dpi);
+                var ft = new FormattedText(row.Label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, typeface,
+                                           row.IsGroupHeader ? 12 : 11, new SolidColorBrush(color), dpi);
 
                 double x = 10 + row.Indent;
                 dc.DrawText(ft, new Point(x, drawY + 3));
@@ -986,8 +938,7 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
         {
             double normExtent = Math.Max(1, extent);
             double normViewport = Math.Max(1, viewport);
-            if (Math.Abs(_verticalExtent - normExtent) > 0.1 ||
-                Math.Abs(_verticalViewport - normViewport) > 0.1 ||
+            if (Math.Abs(_verticalExtent - normExtent) > 0.1 || Math.Abs(_verticalViewport - normViewport) > 0.1 ||
                 Math.Abs(_verticalOffsetReported - offset) > 0.1)
             {
                 _verticalExtent = normExtent;
@@ -997,17 +948,13 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
             }
         }
 
-        private void DrawTimeGridAndAxis(DrawingContext dc, DateTime viewStartUtc, DateTime viewEndUtc,
-                                         double pps, double chartLeft, double chartRight,
-                                         double axisTop, double dpi, Typeface typeface)
+        private void DrawTimeGridAndAxis(DrawingContext dc, DateTime viewStartUtc, DateTime viewEndUtc, double pps,
+                                         double chartLeft, double chartRight, double axisTop, double dpi,
+                                         Typeface typeface)
         {
             double seconds = (viewEndUtc - viewStartUtc).TotalSeconds;
 
-            double baseStep =
-                seconds <= 30 ? 1 :
-                seconds <= 120 ? 5 :
-                seconds <= 300 ? 10 :
-                30;
+            double baseStep = seconds <= 30 ? 1 : seconds <= 120 ? 5 : seconds <= 300 ? 10 : 30;
 
             // Keep labels readable; don't crowd timestamps.
             double minLabelSpacingPx = 70;
@@ -1018,7 +965,8 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
             gridPen.Freeze();
 
             // Axis bar background
-            dc.DrawRectangle(UiPalette.SurfaceAltBrush, null, new Rect(chartLeft, axisTop, chartRight - chartLeft, AxisHeight));
+            dc.DrawRectangle(UiPalette.SurfaceAltBrush, null,
+                             new Rect(chartLeft, axisTop, chartRight - chartLeft, AxisHeight));
 
             // Axis top line
             var axisPen = new Pen(UiPalette.BorderBrush, 1);
@@ -1031,7 +979,8 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
             for (double t = startSec; t <= endSec + 0.0001; t += step)
             {
                 double x = chartLeft + (t - ViewStartSeconds) * pps;
-                if (x < chartLeft || x > chartRight) continue;
+                if (x < chartLeft || x > chartRight)
+                    continue;
 
                 // Vertical grid
                 dc.DrawLine(gridPen, new Point(x, 0), new Point(x, axisTop));
@@ -1039,14 +988,8 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
                 var tickUtc = CaptureStartUtc + TimeSpan.FromSeconds(t);
                 string label = tickUtc.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
 
-                var ft = new FormattedText(
-                    label,
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    typeface,
-                    10,
-                    UiPalette.MutedTextBrush,
-                    dpi);
+                var ft = new FormattedText(label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, typeface, 10,
+                                           UiPalette.MutedTextBrush, dpi);
 
                 dc.DrawText(ft, new Point(x + 4, axisTop + 4));
             }
@@ -1064,30 +1007,20 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
             return 600;
         }
 
-        private void DrawTimeAxisOverlay(
-            DrawingContext dc,
-            DateTime viewStartUtc,
-            DateTime viewEndUtc,
-            double pps,
-            double chartLeft,
-            double chartRight,
-            double axisTop,
-            double dpi,
-            Typeface typeface)
+        private void DrawTimeAxisOverlay(DrawingContext dc, DateTime viewStartUtc, DateTime viewEndUtc, double pps,
+                                         double chartLeft, double chartRight, double axisTop, double dpi,
+                                         Typeface typeface)
         {
             double seconds = (viewEndUtc - viewStartUtc).TotalSeconds;
-            double baseStep =
-                seconds <= 30 ? 1 :
-                seconds <= 120 ? 5 :
-                seconds <= 300 ? 10 :
-                30;
+            double baseStep = seconds <= 30 ? 1 : seconds <= 120 ? 5 : seconds <= 300 ? 10 : 30;
 
             double minLabelSpacingPx = 70;
             double minStepFromPixels = minLabelSpacingPx / Math.Max(1, pps);
             double step = NiceTimeStep(Math.Max(baseStep, minStepFromPixels));
 
             // Axis bar background and top border.
-            dc.DrawRectangle(UiPalette.SurfaceAltBrush, null, new Rect(chartLeft, axisTop, chartRight - chartLeft, AxisHeight));
+            dc.DrawRectangle(UiPalette.SurfaceAltBrush, null,
+                             new Rect(chartLeft, axisTop, chartRight - chartLeft, AxisHeight));
             var axisPen = new Pen(UiPalette.BorderBrush, 1);
             axisPen.Freeze();
             dc.DrawLine(axisPen, new Point(chartLeft, axisTop), new Point(chartRight, axisTop));
@@ -1097,19 +1030,14 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
             for (double t = startSec; t <= endSec + 0.0001; t += step)
             {
                 double x = chartLeft + (t - ViewStartSeconds) * pps;
-                if (x < chartLeft || x > chartRight) continue;
+                if (x < chartLeft || x > chartRight)
+                    continue;
 
                 var tickUtc = CaptureStartUtc + TimeSpan.FromSeconds(t);
                 string label = tickUtc.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
 
-                var ft = new FormattedText(
-                    label,
-                    CultureInfo.InvariantCulture,
-                    FlowDirection.LeftToRight,
-                    typeface,
-                    10,
-                    UiPalette.MutedTextBrush,
-                    dpi);
+                var ft = new FormattedText(label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, typeface, 10,
+                                           UiPalette.MutedTextBrush, dpi);
 
                 dc.DrawText(ft, new Point(x + 4, axisTop + 4));
             }
@@ -1135,5 +1063,3 @@ private (double pps, double chartLeft, double chartRight, double axisTop) Comput
         }
     }
 }
-
-

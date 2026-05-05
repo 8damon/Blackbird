@@ -35,13 +35,8 @@ namespace BlackbirdInterface
         public double SmoothingAlpha { get; }
         public Func<PerformanceSample, double> Selector { get; }
 
-        public ChartSeries(
-            string name,
-            Brush stroke,
-            SeriesScale scale,
-            Func<PerformanceSample, double> selector,
-            ChartValueFormat valueFormat = ChartValueFormat.Auto,
-            double smoothingAlpha = 0)
+        public ChartSeries(string name, Brush stroke, SeriesScale scale, Func<PerformanceSample, double> selector,
+                           ChartValueFormat valueFormat = ChartValueFormat.Auto, double smoothingAlpha = 0)
         {
             Name = name;
             Stroke = stroke;
@@ -54,9 +49,9 @@ namespace BlackbirdInterface
 
     public sealed class PerformanceChartControl : FrameworkElement
     {
-        public static readonly DependencyProperty TitleProperty =
-            DependencyProperty.Register(nameof(Title), typeof(string), typeof(PerformanceChartControl),
-                new FrameworkPropertyMetadata("", FrameworkPropertyMetadataOptions.AffectsRender));
+        public static readonly DependencyProperty TitleProperty = DependencyProperty.Register(
+            nameof(Title), typeof(string), typeof(PerformanceChartControl),
+            new FrameworkPropertyMetadata("", FrameworkPropertyMetadataOptions.AffectsRender));
 
         public string Title
         {
@@ -144,12 +139,11 @@ namespace BlackbirdInterface
 
             var w = ActualWidth;
             var h = ActualHeight;
-            if (w < 50 || h < 50) return;
+            if (w < 50 || h < 50)
+                return;
 
             // Frame
-            dc.DrawRectangle(UiPalette.SurfaceBrush,
-                new Pen(UiPalette.BorderBrush, 1),
-                new Rect(0, 0, w, h));
+            dc.DrawRectangle(UiPalette.SurfaceBrush, new Pen(UiPalette.BorderBrush, 1), new Rect(0, 0, w, h));
 
             // Layout
             double padL = 92;
@@ -172,17 +166,19 @@ namespace BlackbirdInterface
             AdjustRightAnchoredLiveWindow(ref renderStartUtc, ref renderEndUtc);
 
             // Filter samples within effective view
-            var viewSamples = _samples.Where(s => s.TimestampUtc >= renderStartUtc && s.TimestampUtc <= renderEndUtc).ToList();
+            var viewSamples =
+                _samples.Where(s => s.TimestampUtc >= renderStartUtc && s.TimestampUtc <= renderEndUtc).ToList();
             if (viewSamples.Count < 2 || _series.Length == 0)
             {
                 DrawAxes(dc, plot, renderStartUtc, renderEndUtc, 100.0, ChartValueFormat.Percent);
                 DrawText(dc, "NO DATA", 18, FontWeights.Bold, UiPalette.MutedTextBrush,
-                    new Point(plot.Left + (plot.Width * 0.5) - 40, plot.Top + (plot.Height * 0.5) - 10));
+                         new Point(plot.Left + (plot.Width * 0.5) - 40, plot.Top + (plot.Height * 0.5) - 10));
                 _tip.IsOpen = false;
                 return;
             }
 
-            var seriesValues = new Dictionary<ChartSeries, List<(PerformanceSample sample, double value)>>(_series.Length);
+            var seriesValues =
+                new Dictionary<ChartSeries, List<(PerformanceSample sample, double value)>>(_series.Length);
             foreach (var ser in _series)
             {
                 bool hasSmoothed = false;
@@ -209,7 +205,8 @@ namespace BlackbirdInterface
 
                     foreach (var point in seriesValues[ser])
                     {
-                        if (point.value > autoScaleMax) autoScaleMax = point.value;
+                        if (point.value > autoScaleMax)
+                            autoScaleMax = point.value;
                     }
                 }
             }
@@ -235,7 +232,8 @@ namespace BlackbirdInterface
                 _smoothedAutoScaleMax = 1.0;
                 yAxisMax = 100.0;
             }
-            DrawAxes(dc, plot, renderStartUtc, renderEndUtc, yAxisMax, hasAutoScale ? autoScaleFormat : ChartValueFormat.Percent);
+            DrawAxes(dc, plot, renderStartUtc, renderEndUtc, yAxisMax,
+                     hasAutoScale ? autoScaleFormat : ChartValueFormat.Percent);
 
             (ChartSeries ser, PerformanceSample sample, Point point, double raw)? hover = null;
             double hoverDist = double.MaxValue;
@@ -259,9 +257,8 @@ namespace BlackbirdInterface
                     {
                         var first = seriesValues[ser][0];
                         double raw0 = first.value;
-                        double scaled0 = ser.Scale == SeriesScale.Percent
-                            ? Clamp(raw0, 0, 100)
-                            : Clamp(raw0 / yAxisMax * 100.0, 0, 100);
+                        double scaled0 = ser.Scale == SeriesScale.Percent ? Clamp(raw0, 0, 100)
+                                                                          : Clamp(raw0 / yAxisMax * 100.0, 0, 100);
                         double y0 = plot.Bottom - (scaled0 / 100.0) * plot.Height;
                         g.BeginFigure(new Point(plot.Left, y0), false, false);
                         started = true;
@@ -270,15 +267,15 @@ namespace BlackbirdInterface
                     foreach (var point in seriesValues[ser])
                     {
                         double raw = point.value;
-                        double scaledPercent = ser.Scale == SeriesScale.Percent
-                            ? Clamp(raw, 0, 100)
-                            : Clamp(raw / yAxisMax * 100.0, 0, 100);
+                        double scaledPercent = ser.Scale == SeriesScale.Percent ? Clamp(raw, 0, 100)
+                                                                                : Clamp(raw / yAxisMax * 100.0, 0, 100);
 
                         double xNorm = (point.sample.TimestampUtc - renderStartUtc).TotalSeconds / viewSeconds; // 0..1
                         double x = plot.Left + xNorm * plot.Width;
                         double y = plot.Bottom - (scaledPercent / 100.0) * plot.Height;
 
-                        if (_hasMouse && _mouse.X >= plot.Left && _mouse.X <= plot.Right && _mouse.Y >= plot.Top && _mouse.Y <= plot.Bottom)
+                        if (_hasMouse && _mouse.X >= plot.Left && _mouse.X <= plot.Right && _mouse.Y >= plot.Top &&
+                            _mouse.Y <= plot.Bottom)
                         {
                             double dist = Math.Abs(_mouse.X - x) + (Math.Abs(_mouse.Y - y) * 0.35);
                             if (dist < hoverDist)
@@ -298,7 +295,6 @@ namespace BlackbirdInterface
                             g.LineTo(new Point(x, y), true, false);
                         }
                     }
-
                 }
                 geo.Freeze();
 
@@ -310,16 +306,16 @@ namespace BlackbirdInterface
             {
                 var cross = new Pen(UiPalette.GridStrongBrush, 1);
                 cross.Freeze();
-                dc.DrawLine(cross, new Point(hover.Value.point.X, plot.Top), new Point(hover.Value.point.X, plot.Bottom));
+                dc.DrawLine(cross, new Point(hover.Value.point.X, plot.Top),
+                            new Point(hover.Value.point.X, plot.Bottom));
 
-                var markerBrush = new SolidColorBrush(Color.FromArgb(220, UiPalette.Text.R, UiPalette.Text.G, UiPalette.Text.B));
+                var markerBrush =
+                    new SolidColorBrush(Color.FromArgb(220, UiPalette.Text.R, UiPalette.Text.G, UiPalette.Text.B));
                 markerBrush.Freeze();
                 dc.DrawEllipse(markerBrush, null, hover.Value.point, 3.6, 3.6);
 
-                _tip.Content =
-                    $"{hover.Value.ser.Name}\n" +
-                    $"{hover.Value.sample.TimestampUtc:HH:mm:ss.fff}Z\n" +
-                    $"{FormatValue(hover.Value.ser, hover.Value.raw)}";
+                _tip.Content = $"{hover.Value.ser.Name}\n" + $"{hover.Value.sample.TimestampUtc:HH:mm:ss.fff}Z\n" +
+                               $"{FormatValue(hover.Value.ser, hover.Value.raw)}";
                 _tip.PlacementRectangle = new Rect(_mouse.X, _mouse.Y, 0, 0);
                 _tip.IsOpen = true;
             }
@@ -329,13 +325,8 @@ namespace BlackbirdInterface
             }
         }
 
-        private void DrawAxes(
-            DrawingContext dc,
-            Rect plot,
-            DateTime viewStartUtc,
-            DateTime viewEndUtc,
-            double axisMaxValue,
-            ChartValueFormat valueFormat)
+        private void DrawAxes(DrawingContext dc, Rect plot, DateTime viewStartUtc, DateTime viewEndUtc,
+                              double axisMaxValue, ChartValueFormat valueFormat)
         {
             var axisPen = new Pen(UiPalette.GridStrongBrush, 1);
             axisPen.Freeze();
@@ -352,13 +343,14 @@ namespace BlackbirdInterface
                 double axisValue = axisMaxValue * (i / (double)yTicks);
 
                 dc.DrawLine(new Pen(UiPalette.GridBrush, 1), new Point(plot.Left, y), new Point(plot.Right, y));
-                DrawText(dc, FormatAxisValue(axisValue, valueFormat), 10, FontWeights.Normal,
-                    UiPalette.MutedTextBrush, new Point(6, y - 7));
+                DrawText(dc, FormatAxisValue(axisValue, valueFormat), 10, FontWeights.Normal, UiPalette.MutedTextBrush,
+                         new Point(6, y - 7));
             }
 
             // X ticks
             var total = (viewEndUtc - viewStartUtc).TotalSeconds;
-            if (total <= 0) total = 1;
+            if (total <= 0)
+                total = 1;
 
             int ticks = plot.Width < 280 ? 3 : 5;
             for (int i = 0; i <= ticks; i++)
@@ -369,17 +361,16 @@ namespace BlackbirdInterface
 
                 var t = viewStartUtc.AddSeconds(total * xNorm);
                 double tx = Math.Max(plot.Left, Math.Min(plot.Right - 42, x - 22));
-                string text = plot.Width < 280
-                    ? t.ToString("HH:mm", CultureInfo.InvariantCulture)
-                    : t.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
-                DrawText(dc, text, 10, FontWeights.Normal,
-                    UiPalette.MutedTextBrush, new Point(tx, plot.Bottom + 2));
+                string text = plot.Width < 280 ? t.ToString("HH:mm", CultureInfo.InvariantCulture)
+                                               : t.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+                DrawText(dc, text, 10, FontWeights.Normal, UiPalette.MutedTextBrush, new Point(tx, plot.Bottom + 2));
             }
         }
 
         private void DrawLegend(DrawingContext dc, Rect legendArea)
         {
-            if (_series.Length == 0) return;
+            if (_series.Length == 0)
+                return;
 
             double x = legendArea.Left + 4;
             double y = legendArea.Top + 2;
@@ -396,16 +387,13 @@ namespace BlackbirdInterface
             }
         }
 
-        private static void DrawText(DrawingContext dc, string text, double size, FontWeight weight, Brush brush, Point p)
+        private static void DrawText(DrawingContext dc, string text, double size, FontWeight weight, Brush brush,
+                                     Point p)
         {
-            var ft = new FormattedText(
-                text,
-                CultureInfo.InvariantCulture,
-                FlowDirection.LeftToRight,
-                new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, weight, FontStretches.Normal),
-                size,
-                brush,
-                1.0);
+            var ft = new FormattedText(text, CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                                       new Typeface(new FontFamily("Segoe UI Variable Text, Segoe UI, Aptos"),
+                                                    FontStyles.Normal, weight, FontStretches.Normal),
+                                       size, brush, 1.0);
 
             dc.DrawText(ft, p);
         }
@@ -417,15 +405,14 @@ namespace BlackbirdInterface
 
         private static string FormatAxisValue(double value, ChartValueFormat format)
         {
-            return format switch
-            {
-                ChartValueFormat.Percent => value.ToString("0.##", CultureInfo.InvariantCulture) + "%",
-                ChartValueFormat.Bytes => FormatBytes(value),
-                ChartValueFormat.BytesPerSecond => FormatBytes(value) + "/s",
-                ChartValueFormat.CountPerSecond => value.ToString("0.##", CultureInfo.InvariantCulture) + "/s",
-                ChartValueFormat.Raw => value.ToString("0.##", CultureInfo.InvariantCulture),
-                _ => value.ToString("0.##", CultureInfo.InvariantCulture)
-            };
+            return format switch { ChartValueFormat.Percent =>
+                                       value.ToString("0.##", CultureInfo.InvariantCulture) + "%",
+                                   ChartValueFormat.Bytes => FormatBytes(value),
+                                   ChartValueFormat.BytesPerSecond => FormatBytes(value) + "/s",
+                                   ChartValueFormat.CountPerSecond =>
+                                       value.ToString("0.##", CultureInfo.InvariantCulture) + "/s",
+                                   ChartValueFormat.Raw => value.ToString("0.##", CultureInfo.InvariantCulture),
+                                   _ => value.ToString("0.##", CultureInfo.InvariantCulture) };
         }
 
         private static string FormatBytes(double value)
@@ -474,7 +461,8 @@ namespace BlackbirdInterface
             viewEndUtc -= slack;
         }
 
-        private static double ApplySmoothing(double value, double smoothingAlpha, ref bool hasSmoothed, ref double smoothed)
+        private static double ApplySmoothing(double value, double smoothingAlpha, ref bool hasSmoothed,
+                                             ref double smoothed)
         {
             if (smoothingAlpha <= 0)
             {
@@ -492,9 +480,6 @@ namespace BlackbirdInterface
             return smoothed;
         }
 
-        private static double Clamp(double v, double min, double max)
-            => v < min ? min : (v > max ? max : v);
+        private static double Clamp(double v, double min, double max) => v < min ? min : (v > max ? max : v);
     }
 }
-
-

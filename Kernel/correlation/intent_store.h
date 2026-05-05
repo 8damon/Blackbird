@@ -1,32 +1,30 @@
-#ifndef BLACKBIRD_CORRELATION_H
-#define BLACKBIRD_CORRELATION_H
+#ifndef BK_CORRELATION_H
+#define BK_CORRELATION_H
 
 #include <ntdef.h>
 
-#define BLACKBIRD_INTENT_PROCESS_MEMORY 0x00000001
-#define BLACKBIRD_INTENT_THREAD_CONTEXT 0x00000002
-#define BLACKBIRD_INTENT_DUP_HANDLE 0x00000004
+#define BK_INTENT_PROCESS_MEMORY 0x00000001
+#define BK_INTENT_THREAD_CONTEXT 0x00000002
+#define BK_INTENT_DUP_HANDLE 0x00000004
 
 NTSTATUS
-BLACKBIRDCorrelationInitialize(VOID);
+BkcorInitialize(VOID);
 
-VOID BLACKBIRDCorrelationUninitialize(VOID);
+VOID BkcorUninitialize(VOID);
 
-VOID BLACKBIRDCorrelationRecordHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ ACCESS_MASK AccessMask,
-                                            _In_ UINT32 IntentFlags);
-
-BOOLEAN
-BLACKBIRDCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ UINT32 WindowMs,
-                                      _Out_opt_ UINT32 *IntentFlags, _Out_opt_ UINT32 *AccessMask,
-                                      _Out_opt_ UINT32 *AgeMs);
+VOID BkcorRecordHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ ACCESS_MASK AccessMask,
+                             _In_ UINT32 IntentFlags);
 
 BOOLEAN
-BLACKBIRDCorrelationQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UINT32 WindowMs,
-                                               _In_ BOOLEAN PreferExternalCaller, _Out_opt_ HANDLE *CallerPid,
-                                               _Out_opt_ UINT32 *IntentFlags, _Out_opt_ UINT32 *AccessMask,
-                                               _Out_opt_ UINT32 *AgeMs);
+BkcorQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ UINT32 WindowMs,
+                       _Out_opt_ UINT32 *IntentFlags, _Out_opt_ UINT32 *AccessMask, _Out_opt_ UINT32 *AgeMs);
 
 BOOLEAN
-BLACKBIRDCorrelationSelfCheck(VOID);
+BkcorQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UINT32 WindowMs, _In_ BOOLEAN PreferExternalCaller,
+                                _Out_opt_ HANDLE *CallerPid, _Out_opt_ UINT32 *IntentFlags,
+                                _Out_opt_ UINT32 *AccessMask, _Out_opt_ UINT32 *AgeMs);
+
+BOOLEAN
+BkcorSelfCheck(VOID);
 
 #endif

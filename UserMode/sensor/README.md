@@ -46,7 +46,7 @@ Build project `vcxproj/BlackbirdSensorCore.vcxproj`.
 
 ## BlackbirdTestSuite (IOCTL + ETW Validation)
 
-`BlackbirdTestSuite.exe` (from `user/sensor/blackbird_ioctl_test.c`) is the current end-to-end validation harness.
+`BlackbirdTestSuite.exe` (from `UserMode/sensor/ioctl_test.c`) is the current driver/broker transport validation harness.
 
 Build project `vcxproj/BlackbirdIoctlTest.vcxproj` (depends on `BlackbirdSensorCore` and emits `BlackbirdTestSuite.exe`).
 

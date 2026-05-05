@@ -18,18 +18,15 @@ namespace BlackbirdInterface.Capture
         private const long PayloadBudgetBytes = 256L * 1024L * 1024L;
         private const long StackBudgetBytes = 64L * 1024L * 1024L;
         private static readonly TimeSpan MaxSegmentWindow = TimeSpan.FromSeconds(2);
-        private static readonly TimeSpan MaterializedWriteInterval = TimeSpan.FromSeconds(5);
-        private static readonly JsonSerializerOptions JsonOptions = new()
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            PropertyNameCaseInsensitive = true,
-            WriteIndented = true
-        };
-        private static readonly JsonSerializerOptions PayloadJsonOptions = new()
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-        };
+        private const int MaterializedWriteEventDelta = 384;
+        private static readonly TimeSpan MaterializedWriteInterval = TimeSpan.FromSeconds(15);
+        private static readonly TimeSpan MaterializedLowVolumeWriteInterval = TimeSpan.FromSeconds(45);
+        private static readonly JsonSerializerOptions JsonOptions =
+            new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true,
+                    WriteIndented = true };
+        private static readonly JsonSerializerOptions PayloadJsonOptions =
+            new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull };
 
         private readonly object _sync = new();
         private readonly string _rootPath;
@@ -49,10 +46,13 @@ namespace BlackbirdInterface.Capture
         private long _bufferBytes;
         private long _payloadBytesAccepted;
         private long _stackBytesAccepted;
+        private long _materializedSequence;
+        private long _lastMaterializedSequence;
         private DateTime _lastMaterializedWriteUtc;
         private bool _disposed;
 
-        private BlackbirdCaptureLiveStore(string rootPath, string tabDirectory, string segmentsPath, string blobsPath, SqliteDatabase database, int pid, string title)
+        private BlackbirdCaptureLiveStore(string rootPath, string tabDirectory, string segmentsPath, string blobsPath,
+                                          SqliteDatabase database, int pid, string title)
         {
             _rootPath = rootPath;
             _tabDirectory = tabDirectory;
@@ -81,7 +81,8 @@ namespace BlackbirdInterface.Capture
             Directory.CreateDirectory(blobsPath);
             SqliteDatabase database = SqliteDatabase.Open(Path.Combine(tabDirectory, "index.sqlite"));
             CaptureArchiveStorage.CreateSchema(database);
-            var store = new BlackbirdCaptureLiveStore(fullRoot, tabDirectory, segmentsPath, blobsPath, database, pid, title ?? string.Empty);
+            var store = new BlackbirdCaptureLiveStore(fullRoot, tabDirectory, segmentsPath, blobsPath, database, pid,
+                                                      title ?? string.Empty);
             store.WriteMaterializedFiles(force: true);
             return store;
         }
@@ -97,6 +98,40 @@ namespace BlackbirdInterface.Capture
         {
             ArgumentNullException.ThrowIfNull(view);
             CaptureCanonicalRecord canonical = BuildEtwRecord(view, out TelemetryEvent materialized);
+            AppendRecord(canonical, materialized);
+        }
+
+        internal void AppendSyntheticHeuristic(DateTime timestampUtc, int pid, int tid, string group, string subtype,
+                                               string summary, string details, string objectIdentity,
+                                               byte[]? payloadBytes = null, byte[]? stackBytes = null)
+        {
+            string safeGroup = string.IsNullOrWhiteSpace(group) ? "heuristic" : group.Trim();
+            string safeSubtype = string.IsNullOrWhiteSpace(subtype) ? "Synthetic" : subtype.Trim();
+            string safeSummary = string.IsNullOrWhiteSpace(summary) ? safeSubtype : summary.Trim();
+            string safeDetails = string.IsNullOrWhiteSpace(details) ? safeSummary : details.Trim();
+            CaptureCanonicalRecord canonical =
+                new() { TimestampUtc = timestampUtc == default ? DateTime.UtcNow : timestampUtc,
+                        Pid = pid,
+                        Tid = tid,
+                        HitCount = 1,
+                        Kind = CaptureEventKind.HeuristicGrouped,
+                        Group = safeGroup,
+                        SubType = safeSubtype,
+                        Summary = safeSummary,
+                        ObjectIdentity = string.IsNullOrWhiteSpace(objectIdentity)
+                                             ? $"synthetic:{safeGroup}:{safeSubtype}:{pid}:{tid}:{safeSummary}"
+                                             : objectIdentity.Trim(),
+                        PayloadBytes = payloadBytes,
+                        StackBytes = stackBytes };
+
+            TelemetryEvent materialized = new() { TimestampUtc = canonical.TimestampUtc,
+                                                  PID = pid,
+                                                  TID = tid,
+                                                  Group = safeGroup,
+                                                  SubType = safeSubtype,
+                                                  Summary = safeSummary,
+                                                  Details = safeDetails };
+
             AppendRecord(canonical, materialized);
         }
 
@@ -134,15 +169,16 @@ namespace BlackbirdInterface.Capture
                 ThrowIfDisposed();
                 ApplyBudgets(record);
                 _buffer.Add(record);
-                _bufferBytes += 96 + record.Group.Length + record.SubType.Length + record.Summary.Length + (record.PayloadBytes?.Length ?? 0) + (record.StackBytes?.Length ?? 0);
+                _bufferBytes += 96 + record.Group.Length + record.SubType.Length + record.Summary.Length +
+                                (record.PayloadBytes?.Length ?? 0) + (record.StackBytes?.Length ?? 0);
                 _timeline.Add(CloneTelemetryEvent(materialized));
+                _materializedSequence += 1;
                 if (_timeline.Count > MaxMaterializedTimelineEvents)
                 {
                     _timeline.RemoveFirst(_timeline.Count - MaxMaterializedTimelineEvents);
                 }
 
-                bool flush = _buffer.Count >= MaxSegmentEvents ||
-                             _bufferBytes >= MaxSegmentBytes ||
+                bool flush = _buffer.Count >= MaxSegmentEvents || _bufferBytes >= MaxSegmentBytes ||
                              (_buffer.Count > 1 && (record.TimestampUtc - _buffer[0].TimestampUtc) >= MaxSegmentWindow);
                 if (flush)
                 {
@@ -190,7 +226,8 @@ namespace BlackbirdInterface.Capture
             }
 
             using MemoryStream payloadStream = new();
-            using SqliteStatement insert = _database.Prepare("INSERT INTO events(segment_no, record_index, ts_utc_ticks, dt_us, pid, tid, kind, flags, group_ref, subtype_ref, summary_ref, object_ref, payload_blob_ref, stack_blob_ref) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14);");
+            using SqliteStatement insert = _database.Prepare(
+                "INSERT INTO events(segment_no, record_index, ts_utc_ticks, dt_us, pid, tid, kind, flags, group_ref, subtype_ref, summary_ref, object_ref, payload_blob_ref, stack_blob_ref) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14);");
             _database.ExecuteNonQuery("BEGIN IMMEDIATE;");
             try
             {
@@ -198,14 +235,21 @@ namespace BlackbirdInterface.Capture
                 for (int i = 0; i < _buffer.Count; i += 1)
                 {
                     CaptureCanonicalRecord record = _buffer[i];
-                    long deltaUs = i == 0 ? 0 : Math.Max(0, (long)(record.TimestampUtc - previous).TotalMilliseconds * 1000L);
+                    long deltaUs =
+                        i == 0 ? 0 : Math.Max(0, (long)(record.TimestampUtc - previous).TotalMilliseconds * 1000L);
                     previous = record.TimestampUtc;
-                    long groupRef = CaptureArchiveStorage.EnsureStringRef(_database, _stringRefs, "group", record.Group);
-                    long subtypeRef = CaptureArchiveStorage.EnsureStringRef(_database, _stringRefs, "subtype", record.SubType);
-                    long summaryRef = CaptureArchiveStorage.EnsureStringRef(_database, _stringRefs, "summary", record.Summary);
-                    long objectRef = CaptureArchiveStorage.EnsureStringRef(_database, _stringRefs, "object", record.ObjectIdentity);
-                    long payloadRef = CaptureArchiveStorage.EnsureBlobRef(_database, _stringRefs, _blobRefs, _blobsPath, "payload", record.PayloadBytes);
-                    long stackRef = CaptureArchiveStorage.EnsureBlobRef(_database, _stringRefs, _blobRefs, _blobsPath, "stack", record.StackBytes);
+                    long groupRef =
+                        CaptureArchiveStorage.EnsureStringRef(_database, _stringRefs, "group", record.Group);
+                    long subtypeRef =
+                        CaptureArchiveStorage.EnsureStringRef(_database, _stringRefs, "subtype", record.SubType);
+                    long summaryRef =
+                        CaptureArchiveStorage.EnsureStringRef(_database, _stringRefs, "summary", record.Summary);
+                    long objectRef =
+                        CaptureArchiveStorage.EnsureStringRef(_database, _stringRefs, "object", record.ObjectIdentity);
+                    long payloadRef = CaptureArchiveStorage.EnsureBlobRef(_database, _stringRefs, _blobRefs, _blobsPath,
+                                                                          "payload", record.PayloadBytes);
+                    long stackRef = CaptureArchiveStorage.EnsureBlobRef(_database, _stringRefs, _blobRefs, _blobsPath,
+                                                                        "stack", record.StackBytes);
 
                     CaptureArchiveStorage.WriteVarUInt64(payloadStream, (ulong)deltaUs);
                     CaptureArchiveStorage.WriteVarUInt64(payloadStream, (ulong)Math.Max(0, record.Pid));
@@ -280,32 +324,35 @@ namespace BlackbirdInterface.Capture
                 var key = (resolutionMs, bucketKey);
                 if (!_buckets.TryGetValue(key, out CaptureBucketCounter? bucket))
                 {
-                    bucket = new CaptureBucketCounter { ResolutionMs = resolutionMs, BucketKey = bucketKey, StartTicks = bucketKey * bucketTicks, EndTicks = bucketKey * bucketTicks + bucketTicks };
+                    bucket = new CaptureBucketCounter { ResolutionMs = resolutionMs, BucketKey = bucketKey,
+                                                        StartTicks = bucketKey * bucketTicks,
+                                                        EndTicks = bucketKey * bucketTicks + bucketTicks };
                     _buckets[key] = bucket;
                 }
                 bucket.TotalEvents += weight;
                 switch (record.Kind)
                 {
-                    case CaptureEventKind.Timeline:
-                        bucket.TimelineEvents += weight;
-                        break;
-                    case CaptureEventKind.HeuristicGrouped:
-                        bucket.HeuristicEvents += weight;
-                        break;
-                    case CaptureEventKind.FilesystemGrouped:
-                    case CaptureEventKind.FilesystemRaw:
-                        bucket.FilesystemEvents += weight;
-                        break;
-                    case CaptureEventKind.RelationGrouped:
-                        bucket.RelationEvents += weight;
-                        break;
+                case CaptureEventKind.Timeline:
+                    bucket.TimelineEvents += weight;
+                    break;
+                case CaptureEventKind.HeuristicGrouped:
+                    bucket.HeuristicEvents += weight;
+                    break;
+                case CaptureEventKind.FilesystemGrouped:
+                case CaptureEventKind.FilesystemRaw:
+                    bucket.FilesystemEvents += weight;
+                    break;
+                case CaptureEventKind.RelationGrouped:
+                    bucket.RelationEvents += weight;
+                    break;
                 }
                 if (groupRef != 0)
                 {
                     bucket.GroupCounts.TryGetValue(groupRef, out int count);
                     count += weight;
                     bucket.GroupCounts[groupRef] = count;
-                    if (bucket.HotGroupRef == 0 || !bucket.GroupCounts.TryGetValue(bucket.HotGroupRef, out int hotCount) || count >= hotCount)
+                    if (bucket.HotGroupRef == 0 ||
+                        !bucket.GroupCounts.TryGetValue(bucket.HotGroupRef, out int hotCount) || count >= hotCount)
                     {
                         bucket.HotGroupRef = groupRef;
                     }
@@ -315,8 +362,10 @@ namespace BlackbirdInterface.Capture
 
         private void WriteBucketsToDatabase()
         {
-            using SqliteStatement insert = _database.Prepare("INSERT OR REPLACE INTO buckets(resolution_ms, bucket_key, total_events, timeline_events, heuristic_events, filesystem_events, relation_events, bucket_start_ticks, bucket_end_ticks, hot_group_ref) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10);");
-            foreach (CaptureBucketCounter bucket in _buckets.Values.OrderBy(x => x.ResolutionMs).ThenBy(x => x.BucketKey))
+            using SqliteStatement insert = _database.Prepare(
+                "INSERT OR REPLACE INTO buckets(resolution_ms, bucket_key, total_events, timeline_events, heuristic_events, filesystem_events, relation_events, bucket_start_ticks, bucket_end_ticks, hot_group_ref) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10);");
+            foreach (CaptureBucketCounter bucket in _buckets.Values.OrderBy(x => x.ResolutionMs)
+                         .ThenBy(x => x.BucketKey))
             {
                 insert.Reset();
                 insert.ClearBindings();
@@ -337,9 +386,16 @@ namespace BlackbirdInterface.Capture
         private void WriteMaterializedFiles(bool force)
         {
             DateTime nowUtc = DateTime.UtcNow;
-            if (!force && _lastMaterializedWriteUtc != default && (nowUtc - _lastMaterializedWriteUtc) < MaterializedWriteInterval)
+            if (!force && _lastMaterializedWriteUtc != default)
             {
-                return;
+                TimeSpan elapsed = nowUtc - _lastMaterializedWriteUtc;
+                long pendingMaterializedEvents = _materializedSequence - _lastMaterializedSequence;
+                if (pendingMaterializedEvents <= 0 || elapsed < MaterializedWriteInterval ||
+                    (pendingMaterializedEvents < MaterializedWriteEventDelta &&
+                     elapsed < MaterializedLowVolumeWriteInterval))
+                {
+                    return;
+                }
             }
 
             Directory.CreateDirectory(_rootPath);
@@ -348,123 +404,128 @@ namespace BlackbirdInterface.Capture
             Directory.CreateDirectory(_segmentsPath);
             Directory.CreateDirectory(_blobsPath);
 
-            var workspace = new CaptureWorkspaceManifest
-            {
-                Version = CaptureArchiveStorage.FormatVersion,
-                SavedUtc = nowUtc,
-                ActivePid = _pid,
-                Tabs = new List<CaptureWorkspaceTabDescriptor>
-                {
-                    new()
-                    {
-                        Pid = _pid,
-                        Title = _title,
-                        RelativePath = Path.Combine("tabs", $"pid-{_pid}")
-                    }
-                }
+            var workspace = new CaptureWorkspaceManifest {
+                Version = CaptureArchiveStorage.FormatVersion, SavedUtc = nowUtc, ActivePid = _pid,
+                Tabs = new List<CaptureWorkspaceTabDescriptor> { new() { Pid = _pid, Title = _title,
+                                                                         RelativePath =
+                                                                             Path.Combine("tabs", $"pid-{_pid}") } }
             };
-            File.WriteAllText(Path.Combine(_rootPath, "manifest.json"), JsonSerializer.Serialize(workspace, JsonOptions), Encoding.UTF8);
+            File.WriteAllText(Path.Combine(_rootPath, "manifest.json"),
+                              JsonSerializer.Serialize(workspace, JsonOptions), Encoding.UTF8);
 
-            SessionFileTab materialized = new()
-            {
-                Pid = _pid,
-                Title = _title,
-                CaptureStartUtc = _captureStartUtc,
-                OfflineSnapshot = true,
-                Events = _timeline.Select(CloneTelemetryEvent).ToList()
-            };
-            File.WriteAllText(Path.Combine(_tabDirectory, "materialized.json"), JsonSerializer.Serialize(materialized, JsonOptions), Encoding.UTF8);
+            SessionFileTab materialized =
+                new() { Pid = _pid, Title = _title, CaptureStartUtc = _captureStartUtc, OfflineSnapshot = true,
+                        Events = _timeline.Select(CloneTelemetryEvent).ToList() };
+            File.WriteAllText(Path.Combine(_tabDirectory, "materialized.json"),
+                              JsonSerializer.Serialize(materialized, JsonOptions), Encoding.UTF8);
 
-            List<CaptureTimelineBucket> buckets = _buckets.Values
-                .OrderBy(x => x.ResolutionMs)
-                .ThenBy(x => x.BucketKey)
-                .Select(x => new CaptureTimelineBucket
-                {
-                    ResolutionMs = x.ResolutionMs,
-                    BucketKey = x.BucketKey,
-                    TotalEvents = x.TotalEvents,
-                    TimelineEvents = x.TimelineEvents,
-                    HeuristicEvents = x.HeuristicEvents,
-                    FilesystemEvents = x.FilesystemEvents,
-                    RelationEvents = x.RelationEvents,
-                    BucketStartUtc = new DateTime(x.StartTicks, DateTimeKind.Utc),
-                    BucketEndUtc = new DateTime(x.EndTicks, DateTimeKind.Utc),
-                    HotGroupRef = x.HotGroupRef
-                })
-                .ToList();
-            File.WriteAllText(Path.Combine(_tabDirectory, "buckets.json"), JsonSerializer.Serialize(buckets, JsonOptions), Encoding.UTF8);
+            List<CaptureTimelineBucket> buckets =
+                _buckets.Values.OrderBy(x => x.ResolutionMs)
+                    .ThenBy(x => x.BucketKey)
+                    .Select(x => new CaptureTimelineBucket {
+                        ResolutionMs = x.ResolutionMs, BucketKey = x.BucketKey, TotalEvents = x.TotalEvents,
+                        TimelineEvents = x.TimelineEvents, HeuristicEvents = x.HeuristicEvents,
+                        FilesystemEvents = x.FilesystemEvents, RelationEvents = x.RelationEvents,
+                        BucketStartUtc = new DateTime(x.StartTicks, DateTimeKind.Utc),
+                        BucketEndUtc = new DateTime(x.EndTicks, DateTimeKind.Utc), HotGroupRef = x.HotGroupRef
+                    })
+                    .ToList();
+            File.WriteAllText(Path.Combine(_tabDirectory, "buckets.json"),
+                              JsonSerializer.Serialize(buckets, JsonOptions), Encoding.UTF8);
 
-            var tabManifest = new CaptureTabManifest
-            {
+            var tabManifest = new CaptureTabManifest {
                 Version = CaptureArchiveStorage.FormatVersion,
                 Pid = _pid,
                 Title = _title,
                 CaptureStartUtc = _captureStartUtc,
                 SegmentCount = Directory.GetFiles(_segmentsPath, "*.bbseg").Length,
                 BlobCount = Directory.Exists(_blobsPath)
-                    ? Directory.GetFiles(_blobsPath, "*.bbblob", SearchOption.AllDirectories).Length
-                    : 0,
+                                ? Directory.GetFiles(_blobsPath, "*.bbblob", SearchOption.AllDirectories).Length
+                                : 0,
                 TimelineEventCount = _timeline.Count,
                 GroupedRowCount = 0,
                 PerformanceSampleCount = 0,
-                ThreadLifecycleCount = _timeline.Count(x => string.Equals(x.Group, "ioctl-thread", StringComparison.OrdinalIgnoreCase)),
+                ThreadLifecycleCount =
+                    _timeline.Count(x => string.Equals(x.Group, "ioctl-thread", StringComparison.OrdinalIgnoreCase)),
                 ThreadStackHistoryCount = 0
             };
-            File.WriteAllText(Path.Combine(_tabDirectory, "tab.manifest.json"), JsonSerializer.Serialize(tabManifest, JsonOptions), Encoding.UTF8);
+            File.WriteAllText(Path.Combine(_tabDirectory, "tab.manifest.json"),
+                              JsonSerializer.Serialize(tabManifest, JsonOptions), Encoding.UTF8);
 
             _lastMaterializedWriteUtc = nowUtc;
+            _lastMaterializedSequence = _materializedSequence;
         }
-        private static CaptureCanonicalRecord BuildIoctlRecord(DateTime timestampUtc, IoctlParsedEvent record, out TelemetryEvent materialized)
+        private static CaptureCanonicalRecord BuildIoctlRecord(DateTime timestampUtc, IoctlParsedEvent record,
+                                                               out TelemetryEvent materialized)
         {
-            CaptureEventKind kind = record.Type == BlackbirdNative.EventTypeFileSystem
-                ? CaptureEventKind.FilesystemRaw
-                : record.Type == BlackbirdNative.EventTypeThread
-                    ? CaptureEventKind.ThreadLifecycle
-                    : CaptureEventKind.IoctlRaw;
-            string group = record.Type == BlackbirdNative.EventTypeHandle
-                ? "ioctl-handle"
-                : record.Type == BlackbirdNative.EventTypeThread
-                    ? "ioctl-thread"
-                    : record.Type == BlackbirdNative.EventTypeFileSystem
-                        ? "ioctl-filesystem"
-                        : "ioctl";
-            string subtype = record.Type == BlackbirdNative.EventTypeHandle
-                ? "Handle"
-                : record.Type == BlackbirdNative.EventTypeThread
-                    ? "Thread"
-                    : record.Type == BlackbirdNative.EventTypeFileSystem
-                        ? "Filesystem"
-                        : "Unknown";
-            string summary = record.Type == BlackbirdNative.EventTypeThread
-                ? $"thread {record.ThreadId} start=0x{record.StartAddress:X}"
-                : record.Type == BlackbirdNative.EventTypeFileSystem
-                    ? (string.IsNullOrWhiteSpace(record.FilePath) ? "filesystem event" : record.FilePath)
-                    : $"caller={record.CallerPid} target={record.TargetPid} access=0x{record.DesiredAccess:X8}";
+            CaptureEventKind kind =
+                record.Type switch { BlackbirdNative.EventTypeFileSystem => CaptureEventKind.FilesystemRaw,
+                                     BlackbirdNative.EventTypeRegistry => CaptureEventKind.RegistryRaw,
+                                     BlackbirdNative.EventTypeEnterprise => CaptureEventKind.EnterpriseRaw,
+                                     BlackbirdNative.EventTypeThread => CaptureEventKind.ThreadLifecycle,
+                                     _ => CaptureEventKind.IoctlRaw };
+            string group = record.Type switch { BlackbirdNative.EventTypeHandle => "ioctl-handle",
+                                                BlackbirdNative.EventTypeThread => "ioctl-thread",
+                                                BlackbirdNative.EventTypeFileSystem => "ioctl-filesystem",
+                                                BlackbirdNative.EventTypeRegistry => "ioctl-registry",
+                                                BlackbirdNative.EventTypeEnterprise => "ioctl-enterprise",
+                                                _ => "ioctl" };
+            string subtype = record.Type switch { BlackbirdNative.EventTypeHandle => "Handle",
+                                                  BlackbirdNative.EventTypeThread => "Thread",
+                                                  BlackbirdNative.EventTypeFileSystem => "Filesystem",
+                                                  BlackbirdNative.EventTypeRegistry => "Registry",
+                                                  BlackbirdNative.EventTypeEnterprise => "Enterprise",
+                                                  _ => "Unknown" };
+            string summary = record.Type switch {
+                BlackbirdNative.EventTypeThread => $"thread {record.ThreadId} start=0x{record.StartAddress:X}",
+                BlackbirdNative.EventTypeFileSystem =>
+                    string.IsNullOrWhiteSpace(record.FilePath) ? "filesystem event" : record.FilePath,
+                BlackbirdNative.EventTypeRegistry => string.IsNullOrWhiteSpace(record.RegistryKeyPath)
+                                                         ? "registry event"
+                                                     : string.IsNullOrWhiteSpace(record.RegistryValueName)
+                                                         ? record.RegistryKeyPath
+                                                         : $"{record.RegistryKeyPath}\\{record.RegistryValueName}",
+                BlackbirdNative.EventTypeEnterprise =>
+                    $"enterprise op={record.EnterpriseOperation} actor={record.EnterpriseProcessPid} target={record.EnterpriseTargetProcessPid}",
+                _ => $"caller={record.CallerPid} target={record.TargetPid} access=0x{record.DesiredAccess:X8}"
+            };
             byte[]? stackBytes = record.StackSnapshotSize > 0 && record.StackSnapshot.Length > 0
-                ? TrimByteBuffer(record.StackSnapshot, (int)record.StackSnapshotSize)
-                : SerializeUlongs(record.FullFrames.Length > 0 ? record.FullFrames : record.Frames.Length > 0 ? record.Frames : record.ThreadFrames, int.MaxValue);
+                                     ? TrimByteBuffer(record.StackSnapshot, (int)record.StackSnapshotSize)
+                                     : SerializeUlongs(record.FullFrames.Length > 0 ? record.FullFrames
+                                                       : record.Frames.Length > 0   ? record.Frames
+                                                                                    : record.ThreadFrames,
+                                                       int.MaxValue);
 
-            materialized = new TelemetryEvent
-            {
+            materialized = new TelemetryEvent {
                 TimestampUtc = timestampUtc,
-                PID = record.Type == BlackbirdNative.EventTypeThread
-                    ? unchecked((int)record.ProcessPid)
-                    : unchecked((int)(record.CallerPid != 0 ? record.CallerPid : record.FileProcessPid)),
-                TID = unchecked((int)(record.ThreadId != 0 ? record.ThreadId : record.FileThreadId)),
+                PID = record.Type == BlackbirdNative.EventTypeThread ? unchecked((int)record.ProcessPid)
+                      : record.Type == BlackbirdNative.EventTypeRegistry
+                          ? unchecked((int)record.RegistryProcessPid)
+                      : record.Type == BlackbirdNative.EventTypeEnterprise
+                          ? unchecked((int)record.EnterpriseProcessPid)
+                          : unchecked((int)(record.CallerPid != 0 ? record.CallerPid : record.FileProcessPid)),
+                TID = record.Type == BlackbirdNative.EventTypeRegistry
+                          ? unchecked((int)record.RegistryThreadId)
+                      : record.Type == BlackbirdNative.EventTypeEnterprise
+                          ? unchecked((int)record.EnterpriseThreadId)
+                          : unchecked((int)(record.ThreadId != 0 ? record.ThreadId : record.FileThreadId)),
                 Group = group,
                 SubType = subtype,
                 Summary = summary,
                 Details = summary
             };
 
-            return new CaptureCanonicalRecord
-            {
+            return new CaptureCanonicalRecord {
                 TimestampUtc = timestampUtc,
                 Pid = materialized.PID,
                 Tid = materialized.TID,
                 HitCount = 1,
                 Kind = kind,
-                Flags = (byte)(record.Type == BlackbirdNative.EventTypeThread ? (record.ThreadFlags & 0xFF) : (record.HandleFlags & 0xFF)),
+                Flags = (byte)(record.Type == BlackbirdNative.EventTypeThread     ? (record.ThreadFlags & 0xFF)
+                               : record.Type == BlackbirdNative.EventTypeRegistry ? (record.RegistryFlags & 0xFF)
+                               : record.Type == BlackbirdNative.EventTypeEnterprise
+                                   ? (record.EnterpriseFlags & 0xFF)
+                                                                                  : (record.HandleFlags & 0xFF)),
                 Group = group,
                 SubType = subtype,
                 Summary = summary,
@@ -477,30 +538,28 @@ namespace BlackbirdInterface.Capture
         private static CaptureCanonicalRecord BuildEtwRecord(BrokerEtwEventView view, out TelemetryEvent materialized)
         {
             string group = EventDetailFormatting.IsUsermodeSensorTelemetry(view)
-                ? EventDetailFormatting.HookTimelineGroup(view)
-                : (string.IsNullOrWhiteSpace(view.Source) ? "etw" : view.Source);
+                               ? EventDetailFormatting.HookTimelineGroup(view)
+                               : (string.IsNullOrWhiteSpace(view.Source) ? "etw" : view.Source);
             string subtype = string.IsNullOrWhiteSpace(view.EventName)
-                ? (string.IsNullOrWhiteSpace(view.DetectionName) ? "Etw" : view.DetectionName)
-                : view.EventName;
+                                 ? (string.IsNullOrWhiteSpace(view.DetectionName) ? "Etw" : view.DetectionName)
+                                 : view.EventName;
             string summary = view.Summary;
-            materialized = new TelemetryEvent
-            {
-                TimestampUtc = view.TimestampUtc == default ? DateTime.UtcNow : view.TimestampUtc,
-                PID = unchecked((int)(view.ActorPid != 0 ? view.ActorPid : view.EventProcessId)),
-                TID = unchecked((int)(view.ThreadId != 0 ? view.ThreadId : view.EventThreadId)),
-                Group = group,
-                SubType = subtype,
-                Summary = summary,
-                Details = view.Details
-            };
+            materialized =
+                new TelemetryEvent { TimestampUtc = view.TimestampUtc == default ? DateTime.UtcNow : view.TimestampUtc,
+                                     PID = unchecked((int)(view.ActorPid != 0 ? view.ActorPid : view.EventProcessId)),
+                                     TID = unchecked((int)(view.ThreadId != 0 ? view.ThreadId : view.EventThreadId)),
+                                     Group = group,
+                                     SubType = subtype,
+                                     Summary = summary,
+                                     Details = view.Details };
 
-            return new CaptureCanonicalRecord
-            {
+            return new CaptureCanonicalRecord {
                 TimestampUtc = materialized.TimestampUtc,
                 Pid = materialized.PID,
                 Tid = materialized.TID,
                 HitCount = Math.Max(1, view.RepeatCount),
-                Kind = string.IsNullOrWhiteSpace(view.DetectionName) ? CaptureEventKind.EtwRaw : CaptureEventKind.HeuristicGrouped,
+                Kind = string.IsNullOrWhiteSpace(view.DetectionName) ? CaptureEventKind.EtwRaw
+                                                                     : CaptureEventKind.HeuristicGrouped,
                 Flags = (byte)(view.Flags & 0xFF),
                 Group = group,
                 SubType = subtype,
@@ -513,17 +572,12 @@ namespace BlackbirdInterface.Capture
 
         private static byte[]? BuildIoctlPayloadBytes(IoctlParsedEvent record)
         {
-            var payload = new CaptureIoctlPayload
-            {
-                Type = record.Type,
-                Sequence = record.Sequence,
-                StreamMask = record.StreamMask
-            };
+            var payload = new CaptureIoctlPayload { Type = record.Type, Sequence = record.Sequence,
+                                                    StreamMask = record.StreamMask };
 
             if (record.Type == BlackbirdNative.EventTypeHandle)
             {
-                payload.Handle = new CaptureIoctlHandlePayload
-                {
+                payload.Handle = new CaptureIoctlHandlePayload {
                     CallerPid = record.CallerPid,
                     TargetPid = record.TargetPid,
                     DesiredAccess = record.DesiredAccess,
@@ -542,71 +596,85 @@ namespace BlackbirdInterface.Capture
                     OriginPath = NormalizeText(record.OriginPath),
                     CaptureFlags = record.CaptureFlags,
                     DeepSample = TrimByteBuffer(record.DeepSample, (int)record.DeepSampleSize),
-                    Registers = HasHandleContext(record) ? new CaptureIoctlRegisterPayload
-                    {
-                        Rax = record.RegRax,
-                        Rbx = record.RegRbx,
-                        Rcx = record.RegRcx,
-                        Rdx = record.RegRdx,
-                        Rsi = record.RegRsi,
-                        Rdi = record.RegRdi,
-                        Rbp = record.RegRbp,
-                        Rsp = record.RegRsp,
-                        R8 = record.RegR8,
-                        R9 = record.RegR9,
-                        R10 = record.RegR10,
-                        R11 = record.RegR11,
-                        R12 = record.RegR12,
-                        R13 = record.RegR13,
-                        R14 = record.RegR14,
-                        R15 = record.RegR15,
-                        Rip = record.RegRip,
-                        EFlags = record.RegEFlags,
-                        Dr0 = record.RegDr0,
-                        Dr1 = record.RegDr1,
-                        Dr2 = record.RegDr2,
-                        Dr3 = record.RegDr3,
-                        Dr6 = record.RegDr6,
-                        Dr7 = record.RegDr7
-                    } : null
+                    Registers = HasHandleContext(record)
+                                    ? new CaptureIoctlRegisterPayload { Rax = record.RegRax, Rbx = record.RegRbx,
+                                                                        Rcx = record.RegRcx, Rdx = record.RegRdx,
+                                                                        Rsi = record.RegRsi, Rdi = record.RegRdi,
+                                                                        Rbp = record.RegRbp, Rsp = record.RegRsp,
+                                                                        R8 = record.RegR8,   R9 = record.RegR9,
+                                                                        R10 = record.RegR10, R11 = record.RegR11,
+                                                                        R12 = record.RegR12, R13 = record.RegR13,
+                                                                        R14 = record.RegR14, R15 = record.RegR15,
+                                                                        Rip = record.RegRip, EFlags = record.RegEFlags,
+                                                                        Dr0 = record.RegDr0, Dr1 = record.RegDr1,
+                                                                        Dr2 = record.RegDr2, Dr3 = record.RegDr3,
+                                                                        Dr6 = record.RegDr6, Dr7 = record.RegDr7 }
+                                    : null
                 };
             }
             else if (record.Type == BlackbirdNative.EventTypeThread)
             {
-                payload.Thread = new CaptureIoctlThreadPayload
-                {
-                    ProcessPid = record.ProcessPid,
-                    ThreadId = record.ThreadId,
-                    CreatorPid = record.CreatorPid,
-                    ThreadFlags = record.ThreadFlags,
-                    StartAddress = record.StartAddress,
-                    ImageBase = record.ImageBase,
+                payload.Thread = new CaptureIoctlThreadPayload {
+                    ProcessPid = record.ProcessPid,     ThreadId = record.ThreadId,
+                    CreatorPid = record.CreatorPid,     ThreadFlags = record.ThreadFlags,
+                    StartAddress = record.StartAddress, ImageBase = record.ImageBase,
                     ImageSize = record.ImageSize
                 };
             }
             else if (record.Type == BlackbirdNative.EventTypeFileSystem)
             {
-                payload.File = new CaptureIoctlFilePayload
-                {
-                    ProcessPid = record.FileProcessPid,
-                    ThreadId = record.FileThreadId,
-                    FileObject = record.FileObject,
-                    FileId = record.FileId,
-                    ByteOffset = record.FileByteOffset,
-                    Length = record.FileLength,
-                    Status = record.FileStatus,
-                    Information = record.FileInformation,
-                    Operation = record.FileOperation,
-                    MajorCode = record.FileMajorCode,
-                    MinorCode = record.FileMinorCode,
-                    IrpFlags = record.FileIrpFlags,
-                    CreateOptions = record.FileCreateOptions,
-                    CreateDisposition = record.FileCreateDisposition,
-                    DesiredAccess = record.FileDesiredAccess,
-                    ShareAccess = record.FileShareAccess,
-                    Flags = record.FileFlags,
-                    Path = NormalizeText(record.FilePath)
-                };
+                payload.File = new CaptureIoctlFilePayload { ProcessPid = record.FileProcessPid,
+                                                             ThreadId = record.FileThreadId,
+                                                             FileObject = record.FileObject,
+                                                             FileId = record.FileId,
+                                                             ByteOffset = record.FileByteOffset,
+                                                             Length = record.FileLength,
+                                                             Status = record.FileStatus,
+                                                             Information = record.FileInformation,
+                                                             Operation = record.FileOperation,
+                                                             MajorCode = record.FileMajorCode,
+                                                             MinorCode = record.FileMinorCode,
+                                                             IrpFlags = record.FileIrpFlags,
+                                                             CreateOptions = record.FileCreateOptions,
+                                                             CreateDisposition = record.FileCreateDisposition,
+                                                             DesiredAccess = record.FileDesiredAccess,
+                                                             ShareAccess = record.FileShareAccess,
+                                                             Flags = record.FileFlags,
+                                                             Path = NormalizeText(record.FilePath) };
+            }
+            else if (record.Type == BlackbirdNative.EventTypeRegistry)
+            {
+                payload.Registry =
+                    new CaptureIoctlRegistryPayload { ProcessPid = record.RegistryProcessPid,
+                                                      ThreadId = record.RegistryThreadId,
+                                                      Operation = record.RegistryOperation,
+                                                      NotifyClass = record.RegistryNotifyClass,
+                                                      DataType = record.RegistryDataType,
+                                                      DataSize = record.RegistryDataSize,
+                                                      Flags = record.RegistryFlags,
+                                                      SessionId = record.RegistrySessionId,
+                                                      KeyPath = NormalizeText(record.RegistryKeyPath),
+                                                      ValueName = NormalizeText(record.RegistryValueName) };
+            }
+            else if (record.Type == BlackbirdNative.EventTypeEnterprise)
+            {
+                payload.Enterprise =
+                    new CaptureIoctlEnterprisePayload { ProcessPid = record.EnterpriseProcessPid,
+                                                        ThreadId = record.EnterpriseThreadId,
+                                                        TargetProcessPid = record.EnterpriseTargetProcessPid,
+                                                        TargetThreadId = record.EnterpriseTargetThreadId,
+                                                        ObjectAddress = record.EnterpriseObjectAddress,
+                                                        Aux0 = record.EnterpriseAux0,
+                                                        Aux1 = record.EnterpriseAux1,
+                                                        Operation = record.EnterpriseOperation,
+                                                        SubOperation = record.EnterpriseSubOperation,
+                                                        Flags = record.EnterpriseFlags,
+                                                        DesiredAccess = record.EnterpriseDesiredAccess,
+                                                        GrantedAccess = record.EnterpriseGrantedAccess,
+                                                        Status = record.EnterpriseStatus,
+                                                        Protocol = record.EnterpriseProtocol,
+                                                        LocalPort = record.EnterpriseLocalPort,
+                                                        RemotePort = record.EnterpriseRemotePort };
             }
 
             return SerializePayload(payload);
@@ -614,92 +682,91 @@ namespace BlackbirdInterface.Capture
 
         private static byte[]? BuildEtwPayloadBytes(BrokerEtwEventView view)
         {
-            var payload = new CaptureEtwPayload
-            {
-                Source = NormalizeText(view.Source),
-                SourceId = view.SourceId,
-                Family = view.Family,
-                EventName = NormalizeText(view.EventName),
-                Task = view.Task,
-                Opcode = view.Opcode,
-                EventId = view.EventId,
-                EventProcessId = view.EventProcessId,
-                EventThreadId = view.EventThreadId,
-                Severity = view.Severity,
-                Flags = view.Flags,
-                ActorPid = view.ActorPid,
-                TargetPid = view.TargetPid,
-                ProcessPid = view.ProcessPid,
-                ThreadId = view.ThreadId,
-                CallerPid = view.CallerPid,
-                ExplicitTargetPid = view.ExplicitTargetPid,
-                ParentPid = view.ParentPid,
-                CreatorPid = view.CreatorPid,
-                CreatorThreadId = view.CreatorThreadId,
-                CorrelationFlags = view.CorrelationFlags,
-                CorrelationAccessMask = view.CorrelationAccessMask,
-                CorrelationAgeMs = view.CorrelationAgeMs,
-                DetectionName = NormalizeText(view.DetectionName),
-                Reason = NormalizeText(view.Reason),
-                ClassName = NormalizeText(view.ClassName),
-                Operation = NormalizeText(view.Operation),
-                DesiredAccess = view.DesiredAccess,
-                OriginAddress = view.OriginAddress,
-                OriginProtect = view.OriginProtect,
-                StatusOpenProcess = view.StatusOpenProcess,
-                StatusBasicInfo = view.StatusBasicInfo,
-                StatusSectionName = view.StatusSectionName,
-                DeepAllocationBase = view.DeepAllocationBase,
-                DeepRegionSize = view.DeepRegionSize,
-                DeepRegionProtect = view.DeepRegionProtect,
-                DeepRegionState = view.DeepRegionState,
-                DeepRegionType = view.DeepRegionType,
-                DeepSample = TrimByteBuffer(view.DeepSample, (int)view.DeepSampleSize),
-                OriginPath = NormalizeText(view.OriginPath),
-                StartAddress = view.StartAddress,
-                ImageBase = view.ImageBase,
-                ImageSize = view.ImageSize,
-                StartRegionProtect = view.StartRegionProtect,
-                StartRegionState = view.StartRegionState,
-                StartRegionType = view.StartRegionType,
-                StartRegionStatus = view.StartRegionStatus,
-                SessionId = view.SessionId,
-                CreateStatus = view.CreateStatus,
-                ProcessStartKey = view.ProcessStartKey,
-                SignatureLevel = view.SignatureLevel,
-                SignatureType = view.SignatureType,
-                NotifyClass = view.NotifyClass,
-                DataType = view.DataType,
-                DataSize = view.DataSize,
-                ImagePath = NormalizeText(view.ImagePath),
-                CommandLine = NormalizeText(view.CommandLine),
-                KeyPath = NormalizeText(view.KeyPath),
-                ValueName = NormalizeText(view.ValueName),
-                Details = NormalizeText(view.Details),
-                ArgumentSummary = NormalizeText(view.ArgumentSummary),
-                RepeatCount = view.RepeatCount
-            };
+            var payload =
+                new CaptureEtwPayload { Source = NormalizeText(view.Source),
+                                        SourceId = view.SourceId,
+                                        Family = view.Family,
+                                        EventName = NormalizeText(view.EventName),
+                                        Task = view.Task,
+                                        Opcode = view.Opcode,
+                                        EventId = view.EventId,
+                                        EventProcessId = view.EventProcessId,
+                                        EventThreadId = view.EventThreadId,
+                                        Severity = view.Severity,
+                                        Flags = view.Flags,
+                                        ActorPid = view.ActorPid,
+                                        TargetPid = view.TargetPid,
+                                        ProcessPid = view.ProcessPid,
+                                        ThreadId = view.ThreadId,
+                                        CallerPid = view.CallerPid,
+                                        ExplicitTargetPid = view.ExplicitTargetPid,
+                                        ParentPid = view.ParentPid,
+                                        CreatorPid = view.CreatorPid,
+                                        CreatorThreadId = view.CreatorThreadId,
+                                        CorrelationFlags = view.CorrelationFlags,
+                                        CorrelationAccessMask = view.CorrelationAccessMask,
+                                        CorrelationAgeMs = view.CorrelationAgeMs,
+                                        DetectionName = NormalizeText(view.DetectionName),
+                                        Reason = NormalizeText(view.Reason),
+                                        ClassName = NormalizeText(view.ClassName),
+                                        Operation = NormalizeText(view.Operation),
+                                        DesiredAccess = view.DesiredAccess,
+                                        OriginAddress = view.OriginAddress,
+                                        OriginProtect = view.OriginProtect,
+                                        StatusOpenProcess = view.StatusOpenProcess,
+                                        StatusBasicInfo = view.StatusBasicInfo,
+                                        StatusSectionName = view.StatusSectionName,
+                                        DeepAllocationBase = view.DeepAllocationBase,
+                                        DeepRegionSize = view.DeepRegionSize,
+                                        DeepRegionProtect = view.DeepRegionProtect,
+                                        DeepRegionState = view.DeepRegionState,
+                                        DeepRegionType = view.DeepRegionType,
+                                        DeepSample = TrimByteBuffer(view.DeepSample, (int)view.DeepSampleSize),
+                                        OriginPath = NormalizeText(view.OriginPath),
+                                        StartAddress = view.StartAddress,
+                                        ImageBase = view.ImageBase,
+                                        ImageSize = view.ImageSize,
+                                        StartRegionProtect = view.StartRegionProtect,
+                                        StartRegionState = view.StartRegionState,
+                                        StartRegionType = view.StartRegionType,
+                                        StartRegionStatus = view.StartRegionStatus,
+                                        SessionId = view.SessionId,
+                                        CreateStatus = view.CreateStatus,
+                                        ProcessStartKey = view.ProcessStartKey,
+                                        SignatureLevel = view.SignatureLevel,
+                                        SignatureType = view.SignatureType,
+                                        NotifyClass = view.NotifyClass,
+                                        DataType = view.DataType,
+                                        DataSize = view.DataSize,
+                                        ImagePath = NormalizeText(view.ImagePath),
+                                        CommandLine = NormalizeText(view.CommandLine),
+                                        KeyPath = NormalizeText(view.KeyPath),
+                                        ValueName = NormalizeText(view.ValueName),
+                                        Details = NormalizeText(view.Details),
+                                        ArgumentSummary = NormalizeText(view.ArgumentSummary),
+                                        RepeatCount = view.RepeatCount };
 
             return SerializePayload(payload);
         }
 
-        private static string BuildIoctlIdentity(IoctlParsedEvent record)
-            => record.Type == BlackbirdNative.EventTypeHandle
+        private static string BuildIoctlIdentity(IoctlParsedEvent record) =>
+            record.Type == BlackbirdNative.EventTypeHandle
                 ? $"handle:{record.CallerPid}:{record.TargetPid}:{record.OriginAddress:X}"
-                : record.Type == BlackbirdNative.EventTypeThread
-                    ? $"thread:{record.ProcessPid}:{record.ThreadId}:{record.StartAddress:X}"
-                    : !string.IsNullOrWhiteSpace(record.FilePath)
-                        ? $"file:{record.FileProcessPid}:{record.FilePath}"
-                        : $"ioctl:{record.Sequence}:{record.Type}";
+            : record.Type == BlackbirdNative.EventTypeThread
+                ? $"thread:{record.ProcessPid}:{record.ThreadId}:{record.StartAddress:X}"
+            : record.Type == BlackbirdNative.EventTypeRegistry
+                ? $"registry:{record.RegistryProcessPid}:{record.RegistryKeyPath}:{record.RegistryValueName}"
+            : record.Type == BlackbirdNative.EventTypeEnterprise
+                ? $"enterprise:{record.EnterpriseProcessPid}:{record.EnterpriseTargetProcessPid}:{record.EnterpriseOperation}:{record.EnterpriseFlags:X8}"
+            : !string.IsNullOrWhiteSpace(record.FilePath) ? $"file:{record.FileProcessPid}:{record.FilePath}"
+                                                          : $"ioctl:{record.Sequence}:{record.Type}";
 
-        private static string BuildEtwIdentity(BrokerEtwEventView view)
-            => !string.IsNullOrWhiteSpace(view.ImagePath)
-                ? $"image:{view.ProcessPid}:{view.ImagePath}"
-                : !string.IsNullOrWhiteSpace(view.KeyPath)
-                    ? $"registry:{view.ProcessPid}:{view.KeyPath}"
-                    : !string.IsNullOrWhiteSpace(view.DetectionName)
-                        ? $"detection:{view.ActorPid}:{view.DetectionName}"
-                        : $"etw:{view.Source}:{view.EventName}:{view.ActorPid}:{view.TargetPid}";
+        private static string BuildEtwIdentity(BrokerEtwEventView view) =>
+            !string.IsNullOrWhiteSpace(view.ImagePath) ? $"image:{view.ProcessPid}:{view.ImagePath}"
+            : !string.IsNullOrWhiteSpace(view.KeyPath) ? $"registry:{view.ProcessPid}:{view.KeyPath}"
+            : !string.IsNullOrWhiteSpace(view.DetectionName)
+                ? $"detection:{view.ActorPid}:{view.DetectionName}"
+                : $"etw:{view.Source}:{view.EventName}:{view.ActorPid}:{view.TargetPid}";
 
         private static byte[]? SerializeUlongs(ulong[]? values, int count)
         {
@@ -719,10 +786,9 @@ namespace BlackbirdInterface.Capture
         }
 
         private static byte[]? SerializePayload<T>(T payload)
-            where T : class
-            => JsonSerializer.SerializeToUtf8Bytes(payload, PayloadJsonOptions);
+            where T : class => JsonSerializer.SerializeToUtf8Bytes(payload, PayloadJsonOptions);
 
-        private static string NormalizeText(string? value)
+                      private static string NormalizeText(string ? value)
         {
             if (string.IsNullOrWhiteSpace(value))
             {
@@ -766,18 +832,15 @@ namespace BlackbirdInterface.Capture
             return record.RegRip != 0 || record.RegRsp != 0 || record.RegRax != 0 || record.RegRcx != 0;
         }
 
-        private static TelemetryEvent CloneTelemetryEvent(TelemetryEvent src)
-            => new()
-            {
-                TimestampUtc = src.TimestampUtc,
-                PID = src.PID,
-                TID = src.TID,
-                Group = src.Group,
-                SubType = src.SubType,
-                ProcessName = src.ProcessName,
-                Summary = src.Summary,
-                Details = src.Details
-            };
+        private static TelemetryEvent
+        CloneTelemetryEvent(TelemetryEvent src) => new() { TimestampUtc = src.TimestampUtc,
+                                                           PID = src.PID,
+                                                           TID = src.TID,
+                                                           Group = src.Group,
+                                                           SubType = src.SubType,
+                                                           ProcessName = src.ProcessName,
+                                                           Summary = src.Summary,
+                                                           Details = src.Details };
 
         private void ThrowIfDisposed()
         {
@@ -795,6 +858,8 @@ namespace BlackbirdInterface.Capture
             public CaptureIoctlHandlePayload? Handle { get; set; }
             public CaptureIoctlThreadPayload? Thread { get; set; }
             public CaptureIoctlFilePayload? File { get; set; }
+            public CaptureIoctlRegistryPayload? Registry { get; set; }
+            public CaptureIoctlEnterprisePayload? Enterprise { get; set; }
         }
 
         private sealed class CaptureIoctlHandlePayload
@@ -879,6 +944,40 @@ namespace BlackbirdInterface.Capture
             public uint ShareAccess { get; set; }
             public uint Flags { get; set; }
             public string Path { get; set; } = string.Empty;
+        }
+
+        private sealed class CaptureIoctlRegistryPayload
+        {
+            public uint ProcessPid { get; set; }
+            public uint ThreadId { get; set; }
+            public uint Operation { get; set; }
+            public uint NotifyClass { get; set; }
+            public uint DataType { get; set; }
+            public uint DataSize { get; set; }
+            public uint Flags { get; set; }
+            public uint SessionId { get; set; }
+            public string KeyPath { get; set; } = string.Empty;
+            public string ValueName { get; set; } = string.Empty;
+        }
+
+        private sealed class CaptureIoctlEnterprisePayload
+        {
+            public uint ProcessPid { get; set; }
+            public uint ThreadId { get; set; }
+            public uint TargetProcessPid { get; set; }
+            public uint TargetThreadId { get; set; }
+            public ulong ObjectAddress { get; set; }
+            public ulong Aux0 { get; set; }
+            public ulong Aux1 { get; set; }
+            public uint Operation { get; set; }
+            public uint SubOperation { get; set; }
+            public uint Flags { get; set; }
+            public uint DesiredAccess { get; set; }
+            public uint GrantedAccess { get; set; }
+            public uint Status { get; set; }
+            public uint Protocol { get; set; }
+            public uint LocalPort { get; set; }
+            public uint RemotePort { get; set; }
         }
 
         private sealed class CaptureEtwPayload

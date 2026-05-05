@@ -18,9 +18,8 @@ namespace BlackbirdInterface
             string rootPath;
             if (_currentSession != null && _currentSession.Pid == pid)
             {
-                rootPath = IsSessionCachePath(_currentSession.BackingStorePath)
-                    ? _currentSession.BackingStorePath!
-                    : AllocateSessionCachePath(pid);
+                rootPath = IsSessionCachePath(_currentSession.BackingStorePath) ? _currentSession.BackingStorePath!
+                                                                                : AllocateSessionCachePath(pid);
                 _currentSession.BackingStorePath = rootPath;
             }
             else

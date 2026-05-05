@@ -42,7 +42,7 @@ namespace BlackbirdInterface
         public EventLogWindow()
         {
             InitializeComponent();
-            WindowThemeHelper.ApplyDarkTitleBar(this);
+            WindowThemeHelper.WireThemeAwareTitleBar(this);
 
             EventCardList.ItemsSource = _cards;
             _cardView = CollectionViewSource.GetDefaultView(_cards);

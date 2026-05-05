@@ -13,7 +13,7 @@ namespace BlackbirdInterface
         internal SimpleEventDetailWindow(string title, GroupedEventRow row)
         {
             InitializeComponent();
-            WindowThemeHelper.ApplyDarkTitleBar(this);
+            WindowThemeHelper.WireThemeAwareTitleBar(this);
 
             string header = string.IsNullOrWhiteSpace(title) ? "Event Detail" : title.Trim();
             Title = header;
@@ -23,18 +23,14 @@ namespace BlackbirdInterface
             SummaryBlock.Text =
                 $"event={safeRow.Event} severity={safeRow.Severity} hits={Math.Max(1, safeRow.Hits)} target={safeRow.Detection}";
 
-            _detailRows = safeRow.Details
-                .OrderByDescending(x => x.TimestampUtc)
-                .ToList();
+            _detailRows = safeRow.Details.OrderByDescending(x => x.TimestampUtc).ToList();
 
-            DetailList.ItemsSource = _detailRows.Select(x => new DetailListItem
-            {
-                Source = x,
-                Timestamp = x.TimestampUtc.ToString("HH:mm:ss.fff") + "Z",
-                Event = x.Event,
-                Severity = x.Severity,
-                Detection = x.Detection
-            }).ToList();
+            DetailList.ItemsSource =
+                _detailRows
+                    .Select(x => new DetailListItem { Source = x,
+                                                      Timestamp = x.TimestampUtc.ToString("HH:mm:ss.fff") + "Z",
+                                                      Event = x.Event, Severity = x.Severity, Detection = x.Detection })
+                    .ToList();
 
             if (DetailList.Items.Count > 0)
             {
@@ -57,11 +53,10 @@ namespace BlackbirdInterface
             }
 
             string details = string.IsNullOrWhiteSpace(item.Source.Details) ? "<no details>" : item.Source.Details;
-            DetailTextBox.Text =
-                $"timestamp={item.Source.TimestampUtc:O}{Environment.NewLine}" +
-                $"event={item.Source.Event} severity={item.Source.Severity}{Environment.NewLine}" +
-                $"actor={item.Source.Actor} target={item.Source.Target}{Environment.NewLine}" +
-                $"details={details}";
+            DetailTextBox.Text = $"timestamp={item.Source.TimestampUtc:O}{Environment.NewLine}" +
+                                 $"event={item.Source.Event} severity={item.Source.Severity}{Environment.NewLine}" +
+                                 $"actor={item.Source.Actor} target={item.Source.Target}{Environment.NewLine}" +
+                                 $"details={details}";
             DetailTextBox.ScrollToHome();
         }
 
@@ -87,4 +82,3 @@ namespace BlackbirdInterface
         }
     }
 }
-

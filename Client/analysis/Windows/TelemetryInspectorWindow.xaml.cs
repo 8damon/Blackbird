@@ -14,16 +14,8 @@ namespace BlackbirdInterface
 {
     public partial class TelemetryInspectorWindow : Window
     {
-        private static readonly string[] SeverityFilters =
-        {
-            "All",
-            "Critical",
-            "High",
-            "Medium",
-            "Low",
-            "Info",
-            "Unknown"
-        };
+        private static readonly string[] SeverityFilters = { "All", "Critical", "High",   "Medium",
+                                                             "Low", "Info",     "Unknown" };
 
         private readonly ObservableCollection<GroupedEventRow> _groups = new();
         private readonly ObservableCollection<InspectorEventTreeNode> _eventNodes = new();
@@ -35,15 +27,12 @@ namespace BlackbirdInterface
         private string _selectedRawText = string.Empty;
         private string? _preferredGroupKey;
 
-        private TelemetryInspectorWindow(
-            string title,
-            string subtitle,
-            IEnumerable<GroupedEventRow> groups,
-            GroupedEventRow? selectedGroup,
-            Func<uint, uint, IoctlParsedEvent?>? handleEvidenceResolver)
+        private TelemetryInspectorWindow(string title, string subtitle, IEnumerable<GroupedEventRow> groups,
+                                         GroupedEventRow? selectedGroup,
+                                         Func<uint, uint, IoctlParsedEvent?>? handleEvidenceResolver)
         {
             InitializeComponent();
-            WindowThemeHelper.ApplyDarkTitleBar(this);
+            WindowThemeHelper.WireThemeAwareTitleBar(this);
 
             Title = string.IsNullOrWhiteSpace(title) ? "Telemetry Inspector" : title.Trim();
             HeaderBlock.Text = Title;
@@ -53,8 +42,7 @@ namespace BlackbirdInterface
             EventTreeView.ItemsSource = _eventNodes;
             FieldsTreeView.ItemsSource = _fieldNodes;
 
-            foreach (GroupedEventRow row in groups
-                         .Select(x => x.Clone())
+            foreach (GroupedEventRow row in groups.Select(x => x.Clone())
                          .OrderByDescending(x => x.LastSeenUtc)
                          .ThenBy(x => x.Event, StringComparer.OrdinalIgnoreCase))
             {
@@ -66,13 +54,9 @@ namespace BlackbirdInterface
             ApplyGroupFilter();
         }
 
-        internal static void ShowForRows(
-            Window? owner,
-            string title,
-            string subtitle,
-            IEnumerable<GroupedEventRow> groups,
-            GroupedEventRow? selectedGroup,
-            Func<uint, uint, IoctlParsedEvent?>? handleEvidenceResolver)
+        internal static void ShowForRows(Window? owner, string title, string subtitle,
+                                         IEnumerable<GroupedEventRow> groups, GroupedEventRow? selectedGroup,
+                                         Func<uint, uint, IoctlParsedEvent?>? handleEvidenceResolver)
         {
             var window = new TelemetryInspectorWindow(title, subtitle, groups, selectedGroup, handleEvidenceResolver);
             if (owner != null && !ReferenceEquals(owner, window))
@@ -88,9 +72,9 @@ namespace BlackbirdInterface
         {
             List<GroupedEventRow> visibleGroups = GetVisibleGroups().ToList();
             GroupCountBlock.Text = visibleGroups.Count.ToString(CultureInfo.InvariantCulture);
-            OccurrenceCountBlock.Text = visibleGroups
-                .Sum(x => x.Details.Count == 0 ? Math.Max(1, x.Hits) : x.Details.Count)
-                .ToString(CultureInfo.InvariantCulture);
+            OccurrenceCountBlock.Text =
+                visibleGroups.Sum(x => x.Details.Count == 0 ? Math.Max(1, x.Hits) : x.Details.Count)
+                    .ToString(CultureInfo.InvariantCulture);
 
             if (visibleGroups.Count == 0)
             {
@@ -101,13 +85,15 @@ namespace BlackbirdInterface
             }
 
             DateTime first = visibleGroups
-                .SelectMany(x => x.Details.Count == 0 ? new[] { x.LastSeenUtc } : x.Details.Select(d => d.TimestampUtc))
-                .DefaultIfEmpty(DateTime.UtcNow)
-                .Min();
+                                 .SelectMany(x => x.Details.Count == 0 ? new[] { x.LastSeenUtc }
+                                                                       : x.Details.Select(d => d.TimestampUtc))
+                                 .DefaultIfEmpty(DateTime.UtcNow)
+                                 .Min();
             DateTime last = visibleGroups
-                .SelectMany(x => x.Details.Count == 0 ? new[] { x.LastSeenUtc } : x.Details.Select(d => d.TimestampUtc))
-                .DefaultIfEmpty(DateTime.UtcNow)
-                .Max();
+                                .SelectMany(x => x.Details.Count == 0 ? new[] { x.LastSeenUtc }
+                                                                      : x.Details.Select(d => d.TimestampUtc))
+                                .DefaultIfEmpty(DateTime.UtcNow)
+                                .Max();
             WindowRangeBlock.Text = $"{first:HH:mm:ss.fff} - {last:HH:mm:ss.fff}";
         }
 
@@ -124,8 +110,7 @@ namespace BlackbirdInterface
                     continue;
                 }
 
-                if (query.Length == 0 ||
-                    row.Event.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                if (query.Length == 0 || row.Event.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                     row.Detection.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                     row.Severity.Contains(query, StringComparison.OrdinalIgnoreCase) ||
                     row.GroupKey.Contains(query, StringComparison.OrdinalIgnoreCase) ||
@@ -142,11 +127,11 @@ namespace BlackbirdInterface
 
             foreach (GroupedEventRow group in GetVisibleGroups())
             {
-                var groupNode = new InspectorEventTreeNode
-                {
+                var groupNode = new InspectorEventTreeNode {
                     Group = group,
                     Title = string.IsNullOrWhiteSpace(group.Detection) ? group.Event : group.Detection,
-                    Subtitle = string.IsNullOrWhiteSpace(group.Detection) ? group.Severity : $"{group.Event} | {group.Severity}",
+                    Subtitle = string.IsNullOrWhiteSpace(group.Detection) ? group.Severity
+                                                                          : $"{group.Event} | {group.Severity}",
                     RightLabel = $"{Math.Max(1, group.Details.Count == 0 ? group.Hits : group.Details.Count)}x",
                     IsExpanded = string.Equals(group.GroupKey, _preferredGroupKey, StringComparison.Ordinal),
                     AccentBrush = SeverityAccentBrush(group.Severity),
@@ -154,21 +139,18 @@ namespace BlackbirdInterface
                     TitleBrush = SeverityTitleBrush(group.Severity)
                 };
 
-                foreach (GroupedEventDetailRow detail in group.Details
-                             .Select(x => x.Clone())
+                foreach (GroupedEventDetailRow detail in group.Details.Select(x => x.Clone())
                              .OrderByDescending(x => x.TimestampUtc))
                 {
-                    groupNode.Children.Add(new InspectorEventTreeNode
-                    {
-                        Group = group,
-                        Detail = detail,
+                    groupNode.Children.Add(new InspectorEventTreeNode {
+                        Group = group, Detail = detail,
                         Title = string.IsNullOrWhiteSpace(detail.Detection) ? detail.Event : detail.Detection,
                         Subtitle = string.IsNullOrWhiteSpace(detail.ArgumentSummary)
-                            ? $"{detail.Event} | {detail.Actor} -> {detail.Target}"
-                            : $"{detail.Event} | {detail.ArgumentSummary}",
-                        RightLabel = detail.TimestampUtc == default ? "-" : detail.TimestampUtc.ToString("HH:mm:ss.fff"),
-                        IsLeaf = true,
-                        AccentBrush = SeverityAccentBrush(detail.Severity),
+                                       ? $"{detail.Event} | {detail.Actor} -> {detail.Target}"
+                                       : $"{detail.Event} | {detail.ArgumentSummary}",
+                        RightLabel =
+                            detail.TimestampUtc == default ? "-" : detail.TimestampUtc.ToString("HH:mm:ss.fff"),
+                        IsLeaf = true, AccentBrush = SeverityAccentBrush(detail.Severity),
                         BackgroundBrush = new SolidColorBrush(Color.FromArgb(255, 17, 17, 17)),
                         TitleBrush = Brushes.White
                     });
@@ -184,7 +166,8 @@ namespace BlackbirdInterface
 
             if (!string.IsNullOrWhiteSpace(_preferredGroupKey))
             {
-                selectedNode = _eventNodes.FirstOrDefault(x => string.Equals(x.Group?.GroupKey, _preferredGroupKey, StringComparison.Ordinal));
+                selectedNode = _eventNodes.FirstOrDefault(
+                    x => string.Equals(x.Group?.GroupKey, _preferredGroupKey, StringComparison.Ordinal));
             }
 
             selectedNode ??= _eventNodes.FirstOrDefault();
@@ -197,7 +180,8 @@ namespace BlackbirdInterface
                 return;
             }
 
-            UpdateSelectedNode(selectedNode.Detail != null ? selectedNode : selectedNode.Children.FirstOrDefault() ?? selectedNode);
+            UpdateSelectedNode(selectedNode.Detail != null ? selectedNode
+                                                           : selectedNode.Children.FirstOrDefault() ?? selectedNode);
         }
 
         private void SearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
@@ -249,20 +233,18 @@ namespace BlackbirdInterface
             GroupedEventDetailRow? detail = node.Detail;
             if (detail == null && group != null)
             {
-                detail = group.Details
-                    .Select(x => x.Clone())
-                    .OrderByDescending(x => x.TimestampUtc)
-                    .FirstOrDefault();
+                detail = group.Details.Select(x => x.Clone()).OrderByDescending(x => x.TimestampUtc).FirstOrDefault();
             }
 
             if (group != null)
             {
                 _preferredGroupKey = group.GroupKey;
-                SelectionBlock.Text = string.IsNullOrWhiteSpace(group.Detection)
-                    ? group.Event
-                    : $"{group.Detection} / {group.Event}";
-                SelectionTimeBlock.Text = group.LastSeenUtc == default ? "-" : group.LastSeenUtc.ToString("HH:mm:ss.fff");
-                DetailCountBlock.Text = $"{Math.Max(1, group.Details.Count == 0 ? group.Hits : group.Details.Count)} occurrence{(Math.Max(1, group.Details.Count == 0 ? group.Hits : group.Details.Count) == 1 ? string.Empty : "s")} shown";
+                SelectionBlock.Text =
+                    string.IsNullOrWhiteSpace(group.Detection) ? group.Event : $"{group.Detection} / {group.Event}";
+                SelectionTimeBlock.Text =
+                    group.LastSeenUtc == default ? "-" : group.LastSeenUtc.ToString("HH:mm:ss.fff");
+                DetailCountBlock.Text =
+                    $"{Math.Max(1, group.Details.Count == 0 ? group.Hits : group.Details.Count)} occurrence{(Math.Max(1, group.Details.Count == 0 ? group.Hits : group.Details.Count) == 1 ? string.Empty : "s")} shown";
             }
             else
             {
@@ -298,29 +280,19 @@ namespace BlackbirdInterface
 
             string disassembly = BuildDisassemblyText(detail, parsed, _selectedHandleEvidence);
             List<InspectorStackRow> stackRows = BuildStackRows(parsed, _selectedHandleEvidence);
-            BuildFieldTree(detail, parsed, actorPid, targetPid, stackRows, disassembly, _selectedRawText, _selectedHandleEvidence != null);
+            BuildFieldTree(detail, parsed, actorPid, targetPid, stackRows, disassembly, _selectedRawText,
+                           _selectedHandleEvidence != null);
         }
 
-        private void BuildFieldTree(
-            GroupedEventDetailRow detail,
-            Dictionary<string, string> parsed,
-            uint actorPid,
-            uint targetPid,
-            IReadOnlyList<InspectorStackRow> stackRows,
-            string disassembly,
-            string rawText,
-            bool hasHandleEvidence)
+        private void BuildFieldTree(GroupedEventDetailRow detail, Dictionary<string, string> parsed, uint actorPid,
+                                    uint targetPid, IReadOnlyList<InspectorStackRow> stackRows, string disassembly,
+                                    string rawText, bool hasHandleEvidence)
         {
             _fieldNodes.Clear();
 
             InspectorFieldNode AddSection(string name, bool expanded = true)
             {
-                var node = new InspectorFieldNode
-                {
-                    Name = name,
-                    Kind = "section",
-                    IsExpanded = expanded
-                };
+                var node = new InspectorFieldNode { Name = name, Kind = "section", IsExpanded = expanded };
                 _fieldNodes.Add(node);
                 return node;
             }
@@ -332,12 +304,7 @@ namespace BlackbirdInterface
                     return;
                 }
 
-                parent.Children.Add(new InspectorFieldNode
-                {
-                    Name = name,
-                    Value = value.Trim(),
-                    Kind = "pair"
-                });
+                parent.Children.Add(new InspectorFieldNode { Name = name, Value = value.Trim(), Kind = "pair" });
             }
 
             static void AddLine(InspectorFieldNode parent, string value, string kind = "line")
@@ -347,11 +314,7 @@ namespace BlackbirdInterface
                     return;
                 }
 
-                parent.Children.Add(new InspectorFieldNode
-                {
-                    Value = value,
-                    Kind = kind
-                });
+                parent.Children.Add(new InspectorFieldNode { Value = value, Kind = kind });
             }
 
             InspectorFieldNode selection = AddSection("Selected Occurrence");
@@ -370,15 +333,15 @@ namespace BlackbirdInterface
             }
             AddPair(selection, "Correlated Handle Evidence", hasHandleEvidence ? "Available" : "None");
 
-            foreach (string category in parsed.Keys
-                         .Select(CategoryForKey)
+            foreach (string category in parsed.Keys.Select(CategoryForKey)
                          .Distinct(StringComparer.OrdinalIgnoreCase)
                          .OrderBy(CategoryRank)
                          .ThenBy(x => x, StringComparer.OrdinalIgnoreCase))
             {
                 InspectorFieldNode section = AddSection(category, false);
                 foreach ((string key, string value) in parsed
-                             .Where(x => string.Equals(CategoryForKey(x.Key), category, StringComparison.OrdinalIgnoreCase))
+                             .Where(x => string.Equals(CategoryForKey(x.Key), category,
+                                                       StringComparison.OrdinalIgnoreCase))
                              .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
                 {
                     AddPair(section, key, value);
@@ -401,7 +364,8 @@ namespace BlackbirdInterface
             InspectorFieldNode disassemblySection = AddSection("Disassembly");
             foreach (string line in SplitLines(disassembly))
             {
-                AddLine(disassemblySection, line, line.StartsWith("summary:", StringComparison.OrdinalIgnoreCase) ? "note" : "line");
+                AddLine(disassemblySection, line,
+                        line.StartsWith("summary:", StringComparison.OrdinalIgnoreCase) ? "note" : "line");
             }
 
             InspectorFieldNode rawSection = AddSection("Details", false);
@@ -417,14 +381,12 @@ namespace BlackbirdInterface
             int index = 0;
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            foreach ((string key, string value) in parsed
-                         .Where(x => IsCapturedStackFrameKey(x.Key))
+            foreach ((string key, string value) in parsed.Where(x => IsCapturedStackFrameKey(x.Key))
                          .OrderBy(x => StackFrameSortKey(x.Key))
                          .ThenByDescending(x => x.Key.EndsWith("Symbol", StringComparison.OrdinalIgnoreCase))
                          .ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
             {
-                if (string.IsNullOrWhiteSpace(value) ||
-                    value.Equals("<none>", StringComparison.OrdinalIgnoreCase) ||
+                if (string.IsNullOrWhiteSpace(value) || value.Equals("<none>", StringComparison.OrdinalIgnoreCase) ||
                     value.Equals("0x0", StringComparison.OrdinalIgnoreCase) ||
                     value.Equals("0", StringComparison.OrdinalIgnoreCase))
                 {
@@ -437,12 +399,8 @@ namespace BlackbirdInterface
                     continue;
                 }
 
-                rows.Add(new InspectorStackRow
-                {
-                    Index = index.ToString(CultureInfo.InvariantCulture),
-                    Address = value,
-                    Notes = normalizedKey
-                });
+                rows.Add(new InspectorStackRow { Index = index.ToString(CultureInfo.InvariantCulture), Address = value,
+                                                 Notes = normalizedKey });
                 index += 1;
             }
 
@@ -450,19 +408,17 @@ namespace BlackbirdInterface
                 !string.IsNullOrWhiteSpace(fullFrames) &&
                 !fullFrames.Equals("<none>", StringComparison.OrdinalIgnoreCase))
             {
-                foreach (string frame in fullFrames.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                foreach (string frame in fullFrames.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries |
+                                                                             StringSplitOptions.TrimEntries))
                 {
-                    if (frame.Equals("0x0", StringComparison.OrdinalIgnoreCase) || frame.Equals("0", StringComparison.OrdinalIgnoreCase))
+                    if (frame.Equals("0x0", StringComparison.OrdinalIgnoreCase) ||
+                        frame.Equals("0", StringComparison.OrdinalIgnoreCase))
                     {
                         continue;
                     }
 
-                    rows.Add(new InspectorStackRow
-                    {
-                        Index = index.ToString(CultureInfo.InvariantCulture),
-                        Address = frame,
-                        Notes = "fullFrames"
-                    });
+                    rows.Add(new InspectorStackRow { Index = index.ToString(CultureInfo.InvariantCulture),
+                                                     Address = frame, Notes = "fullFrames" });
                     index += 1;
                 }
             }
@@ -478,7 +434,8 @@ namespace BlackbirdInterface
             return rows;
         }
 
-        private static void AppendHandleFrames(List<InspectorStackRow> rows, ulong[]? frames, uint count, string notes, ref int index)
+        private static void AppendHandleFrames(List<InspectorStackRow> rows, ulong[]? frames, uint count, string notes,
+                                               ref int index)
         {
             if (frames == null || frames.Length == 0 || count == 0)
             {
@@ -493,30 +450,21 @@ namespace BlackbirdInterface
                     continue;
                 }
 
-                rows.Add(new InspectorStackRow
-                {
-                    Index = index.ToString(CultureInfo.InvariantCulture),
-                    Address = $"0x{frames[i]:X}",
-                    Notes = notes
-                });
+                rows.Add(new InspectorStackRow { Index = index.ToString(CultureInfo.InvariantCulture),
+                                                 Address = $"0x{frames[i]:X}", Notes = notes });
                 index += 1;
             }
         }
 
-        private string BuildDisassemblyText(GroupedEventDetailRow detail, Dictionary<string, string> parsed, IoctlParsedEvent? evidence)
+        private string BuildDisassemblyText(GroupedEventDetailRow detail, Dictionary<string, string> parsed,
+                                            IoctlParsedEvent? evidence)
         {
             if (evidence != null)
             {
                 return EventDetailFormatting.FormatSampleDisassembly(
-                    evidence.DeepSample,
-                    (int)evidence.DeepSampleSize,
-                    evidence.OriginAddress,
-                    evidence.OriginPath,
-                    evidence.DeepAllocationBase,
-                    evidence.DeepRegionSize,
-                    evidence.DeepRegionProtect,
-                    evidence.DeepRegionState,
-                    evidence.DeepRegionType);
+                    evidence.DeepSample, (int)evidence.DeepSampleSize, evidence.OriginAddress, evidence.OriginPath,
+                    evidence.DeepAllocationBase, evidence.DeepRegionSize, evidence.DeepRegionProtect,
+                    evidence.DeepRegionState, evidence.DeepRegionType);
             }
 
             byte[] sample = ParseHexBytes(parsed.TryGetValue("deepSample", out string? sampleHex) ? sampleHex : null);
@@ -532,16 +480,9 @@ namespace BlackbirdInterface
                     ? originPath
                     : detail.Target;
 
-                return EventDetailFormatting.FormatSampleDisassembly(
-                    sample,
-                    sample.Length,
-                    origin,
-                    modulePath,
-                    regionBase,
-                    regionSize,
-                    regionProtect,
-                    regionState,
-                    regionType);
+                return EventDetailFormatting.FormatSampleDisassembly(sample, sample.Length, origin, modulePath,
+                                                                     regionBase, regionSize, regionProtect, regionState,
+                                                                     regionType);
             }
 
             if (parsed.TryGetValue("reason", out string? reason) && !string.IsNullOrWhiteSpace(reason))
@@ -616,16 +557,9 @@ namespace BlackbirdInterface
 
         private static int CategoryRank(string category)
         {
-            return category switch
-            {
-                "Header" => 0,
-                "Identity" => 1,
-                "Detection" => 2,
-                "Handle" => 3,
-                "Execution" => 4,
-                "Registry" => 5,
-                _ => 6
-            };
+            return category switch { "Header" => 0, "Identity" => 1,  "Detection" => 2,
+                                     "Handle" => 3, "Execution" => 4, "Registry" => 5,
+                                     _ => 6 };
         }
 
         private void ExpandAll_Click(object sender, RoutedEventArgs e)
@@ -664,12 +598,8 @@ namespace BlackbirdInterface
         private static void AppendFieldNode(StringBuilder sb, InspectorFieldNode node, int depth)
         {
             string indent = new string(' ', depth * 2);
-            string label = node.Kind switch
-            {
-                "section" => node.Name,
-                "pair" => $"{node.Name}: {node.Value}",
-                _ => node.Value
-            };
+            string label = node.Kind switch { "section" => node.Name, "pair" => $"{node.Name}: {node.Value}",
+                                              _ => node.Value };
 
             sb.Append(indent).AppendLine(label);
             foreach (InspectorFieldNode child in node.Children)
@@ -689,7 +619,8 @@ namespace BlackbirdInterface
 
         private static uint ResolveActorPid(GroupedEventDetailRow detail, IReadOnlyDictionary<string, string> parsed)
         {
-            return ResolvePid(detail.ActorPid, detail.Actor, parsed, "actor", "sourcePid", "caller", "callerPid", "creator", "creatorPid");
+            return ResolvePid(detail.ActorPid, detail.Actor, parsed, "actor", "sourcePid", "caller", "callerPid",
+                              "creator", "creatorPid");
         }
 
         private static uint ResolveTargetPid(GroupedEventDetailRow detail, IReadOnlyDictionary<string, string> parsed)
@@ -697,11 +628,8 @@ namespace BlackbirdInterface
             return ResolvePid(detail.TargetPid, detail.Target, parsed, "target", "targetPid", "explicitTargetPid");
         }
 
-        private static uint ResolvePid(
-            uint explicitPid,
-            string identityText,
-            IReadOnlyDictionary<string, string> parsed,
-            params string[] keys)
+        private static uint ResolvePid(uint explicitPid, string identityText,
+                                       IReadOnlyDictionary<string, string> parsed, params string[] keys)
         {
             if (explicitPid != 0)
             {
@@ -737,8 +665,8 @@ namespace BlackbirdInterface
             }
 
             string context = _selectedDetail is GroupedEventDetailRow detail
-                ? $"{detail.Detection} / {detail.Actor} -> {detail.Target}"
-                : "Correlated handle evidence";
+                                 ? $"{detail.Detection} / {detail.Actor} -> {detail.Target}"
+                                 : "Correlated handle evidence";
             HandleEvidenceWindow.ShowForEvidence(this, context, _selectedHandleEvidence.Clone());
         }
 
@@ -777,8 +705,7 @@ namespace BlackbirdInterface
 
         private static bool IsCapturedStackFrameKey(string key)
         {
-            return key.StartsWith("stack", StringComparison.OrdinalIgnoreCase) &&
-                   key.Length > 5 &&
+            return key.StartsWith("stack", StringComparison.OrdinalIgnoreCase) && key.Length > 5 &&
                    char.IsDigit(key[5]);
         }
 
@@ -790,16 +717,15 @@ namespace BlackbirdInterface
                 end += 1;
             }
 
-            return end > 5 && int.TryParse(key[5..end], NumberStyles.Integer, CultureInfo.InvariantCulture, out int index)
-                ? index
-                : int.MaxValue;
+            return end > 5 &&
+                           int.TryParse(key[5..end], NumberStyles.Integer, CultureInfo.InvariantCulture, out int index)
+                       ? index
+                       : int.MaxValue;
         }
 
         private static string NormalizeStackFrameKey(string key)
         {
-            return key.EndsWith("Symbol", StringComparison.OrdinalIgnoreCase)
-                ? key[..^"Symbol".Length]
-                : key;
+            return key.EndsWith("Symbol", StringComparison.OrdinalIgnoreCase) ? key[..^ "Symbol".Length] : key;
         }
 
         private static IEnumerable<string> SplitLines(string text)
@@ -837,31 +763,24 @@ namespace BlackbirdInterface
         private static Brush SeverityAccentBrush(string? severity)
         {
             string value = severity?.Trim() ?? string.Empty;
-            return value switch
-            {
-                "Critical" => new SolidColorBrush(Color.FromRgb(0xFF, 0x6B, 0x6B)),
-                "High" => new SolidColorBrush(Color.FromRgb(0xFF, 0xB0, 0x54)),
-                "Medium" => new SolidColorBrush(Color.FromRgb(0x6D, 0xC9, 0xFF)),
-                "Low" => new SolidColorBrush(Color.FromRgb(0x7F, 0xE0, 0xA3)),
-                _ => new SolidColorBrush(Color.FromRgb(0x98, 0xA4, 0xB3))
-            };
+            return value switch { "Critical" => new SolidColorBrush(Color.FromRgb(0xFF, 0x6B, 0x6B)),
+                                  "High" => new SolidColorBrush(Color.FromRgb(0xFF, 0xB0, 0x54)),
+                                  "Medium" => new SolidColorBrush(Color.FromRgb(0x6D, 0xC9, 0xFF)),
+                                  "Low" => new SolidColorBrush(Color.FromRgb(0x7F, 0xE0, 0xA3)),
+                                  _ => new SolidColorBrush(Color.FromRgb(0x98, 0xA4, 0xB3)) };
         }
 
         private static Brush SeverityBackgroundBrush(string? severity)
         {
             string value = severity?.Trim() ?? string.Empty;
-            return value switch
-            {
-                "Critical" => new SolidColorBrush(Color.FromRgb(0x29, 0x12, 0x16)),
-                "High" => new SolidColorBrush(Color.FromRgb(0x2B, 0x1D, 0x10)),
-                "Medium" => new SolidColorBrush(Color.FromRgb(0x11, 0x1F, 0x2D)),
-                "Low" => new SolidColorBrush(Color.FromRgb(0x10, 0x22, 0x1A)),
-                _ => new SolidColorBrush(Color.FromRgb(0x15, 0x15, 0x15))
-            };
+            return value switch { "Critical" => new SolidColorBrush(Color.FromRgb(0x29, 0x12, 0x16)),
+                                  "High" => new SolidColorBrush(Color.FromRgb(0x2B, 0x1D, 0x10)),
+                                  "Medium" => new SolidColorBrush(Color.FromRgb(0x11, 0x1F, 0x2D)),
+                                  "Low" => new SolidColorBrush(Color.FromRgb(0x10, 0x22, 0x1A)),
+                                  _ => new SolidColorBrush(Color.FromRgb(0x15, 0x15, 0x15)) };
         }
 
-        private static Brush SeverityTitleBrush(string? severity)
-            => Brushes.White;
+        private static Brush SeverityTitleBrush(string? severity) => Brushes.White;
 
         private void Root_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
@@ -906,4 +825,3 @@ namespace BlackbirdInterface
         public bool IsExpanded { get; set; }
     }
 }
-

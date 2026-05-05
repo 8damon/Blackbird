@@ -131,7 +131,7 @@
                     <TextBlock x:Name="ValueBlock"
                                Grid.Column="1"
                                Text="{Binding Value}"
-                               FontFamily="Consolas"
+                               FontFamily="{DynamicResource AppMonoFontFamily}"
                                Foreground="{DynamicResource WinTextBrush}"
                                TextWrapping="Wrap"/>
                 </Grid>

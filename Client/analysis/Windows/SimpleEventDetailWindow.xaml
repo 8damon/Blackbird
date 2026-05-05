@@ -140,7 +140,7 @@
                      TextWrapping="Wrap"
                      VerticalScrollBarVisibility="Auto"
                      HorizontalScrollBarVisibility="Auto"
-                     FontFamily="Consolas"
+                     FontFamily="{DynamicResource AppMonoFontFamily}"
                      FontSize="11"
                      BorderThickness="0"
                      Margin="0"/>

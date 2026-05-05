@@ -4,9 +4,9 @@
 #include <psapi.h>
 #include <stdio.h>
 #include <string.h>
-#include "blackbird_symbol_common.h"
+#include "symbol_common.h"
 
-BOOL BLACKBIRDSymStartsWithInsensitive(_In_opt_z_ const char *Text, _In_opt_z_ const char *Prefix)
+BOOL BksymStartsWithInsensitive(_In_opt_z_ const char *Text, _In_opt_z_ const char *Prefix)
 {
     size_t prefixLen;
 
@@ -24,8 +24,8 @@ BOOL BLACKBIRDSymStartsWithInsensitive(_In_opt_z_ const char *Text, _In_opt_z_ c
     return (_strnicmp(Text, Prefix, prefixLen) == 0);
 }
 
-BOOL BLACKBIRDSymNormalizeKernelImagePath(_In_z_ const char *RawPath, _Out_writes_z_(OutputChars) char *Output,
-                                          _In_ size_t OutputChars)
+BOOL BksymNormalizeKernelImagePath(_In_z_ const char *RawPath, _Out_writes_z_(OutputChars) char *Output,
+                                   _In_ size_t OutputChars)
 {
     char windowsDir[MAX_PATH];
 
@@ -35,7 +35,7 @@ BOOL BLACKBIRDSymNormalizeKernelImagePath(_In_z_ const char *RawPath, _Out_write
     }
     Output[0] = '\0';
 
-    if (BLACKBIRDSymStartsWithInsensitive(RawPath, "\\SystemRoot\\"))
+    if (BksymStartsWithInsensitive(RawPath, "\\SystemRoot\\"))
     {
         UINT len = GetWindowsDirectoryA(windowsDir, RTL_NUMBER_OF(windowsDir));
         if (len == 0 || len >= RTL_NUMBER_OF(windowsDir))
@@ -45,12 +45,12 @@ BOOL BLACKBIRDSymNormalizeKernelImagePath(_In_z_ const char *RawPath, _Out_write
         return (sprintf_s(Output, OutputChars, "%s\\%s", windowsDir, RawPath + strlen("\\SystemRoot\\")) > 0);
     }
 
-    if (BLACKBIRDSymStartsWithInsensitive(RawPath, "\\??\\"))
+    if (BksymStartsWithInsensitive(RawPath, "\\??\\"))
     {
         return (strcpy_s(Output, OutputChars, RawPath + 4) == 0);
     }
 
-    if (BLACKBIRDSymStartsWithInsensitive(RawPath, "\\Windows\\"))
+    if (BksymStartsWithInsensitive(RawPath, "\\Windows\\"))
     {
         UINT len = GetWindowsDirectoryA(windowsDir, RTL_NUMBER_OF(windowsDir));
         if (len < 2 || len >= RTL_NUMBER_OF(windowsDir))
@@ -68,8 +68,8 @@ BOOL BLACKBIRDSymNormalizeKernelImagePath(_In_z_ const char *RawPath, _Out_write
     return FALSE;
 }
 
-BOOL BLACKBIRDSymBuildKernelGuessPath(_In_z_ const char *ModuleName, _Out_writes_z_(OutputChars) char *Output,
-                                      _In_ size_t OutputChars)
+BOOL BksymBuildKernelGuessPath(_In_z_ const char *ModuleName, _Out_writes_z_(OutputChars) char *Output,
+                               _In_ size_t OutputChars)
 {
     char windowsDir[MAX_PATH];
     const char *suffix;
@@ -98,8 +98,7 @@ BOOL BLACKBIRDSymBuildKernelGuessPath(_In_z_ const char *ModuleName, _Out_writes
 }
 
 DWORD
-BLACKBIRDSymLoadKernelModulesForProcess(_In_ HANDLE SymbolProcess, _Out_opt_ DWORD *LoadedCount,
-                                        _Out_opt_ DWORD *TotalCount)
+BksymLoadKernelModulesForProcess(_In_ HANDLE SymbolProcess, _Out_opt_ DWORD *LoadedCount, _Out_opt_ DWORD *TotalCount)
 {
     LPVOID drivers[2048];
     DWORD bytesNeeded = 0;
@@ -155,7 +154,7 @@ BLACKBIRDSymLoadKernelModulesForProcess(_In_ HANDLE SymbolProcess, _Out_opt_ DWO
             (void)strcpy_s(moduleName, RTL_NUMBER_OF(moduleName), "unknown");
         }
 
-        if (!BLACKBIRDSymNormalizeKernelImagePath(rawPath, normPath, RTL_NUMBER_OF(normPath)))
+        if (!BksymNormalizeKernelImagePath(rawPath, normPath, RTL_NUMBER_OF(normPath)))
         {
             (void)strcpy_s(normPath, RTL_NUMBER_OF(normPath), rawPath);
         }
@@ -172,7 +171,7 @@ BLACKBIRDSymLoadKernelModulesForProcess(_In_ HANDLE SymbolProcess, _Out_opt_ DWO
         }
 
         if (loadedBase == 0 && err != ERROR_SUCCESS &&
-            BLACKBIRDSymBuildKernelGuessPath(moduleName, guessPath, RTL_NUMBER_OF(guessPath)))
+            BksymBuildKernelGuessPath(moduleName, guessPath, RTL_NUMBER_OF(guessPath)))
         {
             SetLastError(ERROR_SUCCESS);
             loadedBase = SymLoadModuleEx(SymbolProcess, NULL, guessPath, moduleName, base, 0, NULL, 0);

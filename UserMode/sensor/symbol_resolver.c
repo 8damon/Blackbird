@@ -4,8 +4,8 @@
 #include <psapi.h>
 #include <stdio.h>
 #include <string.h>
-#include "blackbird_symbol_resolver.h"
-#include "blackbird_symbol_common.h"
+#include "symbol_resolver.h"
+#include "symbol_common.h"
 
 #pragma comment(lib, "Dbghelp.lib")
 #pragma comment(lib, "Psapi.lib")
@@ -14,7 +14,7 @@ static HANDLE g_SymbolProcess = NULL;
 static BOOL g_SymbolsReady = FALSE;
 static BOOL g_KernelModulesLoaded = FALSE;
 
-static BOOL BLACKBIRDIsLikelyKernelAddress(UINT64 address)
+static BOOL BksymIsLikelyKernelAddress(UINT64 address)
 {
 #if defined(_WIN64)
     return (address >= 0xFFFF000000000000ULL);
@@ -24,7 +24,7 @@ static BOOL BLACKBIRDIsLikelyKernelAddress(UINT64 address)
 #endif
 }
 
-static void BLACKBIRDLoadKernelModules(void)
+static void BksymLoadKernelModules(void)
 {
     DWORD status;
     DWORD loaded = 0;
@@ -35,7 +35,7 @@ static void BLACKBIRDLoadKernelModules(void)
         return;
     }
 
-    status = BLACKBIRDSymLoadKernelModulesForProcess(g_SymbolProcess, &loaded, &count);
+    status = BksymLoadKernelModulesForProcess(g_SymbolProcess, &loaded, &count);
     if (status != ERROR_SUCCESS)
     {
         printf("[WARN] symbol resolver: kernel module load failed err=%lu\n", status);
@@ -46,7 +46,7 @@ static void BLACKBIRDLoadKernelModules(void)
     printf("[INFO] symbol resolver: kernel modules loaded=%lu/%lu\n", loaded, count);
 }
 
-void BLACKBIRDSymbolResolverInitialize(void)
+void BksymResolverInitialize(void)
 {
     DWORD options;
     char ntSymbolPath[2048];
@@ -66,13 +66,13 @@ void BLACKBIRDSymbolResolverInitialize(void)
 
     if (GetEnvironmentVariableA("_NT_SYMBOL_PATH", ntSymbolPath, RTL_NUMBER_OF(ntSymbolPath)) == 0)
     {
-        (void)SymSetSearchPath(g_SymbolProcess, BLACKBIRD_DEFAULT_SYMBOL_PATH);
+        (void)SymSetSearchPath(g_SymbolProcess, BK_DEFAULT_SYMBOL_PATH);
     }
 
-    BLACKBIRDLoadKernelModules();
+    BksymLoadKernelModules();
 }
 
-void BLACKBIRDSymbolResolverCleanup(void)
+void BksymResolverCleanup(void)
 {
     if (g_SymbolsReady)
     {
@@ -83,7 +83,7 @@ void BLACKBIRDSymbolResolverCleanup(void)
     g_KernelModulesLoaded = FALSE;
 }
 
-void BLACKBIRDSymbolResolverPrintAddress(UINT64 address)
+void BksymResolverPrintAddress(UINT64 address)
 {
     DWORD64 addr = (DWORD64)address;
     CHAR symBuffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME];
@@ -100,7 +100,7 @@ void BLACKBIRDSymbolResolverPrintAddress(UINT64 address)
 
     if (!g_SymbolsReady)
     {
-        if (BLACKBIRDIsLikelyKernelAddress(address))
+        if (BksymIsLikelyKernelAddress(address))
         {
             printf(" [kernel-address]");
         }
@@ -132,7 +132,7 @@ void BLACKBIRDSymbolResolverPrintAddress(UINT64 address)
     {
         printf(" %s+0x%llX", modInfo.ModuleName, (unsigned long long)(addr - modInfo.BaseOfImage));
     }
-    else if (BLACKBIRDIsLikelyKernelAddress(address))
+    else if (BksymIsLikelyKernelAddress(address))
     {
         printf(" [kernel-address]");
     }

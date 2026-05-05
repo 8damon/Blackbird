@@ -2,9 +2,9 @@
 #include <windows.h>
 #include <stdio.h>
 #include <string.h>
-#include "blackbird_test_report_html.h"
+#include "test_report_html.h"
 
-static VOID BLACKBIRDHtmlWriteEscaped(_In_ FILE *File, _In_z_ const char *Text)
+static VOID BkhtmlWriteEscaped(_In_ FILE *File, _In_z_ const char *Text)
 {
     const unsigned char *p;
 
@@ -39,7 +39,7 @@ static VOID BLACKBIRDHtmlWriteEscaped(_In_ FILE *File, _In_z_ const char *Text)
     }
 }
 
-static const char *BLACKBIRDHtmlStatusText(_In_ BLACKBIRD_REPORT_CHECK_STATUS Status)
+static const char *BkhtmlStatusText(_In_ BK_REPORT_CHECK_STATUS Status)
 {
     switch (Status)
     {
@@ -54,7 +54,7 @@ static const char *BLACKBIRDHtmlStatusText(_In_ BLACKBIRD_REPORT_CHECK_STATUS St
     }
 }
 
-static const char *BLACKBIRDHtmlStatusClass(_In_ BLACKBIRD_REPORT_CHECK_STATUS Status)
+static const char *BkhtmlStatusClass(_In_ BK_REPORT_CHECK_STATUS Status)
 {
     switch (Status)
     {
@@ -69,9 +69,9 @@ static const char *BLACKBIRDHtmlStatusClass(_In_ BLACKBIRD_REPORT_CHECK_STATUS S
     }
 }
 
-BOOL BLACKBIRDWriteHtmlReport(_In_z_ const char *OutputPath, _In_z_ const char *Title,
-                              _In_reads_(MetaCount) const BLACKBIRD_REPORT_META *Metadata, _In_ size_t MetaCount,
-                              _In_reads_(CheckCount) const BLACKBIRD_REPORT_CHECK *Checks, _In_ size_t CheckCount)
+BOOL BkhtmlWriteReport(_In_z_ const char *OutputPath, _In_z_ const char *Title,
+                       _In_reads_(MetaCount) const BK_REPORT_META *Metadata, _In_ size_t MetaCount,
+                       _In_reads_(CheckCount) const BK_REPORT_CHECK *Checks, _In_ size_t CheckCount)
 {
     FILE *f;
     size_t i;
@@ -94,7 +94,7 @@ BOOL BLACKBIRDWriteHtmlReport(_In_z_ const char *OutputPath, _In_z_ const char *
                 "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />\n"
                 "  <title>",
                 f);
-    BLACKBIRDHtmlWriteEscaped(f, Title);
+    BkhtmlWriteEscaped(f, Title);
     (void)fputs(
         "</title>\n"
         "  <style>\n"
@@ -119,7 +119,7 @@ BOOL BLACKBIRDWriteHtmlReport(_In_z_ const char *OutputPath, _In_z_ const char *
         "  <div class=\"card\">\n"
         "    <h1>",
         f);
-    BLACKBIRDHtmlWriteEscaped(f, Title);
+    BkhtmlWriteEscaped(f, Title);
     (void)fputs("</h1>\n"
                 "    <table class=\"meta\">\n"
                 "      <tbody>\n",
@@ -130,9 +130,9 @@ BOOL BLACKBIRDWriteHtmlReport(_In_z_ const char *OutputPath, _In_z_ const char *
         const char *key = (Metadata != NULL && Metadata[i].Key != NULL) ? Metadata[i].Key : "";
         const char *value = (Metadata != NULL && Metadata[i].Value != NULL) ? Metadata[i].Value : "";
         (void)fputs("        <tr><th>", f);
-        BLACKBIRDHtmlWriteEscaped(f, key);
+        BkhtmlWriteEscaped(f, key);
         (void)fputs("</th><td>", f);
-        BLACKBIRDHtmlWriteEscaped(f, value);
+        BkhtmlWriteEscaped(f, value);
         (void)fputs("</td></tr>\n", f);
     }
 
@@ -148,15 +148,15 @@ BOOL BLACKBIRDWriteHtmlReport(_In_z_ const char *OutputPath, _In_z_ const char *
 
     for (i = 0; i < CheckCount; ++i)
     {
-        const char *cls = BLACKBIRDHtmlStatusClass(Checks[i].Status);
-        const char *status = BLACKBIRDHtmlStatusText(Checks[i].Status);
+        const char *cls = BkhtmlStatusClass(Checks[i].Status);
+        const char *status = BkhtmlStatusText(Checks[i].Status);
         const char *text = (Checks[i].Text != NULL) ? Checks[i].Text : "";
 
         fprintf(f, "        <tr class=\"%s\"><td class=\"mono\">T%04lu</td><td class=\"status\">", cls,
                 (unsigned long)Checks[i].Id);
-        BLACKBIRDHtmlWriteEscaped(f, status);
+        BkhtmlWriteEscaped(f, status);
         (void)fputs("</td><td>", f);
-        BLACKBIRDHtmlWriteEscaped(f, text);
+        BkhtmlWriteEscaped(f, text);
         (void)fputs("</td></tr>\n", f);
     }
 

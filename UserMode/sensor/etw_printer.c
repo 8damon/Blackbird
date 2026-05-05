@@ -4,18 +4,18 @@
 #include <wctype.h>
 #include <math.h>
 #include <winnt.h>
-#include "blackbird_sensor_core.h"
-#include "blackbird_etw_printer.h"
-#include "blackbird_etw_props.h"
-#include "blackbird_etw_symbols.h"
+#include "sensor_core.h"
+#include "etw_printer.h"
+#include "etw_props.h"
+#include "etw_symbols.h"
 
 #ifndef NT_SUCCESS
 #define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
 #endif
 
-#define BLACKBIRD_INTENT_PROCESS_MEMORY 0x00000001
-#define BLACKBIRD_INTENT_THREAD_CONTEXT 0x00000002
-#define BLACKBIRD_INTENT_DUP_HANDLE 0x00000004
+#define BK_INTENT_PROCESS_MEMORY 0x00000001
+#define BK_INTENT_THREAD_CONTEXT 0x00000002
+#define BK_INTENT_DUP_HANDLE 0x00000004
 
 typedef struct _ACCESS_NAME_ENTRY
 {
@@ -23,11 +23,11 @@ typedef struct _ACCESS_NAME_ENTRY
     PCWSTR Name;
 } ACCESS_NAME_ENTRY;
 
-typedef struct _BLACKBIRD_PID_IMAGE_CACHE_ENTRY
+typedef struct _BK_PID_IMAGE_CACHE_ENTRY
 {
     ULONGLONG Pid;
-    WCHAR Path[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
-} BLACKBIRD_PID_IMAGE_CACHE_ENTRY;
+    WCHAR Path[BK_MAX_IMAGE_PATH_CHARS];
+} BK_PID_IMAGE_CACHE_ENTRY;
 
 static const ACCESS_NAME_ENTRY g_ProcessAccessNames[] = {{PROCESS_TERMINATE, L"TERMINATE"},
                                                          {PROCESS_CREATE_THREAD, L"CREATE_THREAD"},
@@ -44,16 +44,16 @@ static const ACCESS_NAME_ENTRY g_ProcessAccessNames[] = {{PROCESS_TERMINATE, L"T
                                                          {PROCESS_QUERY_LIMITED_INFORMATION, L"QUERY_LIMITED_INFO"},
                                                          {SYNCHRONIZE, L"SYNCHRONIZE"}};
 
-#define BLACKBIRD_PID_IMAGE_CACHE_CAPACITY 512
+#define BK_PID_IMAGE_CACHE_CAPACITY 512
 
 static PCWSTR RegistryNotifyClassToString(_In_ ULONG NotifyClass);
-static BOOL BLACKBIRDEventNameContainsInsensitive(_In_opt_z_ PCWSTR EventName, _In_z_ PCWSTR Needle);
+static BOOL BketwprEventNameContainsInsensitive(_In_opt_z_ PCWSTR EventName, _In_z_ PCWSTR Needle);
 
-static BLACKBIRD_PID_IMAGE_CACHE_ENTRY g_PidImageCache[BLACKBIRD_PID_IMAGE_CACHE_CAPACITY];
+static BK_PID_IMAGE_CACHE_ENTRY g_PidImageCache[BK_PID_IMAGE_CACHE_CAPACITY];
 static ULONG g_PidImageCacheCursor = 0;
 static SRWLOCK g_PidImageCacheLock = SRWLOCK_INIT;
 
-typedef struct _BLACKBIRD_REGISTRY_SUPPRESSOR
+typedef struct _BK_REGISTRY_SUPPRESSOR
 {
     BOOL Active;
     ULONGLONG ProcessId;
@@ -67,11 +67,11 @@ typedef struct _BLACKBIRD_REGISTRY_SUPPRESSOR
     WCHAR ValueName[256];
     WCHAR ProcessImage[MAX_PATH];
     ULONG SuppressedCount;
-} BLACKBIRD_REGISTRY_SUPPRESSOR;
+} BK_REGISTRY_SUPPRESSOR;
 
-static BLACKBIRD_REGISTRY_SUPPRESSOR g_RegistrySuppressor;
+static BK_REGISTRY_SUPPRESSOR g_RegistrySuppressor;
 
-static BOOL BLACKBIRDRegistryIsSuppressible(_In_z_ const CHAR *Operation, _In_ BOOL HighValue)
+static BOOL BkavRegIsSuppressible(_In_z_ const CHAR *Operation, _In_ BOOL HighValue)
 {
     if (Operation == NULL)
     {
@@ -84,12 +84,11 @@ static BOOL BLACKBIRDRegistryIsSuppressible(_In_z_ const CHAR *Operation, _In_ B
     return (_stricmp(Operation, "OPEN_KEY") == 0);
 }
 
-static BOOL BLACKBIRDRegistrySuppressorMatches(_In_ const BLACKBIRD_REGISTRY_SUPPRESSOR *State,
-                                               _In_z_ const CHAR *Operation, _In_ ULONGLONG ProcessId,
-                                               _In_ ULONG SessionId, _In_ ULONG NotifyClass, _In_ ULONG DataType,
-                                               _In_ ULONG DataSize, _In_ BOOL HighValue,
-                                               _In_z_ const WCHAR *ProcessImage, _In_z_ const WCHAR *KeyPath,
-                                               _In_z_ const WCHAR *ValueName)
+static BOOL BkavRegSuppressorMatches(_In_ const BK_REGISTRY_SUPPRESSOR *State, _In_z_ const CHAR *Operation,
+                                     _In_ ULONGLONG ProcessId, _In_ ULONG SessionId, _In_ ULONG NotifyClass,
+                                     _In_ ULONG DataType, _In_ ULONG DataSize, _In_ BOOL HighValue,
+                                     _In_z_ const WCHAR *ProcessImage, _In_z_ const WCHAR *KeyPath,
+                                     _In_z_ const WCHAR *ValueName)
 {
     if (State == NULL || !State->Active)
     {
@@ -102,7 +101,7 @@ static BOOL BLACKBIRDRegistrySuppressorMatches(_In_ const BLACKBIRD_REGISTRY_SUP
            _wcsicmp(State->KeyPath, KeyPath) == 0 && _wcsicmp(State->ValueName, ValueName) == 0;
 }
 
-static VOID BLACKBIRDFlushRegistrySuppressor(VOID)
+static VOID BketwprFlushRegistrySuppressor(VOID)
 {
     if (!g_RegistrySuppressor.Active || g_RegistrySuppressor.SuppressedCount == 0)
     {
@@ -119,11 +118,10 @@ static VOID BLACKBIRDFlushRegistrySuppressor(VOID)
     g_RegistrySuppressor.SuppressedCount = 0;
 }
 
-static VOID BLACKBIRDUpdateRegistrySuppressor(_In_z_ const CHAR *Operation, _In_ ULONGLONG ProcessId,
-                                              _In_ ULONG SessionId, _In_ ULONG NotifyClass, _In_ ULONG DataType,
-                                              _In_ ULONG DataSize, _In_ BOOL HighValue,
-                                              _In_z_ const WCHAR *ProcessImage, _In_z_ const WCHAR *KeyPath,
-                                              _In_z_ const WCHAR *ValueName)
+static VOID BketwprUpdateRegistrySuppressor(_In_z_ const CHAR *Operation, _In_ ULONGLONG ProcessId,
+                                            _In_ ULONG SessionId, _In_ ULONG NotifyClass, _In_ ULONG DataType,
+                                            _In_ ULONG DataSize, _In_ BOOL HighValue, _In_z_ const WCHAR *ProcessImage,
+                                            _In_z_ const WCHAR *KeyPath, _In_z_ const WCHAR *ValueName)
 {
     g_RegistrySuppressor.Active = TRUE;
     g_RegistrySuppressor.ProcessId = ProcessId;
@@ -140,7 +138,7 @@ static VOID BLACKBIRDUpdateRegistrySuppressor(_In_z_ const CHAR *Operation, _In_
     (void)StringCchCopyW(g_RegistrySuppressor.ValueName, RTL_NUMBER_OF(g_RegistrySuppressor.ValueName), ValueName);
 }
 
-static BOOL BLACKBIRDPathEndsWithInsensitive(_In_z_ PCWSTR Path, _In_z_ PCWSTR Suffix)
+static BOOL BketwprPathEndsWithInsensitive(_In_z_ PCWSTR Path, _In_z_ PCWSTR Suffix)
 {
     size_t pathLen;
     size_t suffixLen;
@@ -160,18 +158,18 @@ static BOOL BLACKBIRDPathEndsWithInsensitive(_In_z_ PCWSTR Path, _In_z_ PCWSTR S
     return (_wcsicmp(Path + (pathLen - suffixLen), Suffix) == 0);
 }
 
-static BOOL BLACKBIRDIsExecutableImagePath(_In_z_ PCWSTR Path)
+static BOOL BketwprIsExecutableImagePath(_In_z_ PCWSTR Path)
 {
     if (Path == NULL || Path[0] == L'\0')
     {
         return FALSE;
     }
 
-    return BLACKBIRDPathEndsWithInsensitive(Path, L".exe") || BLACKBIRDPathEndsWithInsensitive(Path, L".com");
+    return BketwprPathEndsWithInsensitive(Path, L".exe") || BketwprPathEndsWithInsensitive(Path, L".com");
 }
 
-static BOOL BLACKBIRDLookupCachedProcessImage(_In_ ULONGLONG Pid, _Out_writes_z_(OutputChars) PWSTR Output,
-                                              _In_ size_t OutputChars)
+static BOOL BketwprLookupCachedProcessImage(_In_ ULONGLONG Pid, _Out_writes_z_(OutputChars) PWSTR Output,
+                                            _In_ size_t OutputChars)
 {
     ULONG i;
 
@@ -195,11 +193,11 @@ static BOOL BLACKBIRDLookupCachedProcessImage(_In_ ULONGLONG Pid, _Out_writes_z_
     return FALSE;
 }
 
-static VOID BLACKBIRDCacheProcessImage(_In_ ULONGLONG Pid, _In_opt_z_ PCWSTR Path)
+static VOID BksymCacheProcessImage(_In_ ULONGLONG Pid, _In_opt_z_ PCWSTR Path)
 {
     ULONG i;
 
-    if (Pid == 0 || Path == NULL || Path[0] == L'\0' || Path[0] == L'<' || !BLACKBIRDIsExecutableImagePath(Path))
+    if (Pid == 0 || Path == NULL || Path[0] == L'\0' || Path[0] == L'<' || !BketwprIsExecutableImagePath(Path))
     {
         return;
     }
@@ -223,8 +221,8 @@ static VOID BLACKBIRDCacheProcessImage(_In_ ULONGLONG Pid, _In_opt_z_ PCWSTR Pat
     ReleaseSRWLockExclusive(&g_PidImageCacheLock);
 }
 
-static BOOL BLACKBIRDQueryProcessImageFromKernel(_In_ ULONGLONG Pid, _Out_writes_z_(OutputChars) PWSTR Output,
-                                                 _In_ size_t OutputChars)
+static BOOL BketwprQueryProcessImageFromKernel(_In_ ULONGLONG Pid, _Out_writes_z_(OutputChars) PWSTR Output,
+                                               _In_ size_t OutputChars)
 {
     HANDLE device;
     DWORD outputCharsDword;
@@ -236,23 +234,23 @@ static BOOL BLACKBIRDQueryProcessImageFromKernel(_In_ ULONGLONG Pid, _Out_writes
     }
 
     outputCharsDword = (DWORD)OutputChars;
-    device = BLACKBIRDSCOpenControlDevice();
+    device = BkscOpenControlDevice();
     if (device == INVALID_HANDLE_VALUE)
     {
         return FALSE;
     }
 
-    ok = BLACKBIRDSCQueryProcessImagePath(device, (DWORD)Pid, Output, outputCharsDword);
-    (void)BLACKBIRDSCCloseControlDevice(device);
+    ok = BkscQueryProcessImagePath(device, (DWORD)Pid, Output, outputCharsDword);
+    (void)BkscCloseControlDevice(device);
     return ok;
 }
 
-void BLACKBIRDPrimeProcessImagePath(_In_ ULONGLONG Pid, _In_opt_z_ PCWSTR ImagePath)
+void BketwprPrimeProcessImagePath(_In_ ULONGLONG Pid, _In_opt_z_ PCWSTR ImagePath)
 {
-    BLACKBIRDCacheProcessImage(Pid, ImagePath);
+    BksymCacheProcessImage(Pid, ImagePath);
 }
 
-void BLACKBIRDPrimeProcessImageFromEtw(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName)
+void BketwprPrimeProcessImageFromEtw(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName)
 {
     ULONGLONG processId = 0;
     WCHAR imagePath[1024];
@@ -261,7 +259,7 @@ void BLACKBIRDPrimeProcessImageFromEtw(_In_ PEVENT_RECORD Record, _In_opt_z_ PCW
     {
         return;
     }
-    if (!IsEqualGUID(&Record->EventHeader.ProviderId, &BLACKBIRDSC_PROVIDER_GUID_BLACKBIRD))
+    if (!IsEqualGUID(&Record->EventHeader.ProviderId, &BKSC_PROVIDER_GUID_BLACKBIRD))
     {
         return;
     }
@@ -271,24 +269,24 @@ void BLACKBIRDPrimeProcessImageFromEtw(_In_ PEVENT_RECORD Record, _In_opt_z_ PCW
     }
 
     imagePath[0] = L'\0';
-    if (!BLACKBIRDGetU64Property(Record, L"processId", &processId) || processId == 0)
+    if (!BketwpGetU64Property(Record, L"processId", &processId) || processId == 0)
     {
         return;
     }
-    if (!BLACKBIRDGetWideProperty(Record, L"imagePath", imagePath, RTL_NUMBER_OF(imagePath)))
+    if (!BketwpGetWideProperty(Record, L"imagePath", imagePath, RTL_NUMBER_OF(imagePath)))
     {
         return;
     }
 
-    BLACKBIRDCacheProcessImage(processId, imagePath);
+    BksymCacheProcessImage(processId, imagePath);
     if (wcscmp(EventName, L"ImageTelemetry") == 0)
     {
         ULONGLONG imageBase = 0;
         ULONGLONG imageSize = 0;
-        if (BLACKBIRDGetU64Property(Record, L"imageBase", &imageBase) &&
-            BLACKBIRDGetU64Property(Record, L"imageSize", &imageSize) && imageBase != 0 && imageSize != 0)
+        if (BketwpGetU64Property(Record, L"imageBase", &imageBase) &&
+            BketwpGetU64Property(Record, L"imageSize", &imageSize) && imageBase != 0 && imageSize != 0)
         {
-            BLACKBIRDEtwSymbolsCacheModuleForProcess((DWORD)processId, imageBase, imageSize, imagePath);
+            BksymEtwCacheModuleForProcess((DWORD)processId, imageBase, imageSize, imagePath);
         }
     }
 }
@@ -455,15 +453,15 @@ static void FormatCorrelationFlags(_In_ ULONG Flags, _Out_writes_z_(OutputChars)
     }
     Output[0] = L'\0';
 
-    if ((Flags & BLACKBIRD_INTENT_PROCESS_MEMORY) != 0)
+    if ((Flags & BK_INTENT_PROCESS_MEMORY) != 0)
     {
         AppendFlag(Output, OutputChars, L"ProcessMemory", &first);
     }
-    if ((Flags & BLACKBIRD_INTENT_THREAD_CONTEXT) != 0)
+    if ((Flags & BK_INTENT_THREAD_CONTEXT) != 0)
     {
         AppendFlag(Output, OutputChars, L"ThreadContext", &first);
     }
-    if ((Flags & BLACKBIRD_INTENT_DUP_HANDLE) != 0)
+    if ((Flags & BK_INTENT_DUP_HANDLE) != 0)
     {
         AppendFlag(Output, OutputChars, L"DuplicateHandle", &first);
     }
@@ -503,7 +501,7 @@ static void FormatHandleClass(_In_z_ PCSTR EventClass, _Out_writes_z_(OutputChar
     }
 }
 
-static BOOL BLACKBIRDWideContainsInsensitive(_In_opt_z_ PCWSTR Haystack, _In_z_ PCWSTR Needle)
+static BOOL BketwprWideContainsInsensitive(_In_opt_z_ PCWSTR Haystack, _In_z_ PCWSTR Needle)
 {
     WCHAR hay[1024];
     WCHAR need[64];
@@ -556,8 +554,8 @@ static void ComputeUserModeHandleClass(_In_z_ PCSTR KernelClass, _In_ BOOL ExecP
         return;
     }
 
-    fromKnownSyscallStub = (FromNtdll || BLACKBIRDWideContainsInsensitive(OriginPath, L"ntdll.dll") ||
-                            BLACKBIRDWideContainsInsensitive(OriginPath, L"win32u.dll"));
+    fromKnownSyscallStub = (FromNtdll || BketwprWideContainsInsensitive(OriginPath, L"ntdll.dll") ||
+                            BketwprWideContainsInsensitive(OriginPath, L"win32u.dll"));
 
     if (ExecProtect && fromKnownSyscallStub)
     {
@@ -660,7 +658,7 @@ static void FormatProcessImage(_In_ ULONGLONG Pid, _Out_writes_z_(OutputChars) P
         return;
     }
 
-    if (BLACKBIRDLookupCachedProcessImage(Pid, Output, OutputChars))
+    if (BketwprLookupCachedProcessImage(Pid, Output, OutputChars))
     {
         return;
     }
@@ -672,16 +670,16 @@ static void FormatProcessImage(_In_ ULONGLONG Pid, _Out_writes_z_(OutputChars) P
         size = (DWORD)OutputChars;
         if (QueryFullProcessImageNameW(process, 0, Output, &size) && Output[0] != L'\0')
         {
-            BLACKBIRDCacheProcessImage(Pid, Output);
+            BksymCacheProcessImage(Pid, Output);
             CloseHandle(process);
             return;
         }
         CloseHandle(process);
     }
 
-    if (BLACKBIRDQueryProcessImageFromKernel(Pid, Output, OutputChars) && Output[0] != L'\0')
+    if (BketwprQueryProcessImageFromKernel(Pid, Output, OutputChars) && Output[0] != L'\0')
     {
-        BLACKBIRDCacheProcessImage(Pid, Output);
+        BksymCacheProcessImage(Pid, Output);
         return;
     }
 
@@ -716,7 +714,7 @@ static PCWSTR RegistryNotifyClassToString(_In_ ULONG NotifyClass)
     }
 }
 
-static BOOL BLACKBIRDIsLikelyMainImageAddress(_In_ ULONGLONG Address)
+static BOOL BketwprIsLikelyMainImageAddress(_In_ ULONGLONG Address)
 {
     if (Address >= 0x00007FF600000000ULL && Address <= 0x00007FF7FFFFFFFFULL)
     {
@@ -735,7 +733,7 @@ static void FormatAddressWithImageHint(_In_ DWORD ProcessId, _In_ ULONGLONG Addr
     PCWSTR baseName;
     PCWSTR slash;
 
-    BLACKBIRDEtwSymbolsFormatAddressForProcess(ProcessId, Address, Output, OutputChars);
+    BksymEtwFormatAddressForProcess(ProcessId, Address, Output, OutputChars);
     if (Output == NULL || OutputChars == 0)
     {
         return;
@@ -744,11 +742,11 @@ static void FormatAddressWithImageHint(_In_ DWORD ProcessId, _In_ ULONGLONG Addr
     {
         return;
     }
-    if (ProcessId != 0 && BLACKBIRDEtwSymbolsTryResolveViaModuleCache(ProcessId, Address, Output, OutputChars))
+    if (ProcessId != 0 && BksymEtwTryResolveViaModuleCache(ProcessId, Address, Output, OutputChars))
     {
         return;
     }
-    if (!BLACKBIRDIsLikelyMainImageAddress(Address))
+    if (!BketwprIsLikelyMainImageAddress(Address))
     {
         return;
     }
@@ -779,7 +777,7 @@ static void PrintStack(_In_ PEVENT_RECORD Record, _In_ ULONG Count, _In_ DWORD P
         ULONGLONG addr = 0;
         WCHAR resolved[768];
         (void)StringCchPrintfW(name, RTL_NUMBER_OF(name), L"stack%lu", i);
-        if (!BLACKBIRDGetU64Property(Record, name, &addr))
+        if (!BketwpGetU64Property(Record, name, &addr))
         {
             continue;
         }
@@ -833,7 +831,7 @@ static void PrintHandleTelemetry(_In_ PEVENT_RECORD Record)
     ULONG deepRegionState = 0;
     ULONG deepRegionType = 0;
     ULONG deepSampleSize = 0;
-    BYTE deepSample[BLACKBIRD_MAX_DEEP_SAMPLE_BYTES];
+    BYTE deepSample[BK_MAX_DEEP_SAMPLE_BYTES];
     WCHAR deepOpcodePreview[128];
     double deepEntropy = 0.0;
     DWORD stackPidPrimary;
@@ -845,26 +843,26 @@ static void PrintHandleTelemetry(_In_ PEVENT_RECORD Record)
     ZeroMemory(deepSample, sizeof(deepSample));
     deepOpcodePreview[0] = L'\0';
 
-    (void)BLACKBIRDGetAnsiProperty(Record, L"class", eventClass, RTL_NUMBER_OF(eventClass));
-    (void)BLACKBIRDGetU64Property(Record, L"callerPid", &callerPid);
-    (void)BLACKBIRDGetU64Property(Record, L"targetPid", &targetPid);
-    (void)BLACKBIRDGetU32Property(Record, L"desiredAccess", &desiredAccess);
-    (void)BLACKBIRDGetU64Property(Record, L"originAddress", &originAddress);
-    (void)BLACKBIRDGetU32Property(Record, L"originProtect", &originProtect);
-    (void)BLACKBIRDGetBoolProperty(Record, L"execProtect", &execProtect);
-    (void)BLACKBIRDGetBoolProperty(Record, L"fromNtdll", &fromNtdll);
-    (void)BLACKBIRDGetBoolProperty(Record, L"fromExe", &fromExe);
-    (void)BLACKBIRDGetWideProperty(Record, L"originPath", path, RTL_NUMBER_OF(path));
-    (void)BLACKBIRDGetU32Property(Record, L"frameCount", &frameCount);
-    (void)BLACKBIRDGetI32Property(Record, L"statusOpenProcess", &statusOpen);
-    (void)BLACKBIRDGetI32Property(Record, L"statusBasicInfo", &statusBasic);
-    (void)BLACKBIRDGetI32Property(Record, L"statusSectionName", &statusSection);
-    (void)BLACKBIRDGetU64Property(Record, L"deepAllocationBase", &deepAllocationBase);
-    (void)BLACKBIRDGetU64Property(Record, L"deepRegionSize", &deepRegionSize);
-    (void)BLACKBIRDGetU32Property(Record, L"deepRegionProtect", &deepRegionProtect);
-    (void)BLACKBIRDGetU32Property(Record, L"deepRegionState", &deepRegionState);
-    (void)BLACKBIRDGetU32Property(Record, L"deepRegionType", &deepRegionType);
-    if (!BLACKBIRDGetBinaryProperty(Record, L"deepSample", deepSample, sizeof(deepSample), &deepSampleSize))
+    (void)BketwpGetAnsiProperty(Record, L"class", eventClass, RTL_NUMBER_OF(eventClass));
+    (void)BketwpGetU64Property(Record, L"callerPid", &callerPid);
+    (void)BketwpGetU64Property(Record, L"targetPid", &targetPid);
+    (void)BketwpGetU32Property(Record, L"desiredAccess", &desiredAccess);
+    (void)BketwpGetU64Property(Record, L"originAddress", &originAddress);
+    (void)BketwpGetU32Property(Record, L"originProtect", &originProtect);
+    (void)BketwpGetBoolProperty(Record, L"execProtect", &execProtect);
+    (void)BketwpGetBoolProperty(Record, L"fromNtdll", &fromNtdll);
+    (void)BketwpGetBoolProperty(Record, L"fromExe", &fromExe);
+    (void)BketwpGetWideProperty(Record, L"originPath", path, RTL_NUMBER_OF(path));
+    (void)BketwpGetU32Property(Record, L"frameCount", &frameCount);
+    (void)BketwpGetI32Property(Record, L"statusOpenProcess", &statusOpen);
+    (void)BketwpGetI32Property(Record, L"statusBasicInfo", &statusBasic);
+    (void)BketwpGetI32Property(Record, L"statusSectionName", &statusSection);
+    (void)BketwpGetU64Property(Record, L"deepAllocationBase", &deepAllocationBase);
+    (void)BketwpGetU64Property(Record, L"deepRegionSize", &deepRegionSize);
+    (void)BketwpGetU32Property(Record, L"deepRegionProtect", &deepRegionProtect);
+    (void)BketwpGetU32Property(Record, L"deepRegionState", &deepRegionState);
+    (void)BketwpGetU32Property(Record, L"deepRegionType", &deepRegionType);
+    if (!BketwpGetBinaryProperty(Record, L"deepSample", deepSample, sizeof(deepSample), &deepSampleSize))
     {
         deepSampleSize = 0;
     }
@@ -978,24 +976,24 @@ static void PrintThreadTelemetry(_In_ PEVENT_RECORD Record)
     WCHAR startStateText[64];
     WCHAR startTypeText[64];
 
-    (void)BLACKBIRDGetU64Property(Record, L"processId", &processId);
-    (void)BLACKBIRDGetU64Property(Record, L"threadId", &threadId);
-    (void)BLACKBIRDGetU64Property(Record, L"creatorPid", &creatorPid);
-    (void)BLACKBIRDGetU64Property(Record, L"startAddress", &startAddress);
-    (void)BLACKBIRDGetU64Property(Record, L"imageBase", &imageBase);
-    (void)BLACKBIRDGetU64Property(Record, L"imageSize", &imageSize);
-    (void)BLACKBIRDGetBoolProperty(Record, L"gotStart", &gotStart);
-    (void)BLACKBIRDGetBoolProperty(Record, L"gotRange", &gotRange);
-    (void)BLACKBIRDGetBoolProperty(Record, L"isRemoteCreator", &isRemote);
-    (void)BLACKBIRDGetBoolProperty(Record, L"outsideMainImage", &outsideImage);
-    (void)BLACKBIRDGetU32Property(Record, L"correlationFlags", &correlationFlags);
-    (void)BLACKBIRDGetU32Property(Record, L"correlationAccessMask", &correlationAccessMask);
-    (void)BLACKBIRDGetU32Property(Record, L"correlationAgeMs", &correlationAgeMs);
-    (void)BLACKBIRDGetU32Property(Record, L"startRegionProtect", &startRegionProtect);
-    (void)BLACKBIRDGetU32Property(Record, L"startRegionState", &startRegionState);
-    (void)BLACKBIRDGetU32Property(Record, L"startRegionType", &startRegionType);
-    (void)BLACKBIRDGetI32Property(Record, L"startRegionStatus", &startRegionStatus);
-    (void)BLACKBIRDGetU32Property(Record, L"workerFrameCount", &frameCount);
+    (void)BketwpGetU64Property(Record, L"processId", &processId);
+    (void)BketwpGetU64Property(Record, L"threadId", &threadId);
+    (void)BketwpGetU64Property(Record, L"creatorPid", &creatorPid);
+    (void)BketwpGetU64Property(Record, L"startAddress", &startAddress);
+    (void)BketwpGetU64Property(Record, L"imageBase", &imageBase);
+    (void)BketwpGetU64Property(Record, L"imageSize", &imageSize);
+    (void)BketwpGetBoolProperty(Record, L"gotStart", &gotStart);
+    (void)BketwpGetBoolProperty(Record, L"gotRange", &gotRange);
+    (void)BketwpGetBoolProperty(Record, L"isRemoteCreator", &isRemote);
+    (void)BketwpGetBoolProperty(Record, L"outsideMainImage", &outsideImage);
+    (void)BketwpGetU32Property(Record, L"correlationFlags", &correlationFlags);
+    (void)BketwpGetU32Property(Record, L"correlationAccessMask", &correlationAccessMask);
+    (void)BketwpGetU32Property(Record, L"correlationAgeMs", &correlationAgeMs);
+    (void)BketwpGetU32Property(Record, L"startRegionProtect", &startRegionProtect);
+    (void)BketwpGetU32Property(Record, L"startRegionState", &startRegionState);
+    (void)BketwpGetU32Property(Record, L"startRegionType", &startRegionType);
+    (void)BketwpGetI32Property(Record, L"startRegionStatus", &startRegionStatus);
+    (void)BketwpGetU32Property(Record, L"workerFrameCount", &frameCount);
 
     FormatProcessImage(processId, processImage, RTL_NUMBER_OF(processImage));
     FormatProcessImage(creatorPid, creatorImage, RTL_NUMBER_OF(creatorImage));
@@ -1066,17 +1064,17 @@ static void PrintProcessTelemetry(_In_ PEVENT_RECORD Record)
     imagePath[0] = L'\0';
     commandLine[0] = L'\0';
 
-    (void)BLACKBIRDGetBoolProperty(Record, L"isCreate", &isCreate);
-    (void)BLACKBIRDGetI32Property(Record, L"createStatus", &createStatus);
-    (void)BLACKBIRDGetU64Property(Record, L"processId", &processId);
-    (void)BLACKBIRDGetU64Property(Record, L"parentProcessId", &parentPid);
-    (void)BLACKBIRDGetU64Property(Record, L"creatorProcessId", &creatorPid);
-    (void)BLACKBIRDGetU64Property(Record, L"creatorThreadId", &creatorTid);
-    (void)BLACKBIRDGetU64Property(Record, L"processStartKey", &startKey);
-    (void)BLACKBIRDGetU32Property(Record, L"sessionId", &sessionId);
-    (void)BLACKBIRDGetWideProperty(Record, L"imagePath", imagePath, RTL_NUMBER_OF(imagePath));
-    (void)BLACKBIRDGetWideProperty(Record, L"commandLine", commandLine, RTL_NUMBER_OF(commandLine));
-    BLACKBIRDCacheProcessImage(processId, imagePath);
+    (void)BketwpGetBoolProperty(Record, L"isCreate", &isCreate);
+    (void)BketwpGetI32Property(Record, L"createStatus", &createStatus);
+    (void)BketwpGetU64Property(Record, L"processId", &processId);
+    (void)BketwpGetU64Property(Record, L"parentProcessId", &parentPid);
+    (void)BketwpGetU64Property(Record, L"creatorProcessId", &creatorPid);
+    (void)BketwpGetU64Property(Record, L"creatorThreadId", &creatorTid);
+    (void)BketwpGetU64Property(Record, L"processStartKey", &startKey);
+    (void)BketwpGetU32Property(Record, L"sessionId", &sessionId);
+    (void)BketwpGetWideProperty(Record, L"imagePath", imagePath, RTL_NUMBER_OF(imagePath));
+    (void)BketwpGetWideProperty(Record, L"commandLine", commandLine, RTL_NUMBER_OF(commandLine));
+    BksymCacheProcessImage(processId, imagePath);
 
     wprintf(L"\n[PROCESS] %ls pid=%016llX parent=%016llX creator=%016llX/%016llX session=%lu\n",
             isCreate ? L"CREATE" : L"EXIT", processId, parentPid, creatorPid, creatorTid, sessionId);
@@ -1102,18 +1100,18 @@ static void PrintImageTelemetry(_In_ PEVENT_RECORD Record)
 
     imagePath[0] = L'\0';
 
-    (void)BLACKBIRDGetU64Property(Record, L"processId", &processId);
-    (void)BLACKBIRDGetU64Property(Record, L"imageBase", &imageBase);
-    (void)BLACKBIRDGetU64Property(Record, L"imageSize", &imageSize);
-    (void)BLACKBIRDGetBoolProperty(Record, L"isSystemModeImage", &systemMode);
-    (void)BLACKBIRDGetBoolProperty(Record, L"isSignatureLevelKnown", &sigKnown);
-    (void)BLACKBIRDGetU8Property(Record, L"signatureLevel", &sigLevel);
-    (void)BLACKBIRDGetU8Property(Record, L"signatureType", &sigType);
-    (void)BLACKBIRDGetWideProperty(Record, L"imagePath", imagePath, RTL_NUMBER_OF(imagePath));
-    BLACKBIRDCacheProcessImage(processId, imagePath);
-    BLACKBIRDEtwSymbolsCacheModuleForProcess((DWORD)processId, imageBase, imageSize, imagePath);
+    (void)BketwpGetU64Property(Record, L"processId", &processId);
+    (void)BketwpGetU64Property(Record, L"imageBase", &imageBase);
+    (void)BketwpGetU64Property(Record, L"imageSize", &imageSize);
+    (void)BketwpGetBoolProperty(Record, L"isSystemModeImage", &systemMode);
+    (void)BketwpGetBoolProperty(Record, L"isSignatureLevelKnown", &sigKnown);
+    (void)BketwpGetU8Property(Record, L"signatureLevel", &sigLevel);
+    (void)BketwpGetU8Property(Record, L"signatureType", &sigType);
+    (void)BketwpGetWideProperty(Record, L"imagePath", imagePath, RTL_NUMBER_OF(imagePath));
+    BksymCacheProcessImage(processId, imagePath);
+    BksymEtwCacheModuleForProcess((DWORD)processId, imageBase, imageSize, imagePath);
 
-    BLACKBIRDEtwSymbolsFormatAddressForProcess((DWORD)processId, imageBase, imageSym, RTL_NUMBER_OF(imageSym));
+    BksymEtwFormatAddressForProcess((DWORD)processId, imageBase, imageSym, RTL_NUMBER_OF(imageSym));
     FormatProcessImage(processId, processImage, RTL_NUMBER_OF(processImage));
 
     wprintf(L"\n[IMAGE] pid=%016llX base=0x%016llX size=0x%llX\n", processId, imageBase, imageSize);
@@ -1143,28 +1141,27 @@ static void PrintRegistryTelemetry(_In_ PEVENT_RECORD Record)
     keyPath[0] = L'\0';
     valueName[0] = L'\0';
 
-    (void)BLACKBIRDGetAnsiProperty(Record, L"operation", operation, RTL_NUMBER_OF(operation));
-    (void)BLACKBIRDGetU64Property(Record, L"processId", &processId);
-    (void)BLACKBIRDGetU32Property(Record, L"sessionId", &sessionId);
-    (void)BLACKBIRDGetU32Property(Record, L"notifyClass", &notifyClass);
-    (void)BLACKBIRDGetU32Property(Record, L"dataType", &dataType);
-    (void)BLACKBIRDGetU32Property(Record, L"dataSize", &dataSize);
-    (void)BLACKBIRDGetBoolProperty(Record, L"isHighValuePath", &highValue);
-    (void)BLACKBIRDGetWideProperty(Record, L"keyPath", keyPath, RTL_NUMBER_OF(keyPath));
-    (void)BLACKBIRDGetWideProperty(Record, L"valueName", valueName, RTL_NUMBER_OF(valueName));
+    (void)BketwpGetAnsiProperty(Record, L"operation", operation, RTL_NUMBER_OF(operation));
+    (void)BketwpGetU64Property(Record, L"processId", &processId);
+    (void)BketwpGetU32Property(Record, L"sessionId", &sessionId);
+    (void)BketwpGetU32Property(Record, L"notifyClass", &notifyClass);
+    (void)BketwpGetU32Property(Record, L"dataType", &dataType);
+    (void)BketwpGetU32Property(Record, L"dataSize", &dataSize);
+    (void)BketwpGetBoolProperty(Record, L"isHighValuePath", &highValue);
+    (void)BketwpGetWideProperty(Record, L"keyPath", keyPath, RTL_NUMBER_OF(keyPath));
+    (void)BketwpGetWideProperty(Record, L"valueName", valueName, RTL_NUMBER_OF(valueName));
 
     FormatProcessImage(processId, processImage, RTL_NUMBER_OF(processImage));
-    suppressible = BLACKBIRDRegistryIsSuppressible(operation, highValue);
+    suppressible = BkavRegIsSuppressible(operation, highValue);
 
-    if (suppressible &&
-        BLACKBIRDRegistrySuppressorMatches(&g_RegistrySuppressor, operation, processId, sessionId, notifyClass,
-                                           dataType, dataSize, highValue, processImage, keyPath, valueName))
+    if (suppressible && BkavRegSuppressorMatches(&g_RegistrySuppressor, operation, processId, sessionId, notifyClass,
+                                                 dataType, dataSize, highValue, processImage, keyPath, valueName))
     {
         g_RegistrySuppressor.SuppressedCount += 1;
         return;
     }
 
-    BLACKBIRDFlushRegistrySuppressor();
+    BketwprFlushRegistrySuppressor();
 
     wprintf(L"\n[REGISTRY] op=%S pid=%016llX session=%lu class=%ls(%lu)\n", operation[0] ? operation : "OTHER",
             processId, sessionId, RegistryNotifyClassToString(notifyClass), notifyClass);
@@ -1176,8 +1173,8 @@ static void PrintRegistryTelemetry(_In_ PEVENT_RECORD Record)
 
     if (suppressible)
     {
-        BLACKBIRDUpdateRegistrySuppressor(operation, processId, sessionId, notifyClass, dataType, dataSize, highValue,
-                                          processImage, keyPath, valueName);
+        BketwprUpdateRegistrySuppressor(operation, processId, sessionId, notifyClass, dataType, dataSize, highValue,
+                                        processImage, keyPath, valueName);
     }
     else
     {
@@ -1202,14 +1199,14 @@ static void PrintDetectionTelemetry(_In_ PEVENT_RECORD Record)
     detectionName[0] = '\0';
     reason[0] = L'\0';
 
-    (void)BLACKBIRDGetAnsiProperty(Record, L"detectionName", detectionName, RTL_NUMBER_OF(detectionName));
-    (void)BLACKBIRDGetU32Property(Record, L"severity", &severity);
-    (void)BLACKBIRDGetU64Property(Record, L"processId", &processId);
-    (void)BLACKBIRDGetU64Property(Record, L"targetPid", &targetPid);
-    (void)BLACKBIRDGetU32Property(Record, L"correlationFlags", &correlationFlags);
-    (void)BLACKBIRDGetU32Property(Record, L"correlationAccessMask", &correlationAccessMask);
-    (void)BLACKBIRDGetU32Property(Record, L"correlationAgeMs", &correlationAgeMs);
-    (void)BLACKBIRDGetWideProperty(Record, L"reason", reason, RTL_NUMBER_OF(reason));
+    (void)BketwpGetAnsiProperty(Record, L"detectionName", detectionName, RTL_NUMBER_OF(detectionName));
+    (void)BketwpGetU32Property(Record, L"severity", &severity);
+    (void)BketwpGetU64Property(Record, L"processId", &processId);
+    (void)BketwpGetU64Property(Record, L"targetPid", &targetPid);
+    (void)BketwpGetU32Property(Record, L"correlationFlags", &correlationFlags);
+    (void)BketwpGetU32Property(Record, L"correlationAccessMask", &correlationAccessMask);
+    (void)BketwpGetU32Property(Record, L"correlationAgeMs", &correlationAgeMs);
+    (void)BketwpGetWideProperty(Record, L"reason", reason, RTL_NUMBER_OF(reason));
 
     FormatCorrelationFlags(correlationFlags, corrFlagsText, RTL_NUMBER_OF(corrFlagsText));
     FormatProcessImage(processId, processImage, RTL_NUMBER_OF(processImage));
@@ -1225,7 +1222,7 @@ static void PrintDetectionTelemetry(_In_ PEVENT_RECORD Record)
     wprintf(L"Reason %ls\n", reason[0] ? reason : L"<none>");
 }
 
-void BLACKBIRDPrintEtwRecord(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR EventName)
+void BketwprPrintEtwRecord(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR EventName)
 {
     if (Record == NULL || EventName == NULL)
     {
@@ -1234,7 +1231,7 @@ void BLACKBIRDPrintEtwRecord(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR EventName)
 
     if (wcscmp(EventName, L"RegistryTelemetry") != 0)
     {
-        BLACKBIRDFlushRegistrySuppressor();
+        BketwprFlushRegistrySuppressor();
     }
 
     if (wcscmp(EventName, L"HandleTelemetry") == 0)
@@ -1272,35 +1269,13 @@ void BLACKBIRDPrintEtwRecord(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR EventName)
     PrintHeaderMetadata(Record, EventName);
 }
 
-void BLACKBIRDFlushEtwPrinterState(VOID)
+void BketwprFlushEtwPrinterState(VOID)
 {
-    BLACKBIRDFlushRegistrySuppressor();
+    BketwprFlushRegistrySuppressor();
 }
 
-static BOOL BLACKBIRDTryGetU64Any(_In_ PEVENT_RECORD Record, _In_reads_(NameCount) const PCWSTR *Names,
-                                  _In_ size_t NameCount, _Out_ ULONGLONG *Value)
-{
-    size_t i;
-
-    if (Value == NULL)
-    {
-        return FALSE;
-    }
-    *Value = 0;
-
-    for (i = 0; i < NameCount; ++i)
-    {
-        if (BLACKBIRDGetU64Property(Record, Names[i], Value))
-        {
-            return TRUE;
-        }
-    }
-
-    return FALSE;
-}
-
-static BOOL BLACKBIRDTryGetU32Any(_In_ PEVENT_RECORD Record, _In_reads_(NameCount) const PCWSTR *Names,
-                                  _In_ size_t NameCount, _Out_ ULONG *Value)
+static BOOL BketwprTryGetU64Any(_In_ PEVENT_RECORD Record, _In_reads_(NameCount) const PCWSTR *Names,
+                                _In_ size_t NameCount, _Out_ ULONGLONG *Value)
 {
     size_t i;
 
@@ -1312,7 +1287,7 @@ static BOOL BLACKBIRDTryGetU32Any(_In_ PEVENT_RECORD Record, _In_reads_(NameCoun
 
     for (i = 0; i < NameCount; ++i)
     {
-        if (BLACKBIRDGetU32Property(Record, Names[i], Value))
+        if (BketwpGetU64Property(Record, Names[i], Value))
         {
             return TRUE;
         }
@@ -1321,7 +1296,29 @@ static BOOL BLACKBIRDTryGetU32Any(_In_ PEVENT_RECORD Record, _In_reads_(NameCoun
     return FALSE;
 }
 
-static BOOL BLACKBIRDEventNameContainsInsensitive(_In_opt_z_ PCWSTR EventName, _In_z_ PCWSTR Needle)
+static BOOL BketwprTryGetU32Any(_In_ PEVENT_RECORD Record, _In_reads_(NameCount) const PCWSTR *Names,
+                                _In_ size_t NameCount, _Out_ ULONG *Value)
+{
+    size_t i;
+
+    if (Value == NULL)
+    {
+        return FALSE;
+    }
+    *Value = 0;
+
+    for (i = 0; i < NameCount; ++i)
+    {
+        if (BketwpGetU32Property(Record, Names[i], Value))
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static BOOL BketwprEventNameContainsInsensitive(_In_opt_z_ PCWSTR EventName, _In_z_ PCWSTR Needle)
 {
     WCHAR eventLower[256];
     WCHAR needleLower[64];
@@ -1355,7 +1352,7 @@ static BOOL BLACKBIRDEventNameContainsInsensitive(_In_opt_z_ PCWSTR EventName, _
     return (wcsstr(eventLower, needleLower) != NULL);
 }
 
-void BLACKBIRDPrintThreatIntelRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName)
+void BketwprPrintThreatIntelRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName)
 {
     static const PCWSTR callerPidNames[] = {L"CallingProcessId", L"CallerProcessId", L"SourceProcessId", L"ProcessId"};
     static const PCWSTR targetPidNames[] = {L"TargetProcessId", L"NewProcessId", L"DestProcessId", L"ProcessId"};
@@ -1386,24 +1383,24 @@ void BLACKBIRDPrintThreatIntelRecord(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWST
 
     safeName = (EventName != NULL && EventName[0] != L'\0') ? EventName : L"<unnamed-ti-event>";
 
-    (void)BLACKBIRDTryGetU64Any(Record, callerPidNames, RTL_NUMBER_OF(callerPidNames), &callerPid);
-    (void)BLACKBIRDTryGetU64Any(Record, targetPidNames, RTL_NUMBER_OF(targetPidNames), &targetPid);
-    (void)BLACKBIRDTryGetU64Any(Record, targetTidNames, RTL_NUMBER_OF(targetTidNames), &targetTid);
-    (void)BLACKBIRDTryGetU64Any(Record, startAddrNames, RTL_NUMBER_OF(startAddrNames), &startAddress);
-    (void)BLACKBIRDTryGetU64Any(Record, routineNames, RTL_NUMBER_OF(routineNames), &routineAddress);
-    (void)BLACKBIRDTryGetU32Any(Record, accessNames, RTL_NUMBER_OF(accessNames), &desiredAccess);
+    (void)BketwprTryGetU64Any(Record, callerPidNames, RTL_NUMBER_OF(callerPidNames), &callerPid);
+    (void)BketwprTryGetU64Any(Record, targetPidNames, RTL_NUMBER_OF(targetPidNames), &targetPid);
+    (void)BketwprTryGetU64Any(Record, targetTidNames, RTL_NUMBER_OF(targetTidNames), &targetTid);
+    (void)BketwprTryGetU64Any(Record, startAddrNames, RTL_NUMBER_OF(startAddrNames), &startAddress);
+    (void)BketwprTryGetU64Any(Record, routineNames, RTL_NUMBER_OF(routineNames), &routineAddress);
+    (void)BketwprTryGetU32Any(Record, accessNames, RTL_NUMBER_OF(accessNames), &desiredAccess);
 
     FormatProcessImage(callerPid, callerImage, RTL_NUMBER_OF(callerImage));
     FormatProcessImage(targetPid, targetImage, RTL_NUMBER_OF(targetImage));
     FormatAddressWithImageHint((DWORD)targetPid, startAddress, targetImage, startSym, RTL_NUMBER_OF(startSym));
     FormatAddressWithImageHint((DWORD)targetPid, routineAddress, targetImage, routineSym, RTL_NUMBER_OF(routineSym));
 
-    nameSuggestsCreateThread = BLACKBIRDEventNameContainsInsensitive(safeName, L"createthread") ||
-                               BLACKBIRDEventNameContainsInsensitive(safeName, L"ntcreatethreadex");
-    nameSuggestsSetContext = BLACKBIRDEventNameContainsInsensitive(safeName, L"setcontext") ||
-                             BLACKBIRDEventNameContainsInsensitive(safeName, L"setthreadcontext");
-    nameSuggestsQueueApc = BLACKBIRDEventNameContainsInsensitive(safeName, L"queueapc") ||
-                           BLACKBIRDEventNameContainsInsensitive(safeName, L"insertqueueapc");
+    nameSuggestsCreateThread = BketwprEventNameContainsInsensitive(safeName, L"createthread") ||
+                               BketwprEventNameContainsInsensitive(safeName, L"ntcreatethreadex");
+    nameSuggestsSetContext = BketwprEventNameContainsInsensitive(safeName, L"setcontext") ||
+                             BketwprEventNameContainsInsensitive(safeName, L"setthreadcontext");
+    nameSuggestsQueueApc = BketwprEventNameContainsInsensitive(safeName, L"queueapc") ||
+                           BketwprEventNameContainsInsensitive(safeName, L"insertqueueapc");
 
     wprintf(L"\n[ETW-TI] event=%ls\n", safeName);
     PrintHeaderMetadata(Record, safeName);

@@ -1,6 +1,6 @@
-#include "../blackbird_controller_private.h"
+#include "../controller_private.h"
 
-#define BLACKBIRD_ETW_PROP_SCRATCH_BYTES 512u
+#define BK_ETW_PROP_SCRATCH_BYTES 512u
 
 static BOOL ControllerEtwGetPropertyRaw(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
                                         _Out_writes_bytes_(ScratchCapacity) PBYTE Scratch, _In_ ULONG ScratchCapacity,
@@ -63,7 +63,7 @@ static BOOL ControllerEtwGetPropertyRaw(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR
 }
 BOOL ControllerEtwGetU64Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ ULONGLONG *Value)
 {
-    BYTE scratch[BLACKBIRD_ETW_PROP_SCRATCH_BYTES];
+    BYTE scratch[BK_ETW_PROP_SCRATCH_BYTES];
     PBYTE raw = NULL;
     ULONG size = 0;
     BOOL heapAllocated = FALSE;
@@ -100,7 +100,7 @@ BOOL ControllerEtwGetU64Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, 
 }
 BOOL ControllerEtwGetU32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ ULONG *Value)
 {
-    BYTE scratch[BLACKBIRD_ETW_PROP_SCRATCH_BYTES];
+    BYTE scratch[BK_ETW_PROP_SCRATCH_BYTES];
     PBYTE raw = NULL;
     ULONG size = 0;
     BOOL heapAllocated = FALSE;
@@ -129,7 +129,7 @@ BOOL ControllerEtwGetU32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, 
 }
 BOOL ControllerEtwGetI32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ LONG *Value)
 {
-    BYTE scratch[BLACKBIRD_ETW_PROP_SCRATCH_BYTES];
+    BYTE scratch[BK_ETW_PROP_SCRATCH_BYTES];
     PBYTE raw = NULL;
     ULONG size = 0;
     BOOL heapAllocated = FALSE;
@@ -158,7 +158,7 @@ BOOL ControllerEtwGetI32Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, 
 }
 BOOL ControllerEtwGetU8Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ UCHAR *Value)
 {
-    BYTE scratch[BLACKBIRD_ETW_PROP_SCRATCH_BYTES];
+    BYTE scratch[BK_ETW_PROP_SCRATCH_BYTES];
     PBYTE raw = NULL;
     ULONG size = 0;
     BOOL heapAllocated = FALSE;
@@ -187,7 +187,7 @@ BOOL ControllerEtwGetU8Property(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _
 }
 BOOL ControllerEtwGetBoolProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name, _Out_ BOOL *Value)
 {
-    BYTE scratch[BLACKBIRD_ETW_PROP_SCRATCH_BYTES];
+    BYTE scratch[BK_ETW_PROP_SCRATCH_BYTES];
     PBYTE raw = NULL;
     ULONG size = 0;
     BOOL heapAllocated = FALSE;
@@ -224,7 +224,7 @@ BOOL ControllerEtwGetBoolProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
 BOOL ControllerEtwGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
                                   _Out_writes_z_(OutputChars) PSTR Output, _In_ size_t OutputChars)
 {
-    BYTE scratch[BLACKBIRD_ETW_PROP_SCRATCH_BYTES];
+    BYTE scratch[BK_ETW_PROP_SCRATCH_BYTES];
     PBYTE raw = NULL;
     ULONG size = 0;
     BOOL heapAllocated = FALSE;
@@ -255,7 +255,7 @@ BOOL ControllerEtwGetAnsiProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
 BOOL ControllerEtwGetWideProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Name,
                                   _Out_writes_z_(OutputChars) PWSTR Output, _In_ size_t OutputChars)
 {
-    BYTE scratch[BLACKBIRD_ETW_PROP_SCRATCH_BYTES];
+    BYTE scratch[BK_ETW_PROP_SCRATCH_BYTES];
     PBYTE raw = NULL;
     ULONG size = 0;
     BOOL heapAllocated = FALSE;
@@ -287,7 +287,7 @@ BOOL ControllerEtwCopyBinaryProperty(_In_ PEVENT_RECORD Record, _In_z_ PCWSTR Na
                                      _Out_writes_bytes_(Capacity) PBYTE Output, _In_ ULONG Capacity,
                                      _Out_opt_ UINT32 *BytesCopied)
 {
-    BYTE scratch[BLACKBIRD_ETW_PROP_SCRATCH_BYTES];
+    BYTE scratch[BK_ETW_PROP_SCRATCH_BYTES];
     PBYTE raw = NULL;
     ULONG size = 0;
     ULONG copy = 0;
@@ -366,7 +366,7 @@ static BOOL ControllerAddCandidatePid(_Inout_updates_(Capacity) DWORD *Candidate
     return TRUE;
 }
 
-static BOOL ControllerEtwEventMatchesPid(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event, _In_ DWORD ProcessId)
+static BOOL ControllerEtwEventMatchesPid(_In_ const BKIPC_ETW_EVENT *Event, _In_ DWORD ProcessId)
 {
     if (Event == NULL || ProcessId == 0)
     {
@@ -403,7 +403,7 @@ static BOOL ControllerEtwEventMatchesPid(_In_ const BLACKBIRD_IPC_ETW_EVENT *Eve
     return FALSE;
 }
 
-static BOOL ControllerEtwResolveRelation(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event, _Out_ DWORD *SourcePid,
+static BOOL ControllerEtwResolveRelation(_In_ const BKIPC_ETW_EVENT *Event, _Out_ DWORD *SourcePid,
                                          _Out_ DWORD *TargetPid)
 {
     ULONGLONG sourceValue = 0;
@@ -455,18 +455,30 @@ static BOOL ControllerEtwResolveRelation(_In_ const BLACKBIRD_IPC_ETW_EVENT *Eve
 
 static LONG ControllerFindPidIndexEntryForEtwLocked(_In_ DWORD ProcessId)
 {
-    DWORD i;
+    LONG lo = 0;
+    LONG hi = (LONG)g_PidIndexCount - 1;
 
     if (ProcessId == 0)
     {
         return -1;
     }
 
-    for (i = 0; i < g_PidIndexCount; ++i)
+    while (lo <= hi)
     {
-        if (g_PidIndex[i].ProcessId == ProcessId)
+        LONG mid = lo + ((hi - lo) / 2);
+        DWORD midPid = g_PidIndex[(DWORD)mid].ProcessId;
+
+        if (midPid == ProcessId)
         {
-            return (LONG)i;
+            return mid;
+        }
+        if (midPid < ProcessId)
+        {
+            lo = mid + 1;
+        }
+        else
+        {
+            hi = mid - 1;
         }
     }
 
@@ -474,8 +486,7 @@ static LONG ControllerFindPidIndexEntryForEtwLocked(_In_ DWORD ProcessId)
 }
 
 static VOID ControllerEtwMergeCandidateMaskForPidLocked(_In_ DWORD ProcessId,
-                                                        _Inout_updates_(BLACKBIRD_CONTROLLER_CLIENT_MASK_DWORDS)
-                                                            DWORD *Mask)
+                                                        _Inout_updates_(BK_CONTROLLER_CLIENT_MASK_DWORDS) DWORD *Mask)
 {
     LONG entryIndex;
     DWORD i;
@@ -491,18 +502,23 @@ static VOID ControllerEtwMergeCandidateMaskForPidLocked(_In_ DWORD ProcessId,
         return;
     }
 
-    if ((g_PidIndex[(DWORD)entryIndex].StreamMask & BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK) == 0)
+    if ((g_PidIndex[(DWORD)entryIndex].StreamMask & BK_CONTROLLER_DRIVER_STREAM_MASK) == 0)
     {
         return;
     }
 
-    for (i = 0; i < BLACKBIRD_CONTROLLER_CLIENT_MASK_DWORDS; ++i)
+    for (i = 0; i < BK_CONTROLLER_MAX_CLIENTS; ++i)
     {
-        Mask[i] |= g_PidIndex[(DWORD)entryIndex].ClientMask[i];
+        if ((g_PidIndex[(DWORD)entryIndex].ClientStreamMask[i] & BK_CONTROLLER_DRIVER_STREAM_MASK) != 0)
+        {
+            DWORD wordIndex = i / 32u;
+            DWORD bitMask = (1u << (i % 32u));
+            Mask[wordIndex] |= bitMask;
+        }
     }
 }
 
-static BOOL ControllerEtwEventNeedsFullScan(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
+static BOOL ControllerEtwEventNeedsFullScan(_In_ const BKIPC_ETW_EVENT *Event)
 {
     if (Event == NULL)
     {
@@ -514,7 +530,7 @@ static BOOL ControllerEtwEventNeedsFullScan(_In_ const BLACKBIRD_IPC_ETW_EVENT *
 
 static BOOL ControllerAnyPendingLaunchArmedLocked(VOID)
 {
-    PBLACKBIRD_CONTROLLER_CLIENT client;
+    PBK_CONTROLLER_CLIENT client;
 
     for (client = g_ClientList; client != NULL; client = client->Next)
     {
@@ -572,7 +588,7 @@ static BOOL ControllerPathEqualsInsensitive(_In_opt_z_ PCWSTR Left, _In_opt_z_ P
     return (leftFile[0] != L'\0' && rightFile[0] != L'\0' && _wcsicmp(leftFile, rightFile) == 0);
 }
 
-static BOOL ControllerTryReadEventImagePath(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event, _Outptr_result_z_ PCWSTR *Path)
+static BOOL ControllerTryReadEventImagePath(_In_ const BKIPC_ETW_EVENT *Event, _Outptr_result_z_ PCWSTR *Path)
 {
     if (Path == NULL || Event == NULL)
     {
@@ -590,8 +606,8 @@ static BOOL ControllerTryReadEventImagePath(_In_ const BLACKBIRD_IPC_ETW_EVENT *
     return FALSE;
 }
 
-static BOOL ControllerClientMatchPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
-                                                     _In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
+static BOOL ControllerClientMatchPendingLaunchLocked(_Inout_ BK_CONTROLLER_CLIENT *Client,
+                                                     _In_ const BKIPC_ETW_EVENT *Event)
 {
     PCWSTR eventImagePath = NULL;
     DWORD eventPid = 0;
@@ -637,13 +653,15 @@ static BOOL ControllerClientMatchPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLE
         Client->PendingLaunchPid = eventPid;
         Client->PendingLaunchArmed = FALSE;
         Client->PendingLaunchArmedTick = 0;
+        Client->PendingAnalysisSubjectKind = BlackbirdAnalysisSubjectProcess;
         Client->PendingLaunchImagePath[0] = L'\0';
+        Client->PendingAnalysisSubjectPath[0] = L'\0';
 
         for (i = 0; i < Client->SubscriptionCount; ++i)
         {
             if (Client->Subscriptions[i].ProcessId == eventPid)
             {
-                Client->Subscriptions[i].StreamMask |= BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK;
+                Client->Subscriptions[i].StreamMask |= BK_CONTROLLER_DRIVER_STREAM_MASK;
                 if (Client->Subscriptions[i].Dynamic)
                 {
                     Client->Subscriptions[i].Dynamic = FALSE;
@@ -658,10 +676,10 @@ static BOOL ControllerClientMatchPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLE
             }
         }
 
-        if (Client->SubscriptionCount < BLACKBIRD_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS)
+        if (Client->SubscriptionCount < BK_CONTROLLER_MAX_CLIENT_SUBSCRIPTIONS)
         {
             Client->Subscriptions[Client->SubscriptionCount].ProcessId = eventPid;
-            Client->Subscriptions[Client->SubscriptionCount].StreamMask = BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK;
+            Client->Subscriptions[Client->SubscriptionCount].StreamMask = BK_CONTROLLER_DRIVER_STREAM_MASK;
             Client->Subscriptions[Client->SubscriptionCount].Dynamic = FALSE;
             Client->Subscriptions[Client->SubscriptionCount].SourceProcessId = 0;
             Client->Subscriptions[Client->SubscriptionCount].Depth = 0;
@@ -676,8 +694,7 @@ static BOOL ControllerClientMatchPendingLaunchLocked(_Inout_ BLACKBIRD_CONTROLLE
     return TRUE;
 }
 
-static BOOL ControllerClientHasEtwMatchLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIENT *Client,
-                                              _In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
+static BOOL ControllerClientHasEtwMatchLocked(_Inout_ BK_CONTROLLER_CLIENT *Client, _In_ const BKIPC_ETW_EVENT *Event)
 {
     DWORD i;
 
@@ -701,13 +718,13 @@ static BOOL ControllerClientHasEtwMatchLocked(_Inout_ BLACKBIRD_CONTROLLER_CLIEN
 
     return FALSE;
 }
-VOID ControllerDispatchEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
+VOID ControllerDispatchEtwEvent(_In_ const BKIPC_ETW_EVENT *Event)
 {
-    BLACKBIRD_IPC_ETW_EVENT enriched;
-    PBLACKBIRD_CONTROLLER_CLIENT client;
-    PBLACKBIRD_CONTROLLER_CLIENT dispatchClients[BLACKBIRD_CONTROLLER_MAX_CLIENTS];
+    BKIPC_ETW_EVENT enriched;
+    PBK_CONTROLLER_CLIENT client;
+    PBK_CONTROLLER_CLIENT dispatchClients[BK_CONTROLLER_MAX_CLIENTS];
     DWORD dispatchCount = 0;
-    DWORD candidateMask[BLACKBIRD_CONTROLLER_CLIENT_MASK_DWORDS];
+    DWORD candidateMask[BK_CONTROLLER_CLIENT_MASK_DWORDS];
     DWORD sourcePid = 0;
     DWORD targetPid = 0;
     DWORD candidatePids[6];
@@ -721,17 +738,18 @@ VOID ControllerDispatchEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
     }
 
     enriched = *Event;
-    ControllerSymbolServiceEnrichEvent(&enriched);
 
-    if (ControllerEtwResolveRelation(&enriched, &sourcePid, &targetPid))
+    if (ControllerEtwResolveRelation(Event, &sourcePid, &targetPid))
     {
-        ControllerExpandMonitoringGraph(sourcePid, targetPid, BLACKBIRD_CONTROLLER_DRIVER_STREAM_MASK);
+        ControllerExpandMonitoringGraph(sourcePid, targetPid, BK_CONTROLLER_DRIVER_STREAM_MASK);
     }
+
+    ControllerSymbolServiceEnrichEvent(&enriched);
 
     useSlowPath = (InterlockedCompareExchange(&g_DriverSubscriptionsDirty, 0, 0) != 0);
 
     EnterCriticalSection(g_ClientListLock.get());
-    if (!useSlowPath && ControllerEtwEventNeedsFullScan(&enriched) && ControllerAnyPendingLaunchArmedLocked())
+    if (!useSlowPath && ControllerEtwEventNeedsFullScan(Event) && ControllerAnyPendingLaunchArmedLocked())
     {
         useSlowPath = TRUE;
     }
@@ -753,17 +771,17 @@ VOID ControllerDispatchEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
         ZeroMemory(candidatePids, sizeof(candidatePids));
 
         (void)ControllerAddCandidatePid(candidatePids, RTL_NUMBER_OF(candidatePids), &candidatePidCount,
-                                        enriched.EventProcessId);
+                                        Event->EventProcessId);
         (void)ControllerAddCandidatePid(candidatePids, RTL_NUMBER_OF(candidatePids), &candidatePidCount,
-                                        enriched.ProcessId);
+                                        Event->ProcessId);
         (void)ControllerAddCandidatePid(candidatePids, RTL_NUMBER_OF(candidatePids), &candidatePidCount,
-                                        enriched.CallerPid);
+                                        Event->CallerPid);
         (void)ControllerAddCandidatePid(candidatePids, RTL_NUMBER_OF(candidatePids), &candidatePidCount,
-                                        enriched.TargetPid);
+                                        Event->TargetPid);
         (void)ControllerAddCandidatePid(candidatePids, RTL_NUMBER_OF(candidatePids), &candidatePidCount,
-                                        enriched.ParentProcessId);
+                                        Event->ParentProcessId);
         (void)ControllerAddCandidatePid(candidatePids, RTL_NUMBER_OF(candidatePids), &candidatePidCount,
-                                        enriched.CreatorProcessId);
+                                        Event->CreatorProcessId);
 
         for (i = 0; i < candidatePidCount; ++i)
         {
@@ -798,9 +816,28 @@ VOID ControllerDispatchEtwEvent(_In_ const BLACKBIRD_IPC_ETW_EVENT *Event)
     {
         client = dispatchClients[i];
         EnterCriticalSection(&client->Lock);
-        if (ControllerClientHasEtwMatchLocked(client, &enriched))
+        if (!useSlowPath || ControllerClientHasEtwMatchLocked(client, &enriched))
         {
-            (void)ControllerClientEnqueueEtwEventLocked(client, &enriched);
+            /* Tag events whose primary address falls within an SR71-registered
+               owned range.  This lets the UI annotate them as "BK
+               Instrumentation" and suppresses downstream heuristic scoring. */
+            BKIPC_ETW_EVENT toQueue = enriched;
+            /* Use the event's OriginAddress as the primary address to check against
+               owned ranges.  Hook events set OriginAddress to the caller's virtual address. */
+            UINT64 primaryAddr = enriched.OriginAddress;
+
+            if (ControllerIsBlackbirdOwnedAddress(client, primaryAddr) ||
+                (toQueue.Reserved2 & BKIPC_ETW_TRAIT_BLACKBIRD_OWN) != 0)
+            {
+                toQueue.Reserved2 |= BKIPC_ETW_TRAIT_BLACKBIRD_OWN;
+                if (toQueue.Severity > 1u)
+                    toQueue.Severity = 1u;
+                if (toQueue.DetectionName[0] == '\0')
+                    (void)StringCchCopyA(toQueue.DetectionName, RTL_NUMBER_OF(toQueue.DetectionName),
+                                         "BK_INSTRUMENTATION");
+            }
+
+            (void)ControllerClientEnqueueEtwEventLocked(client, &toQueue);
         }
         LeaveCriticalSection(&client->Lock);
         ControllerClientReleaseFromDispatch(client);

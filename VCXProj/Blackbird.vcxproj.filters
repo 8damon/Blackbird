@@ -11,6 +11,9 @@
     <Filter Include="Source Files\Monitors">
       <UniqueIdentifier>{6B77FDF4-F15D-45D6-B2E6-D2093A2B9B5F}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\Callbacks">
+      <UniqueIdentifier>{D6A97B79-1E61-4BB9-A7E4-2DA28E8F818B}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Source Files\Telemetry">
       <UniqueIdentifier>{FF11D598-F8A2-4E52-9BB9-B6F6FF90CCF8}</UniqueIdentifier>
     </Filter>
@@ -23,6 +26,9 @@
     <Filter Include="Source Files\AntiVirt">
       <UniqueIdentifier>{2B3A2C17-7EE8-4E6A-A8A1-4D667F2CF4F2}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\Network">
+      <UniqueIdentifier>{5DB73B8E-31F0-4E2C-98B4-C74BE9DE3A89}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Header Files">
       <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
       <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
@@ -32,6 +38,9 @@
     </Filter>
     <Filter Include="Header Files\Monitors">
       <UniqueIdentifier>{568765D5-EADF-40B9-9788-09F296F4D886}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\Callbacks">
+      <UniqueIdentifier>{DA86E52B-7663-4E09-B066-1DA6D27D0AF2}</UniqueIdentifier>
     </Filter>
     <Filter Include="Header Files\Telemetry">
       <UniqueIdentifier>{58A789E2-4585-40F6-946E-AFCB8AA10567}</UniqueIdentifier>
@@ -45,12 +54,18 @@
     <Filter Include="Header Files\AntiVirt">
       <UniqueIdentifier>{72A6F6E8-5B7D-4B26-9A18-07F2B8B8C137}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Header Files\Network">
+      <UniqueIdentifier>{4876F3BF-F71A-4BC7-8208-5685B7F987AB}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Header Files\ABI">
       <UniqueIdentifier>{6F1BDA0C-CA16-4CF5-A322-C77F20EE6474}</UniqueIdentifier>
     </Filter>
     <Filter Include="Driver Files">
       <UniqueIdentifier>{8E41214B-6785-4CFE-B992-037D68949A14}</UniqueIdentifier>
       <Extensions>inf;inv;inx;mof;mc;</Extensions>
+    </Filter>
+    <Filter Include="Header Files\Include">
+      <UniqueIdentifier>{af64a50f-aacb-46e6-9475-5f5a2387f7bd}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -74,14 +89,20 @@
     <ClCompile Include="..\kernel\core\control\control_uninit_exports.c">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\kernel\core\diagnostics.c">
+      <Filter>Source Files\Core</Filter>
+    </ClCompile>
     <ClCompile Include="..\kernel\core\driver.c">
+      <Filter>Source Files\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\kernel\core\optional_feature_stubs.c">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
     <ClCompile Include="..\kernel\core\crt_compat.c">
       <Filter>Source Files\Core</Filter>
     </ClCompile>
-    <ClCompile Include="..\kernel\monitors\handle_monitor.c">
-      <Filter>Source Files\Monitors</Filter>
+    <ClCompile Include="..\kernel\callbacks\handle_monitor.c">
+      <Filter>Source Files\Callbacks</Filter>
     </ClCompile>
     <ClCompile Include="..\kernel\monitors\anti_tamper.c">
       <Filter>Source Files\Monitors</Filter>
@@ -95,26 +116,29 @@
     <ClCompile Include="..\kernel\correlation\hollowing_engine.c">
       <Filter>Source Files\Correlation</Filter>
     </ClCompile>
-    <ClCompile Include="..\kernel\monitors\image_monitor.c">
-      <Filter>Source Files\Monitors</Filter>
+    <ClCompile Include="..\kernel\callbacks\image_monitor.c">
+      <Filter>Source Files\Callbacks</Filter>
     </ClCompile>
-    <ClCompile Include="..\kernel\monitors\process_monitor.c">
-      <Filter>Source Files\Monitors</Filter>
+    <ClCompile Include="..\kernel\callbacks\process_monitor.c">
+      <Filter>Source Files\Callbacks</Filter>
     </ClCompile>
     <ClCompile Include="..\kernel\antivirt\registry_concealment.c">
       <Filter>Source Files\AntiVirt</Filter>
     </ClCompile>
-    <ClCompile Include="..\kernel\monitors\registry_monitor.c">
-      <Filter>Source Files\Monitors</Filter>
+    <ClCompile Include="..\kernel\antivirt\qpc_timing.c">
+      <Filter>Source Files\AntiVirt</Filter>
     </ClCompile>
-    <ClCompile Include="..\kernel\monitors\thread_monitor.c">
-      <Filter>Source Files\Monitors</Filter>
+    <ClCompile Include="..\kernel\callbacks\registry_monitor.c">
+      <Filter>Source Files\Callbacks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\kernel\callbacks\thread_monitor.c">
+      <Filter>Source Files\Callbacks</Filter>
     </ClCompile>
     <ClCompile Include="..\kernel\telemetry\etw.c">
       <Filter>Source Files\Telemetry</Filter>
     </ClCompile>
-    <ClCompile Include="..\kernel\monitors\filesystem_monitor.c">
-      <Filter>Source Files\Monitors</Filter>
+    <ClCompile Include="..\kernel\callbacks\filesystem_monitor.c">
+      <Filter>Source Files\Callbacks</Filter>
     </ClCompile>
     <ClCompile Include="..\kernel\hooks\hook\ntapi_hook.c">
       <Filter>Source Files\Hooks</Filter>
@@ -134,6 +158,9 @@
     <ClCompile Include="..\kernel\antivirt\antivirt_ntapi_firmware.c">
       <Filter>Source Files\AntiVirt</Filter>
     </ClCompile>
+    <ClCompile Include="..\kernel\core\tempus_debug.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <MASM Include="..\kernel\hooks\asm\ntapi_stubs.asm">
@@ -147,14 +174,23 @@
     <ClInclude Include="..\kernel\core\control\control_private.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\kernel\core\crashdump.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\kernel\core\diagnostics.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\kernel\core\optional_features.h">
+      <Filter>Header Files\Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\kernel\core\protection_utils.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
     <ClInclude Include="..\kernel\core\unicode_utils.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
-    <ClInclude Include="..\kernel\monitors\handle_monitor.h">
-      <Filter>Header Files\Monitors</Filter>
+    <ClInclude Include="..\kernel\callbacks\handle_monitor.h">
+      <Filter>Header Files\Callbacks</Filter>
     </ClInclude>
     <ClInclude Include="..\kernel\monitors\anti_tamper.h">
       <Filter>Header Files\Monitors</Filter>
@@ -168,20 +204,23 @@
     <ClInclude Include="..\kernel\correlation\hollowing_engine.h">
       <Filter>Header Files\Correlation</Filter>
     </ClInclude>
-    <ClInclude Include="..\kernel\monitors\image_monitor.h">
-      <Filter>Header Files\Monitors</Filter>
+    <ClInclude Include="..\kernel\callbacks\image_monitor.h">
+      <Filter>Header Files\Callbacks</Filter>
     </ClInclude>
-    <ClInclude Include="..\kernel\monitors\process_monitor.h">
-      <Filter>Header Files\Monitors</Filter>
+    <ClInclude Include="..\kernel\callbacks\process_monitor.h">
+      <Filter>Header Files\Callbacks</Filter>
     </ClInclude>
     <ClInclude Include="..\kernel\antivirt\registry_concealment.h">
       <Filter>Header Files\AntiVirt</Filter>
     </ClInclude>
-    <ClInclude Include="..\kernel\monitors\registry_monitor.h">
-      <Filter>Header Files\Monitors</Filter>
+    <ClInclude Include="..\kernel\antivirt\qpc_timing.h">
+      <Filter>Header Files\AntiVirt</Filter>
     </ClInclude>
-    <ClInclude Include="..\kernel\monitors\thread_monitor.h">
-      <Filter>Header Files\Monitors</Filter>
+    <ClInclude Include="..\kernel\callbacks\registry_monitor.h">
+      <Filter>Header Files\Callbacks</Filter>
+    </ClInclude>
+    <ClInclude Include="..\kernel\callbacks\thread_monitor.h">
+      <Filter>Header Files\Callbacks</Filter>
     </ClInclude>
     <ClInclude Include="..\kernel\telemetry\etw.h">
       <Filter>Header Files\Telemetry</Filter>
@@ -189,8 +228,8 @@
     <ClInclude Include="..\ABI\blackbird_ioctl.h">
       <Filter>Header Files\ABI</Filter>
     </ClInclude>
-    <ClInclude Include="..\kernel\monitors\filesystem_monitor.h">
-      <Filter>Header Files\Monitors</Filter>
+    <ClInclude Include="..\kernel\callbacks\filesystem_monitor.h">
+      <Filter>Header Files\Callbacks</Filter>
     </ClInclude>
     <ClInclude Include="..\kernel\hooks\hook\ntapi_hook.h">
       <Filter>Header Files\Hooks</Filter>
@@ -204,6 +243,12 @@
     <ClInclude Include="..\kernel\hooks\monitor\ntapi_monitor_private.h">
       <Filter>Header Files\Hooks</Filter>
     </ClInclude>
+    <ClInclude Include="..\kernel\core\tempus_debug.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Kernel\include\ntpebteb.h">
+      <Filter>Header Files\Include</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\kernel\core\runtime_config.c">
@@ -212,5 +257,5 @@
     <ClInclude Include="..\kernel\core\runtime_config.h">
       <Filter>Header Files\Core</Filter>
     </ClInclude>
-  </ItemGroup></Project>
-
+  </ItemGroup>
+</Project>

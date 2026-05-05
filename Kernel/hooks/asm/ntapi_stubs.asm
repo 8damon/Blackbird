@@ -2,14 +2,15 @@ OPTION DOTNAME
 OPTION CASEMAP:NONE
 
 EXTERN g_OriginalNtAllocateVirtualMemory:QWORD
-EXTERN BLACKBIRDNtAllocateVirtualMemoryPreLog:PROC
-EXTERN BLACKBIRDNtApiHookExit:PROC
+EXTERN BkntkiNtAllocateVirtualMemoryPreLog:PROC
+EXTERN BkntkiHookEnter:PROC
+EXTERN BkntkiHookExit:PROC
 
-PUBLIC BLACKBIRDNtAllocateVirtualMemoryHookStub
+PUBLIC BkntkiNtAllocateVirtualMemoryHookStub
 
 .code
 
-BLACKBIRDNtAllocateVirtualMemoryHookStub PROC
+BkntkiNtAllocateVirtualMemoryHookStub PROC
     mov r10, qword ptr [rsp+28h]
     mov r11, qword ptr [rsp+30h]
 
@@ -23,6 +24,8 @@ BLACKBIRDNtAllocateVirtualMemoryHookStub PROC
     mov [rsp+0A8h], r10
     mov [rsp+0B0h], r11
 
+    call BkntkiHookEnter
+
     mov rcx, [rsp+88h]
     mov rdx, [rsp+90h]
     mov r8, [rsp+98h]
@@ -31,7 +34,7 @@ BLACKBIRDNtAllocateVirtualMemoryHookStub PROC
     mov r11, [rsp+0B0h]
     mov [rsp+20h], r10
     mov [rsp+28h], r11
-    call BLACKBIRDNtAllocateVirtualMemoryPreLog
+    call BkntkiNtAllocateVirtualMemoryPreLog
 
     mov rax, [rsp+80h]
     mov rcx, [rsp+88h]
@@ -47,7 +50,7 @@ BLACKBIRDNtAllocateVirtualMemoryHookStub PROC
     test r11, r11
     jnz short __bb_jump_to_original
     sub rsp, 28h
-    call BLACKBIRDNtApiHookExit
+    call BkntkiHookExit
     add rsp, 28h
     mov eax, 0C0000001h
     ret
@@ -58,11 +61,10 @@ __bb_jump_to_original:
     mov [rsp+28h], rax
     call r11
     mov [rsp+30h], rax
-    call BLACKBIRDNtApiHookExit
+    call BkntkiHookExit
     mov rax, [rsp+30h]
     add rsp, 38h
     ret
-BLACKBIRDNtAllocateVirtualMemoryHookStub ENDP
+BkntkiNtAllocateVirtualMemoryHookStub ENDP
 
 END
-

@@ -877,7 +877,7 @@ static ULONG DecodeOne(const UCHAR *Bytes, ULONG Available)
 // ---------------------------------------------------------------------------
 
 _Success_(return != 0) ULONG
-    BLACKBIRDx64MinCoverLength(_In_reads_bytes_(MaxBytes) const UCHAR *Code, _In_ ULONG MinBytes, _In_ ULONG MaxBytes)
+    Bkx64MinCoverLength(_In_reads_bytes_(MaxBytes) const UCHAR *Code, _In_ ULONG MinBytes, _In_ ULONG MaxBytes)
 {
     ULONG offset = 0;
     ULONG instrLen;

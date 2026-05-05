@@ -5,31 +5,34 @@
 
 #if defined(_AMD64_)
 
-#define BLACKBIRD_NTAPI_HOOK_TAG 'pAnB'
-#define BLACKBIRD_HOOK_LOG(_level, ...) DbgPrintEx(DPFLTR_IHVDRIVER_ID, (_level), __VA_ARGS__)
-#define BLACKBIRD_SSDT_MAX_SERVICES 8192
+#define BK_NTAPI_HOOK_TAG 'pAnB'
+#define BK_HOOK_LOG(_level, ...)                                \
+    do                                                          \
+    {                                                           \
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, (_level), __VA_ARGS__); \
+    } while (0)
+#define BK_SSDT_MAX_SERVICES 8192
 
-typedef struct _BLACKBIRD_KSERVICE_TABLE_DESCRIPTOR
+typedef struct _BK_KSERVICE_TABLE_DESCRIPTOR
 {
     LONG *ServiceTableBase;
     PVOID ServiceCounterTableBase;
     ULONGLONG NumberOfServices;
     PVOID ParamTableBase;
-} BLACKBIRD_KSERVICE_TABLE_DESCRIPTOR, *PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR;
+} BK_KSERVICE_TABLE_DESCRIPTOR, *PBK_KSERVICE_TABLE_DESCRIPTOR;
 
-typedef struct _BLACKBIRD_NTAPI_PATCH_CONTEXT
+typedef struct _BK_NTAPI_PATCH_CONTEXT
 {
     volatile LONG Applied;
     volatile UCHAR *Destination;
     const UCHAR *Source;
     SIZE_T Size;
-} BLACKBIRD_NTAPI_PATCH_CONTEXT, *PBLACKBIRD_NTAPI_PATCH_CONTEXT;
+} BK_NTAPI_PATCH_CONTEXT, *PBK_NTAPI_PATCH_CONTEXT;
 
-NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_bytes_(Size) const VOID *Source,
-                                           _In_ SIZE_T Size);
+NTSTATUS BkntkhWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_bytes_(Size) const VOID *Source, _In_ SIZE_T Size);
 
-VOID BLACKBIRDNtApiFormatBytes(_In_reads_bytes_(Length) const UCHAR *Bytes, _In_ ULONG Length,
-                               _Out_writes_bytes_(OutputSize) PCHAR Output, _In_ SIZE_T OutputSize)
+VOID BkntkhFormatBytes(_In_reads_bytes_(Length) const UCHAR *Bytes, _In_ ULONG Length,
+                       _Out_writes_bytes_(OutputSize) PCHAR Output, _In_ SIZE_T OutputSize)
 {
     ULONG i;
     SIZE_T offset = 0;
@@ -61,12 +64,12 @@ VOID BLACKBIRDNtApiFormatBytes(_In_reads_bytes_(Length) const UCHAR *Bytes, _In_
     }
 }
 
-static ULONG_PTR BLACKBIRDNtApiBroadcastWrite(_In_ ULONG_PTR Context)
+static ULONG_PTR BkntkhBroadcastWrite(_In_ ULONG_PTR Context)
 {
-    PBLACKBIRD_NTAPI_PATCH_CONTEXT patchContext;
+    PBK_NTAPI_PATCH_CONTEXT patchContext;
     SIZE_T i;
 
-    patchContext = (PBLACKBIRD_NTAPI_PATCH_CONTEXT)Context;
+    patchContext = (PBK_NTAPI_PATCH_CONTEXT)Context;
     if (patchContext == NULL || patchContext->Destination == NULL || patchContext->Source == NULL ||
         patchContext->Size == 0)
     {
@@ -102,7 +105,7 @@ static ULONG_PTR BLACKBIRDNtApiBroadcastWrite(_In_ ULONG_PTR Context)
     return 0;
 }
 
-VOID BLACKBIRDNtApiBuildJump(_Out_writes_(BLACKBIRD_NTAPI_PATCH_SIZE) UCHAR *Patch, _In_ PVOID Destination)
+VOID BkntkhBuildJump(_Out_writes_(BK_NTAPI_PATCH_SIZE) UCHAR *Patch, _In_ PVOID Destination)
 {
     ULONGLONG destination64;
     ULONG displacement = 0;
@@ -114,7 +117,7 @@ VOID BLACKBIRDNtApiBuildJump(_Out_writes_(BLACKBIRD_NTAPI_PATCH_SIZE) UCHAR *Pat
     RtlCopyMemory(&Patch[6], &destination64, sizeof(destination64));
 }
 
-VOID BLACKBIRDNtApiRollbackPatchOnInstallFailure(_Inout_ PBLACKBIRD_NTAPI_HOOK Hook, _In_ ULONG OverwriteLength)
+VOID BkntkhRollbackPatchOnInstallFailure(_Inout_ PBK_NTAPI_HOOK Hook, _In_ ULONG OverwriteLength)
 {
     NTSTATUS rollbackStatus;
 
@@ -123,29 +126,26 @@ VOID BLACKBIRDNtApiRollbackPatchOnInstallFailure(_Inout_ PBLACKBIRD_NTAPI_HOOK H
         return;
     }
 
-    rollbackStatus = BLACKBIRDNtApiWriteReadonlyMemory(Hook->RoutineAddress, Hook->OriginalPatch, OverwriteLength);
+    rollbackStatus = BkntkhWriteReadonlyMemory(Hook->RoutineAddress, Hook->OriginalPatch, OverwriteLength);
     if (!NT_SUCCESS(rollbackStatus))
     {
-        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
-                           "BLACKBIRD: ntapi hook rollback failed api=%s routine=%p status=0x%08X.\n",
-                           (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>",
-                           Hook->RoutineAddress, rollbackStatus);
+        BK_HOOK_LOG(DPFLTR_ERROR_LEVEL, "BK: ntapi hook rollback failed api=%s routine=%p status=0x%08X.\n",
+                    (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>", Hook->RoutineAddress,
+                    rollbackStatus);
     }
     else
     {
-        BLACKBIRD_HOOK_LOG(DPFLTR_INFO_LEVEL, "BLACKBIRD: ntapi hook rollback restored api=%s routine=%p.\n",
-                           (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>",
-                           Hook->RoutineAddress);
+        BK_HOOK_LOG(DPFLTR_INFO_LEVEL, "BK: ntapi hook rollback restored api=%s routine=%p.\n",
+                    (Hook->Descriptor.ApiName != NULL) ? Hook->Descriptor.ApiName : "<null>", Hook->RoutineAddress);
     }
 }
 
-NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_bytes_(Size) const VOID *Source,
-                                           _In_ SIZE_T Size)
+NTSTATUS BkntkhWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_bytes_(Size) const VOID *Source, _In_ SIZE_T Size)
 {
     PMDL mdl;
     PVOID mappedAddress = NULL;
     NTSTATUS status = STATUS_SUCCESS;
-    BLACKBIRD_NTAPI_PATCH_CONTEXT patchContext;
+    BK_NTAPI_PATCH_CONTEXT patchContext;
 
     if (Destination == NULL || Source == NULL || Size == 0 || Size > MAXULONG)
     {
@@ -165,9 +165,8 @@ NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_byt
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
         status = GetExceptionCode();
-        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
-                           "BLACKBIRD: ntapi hook probe/lock failed dst=%p size=%Iu status=0x%08X.\n", Destination,
-                           Size, status);
+        BK_HOOK_LOG(DPFLTR_ERROR_LEVEL, "BK: ntapi hook probe/lock failed dst=%p size=%Iu status=0x%08X.\n",
+                    Destination, Size, status);
     }
 
     if (!NT_SUCCESS(status))
@@ -186,17 +185,15 @@ NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_byt
     if (mappedAddress == NULL)
     {
         status = STATUS_INSUFFICIENT_RESOURCES;
-        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL, "BLACKBIRD: ntapi hook map-locked-pages failed dst=%p size=%Iu.\n",
-                           Destination, Size);
+        BK_HOOK_LOG(DPFLTR_ERROR_LEVEL, "BK: ntapi hook map-locked-pages failed dst=%p size=%Iu.\n", Destination, Size);
         goto Exit;
     }
 
     status = MmProtectMdlSystemAddress(mdl, PAGE_EXECUTE_READWRITE);
     if (!NT_SUCCESS(status))
     {
-        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
-                           "BLACKBIRD: ntapi hook protect-mdl failed dst=%p size=%Iu status=0x%08X.\n", Destination,
-                           Size, status);
+        BK_HOOK_LOG(DPFLTR_ERROR_LEVEL, "BK: ntapi hook protect-mdl failed dst=%p size=%Iu status=0x%08X.\n",
+                    Destination, Size, status);
         goto Exit;
     }
 
@@ -207,14 +204,14 @@ NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_byt
 
     __try
     {
-        KeIpiGenericCall(BLACKBIRDNtApiBroadcastWrite, (ULONG_PTR)&patchContext);
+        KeIpiGenericCall(BkntkhBroadcastWrite, (ULONG_PTR)&patchContext);
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
         status = GetExceptionCode();
-        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
-                           "BLACKBIRD: ntapi hook broadcast copy failed dst=%p mapped=%p size=%Iu status=0x%08X.\n",
-                           Destination, mappedAddress, Size, status);
+        BK_HOOK_LOG(DPFLTR_ERROR_LEVEL,
+                    "BK: ntapi hook broadcast copy failed dst=%p mapped=%p size=%Iu status=0x%08X.\n", Destination,
+                    mappedAddress, Size, status);
     }
     if (!NT_SUCCESS(status))
     {
@@ -223,9 +220,8 @@ NTSTATUS BLACKBIRDNtApiWriteReadonlyMemory(_In_ PVOID Destination, _In_reads_byt
     if (InterlockedCompareExchange(&patchContext.Applied, 0, 0) == 0)
     {
         status = STATUS_UNSUCCESSFUL;
-        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL,
-                           "BLACKBIRD: ntapi hook broadcast copy not applied dst=%p mapped=%p size=%Iu.\n", Destination,
-                           mappedAddress, Size);
+        BK_HOOK_LOG(DPFLTR_ERROR_LEVEL, "BK: ntapi hook broadcast copy not applied dst=%p mapped=%p size=%Iu.\n",
+                    Destination, mappedAddress, Size);
         goto Exit;
     }
     KeMemoryBarrier();
@@ -240,7 +236,7 @@ Exit:
     return status;
 }
 
-PVOID BLACKBIRDNtApiResolveAddress(_In_ PCWSTR Name0, _In_opt_ PCWSTR Name1, _In_opt_ PCWSTR Name2)
+PVOID BkntkhResolveAddress(_In_ PCWSTR Name0, _In_opt_ PCWSTR Name1, _In_opt_ PCWSTR Name2)
 {
     UNICODE_STRING us;
     PVOID address = NULL;
@@ -272,8 +268,8 @@ PVOID BLACKBIRDNtApiResolveAddress(_In_ PCWSTR Name0, _In_opt_ PCWSTR Name1, _In
     return address;
 }
 
-static BOOLEAN BLACKBIRDNtApiAddressMatchesSignature(_In_ PVOID Address, _In_reads_bytes_(Size) const UCHAR *Signature,
-                                                     _In_ ULONG Size)
+static BOOLEAN BkntkhAddressMatchesSignature(_In_ PVOID Address, _In_reads_bytes_(Size) const UCHAR *Signature,
+                                             _In_ ULONG Size)
 {
     ULONG i;
     volatile const UCHAR *bytes;
@@ -302,7 +298,7 @@ static BOOLEAN BLACKBIRDNtApiAddressMatchesSignature(_In_ PVOID Address, _In_rea
     return TRUE;
 }
 
-static PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR BLACKBIRDNtApiResolveServiceDescriptor(VOID)
+static PBK_KSERVICE_TABLE_DESCRIPTOR BkntkhResolveServiceDescriptor(VOID)
 {
     UNICODE_STRING name;
     PVOID address;
@@ -311,22 +307,22 @@ static PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR BLACKBIRDNtApiResolveServiceDescript
     address = MmGetSystemRoutineAddress(&name);
     if (address != NULL)
     {
-        return (PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR)address;
+        return (PBK_KSERVICE_TABLE_DESCRIPTOR)address;
     }
 
     RtlInitUnicodeString(&name, L"KeServiceDescriptorTableShadow");
     address = MmGetSystemRoutineAddress(&name);
     if (address != NULL)
     {
-        return (PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR)address;
+        return (PBK_KSERVICE_TABLE_DESCRIPTOR)address;
     }
 
     return NULL;
 }
 
-static BOOLEAN BLACKBIRDNtApiIsLikelyDescriptor(_In_ PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR Candidate)
+static BOOLEAN BkntkhIsLikelyDescriptor(_In_ PBK_KSERVICE_TABLE_DESCRIPTOR Candidate)
 {
-    PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR d = Candidate;
+    PBK_KSERVICE_TABLE_DESCRIPTOR d = Candidate;
     LONG *table;
     ULONGLONG count;
     LONG firstEntry;
@@ -346,7 +342,7 @@ static BOOLEAN BLACKBIRDNtApiIsLikelyDescriptor(_In_ PBLACKBIRD_KSERVICE_TABLE_D
         return FALSE;
     }
 
-    if (table == NULL || count == 0 || count > BLACKBIRD_SSDT_MAX_SERVICES)
+    if (table == NULL || count == 0 || count > BK_SSDT_MAX_SERVICES)
     {
         return FALSE;
     }
@@ -368,7 +364,7 @@ static BOOLEAN BLACKBIRDNtApiIsLikelyDescriptor(_In_ PBLACKBIRD_KSERVICE_TABLE_D
     return TRUE;
 }
 
-static PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR BLACKBIRDNtApiResolveServiceDescriptorFromLstar(VOID)
+static PBK_KSERVICE_TABLE_DESCRIPTOR BkntkhResolveServiceDescriptorFromLstar(VOID)
 {
     ULONGLONG lstar;
     PUCHAR entry;
@@ -386,7 +382,7 @@ static PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR BLACKBIRDNtApiResolveServiceDescript
     {
         LONG disp;
         PUCHAR instr;
-        PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR candidate;
+        PBK_KSERVICE_TABLE_DESCRIPTOR candidate;
         BOOLEAN isLeaRip;
 
         instr = entry + i;
@@ -400,30 +396,30 @@ static PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR BLACKBIRDNtApiResolveServiceDescript
             }
 
             disp = *(LONG *)&instr[3];
-            candidate = (PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR)(instr + 7 + disp);
+            candidate = (PBK_KSERVICE_TABLE_DESCRIPTOR)(instr + 7 + disp);
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
             continue;
         }
 
-        if (!BLACKBIRDNtApiIsLikelyDescriptor(candidate))
+        if (!BkntkhIsLikelyDescriptor(candidate))
         {
             continue;
         }
 
-        BLACKBIRD_HOOK_LOG(DPFLTR_INFO_LEVEL,
-                           "BLACKBIRD: ntapi hook ssdt descriptor via lstar entry=%p candidate=%p scanOffset=0x%lX.\n",
-                           entry, candidate, i);
+        BK_HOOK_LOG(DPFLTR_INFO_LEVEL,
+                    "BK: ntapi hook ssdt descriptor via lstar entry=%p candidate=%p scanOffset=0x%lX.\n", entry,
+                    candidate, i);
         return candidate;
     }
 
     return NULL;
 }
 
-PVOID BLACKBIRDNtApiResolveViaSsdtSignature(_In_ const BLACKBIRD_NTAPI_HOOK_DESCRIPTOR *Descriptor)
+PVOID BkntkhResolveViaSsdtSignature(_In_ const BK_NTAPI_HOOK_DESCRIPTOR *Descriptor)
 {
-    PBLACKBIRD_KSERVICE_TABLE_DESCRIPTOR descriptor;
+    PBK_KSERVICE_TABLE_DESCRIPTOR descriptor;
     LONG *table;
     ULONG serviceCount;
     ULONG i;
@@ -436,28 +432,28 @@ PVOID BLACKBIRDNtApiResolveViaSsdtSignature(_In_ const BLACKBIRD_NTAPI_HOOK_DESC
         return NULL;
     }
 
-    descriptor = BLACKBIRDNtApiResolveServiceDescriptor();
+    descriptor = BkntkhResolveServiceDescriptor();
     if (descriptor == NULL)
     {
-        descriptor = BLACKBIRDNtApiResolveServiceDescriptorFromLstar();
+        descriptor = BkntkhResolveServiceDescriptorFromLstar();
     }
     if (descriptor == NULL)
     {
-        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL, "BLACKBIRD: ntapi hook ssdt descriptor not resolved api=%s.\n",
-                           (Descriptor->ApiName != NULL) ? Descriptor->ApiName : "<null>");
+        BK_HOOK_LOG(DPFLTR_ERROR_LEVEL, "BK: ntapi hook ssdt descriptor not resolved api=%s.\n",
+                    (Descriptor->ApiName != NULL) ? Descriptor->ApiName : "<null>");
         return NULL;
     }
     table = descriptor->ServiceTableBase;
     if (table == NULL || descriptor->NumberOfServices == 0)
     {
-        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL, "BLACKBIRD: ntapi hook ssdt invalid table api=%s table=%p count=%llu.\n",
-                           (Descriptor->ApiName != NULL) ? Descriptor->ApiName : "<null>", table,
-                           descriptor->NumberOfServices);
+        BK_HOOK_LOG(DPFLTR_ERROR_LEVEL, "BK: ntapi hook ssdt invalid table api=%s table=%p count=%llu.\n",
+                    (Descriptor->ApiName != NULL) ? Descriptor->ApiName : "<null>", table,
+                    descriptor->NumberOfServices);
         return NULL;
     }
 
-    serviceCount = (descriptor->NumberOfServices > BLACKBIRD_SSDT_MAX_SERVICES) ? BLACKBIRD_SSDT_MAX_SERVICES
-                                                                                : (ULONG)descriptor->NumberOfServices;
+    serviceCount = (descriptor->NumberOfServices > BK_SSDT_MAX_SERVICES) ? BK_SSDT_MAX_SERVICES
+                                                                         : (ULONG)descriptor->NumberOfServices;
     for (i = 0; i < serviceCount; ++i)
     {
         LONG entry;
@@ -474,8 +470,8 @@ PVOID BLACKBIRDNtApiResolveViaSsdtSignature(_In_ const BLACKBIRD_NTAPI_HOOK_DESC
         }
 
         candidate = (PUCHAR)table + (((LONG_PTR)entry) >> 4);
-        matched = BLACKBIRDNtApiAddressMatchesSignature(candidate, Descriptor->FallbackSignature,
-                                                        Descriptor->FallbackSignatureSize);
+        matched =
+            BkntkhAddressMatchesSignature(candidate, Descriptor->FallbackSignature, Descriptor->FallbackSignatureSize);
         if (!matched)
         {
             continue;
@@ -490,15 +486,14 @@ PVOID BLACKBIRDNtApiResolveViaSsdtSignature(_In_ const BLACKBIRD_NTAPI_HOOK_DESC
 
     if (firstMatch == NULL)
     {
-        BLACKBIRD_HOOK_LOG(DPFLTR_ERROR_LEVEL, "BLACKBIRD: ntapi hook ssdt signature match failed api=%s siglen=%lu.\n",
-                           (Descriptor->ApiName != NULL) ? Descriptor->ApiName : "<null>",
-                           Descriptor->FallbackSignatureSize);
+        BK_HOOK_LOG(DPFLTR_ERROR_LEVEL, "BK: ntapi hook ssdt signature match failed api=%s siglen=%lu.\n",
+                    (Descriptor->ApiName != NULL) ? Descriptor->ApiName : "<null>", Descriptor->FallbackSignatureSize);
         return NULL;
     }
 
-    BLACKBIRD_HOOK_LOG((matchCount == 1) ? DPFLTR_INFO_LEVEL : DPFLTR_WARNING_LEVEL,
-                       "BLACKBIRD: ntapi hook ssdt signature resolved api=%s address=%p matches=%lu.\n",
-                       (Descriptor->ApiName != NULL) ? Descriptor->ApiName : "<null>", firstMatch, matchCount);
+    BK_HOOK_LOG((matchCount == 1) ? DPFLTR_INFO_LEVEL : DPFLTR_WARNING_LEVEL,
+                "BK: ntapi hook ssdt signature resolved api=%s address=%p matches=%lu.\n",
+                (Descriptor->ApiName != NULL) ? Descriptor->ApiName : "<null>", firstMatch, matchCount);
     return firstMatch;
 }
 

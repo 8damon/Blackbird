@@ -879,7 +879,7 @@ foreach ($line in $remaining) {
                 $skip = $true
                 break
             }
-        } elseif ($normalized.Contains($candidate, [System.StringComparison]::OrdinalIgnoreCase)) {
+        } elseif ($normalized.IndexOf($candidate, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
             $skip = $true
             break
         }

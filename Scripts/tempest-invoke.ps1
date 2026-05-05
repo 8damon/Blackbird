@@ -3,7 +3,11 @@ param(
     [string]$ControllerName = "BlackbirdController",
     [string]$DriverSys = "",
     [string]$ControllerExe = "",
+    [string]$NetSvcExe = "",
+    [string]$PreviewHostExe = "",
+    [string]$RunnerExe = "",
     [string]$SensorCoreDll = "",
+    [string]$HookDll = "",
     [string]$InstanceName = "Blackbird Default",
     [string]$InstanceAltitude = "385000.424244",
     [uint32]$InstanceFlags = 0,
@@ -91,7 +95,8 @@ function Resolve-ArtifactPath {
         [Parameter(Mandatory = $true)]
         [string[]]$FallbackPaths,
         [Parameter(Mandatory = $true)]
-        [string]$Label
+        [string]$Label,
+        [switch]$Optional
     )
 
     $candidates = @($PreferredPath) + $FallbackPaths
@@ -114,7 +119,41 @@ function Resolve-ArtifactPath {
         }
     }
 
+    if ($Optional) {
+        Write-InfoLog "Optional $Label not found. Continuing without it."
+        return $null
+    }
+
     throw "$Label not found. Tried: $($candidates -join ', ')"
+}
+
+function Resolve-SiblingArtifactPath {
+    param(
+        [string]$SiblingOf = "",
+        [Parameter(Mandatory = $true)]
+        [string]$FileName,
+        [Parameter(Mandatory = $true)]
+        [string]$Label
+    )
+
+    if ([string]::IsNullOrWhiteSpace($SiblingOf)) {
+        return $null
+    }
+
+    $parent = Split-Path -Parent $SiblingOf
+    if ([string]::IsNullOrWhiteSpace($parent)) {
+        return $null
+    }
+
+    $candidate = Join-Path $parent $FileName
+    Write-VerboseLog "Trying $Label sibling candidate: $candidate"
+    $resolved = Resolve-Path -LiteralPath $candidate -ErrorAction SilentlyContinue
+    if ($null -ne $resolved) {
+        Write-InfoLog "Resolved $Label to $($resolved.Path)"
+        return $resolved.Path
+    }
+
+    return $null
 }
 
 function Invoke-Sc {
@@ -288,7 +327,9 @@ function Set-DriverRuntimeDefaults {
         [Parameter(Mandatory = $true)]
         [bool]$EnableAntiVirtualization,
         [Parameter(Mandatory = $true)]
-        [bool]$EnableSelfHide
+        [bool]$EnableSelfHide,
+        [Parameter(Mandatory = $true)]
+        [bool]$EnableControllerProtectedAccess
     )
 
     $serviceKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
@@ -303,8 +344,9 @@ function Set-DriverRuntimeDefaults {
 
     New-ItemProperty -Path $parametersKey -Name "EnableAntiVirtualization" -PropertyType DWord -Value ([int]$EnableAntiVirtualization) -Force | Out-Null
     New-ItemProperty -Path $parametersKey -Name "EnableSelfHide" -PropertyType DWord -Value ([int]$EnableSelfHide) -Force | Out-Null
+    New-ItemProperty -Path $parametersKey -Name "EnableControllerProtectedAccess" -PropertyType DWord -Value ([int]$EnableControllerProtectedAccess) -Force | Out-Null
     New-ItemProperty -Path $parametersKey -Name "DebugMode" -PropertyType DWord -Value 1 -Force | Out-Null
-    Write-DebugLog ("Driver runtime: av={0} hide={1} DebugMode=1" -f ([int]$EnableAntiVirtualization), ([int]$EnableSelfHide))
+    Write-DebugLog ("Driver runtime: av={0} hide={1} ctrl-protect={2} DebugMode=1" -f ([int]$EnableAntiVirtualization), ([int]$EnableSelfHide), ([int]$EnableControllerProtectedAccess))
 }
 
 function Get-ServicesUsingMinifilterAltitude {
@@ -604,6 +646,74 @@ $controllerSrc = Resolve-ArtifactPath `
     ) `
     -Label "Controller .exe"
 
+$netSvcSrc = Resolve-ArtifactPath `
+    -PreferredPath $NetSvcExe `
+    -FallbackPaths @(
+        "Lib\NetworkServiceLayer\target\release\BlackbirdNetSvc.exe",
+        "Lib\NetworkServiceLayer\target\debug\BlackbirdNetSvc.exe",
+        "x64\Release\BlackbirdNetSvc.exe",
+        "vcxproj\x64\Release\BlackbirdNetSvc.exe",
+        "x64\TEMPUS_DEBUG\BlackbirdNetSvc.exe",
+        "vcxproj\x64\TEMPUS_DEBUG\BlackbirdNetSvc.exe",
+        "x64\Debug\BlackbirdNetSvc.exe",
+        "vcxproj\x64\Debug\BlackbirdNetSvc.exe",
+        "BlackbirdNetSvc.exe"
+    ) `
+    -Label "Network service .exe" `
+    -Optional
+
+$previewHostPreferred = $PreviewHostExe
+if ([string]::IsNullOrWhiteSpace($previewHostPreferred)) {
+    $previewHostPreferred = Resolve-SiblingArtifactPath `
+        -SiblingOf $netSvcSrc `
+        -FileName "BlackbirdPreviewHost.exe" `
+        -Label "Preview host .exe"
+}
+
+$previewHostSrc = Resolve-ArtifactPath `
+    -PreferredPath $previewHostPreferred `
+    -FallbackPaths @(
+        "Lib\NetworkServiceLayer\target\release\BlackbirdPreviewHost.exe",
+        "Lib\NetworkServiceLayer\target\debug\BlackbirdPreviewHost.exe",
+        "x64\Release\BlackbirdPreviewHost.exe",
+        "vcxproj\x64\Release\BlackbirdPreviewHost.exe",
+        "x64\TEMPUS_DEBUG\BlackbirdPreviewHost.exe",
+        "vcxproj\x64\TEMPUS_DEBUG\BlackbirdPreviewHost.exe",
+        "x64\Debug\BlackbirdPreviewHost.exe",
+        "vcxproj\x64\Debug\BlackbirdPreviewHost.exe",
+        "BlackbirdPreviewHost.exe"
+    ) `
+    -Label "Preview host .exe" `
+    -Optional
+
+if (-not $previewHostSrc) {
+    $previewHostSrc = Resolve-SiblingArtifactPath `
+        -SiblingOf $netSvcSrc `
+        -FileName "BlackbirdPreviewHost.exe" `
+        -Label "Preview host .exe"
+}
+
+$runnerSrc = Resolve-ArtifactPath `
+    -PreferredPath $RunnerExe `
+    -FallbackPaths @(
+        "x64\Debug\BlackbirdRunner.exe",
+        "vcxproj\x64\Debug\BlackbirdRunner.exe",
+        "x64\Debug\net9.0-windows\BlackbirdRunner.exe",
+        "x64\TEMPUS_DEBUG\BlackbirdRunner.exe",
+        "vcxproj\x64\TEMPUS_DEBUG\BlackbirdRunner.exe",
+        "x64\TEMPUS_DEBUG\net9.0-windows\BlackbirdRunner.exe",
+        "x64\Release\BlackbirdRunner.exe",
+        "vcxproj\x64\Release\BlackbirdRunner.exe",
+        "x64\Release\net9.0-windows\BlackbirdRunner.exe",
+        "BlackbirdRunner.exe"
+    ) `
+    -Label "Runner .exe" `
+    -Optional
+
+if ($netSvcSrc -and -not $previewHostSrc) {
+    throw "Network service build was found, but BlackbirdPreviewHost.exe was not. Build/copy the preview host next to BlackbirdNetSvc.exe before installing."
+}
+
 $sensorCoreSrc = Resolve-ArtifactPath `
     -PreferredPath $SensorCoreDll `
     -FallbackPaths @(
@@ -617,14 +727,50 @@ $sensorCoreSrc = Resolve-ArtifactPath `
     ) `
     -Label "SensorCore .dll"
 
+$hookDllSrc = Resolve-ArtifactPath `
+    -PreferredPath $HookDll `
+    -FallbackPaths @(
+        "vcxproj\x64\Debug\SR71.dll",
+        "vcxproj\x64\TEMPUS_DEBUG\SR71.dll",
+        "vcxproj\x64\Release\SR71.dll",
+        "UserMode\hook\vcxproj\x64\Debug\SR71.dll",
+        "UserMode\hook\vcxproj\x64\TEMPUS_DEBUG\SR71.dll",
+        "UserMode\hook\vcxproj\x64\Release\SR71.dll",
+        "x64\Debug\SR71.dll",
+        "x64\TEMPUS_DEBUG\SR71.dll",
+        "x64\Release\SR71.dll",
+        "SR71.dll"
+    ) `
+    -Label "SR71 hook .dll"
+
 $driverDst = Join-Path $env:windir "System32\drivers\blackbird.sys"
 $controllerDir = Join-Path $env:ProgramFiles "Blackbird"
 $controllerDst = Join-Path $controllerDir "BlackbirdController.exe"
+$netSvcDst = Join-Path $controllerDir "BlackbirdNetSvc.exe"
+$previewHostDst = Join-Path $controllerDir "BlackbirdPreviewHost.exe"
+$runnerDst = Join-Path $controllerDir "BlackbirdRunner.exe"
 $sensorCoreDst = Join-Path $controllerDir "J58.dll"
+$hookDllDst = Join-Path $controllerDir "SR71.dll"
 
 Write-DebugLog "Driver source:     $driverSrc"
 Write-DebugLog "Controller source: $controllerSrc"
+if ($netSvcSrc) {
+    Write-DebugLog "NetSvc source:     $netSvcSrc"
+} else {
+    Write-DebugLog "NetSvc source:     optional component absent"
+}
+if ($previewHostSrc) {
+    Write-DebugLog "PreviewHost source: $previewHostSrc"
+} else {
+    Write-DebugLog "PreviewHost source: optional component absent"
+}
+if ($runnerSrc) {
+    Write-DebugLog "Runner source:     $runnerSrc"
+} else {
+    Write-DebugLog "Runner source:     optional component absent"
+}
 Write-DebugLog "SensorCore source: $sensorCoreSrc"
+Write-DebugLog "SR71 source:       $hookDllSrc"
 
 # Stage 3 — copy binaries
 Write-Stage -Index 3 -Total $totalStages -Activity $activity -Status "Stopping services and copying binaries"
@@ -646,8 +792,20 @@ if (-not (Wait-UntilFileUnlocked -Path $driverDst -TimeoutSeconds 20)) {
 if (-not (Wait-UntilFileUnlocked -Path $controllerDst -TimeoutSeconds 20)) {
     throw "$controllerDst is still locked. Kill any running BlackbirdController process then rerun."
 }
+if ($netSvcSrc -and -not (Wait-UntilFileUnlocked -Path $netSvcDst -TimeoutSeconds 20)) {
+    throw "$netSvcDst is still locked. Kill any running BlackbirdNetSvc process then rerun."
+}
+if ($previewHostSrc -and -not (Wait-UntilFileUnlocked -Path $previewHostDst -TimeoutSeconds 20)) {
+    throw "$previewHostDst is still locked. Kill any running BlackbirdPreviewHost process then rerun."
+}
+if ($runnerSrc -and -not (Wait-UntilFileUnlocked -Path $runnerDst -TimeoutSeconds 20)) {
+    throw "$runnerDst is still locked. Kill any running BlackbirdRunner process then rerun."
+}
 if (-not (Wait-UntilFileUnlocked -Path $sensorCoreDst -TimeoutSeconds 20)) {
     throw "$sensorCoreDst is still locked. Kill any running BlackbirdController process then rerun."
+}
+if (-not (Wait-UntilFileUnlocked -Path $hookDllDst -TimeoutSeconds 20)) {
+    throw "$hookDllDst is still locked. Kill any running target using SR71 then rerun."
 }
 
 New-Item -ItemType Directory -Path $controllerDir -Force | Out-Null
@@ -655,12 +813,42 @@ Write-InfoLog "Copying driver:     $driverSrc -> $driverDst"
 Copy-Item -LiteralPath $driverSrc -Destination $driverDst -Force
 Write-InfoLog "Copying controller: $controllerSrc -> $controllerDst"
 Copy-Item -LiteralPath $controllerSrc -Destination $controllerDst -Force
+if ($netSvcSrc) {
+    Write-InfoLog "Copying NetSvc:     $netSvcSrc -> $netSvcDst"
+    Copy-Item -LiteralPath $netSvcSrc -Destination $netSvcDst -Force
+} else {
+    Write-InfoLog "Skipping optional NetSvc copy"
+}
+if ($previewHostSrc) {
+    Write-InfoLog "Copying PreviewHost: $previewHostSrc -> $previewHostDst"
+    Copy-Item -LiteralPath $previewHostSrc -Destination $previewHostDst -Force
+} else {
+    Write-InfoLog "Skipping optional PreviewHost copy"
+}
+if ($runnerSrc) {
+    Write-InfoLog "Copying Runner:     $runnerSrc -> $runnerDst"
+    Copy-Item -LiteralPath $runnerSrc -Destination $runnerDst -Force
+} else {
+    Write-InfoLog "Skipping optional Runner copy"
+}
 Write-InfoLog "Copying SensorCore: $sensorCoreSrc -> $sensorCoreDst"
 Copy-Item -LiteralPath $sensorCoreSrc -Destination $sensorCoreDst -Force
+Write-InfoLog "Copying SR71:       $hookDllSrc -> $hookDllDst"
+Copy-Item -LiteralPath $hookDllSrc -Destination $hookDllDst -Force
 
 Assert-PathExists -Path $driverDst -Label "Installed driver"
 Assert-PathExists -Path $controllerDst -Label "Installed controller"
+if ($netSvcSrc) {
+    Assert-PathExists -Path $netSvcDst -Label "Installed network service"
+}
+if ($previewHostSrc) {
+    Assert-PathExists -Path $previewHostDst -Label "Installed preview host"
+}
+if ($runnerSrc) {
+    Assert-PathExists -Path $runnerDst -Label "Installed runner"
+}
 Assert-PathExists -Path $sensorCoreDst -Label "Installed SensorCore"
+Assert-PathExists -Path $hookDllDst -Label "Installed SR71"
 
 # Stage 4 — altitude conflict check
 Write-Stage -Index 4 -Total $totalStages -Activity $activity -Status "Checking minifilter altitude conflicts"
@@ -693,7 +881,7 @@ Invoke-Sc -Arguments @("qc", $DriverName)
 
 # DebugFlags=1 enables kernel-side debug output paths
 Ensure-MinifilterRegistry -ServiceName $DriverName -InstanceName $InstanceName -Altitude $InstanceAltitude -InstanceFlags $InstanceFlags
-Set-DriverRuntimeDefaults -ServiceName $DriverName -EnableAntiVirtualization $EnableAntiVirtualization.IsPresent -EnableSelfHide $EnableControllerHiding.IsPresent
+Set-DriverRuntimeDefaults -ServiceName $DriverName -EnableAntiVirtualization $EnableAntiVirtualization.IsPresent -EnableSelfHide $EnableControllerHiding.IsPresent -EnableControllerProtectedAccess $true
 
 if (-not (Test-ServiceExists -ServiceName $DriverName)) {
     throw "Driver service '$DriverName' was not created."
@@ -731,7 +919,7 @@ catch {
         if ($unknownRetryConflicts.Count -eq 0) {
             try {
                 Ensure-MinifilterRegistry -ServiceName $DriverName -InstanceName $InstanceName -Altitude $InstanceAltitude -InstanceFlags $InstanceFlags
-                Set-DriverRuntimeDefaults -ServiceName $DriverName -EnableAntiVirtualization $EnableAntiVirtualization.IsPresent -EnableSelfHide $EnableControllerHiding.IsPresent
+                Set-DriverRuntimeDefaults -ServiceName $DriverName -EnableAntiVirtualization $EnableAntiVirtualization.IsPresent -EnableSelfHide $EnableControllerHiding.IsPresent -EnableControllerProtectedAccess $true
                 Invoke-Sc -Arguments @("start", $DriverName)
                 Write-Host "    Driver start succeeded after altitude conflict remediation." -ForegroundColor Green
                 $driverRecovered = $true

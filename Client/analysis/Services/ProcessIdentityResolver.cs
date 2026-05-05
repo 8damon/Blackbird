@@ -36,14 +36,11 @@ namespace BlackbirdInterface
             }
         }
 
-        internal static string Resolve(uint pid)
-            => ResolveIdentity(pid).DisplayName;
+        internal static string Resolve(uint pid) => ResolveIdentity(pid).DisplayName;
 
-        internal static string HoverText(uint pid)
-            => ResolveIdentity(pid).HoverText;
+        internal static string HoverText(uint pid) => ResolveIdentity(pid).HoverText;
 
-        internal static string Describe(uint pid)
-            => Resolve(pid);
+        internal static string Describe(uint pid) => Resolve(pid);
 
         private static ProcessIdentity ResolveIdentity(uint pid)
         {
@@ -58,9 +55,8 @@ namespace BlackbirdInterface
                 return cached;
             }
 
-            ProcessIdentity resolved = ResolveCore(key);
-            IdentityByPid[key] = resolved;
-            return resolved;
+            Prime(pid);
+            return new ProcessIdentity($"pid:{pid}", $"PID {pid} (resolving)");
         }
 
         private static Task[] StartWorkers()
@@ -69,11 +65,8 @@ namespace BlackbirdInterface
             var workers = new Task[workerCount];
             for (int i = 0; i < workers.Length; i += 1)
             {
-                workers[i] = Task.Factory.StartNew(
-                    WorkerLoop,
-                    CancellationToken.None,
-                    TaskCreationOptions.LongRunning,
-                    TaskScheduler.Default);
+                workers[i] = Task.Factory.StartNew(WorkerLoop, CancellationToken.None, TaskCreationOptions.LongRunning,
+                                                   TaskScheduler.Default);
             }
 
             return workers;
@@ -114,4 +107,3 @@ namespace BlackbirdInterface
         }
     }
 }
-

@@ -14,7 +14,7 @@ namespace BlackbirdInterface
         public ChildProcessGraphWindow(int pid)
         {
             InitializeComponent();
-            WindowThemeHelper.ApplyDarkTitleBar(this);
+            WindowThemeHelper.WireThemeAwareTitleBar(this);
             SetTargetPid(pid);
             UpdateGraph(Array.Empty<GroupedEventRow>(), pid);
         }
@@ -35,7 +35,8 @@ namespace BlackbirdInterface
                 CaptureExpandedState(RelationsTree.ItemsSource as IEnumerable<ProcessGraphNodeView>);
             }
 
-            var snapshot = ProcessGraphProjectionBuilder.Build(rows ?? Array.Empty<GroupedEventRow>(), rootPid > 0 ? (uint)rootPid : 0);
+            var snapshot = ProcessGraphProjectionBuilder.Build(rows ?? Array.Empty<GroupedEventRow>(),
+                                                               rootPid > 0 ? (uint)rootPid : 0);
             ApplyExpandedState(snapshot.Roots, isRoot: true);
             RelationsTree.ItemsSource = snapshot.Roots;
             InboundHandlesList.ItemsSource = snapshot.InboundHandles;
@@ -44,12 +45,15 @@ namespace BlackbirdInterface
             SetTargetPid(rootPid);
             LaunchCountBlock.Text = snapshot.LaunchEdges.ToString();
             PivotCountBlock.Text = snapshot.ActionEdges.ToString();
-            ScopeBlock.Text = snapshot.RootPid != 0
-                ? $"Root PID {snapshot.RootPid} with {snapshot.ProcessCount} tracked process node(s), {snapshot.InboundHandles.Count} inbound handle row(s), {snapshot.OutboundHandles.Count} outbound handle row(s)"
-                : "Live descendant and pivot graph";
+            ScopeBlock.Text =
+                snapshot.RootPid != 0
+                    ? $"Root PID {snapshot.RootPid} with {snapshot.ProcessCount} tracked process node(s), {snapshot.InboundHandles.Count} inbound handle row(s), {snapshot.OutboundHandles.Count} outbound handle row(s)"
+                    : "Live descendant and pivot graph";
             NoDataOverlay.Visibility = snapshot.Roots.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            InboundHandlesEmptyBlock.Visibility = snapshot.InboundHandles.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-            OutboundHandlesEmptyBlock.Visibility = snapshot.OutboundHandles.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            InboundHandlesEmptyBlock.Visibility =
+                snapshot.InboundHandles.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            OutboundHandlesEmptyBlock.Visibility =
+                snapshot.OutboundHandles.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
         internal IReadOnlyCollection<string> GetExpandedKeysSnapshot()

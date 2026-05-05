@@ -16,7 +16,7 @@ namespace BlackbirdInterface
         private HandleEvidenceWindow(string context, IoctlParsedEvent evidence)
         {
             InitializeComponent();
-            WindowThemeHelper.ApplyDarkTitleBar(this);
+            WindowThemeHelper.WireThemeAwareTitleBar(this);
 
             Title = string.IsNullOrWhiteSpace(context) ? "Handle Evidence" : $"Handle Evidence - {context}";
             HeaderBlock.Text = string.IsNullOrWhiteSpace(context) ? "Handle Evidence" : context.Trim();
@@ -69,22 +69,14 @@ namespace BlackbirdInterface
         {
             _fieldNodes.Clear();
             string syscallLabel = EventDetailFormatting.BuildDirectSyscallLabel(
-                evidence.DesiredAccess,
-                evidence.HandleFlags,
-                evidence.DeepSample,
-                (int)evidence.DeepSampleSize);
+                evidence.DesiredAccess, evidence.HandleFlags, evidence.DeepSample, (int)evidence.DeepSampleSize);
             string analystSummary = EventDetailFormatting.BuildDirectSyscallSummary(
                 evidence.CallerPid.ToString(CultureInfo.InvariantCulture),
-                evidence.TargetPid.ToString(CultureInfo.InvariantCulture),
-                evidence.DesiredAccess,
-                evidence.HandleFlags,
-                evidence.DeepSample,
-                (int)evidence.DeepSampleSize,
-                evidence.OriginPath);
+                evidence.TargetPid.ToString(CultureInfo.InvariantCulture), evidence.DesiredAccess, evidence.HandleFlags,
+                evidence.DeepSample, (int)evidence.DeepSampleSize, evidence.OriginPath);
             _rawText =
                 $"callerPid={evidence.CallerPid} targetPid={evidence.TargetPid} class={DescribeHandleClass(evidence.HandleClass)}{Environment.NewLine}" +
-                $"syscall={syscallLabel}{Environment.NewLine}" +
-                $"summary={analystSummary}{Environment.NewLine}" +
+                $"syscall={syscallLabel}{Environment.NewLine}" + $"summary={analystSummary}{Environment.NewLine}" +
                 $"desiredAccess=0x{evidence.DesiredAccess:X8} handleFlags=0x{evidence.HandleFlags:X8}{Environment.NewLine}" +
                 $"originAddress=0x{evidence.OriginAddress:X} originProtect=0x{evidence.OriginProtect:X8}{Environment.NewLine}" +
                 $"deepAllocationBase=0x{evidence.DeepAllocationBase:X} deepRegionSize=0x{evidence.DeepRegionSize:X}{Environment.NewLine}" +
@@ -92,12 +84,7 @@ namespace BlackbirdInterface
 
             InspectorFieldNode AddSection(string name, bool expanded = true)
             {
-                var node = new InspectorFieldNode
-                {
-                    Name = name,
-                    Kind = "section",
-                    IsExpanded = expanded
-                };
+                var node = new InspectorFieldNode { Name = name, Kind = "section", IsExpanded = expanded };
                 _fieldNodes.Add(node);
                 return node;
             }
@@ -109,12 +96,7 @@ namespace BlackbirdInterface
                     return;
                 }
 
-                parent.Children.Add(new InspectorFieldNode
-                {
-                    Name = name,
-                    Value = value.Trim(),
-                    Kind = "pair"
-                });
+                parent.Children.Add(new InspectorFieldNode { Name = name, Value = value.Trim(), Kind = "pair" });
             }
 
             static void AddLine(InspectorFieldNode parent, string value, string kind = "line")
@@ -124,11 +106,7 @@ namespace BlackbirdInterface
                     return;
                 }
 
-                parent.Children.Add(new InspectorFieldNode
-                {
-                    Value = value,
-                    Kind = kind
-                });
+                parent.Children.Add(new InspectorFieldNode { Value = value, Kind = kind });
             }
 
             InspectorFieldNode frame = AddSection("Frame");
@@ -139,13 +117,19 @@ namespace BlackbirdInterface
             AddPair(frame, "Syscall", syscallLabel);
             AddPair(frame, "Caller PID", evidence.CallerPid.ToString(CultureInfo.InvariantCulture));
             AddPair(frame, "Target PID", evidence.TargetPid.ToString(CultureInfo.InvariantCulture));
-            AddPair(frame, "Desired Access", $"0x{evidence.DesiredAccess:X8} ({EventDetailFormatting.DescribeHandleAccess(evidence.DesiredAccess)})");
-            AddPair(frame, "Handle Flags", $"0x{evidence.HandleFlags:X8} ({EventDetailFormatting.DescribeHandleFlags(evidence.HandleFlags)})");
-            AddPair(frame, "Capture Flags", $"0x{evidence.CaptureFlags:X8} ({DescribeCaptureFlags(evidence.CaptureFlags)})");
+            AddPair(
+                frame, "Desired Access",
+                $"0x{evidence.DesiredAccess:X8} ({EventDetailFormatting.DescribeHandleAccess(evidence.DesiredAccess)})");
+            AddPair(frame, "Handle Flags",
+                    $"0x{evidence.HandleFlags:X8} ({EventDetailFormatting.DescribeHandleFlags(evidence.HandleFlags)})");
+            AddPair(frame, "Capture Flags",
+                    $"0x{evidence.CaptureFlags:X8} ({DescribeCaptureFlags(evidence.CaptureFlags)})");
 
             InspectorFieldNode origin = AddSection("Origin", false);
             AddPair(origin, "Address", $"0x{evidence.OriginAddress:X}");
-            AddPair(origin, "Protect", $"0x{evidence.OriginProtect:X8} ({EventDetailFormatting.DescribeMemoryProtection(evidence.OriginProtect)})");
+            AddPair(
+                origin, "Protect",
+                $"0x{evidence.OriginProtect:X8} ({EventDetailFormatting.DescribeMemoryProtection(evidence.OriginProtect)})");
             AddPair(origin, "Path", EventDetailsParsing.FallbackText(evidence.OriginPath));
             AddPair(origin, "OpenProcess", $"0x{unchecked((uint)evidence.StatusOpenProcess):X8}");
             AddPair(origin, "BasicInfo", $"0x{unchecked((uint)evidence.StatusBasicInfo):X8}");
@@ -154,9 +138,15 @@ namespace BlackbirdInterface
             InspectorFieldNode region = AddSection("Region", false);
             AddPair(region, "Allocation Base", $"0x{evidence.DeepAllocationBase:X}");
             AddPair(region, "Region Size", $"0x{evidence.DeepRegionSize:X}");
-            AddPair(region, "Protect", $"0x{evidence.DeepRegionProtect:X8} ({EventDetailFormatting.DescribeMemoryProtection(evidence.DeepRegionProtect)})");
-            AddPair(region, "State", $"0x{evidence.DeepRegionState:X8} ({EventDetailFormatting.DescribeMemoryState(evidence.DeepRegionState)})");
-            AddPair(region, "Type", $"0x{evidence.DeepRegionType:X8} ({EventDetailFormatting.DescribeMemoryType(evidence.DeepRegionType)})");
+            AddPair(
+                region, "Protect",
+                $"0x{evidence.DeepRegionProtect:X8} ({EventDetailFormatting.DescribeMemoryProtection(evidence.DeepRegionProtect)})");
+            AddPair(
+                region, "State",
+                $"0x{evidence.DeepRegionState:X8} ({EventDetailFormatting.DescribeMemoryState(evidence.DeepRegionState)})");
+            AddPair(
+                region, "Type",
+                $"0x{evidence.DeepRegionType:X8} ({EventDetailFormatting.DescribeMemoryType(evidence.DeepRegionType)})");
             AddPair(region, "Sample Size", evidence.DeepSampleSize.ToString(CultureInfo.InvariantCulture));
             AddPair(region, "Stack Snapshot Address", $"0x{evidence.StackSnapshotAddress:X}");
             AddPair(region, "Stack Snapshot Size", evidence.StackSnapshotSize.ToString(CultureInfo.InvariantCulture));
@@ -198,24 +188,20 @@ namespace BlackbirdInterface
 
             InspectorFieldNode disassembly = AddSection("Disassembly");
             foreach (string line in SplitLines(EventDetailFormatting.FormatSampleDisassembly(
-                         evidence.DeepSample,
-                         (int)evidence.DeepSampleSize,
-                         evidence.OriginAddress,
-                         evidence.OriginPath,
-                         evidence.DeepAllocationBase,
-                         evidence.DeepRegionSize,
-                         evidence.DeepRegionProtect,
-                         evidence.DeepRegionState,
-                         evidence.DeepRegionType)))
+                         evidence.DeepSample, (int)evidence.DeepSampleSize, evidence.OriginAddress, evidence.OriginPath,
+                         evidence.DeepAllocationBase, evidence.DeepRegionSize, evidence.DeepRegionProtect,
+                         evidence.DeepRegionState, evidence.DeepRegionType)))
             {
-                AddLine(disassembly, line, line.StartsWith("summary:", StringComparison.OrdinalIgnoreCase) ? "note" : "line");
+                AddLine(disassembly, line,
+                        line.StartsWith("summary:", StringComparison.OrdinalIgnoreCase) ? "note" : "line");
             }
 
             InspectorFieldNode snapshot = AddSection("Stack Snapshot", false);
-            foreach (string line in SplitLines(
-                         $"stackSnapshotAddress=0x{evidence.StackSnapshotAddress:X}{Environment.NewLine}" +
-                         $"stackSnapshotSize={evidence.StackSnapshotSize}{Environment.NewLine}" +
-                         $"stackSnapshot={EventDetailFormatting.FormatSampleHex(evidence.StackSnapshot, (int)evidence.StackSnapshotSize)}"))
+            foreach (
+                string line in SplitLines(
+                    $"stackSnapshotAddress=0x{evidence.StackSnapshotAddress:X}{Environment.NewLine}" +
+                    $"stackSnapshotSize={evidence.StackSnapshotSize}{Environment.NewLine}" +
+                    $"stackSnapshot={EventDetailFormatting.FormatSampleHex(evidence.StackSnapshot, (int)evidence.StackSnapshotSize)}"))
             {
                 AddLine(snapshot, line);
             }
@@ -229,12 +215,8 @@ namespace BlackbirdInterface
 
         private static void AddRegister(InspectorFieldNode parent, string name, ulong value)
         {
-            parent.Children.Add(new InspectorFieldNode
-            {
-                Name = name,
-                Value = value == 0 ? "-" : $"0x{value:X}",
-                Kind = "pair"
-            });
+            parent.Children.Add(
+                new InspectorFieldNode { Name = name, Value = value == 0 ? "-" : $"0x{value:X}", Kind = "pair" });
         }
 
         private static void AddFrames(InspectorFieldNode parent, ulong[]? frames, uint count, string label)
@@ -252,12 +234,8 @@ namespace BlackbirdInterface
                     continue;
                 }
 
-                parent.Children.Add(new InspectorFieldNode
-                {
-                    Name = $"{label}[{i}]",
-                    Value = $"0x{frames[i]:X}",
-                    Kind = "pair"
-                });
+                parent.Children.Add(
+                    new InspectorFieldNode { Name = $"{label}[{i}]", Value = $"0x{frames[i]:X}", Kind = "pair" });
             }
         }
 
@@ -277,8 +255,7 @@ namespace BlackbirdInterface
 
         private static string DescribeHandleClass(uint handleClass)
         {
-            return handleClass switch
-            {
+            return handleClass switch {
                 1 => "LEGITIMATE-SYSCALL",
                 2 => "DIRECT-SYSCALL-SUSPECT",
                 _ => $"CLASS-{handleClass}"
@@ -310,25 +287,19 @@ namespace BlackbirdInterface
 
         private static string BuildSummaryText(IoctlParsedEvent evidence)
         {
-            string prefix = $"{DescribeHandleClass(evidence.HandleClass)}  caller={evidence.CallerPid}  target={evidence.TargetPid}";
+            string prefix =
+                $"{DescribeHandleClass(evidence.HandleClass)}  caller={evidence.CallerPid}  target={evidence.TargetPid}";
             if (evidence.HandleClass != 2)
             {
                 return $"{prefix}  access=0x{evidence.DesiredAccess:X8}";
             }
 
             string syscallLabel = EventDetailFormatting.BuildDirectSyscallLabel(
-                evidence.DesiredAccess,
-                evidence.HandleFlags,
-                evidence.DeepSample,
-                (int)evidence.DeepSampleSize);
+                evidence.DesiredAccess, evidence.HandleFlags, evidence.DeepSample, (int)evidence.DeepSampleSize);
             string narrative = EventDetailFormatting.BuildDirectSyscallSummary(
                 evidence.CallerPid.ToString(CultureInfo.InvariantCulture),
-                evidence.TargetPid.ToString(CultureInfo.InvariantCulture),
-                evidence.DesiredAccess,
-                evidence.HandleFlags,
-                evidence.DeepSample,
-                (int)evidence.DeepSampleSize,
-                evidence.OriginPath);
+                evidence.TargetPid.ToString(CultureInfo.InvariantCulture), evidence.DesiredAccess, evidence.HandleFlags,
+                evidence.DeepSample, (int)evidence.DeepSampleSize, evidence.OriginPath);
             return $"{syscallLabel}  {narrative}";
         }
 
@@ -368,12 +339,8 @@ namespace BlackbirdInterface
         private static void AppendFieldNode(StringBuilder sb, InspectorFieldNode node, int depth)
         {
             string indent = new string(' ', depth * 2);
-            string label = node.Kind switch
-            {
-                "section" => node.Name,
-                "pair" => $"{node.Name}: {node.Value}",
-                _ => node.Value
-            };
+            string label = node.Kind switch { "section" => node.Name, "pair" => $"{node.Name}: {node.Value}",
+                                              _ => node.Value };
 
             sb.Append(indent).AppendLine(label);
             foreach (InspectorFieldNode child in node.Children)
@@ -392,4 +359,3 @@ namespace BlackbirdInterface
         }
     }
 }
-

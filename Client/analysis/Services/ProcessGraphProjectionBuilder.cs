@@ -326,7 +326,7 @@ namespace BlackbirdInterface
             string title = inbound ? $"Inbound handle from {other}"
                                    : $"{(edge.IsSr71Handle ? "SR71" : "Target")} opens handle to {other}";
             string relation = inbound ? "another process -> target" : "target -> another process";
-            string owner = edge.IsSr71Handle ? "SR71 instrumentation" : "target process";
+            string owner = edge.IsSr71Handle ? "BK Instrumentation" : "target process";
             string via = !string.IsNullOrWhiteSpace(edge.OriginModule) &&
                                  !string.Equals(edge.OriginModule, "unknown", StringComparison.OrdinalIgnoreCase)
                              ? $" via {edge.OriginModule}"

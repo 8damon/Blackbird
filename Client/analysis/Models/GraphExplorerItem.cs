@@ -23,9 +23,9 @@ namespace BlackbirdInterface
         public bool IsEnabled
         {
             get => _isEnabled;
-            set
-            {
-                if (_isEnabled == value) return;
+            set {
+                if (_isEnabled == value)
+                    return;
                 _isEnabled = value;
                 OnPropertyChanged();
             }
@@ -34,9 +34,9 @@ namespace BlackbirdInterface
         public bool HasData
         {
             get => _hasData;
-            set
-            {
-                if (_hasData == value) return;
+            set {
+                if (_hasData == value)
+                    return;
                 _hasData = value;
                 OnPropertyChanged();
             }
@@ -45,9 +45,9 @@ namespace BlackbirdInterface
         public bool ShowDetails
         {
             get => _showDetails;
-            set
-            {
-                if (_showDetails == value) return;
+            set {
+                if (_showDetails == value)
+                    return;
                 _showDetails = value;
                 OnPropertyChanged();
             }
@@ -56,9 +56,9 @@ namespace BlackbirdInterface
         public string DetailPrimary
         {
             get => _detailPrimary;
-            set
-            {
-                if (string.Equals(_detailPrimary, value, StringComparison.Ordinal)) return;
+            set {
+                if (string.Equals(_detailPrimary, value, StringComparison.Ordinal))
+                    return;
                 _detailPrimary = value;
                 OnPropertyChanged();
             }
@@ -67,9 +67,9 @@ namespace BlackbirdInterface
         public string DetailSecondary
         {
             get => _detailSecondary;
-            set
-            {
-                if (string.Equals(_detailSecondary, value, StringComparison.Ordinal)) return;
+            set {
+                if (string.Equals(_detailSecondary, value, StringComparison.Ordinal))
+                    return;
                 _detailSecondary = value;
                 OnPropertyChanged();
             }
@@ -96,9 +96,7 @@ namespace BlackbirdInterface
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
-        private void OnPropertyChanged([CallerMemberName] string? prop = null)
-            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(prop));
+        private void OnPropertyChanged([CallerMemberName] string? prop = null) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(prop));
     }
 }
-
-

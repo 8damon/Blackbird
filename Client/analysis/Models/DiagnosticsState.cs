@@ -53,10 +53,7 @@ namespace BlackbirdInterface
         {
             lock (Sync)
             {
-                var lines = new List<string>
-                {
-                    $"State Snapshot UTC {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}"
-                };
+                var lines = new List<string> { $"State Snapshot UTC {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}" };
 
                 foreach (var pair in Values.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
                 {
@@ -87,5 +84,3 @@ namespace BlackbirdInterface
         }
     }
 }
-
-

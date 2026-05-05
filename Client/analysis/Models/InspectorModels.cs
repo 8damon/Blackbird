@@ -31,8 +31,7 @@ namespace BlackbirdInterface
         public bool IsExpanded
         {
             get => _isExpanded;
-            set
-            {
+            set {
                 if (_isExpanded == value)
                 {
                     return;
@@ -58,5 +57,3 @@ namespace BlackbirdInterface
         public string Notes { get; set; } = string.Empty;
     }
 }
-
-

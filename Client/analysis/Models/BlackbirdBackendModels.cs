@@ -94,91 +94,142 @@ namespace BlackbirdInterface
         public uint FileFlags { get; set; }
         public string FilePath { get; set; } = "";
 
+        public uint RegistryProcessPid { get; set; }
+        public uint RegistryThreadId { get; set; }
+        public uint RegistryOperation { get; set; }
+        public uint RegistryNotifyClass { get; set; }
+        public uint RegistryDataType { get; set; }
+        public uint RegistryDataSize { get; set; }
+        public uint RegistryFlags { get; set; }
+        public uint RegistrySessionId { get; set; }
+        public string RegistryKeyPath { get; set; } = "";
+        public string RegistryValueName { get; set; } = "";
+
+        public uint EnterpriseProcessPid { get; set; }
+        public uint EnterpriseThreadId { get; set; }
+        public uint EnterpriseTargetProcessPid { get; set; }
+        public uint EnterpriseTargetThreadId { get; set; }
+        public ulong EnterpriseObjectAddress { get; set; }
+        public ulong EnterpriseAux0 { get; set; }
+        public ulong EnterpriseAux1 { get; set; }
+        public uint EnterpriseOperation { get; set; }
+        public uint EnterpriseSubOperation { get; set; }
+        public uint EnterpriseFlags { get; set; }
+        public uint EnterpriseDesiredAccess { get; set; }
+        public uint EnterpriseGrantedAccess { get; set; }
+        public uint EnterpriseStatus { get; set; }
+        public uint EnterpriseProtocol { get; set; }
+        public uint EnterpriseLocalPort { get; set; }
+        public uint EnterpriseRemotePort { get; set; }
+
         public IoctlParsedEvent Clone()
         {
-            return new IoctlParsedEvent
-            {
-                Type = Type,
-                Sequence = Sequence,
-                StreamMask = StreamMask,
-                CallerPid = CallerPid,
-                TargetPid = TargetPid,
-                DesiredAccess = DesiredAccess,
-                HandleClass = HandleClass,
-                HandleFlags = HandleFlags,
-                OriginAddress = OriginAddress,
-                OriginProtect = OriginProtect,
-                FrameCount = FrameCount,
-                Frames = Frames.ToArray(),
-                StatusOpenProcess = StatusOpenProcess,
-                StatusBasicInfo = StatusBasicInfo,
-                StatusSectionName = StatusSectionName,
-                DeepAllocationBase = DeepAllocationBase,
-                DeepRegionSize = DeepRegionSize,
-                DeepRegionProtect = DeepRegionProtect,
-                DeepRegionState = DeepRegionState,
-                DeepRegionType = DeepRegionType,
-                DeepSampleSize = DeepSampleSize,
-                DeepSample = DeepSample.ToArray(),
-                OriginPath = OriginPath,
-                CaptureFlags = CaptureFlags,
-                FullFrameCount = FullFrameCount,
-                FullFrames = FullFrames.ToArray(),
-                RegRax = RegRax,
-                RegRbx = RegRbx,
-                RegRcx = RegRcx,
-                RegRdx = RegRdx,
-                RegRsi = RegRsi,
-                RegRdi = RegRdi,
-                RegRbp = RegRbp,
-                RegRsp = RegRsp,
-                RegR8 = RegR8,
-                RegR9 = RegR9,
-                RegR10 = RegR10,
-                RegR11 = RegR11,
-                RegR12 = RegR12,
-                RegR13 = RegR13,
-                RegR14 = RegR14,
-                RegR15 = RegR15,
-                RegRip = RegRip,
-                RegEFlags = RegEFlags,
-                RegDr0 = RegDr0,
-                RegDr1 = RegDr1,
-                RegDr2 = RegDr2,
-                RegDr3 = RegDr3,
-                RegDr6 = RegDr6,
-                RegDr7 = RegDr7,
-                StackSnapshotAddress = StackSnapshotAddress,
-                StackSnapshotSize = StackSnapshotSize,
-                StackSnapshot = StackSnapshot.ToArray(),
-                ProcessPid = ProcessPid,
-                ThreadId = ThreadId,
-                CreatorPid = CreatorPid,
-                ThreadFlags = ThreadFlags,
-                StartAddress = StartAddress,
-                ImageBase = ImageBase,
-                ImageSize = ImageSize,
-                ThreadFrameCount = ThreadFrameCount,
-                ThreadFrames = ThreadFrames.ToArray(),
-                FileProcessPid = FileProcessPid,
-                FileThreadId = FileThreadId,
-                FileObject = FileObject,
-                FileId = FileId,
-                FileByteOffset = FileByteOffset,
-                FileLength = FileLength,
-                FileStatus = FileStatus,
-                FileInformation = FileInformation,
-                FileOperation = FileOperation,
-                FileMajorCode = FileMajorCode,
-                FileMinorCode = FileMinorCode,
-                FileIrpFlags = FileIrpFlags,
-                FileCreateOptions = FileCreateOptions,
-                FileCreateDisposition = FileCreateDisposition,
-                FileDesiredAccess = FileDesiredAccess,
-                FileShareAccess = FileShareAccess,
-                FileFlags = FileFlags,
-                FilePath = FilePath
-            };
+            return new IoctlParsedEvent { Type = Type,
+                                          Sequence = Sequence,
+                                          StreamMask = StreamMask,
+                                          CallerPid = CallerPid,
+                                          TargetPid = TargetPid,
+                                          DesiredAccess = DesiredAccess,
+                                          HandleClass = HandleClass,
+                                          HandleFlags = HandleFlags,
+                                          OriginAddress = OriginAddress,
+                                          OriginProtect = OriginProtect,
+                                          FrameCount = FrameCount,
+                                          Frames = Frames.ToArray(),
+                                          StatusOpenProcess = StatusOpenProcess,
+                                          StatusBasicInfo = StatusBasicInfo,
+                                          StatusSectionName = StatusSectionName,
+                                          DeepAllocationBase = DeepAllocationBase,
+                                          DeepRegionSize = DeepRegionSize,
+                                          DeepRegionProtect = DeepRegionProtect,
+                                          DeepRegionState = DeepRegionState,
+                                          DeepRegionType = DeepRegionType,
+                                          DeepSampleSize = DeepSampleSize,
+                                          DeepSample = DeepSample.ToArray(),
+                                          OriginPath = OriginPath,
+                                          CaptureFlags = CaptureFlags,
+                                          FullFrameCount = FullFrameCount,
+                                          FullFrames = FullFrames.ToArray(),
+                                          RegRax = RegRax,
+                                          RegRbx = RegRbx,
+                                          RegRcx = RegRcx,
+                                          RegRdx = RegRdx,
+                                          RegRsi = RegRsi,
+                                          RegRdi = RegRdi,
+                                          RegRbp = RegRbp,
+                                          RegRsp = RegRsp,
+                                          RegR8 = RegR8,
+                                          RegR9 = RegR9,
+                                          RegR10 = RegR10,
+                                          RegR11 = RegR11,
+                                          RegR12 = RegR12,
+                                          RegR13 = RegR13,
+                                          RegR14 = RegR14,
+                                          RegR15 = RegR15,
+                                          RegRip = RegRip,
+                                          RegEFlags = RegEFlags,
+                                          RegDr0 = RegDr0,
+                                          RegDr1 = RegDr1,
+                                          RegDr2 = RegDr2,
+                                          RegDr3 = RegDr3,
+                                          RegDr6 = RegDr6,
+                                          RegDr7 = RegDr7,
+                                          StackSnapshotAddress = StackSnapshotAddress,
+                                          StackSnapshotSize = StackSnapshotSize,
+                                          StackSnapshot = StackSnapshot.ToArray(),
+                                          ProcessPid = ProcessPid,
+                                          ThreadId = ThreadId,
+                                          CreatorPid = CreatorPid,
+                                          ThreadFlags = ThreadFlags,
+                                          StartAddress = StartAddress,
+                                          ImageBase = ImageBase,
+                                          ImageSize = ImageSize,
+                                          ThreadFrameCount = ThreadFrameCount,
+                                          ThreadFrames = ThreadFrames.ToArray(),
+                                          FileProcessPid = FileProcessPid,
+                                          FileThreadId = FileThreadId,
+                                          FileObject = FileObject,
+                                          FileId = FileId,
+                                          FileByteOffset = FileByteOffset,
+                                          FileLength = FileLength,
+                                          FileStatus = FileStatus,
+                                          FileInformation = FileInformation,
+                                          FileOperation = FileOperation,
+                                          FileMajorCode = FileMajorCode,
+                                          FileMinorCode = FileMinorCode,
+                                          FileIrpFlags = FileIrpFlags,
+                                          FileCreateOptions = FileCreateOptions,
+                                          FileCreateDisposition = FileCreateDisposition,
+                                          FileDesiredAccess = FileDesiredAccess,
+                                          FileShareAccess = FileShareAccess,
+                                          FileFlags = FileFlags,
+                                          FilePath = FilePath,
+                                          RegistryProcessPid = RegistryProcessPid,
+                                          RegistryThreadId = RegistryThreadId,
+                                          RegistryOperation = RegistryOperation,
+                                          RegistryNotifyClass = RegistryNotifyClass,
+                                          RegistryDataType = RegistryDataType,
+                                          RegistryDataSize = RegistryDataSize,
+                                          RegistryFlags = RegistryFlags,
+                                          RegistrySessionId = RegistrySessionId,
+                                          RegistryKeyPath = RegistryKeyPath,
+                                          RegistryValueName = RegistryValueName,
+                                          EnterpriseProcessPid = EnterpriseProcessPid,
+                                          EnterpriseThreadId = EnterpriseThreadId,
+                                          EnterpriseTargetProcessPid = EnterpriseTargetProcessPid,
+                                          EnterpriseTargetThreadId = EnterpriseTargetThreadId,
+                                          EnterpriseObjectAddress = EnterpriseObjectAddress,
+                                          EnterpriseAux0 = EnterpriseAux0,
+                                          EnterpriseAux1 = EnterpriseAux1,
+                                          EnterpriseOperation = EnterpriseOperation,
+                                          EnterpriseSubOperation = EnterpriseSubOperation,
+                                          EnterpriseFlags = EnterpriseFlags,
+                                          EnterpriseDesiredAccess = EnterpriseDesiredAccess,
+                                          EnterpriseGrantedAccess = EnterpriseGrantedAccess,
+                                          EnterpriseStatus = EnterpriseStatus,
+                                          EnterpriseProtocol = EnterpriseProtocol,
+                                          EnterpriseLocalPort = EnterpriseLocalPort,
+                                          EnterpriseRemotePort = EnterpriseRemotePort };
         }
     }
 
@@ -197,6 +248,7 @@ namespace BlackbirdInterface
         public uint EventThreadId { get; set; }
         public uint Severity { get; set; }
         public uint Flags { get; set; }
+        public uint DetectionTraits { get; set; }
         public uint ActorPid { get; set; }
         public uint TargetPid { get; set; }
         public uint ProcessPid { get; set; }
@@ -251,8 +303,30 @@ namespace BlackbirdInterface
         public string KeyPath { get; set; } = "";
         public string ValueName { get; set; } = "";
         public int RepeatCount { get; set; } = 1;
-        public string ArgumentSummary { get; set; } = string.Empty;
+        private string _argumentSummary = string.Empty;
+        [JsonIgnore]
+        private bool _argumentSummaryMaterialized;
+        public string ArgumentSummary
+        {
+            get {
+                if (!_argumentSummaryMaterialized)
+                {
+                    _argumentSummary = BuildArgumentSummary();
+                    _argumentSummaryMaterialized = true;
+                }
+
+                return _argumentSummary;
+            }
+            set {
+                _argumentSummary = value ?? string.Empty;
+                _argumentSummaryMaterialized = !string.IsNullOrWhiteSpace(_argumentSummary);
+            }
+        }
         public string DisplayDetails { get; set; } = string.Empty;
+        [JsonIgnore]
+        private Dictionary<string, string>? _cachedHookFieldMap;
+        [JsonIgnore]
+        private string? _cachedDetails;
 
         // Human-readable caller-origin label for UserHook family events.
         // Empty for non-hook events or when origin flags are absent.
@@ -260,8 +334,7 @@ namespace BlackbirdInterface
 
         public string Summary
         {
-            get
-            {
+            get {
                 if (!string.IsNullOrWhiteSpace(DetectionName))
                 {
                     return $"{DetectionName} (sev {Severity})";
@@ -276,82 +349,128 @@ namespace BlackbirdInterface
             }
         }
 
-        public string Details => string.IsNullOrWhiteSpace(DisplayDetails) ? BuildDetails() : DisplayDetails;
+        public string Details
+        {
+            get {
+                if (!string.IsNullOrWhiteSpace(DisplayDetails))
+                {
+                    return DisplayDetails;
+                }
+
+                return _cachedDetails ??= BuildDetails();
+            }
+        }
+
+        internal Dictionary<string, string> GetOrCreateHookFieldMap()
+        {
+            if (_cachedHookFieldMap != null)
+            {
+                return _cachedHookFieldMap;
+            }
+
+            var fields = EventDetailsParsing.ParseRawFields(Reason);
+
+            ulong[] hookArgs = HookArgs ?? Array.Empty<ulong>();
+            int count = Math.Min((int)HookArgCount, hookArgs.Length);
+            for (int i = 0; i < count; i += 1)
+            {
+                string key = $"a{i}";
+                if (!fields.ContainsKey(key))
+                {
+                    fields[key] = $"0x{hookArgs[i]:X}";
+                }
+            }
+
+            _cachedHookFieldMap = fields;
+            return fields;
+        }
+
+        private string BuildArgumentSummary()
+        {
+            if (HookArgCount == 0 && string.IsNullOrWhiteSpace(Reason))
+            {
+                return string.Empty;
+            }
+
+            return EventDetailFormatting.BuildNtApiArgumentSummary(
+                !string.IsNullOrWhiteSpace(Operation) ? Operation : EventName, GetOrCreateHookFieldMap(),
+                ProcessIdentityResolver.Resolve(ActorPid), ProcessIdentityResolver.Resolve(TargetPid));
+        }
 
         public BrokerEtwEventView Clone()
         {
-            return new BrokerEtwEventView
-            {
-                TimestampUtc = TimestampUtc,
-                LastSeenUtc = LastSeenUtc,
-                Source = Source,
-                SourceId = SourceId,
-                Family = Family,
-                EventName = EventName,
-                Task = Task,
-                Opcode = Opcode,
-                EventId = EventId,
-                EventProcessId = EventProcessId,
-                EventThreadId = EventThreadId,
-                Severity = Severity,
-                Flags = Flags,
-                ActorPid = ActorPid,
-                TargetPid = TargetPid,
-                ProcessPid = ProcessPid,
-                ThreadId = ThreadId,
-                CallerPid = CallerPid,
-                ExplicitTargetPid = ExplicitTargetPid,
-                ParentPid = ParentPid,
-                CreatorPid = CreatorPid,
-                CreatorThreadId = CreatorThreadId,
-                CorrelationFlags = CorrelationFlags,
-                CorrelationAccessMask = CorrelationAccessMask,
-                CorrelationAgeMs = CorrelationAgeMs,
-                DetectionName = DetectionName,
-                Reason = Reason,
-                ClassName = ClassName,
-                Operation = Operation,
-                DesiredAccess = DesiredAccess,
-                OriginAddress = OriginAddress,
-                OriginProtect = OriginProtect,
-                StatusOpenProcess = StatusOpenProcess,
-                StatusBasicInfo = StatusBasicInfo,
-                StatusSectionName = StatusSectionName,
-                StackCount = StackCount,
-                Stack = Stack.ToArray(),
-                DeepAllocationBase = DeepAllocationBase,
-                DeepRegionSize = DeepRegionSize,
-                DeepRegionProtect = DeepRegionProtect,
-                DeepRegionState = DeepRegionState,
-                DeepRegionType = DeepRegionType,
-                DeepSampleSize = DeepSampleSize,
-                DeepSample = DeepSample.ToArray(),
-                OriginPath = OriginPath,
-                StartAddress = StartAddress,
-                ImageBase = ImageBase,
-                ImageSize = ImageSize,
-                StartRegionProtect = StartRegionProtect,
-                StartRegionState = StartRegionState,
-                StartRegionType = StartRegionType,
-                StartRegionStatus = StartRegionStatus,
-                SessionId = SessionId,
-                CreateStatus = CreateStatus,
-                ProcessStartKey = ProcessStartKey,
-                SignatureLevel = SignatureLevel,
-                SignatureType = SignatureType,
-                NotifyClass = NotifyClass,
-                DataType = DataType,
-                DataSize = DataSize,
-                HookArgCount = HookArgCount,
-                HookArgs = HookArgs.ToArray(),
-                ImagePath = ImagePath,
-                CommandLine = CommandLine,
-                KeyPath = KeyPath,
-                ValueName = ValueName,
-                RepeatCount = RepeatCount,
-                ArgumentSummary = ArgumentSummary,
-                DisplayDetails = DisplayDetails
-            };
+            var clone = new BrokerEtwEventView { TimestampUtc = TimestampUtc,
+                                                 LastSeenUtc = LastSeenUtc,
+                                                 Source = Source,
+                                                 SourceId = SourceId,
+                                                 Family = Family,
+                                                 EventName = EventName,
+                                                 Task = Task,
+                                                 Opcode = Opcode,
+                                                 EventId = EventId,
+                                                 EventProcessId = EventProcessId,
+                                                 EventThreadId = EventThreadId,
+                                                 Severity = Severity,
+                                                 Flags = Flags,
+                                                 DetectionTraits = DetectionTraits,
+                                                 ActorPid = ActorPid,
+                                                 TargetPid = TargetPid,
+                                                 ProcessPid = ProcessPid,
+                                                 ThreadId = ThreadId,
+                                                 CallerPid = CallerPid,
+                                                 ExplicitTargetPid = ExplicitTargetPid,
+                                                 ParentPid = ParentPid,
+                                                 CreatorPid = CreatorPid,
+                                                 CreatorThreadId = CreatorThreadId,
+                                                 CorrelationFlags = CorrelationFlags,
+                                                 CorrelationAccessMask = CorrelationAccessMask,
+                                                 CorrelationAgeMs = CorrelationAgeMs,
+                                                 DetectionName = DetectionName,
+                                                 Reason = Reason,
+                                                 ClassName = ClassName,
+                                                 Operation = Operation,
+                                                 DesiredAccess = DesiredAccess,
+                                                 OriginAddress = OriginAddress,
+                                                 OriginProtect = OriginProtect,
+                                                 StatusOpenProcess = StatusOpenProcess,
+                                                 StatusBasicInfo = StatusBasicInfo,
+                                                 StatusSectionName = StatusSectionName,
+                                                 StackCount = StackCount,
+                                                 Stack = Stack.ToArray(),
+                                                 DeepAllocationBase = DeepAllocationBase,
+                                                 DeepRegionSize = DeepRegionSize,
+                                                 DeepRegionProtect = DeepRegionProtect,
+                                                 DeepRegionState = DeepRegionState,
+                                                 DeepRegionType = DeepRegionType,
+                                                 DeepSampleSize = DeepSampleSize,
+                                                 DeepSample = DeepSample.ToArray(),
+                                                 OriginPath = OriginPath,
+                                                 StartAddress = StartAddress,
+                                                 ImageBase = ImageBase,
+                                                 ImageSize = ImageSize,
+                                                 StartRegionProtect = StartRegionProtect,
+                                                 StartRegionState = StartRegionState,
+                                                 StartRegionType = StartRegionType,
+                                                 StartRegionStatus = StartRegionStatus,
+                                                 SessionId = SessionId,
+                                                 CreateStatus = CreateStatus,
+                                                 ProcessStartKey = ProcessStartKey,
+                                                 SignatureLevel = SignatureLevel,
+                                                 SignatureType = SignatureType,
+                                                 NotifyClass = NotifyClass,
+                                                 DataType = DataType,
+                                                 DataSize = DataSize,
+                                                 HookArgCount = HookArgCount,
+                                                 HookArgs = HookArgs.ToArray(),
+                                                 ImagePath = ImagePath,
+                                                 CommandLine = CommandLine,
+                                                 KeyPath = KeyPath,
+                                                 ValueName = ValueName,
+                                                 RepeatCount = RepeatCount,
+                                                 DisplayDetails = DisplayDetails };
+            clone._argumentSummary = _argumentSummary;
+            clone._argumentSummaryMaterialized = _argumentSummaryMaterialized;
+            return clone;
         }
 
         private string BuildDetails()
@@ -597,8 +716,7 @@ namespace BlackbirdInterface
 
         private static string DescribeFamily(uint family)
         {
-            return family switch
-            {
+            return family switch {
                 1 => "Handle",
                 2 => "Thread",
                 3 => "Process",
@@ -637,23 +755,20 @@ namespace BlackbirdInterface
 
         public HeuristicEventView Clone()
         {
-            return new HeuristicEventView
-            {
-                TimestampUtc = TimestampUtc,
-                LastSeenUtc = LastSeenUtc,
-                Severity = Severity,
-                DetectionName = DetectionName,
-                ActorPid = ActorPid,
-                TargetPid = TargetPid,
-                Source = Source,
-                EventName = EventName,
-                CorrelationFlags = CorrelationFlags,
-                CorrelationAccessMask = CorrelationAccessMask,
-                CorrelationAgeMs = CorrelationAgeMs,
-                Reason = Reason,
-                Evidence = Evidence,
-                RepeatCount = RepeatCount
-            };
+            return new HeuristicEventView { TimestampUtc = TimestampUtc,
+                                            LastSeenUtc = LastSeenUtc,
+                                            Severity = Severity,
+                                            DetectionName = DetectionName,
+                                            ActorPid = ActorPid,
+                                            TargetPid = TargetPid,
+                                            Source = Source,
+                                            EventName = EventName,
+                                            CorrelationFlags = CorrelationFlags,
+                                            CorrelationAccessMask = CorrelationAccessMask,
+                                            CorrelationAgeMs = CorrelationAgeMs,
+                                            Reason = Reason,
+                                            Evidence = Evidence,
+                                            RepeatCount = RepeatCount };
         }
     }
 
@@ -680,21 +795,12 @@ namespace BlackbirdInterface
 
         public ProcessRelationView Clone()
         {
-            return new ProcessRelationView
-            {
-                FirstSeenUtc = FirstSeenUtc,
-                LastSeenUtc = LastSeenUtc,
-                SourcePid = SourcePid,
-                TargetPid = TargetPid,
-                RelationType = RelationType,
-                LastAccessMask = LastAccessMask,
-                LastFlags = LastFlags,
-                OriginSource = OriginSource,
-                OriginModule = OriginModule,
-                DetailSignature = DetailSignature,
-                DetailText = DetailText,
-                RepeatCount = RepeatCount
-            };
+            return new ProcessRelationView { FirstSeenUtc = FirstSeenUtc, LastSeenUtc = LastSeenUtc,
+                                             SourcePid = SourcePid,       TargetPid = TargetPid,
+                                             RelationType = RelationType, LastAccessMask = LastAccessMask,
+                                             LastFlags = LastFlags,       OriginSource = OriginSource,
+                                             OriginModule = OriginModule, DetailSignature = DetailSignature,
+                                             DetailText = DetailText,     RepeatCount = RepeatCount };
         }
     }
 
@@ -707,12 +813,7 @@ namespace BlackbirdInterface
 
         public TiTaskCountView Clone()
         {
-            return new TiTaskCountView
-            {
-                Task = Task,
-                Count = Count,
-                MaxCount = MaxCount
-            };
+            return new TiTaskCountView { Task = Task, Count = Count, MaxCount = MaxCount };
         }
     }
 
@@ -849,8 +950,7 @@ namespace BlackbirdInterface
         public string Details
         {
             get => _details;
-            set
-            {
+            set {
                 if (string.Equals(_details, value, StringComparison.Ordinal))
                 {
                     return;
@@ -904,23 +1004,20 @@ namespace BlackbirdInterface
 
         public GroupedEventDetailRow Clone()
         {
-            return new GroupedEventDetailRow
-            {
-                TimestampUtc = TimestampUtc,
-                Event = Event,
-                Severity = Severity,
-                Detection = Detection,
-                Source = Source,
-                Actor = Actor,
-                Target = Target,
-                ActorPid = ActorPid,
-                TargetPid = TargetPid,
-                ActorToolTip = ActorToolTip,
-                TargetToolTip = TargetToolTip,
-                ArgumentSummary = ArgumentSummary,
-                HitCount = HitCount,
-                Details = Details
-            };
+            return new GroupedEventDetailRow { TimestampUtc = TimestampUtc,
+                                               Event = Event,
+                                               Severity = Severity,
+                                               Detection = Detection,
+                                               Source = Source,
+                                               Actor = Actor,
+                                               Target = Target,
+                                               ActorPid = ActorPid,
+                                               TargetPid = TargetPid,
+                                               ActorToolTip = ActorToolTip,
+                                               TargetToolTip = TargetToolTip,
+                                               ArgumentSummary = ArgumentSummary,
+                                               HitCount = HitCount,
+                                               Details = Details };
         }
 
         private static string FirstNonEmpty(string primary, string fallback)
@@ -1053,8 +1150,8 @@ namespace BlackbirdInterface
             return true;
         }
 
-        private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
-            => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 
     internal sealed class GroupedEventRow : INotifyPropertyChanged
@@ -1113,17 +1210,14 @@ namespace BlackbirdInterface
 
         public GroupedEventRow Clone()
         {
-            return new GroupedEventRow
-            {
-                LastSeenUtc = LastSeenUtc,
-                Event = Event,
-                Severity = Severity,
-                Detection = Detection,
-                Hits = Hits,
-                GroupKey = GroupKey,
-                ArgumentPreview = ArgumentPreview,
-                Details = Details.Select(x => x.Clone()).ToList()
-            };
+            return new GroupedEventRow { LastSeenUtc = LastSeenUtc,
+                                         Event = Event,
+                                         Severity = Severity,
+                                         Detection = Detection,
+                                         Hits = Hits,
+                                         GroupKey = GroupKey,
+                                         ArgumentPreview = ArgumentPreview,
+                                         Details = Details.Select(x => x.Clone()).ToList() };
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
@@ -1146,10 +1240,67 @@ namespace BlackbirdInterface
         public string ApiName { get; set; } = "";
         public string SensorOrigin { get; set; } = "";
         public string CallerOrigin { get; set; } = "";
+        public string OriginModule { get; set; } = "";
+        public string ActionLabel { get; set; } = "";
+        public string DetailFull { get; set; } = "";
+        public string CallChainLabel { get; set; } = "";
+        public string ContextLabel { get; set; } = "";
+        public string FlagsLabel { get; set; } = "";
         public uint SourcePid { get; set; }
         public uint TargetPid { get; set; }
         public uint ThreadId { get; set; }
         public int Hits { get; set; }
+        public DateTime FirstSeenUtc { get; set; }
         public DateTime LastSeenUtc { get; set; }
+
+        public ApiCallGraphRowSnapshot Clone()
+        {
+            return new ApiCallGraphRowSnapshot { ApiName = ApiName,
+                                                 SensorOrigin = SensorOrigin,
+                                                 CallerOrigin = CallerOrigin,
+                                                 OriginModule = OriginModule,
+                                                 ActionLabel = ActionLabel,
+                                                 DetailFull = DetailFull,
+                                                 CallChainLabel = CallChainLabel,
+                                                 ContextLabel = ContextLabel,
+                                                 FlagsLabel = FlagsLabel,
+                                                 SourcePid = SourcePid,
+                                                 TargetPid = TargetPid,
+                                                 ThreadId = ThreadId,
+                                                 Hits = Hits,
+                                                 FirstSeenUtc = FirstSeenUtc,
+                                                 LastSeenUtc = LastSeenUtc };
+        }
+    }
+
+    internal sealed class ExtendedActivityRowSnapshot
+    {
+        public string TypeLabel { get; set; } = string.Empty;
+        public string ActorLabel { get; set; } = string.Empty;
+        public string TargetLabel { get; set; } = string.Empty;
+        public string SubjectLabel { get; set; } = string.Empty;
+        public string OperationLabel { get; set; } = string.Empty;
+        public string DetailLabel { get; set; } = string.Empty;
+        public string LastSeenLabel { get; set; } = string.Empty;
+        public DateTime LastSeenUtc { get; set; }
+        public int Hits { get; set; }
+
+        public ExtendedActivityRowSnapshot Clone()
+        {
+            return new ExtendedActivityRowSnapshot {
+                TypeLabel = TypeLabel,         ActorLabel = ActorLabel,         TargetLabel = TargetLabel,
+                SubjectLabel = SubjectLabel,   OperationLabel = OperationLabel, DetailLabel = DetailLabel,
+                LastSeenLabel = LastSeenLabel, LastSeenUtc = LastSeenUtc,       Hits = Hits
+            };
+        }
+    }
+
+    internal sealed class MonitoredProcessEntry
+    {
+        public uint Pid { get; set; }
+        public string ImageName { get; set; } = "";
+        public DateTime FirstSeenUtc { get; set; } = DateTime.UtcNow;
+
+        public string Label => string.IsNullOrEmpty(ImageName) ? $"PID {Pid}" : $"{ImageName} ({Pid})";
     }
 }

@@ -3,6 +3,7 @@
 #include "..\correlation\intent_store.h"
 #include "..\core\tempus_debug.h"
 #include "..\telemetry\etw.h"
+#include "..\callbacks\process_monitor.h"
 
 #ifndef THREAD_SET_CONTEXT
 #define THREAD_SET_CONTEXT 0x0010
@@ -20,31 +21,31 @@
 #define THREAD_ALL_ACCESS (STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0xFFFF)
 #endif
 
-#define BLACKBIRD_APC_COOLDOWN_MS 7000
-#define BLACKBIRD_APC_RING_SIZE 64
-#define BLACKBIRD_APC_INTENT_WINDOW_MS 12000
+#define BK_APC_COOLDOWN_MS 7000
+#define BK_APC_RING_SIZE 64
+#define BK_APC_INTENT_WINDOW_MS 12000
 
-typedef struct _BLACKBIRD_APC_RING_ENTRY
+typedef struct _BK_APC_RING_ENTRY
 {
     UINT64 CallerPid;
     UINT64 TargetPid;
     UINT32 Kind;
     INT64 TimestampQpc;
-} BLACKBIRD_APC_RING_ENTRY;
+} BK_APC_RING_ENTRY;
 
-typedef enum _BLACKBIRD_APC_EVENT_KIND
+typedef enum _BK_APC_EVENT_KIND
 {
-    BLACKBIRDApcKindRemoteApc = 1,
-    BLACKBIRDApcKindThreadHijack = 2
-} BLACKBIRD_APC_EVENT_KIND;
+    BkapcKindRemoteApc = 1,
+    BkapcKindThreadHijack = 2
+} BK_APC_EVENT_KIND;
 
-static BLACKBIRD_APC_RING_ENTRY g_ApcRing[BLACKBIRD_APC_RING_SIZE];
+static BK_APC_RING_ENTRY g_ApcRing[BK_APC_RING_SIZE];
 static volatile LONG g_ApcRingWriteIndex = -1;
 static KSPIN_LOCK g_ApcRingLock;
 static volatile LONG g_ApcMonitorInitialized = 0;
 static ULONGLONG g_ApcQpcFrequency = 1;
 
-static ULONGLONG BLACKBIRDApcMsToQpc(_In_ UINT32 Ms)
+static ULONGLONG BkapcMsToQpc(_In_ UINT32 Ms)
 {
     ULONGLONG ticks;
 
@@ -61,7 +62,7 @@ static ULONGLONG BLACKBIRDApcMsToQpc(_In_ UINT32 Ms)
     return ticks;
 }
 
-static BOOLEAN BLACKBIRDApcShouldEmit(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ BLACKBIRD_APC_EVENT_KIND Kind)
+static BOOLEAN BkapcShouldEmit(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ BK_APC_EVENT_KIND Kind)
 {
     UINT64 caller = (UINT64)(ULONG_PTR)CallerPid;
     UINT64 target = (UINT64)(ULONG_PTR)TargetPid;
@@ -72,10 +73,10 @@ static BOOLEAN BLACKBIRDApcShouldEmit(_In_ HANDLE CallerPid, _In_ HANDLE TargetP
     LONG writeIndex;
     ULONGLONG cooldownQpc;
 
-    cooldownQpc = BLACKBIRDApcMsToQpc(BLACKBIRD_APC_COOLDOWN_MS);
+    cooldownQpc = BkapcMsToQpc(BK_APC_COOLDOWN_MS);
     KeAcquireSpinLock(&g_ApcRingLock, &oldIrql);
 
-    for (i = 0; i < BLACKBIRD_APC_RING_SIZE; ++i)
+    for (i = 0; i < BK_APC_RING_SIZE; ++i)
     {
         INT64 deltaQpc;
 
@@ -104,10 +105,10 @@ static BOOLEAN BLACKBIRDApcShouldEmit(_In_ HANDLE CallerPid, _In_ HANDLE TargetP
     if (allow)
     {
         writeIndex = InterlockedIncrement(&g_ApcRingWriteIndex);
-        writeIndex %= BLACKBIRD_APC_RING_SIZE;
+        writeIndex %= BK_APC_RING_SIZE;
         if (writeIndex < 0)
         {
-            writeIndex += BLACKBIRD_APC_RING_SIZE;
+            writeIndex += BK_APC_RING_SIZE;
         }
 
         g_ApcRing[writeIndex].CallerPid = caller;
@@ -121,7 +122,7 @@ static BOOLEAN BLACKBIRDApcShouldEmit(_In_ HANDLE CallerPid, _In_ HANDLE TargetP
 }
 
 NTSTATUS
-BLACKBIRDApcMonitorInitialize(VOID)
+BkapcInitialize(VOID)
 {
     LARGE_INTEGER freq;
 
@@ -138,7 +139,7 @@ BLACKBIRDApcMonitorInitialize(VOID)
     return STATUS_SUCCESS;
 }
 
-VOID BLACKBIRDApcMonitorUninitialize(VOID)
+VOID BkapcUninitialize(VOID)
 {
     if (InterlockedExchange(&g_ApcMonitorInitialized, 0) == 0)
     {
@@ -149,27 +150,28 @@ VOID BLACKBIRDApcMonitorUninitialize(VOID)
     InterlockedExchange(&g_ApcRingWriteIndex, -1);
 }
 
-VOID BLACKBIRDApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
-                                                 _In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsDuplicateOperation)
+VOID BkapcRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ ACCESS_MASK DesiredAccess,
+                                   _In_ BOOLEAN IsDuplicateOperation)
 {
-    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemApcMonitor);
+    ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemApcMonitor);
     BOOLEAN hasSetContext;
     BOOLEAN hasSuspendResume;
     BOOLEAN hasRecentIntent;
     BOOLEAN hasMemoryIntent;
+    BOOLEAN suppressSystemBrokerNoise;
     UINT32 intentFlags = 0;
     UINT32 intentAccessMask = 0;
     UINT32 intentAgeMs = 0;
 
     if (InterlockedCompareExchange(&g_ApcMonitorInitialized, 0, 0) == 0)
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemApcMonitor, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemApcMonitor, tempusStartQpc);
         return;
     }
 
     if (CallerPid == TargetPid)
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemApcMonitor, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemApcMonitor, tempusStartQpc);
         return;
     }
 
@@ -177,37 +179,44 @@ VOID BLACKBIRDApcMonitorRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ HAN
     hasSuspendResume = ((DesiredAccess & THREAD_SUSPEND_RESUME) != 0);
     if (!hasSetContext && !hasSuspendResume)
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemApcMonitor, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemApcMonitor, tempusStartQpc);
         return;
     }
-    hasRecentIntent = BLACKBIRDCorrelationQueryRecentIntent(CallerPid, TargetPid, BLACKBIRD_APC_INTENT_WINDOW_MS,
-                                                            &intentFlags, &intentAccessMask, &intentAgeMs);
-    hasMemoryIntent = hasRecentIntent && ((intentFlags & BLACKBIRD_INTENT_PROCESS_MEMORY) != 0);
+    hasRecentIntent = BkcorQueryRecentIntent(CallerPid, TargetPid, BK_APC_INTENT_WINDOW_MS, &intentFlags,
+                                             &intentAccessMask, &intentAgeMs);
+    hasMemoryIntent = hasRecentIntent && ((intentFlags & BK_INTENT_PROCESS_MEMORY) != 0);
+    suppressSystemBrokerNoise = BkcprocIsKnownSystemBrokerPid((UINT32)(ULONG_PTR)CallerPid) &&
+                                !BkcprocIsProtectedPid((UINT32)(ULONG_PTR)TargetPid);
 
-    if (hasSetContext && hasSuspendResume && hasMemoryIntent &&
-        BLACKBIRDApcShouldEmit(CallerPid, TargetPid, BLACKBIRDApcKindRemoteApc))
+    if (suppressSystemBrokerNoise)
     {
-        BLACKBIRDEtwLogApcEvent("REMOTE_APC_INTENT", CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation,
-                                intentFlags, intentAccessMask, intentAgeMs);
-        BLACKBIRDEtwLogDetectionEvent("REMOTE_APC_CREATION_SUSPECT", 5, CallerPid, TargetPid, intentFlags,
-                                      intentAccessMask, intentAgeMs,
-                                      L"set-context plus suspend/resume with recent process-memory intent");
+        BktmpLeave(BktmpSubsystemApcMonitor, tempusStartQpc);
+        return;
     }
 
-    if (hasSetContext && hasSuspendResume && hasMemoryIntent &&
-        BLACKBIRDApcShouldEmit(CallerPid, TargetPid, BLACKBIRDApcKindThreadHijack))
+    UNREFERENCED_PARAMETER(IsDuplicateOperation);
+
+    if (BkapcShouldEmit(CallerPid, TargetPid, hasSetContext ? BkapcKindRemoteApc : BkapcKindThreadHijack))
     {
-        BLACKBIRDEtwLogApcEvent("THREAD_CONTEXT_INTENT", CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation,
-                                intentFlags, intentAccessMask, intentAgeMs);
-        BLACKBIRDEtwLogDetectionEvent("THREAD_HIJACK_INTENT", 6, CallerPid, TargetPid, intentFlags, intentAccessMask,
-                                      intentAgeMs,
-                                      L"high-confidence hijack intent chain (thread context + memory intent)");
+        BketwLogApcEvent(hasSetContext ? "REMOTE_THREAD_HANDLE_APC_INTENT" : "REMOTE_THREAD_HANDLE_CONTEXT_INTENT",
+                         CallerPid, TargetPid, DesiredAccess, IsDuplicateOperation, intentFlags, intentAccessMask,
+                         intentAgeMs);
+
+        if (hasSetContext && hasMemoryIntent)
+        {
+            BketwLogDetectionEvent(
+                "REMOTE_APC_CREATION_SUSPECT", hasSuspendResume ? 6u : 5u, CallerPid, TargetPid, intentFlags,
+                intentAccessMask, intentAgeMs,
+                hasSuspendResume
+                    ? L"remote thread handle has THREAD_SET_CONTEXT plus suspend/resume after memory intent"
+                    : L"remote thread handle has THREAD_SET_CONTEXT after memory intent");
+        }
     }
-    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemApcMonitor, tempusStartQpc);
+    BktmpLeave(BktmpSubsystemApcMonitor, tempusStartQpc);
 }
 
 BOOLEAN
-BLACKBIRDApcMonitorSelfCheck(VOID)
+BkapcSelfCheck(VOID)
 {
     return (InterlockedCompareExchange(&g_ApcMonitorInitialized, 0, 0) != 0);
 }

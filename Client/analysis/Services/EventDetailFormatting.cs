@@ -121,9 +121,11 @@ namespace BlackbirdInterface
             if (string.Equals(view.RelationType, "HandleOpen", StringComparison.OrdinalIgnoreCase))
             {
                 bool anomaly = (view.LastFlags & (HandleFlagStackSpoofSuspect | HandleFlagSyscallExportMismatch)) != 0;
-                bool suspiciousContext = (view.LastFlags & (HandleFlagModuleChainSane | HandleFlagUnwindMetadataValid)) == 0;
-                bool highAccess = (view.LastAccessMask & (ProcessVmWrite | ProcessCreateThread | ThreadSetContext |
-                                                          ThreadSuspendResume | ProcessAllAccess | ThreadAllAccess)) != 0;
+                bool suspiciousContext =
+                    (view.LastFlags & (HandleFlagModuleChainSane | HandleFlagUnwindMetadataValid)) == 0;
+                bool highAccess =
+                    (view.LastAccessMask & (ProcessVmWrite | ProcessCreateThread | ThreadSetContext |
+                                            ThreadSuspendResume | ProcessAllAccess | ThreadAllAccess)) != 0;
                 bool mediumAccess = (view.LastAccessMask & (ProcessVmOperation | ProcessDupHandle | ThreadGetContext |
                                                             ProcessSuspendResume | ProcessVmRead)) != 0;
                 if (anomaly || suspiciousContext)
@@ -242,9 +244,9 @@ namespace BlackbirdInterface
                 return "NtDuplicateObject";
             }
 
-            if ((handleFlags & HandleFlagThreadObject) != 0 ||
-                (desiredAccess & ThreadAllAccess) == ThreadAllAccess ||
-                (desiredAccess & (ThreadSetContext | ThreadGetContext | ThreadSuspendResume | ThreadQueryInformation | ThreadQueryLimitedInformation)) != 0)
+            if ((handleFlags & HandleFlagThreadObject) != 0 || (desiredAccess & ThreadAllAccess) == ThreadAllAccess ||
+                (desiredAccess & (ThreadSetContext | ThreadGetContext | ThreadSuspendResume | ThreadQueryInformation |
+                                  ThreadQueryLimitedInformation)) != 0)
             {
                 return "NtOpenThread";
             }
@@ -268,17 +270,11 @@ namespace BlackbirdInterface
 
             for (int i = 0; i <= count - 11; i += 1)
             {
-                if (sample[i] == 0x4C &&
-                    sample[i + 1] == 0x8B &&
-                    sample[i + 2] == 0xD1 &&
-                    sample[i + 3] == 0xB8 &&
-                    sample[i + 8] == 0x0F &&
-                    sample[i + 9] == 0x05)
+                if (sample[i] == 0x4C && sample[i + 1] == 0x8B && sample[i + 2] == 0xD1 && sample[i + 3] == 0xB8 &&
+                    sample[i + 8] == 0x0F && sample[i + 9] == 0x05)
                 {
-                    syscallId = (uint)(sample[i + 4] |
-                                       (sample[i + 5] << 8) |
-                                       (sample[i + 6] << 16) |
-                                       (sample[i + 7] << 24));
+                    syscallId =
+                        (uint)(sample[i + 4] | (sample[i + 5] << 8) | (sample[i + 6] << 16) | (sample[i + 7] << 24));
                     return true;
                 }
             }
@@ -286,41 +282,41 @@ namespace BlackbirdInterface
             return false;
         }
 
-        internal static string BuildDirectSyscallLabel(uint desiredAccess, uint handleFlags, byte[]? sample, int sampleSize, string? detection = null)
+        internal static string BuildDirectSyscallLabel(uint desiredAccess, uint handleFlags, byte[]? sample,
+                                                       int sampleSize, string? detection = null)
         {
             string api = ResolveDirectSyscallApi(desiredAccess, handleFlags, detection);
-            return TryExtractSyscallId(sample, sampleSize, out uint syscallId)
-                ? $"{api} (id=0x{syscallId:X})"
-                : api;
+            return TryExtractSyscallId(sample, sampleSize, out uint syscallId) ? $"{api} (id=0x{syscallId:X})" : api;
         }
 
-        internal static string BuildDirectSyscallSummary(
-            string actor,
-            string target,
-            uint desiredAccess,
-            uint handleFlags,
-            byte[]? sample,
-            int sampleSize,
-            string? originPath = null,
-            string? detection = null)
+        internal static string BuildDirectSyscallSummary(string actor, string target, uint desiredAccess,
+                                                         uint handleFlags, byte[]? sample, int sampleSize,
+                                                         string? originPath = null, string? detection = null)
         {
             string syscallLabel = BuildDirectSyscallLabel(desiredAccess, handleFlags, sample, sampleSize, detection);
             string accessSummary = SummarizePrimaryHandleAccess(desiredAccess);
             string objectKind = (handleFlags & HandleFlagThreadObject) != 0 ? "thread" : "process";
             string originModule = ModuleNameFromPath(originPath);
             string signalSummary = SummarizeDirectSyscallSignals(handleFlags);
+            string actorText = string.IsNullOrWhiteSpace(actor) ? "Actor" : actor.Trim();
+            string targetText = string.IsNullOrWhiteSpace(target) ? "target" : target.Trim();
+            if (!string.IsNullOrWhiteSpace(actor) &&
+                string.Equals(actorText, targetText, StringComparison.OrdinalIgnoreCase))
+            {
+                targetText = "SELF";
+            }
 
             var sb = new StringBuilder(192);
-            sb.Append(string.IsNullOrWhiteSpace(actor) ? "Actor" : actor.Trim())
-              .Append(" issued ")
-              .Append(syscallLabel)
-              .Append(" against ")
-              .Append(string.IsNullOrWhiteSpace(target) ? "target" : target.Trim())
-              .Append(" for ")
-              .Append(accessSummary)
-              .Append(" on a ")
-              .Append(objectKind)
-              .Append(" handle");
+            sb.Append(actorText)
+                .Append(" issued ")
+                .Append(syscallLabel)
+                .Append(" against ")
+                .Append(targetText)
+                .Append(" for ")
+                .Append(accessSummary)
+                .Append(" on a ")
+                .Append(objectKind)
+                .Append(" handle");
 
             if (!string.Equals(originModule, "unknown", StringComparison.OrdinalIgnoreCase))
             {
@@ -338,26 +334,15 @@ namespace BlackbirdInterface
 
         internal static string DescribeHandleFlags(uint flags)
         {
-            return DescribeByBits(flags, new (uint Bit, string Name)[]
-            {
-                (0x00000001, "EXEC_PROTECT"),
-                (0x00000002, "FROM_NTDLL"),
-                (0x00000004, "FROM_EXE"),
-                (0x00000008, "MEMORY_RELATED"),
-                (0x00000010, "THREAD_OBJECT"),
-                (0x00000020, "DUPLICATE_OPERATION"),
-                (0x00000040, "DEEP_PATH_CANDIDATE"),
-                (0x00000080, "DEEP_PATH_CAPTURED"),
-                (0x00000100, "DEEP_PATH_CACHE_HIT"),
-                (0x00000200, "RETURN_ADDRESS_VALID"),
-                (0x00000400, "STACK_VALIDATED"),
-                (0x00000800, "STACK_SPOOF_SUSPECT"),
-                (0x00001000, "SYSCALL_EXPORT_MATCH"),
-                (0x00002000, "SYSCALL_EXPORT_MISMATCH"),
-                (0x00004000, "MODULE_CHAIN_SANE"),
-                (0x00008000, "UNWIND_METADATA_VALID"),
-                (0x00010000, "TEB_STACK_BOUNDS_VALID"),
-                (0x00020000, "FRAMES_OUTSIDE_TEB_STACK")
+            return DescribeByBits(flags, new(uint Bit, string Name)[] {
+                (0x00000001, "EXEC_PROTECT"), (0x00000002, "FROM_NTDLL"), (0x00000004, "FROM_EXE"),
+                (0x00000008, "MEMORY_RELATED"), (0x00000010, "THREAD_OBJECT"), (0x00000020, "DUPLICATE_OPERATION"),
+                (0x00000040, "DEEP_PATH_CANDIDATE"), (0x00000080, "DEEP_PATH_CAPTURED"),
+                (0x00000100, "DEEP_PATH_CACHE_HIT"), (0x00000200, "RETURN_ADDRESS_VALID"),
+                (0x00000400, "STACK_VALIDATED"), (0x00000800, "STACK_SPOOF_SUSPECT"),
+                (0x00001000, "SYSCALL_EXPORT_MATCH"), (0x00002000, "SYSCALL_EXPORT_MISMATCH"),
+                (0x00004000, "MODULE_CHAIN_SANE"), (0x00008000, "UNWIND_METADATA_VALID"),
+                (0x00010000, "TEB_STACK_BOUNDS_VALID"), (0x00020000, "FRAMES_OUTSIDE_TEB_STACK")
             });
         }
 
@@ -421,7 +406,8 @@ namespace BlackbirdInterface
             var signals = new List<string>();
             if ((handleFlags & HandleFlagSyscallExportMismatch) != 0)
             {
-                signals.Add("the observed syscall id did not match the expected ntdll export");
+                signals.Add(
+                    "the syscall entry was not inside the expected ntdll export or its syscall id did not match");
             }
 
             if ((handleFlags & HandleFlagStackSpoofSuspect) != 0)
@@ -446,36 +432,25 @@ namespace BlackbirdInterface
 
         internal static string DescribeThreadFlags(uint flags)
         {
-            return DescribeByBits(flags, new (uint Bit, string Name)[]
-            {
-                (0x00000001, "GOT_START"),
-                (0x00000002, "GOT_RANGE"),
-                (0x00000004, "REMOTE_CREATOR"),
-                (0x00000008, "OUTSIDE_MAIN_IMG"),
-                (0x00000010, "CORRELATED_INTENT"),
-                (0x00000020, "CORR_MEMORY"),
-                (0x00000040, "CORR_THREAD_CTX"),
-                (0x00000080, "CORR_DUP_HANDLE"),
-                (0x00000100, "START_REGION_EXEC")
+            return DescribeByBits(flags, new(uint Bit, string Name)[] {
+                (0x00000001, "GOT_START"), (0x00000002, "GOT_RANGE"), (0x00000004, "REMOTE_CREATOR"),
+                (0x00000008, "OUTSIDE_MAIN_IMG"), (0x00000010, "CORRELATED_INTENT"), (0x00000020, "CORR_MEMORY"),
+                (0x00000040, "CORR_THREAD_CTX"), (0x00000080, "CORR_DUP_HANDLE"), (0x00000100, "START_REGION_EXEC")
             });
         }
 
         internal static string DescribeCorrelationFlags(uint flags)
         {
-            return DescribeByBits(flags, new (uint Bit, string Name)[]
-            {
-                (IntentProcessMemory, "INTENT_PROCESS_MEMORY"),
-                (IntentThreadContext, "INTENT_THREAD_CONTEXT"),
-                (IntentDupHandle, "INTENT_DUP_HANDLE")
-            });
+            return DescribeByBits(flags, new(uint Bit, string Name)[] { (IntentProcessMemory, "INTENT_PROCESS_MEMORY"),
+                                                                        (IntentThreadContext, "INTENT_THREAD_CONTEXT"),
+                                                                        (IntentDupHandle, "INTENT_DUP_HANDLE") });
         }
 
         internal static string DescribeMemoryProtection(uint protect)
         {
             uint baseProtect = protect & 0xFFu;
             var labels = new List<string>();
-            labels.Add(baseProtect switch
-            {
+            labels.Add(baseProtect switch {
                 0x01 => "PAGE_NOACCESS",
                 0x02 => "PAGE_READONLY",
                 0x04 => "PAGE_READWRITE",
@@ -505,8 +480,7 @@ namespace BlackbirdInterface
 
         internal static string DescribeMemoryState(uint state)
         {
-            return state switch
-            {
+            return state switch {
                 0x00001000 => "MEM_COMMIT",
                 0x00002000 => "MEM_RESERVE",
                 0x00010000 => "MEM_FREE",
@@ -545,9 +519,56 @@ namespace BlackbirdInterface
             return slash >= 0 && slash + 1 < cleaned.Length ? cleaned[(slash + 1)..] : cleaned;
         }
 
-        internal static bool IsSr71Module(string? moduleName)
-            => !string.IsNullOrWhiteSpace(moduleName) &&
-               string.Equals(moduleName.Trim(), "SR71.dll", StringComparison.OrdinalIgnoreCase);
+        internal static string FormatModuleRelativeAddress(string? modulePath, ulong moduleBase, ulong moduleSize,
+                                                           ulong address, bool includeRawAddress = true)
+        {
+            if (address == 0)
+            {
+                return string.Empty;
+            }
+
+            string moduleName = ModuleNameFromPath(modulePath);
+            if (string.IsNullOrWhiteSpace(moduleName) ||
+                string.Equals(moduleName, "unknown", StringComparison.OrdinalIgnoreCase) || moduleBase == 0)
+            {
+                return includeRawAddress ? $"0x{address:X}" : string.Empty;
+            }
+
+            ulong relative = address - moduleBase;
+            bool inDeclaredRange = moduleSize == 0 || address < moduleBase + moduleSize;
+            if (address < moduleBase || !inDeclaredRange)
+            {
+                return includeRawAddress ? $"0x{address:X}" : string.Empty;
+            }
+
+            string label = $"{moduleName}+0x{relative:X}";
+            return includeRawAddress ? $"{label} [0x{address:X}]" : label;
+        }
+
+        internal static bool IsSr71Module(string? moduleName) =>
+            !string.IsNullOrWhiteSpace(moduleName) && string.Equals(moduleName.Trim(), "SR71.dll",
+                                                                    StringComparison.OrdinalIgnoreCase);
+
+        internal static bool IsBlackbirdInternalModule(string? moduleName)
+        {
+            string normalized = ModuleNameFromPath(moduleName);
+            return normalized.Equals("SR71.dll", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.Equals("J58.dll", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.Equals("BlackbirdController.exe", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.Equals("BlackbirdInterface.exe", StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal static bool IsBlackbirdInternalPath(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            string normalized = path.Trim().Replace('/', '\\');
+            return IsBlackbirdInternalModule(normalized) ||
+                   normalized.Contains("\\BK\\", StringComparison.OrdinalIgnoreCase);
+        }
 
         internal static string FormatSampleHex(byte[]? sample, int sampleSize)
         {
@@ -575,11 +596,8 @@ namespace BlackbirdInterface
             return sb.ToString();
         }
 
-        internal static string BuildNtApiArgumentSummary(
-            string? apiName,
-            IReadOnlyDictionary<string, string> fields,
-            string? actor,
-            string? target)
+        internal static string BuildNtApiArgumentSummary(string? apiName, IReadOnlyDictionary<string, string> fields,
+                                                         string? actor, string? target)
         {
             string api = string.IsNullOrWhiteSpace(apiName) ? "unknown" : apiName.Trim();
             string actorText = string.IsNullOrWhiteSpace(actor) ? "actor" : actor.Trim();
@@ -688,6 +706,15 @@ namespace BlackbirdInterface
                 return $"{actorText} queries process info on {targetText}: {DescribeProcessInformationClass(infoClass)} len=0x{length:X}";
             }
 
+            if (api.Equals("NtQueryInformationThread", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong threadHandle = FirstU64(fields, "a0", "c0");
+                ulong infoClass = FirstU64(fields, "a1", "c1");
+                ulong outputBuffer = FirstU64(fields, "a2", "c2");
+                ulong length = FirstU64(fields, "a3", "c3");
+                return $"{actorText} queries thread info on {targetText}: handle=0x{threadHandle:X} class=0x{infoClass:X} buffer=0x{outputBuffer:X} len=0x{length:X}";
+            }
+
             if (api.Equals("NtQueryVirtualMemory", StringComparison.OrdinalIgnoreCase))
             {
                 uint infoClass = (uint)FirstU64(fields, "a2", "c2");
@@ -710,8 +737,22 @@ namespace BlackbirdInterface
                 return $"{actorText} queries system info: {label} len=0x{outputLength:X}";
             }
 
+            if (api.Equals("NtQueryPerformanceCounter", StringComparison.OrdinalIgnoreCase))
+            {
+                ulong rawCounter = FirstU64(fields, "rawCounter", "a0", "c0");
+                ulong virtualCounter = FirstU64(fields, "virtualCounter", "a1", "c1");
+                ulong rawDelta = FirstU64(fields, "rawDelta", "a2", "c2");
+                ulong virtualDelta = FirstU64(fields, "virtualDelta", "a3", "c3");
+                ulong correctionTicks = FirstU64(fields, "correctionTicks", "a4", "c4");
+                uint sourceFlags = (uint)FirstU64(fields, "sourceFlags", "a5", "c5");
+                return $"{actorText} queries QPC with timing compensation: raw=0x{rawCounter:X} virtual=0x{virtualCounter:X} " +
+                       $"rawDelta=0x{rawDelta:X} virtualDelta=0x{virtualDelta:X} correction={correctionTicks} " +
+                       $"source={DescribeQpcTimingSourceFlags(sourceFlags)}";
+            }
+
             var rawArgs = new List<string>(8);
-            foreach (string key in new[] { "c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7", "a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7" })
+            foreach (string key in new[] { "c0", "c1", "c2", "c3", "c4", "c5", "c6", "c7", "a0", "a1", "a2", "a3", "a4",
+                                           "a5", "a6", "a7" })
             {
                 if (fields.TryGetValue(key, out string? value) && !string.IsNullOrWhiteSpace(value))
                 {
@@ -719,15 +760,55 @@ namespace BlackbirdInterface
                 }
             }
 
+            string displayTarget = string.Equals(actorText, targetText, StringComparison.Ordinal) ? "SELF" : targetText;
             return rawArgs.Count == 0
-                ? $"{actorText} invokes {api} against {targetText}"
-                : $"{actorText} invokes {api} against {targetText} ({string.Join(", ", rawArgs)})";
+                       ? $"{actorText} invokes {api} against {displayTarget}"
+                       : $"{actorText} invokes {api} against {displayTarget} ({string.Join(", ", rawArgs)})";
+        }
+
+        private static string DescribeQpcTimingSourceFlags(uint flags)
+        {
+            if (flags == 0)
+            {
+                return "none";
+            }
+
+            var parts = new List<string>(7);
+            if ((flags & BlackbirdNative.QpcTimingSourceBlackbirdOverhead) != 0)
+            {
+                parts.Add("blackbird-overhead");
+            }
+            if ((flags & BlackbirdNative.QpcTimingSourceAutoBias) != 0)
+            {
+                parts.Add("auto-bias");
+            }
+            if ((flags & BlackbirdNative.QpcTimingSourceManualBias) != 0)
+            {
+                parts.Add("manual-bias");
+            }
+            if ((flags & BlackbirdNative.QpcTimingSourceSuspendPause) != 0)
+            {
+                parts.Add("suspend-pause");
+            }
+            if ((flags & BlackbirdNative.QpcTimingSourceMonotonicClamp) != 0)
+            {
+                parts.Add("monotonic-clamp");
+            }
+            if ((flags & BlackbirdNative.QpcTimingSourcePairMatch) != 0)
+            {
+                parts.Add("pair-match");
+            }
+            if ((flags & BlackbirdNative.QpcTimingSourceTightPairClamp) != 0)
+            {
+                parts.Add("tight-pair-clamp");
+            }
+
+            return string.Join(",", parts);
         }
 
         private static string DescribeProcessInformationClass(uint value)
         {
-            string label = value switch
-            {
+            string label = value switch {
                 0 => "ProcessBasicInformation",
                 7 => "ProcessDebugPort",
                 26 => "ProcessWow64Information",
@@ -747,12 +828,12 @@ namespace BlackbirdInterface
 
         private static string DescribeSystemInformationClass(uint value)
         {
-            string label = value switch
-            {
+            string label = value switch {
                 5 => "SystemProcessInformation",
                 8 => "SystemProcessorPerformanceInformation",
                 11 => "SystemModuleInformation",
                 16 => "SystemHandleInformation",
+                35 => "SystemKernelDebuggerInformation",
                 57 => "SystemExtendedHandleInformation",
                 64 => "SystemProcessorIdleInformation",
                 76 => "SystemFirmwareTableInformation",
@@ -766,8 +847,7 @@ namespace BlackbirdInterface
 
         private static string DescribeMemoryInformationClass(uint value)
         {
-            string label = value switch
-            {
+            string label = value switch {
                 0 => "MemoryBasicInformation",
                 1 => "MemoryWorkingSetInformation",
                 2 => "MemoryMappedFilenameInformation",
@@ -781,25 +861,21 @@ namespace BlackbirdInterface
             return $"0x{value:X} ({label})";
         }
 
-        internal static bool IsBlackbirdEtwSource(BrokerEtwEventView view)
-            => view.SourceId == BlackbirdNative.IpcEtwSourceBlackbird ||
-               (view.SourceId == 0 &&
-                view.Source.Equals("Blackbird", StringComparison.OrdinalIgnoreCase));
+        internal static bool IsBlackbirdEtwSource(BrokerEtwEventView view) =>
+            view.SourceId == BlackbirdNative.IpcEtwSourceBlackbird ||
+            (view.SourceId == 0 && view.Source.Equals("BK", StringComparison.OrdinalIgnoreCase));
 
-        internal static bool IsUserHookEtwSource(BrokerEtwEventView view)
-            => view.SourceId == BlackbirdNative.IpcEtwSourceUserHook ||
-               (view.SourceId == 0 &&
-                view.Source.Equals("UserHook", StringComparison.OrdinalIgnoreCase));
+        internal static bool IsUserHookEtwSource(BrokerEtwEventView view) =>
+            view.SourceId == BlackbirdNative.IpcEtwSourceUserHook ||
+            (view.SourceId == 0 && view.Source.Equals("UserHook", StringComparison.OrdinalIgnoreCase));
 
-        internal static bool IsThreatIntelEtwSource(BrokerEtwEventView view)
-            => view.SourceId == BlackbirdNative.IpcEtwSourceThreatIntel ||
-               (view.SourceId == 0 &&
-                view.Source.Equals("ThreatIntel", StringComparison.OrdinalIgnoreCase));
+        internal static bool IsThreatIntelEtwSource(BrokerEtwEventView view) =>
+            view.SourceId == BlackbirdNative.IpcEtwSourceThreatIntel ||
+            (view.SourceId == 0 && view.Source.Equals("ThreatIntel", StringComparison.OrdinalIgnoreCase));
 
-        internal static bool IsKernelNetworkEtwSource(BrokerEtwEventView view)
-            => view.SourceId == BlackbirdNative.IpcEtwSourceKernelNetwork ||
-               (view.SourceId == 0 &&
-                view.Source.Equals("KernelNetwork", StringComparison.OrdinalIgnoreCase));
+        internal static bool IsKernelNetworkEtwSource(BrokerEtwEventView view) =>
+            view.SourceId == BlackbirdNative.IpcEtwSourceKernelNetwork ||
+            (view.SourceId == 0 && view.Source.Equals("KernelNetwork", StringComparison.OrdinalIgnoreCase));
 
         internal static bool IsKernelHookTelemetry(BrokerEtwEventView view)
         {
@@ -832,60 +908,71 @@ namespace BlackbirdInterface
             return string.Empty;
         }
 
+        internal static bool
+        HookTraceContainsOwnModule(uint flags) => (flags & BlackbirdNative.IpcEtwFlagHookCallerHasOwnModule) != 0;
+
         internal static string HookCallerKindLabel(uint kind)
         {
-            return kind switch
-            {
-                BlackbirdNative.HookCallerKindUnmapped => "Unbacked / Shellcode",
-                BlackbirdNative.HookCallerKindSystemDll => "System DLL",
-                BlackbirdNative.HookCallerKindProcessImage => "Process Image",
-                BlackbirdNative.HookCallerKindOwnModule => "SR71 / Own Module",
-                BlackbirdNative.HookCallerKindNonSystemDll => "Other DLL",
-                _ => "Unknown"
-            };
+            return kind switch { BlackbirdNative.HookCallerKindUnmapped => "Unbacked / Shellcode",
+                                 BlackbirdNative.HookCallerKindSystemDll => "System DLL",
+                                 BlackbirdNative.HookCallerKindProcessImage => "Process Image",
+                                 BlackbirdNative.HookCallerKindOwnModule => "SR71 / Own Module",
+                                 BlackbirdNative.HookCallerKindNonSystemDll => "Other DLL",
+                                 _ => "Unknown" };
+        }
+
+        internal static string HookComponentLabel(uint flags)
+        {
+            uint component =
+                (flags & BlackbirdNative.HookCallerComponentMask) >> (int)BlackbirdNative.HookCallerComponentShift;
+            return component switch { BlackbirdNative.HookComponentRuntime => "SR71 Runtime",
+                                      BlackbirdNative.HookComponentWinsock => "SR71 Winsock",
+                                      BlackbirdNative.HookComponentNt => "SR71 NT",
+                                      BlackbirdNative.HookComponentKi => "SR71 KI",
+                                      BlackbirdNative.HookComponentModule => "SR71 Module",
+                                      BlackbirdNative.HookComponentIntegrity => "SR71 Integrity",
+                                      BlackbirdNative.HookComponentLaunchGate => "SR71 Launch Gate",
+                                      BlackbirdNative.HookComponentIpc => "SR71 IPC",
+                                      _ => string.Empty };
         }
 
         internal static string HookImmediateCallerLabel(uint flags)
         {
-            uint kind = (flags & BlackbirdNative.HookCallerImmediateMask) >> (int)BlackbirdNative.HookCallerImmediateShift;
+            uint kind =
+                (flags & BlackbirdNative.HookCallerImmediateMask) >> (int)BlackbirdNative.HookCallerImmediateShift;
             return HookCallerKindLabel(kind);
         }
 
         internal static string HookDeepOriginLabel(uint flags)
         {
-            uint kind = (flags & BlackbirdNative.HookCallerDeepOriginMask) >> (int)BlackbirdNative.HookCallerDeepOriginShift;
+            uint kind =
+                (flags & BlackbirdNative.HookCallerDeepOriginMask) >> (int)BlackbirdNative.HookCallerDeepOriginShift;
             return HookCallerKindLabel(kind);
         }
 
         internal static bool IsUsermodeSensorTelemetry(BrokerEtwEventView view)
         {
-            if (!IsUserHookEtwSource(view) || view.Task != 0)
+            if (!IsUserHookEtwSource(view))
             {
                 return false;
             }
 
             return view.NotifyClass is BlackbirdNative.IpcHookEventNt or
-                BlackbirdNative.IpcHookEventWinsock or
-                BlackbirdNative.IpcHookEventKi or
-                BlackbirdNative.IpcHookEventModule or
-                BlackbirdNative.IpcHookEventExceptionLowNoise or
-                BlackbirdNative.IpcHookEventExceptionHighPriv or
-                BlackbirdNative.IpcHookEventIntegrity;
+                BlackbirdNative.IpcHookEventWinsock or BlackbirdNative.IpcHookEventKi or BlackbirdNative
+                    .IpcHookEventModule or BlackbirdNative.IpcHookEventExceptionLowNoise or
+                        BlackbirdNative.IpcHookEventExceptionHighPriv or BlackbirdNative.IpcHookEventIntegrity;
         }
 
         internal static string HookKindName(uint notifyClass)
         {
-            return notifyClass switch
-            {
-                BlackbirdNative.IpcHookEventNt => "NT",
-                BlackbirdNative.IpcHookEventWinsock => "Winsock",
-                BlackbirdNative.IpcHookEventKi => "KI",
-                BlackbirdNative.IpcHookEventModule => "Module",
-                BlackbirdNative.IpcHookEventExceptionLowNoise => "ExceptionLowNoise",
-                BlackbirdNative.IpcHookEventExceptionHighPriv => "ExceptionHighPriv",
-                BlackbirdNative.IpcHookEventIntegrity => "Integrity",
-                _ => "Hook"
-            };
+            return notifyClass switch { BlackbirdNative.IpcHookEventNt => "NT",
+                                        BlackbirdNative.IpcHookEventWinsock => "Winsock",
+                                        BlackbirdNative.IpcHookEventKi => "KI",
+                                        BlackbirdNative.IpcHookEventModule => "Module",
+                                        BlackbirdNative.IpcHookEventExceptionLowNoise => "ExceptionLowNoise",
+                                        BlackbirdNative.IpcHookEventExceptionHighPriv => "ExceptionHighPriv",
+                                        BlackbirdNative.IpcHookEventIntegrity => "Integrity",
+                                        _ => "Hook" };
         }
 
         internal static string HookTimelineGroup(BrokerEtwEventView view)
@@ -895,17 +982,14 @@ namespace BlackbirdInterface
                 return "API Hooks";
             }
 
-            return view.NotifyClass switch
-            {
-                BlackbirdNative.IpcHookEventNt => "Hook NT",
-                BlackbirdNative.IpcHookEventWinsock => "Hook Winsock",
-                BlackbirdNative.IpcHookEventKi => "Hook KI",
-                BlackbirdNative.IpcHookEventModule => "Hook Module",
-                BlackbirdNative.IpcHookEventIntegrity => "Hook Integrity",
-                BlackbirdNative.IpcHookEventExceptionLowNoise => "Hook Exceptions",
-                BlackbirdNative.IpcHookEventExceptionHighPriv => "Hook Exceptions",
-                _ => "API Hooks"
-            };
+            return view.NotifyClass switch { BlackbirdNative.IpcHookEventNt => "Hook NT",
+                                             BlackbirdNative.IpcHookEventWinsock => "Hook Winsock",
+                                             BlackbirdNative.IpcHookEventKi => "Hook KI",
+                                             BlackbirdNative.IpcHookEventModule => "Hook Module",
+                                             BlackbirdNative.IpcHookEventIntegrity => "Hook Integrity",
+                                             BlackbirdNative.IpcHookEventExceptionLowNoise => "Hook Exceptions",
+                                             BlackbirdNative.IpcHookEventExceptionHighPriv => "Hook Exceptions",
+                                             _ => "API Hooks" };
         }
 
         internal static bool IsApiGraphCandidate(BrokerEtwEventView view)
@@ -921,14 +1005,14 @@ namespace BlackbirdInterface
             }
 
             // Legacy fallback for older snapshots that may not carry structured source metadata yet.
-            if (!HasStructuredHookRoute(view) &&
-                ReasonContainsToken(view.Reason, "kind", "kernel_ntapi"))
+            if (!HasStructuredHookRoute(view) && ReasonContainsToken(view.Reason, "kind", "kernel_ntapi"))
             {
                 return true;
             }
 
             return view.Family == BlackbirdNative.IpcEtwFamilyUserHook &&
-                   !string.Equals(view.DetectionName, "USERMODE_HOOK_INTEGRITY_OK", StringComparison.OrdinalIgnoreCase) &&
+                   !string.Equals(view.DetectionName, "USERMODE_HOOK_INTEGRITY_OK",
+                                  StringComparison.OrdinalIgnoreCase) &&
                    !string.Equals(view.DetectionName, "AMSI_PATCH_OK", StringComparison.OrdinalIgnoreCase) &&
                    !string.Equals(view.DetectionName, "ETW_PATCH_OK", StringComparison.OrdinalIgnoreCase);
         }
@@ -940,14 +1024,12 @@ namespace BlackbirdInterface
                 return "Kernel Hook";
             }
 
-            if (!HasStructuredHookRoute(view) &&
-                ReasonContainsToken(view.Reason, "kind", "kernel_ntapi"))
+            if (!HasStructuredHookRoute(view) && ReasonContainsToken(view.Reason, "kind", "kernel_ntapi"))
             {
                 return "Kernel Hook";
             }
 
-            if (IsUsermodeSensorTelemetry(view) ||
-                IsUserHookEtwSource(view) ||
+            if (IsUsermodeSensorTelemetry(view) || IsUserHookEtwSource(view) ||
                 (!string.IsNullOrWhiteSpace(view.DetectionName) &&
                  view.DetectionName.StartsWith("USERMODE_", StringComparison.OrdinalIgnoreCase)))
             {
@@ -957,16 +1039,13 @@ namespace BlackbirdInterface
             return "Unclassified";
         }
 
-        private static bool HasStructuredHookRoute(BrokerEtwEventView view)
-            => view.Family == BlackbirdNative.IpcEtwFamilyUserHook ||
-               view.NotifyClass != 0 ||
-               view.Task != 0 ||
-               view.SourceId != 0;
+        private static bool HasStructuredHookRoute(BrokerEtwEventView view) =>
+            view.Family == BlackbirdNative.IpcEtwFamilyUserHook
+            || view.NotifyClass != 0 || view.Task != 0 || view.SourceId != 0;
 
         private static bool ReasonContainsToken(string? reason, string key, string expectedValue)
         {
-            if (string.IsNullOrWhiteSpace(reason) ||
-                string.IsNullOrWhiteSpace(key) ||
+            if (string.IsNullOrWhiteSpace(reason) || string.IsNullOrWhiteSpace(key) ||
                 string.IsNullOrWhiteSpace(expectedValue))
             {
                 return false;
@@ -978,9 +1057,7 @@ namespace BlackbirdInterface
             while (index < span.Length)
             {
                 int nextSpace = span[index..].IndexOf(' ');
-                ReadOnlySpan<char> segment = nextSpace >= 0
-                    ? span.Slice(index, nextSpace)
-                    : span[index..];
+                ReadOnlySpan<char> segment = nextSpace >= 0 ? span.Slice(index, nextSpace) : span[index..];
 
                 if (segment.StartsWith(token, StringComparison.OrdinalIgnoreCase))
                 {
@@ -1017,13 +1094,11 @@ namespace BlackbirdInterface
 
             for (int i = 0; i <= count - 11; i += 1)
             {
-                if (sample[i] == 0x4C && sample[i + 1] == 0x8B && sample[i + 2] == 0xD1 &&
-                    sample[i + 3] == 0xB8 && sample[i + 8] == 0x0F && sample[i + 9] == 0x05)
+                if (sample[i] == 0x4C && sample[i + 1] == 0x8B && sample[i + 2] == 0xD1 && sample[i + 3] == 0xB8 &&
+                    sample[i + 8] == 0x0F && sample[i + 9] == 0x05)
                 {
-                    uint syscallId = (uint)(sample[i + 4] |
-                                            (sample[i + 5] << 8) |
-                                            (sample[i + 6] << 16) |
-                                            (sample[i + 7] << 24));
+                    uint syscallId =
+                        (uint)(sample[i + 4] | (sample[i + 5] << 8) | (sample[i + 6] << 16) | (sample[i + 7] << 24));
                     return $"syscall stub pattern: mov r10,rcx; mov eax,0x{syscallId:X}; syscall";
                 }
             }
@@ -1043,16 +1118,10 @@ namespace BlackbirdInterface
             return "no known syscall/trampoline signature";
         }
 
-        internal static string FormatSampleDisassembly(
-            byte[]? sample,
-            int sampleSize,
-            ulong originAddress = 0,
-            string? modulePath = null,
-            ulong regionBase = 0,
-            ulong regionSize = 0,
-            uint regionProtect = 0,
-            uint regionState = 0,
-            uint regionType = 0)
+        internal static string FormatSampleDisassembly(byte[]? sample, int sampleSize, ulong originAddress = 0,
+                                                       string? modulePath = null, ulong regionBase = 0,
+                                                       ulong regionSize = 0, uint regionProtect = 0,
+                                                       uint regionState = 0, uint regionType = 0)
         {
             if (sample == null || sampleSize <= 0)
             {
@@ -1070,45 +1139,45 @@ namespace BlackbirdInterface
             if (!string.IsNullOrWhiteSpace(modulePath))
             {
                 sb.Append('\n')
-                  .Append("module: ")
-                  .Append(ModuleNameFromPath(modulePath))
-                  .Append(" (")
-                  .Append(modulePath)
-                  .Append(')');
+                    .Append("module: ")
+                    .Append(ModuleNameFromPath(modulePath))
+                    .Append(" (")
+                    .Append(modulePath)
+                    .Append(')');
             }
             if (originAddress != 0)
             {
                 ulong pageBase = originAddress & ~0xFFFUL;
                 sb.Append('\n')
-                  .Append("origin: 0x")
-                  .Append(originAddress.ToString("X"))
-                  .Append(" page: 0x")
-                  .Append(pageBase.ToString("X"));
+                    .Append("origin: 0x")
+                    .Append(originAddress.ToString("X"))
+                    .Append(" page: 0x")
+                    .Append(pageBase.ToString("X"));
             }
             if (regionBase != 0 || regionSize != 0 || regionProtect != 0 || regionState != 0 || regionType != 0)
             {
                 ulong regionEnd = regionSize == 0 ? regionBase : (regionBase + regionSize);
                 sb.Append('\n')
-                  .Append("region: 0x")
-                  .Append(regionBase.ToString("X"))
-                  .Append("-0x")
-                  .Append(regionEnd.ToString("X"))
-                  .Append(" size=0x")
-                  .Append(regionSize.ToString("X"));
+                    .Append("region: 0x")
+                    .Append(regionBase.ToString("X"))
+                    .Append("-0x")
+                    .Append(regionEnd.ToString("X"))
+                    .Append(" size=0x")
+                    .Append(regionSize.ToString("X"));
                 sb.Append('\n')
-                  .Append("vad: protect=0x")
-                  .Append(regionProtect.ToString("X8"))
-                  .Append(" (")
-                  .Append(DescribeMemoryProtection(regionProtect))
-                  .Append(") state=0x")
-                  .Append(regionState.ToString("X8"))
-                  .Append(" (")
-                  .Append(DescribeMemoryState(regionState))
-                  .Append(") type=0x")
-                  .Append(regionType.ToString("X8"))
-                  .Append(" (")
-                  .Append(DescribeMemoryType(regionType))
-                  .Append(')');
+                    .Append("vad: protect=0x")
+                    .Append(regionProtect.ToString("X8"))
+                    .Append(" (")
+                    .Append(DescribeMemoryProtection(regionProtect))
+                    .Append(") state=0x")
+                    .Append(regionState.ToString("X8"))
+                    .Append(" (")
+                    .Append(DescribeMemoryState(regionState))
+                    .Append(") type=0x")
+                    .Append(regionType.ToString("X8"))
+                    .Append(" (")
+                    .Append(DescribeMemoryType(regionType))
+                    .Append(')');
             }
             sb.Append('\n').Append("summary: ").Append(InferSampleDisassembly(sample, count));
 
@@ -1126,16 +1195,9 @@ namespace BlackbirdInterface
                 }
 
                 string bytes = FormatSampleBytes(sample, offset, length);
-                string address = originAddress != 0
-                    ? $"0x{(originAddress + (ulong)offset):X}"
-                    : $"+0x{offset:X2}";
+                string address = originAddress != 0 ? $"0x{(originAddress + (ulong)offset):X}" : $"+0x{offset:X2}";
 
-                sb.Append('\n')
-                  .Append(address)
-                  .Append(": ")
-                  .Append(bytes.PadRight(24))
-                  .Append(' ')
-                  .Append(mnemonic);
+                sb.Append('\n').Append(address).Append(": ").Append(bytes.PadRight(24)).Append(' ').Append(mnemonic);
 
                 offset += length;
                 emitted += 1;
@@ -1173,17 +1235,11 @@ namespace BlackbirdInterface
         private static string FormatRelativeTarget(int offset, int instructionLength, int displacement)
         {
             int target = offset + instructionLength + displacement;
-            return target >= 0
-                ? $"+0x{target:X}"
-                : $"-0x{(-target):X}";
+            return target >= 0 ? $"+0x{target:X}" : $"-0x{(-target):X}";
         }
 
-        private static bool TryDecodeX64Instruction(
-            byte[] sample,
-            int count,
-            int offset,
-            out int length,
-            out string mnemonic)
+        private static bool TryDecodeX64Instruction(byte[] sample, int count, int offset, out int length,
+                                                    out string mnemonic)
         {
             length = 0;
             mnemonic = string.Empty;
@@ -1196,22 +1252,19 @@ namespace BlackbirdInterface
             int remaining = count - offset;
             byte b0 = sample[offset];
 
-            if (remaining >= 11 &&
-                b0 == 0x4C && sample[offset + 1] == 0x8B && sample[offset + 2] == 0xD1 &&
+            if (remaining >= 11 && b0 == 0x4C && sample[offset + 1] == 0x8B && sample[offset + 2] == 0xD1 &&
                 sample[offset + 3] == 0xB8 && sample[offset + 8] == 0x0F && sample[offset + 9] == 0x05 &&
                 sample[offset + 10] == 0xC3)
             {
-                uint syscallId = (uint)(sample[offset + 4] |
-                                        (sample[offset + 5] << 8) |
-                                        (sample[offset + 6] << 16) |
+                uint syscallId = (uint)(sample[offset + 4] | (sample[offset + 5] << 8) | (sample[offset + 6] << 16) |
                                         (sample[offset + 7] << 24));
                 length = 11;
                 mnemonic = $"mov r10, rcx; mov eax, 0x{syscallId:X}; syscall; ret";
                 return true;
             }
 
-            if (remaining >= 4 &&
-                b0 == 0xF3 && sample[offset + 1] == 0x0F && sample[offset + 2] == 0x1E && sample[offset + 3] == 0xFA)
+            if (remaining >= 4 && b0 == 0xF3 && sample[offset + 1] == 0x0F && sample[offset + 2] == 0x1E &&
+                sample[offset + 3] == 0xFA)
             {
                 length = 4;
                 mnemonic = "endbr64";
@@ -1227,9 +1280,7 @@ namespace BlackbirdInterface
 
             if (remaining >= 5 && b0 == 0xB8)
             {
-                uint imm = (uint)(sample[offset + 1] |
-                                  (sample[offset + 2] << 8) |
-                                  (sample[offset + 3] << 16) |
+                uint imm = (uint)(sample[offset + 1] | (sample[offset + 2] << 8) | (sample[offset + 3] << 16) |
                                   (sample[offset + 4] << 24));
                 length = 5;
                 mnemonic = $"mov eax, 0x{imm:X}";
@@ -1247,7 +1298,8 @@ namespace BlackbirdInterface
             {
                 int rel = BitConverter.ToInt32(sample, offset + 3);
                 length = 7;
-                mnemonic = $"lea rax, [rip{(rel >= 0 ? "+" : "-")}0x{Math.Abs(rel):X}] ; -> {FormatRelativeTarget(offset, length, rel)}";
+                mnemonic =
+                    $"lea rax, [rip{(rel >= 0 ? "+" : "-")}0x{Math.Abs(rel):X}] ; -> {FormatRelativeTarget(offset, length, rel)}";
                 return true;
             }
 
@@ -1255,7 +1307,8 @@ namespace BlackbirdInterface
             {
                 int rel = BitConverter.ToInt32(sample, offset + 2);
                 length = 6;
-                mnemonic = $"jmp qword ptr [rip{(rel >= 0 ? "+" : "-")}0x{Math.Abs(rel):X}] ; -> {FormatRelativeTarget(offset, length, rel)}";
+                mnemonic =
+                    $"jmp qword ptr [rip{(rel >= 0 ? "+" : "-")}0x{Math.Abs(rel):X}] ; -> {FormatRelativeTarget(offset, length, rel)}";
                 return true;
             }
 

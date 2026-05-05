@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Launch Parameters"
         Width="720"
-        Height="660"
+        Height="760"
         MinWidth="720"
-        MinHeight="660"
+        MinHeight="700"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None"
         ResizeMode="CanResize"
@@ -184,7 +184,7 @@
                                 <CheckBox x:Name="AutoOpenApiGraphCheckBox"
                                           Margin="0,8,0,0"
                                           Content="Auto-switch to API view"
-                                          IsChecked="True"/>
+                                          IsChecked="False"/>
                                 <CheckBox x:Name="EarlyBirdApcCheckBox"
                                           Margin="0,8,0,0"
                                           Content="Launch via APC (required)"
@@ -209,7 +209,7 @@
                                 <TextBlock Margin="0,4,0,0"
                                            Foreground="{DynamicResource WinMutedTextBrush}"
                                            TextWrapping="Wrap"
-                                           Text="Working directory, environment overrides, staged resume, parent/inherited handles, and scheduler placement."/>
+                                           Text="Working directory, environment overrides, staged resume, PPID spoofing, inherited handles, and scheduler placement."/>
 
                                 <Grid Margin="0,10,0,0">
                                     <Grid.ColumnDefinitions>
@@ -229,6 +229,21 @@
                                         <ColumnDefinition Width="170"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Arguments"/>
+                                    <TextBox x:Name="CommandLineArgumentsTextBox"
+                                             Grid.Column="1"
+                                             MinWidth="240"
+                                             HorizontalAlignment="Stretch"
+                                             FontFamily="{DynamicResource AppMonoFontFamily}"
+                                             ToolTip="Arguments passed after the executable path. Preserve your own quoting, for example: --profile &quot;lab one&quot;"/>
+                                </Grid>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
                                     <TextBlock VerticalAlignment="Top"
                                                Margin="0,4,0,0"
                                                Text="Environment overrides"/>
@@ -238,7 +253,7 @@
                                                  Height="110"
                                                  VerticalScrollBarVisibility="Auto"
                                                  TextWrapping="NoWrap"
-                                                 FontFamily="Consolas"/>
+                                                 FontFamily="{DynamicResource AppMonoFontFamily}"/>
                                         <TextBlock Margin="0,4,0,0"
                                                    Foreground="{DynamicResource WinMutedTextBrush}"
                                                    Text="One per line: NAME=VALUE"/>
@@ -253,15 +268,22 @@
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="170"/>
                                         <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="90"/>
                                         <ColumnDefinition Width="150"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock VerticalAlignment="Center"
-                                               Text="Parent process PID"/>
+                                               Text="Spoof parent PID"/>
                                     <TextBox x:Name="ParentPidTextBox"
                                              Grid.Column="1"
                                              Margin="0,0,10,0"/>
+                                    <Button x:Name="UseShellParentButton"
+                                            Grid.Column="2"
+                                            Margin="0,0,10,0"
+                                            Content="Use shell"
+                                            Height="26"
+                                            Click="UseShellParent_Click"/>
                                     <CheckBox x:Name="InheritHandlesCheckBox"
-                                              Grid.Column="2"
+                                              Grid.Column="3"
                                               VerticalAlignment="Center"
                                               Content="Inherit handles"/>
                                 </Grid>
@@ -317,6 +339,112 @@
                                         <ComboBoxItem Content="High (admin)"/>
                                         <ComboBoxItem Content="SYSTEM"/>
                                     </ComboBox>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border x:Name="DllAnalysisPanel"
+                                Margin="0,12,0,0"
+                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                BorderThickness="1"
+                                Background="{DynamicResource WinPanelBrush}"
+                                Padding="10,10"
+                                Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="DLL Analysis"/>
+                                <TextBlock Margin="0,4,0,0"
+                                           Foreground="{DynamicResource WinMutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Blackbird will launch a small host process, then treat the DLL path as the analysis subject for driver and hook attribution."/>
+
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Mode"/>
+                                    <ComboBox x:Name="DllModeComboBox"
+                                              Grid.Column="1"
+                                              Style="{StaticResource LaunchComboStyle}"
+                                              ItemContainerStyle="{StaticResource LaunchComboItemStyle}"
+                                              SelectedIndex="0"
+                                              SelectionChanged="DllModeComboBox_SelectionChanged">
+                                        <ComboBoxItem Content="Load only"/>
+                                        <ComboBoxItem Content="Call export"/>
+                                        <ComboBoxItem Content="Rundll export"/>
+                                        <ComboBoxItem Content="DllRegisterServer"/>
+                                        <ComboBoxItem Content="DllUnregisterServer"/>
+                                        <ComboBoxItem Content="DllInstall"/>
+                                    </ComboBox>
+                                    <TextBlock Grid.Column="2"
+                                               Margin="14,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Text="Hold time (ms)"/>
+                                    <TextBox x:Name="DllWaitMsTextBox"
+                                             Grid.Column="3"
+                                             Margin="10,0,0,0"
+                                             Text="60000"/>
+                                </Grid>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Export name"/>
+                                    <TextBox x:Name="DllExportTextBox"
+                                             Grid.Column="1"
+                                             FontFamily="{DynamicResource AppMonoFontFamily}"/>
+                                    <TextBlock Grid.Column="2"
+                                               Margin="14,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Text="Export ordinal"/>
+                                    <TextBox x:Name="DllOrdinalTextBox"
+                                             Grid.Column="3"
+                                             Margin="10,0,0,0"/>
+                                </Grid>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Argument"/>
+                                    <TextBox x:Name="DllArgumentTextBox"
+                                             Grid.Column="1"
+                                             FontFamily="{DynamicResource AppMonoFontFamily}"/>
+                                </Grid>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Load flags"/>
+                                    <TextBox x:Name="DllLoadFlagsTextBox"
+                                             Grid.Column="1"
+                                             ToolTip="Optional LoadLibraryEx flags as decimal or hex."/>
+                                    <CheckBox x:Name="DllFreeOnExitCheckBox"
+                                              Grid.Column="2"
+                                              Margin="14,0,0,0"
+                                              VerticalAlignment="Center"
+                                              Content="Free on exit"/>
+                                    <CheckBox x:Name="DllInstallDisableCheckBox"
+                                              Grid.Column="3"
+                                              Margin="10,0,0,0"
+                                              VerticalAlignment="Center"
+                                              Content="DllInstall(FALSE)"/>
                                 </Grid>
                             </StackPanel>
                         </Border>

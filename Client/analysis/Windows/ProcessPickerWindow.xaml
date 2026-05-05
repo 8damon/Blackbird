@@ -203,18 +203,6 @@
             <TextBlock Text="Display entries matching these conditions:"
                        FontWeight="SemiBold"
                        VerticalAlignment="Center"/>
-            <Button DockPanel.Dock="Right"
-                    Content="✕"
-                    Width="28"
-                    Height="22"
-                    Margin="8,0,0,0"
-                    VerticalAlignment="Top"
-                    HorizontalContentAlignment="Center"
-                    VerticalContentAlignment="Center"
-                    Padding="0"
-                    FontSize="13"
-                    Style="{DynamicResource PickerFlatButtonStyle}"
-                    Click="Cancel_Click"/>
         </DockPanel>
 
         <Grid Grid.Row="1" Margin="0,0,0,8">
@@ -570,43 +558,71 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <DockPanel Grid.Row="7" Margin="0,8,0,0" LastChildFill="False">
-            <StackPanel x:Name="LaunchOptionsPanel"
-                        DockPanel.Dock="Left"
-                        Orientation="Vertical"
-                        Margin="0,0,12,0"
-                        Visibility="Collapsed">
-                <CheckBox x:Name="UseUsermodeHooksCheckBox"
-                          Content="Use usermode hooks?"
-                          Checked="UseUsermodeHooksCheckBox_Changed"
-                          Unchecked="UseUsermodeHooksCheckBox_Changed"
-                          IsChecked="True"/>
-                <CheckBox x:Name="AutoOpenApiGraphCheckBox"
-                          Content="Auto-switch to API view"
-                          Margin="0,4,0,0"
-                          IsChecked="True"/>
-                <CheckBox x:Name="EarlyBirdApcCheckBox"
-                          Content="Launch via APC"
-                          Margin="0,4,0,0"
-                          IsEnabled="False"
-                          IsChecked="True"/>
-            </StackPanel>
-            <Button Content="Open .exe..."
-                    DockPanel.Dock="Left"
-                    Background="#FF2F6ED8"
-                    BorderBrush="#FF3F86FF"
-                    Foreground="#FFF4F8FF"
-                    Click="OpenExe_Click"/>
-            <Button Content="Cancel"
-                    DockPanel.Dock="Right"
-                    Style="{DynamicResource PickerFlatButtonStyle}"
-                    Click="Cancel_Click"/>
-            <Button Content="Use Selected"
-                    DockPanel.Dock="Right"
-                    Margin="0,0,8,0"
-                    Style="{DynamicResource PickerFlatButtonStyle}"
-                    Click="Select_Click"/>
-        </DockPanel>
+        <Grid Grid.Row="7" Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.2*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    Grid.ColumnSpan="3"
+                    Padding="12,10"
+                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                    BorderThickness="1"
+                    Background="{DynamicResource WinPanelBrush}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="Target Image"
+                                   FontWeight="SemiBold" />
+                        <TextBlock Margin="0,4,0,0"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Text="Pick a live process from the grid, or launch an executable or DLL directly into capture." />
+                        <StackPanel x:Name="LaunchOptionsPanel"
+                                    Orientation="Vertical"
+                                    Margin="0,10,0,0"
+                                    Visibility="Collapsed">
+                            <CheckBox x:Name="UseUsermodeHooksCheckBox"
+                                      Content="Use usermode hooks?"
+                                      Checked="UseUsermodeHooksCheckBox_Changed"
+                                      Unchecked="UseUsermodeHooksCheckBox_Changed"
+                                      IsChecked="True"/>
+                            <CheckBox x:Name="AutoOpenApiGraphCheckBox"
+                                      Content="Auto-switch to API view"
+                                      Margin="0,4,0,0"
+                                      IsChecked="False"/>
+                            <CheckBox x:Name="EarlyBirdApcCheckBox"
+                                      Content="Launch via APC"
+                                      Margin="0,4,0,0"
+                                      IsEnabled="False"
+                                      IsChecked="True"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                Margin="12,0,0,0"
+                                VerticalAlignment="Center">
+                        <Button Content="Run EXE..."
+                                Padding="14,8"
+                                Background="#FF2F6ED8"
+                                BorderBrush="#FF3F86FF"
+                                Foreground="#FFF4F8FF"
+                                Click="OpenExe_Click"/>
+                        <Button Content="Run DLL..."
+                                Margin="8,0,0,0"
+                                Padding="14,8"
+                                Style="{DynamicResource PickerFlatButtonStyle}"
+                                Click="OpenDll_Click"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </Window>
 

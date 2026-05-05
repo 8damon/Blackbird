@@ -1,0 +1,98 @@
+<Window x:Class="BlackbirdInterface.VmRegistrationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Prepare VM Enrollment"
+        Height="660"
+        Width="920"
+        MinHeight="500"
+        MinWidth="820"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        Background="{DynamicResource WinBgBrush}"
+        PreviewKeyDown="Window_PreviewKeyDown">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <DockPanel Grid.Row="0" Margin="0,0,0,10" MouseLeftButtonDown="Root_MouseLeftButtonDown">
+            <StackPanel>
+                <TextBlock Text="Prepare VM Enrollment" FontSize="14" FontWeight="SemiBold"/>
+                <TextBlock Text="Creates the install-time trust package for the server operator identity." Foreground="{DynamicResource WinMutedTextBrush}"/>
+            </StackPanel>
+            <Button DockPanel.Dock="Right" Content="x" Width="24" Height="22" Click="Close_Click"/>
+        </DockPanel>
+
+        <Border Grid.Row="1"
+                Background="{DynamicResource WinPanelBrush}"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="1"
+                Padding="12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="180"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Row="0"
+                        Grid.ColumnSpan="2"
+                        Background="#221B6D85"
+                        BorderBrush="{DynamicResource WinBorderBrush}"
+                        BorderThickness="1"
+                        Padding="10"
+                        Margin="0,0,0,10">
+                    <TextBlock TextWrapping="Wrap"
+                               Foreground="{DynamicResource WinTextBrush}"
+                               Text="Server-side registration is two steps: provision VM trust for the server operator fingerprint, then let the server discover/register the running VM. Build this package, copy the Blackbird folder into the VM, then run Register-BlackbirdVm.ps1 elevated from that folder."/>
+                </Border>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="VM Name" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="1" Grid.Column="1" x:Name="MachineNameBox" Height="26" Margin="0,0,0,8"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Operator Fingerprint" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="2" Grid.Column="1" x:Name="OperatorFingerprintBox" Height="26" Margin="0,0,0,8" FontFamily="Consolas"
+                         ToolTip="64 hex characters. This is the analyst/operator identity public-key fingerprint, not a yes/no setting."/>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Blackbird Root" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="3" Grid.Column="1" x:Name="BlackbirdRootBox" Height="26" Margin="0,0,0,8"/>
+
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="Output Root" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="4" Grid.Column="1" x:Name="OutputRootBox" Height="26" Margin="0,0,0,8"/>
+
+                <TextBlock Grid.Row="5" Grid.Column="0" Text="VM Copy Path" VerticalAlignment="Center"/>
+                <TextBox Grid.Row="5" Grid.Column="1" x:Name="RemotePathBox" Height="26" Margin="0,0,0,8"
+                         ToolTip="Example: \\lab-win11-004\C$\BlackbirdRegistration"/>
+
+                <TextBox Grid.Row="6"
+                         Grid.ColumnSpan="2"
+                         x:Name="OutputBox"
+                         FontFamily="Consolas"
+                         FontSize="12"
+                         TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto"
+                         IsReadOnly="True"
+                         Background="#FF0A0A0A"
+                         Foreground="{DynamicResource WinTextBrush}"
+                         BorderBrush="{DynamicResource WinBorderBrush}"/>
+            </Grid>
+        </Border>
+
+        <DockPanel Grid.Row="2" Margin="0,10,0,0" LastChildFill="False">
+            <Button x:Name="BuildButton" Content="Build Package" Width="120" Margin="0,0,8,0" Click="BuildPackage_Click"/>
+            <Button x:Name="CopyButton" Content="Copy To VM" Width="120" Margin="0,0,8,0" Click="CopyToVm_Click"/>
+            <Button Content="Close" Width="90" Click="Close_Click"/>
+        </DockPanel>
+    </Grid>
+</Window>

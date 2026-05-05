@@ -24,12 +24,15 @@ namespace BlackbirdInterface
 {
     public partial class ProcessPickerWindow : Window
     {
+        private readonly int _currentPid = Environment.ProcessId;
         private readonly List<ProcessItem> _all = new();
         private readonly ObservableCollection<ProcessItem> _view = new();
         private readonly ObservableCollection<ProcessFilterRule> _rules = new();
         private readonly Dictionary<int, (long cpu100ns, DateTime ts)> _cpuBaseline = new();
-        private readonly Dictionary<string, SignatureTrustState> _signatureCache = new(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<string, ProcessPathMetadata> _pathMetadataCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, SignatureTrustState> _signatureCache =
+            new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, ProcessPathMetadata> _pathMetadataCache =
+            new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, ImageSource?> _iconCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<int, ProcessEnrichmentSnapshot> _processEnrichmentCache = new();
         private readonly object _cacheLock = new();
@@ -60,15 +63,15 @@ namespace BlackbirdInterface
 
         public int SelectedPid { get; private set; }
         public bool UseUsermodeHooks { get; private set; }
-        public bool AutoOpenApiGraphWindow { get; private set; } = true;
+        public bool AutoOpenApiGraphWindow { get; private set; }
         public bool UseEarlyBirdApcLaunch { get; private set; }
         public bool LaunchSelectedImage { get; private set; }
         public string LaunchImagePath { get; private set; } = string.Empty;
+        public LaunchTargetKind SelectedLaunchTargetKind { get; private set; } = LaunchTargetKind.Executable;
         public bool ShowLaunchOptions
         {
             get => _showLaunchOptions;
-            set
-            {
+            set {
                 _showLaunchOptions = value;
                 UpdateLaunchOptionsUi();
             }
@@ -78,7 +81,7 @@ namespace BlackbirdInterface
         {
             InitializeComponent();
             Opacity = 0;
-            WindowThemeHelper.ApplyTitleBarTheme(this, App.IsDarkTheme);
+            WindowThemeHelper.WireThemeAwareTitleBar(this);
             RefreshThemePalette();
             _defaultProcessIcon = GetDefaultProcessIcon();
 
@@ -86,21 +89,20 @@ namespace BlackbirdInterface
             RulesGrid.ItemsSource = _rules;
             UpdateRulesPanelVisibility();
 
-            _refreshTimer = new DispatcherTimer(DispatcherPriority.Background)
-            {
-                Interval = TimeSpan.FromSeconds(2)
-            };
+            _refreshTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(2) };
             _refreshTimer.Tick += (_, __) => RefreshList();
 
             Loaded += async (_, __) =>
             {
                 await RevealAfterFirstRenderAsync();
 
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    EnsureInitialListPrepared();
-                    _refreshTimer.Start();
-                }, DispatcherPriority.Background);
+                await Dispatcher.InvokeAsync(
+                    () =>
+                    {
+                        EnsureInitialListPrepared();
+                        _refreshTimer.Start();
+                    },
+                    DispatcherPriority.Background);
             };
             Closed += (_, __) =>
             {
@@ -155,7 +157,9 @@ namespace BlackbirdInterface
             if (_firstRevealComplete)
                 return;
 
-            await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Render);
+            await Dispatcher.InvokeAsync(() =>
+                                         {},
+                                         DispatcherPriority.Render);
             Opacity = 1;
             Activate();
             _firstRevealComplete = true;
@@ -176,7 +180,8 @@ namespace BlackbirdInterface
 
         private void AddRule_Click(object sender, RoutedEventArgs e)
         {
-            if (!_isReady || FilterColumnBox == null || FilterRelationBox == null || FilterActionBox == null || FilterValueBox == null)
+            if (!_isReady || FilterColumnBox == null || FilterRelationBox == null || FilterActionBox == null ||
+                FilterValueBox == null)
                 return;
 
             string column = (FilterColumnBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "Process Name";
@@ -187,14 +192,8 @@ namespace BlackbirdInterface
             if (string.IsNullOrWhiteSpace(value))
                 return;
 
-            _rules.Add(new ProcessFilterRule
-            {
-                Enabled = true,
-                Column = column,
-                Relation = relation,
-                Value = value,
-                Action = action
-            });
+            _rules.Add(new ProcessFilterRule { Enabled = true, Column = column, Relation = relation, Value = value,
+                                               Action = action });
 
             FilterValueBox.Text = "";
             UpdateRulesPanelVisibility();
@@ -241,6 +240,7 @@ namespace BlackbirdInterface
             int selectedIndex = ProcessGrid.SelectedIndex;
             var list = new List<ProcessItem>();
             var snapshot = QuerySystemProcessesFast();
+            EnsureCurrentProcessVisible(snapshot);
             var presentPids = new HashSet<int>(snapshot.Select(s => s.Pid));
             var now = DateTime.UtcNow;
 
@@ -255,29 +255,26 @@ namespace BlackbirdInterface
 
                 bool isChild = entry.ParentPid > 0;
                 double cpuPct = TryGetCpuPercent(entry.Pid, entry.CpuTime100ns, now);
-                var row = new ProcessItem
-                {
-                    Name = entry.Name,
-                    AppName = cached?.AppName ?? entry.Name,
-                    Company = cached?.Company ?? "",
-                    FileName = cached?.FileName ?? "",
-                    Icon = cached?.Icon ?? _defaultProcessIcon,
-                    Architecture = cached?.Architecture ?? "",
-                    Pid = entry.Pid,
-                    ParentPid = entry.ParentPid,
-                    CpuPercentValue = cpuPct,
-                    CpuPercent = cpuPct.ToString("0.0", CultureInfo.InvariantCulture),
-                    IntegrityLevel = cached?.IntegrityLevel ?? "",
-                    IsAppContainer = cached?.IsAppContainer ?? false,
-                    SandboxStatus = cached?.SandboxStatus ?? "",
-                    IsSigned = cached?.IsSigned ?? false,
-                    IsUnsigned = cached?.IsUnsigned ?? false,
-                    SignedStatus = cached?.SignedStatus ?? "",
-                    SignatureState = cached?.SignatureState ?? SignatureTrustState.Unknown,
-                    IsSystemOrWindows = cached?.IsSystemOrWindows ?? false,
-                    Relation = isChild ? "Child" : "Head",
-                    Path = cached?.Path ?? ""
-                };
+                var row = new ProcessItem { Name = entry.Name,
+                                            AppName = cached?.AppName ?? entry.Name,
+                                            Company = cached?.Company ?? "",
+                                            FileName = cached?.FileName ?? "",
+                                            Icon = cached?.Icon ?? _defaultProcessIcon,
+                                            Architecture = cached?.Architecture ?? "",
+                                            Pid = entry.Pid,
+                                            ParentPid = entry.ParentPid,
+                                            CpuPercentValue = cpuPct,
+                                            CpuPercent = cpuPct.ToString("0.0", CultureInfo.InvariantCulture),
+                                            IntegrityLevel = cached?.IntegrityLevel ?? "",
+                                            IsAppContainer = cached?.IsAppContainer ?? false,
+                                            SandboxStatus = cached?.SandboxStatus ?? "",
+                                            IsSigned = cached?.IsSigned ?? false,
+                                            IsUnsigned = cached?.IsUnsigned ?? false,
+                                            SignedStatus = cached?.SignedStatus ?? "",
+                                            SignatureState = cached?.SignatureState ?? SignatureTrustState.Unknown,
+                                            IsSystemOrWindows = cached?.IsSystemOrWindows ?? false,
+                                            Relation = entry.Pid == _currentPid ? "Self" : (isChild ? "Child" : "Head"),
+                                            Path = cached?.Path ?? "" };
 
                 ApplyRowTheme(row);
                 list.Add(row);
@@ -302,12 +299,11 @@ namespace BlackbirdInterface
             }
 
             _all.Clear();
-            _all.AddRange(list
-                .OrderBy(x => x.IsUnsigned ? 0 : 1)
-                .ThenBy(x => x.IsAppContainer ? 0 : 1)
-                .ThenBy(x => x.IsSystemOrWindows ? 1 : 0)
-                .ThenByDescending(x => x.CpuPercentValue)
-                .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase));
+            _all.AddRange(list.OrderBy(x => x.IsUnsigned ? 0 : 1)
+                              .ThenBy(x => x.IsAppContainer ? 0 : 1)
+                              .ThenBy(x => x.IsSystemOrWindows ? 1 : 0)
+                              .ThenByDescending(x => x.CpuPercentValue)
+                              .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase));
 
             ApplyFilter(selectedPid, selectedIndex);
             StartDeferredEnrichment(++_refreshGeneration);
@@ -326,8 +322,9 @@ namespace BlackbirdInterface
                 return;
 
             string label = item.Content?.ToString() ?? "2s";
-            int sec = label.StartsWith("1", StringComparison.Ordinal) ? 1 :
-                      label.StartsWith("5", StringComparison.Ordinal) ? 5 : 2;
+            int sec = label.StartsWith("1", StringComparison.Ordinal)   ? 1
+                      : label.StartsWith("5", StringComparison.Ordinal) ? 5
+                                                                        : 2;
 
             _refreshTimer.Interval = TimeSpan.FromSeconds(sec);
         }
@@ -349,14 +346,14 @@ namespace BlackbirdInterface
 
             if (!string.IsNullOrWhiteSpace(q))
             {
-                filtered = filtered.Where(x =>
-                    x.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                    x.AppName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                    x.Company.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                    x.FileName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                    x.Architecture.Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                    x.Pid.ToString(CultureInfo.InvariantCulture).Contains(q, StringComparison.OrdinalIgnoreCase) ||
-                    x.Path.Contains(q, StringComparison.OrdinalIgnoreCase));
+                filtered = filtered.Where(
+                    x => x.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                         x.AppName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                         x.Company.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                         x.FileName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                         x.Architecture.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                         x.Pid.ToString(CultureInfo.InvariantCulture).Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                         x.Path.Contains(q, StringComparison.OrdinalIgnoreCase));
             }
 
             if (_rules.Count > 0)
@@ -396,27 +393,26 @@ namespace BlackbirdInterface
 
         private IEnumerable<ProcessItem> ApplyActiveSort(IEnumerable<ProcessItem> source)
         {
-            Func<ProcessItem, object?> selector = _activeSortProperty switch
-            {
-                nameof(ProcessItem.Name) => x => x.Name,
-                nameof(ProcessItem.AppName) => x => x.AppName,
-                nameof(ProcessItem.Company) => x => x.Company,
-                nameof(ProcessItem.FileName) => x => x.FileName,
-                nameof(ProcessItem.Architecture) => x => x.Architecture,
-                nameof(ProcessItem.Pid) => x => x.Pid,
-                nameof(ProcessItem.CpuPercentValue) => x => x.CpuPercentValue,
-                nameof(ProcessItem.IntegrityLevel) => x => x.IntegrityLevel,
-                nameof(ProcessItem.SignedStatus) => x => x.SignedStatus,
-                nameof(ProcessItem.SandboxStatus) => x => x.SandboxStatus,
-                nameof(ProcessItem.Relation) => x => x.Relation,
-                nameof(ProcessItem.ParentName) => x => x.ParentName,
-                nameof(ProcessItem.Path) => x => x.Path,
-                _ => x => x.Name
-            };
+            Func < ProcessItem,
+                object ? > selector =
+                             _activeSortProperty switch { nameof(ProcessItem.Name) => x => x.Name,
+                                                          nameof(ProcessItem.AppName) => x => x.AppName,
+                                                          nameof(ProcessItem.Company) => x => x.Company,
+                                                          nameof(ProcessItem.FileName) => x => x.FileName,
+                                                          nameof(ProcessItem.Architecture) => x => x.Architecture,
+                                                          nameof(ProcessItem.Pid) => x => x.Pid,
+                                                          nameof(ProcessItem.CpuPercentValue) => x => x.CpuPercentValue,
+                                                          nameof(ProcessItem.IntegrityLevel) => x => x.IntegrityLevel,
+                                                          nameof(ProcessItem.SignedStatus) => x => x.SignedStatus,
+                                                          nameof(ProcessItem.SandboxStatus) => x => x.SandboxStatus,
+                                                          nameof(ProcessItem.Relation) => x => x.Relation,
+                                                          nameof(ProcessItem.ParentName) => x => x.ParentName,
+                                                          nameof(ProcessItem.Path) => x => x.Path,
+                                                          _ => x => x.Name };
 
             return _activeSortDirection == ListSortDirection.Ascending
-                ? source.OrderBy(selector).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
-                : source.OrderByDescending(selector).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase);
+                       ? source.OrderBy(selector).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                       : source.OrderByDescending(selector).ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase);
         }
 
         private bool PassesRules(ProcessItem item)
@@ -464,37 +460,31 @@ namespace BlackbirdInterface
             string right = rule.Value ?? "";
             string relation = rule.Relation?.Trim().ToLowerInvariant() ?? "is";
 
-            return relation switch
-            {
-                "is" => string.Equals(left, right, StringComparison.OrdinalIgnoreCase),
-                "contains" => left.Contains(right, StringComparison.OrdinalIgnoreCase),
-                "begins with" => left.StartsWith(right, StringComparison.OrdinalIgnoreCase),
-                "ends with" => left.EndsWith(right, StringComparison.OrdinalIgnoreCase),
-                "greater than" => TryCompareNumeric(left, right, out var gt) && gt > 0,
-                "less than" => TryCompareNumeric(left, right, out var lt) && lt < 0,
-                _ => string.Equals(left, right, StringComparison.OrdinalIgnoreCase)
-            };
+            return relation switch { "is" => string.Equals(left, right, StringComparison.OrdinalIgnoreCase),
+                                     "contains" => left.Contains(right, StringComparison.OrdinalIgnoreCase),
+                                     "begins with" => left.StartsWith(right, StringComparison.OrdinalIgnoreCase),
+                                     "ends with" => left.EndsWith(right, StringComparison.OrdinalIgnoreCase),
+                                     "greater than" => TryCompareNumeric(left, right, out var gt) && gt > 0,
+                                     "less than" => TryCompareNumeric(left, right, out var lt) && lt < 0,
+                                     _ => string.Equals(left, right, StringComparison.OrdinalIgnoreCase) };
         }
 
         private static string GetRuleField(ProcessItem item, string column)
         {
-            return column switch
-            {
-                "Architecture" => item.Architecture,
-                "Process Name" => item.Name,
-                "App Name" => item.AppName,
-                "Company" => item.Company,
-                "File Name" => item.FileName,
-                "PID" => item.Pid.ToString(CultureInfo.InvariantCulture),
-                "CPU %" => item.CpuPercent,
-                "Integrity" => item.IntegrityLevel,
-                "Signed" => item.SignedStatus,
-                "Sandbox" => item.SandboxStatus,
-                "Relation" => item.Relation,
-                "Parent" => item.ParentName,
-                "Path" => item.Path,
-                _ => item.Name
-            };
+            return column switch { "Architecture" => item.Architecture,
+                                   "Process Name" => item.Name,
+                                   "App Name" => item.AppName,
+                                   "Company" => item.Company,
+                                   "File Name" => item.FileName,
+                                   "PID" => item.Pid.ToString(CultureInfo.InvariantCulture),
+                                   "CPU %" => item.CpuPercent,
+                                   "Integrity" => item.IntegrityLevel,
+                                   "Signed" => item.SignedStatus,
+                                   "Sandbox" => item.SandboxStatus,
+                                   "Relation" => item.Relation,
+                                   "Parent" => item.ParentName,
+                                   "Path" => item.Path,
+                                   _ => item.Name };
         }
 
         private static bool TryCompareNumeric(string left, string right, out int compareResult)
@@ -548,23 +538,20 @@ namespace BlackbirdInterface
 
         private bool TryBuildProcessEnrichment(int pid, string fallbackName, out ProcessEnrichmentSnapshot enrichment)
         {
-            enrichment = new ProcessEnrichmentSnapshot
-            {
-                Path = "",
-                FileName = "",
-                AppName = fallbackName,
-                Company = "",
-                Icon = _defaultProcessIcon,
-                Architecture = "",
-                IntegrityLevel = "",
-                IsAppContainer = false,
-                SandboxStatus = "",
-                IsSigned = false,
-                IsUnsigned = false,
-                SignedStatus = "",
-                SignatureState = SignatureTrustState.Unknown,
-                IsSystemOrWindows = false
-            };
+            enrichment = new ProcessEnrichmentSnapshot { Path = "",
+                                                         FileName = "",
+                                                         AppName = fallbackName,
+                                                         Company = "",
+                                                         Icon = _defaultProcessIcon,
+                                                         Architecture = "",
+                                                         IntegrityLevel = "",
+                                                         IsAppContainer = false,
+                                                         SandboxStatus = "",
+                                                         IsSigned = false,
+                                                         IsUnsigned = false,
+                                                         SignedStatus = "",
+                                                         SignatureState = SignatureTrustState.Unknown,
+                                                         IsSystemOrWindows = false };
 
             string windowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
 
@@ -615,34 +602,28 @@ namespace BlackbirdInterface
                     isUnsigned = signatureState == SignatureTrustState.Unsigned ||
                                  signatureState == SignatureTrustState.Invalid ||
                                  signatureState == SignatureTrustState.Expired;
-                    signedStatus = signatureState switch
-                    {
-                        SignatureTrustState.Trusted => "Yes",
-                        SignatureTrustState.Unsigned => "Unsigned",
-                        SignatureTrustState.Invalid => "Invalid",
-                        SignatureTrustState.Expired => "Expired",
-                        _ => ""
-                    };
+                    signedStatus = signatureState switch { SignatureTrustState.Trusted => "Yes",
+                                                           SignatureTrustState.Unsigned => "Unsigned",
+                                                           SignatureTrustState.Invalid => "Invalid",
+                                                           SignatureTrustState.Expired => "Expired",
+                                                           _ => "" };
                     icon = GetProcessIcon(path);
                 }
 
-                enrichment = new ProcessEnrichmentSnapshot
-                {
-                    Path = path,
-                    FileName = fileName,
-                    AppName = appName,
-                    Company = company,
-                    Icon = icon ?? _defaultProcessIcon,
-                    Architecture = architecture,
-                    IntegrityLevel = integrity,
-                    IsAppContainer = isAppContainer,
-                    SandboxStatus = isAppContainer ? "AppContainer" : "",
-                    IsSigned = isSigned,
-                    IsUnsigned = isUnsigned,
-                    SignedStatus = signedStatus,
-                    SignatureState = signatureState,
-                    IsSystemOrWindows = isSystemOrWindows
-                };
+                enrichment = new ProcessEnrichmentSnapshot { Path = path,
+                                                             FileName = fileName,
+                                                             AppName = appName,
+                                                             Company = company,
+                                                             Icon = icon ?? _defaultProcessIcon,
+                                                             Architecture = architecture,
+                                                             IntegrityLevel = integrity,
+                                                             IsAppContainer = isAppContainer,
+                                                             SandboxStatus = isAppContainer ? "AppContainer" : "",
+                                                             IsSigned = isSigned,
+                                                             IsUnsigned = isUnsigned,
+                                                             SignedStatus = signedStatus,
+                                                             SignatureState = signatureState,
+                                                             IsSystemOrWindows = isSystemOrWindows };
 
                 return true;
             }
@@ -665,7 +646,8 @@ namespace BlackbirdInterface
                 while (true)
                 {
                     buffer = Marshal.AllocHGlobal(length);
-                    int status = NtQuerySystemInformation(systemProcessInformation, buffer, length, out int returnLength);
+                    int status =
+                        NtQuerySystemInformation(systemProcessInformation, buffer, length, out int returnLength);
                     if (status == statusInfoLengthMismatch)
                     {
                         Marshal.FreeHGlobal(buffer);
@@ -734,6 +716,38 @@ namespace BlackbirdInterface
             }
         }
 
+        private void EnsureCurrentProcessVisible(List<SystemProcessSnapshot> snapshot)
+        {
+            if (snapshot.Any(entry => entry.Pid == _currentPid))
+            {
+                return;
+            }
+
+            try
+            {
+                using Process current = Process.GetCurrentProcess();
+                int parentPid = 0;
+
+                try
+                {
+                    Dictionary<int, int> parentMap = BuildParentPidMap();
+                    if (parentMap.TryGetValue(_currentPid, out int resolvedParentPid))
+                    {
+                        parentPid = resolvedParentPid;
+                    }
+                }
+                catch
+                {
+                }
+
+                snapshot.Add(new SystemProcessSnapshot(_currentPid, parentPid, current.ProcessName,
+                                                       current.TotalProcessorTime.Ticks));
+            }
+            catch
+            {
+            }
+        }
+
         private void UpdateRulesPanelVisibility()
         {
             bool hasRules = _rules.Count > 0;
@@ -755,82 +769,87 @@ namespace BlackbirdInterface
             if (targets.Count == 0)
                 return;
 
-            _ = Task.Run(async () =>
-            {
-                int updates = 0;
-
-                foreach (var target in targets)
+            _ = Task.Run(
+                async () =>
                 {
-                    if (token.IsCancellationRequested || generation != _refreshGeneration)
-                        break;
+                    int updates = 0;
 
-                    if (!TryBuildProcessEnrichment(target.Pid, target.Name, out var enrichment))
-                        continue;
-
-                    lock (_cacheLock)
-                    {
-                        _processEnrichmentCache[target.Pid] = enrichment;
-                    }
-
-                    await Dispatcher.InvokeAsync(() =>
+                    foreach (var target in targets)
                     {
                         if (token.IsCancellationRequested || generation != _refreshGeneration)
-                            return;
+                            break;
 
-                        ProcessItem? current = _all.FirstOrDefault(x =>
-                            x.Pid == target.Pid &&
-                            string.Equals(x.Path, target.Path, StringComparison.OrdinalIgnoreCase));
+                        if (!TryBuildProcessEnrichment(target.Pid, target.Name, out var enrichment))
+                            continue;
 
-                        if (current == null)
-                            return;
-
-                        current.FileName = enrichment.FileName;
-                        current.AppName = enrichment.AppName;
-                        current.Company = enrichment.Company;
-                        current.Icon = enrichment.Icon ?? _defaultProcessIcon;
-                        current.IsSigned = enrichment.IsSigned;
-                        current.IsUnsigned = enrichment.IsUnsigned;
-                        current.SignedStatus = enrichment.SignedStatus;
-                        current.SignatureState = enrichment.SignatureState;
-                        current.Architecture = enrichment.Architecture;
-                        current.IntegrityLevel = enrichment.IntegrityLevel;
-                        current.IsAppContainer = enrichment.IsAppContainer;
-                        current.SandboxStatus = enrichment.SandboxStatus;
-                        current.IsSystemOrWindows = enrichment.IsSystemOrWindows;
-                        current.Path = enrichment.Path;
-                        ApplyRowTheme(current);
-
-                        updates++;
-                        if ((updates % 8) == 0)
+                        lock (_cacheLock)
                         {
+                            _processEnrichmentCache[target.Pid] = enrichment;
+                        }
+
+                        await Dispatcher.InvokeAsync(
+                            () =>
+                            {
+                                if (token.IsCancellationRequested || generation != _refreshGeneration)
+                                    return;
+
+                                ProcessItem? current = _all.FirstOrDefault(
+                                    x => x.Pid == target.Pid &&
+                                         string.Equals(x.Path, target.Path, StringComparison.OrdinalIgnoreCase));
+
+                                if (current == null)
+                                    return;
+
+                                current.FileName = enrichment.FileName;
+                                current.AppName = enrichment.AppName;
+                                current.Company = enrichment.Company;
+                                current.Icon = enrichment.Icon ?? _defaultProcessIcon;
+                                current.IsSigned = enrichment.IsSigned;
+                                current.IsUnsigned = enrichment.IsUnsigned;
+                                current.SignedStatus = enrichment.SignedStatus;
+                                current.SignatureState = enrichment.SignatureState;
+                                current.Architecture = enrichment.Architecture;
+                                current.IntegrityLevel = enrichment.IntegrityLevel;
+                                current.IsAppContainer = enrichment.IsAppContainer;
+                                current.SandboxStatus = enrichment.SandboxStatus;
+                                current.IsSystemOrWindows = enrichment.IsSystemOrWindows;
+                                current.Path = enrichment.Path;
+                                ApplyRowTheme(current);
+
+                                updates++;
+                                if ((updates % 8) == 0)
+                                {
+                                    ResortAllForDisplay();
+                                    ProcessGrid.Items.Refresh();
+                                    RulesGrid.Items.Refresh();
+                                }
+                            },
+                            DispatcherPriority.Background);
+                    }
+
+                    await Dispatcher.InvokeAsync(
+                        () =>
+                        {
+                            if (generation != _refreshGeneration)
+                                return;
+
                             ResortAllForDisplay();
                             ProcessGrid.Items.Refresh();
                             RulesGrid.Items.Refresh();
-                        }
-                    }, DispatcherPriority.Background);
-                }
-
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    if (generation != _refreshGeneration)
-                        return;
-
-                    ResortAllForDisplay();
-                    ProcessGrid.Items.Refresh();
-                    RulesGrid.Items.Refresh();
-                }, DispatcherPriority.Background);
-            }, token);
+                        },
+                        DispatcherPriority.Background);
+                },
+                token);
         }
 
         private void ResortAllForDisplay()
         {
-            var sorted = _all
-                .OrderBy(x => x.IsUnsigned ? 0 : 1)
-                .ThenBy(x => x.IsAppContainer ? 0 : 1)
-                .ThenBy(x => x.IsSystemOrWindows ? 1 : 0)
-                .ThenByDescending(x => x.CpuPercentValue)
-                .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var sorted = _all.OrderBy(x => x.IsUnsigned ? 0 : 1)
+                             .ThenBy(x => x.IsAppContainer ? 0 : 1)
+                             .ThenBy(x => x.IsSystemOrWindows ? 1 : 0)
+                             .ThenByDescending(x => x.CpuPercentValue)
+                             .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+                             .ToList();
 
             _all.Clear();
             _all.AddRange(sorted);
@@ -841,15 +860,20 @@ namespace BlackbirdInterface
         {
             item.RowForeground = _rowDefaultForeground;
 
+            if (item.Pid == _currentPid)
+            {
+                item.RowBackground = BuildFrozenBrush(Color.FromArgb(0x22, 0x3F, 0x86, 0xFF));
+                item.RowBorderBrush = BuildFrozenBrush(Color.FromArgb(0x88, 0x68, 0xA4, 0xFF));
+                item.RowForeground = BuildFrozenBrush(Color.FromRgb(0xF2, 0xF7, 0xFF));
+                return;
+            }
+
             if (item.IsUnsigned)
             {
-                double severity = item.SignatureState switch
-                {
-                    SignatureTrustState.Unsigned => 1.00,
-                    SignatureTrustState.Invalid => 0.82,
-                    SignatureTrustState.Expired => 0.60,
-                    _ => 0.45
-                };
+                double severity = item.SignatureState switch { SignatureTrustState.Unsigned => 1.00,
+                                                               SignatureTrustState.Invalid => 0.82,
+                                                               SignatureTrustState.Expired => 0.60,
+                                                               _ => 0.45 };
 
                 double cpuBoost = Math.Clamp(item.CpuPercentValue / 45.0, 0.0, 1.0);
                 double intensity = Math.Clamp(severity + (cpuBoost * 0.55), 0.20, 1.45);
@@ -915,30 +939,44 @@ namespace BlackbirdInterface
             return result;
         }
 
+        private static SolidColorBrush BuildFrozenBrush(Color color)
+        {
+            var brush = new SolidColorBrush(color);
+            brush.Freeze();
+            return brush;
+        }
+
         private void OnThemeChanged(bool _)
         {
             Dispatcher.BeginInvoke(new Action(() =>
-            {
-                WindowThemeHelper.ApplyTitleBarTheme(this, App.IsDarkTheme);
-                RefreshThemePalette();
-                ReapplyRowThemes();
-            }), DispatcherPriority.Background);
+                                              {
+                                                  RefreshThemePalette();
+                                                  ReapplyRowThemes();
+                                              }),
+                                   DispatcherPriority.Background);
         }
 
         private void RefreshThemePalette()
         {
             _rowDefaultForeground = ResolveBrush("ProcessRowDefaultForegroundBrush", Color.FromRgb(0xD8, 0xD8, 0xD8));
-            _rowUnsignedBackground = ResolveBrush("ProcessRowUnsignedBackgroundBrush", Color.FromArgb(0x33, 0x50, 0x1F, 0x1F));
+            _rowUnsignedBackground =
+                ResolveBrush("ProcessRowUnsignedBackgroundBrush", Color.FromArgb(0x33, 0x50, 0x1F, 0x1F));
             _rowUnsignedBorder = ResolveBrush("ProcessRowUnsignedBorderBrush", Color.FromArgb(0xAA, 0xE3, 0x6B, 0x6B));
             _rowUnsignedForeground = ResolveBrush("ProcessRowUnsignedForegroundBrush", Color.FromRgb(0xF4, 0xD7, 0xD7));
-            _rowAppContainerBackground = ResolveBrush("ProcessRowAppContainerBackgroundBrush", Color.FromArgb(0x33, 0x3A, 0x2A, 0x58));
-            _rowAppContainerBorder = ResolveBrush("ProcessRowAppContainerBorderBrush", Color.FromArgb(0x99, 0xB0, 0x7A, 0xE8));
+            _rowAppContainerBackground =
+                ResolveBrush("ProcessRowAppContainerBackgroundBrush", Color.FromArgb(0x33, 0x3A, 0x2A, 0x58));
+            _rowAppContainerBorder =
+                ResolveBrush("ProcessRowAppContainerBorderBrush", Color.FromArgb(0x99, 0xB0, 0x7A, 0xE8));
             _rowAppContainerForeground = ResolveBrush("ProcessRowAppContainerForegroundBrush", Colors.WhiteSmoke);
-            _rowLowIntegrityBackground = ResolveBrush("ProcessRowLowIntegrityBackgroundBrush", Color.FromArgb(0x2D, 0x4C, 0x41, 0x1D));
-            _rowLowIntegrityBorder = ResolveBrush("ProcessRowLowIntegrityBorderBrush", Color.FromArgb(0x88, 0xD1, 0xB0, 0x5C));
-            _rowElevatedBackground = ResolveBrush("ProcessRowElevatedBackgroundBrush", Color.FromArgb(0x24, 0x2D, 0x3C, 0x52));
+            _rowLowIntegrityBackground =
+                ResolveBrush("ProcessRowLowIntegrityBackgroundBrush", Color.FromArgb(0x2D, 0x4C, 0x41, 0x1D));
+            _rowLowIntegrityBorder =
+                ResolveBrush("ProcessRowLowIntegrityBorderBrush", Color.FromArgb(0x88, 0xD1, 0xB0, 0x5C));
+            _rowElevatedBackground =
+                ResolveBrush("ProcessRowElevatedBackgroundBrush", Color.FromArgb(0x24, 0x2D, 0x3C, 0x52));
             _rowElevatedBorder = ResolveBrush("ProcessRowElevatedBorderBrush", Color.FromArgb(0x70, 0x8A, 0xA8, 0xC7));
-            _rowSystemBackground = ResolveBrush("ProcessRowSystemBackgroundBrush", Color.FromArgb(0x22, 0x23, 0x23, 0x23));
+            _rowSystemBackground =
+                ResolveBrush("ProcessRowSystemBackgroundBrush", Color.FromArgb(0x22, 0x23, 0x23, 0x23));
             _rowSystemBorder = ResolveBrush("ProcessRowSystemBorderBrush", Color.FromArgb(0x55, 0x5A, 0x5A, 0x5A));
             _rowSystemForeground = ResolveBrush("ProcessRowSystemForegroundBrush", Color.FromRgb(0xB8, 0xB8, 0xB8));
         }
@@ -994,8 +1032,8 @@ namespace BlackbirdInterface
                 chain.ChainPolicy.VerificationFlags = X509VerificationFlags.NoFlag;
                 chain.ChainPolicy.VerificationTime = utcNow;
 
-                bool chainValid = chain.Build(certificate) &&
-                                  chain.ChainStatus.All(x => x.Status == X509ChainStatusFlags.NoError);
+                bool chainValid =
+                    chain.Build(certificate) && chain.ChainStatus.All(x => x.Status == X509ChainStatusFlags.NoError);
 
                 if (!timeValid)
                     state = SignatureTrustState.Expired;
@@ -1025,13 +1063,9 @@ namespace BlackbirdInterface
                     return cached;
             }
 
-            var result = new ProcessPathMetadata
-            {
-                FileName = System.IO.Path.GetFileName(path),
-                AppName = fallbackProcessName,
-                Company = "",
-                SignatureState = ClassifySignature(path)
-            };
+            var result =
+                new ProcessPathMetadata { FileName = System.IO.Path.GetFileName(path), AppName = fallbackProcessName,
+                                          Company = "", SignatureState = ClassifySignature(path) };
 
             try
             {
@@ -1081,9 +1115,7 @@ namespace BlackbirdInterface
                 try
                 {
                     BitmapSource bitmap = Imaging.CreateBitmapSourceFromHIcon(
-                        info.hIcon,
-                        Int32Rect.Empty,
-                        BitmapSizeOptions.FromWidthAndHeight(16, 16));
+                        info.hIcon, Int32Rect.Empty, BitmapSizeOptions.FromWidthAndHeight(16, 16));
                     bitmap.Freeze();
                     lock (_cacheLock)
                     {
@@ -1112,7 +1144,8 @@ namespace BlackbirdInterface
             {
                 uint cbFileInfo = (uint)Marshal.SizeOf<SHFILEINFO>();
                 const uint flags = SHGFI_ICON | SHGFI_SMALLICON | SHGFI_USEFILEATTRIBUTES;
-                IntPtr result = SHGetFileInfo("dummy.exe", FILE_ATTRIBUTE_NORMAL, out SHFILEINFO info, cbFileInfo, flags);
+                IntPtr result =
+                    SHGetFileInfo("dummy.exe", FILE_ATTRIBUTE_NORMAL, out SHFILEINFO info, cbFileInfo, flags);
                 if (result == IntPtr.Zero || info.hIcon == IntPtr.Zero)
                 {
                     return null;
@@ -1121,9 +1154,7 @@ namespace BlackbirdInterface
                 try
                 {
                     BitmapSource bitmap = Imaging.CreateBitmapSourceFromHIcon(
-                        info.hIcon,
-                        Int32Rect.Empty,
-                        BitmapSizeOptions.FromWidthAndHeight(16, 16));
+                        info.hIcon, Int32Rect.Empty, BitmapSizeOptions.FromWidthAndHeight(16, 16));
                     bitmap.Freeze();
                     return bitmap;
                 }
@@ -1170,14 +1201,9 @@ namespace BlackbirdInterface
 
         private static string MachineToArch(ushort machine)
         {
-            return machine switch
-            {
-                IMAGE_FILE_MACHINE_I386 => "x86",
-                IMAGE_FILE_MACHINE_AMD64 => "x64",
-                IMAGE_FILE_MACHINE_ARM64 => "arm64",
-                IMAGE_FILE_MACHINE_ARM => "arm",
-                _ => ""
-            };
+            return machine switch { IMAGE_FILE_MACHINE_I386 => "x86", IMAGE_FILE_MACHINE_AMD64 => "x64",
+                                    IMAGE_FILE_MACHINE_ARM64 => "arm64", IMAGE_FILE_MACHINE_ARM => "arm",
+                                    _ => "" };
         }
 
         private static Dictionary<int, int> BuildParentPidMap()
@@ -1198,8 +1224,7 @@ namespace BlackbirdInterface
                 do
                 {
                     map[(int)pe.th32ProcessID] = (int)pe.th32ParentProcessID;
-                }
-                while (Process32Next(snap, ref pe));
+                } while (Process32Next(snap, ref pe));
             }
             finally
             {
@@ -1258,15 +1283,12 @@ namespace BlackbirdInterface
                 int subAuthCount = Marshal.ReadByte(GetSidSubAuthorityCount(pSid));
                 int rid = Marshal.ReadInt32(GetSidSubAuthority(pSid, subAuthCount - 1));
 
-                integrity = rid switch
-                {
-                    >= SECURITY_MANDATORY_PROTECTED_PROCESS_RID => "Protected",
-                    >= SECURITY_MANDATORY_SYSTEM_RID => "System",
-                    >= SECURITY_MANDATORY_HIGH_RID => "High",
-                    >= SECURITY_MANDATORY_MEDIUM_RID => "Medium",
-                    >= SECURITY_MANDATORY_LOW_RID => "Low",
-                    _ => "Untrusted"
-                };
+                integrity = rid switch { >= SECURITY_MANDATORY_PROTECTED_PROCESS_RID => "Protected",
+                                         >= SECURITY_MANDATORY_SYSTEM_RID => "System",
+                                         >= SECURITY_MANDATORY_HIGH_RID => "High",
+                                         >= SECURITY_MANDATORY_MEDIUM_RID => "Medium",
+                                         >= SECURITY_MANDATORY_LOW_RID => "Low",
+                                         _ => "Untrusted" };
                 return true;
             }
             finally
@@ -1300,6 +1322,7 @@ namespace BlackbirdInterface
 
             LaunchSelectedImage = false;
             LaunchImagePath = string.Empty;
+            SelectedLaunchTargetKind = LaunchTargetKind.Executable;
             SelectedPid = item.Pid;
             ApplyLaunchHookOptions(allowEarlyBird: true);
             DialogResult = true;
@@ -1322,8 +1345,8 @@ namespace BlackbirdInterface
 
         private void ProcessGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            ProcessItem? item = GetProcessItemFromSource(e.OriginalSource as DependencyObject)
-                ?? ProcessGrid.SelectedItem as ProcessItem;
+            ProcessItem? item = GetProcessItemFromSource(e.OriginalSource as DependencyObject) ??
+                                ProcessGrid.SelectedItem as ProcessItem;
             if (item == null)
             {
                 return;
@@ -1362,7 +1385,8 @@ namespace BlackbirdInterface
             e.Handled = true;
 
             string property = e.Column.SortMemberPath;
-            if (string.IsNullOrWhiteSpace(property) && e.Column is DataGridBoundColumn bc && bc.Binding is System.Windows.Data.Binding b)
+            if (string.IsNullOrWhiteSpace(property) && e.Column is DataGridBoundColumn bc &&
+                bc.Binding is System.Windows.Data.Binding b)
             {
                 property = b.Path?.Path ?? "";
             }
@@ -1373,8 +1397,8 @@ namespace BlackbirdInterface
             if (string.Equals(_activeSortProperty, property, StringComparison.Ordinal))
             {
                 _activeSortDirection = _activeSortDirection == ListSortDirection.Ascending
-                    ? ListSortDirection.Descending
-                    : ListSortDirection.Ascending;
+                                           ? ListSortDirection.Descending
+                                           : ListSortDirection.Ascending;
             }
             else
             {
@@ -1394,12 +1418,19 @@ namespace BlackbirdInterface
 
         private void OpenExe_Click(object sender, RoutedEventArgs e)
         {
-            var dlg = new OpenFileDialog
-            {
-                Filter = "Executable (*.exe)|*.exe",
-                CheckFileExists = true,
-                Multiselect = false
-            };
+            OpenLaunchImage(LaunchTargetKind.Executable);
+        }
+
+        private void OpenDll_Click(object sender, RoutedEventArgs e)
+        {
+            OpenLaunchImage(LaunchTargetKind.Dll);
+        }
+
+        private void OpenLaunchImage(LaunchTargetKind targetKind)
+        {
+            var dlg = new OpenFileDialog { Filter = targetKind == LaunchTargetKind.Dll ? "DLL (*.dll)|*.dll"
+                                                                                       : "Executable (*.exe)|*.exe",
+                                           CheckFileExists = true, Multiselect = false };
 
             if (dlg.ShowDialog(this) != true)
                 return;
@@ -1408,10 +1439,18 @@ namespace BlackbirdInterface
             {
                 LaunchSelectedImage = true;
                 LaunchImagePath = dlg.FileName;
+                SelectedLaunchTargetKind = targetKind;
                 SelectedPid = 0;
                 ApplyLaunchHookOptions(allowEarlyBird: true);
                 DialogResult = true;
                 Close();
+                return;
+            }
+
+            if (targetKind == LaunchTargetKind.Dll)
+            {
+                ThemedMessageBox.Show(this, "DLL targets require launch options so Blackbird can stage the DLL host.",
+                                      "DLL launch", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -1425,6 +1464,7 @@ namespace BlackbirdInterface
 
                 LaunchSelectedImage = false;
                 LaunchImagePath = string.Empty;
+                SelectedLaunchTargetKind = LaunchTargetKind.Executable;
                 SelectedPid = started.Id;
                 UseUsermodeHooks = false;
                 AutoOpenApiGraphWindow = false;
@@ -1438,19 +1478,11 @@ namespace BlackbirdInterface
             }
         }
 
-        private void Cancel_Click(object sender, RoutedEventArgs e)
-        {
-            DialogResult = false;
-            Close();
-        }
-
         private void ApplyLaunchHookOptions(bool allowEarlyBird)
         {
-            LaunchHookOptions state = LaunchHookOptions.Capture(
-                UseUsermodeHooksCheckBox?.IsChecked,
-                AutoOpenApiGraphCheckBox?.IsChecked,
-                EarlyBirdApcCheckBox?.IsChecked,
-                allowEarlyBird);
+            LaunchHookOptions state =
+                LaunchHookOptions.Capture(UseUsermodeHooksCheckBox?.IsChecked, AutoOpenApiGraphCheckBox?.IsChecked,
+                                          EarlyBirdApcCheckBox?.IsChecked, allowEarlyBird);
 
             UseUsermodeHooks = state.UseUsermodeHooks;
             AutoOpenApiGraphWindow = state.AutoOpenApiGraphWindow;
@@ -1575,12 +1607,10 @@ namespace BlackbirdInterface
         private static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
 
         [DllImport("advapi32.dll", SetLastError = true)]
-        private static extern bool GetTokenInformation(
-            IntPtr TokenHandle,
-            TOKEN_INFORMATION_CLASS TokenInformationClass,
-            IntPtr TokenInformation,
-            int TokenInformationLength,
-            out int ReturnLength);
+        private static extern bool GetTokenInformation(IntPtr TokenHandle,
+                                                       TOKEN_INFORMATION_CLASS TokenInformationClass,
+                                                       IntPtr TokenInformation, int TokenInformationLength,
+                                                       out int ReturnLength);
 
         [DllImport("advapi32.dll", SetLastError = true)]
         private static extern IntPtr GetSidSubAuthority(IntPtr pSid, int nSubAuthority);
@@ -1592,14 +1622,12 @@ namespace BlackbirdInterface
         private static extern bool IsWow64Process(IntPtr hProcess, out bool wow64Process);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool IsWow64Process2(IntPtr hProcess, out ushort processMachine, out ushort nativeMachine);
+        private static extern bool IsWow64Process2(IntPtr hProcess, out ushort processMachine,
+                                                   out ushort nativeMachine);
 
         [DllImport("ntdll.dll")]
-        private static extern int NtQuerySystemInformation(
-            int systemInformationClass,
-            IntPtr systemInformation,
-            int systemInformationLength,
-            out int returnLength);
+        private static extern int NtQuerySystemInformation(int systemInformationClass, IntPtr systemInformation,
+                                                           int systemInformationLength, out int returnLength);
 
         private const uint SHGFI_ICON = 0x000000100;
         private const uint SHGFI_SMALLICON = 0x000000001;
@@ -1619,15 +1647,11 @@ namespace BlackbirdInterface
         }
 
         [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
-        private static extern IntPtr SHGetFileInfo(
-            string pszPath,
-            uint dwFileAttributes,
-            out SHFILEINFO psfi,
-            uint cbFileInfo,
-            uint uFlags);
+        private static extern IntPtr SHGetFileInfo(string pszPath, uint dwFileAttributes, out SHFILEINFO psfi,
+                                                   uint cbFileInfo, uint uFlags);
 
         [DllImport("user32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
+        [return:MarshalAs(UnmanagedType.Bool)]
         private static extern bool DestroyIcon(IntPtr hIcon);
     }
 
@@ -1697,13 +1721,4 @@ namespace BlackbirdInterface
         public Brush RowForeground { get; set; } = Brushes.Black;
     }
 
-    public enum SignatureTrustState
-    {
-        Unknown = 0,
-        Trusted = 1,
-        Expired = 2,
-        Invalid = 3,
-        Unsigned = 4
-    }
 }
-

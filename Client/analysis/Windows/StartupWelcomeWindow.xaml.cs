@@ -15,21 +15,22 @@ namespace BlackbirdInterface
     public partial class StartupWelcomeWindow : Window
     {
         private readonly bool _forceAntiVirtualizationMasking;
+        private readonly bool _forceQpcTimingDisabled;
         private readonly bool _forceControllerConcealment;
         private readonly bool _forceInterfaceProtectedAccess;
-        private readonly bool _forceControllerProtectedAccess;
 
         internal StartupWelcomeAction SelectedAction { get; private set; }
         internal bool EnableKernelHooks => EnableKernelHooksCheckBox?.IsChecked == true;
         internal bool EnableAntiVirtualizationMasking =>
             EnableKernelHooks &&
             (_forceAntiVirtualizationMasking || (EnableAntiVirtualizationMaskingCheckBox?.IsChecked == true));
+        internal bool EnableQpcTimingCompensation => EnableAntiVirtualizationMasking && !_forceQpcTimingDisabled &&
+                                                     (EnableQpcTimingCompensationCheckBox?.IsChecked == true);
         internal bool EnableControllerConcealment =>
             _forceControllerConcealment || (EnableControllerConcealmentCheckBox?.IsChecked == true);
         internal bool EnableInterfaceProtectedAccess =>
             _forceInterfaceProtectedAccess || (EnableInterfaceProtectedAccessCheckBox?.IsChecked == true);
-        internal bool EnableControllerProtectedAccess =>
-            _forceControllerProtectedAccess || (EnableControllerProtectedAccessCheckBox?.IsChecked == true);
+        internal bool EnableControllerProtectedAccess => true;
         internal bool EnableSignatureIntel => EnableSignatureIntelCheckBox?.IsChecked == true;
         internal bool EnableSignatureIntelMemoryScan => EnableSignatureIntelMemoryScanCheckBox?.IsChecked == true;
         internal bool EnableSignatureIntelPageScan => EnableSignatureIntelPageScanCheckBox?.IsChecked == true;
@@ -38,13 +39,13 @@ namespace BlackbirdInterface
         {
             _forceAntiVirtualizationMasking =
                 (persistentRuntimeFlags & BlackbirdNative.RuntimeFlagAntiVirtualization) != 0;
+            _forceQpcTimingDisabled = (persistentRuntimeFlags & BlackbirdNative.RuntimeFlagQpcTimingDisabled) != 0;
             _forceControllerConcealment = (persistentRuntimeFlags & BlackbirdNative.RuntimeFlagSelfHide) != 0;
             _forceInterfaceProtectedAccess =
                 (persistentRuntimeFlags & BlackbirdNative.RuntimeFlagInterfaceProtectedAccess) != 0;
-            _forceControllerProtectedAccess =
-                (persistentRuntimeFlags & BlackbirdNative.RuntimeFlagControllerProtectedAccess) != 0;
 
             InitializeComponent();
+            WindowThemeHelper.WireThemeAwareTitleBar(this);
             ApplyRuntimeConfigUi();
         }
 
@@ -60,10 +61,19 @@ namespace BlackbirdInterface
                 }
             }
 
+            UpdateSubsystemOptionUi();
         }
 
         private void SubsystemOptions_Changed(object sender, RoutedEventArgs e)
         {
+            if (ReferenceEquals(sender, EnableAntiVirtualizationMaskingCheckBox) &&
+                EnableAntiVirtualizationMaskingCheckBox?.IsChecked == true &&
+                EnableQpcTimingCompensationCheckBox != null && !_forceQpcTimingDisabled)
+            {
+                EnableQpcTimingCompensationCheckBox.IsChecked = true;
+            }
+
+            UpdateSubsystemOptionUi();
         }
 
         private void ApplyRuntimeConfigUi()
@@ -80,16 +90,16 @@ namespace BlackbirdInterface
                 EnableControllerConcealmentCheckBox.IsEnabled = !_forceControllerConcealment;
             }
 
+            if (EnableQpcTimingCompensationCheckBox != null)
+            {
+                EnableQpcTimingCompensationCheckBox.IsChecked = !_forceQpcTimingDisabled;
+                EnableQpcTimingCompensationCheckBox.IsEnabled = !_forceQpcTimingDisabled;
+            }
+
             if (EnableInterfaceProtectedAccessCheckBox != null)
             {
                 EnableInterfaceProtectedAccessCheckBox.IsChecked = _forceInterfaceProtectedAccess;
                 EnableInterfaceProtectedAccessCheckBox.IsEnabled = !_forceInterfaceProtectedAccess;
-            }
-
-            if (EnableControllerProtectedAccessCheckBox != null)
-            {
-                EnableControllerProtectedAccessCheckBox.IsChecked = _forceControllerProtectedAccess;
-                EnableControllerProtectedAccessCheckBox.IsEnabled = !_forceControllerProtectedAccess;
             }
 
             if (RuntimeConfigNoteBlock != null)
@@ -112,10 +122,6 @@ namespace BlackbirdInterface
                 {
                     forcedItems.Add("interface protection");
                 }
-                if (_forceControllerProtectedAccess)
-                {
-                    forcedItems.Add("controller protection");
-                }
 
                 if (forcedItems.Count != 0)
                 {
@@ -127,6 +133,40 @@ namespace BlackbirdInterface
                 {
                     RuntimeConfigNoteBlock.Text = string.Empty;
                     RuntimeConfigNoteBlock.Visibility = Visibility.Collapsed;
+                }
+            }
+
+            UpdateSubsystemOptionUi();
+        }
+
+        private void UpdateSubsystemOptionUi()
+        {
+            bool signatureIntelEnabled = EnableSignatureIntelCheckBox?.IsChecked == true;
+            bool qpcTimingAvailable = EnableAntiVirtualizationMasking && !_forceQpcTimingDisabled;
+            if (EnableQpcTimingCompensationCheckBox != null)
+            {
+                EnableQpcTimingCompensationCheckBox.IsEnabled = qpcTimingAvailable;
+                if (!qpcTimingAvailable)
+                {
+                    EnableQpcTimingCompensationCheckBox.IsChecked = false;
+                }
+            }
+
+            if (EnableSignatureIntelMemoryScanCheckBox != null)
+            {
+                EnableSignatureIntelMemoryScanCheckBox.IsEnabled = signatureIntelEnabled;
+                if (!signatureIntelEnabled)
+                {
+                    EnableSignatureIntelMemoryScanCheckBox.IsChecked = false;
+                }
+            }
+
+            if (EnableSignatureIntelPageScanCheckBox != null)
+            {
+                EnableSignatureIntelPageScanCheckBox.IsEnabled = signatureIntelEnabled;
+                if (!signatureIntelEnabled)
+                {
+                    EnableSignatureIntelPageScanCheckBox.IsChecked = false;
                 }
             }
         }

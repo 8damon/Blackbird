@@ -44,3 +44,16 @@ bool KeIsWinsockHookRequired() noexcept;
 bool KeRefreshWinsockHooks(HMODULE moduleHandle = nullptr) noexcept;
 void KeRemoveWinsockHook() noexcept;
 bool KeCheckWinsockHookIntegrity(std::uint32_t *mismatchCount) noexcept;
+bool KeInstallWinsockInlineHooks() noexcept;
+
+struct WinsockHookPatchInfo
+{
+    void *PatchAddress;
+    std::size_t PatchSize;
+    std::uint8_t OriginalBytes[16];
+    const char *HookName;
+    std::uint32_t Flags;
+};
+
+std::size_t KeCollectWinsockHookPatchInfos(_Out_writes_(capacity) WinsockHookPatchInfo *out,
+                                           _In_ std::size_t capacity) noexcept;

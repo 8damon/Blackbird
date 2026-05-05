@@ -1,4 +1,5 @@
 #include "bk.h"
+#include "../hooks/nt.h"
 
 #include <atomic>
 #include <cstring>
@@ -7,9 +8,9 @@ namespace
 {
     using RtlCaptureStackBackTrace_t = USHORT(WINAPI *)(ULONG, ULONG, PVOID *, PULONG);
     static std::atomic<void *> g_veh_handle{nullptr};
-    static std::atomic<bk::blackbird::TelemetryArguments *> g_args{nullptr};
+    static std::atomic<bk::BK::TelemetryArguments *> g_args{nullptr};
     static std::atomic<bool> g_installed{false};
-    static wchar_t g_target_lower[bk::blackbird::kMaxModuleName]{};
+    static wchar_t g_target_lower[bk::BK::kMaxModuleName]{};
     static std::atomic<RtlCaptureStackBackTrace_t> g_capture{nullptr};
     static std::atomic<DWORD> g_tls{TLS_OUT_OF_INDEXES};
 
@@ -18,7 +19,7 @@ namespace
     struct alignas(MEMORY_ALLOCATION_ALIGNMENT) VehRingNode
     {
         SLIST_ENTRY ListEntry; // must be first field
-        bk::blackbird::Event Evt;
+        bk::BK::Event Evt;
         bool IsLowNoise;
     };
 
@@ -120,6 +121,11 @@ namespace
             g_vehSignal = nullptr;
             return false;
         }
+        DWORD tid = GetThreadId(g_vehDispatchThread);
+        if (tid != 0)
+        {
+            KeRegisterConcealedThread(tid);
+        }
         return true;
     }
 
@@ -148,7 +154,7 @@ namespace
 
     /* Enqueue a non-memory-fault telemetry event to the ring.
      * Returns true if enqueued, false if the ring is full (caller may fall back). */
-    static bool VehRingEnqueue(const bk::blackbird::Event &evt, bool isLowNoise) noexcept
+    static bool VehRingEnqueue(const bk::BK::Event &evt, bool isLowNoise) noexcept
     {
         PSLIST_ENTRY entry = InterlockedPopEntrySList(&g_vehFreeList);
         if (!entry)
@@ -257,7 +263,7 @@ namespace
         return fn(static_cast<ULONG>(skip), static_cast<ULONG>(maxFrames), outFrames, nullptr);
     }
 
-    static bool DefaultMemoryFaultHandling(const bk::blackbird::Event &evt) noexcept
+    static bool DefaultMemoryFaultHandling(const bk::BK::Event &evt) noexcept
     {
         if (evt.exception_code == STATUS_GUARD_PAGE_VIOLATION)
             return true;
@@ -319,7 +325,7 @@ namespace
         if (!TryEnterHandler())
             return EXCEPTION_CONTINUE_SEARCH;
 
-        bk::blackbird::Event evt{};
+        bk::BK::Event evt{};
         evt.exception_code = ep->ExceptionRecord->ExceptionCode;
         evt.exception_flags = ep->ExceptionRecord->ExceptionFlags;
         evt.exception_address = ep->ExceptionRecord->ExceptionAddress;
@@ -330,14 +336,13 @@ namespace
         evt.is_noncontinuable = (evt.exception_flags & EXCEPTION_NONCONTINUABLE) != 0;
         evt.is_memory_fault = IsMemoryFault(evt.exception_code);
 
-        evt.exception_info_count = (ep->ExceptionRecord->NumberParameters > bk::blackbird::kMaxExInfo)
-                                       ? static_cast<ULONG>(bk::blackbird::kMaxExInfo)
+        evt.exception_info_count = (ep->ExceptionRecord->NumberParameters > bk::BK::kMaxExInfo)
+                                       ? static_cast<ULONG>(bk::BK::kMaxExInfo)
                                        : static_cast<ULONG>(ep->ExceptionRecord->NumberParameters);
 
         for (ULONG i = 0; i < evt.exception_info_count; ++i)
             evt.exception_info[i] = ep->ExceptionRecord->ExceptionInformation[i];
-        GetModuleBasenameLowerFromAddress(evt.exception_address, evt.module_basename_lower,
-                                          bk::blackbird::kMaxModuleName);
+        GetModuleBasenameLowerFromAddress(evt.exception_address, evt.module_basename_lower, bk::BK::kMaxModuleName);
 
         evt.is_target_module = EqualsLower(evt.module_basename_lower, g_target_lower);
         if (a->capture_stack)
@@ -347,8 +352,8 @@ namespace
             std::uint16_t maxF = a->max_stack_frames;
             if (maxF == 0)
                 maxF = 1;
-            if (maxF > bk::blackbird::kMaxStackFrames)
-                maxF = static_cast<std::uint16_t>(bk::blackbird::kMaxStackFrames);
+            if (maxF > bk::BK::kMaxStackFrames)
+                maxF = static_cast<std::uint16_t>(bk::BK::kMaxStackFrames);
 
             evt.stack_frame_count = CaptureStack(a->stack_frames_to_skip, maxF, evt.stack);
         }
@@ -420,7 +425,7 @@ PVOID BkRegisterVectoredExceptionHandler(BkBlackbirdTelemetryArguments *args) no
 {
     if (!args)
         return nullptr;
-    CopyLowerBasename(args->target_module_basename, g_target_lower, bk::blackbird::kMaxModuleName);
+    CopyLowerBasename(args->target_module_basename, g_target_lower, bk::BK::kMaxModuleName);
 
     if (args->capture_stack)
         (void)EnsureRtlCaptureResolved();

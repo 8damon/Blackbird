@@ -26,8 +26,16 @@ namespace BlackbirdInterface
         public double ViewStartSeconds { get; set; }
         public string? LaneFocusKey { get; set; }
         public bool UseUsermodeHooks { get; set; }
+        public bool KernelHooksEnabled { get; set; } = true;
+        public bool SignatureIntelEnabled { get; set; } = true;
+        public bool SignatureIntelMemoryScanEnabled { get; set; }
+        public bool SignatureIntelPageScanEnabled { get; set; }
         public bool TargetExited { get; set; }
+        public string TargetExitReason { get; set; } = "";
         public bool OfflineSnapshot { get; set; } = true;
+        public LaunchTargetKind AnalysisSubjectKind { get; set; } = LaunchTargetKind.Executable;
+        public string AnalysisSubjectPath { get; set; } = "";
+        public string AnalysisHostPath { get; set; } = "";
 
         [JsonIgnore]
         public string? CaptureStorePath { get; set; }
@@ -39,8 +47,10 @@ namespace BlackbirdInterface
         public List<GroupedEventRow> EtwGroups { get; set; } = new();
         public List<GroupedEventRow> HeuristicsGroups { get; set; } = new();
         public List<GroupedEventRow> FilesystemGroups { get; set; } = new();
+        public List<GroupedEventRow> RegistryGroups { get; set; } = new();
         public List<GroupedEventRow> ProcessRelationsGroups { get; set; } = new();
         public List<ApiCallGraphRowSnapshot> ApiGraphRows { get; set; } = new();
+        public List<ExtendedActivityRowSnapshot> ExtendedActivityRows { get; set; } = new();
         public List<ThreadStackHistoryArchiveEntry> ThreadStackHistories { get; set; } = new();
     }
 
@@ -57,14 +67,11 @@ namespace BlackbirdInterface
         private const int MaxThreadStackHistoriesPerTab = 8_192;
         private const int MaxThreadStackSnapshotsPerHistory = 2_048;
 
-        private static readonly JsonSerializerOptions JsonOptions = new()
-        {
-            PropertyNameCaseInsensitive = true,
-            WriteIndented = false
-        };
+        private static readonly JsonSerializerOptions JsonOptions =
+            new() { PropertyNameCaseInsensitive = true, WriteIndented = false };
 
-        internal static bool Exists(string? path)
-            => !string.IsNullOrWhiteSpace(path) && CaptureArchiveStorage.Exists(path);
+        internal static bool
+            Exists(string? path) => !string.IsNullOrWhiteSpace(path) && CaptureArchiveStorage.Exists(path);
 
         internal static void DeletePath(string? path)
         {
@@ -121,8 +128,7 @@ namespace BlackbirdInterface
             SessionFileArchive archive = workspace.Archive;
             if (archive.Version <= 0 || archive.Version > CurrentVersion)
             {
-                throw new InvalidDataException(
-                    $"Unsupported session archive version ({archive.Version}).");
+                throw new InvalidDataException($"Unsupported session archive version ({archive.Version}).");
             }
 
             NormalizeArchive(archive);
@@ -162,7 +168,8 @@ namespace BlackbirdInterface
                     $"Session archive exceeds compressed size limit ({MaxCompressedArchiveBytes / (1024 * 1024)} MB).");
             }
 
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.SequentialScan);
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024,
+                                              FileOptions.SequentialScan);
             using var gzip = new GZipStream(stream, CompressionMode.Decompress);
             using var bounded = new BoundedReadStream(gzip, MaxUncompressedArchiveBytes);
 
@@ -183,6 +190,9 @@ namespace BlackbirdInterface
             {
                 tab.Title ??= string.Empty;
                 tab.LaneFocusKey ??= null;
+                tab.TargetExitReason ??= string.Empty;
+                tab.AnalysisSubjectPath ??= string.Empty;
+                tab.AnalysisHostPath ??= string.Empty;
                 tab.Events ??= new List<TelemetryEvent>();
                 tab.PerformanceHistory ??= new List<PerformanceSample>();
                 tab.MemoryRegionAttributionHistory ??= new List<MemoryRegionAttributionSample>();
@@ -190,8 +200,10 @@ namespace BlackbirdInterface
                 tab.EtwGroups ??= new List<GroupedEventRow>();
                 tab.HeuristicsGroups ??= new List<GroupedEventRow>();
                 tab.FilesystemGroups ??= new List<GroupedEventRow>();
+                tab.RegistryGroups ??= new List<GroupedEventRow>();
                 tab.ProcessRelationsGroups ??= new List<GroupedEventRow>();
                 tab.ApiGraphRows ??= new List<ApiCallGraphRowSnapshot>();
+                tab.ExtendedActivityRows ??= new List<ExtendedActivityRowSnapshot>();
                 tab.ThreadStackHistories ??= new List<ThreadStackHistoryArchiveEntry>();
                 tab.CaptureStorePath ??= null;
             }
@@ -223,8 +235,10 @@ namespace BlackbirdInterface
                 if (tab.EtwGroups.Count > MaxGroupedRowsPerCategory ||
                     tab.HeuristicsGroups.Count > MaxGroupedRowsPerCategory ||
                     tab.FilesystemGroups.Count > MaxGroupedRowsPerCategory ||
+                    tab.RegistryGroups.Count > MaxGroupedRowsPerCategory ||
                     tab.ProcessRelationsGroups.Count > MaxGroupedRowsPerCategory ||
-                    tab.ApiGraphRows.Count > MaxGroupedRowsPerCategory)
+                    tab.ApiGraphRows.Count > MaxGroupedRowsPerCategory ||
+                    tab.ExtendedActivityRows.Count > MaxGroupedRowsPerCategory)
                 {
                     throw new InvalidDataException($"PID {tab.Pid} has too many grouped intel rows.");
                 }
@@ -237,7 +251,8 @@ namespace BlackbirdInterface
                 {
                     if (history.Snapshots.Count > MaxThreadStackSnapshotsPerHistory)
                     {
-                        throw new InvalidDataException($"PID {tab.Pid} TID {history.Tid} has too many thread stack snapshots.");
+                        throw new InvalidDataException(
+                            $"PID {tab.Pid} TID {history.Tid} has too many thread stack snapshots.");
                     }
                 }
             }
@@ -331,4 +346,3 @@ namespace BlackbirdInterface
         }
     }
 }
-

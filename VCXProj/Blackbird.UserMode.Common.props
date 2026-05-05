@@ -3,15 +3,19 @@
   <PropertyGroup Label="BlackbirdUserModeIdentity">
     <BlackbirdCompanyName>TITAN Softwork Solutions</BlackbirdCompanyName>
     <BlackbirdProductName>Blackbird Platform</BlackbirdProductName>
-    <BlackbirdManifestPath>$(MSBuildThisFileDirectory)Blackbird.UserMode.manifest</BlackbirdManifestPath>
+    <BlackbirdFileDescription Condition="'$(BlackbirdFileDescription)'==''">Blackbird Platform User-Mode Component</BlackbirdFileDescription>
+    <BlackbirdInternalName Condition="'$(BlackbirdInternalName)'==''">Blackbird</BlackbirdInternalName>
+    <BlackbirdOriginalFilename Condition="'$(BlackbirdOriginalFilename)'==''">Blackbird.bin</BlackbirdOriginalFilename>
+    <BlackbirdManifestIdentity Condition="'$(BlackbirdManifestIdentity)'==''">Blackbird.Platform.$(BlackbirdInternalName)</BlackbirdManifestIdentity>
+    <BlackbirdManifestPath>$(IntDir)$(TargetName).Blackbird.UserMode.manifest</BlackbirdManifestPath>
     <BlackbirdVersionRcPath>$(MSBuildThisFileDirectory)Blackbird.Version.rc</BlackbirdVersionRcPath>
     <BlackbirdSignEnabled Condition="'$(BlackbirdSignEnabled)'==''">false</BlackbirdSignEnabled>
     <BlackbirdSignSubjectName>TITAN Softwork Solutions</BlackbirdSignSubjectName>
     <BlackbirdSignStoreName>My</BlackbirdSignStoreName>
-    <BlackbirdSignThumbprint Condition="'$(BlackbirdSignThumbprint)'==''">$(BLACKBIRD_SIGN_THUMBPRINT)</BlackbirdSignThumbprint>
+    <BlackbirdSignThumbprint Condition="'$(BlackbirdSignThumbprint)'==''">$(BK_SIGN_THUMBPRINT)</BlackbirdSignThumbprint>
     <BlackbirdSignToolPath>signtool.exe</BlackbirdSignToolPath>
     <BlackbirdSignPfxPath Condition="'$(BlackbirdSignPfxPath)'==''">$(MSBuildThisFileDirectory)..\TITAN Softwork Solutions.pfx</BlackbirdSignPfxPath>
-    <BlackbirdSignPfxPassword Condition="'$(BlackbirdSignPfxPassword)'==''">$(BLACKBIRD_SIGN_PFX_PASSWORD)</BlackbirdSignPfxPassword>
+    <BlackbirdSignPfxPassword Condition="'$(BlackbirdSignPfxPassword)'==''">$(BK_SIGN_PFX_PASSWORD)</BlackbirdSignPfxPassword>
     <BlackbirdSignCommand>"$(BlackbirdSignToolPath)" sign /fd SHA256 /s "$(BlackbirdSignStoreName)" /n "$(BlackbirdSignSubjectName)" "$(TargetPath)"</BlackbirdSignCommand>
     <BlackbirdSignCommand Condition="'$(BlackbirdSignThumbprint)'!=''">"$(BlackbirdSignToolPath)" sign /fd SHA256 /s "$(BlackbirdSignStoreName)" /sha1 "$(BlackbirdSignThumbprint)" "$(TargetPath)"</BlackbirdSignCommand>
     <BlackbirdSignCommand Condition="'$(BlackbirdSignPfxPassword)'!='' and Exists('$(BlackbirdSignPfxPath)')">"$(BlackbirdSignToolPath)" sign /fd SHA256 /f "$(BlackbirdSignPfxPath)" /p "$(BlackbirdSignPfxPassword)" "$(TargetPath)"</BlackbirdSignCommand>
@@ -19,6 +23,7 @@
 
   <ItemDefinitionGroup>
     <ClCompile>
+      <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\UserMode\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <SDLCheck>true</SDLCheck>
       <BufferSecurityCheck>true</BufferSecurityCheck>
@@ -26,11 +31,19 @@
     </ClCompile>
     <Link>
       <GenerateManifest>true</GenerateManifest>
-      <AdditionalManifestFiles>$(BlackbirdManifestPath);%(AdditionalManifestFiles)</AdditionalManifestFiles>
+      <UACExecutionLevel>RequireAdministrator</UACExecutionLevel>
+      <UACUIAccess>false</UACUIAccess>
       <RandomizedBaseAddress>true</RandomizedBaseAddress>
+      <HighEntropyVA>true</HighEntropyVA>
       <DataExecutionPrevention>true</DataExecutionPrevention>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
+    <Manifest>
+      <AdditionalManifestFiles>$(BlackbirdManifestPath);%(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
+    <ResourceCompile>
+      <PreprocessorDefinitions>BK_FILE_DESCRIPTION=\"$(BlackbirdFileDescription)\";BK_INTERNAL_NAME=\"$(BlackbirdInternalName)\";BK_ORIGINAL_FILENAME=\"$(BlackbirdOriginalFilename)\";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
   </ItemDefinitionGroup>
 
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release' or '$(Configuration)'=='TEMPUS_DEBUG'">
@@ -55,6 +68,15 @@
   <ItemGroup Condition="'$(ConfigurationType)'!='StaticLibrary' and Exists('$(BlackbirdVersionRcPath)')">
     <ResourceCompile Include="$(BlackbirdVersionRcPath)" />
   </ItemGroup>
+
+  <Target Name="BlackbirdGenerateUserModeManifest"
+          BeforeTargets="Link"
+          Condition="'$(DesignTimeBuild)'!='true' and '$(ConfigurationType)'!='StaticLibrary'">
+    <MakeDir Directories="$(IntDir)" />
+    <WriteLinesToFile File="$(BlackbirdManifestPath)"
+                      Overwrite="true"
+                      Lines="&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;yes&quot;?&gt;&#xD;&#xA;&lt;assembly xmlns=&quot;urn:schemas-microsoft-com:asm.v1&quot; manifestVersion=&quot;1.0&quot;&gt;&#xD;&#xA;  &lt;assemblyIdentity type=&quot;win32&quot; name=&quot;$(BlackbirdManifestIdentity)&quot; version=&quot;2.0.0.0&quot; processorArchitecture=&quot;*&quot;/&gt;&#xD;&#xA;  &lt;description&gt;$(BlackbirdFileDescription)&lt;/description&gt;&#xD;&#xA;  &lt;trustInfo xmlns=&quot;urn:schemas-microsoft-com:asm.v3&quot;&gt;&#xD;&#xA;    &lt;security&gt;&#xD;&#xA;      &lt;requestedPrivileges&gt;&#xD;&#xA;        &lt;requestedExecutionLevel level=&quot;requireAdministrator&quot; uiAccess=&quot;false&quot;/&gt;&#xD;&#xA;      &lt;/requestedPrivileges&gt;&#xD;&#xA;    &lt;/security&gt;&#xD;&#xA;  &lt;/trustInfo&gt;&#xD;&#xA;  &lt;compatibility xmlns=&quot;urn:schemas-microsoft-com:compatibility.v1&quot;&gt;&#xD;&#xA;    &lt;application&gt;&#xD;&#xA;      &lt;supportedOS Id=&quot;{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}&quot;/&gt;&#xD;&#xA;      &lt;supportedOS Id=&quot;{4f476546-9374-43a4-9f6b-2cf5f3edb7d7}&quot;/&gt;&#xD;&#xA;      &lt;supportedOS Id=&quot;{1f676c76-80e1-4239-95bb-83d0f6d0da78}&quot;/&gt;&#xD;&#xA;      &lt;supportedOS Id=&quot;{35138b9a-5d96-4fbd-8e2d-a2440225f93a}&quot;/&gt;&#xD;&#xA;      &lt;supportedOS Id=&quot;{8e1f0f95-c0f8-4cb1-a0f6-6f72f3f8f4f3}&quot;/&gt;&#xD;&#xA;    &lt;/application&gt;&#xD;&#xA;  &lt;/compatibility&gt;&#xD;&#xA;  &lt;dependency&gt;&#xD;&#xA;    &lt;dependentAssembly&gt;&#xD;&#xA;      &lt;assemblyIdentity type=&quot;win32&quot; name=&quot;Microsoft.Windows.Common-Controls&quot; version=&quot;6.0.0.0&quot; processorArchitecture=&quot;*&quot; publicKeyToken=&quot;6595b64144ccf1df&quot; language=&quot;*&quot;/&gt;&#xD;&#xA;    &lt;/dependentAssembly&gt;&#xD;&#xA;  &lt;/dependency&gt;&#xD;&#xA;&lt;/assembly&gt;" />
+  </Target>
 
   <Target Name="BlackbirdSignUserModeBinary"
           AfterTargets="Build"

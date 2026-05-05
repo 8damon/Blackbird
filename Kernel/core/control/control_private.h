@@ -1,5 +1,5 @@
-#ifndef BLACKBIRD_CONTROL_PRIVATE_H
-#define BLACKBIRD_CONTROL_PRIVATE_H
+#ifndef BK_CONTROL_PRIVATE_H
+#define BK_CONTROL_PRIVATE_H
 
 #include <ntddk.h>
 #include <wdf.h>
@@ -7,29 +7,31 @@
 #include "../control.h"
 #include "../pool_compat.h"
 #include "../tempus_debug.h"
+#include "../diagnostics.h"
 
-#define BLACKBIRD_POOL_TAG 'lrtS'
-#define BLACKBIRD_MAX_CLIENT_SUBSCRIPTIONS 64
-#define BLACKBIRD_MAX_CLIENT_QUEUE_DEPTH 1024
-#define BLACKBIRD_MAX_TOTAL_CLIENTS 256
-#define BLACKBIRD_MAX_TOTAL_QUEUED_EVENTS 16384
-#define BLACKBIRD_QUERY_IMAGE_WINDOW_100NS 10000000ULL
-#define BLACKBIRD_QUERY_IMAGE_MAX_PER_WINDOW 64
-#define BLACKBIRD_QUERY_IMAGE_MAX_INFLIGHT 8
+#define BK_POOL_TAG 'lrtS'
+#define BK_MAX_CLIENT_SUBSCRIPTIONS 4096
+#define BK_INITIAL_CLIENT_SUBSCRIPTIONS 64
+#define BK_MAX_CLIENT_QUEUE_DEPTH 8192
+#define BK_MAX_TOTAL_CLIENTS 256
+#define BK_MAX_TOTAL_QUEUED_EVENTS 131072
+#define BK_QUERY_IMAGE_WINDOW_100NS 10000000ULL
+#define BK_QUERY_IMAGE_MAX_PER_WINDOW 64
+#define BK_QUERY_IMAGE_MAX_INFLIGHT 8
 
-typedef struct _BLACKBIRD_SUBSCRIPTION
+typedef struct _BK_SUBSCRIPTION
 {
     UINT32 ProcessId;
     UINT32 StreamMask;
-} BLACKBIRD_SUBSCRIPTION;
+} BK_SUBSCRIPTION, *PBK_SUBSCRIPTION;
 
-typedef struct _BLACKBIRD_EVENT_NODE
+typedef struct _BK_EVENT_NODE
 {
     LIST_ENTRY Link;
-    BLACKBIRD_EVENT_RECORD Record;
-} BLACKBIRD_EVENT_NODE, *PBLACKBIRD_EVENT_NODE;
+    BK_EVENT_RECORD Record;
+} BK_EVENT_NODE, *PBK_EVENT_NODE;
 
-typedef struct _BLACKBIRD_CLIENT
+typedef struct _BK_CLIENT
 {
     LIST_ENTRY Link;
     LIST_ENTRY EventQueue;
@@ -40,23 +42,36 @@ typedef struct _BLACKBIRD_CLIENT
     UINT32 DroppedEvents;
     UINT32 SubscriptionCount;
     UINT32 PendingLaunchStreamMask;
+    UINT32 PendingAnalysisSubjectKind;
+    UINT32 AnalysisSubjectKind;
+    UINT32 AnalysisSubjectProcessId;
+    UINT64 AnalysisSubjectImageBase;
+    UINT64 AnalysisSubjectImageSize;
     ULONGLONG QueryWindowStart100ns;
     UINT32 QueryWindowCount;
     BOOLEAN PendingLaunchArmed;
     UCHAR PendingLaunchReserved[3];
     volatile LONG RefCount;
-    BLACKBIRD_SUBSCRIPTION Subscriptions[BLACKBIRD_MAX_CLIENT_SUBSCRIPTIONS];
-    WCHAR PendingLaunchPathNormDos[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
-    WCHAR PendingLaunchPathNormNt[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
-    WCHAR PendingLaunchPathTail[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
-} BLACKBIRD_CLIENT, *PBLACKBIRD_CLIENT;
+    UINT32 SubscriptionCapacity;
+    UCHAR SubscriptionReserved[4];
+    PBK_SUBSCRIPTION Subscriptions;
+    WCHAR PendingLaunchPathNormDos[BK_MAX_IMAGE_PATH_CHARS];
+    WCHAR PendingLaunchPathNormNt[BK_MAX_IMAGE_PATH_CHARS];
+    WCHAR PendingLaunchPathTail[BK_MAX_IMAGE_PATH_CHARS];
+    WCHAR PendingSubjectPathNormDos[BK_MAX_IMAGE_PATH_CHARS];
+    WCHAR PendingSubjectPathNormNt[BK_MAX_IMAGE_PATH_CHARS];
+    WCHAR PendingSubjectPathTail[BK_MAX_IMAGE_PATH_CHARS];
+    WCHAR AnalysisSubjectPathNormDos[BK_MAX_IMAGE_PATH_CHARS];
+    WCHAR AnalysisSubjectPathNormNt[BK_MAX_IMAGE_PATH_CHARS];
+    WCHAR AnalysisSubjectPathTail[BK_MAX_IMAGE_PATH_CHARS];
+} BK_CLIENT, *PBK_CLIENT;
 
-typedef struct _BLACKBIRD_FILE_CONTEXT
+typedef struct _BK_FILE_CONTEXT
 {
-    PBLACKBIRD_CLIENT Client;
-} BLACKBIRD_FILE_CONTEXT, *PBLACKBIRD_FILE_CONTEXT;
+    PBK_CLIENT Client;
+} BK_FILE_CONTEXT, *PBK_FILE_CONTEXT;
 
-WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(BLACKBIRD_FILE_CONTEXT, BLACKBIRDGetFileContext);
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(BK_FILE_CONTEXT, BkctlGetFileContext);
 
 extern WDFDEVICE g_ControlDevice;
 extern FAST_MUTEX g_ClientListLock;
@@ -110,51 +125,57 @@ MmCopyVirtualMemory(_In_ PEPROCESS FromProcess, _In_ const VOID *FromAddress, _I
                     _Out_writes_bytes_(BufferSize) PVOID ToAddress, _In_ SIZE_T BufferSize,
                     _In_ KPROCESSOR_MODE PreviousMode, _Out_ PSIZE_T NumberOfBytesCopied);
 
-BOOLEAN BLACKBIRDModeAllowed(_In_ WDFREQUEST Request);
-ULONG BLACKBIRDGetRequestorPid(VOID);
-PCSTR BLACKBIRDIoctlName(_In_ ULONG Ioctl);
-BOOLEAN BLACKBIRDControlIsShutdown(VOID);
-VOID BLACKBIRDReleaseGlobalQueueSlot(VOID);
-BOOLEAN BLACKBIRDClientConsumeQueryBudgetLocked(_Inout_ PBLACKBIRD_CLIENT Client);
-BOOLEAN BLACKBIRDTryAcquireQueryInflightSlot(VOID);
-VOID BLACKBIRDReleaseQueryInflightSlot(VOID);
-VOID BLACKBIRDClientFreeQueuedEvents(_Inout_ PBLACKBIRD_CLIENT Client);
-VOID BLACKBIRDClientRelease(_Inout_ PBLACKBIRD_CLIENT Client);
-VOID BLACKBIRDClientReference(_Inout_ PBLACKBIRD_CLIENT Client);
-BOOLEAN BLACKBIRDControlIsValidStreamMask(_In_ UINT32 StreamMask);
-VOID BLACKBIRDClientClearPendingLaunchLocked(_Inout_ PBLACKBIRD_CLIENT Client);
-VOID BLACKBIRDClientConfigurePendingLaunchLocked(_Inout_ PBLACKBIRD_CLIENT Client,
-                                                 _In_opt_ const BLACKBIRD_ARM_PENDING_LAUNCH_REQUEST *Request);
-BOOLEAN BLACKBIRDClientAddOrUpdateSubscriptionLocked(_Inout_ PBLACKBIRD_CLIENT Client, _In_ UINT32 ProcessId,
-                                                     _In_ UINT32 StreamMask);
-BOOLEAN BLACKBIRDClientRemoveSubscriptionLocked(_Inout_ PBLACKBIRD_CLIENT Client, _In_ UINT32 ProcessId);
-UINT32 BLACKBIRDClientReplaceSubscriptionsLocked(_Inout_ PBLACKBIRD_CLIENT Client,
-                                                 _In_reads_(ProcessCount) const UINT32 *ProcessIds,
-                                                 _In_ UINT32 ProcessCount, _In_ UINT32 StreamMask);
-VOID BLACKBIRDControlRefreshArmedState(VOID);
-BOOLEAN BLACKBIRDClientMatchSubscriptionEither(_In_ PBLACKBIRD_CLIENT Client, _In_ UINT32 PrimaryProcessId,
-                                               _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask);
-VOID BLACKBIRDPublishRecordToSubscribers(_In_ UINT32 PrimaryPid, _In_ UINT32 SecondaryPid, _In_ UINT32 StreamMask,
-                                         _In_ BLACKBIRD_EVENT_RECORD *Record);
+BOOLEAN BkctlModeAllowed(_In_ WDFREQUEST Request);
+ULONG BkctlGetRequestorPid(VOID);
+PCSTR BkctlIoctlName(_In_ ULONG Ioctl);
+BOOLEAN BkctlIsShutdown(VOID);
+VOID BkctlSetTelemetryArmed(_In_ BOOLEAN Armed);
+VOID BkctlReleaseGlobalQueueSlot(VOID);
+BOOLEAN BkctlClientConsumeQueryBudgetLocked(_Inout_ PBK_CLIENT Client);
+BOOLEAN BkctlTryAcquireQueryInflightSlot(VOID);
+VOID BkctlReleaseQueryInflightSlot(VOID);
+VOID BkctlClientFreeQueuedEvents(_Inout_ PBK_CLIENT Client);
+VOID BkctlClientRelease(_Inout_ PBK_CLIENT Client);
+VOID BkctlClientReference(_Inout_ PBK_CLIENT Client);
+BOOLEAN BkctlIsValidStreamMask(_In_ UINT32 StreamMask);
+VOID BkctlClientClearPendingLaunchLocked(_Inout_ PBK_CLIENT Client);
+VOID BkctlClientConfigurePendingLaunchLocked(_Inout_ PBK_CLIENT Client,
+                                             _In_opt_ const BK_ARM_PENDING_LAUNCH_REQUEST *Request);
+BOOLEAN BkctlClientAddOrUpdateSubscriptionLocked(_Inout_ PBK_CLIENT Client, _In_ UINT32 ProcessId,
+                                                 _In_ UINT32 StreamMask);
+BOOLEAN BkctlClientRemoveSubscriptionLocked(_Inout_ PBK_CLIENT Client, _In_ UINT32 ProcessId);
+UINT32 BkctlClientReplaceSubscriptionsLocked(_Inout_ PBK_CLIENT Client,
+                                             _In_reads_(ProcessCount) const UINT32 *ProcessIds,
+                                             _In_ UINT32 ProcessCount, _In_ UINT32 StreamMask);
+VOID BkctlRefreshArmedState(VOID);
+BOOLEAN BkctlClientMatchSubscriptionEither(_In_ PBK_CLIENT Client, _In_ UINT32 PrimaryProcessId,
+                                           _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask);
+VOID BkctlPublishRecordToSubscribers(_In_ UINT32 PrimaryPid, _In_ UINT32 SecondaryPid, _In_ UINT32 StreamMask,
+                                     _In_ BK_EVENT_RECORD *Record);
 
-EVT_WDF_DEVICE_FILE_CREATE BLACKBIRDEvtFileCreate;
-EVT_WDF_FILE_CLEANUP BLACKBIRDEvtFileCleanup;
-EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL BLACKBIRDEvtIoDeviceControl;
+EVT_WDF_DEVICE_FILE_CREATE BkctlEvtFileCreate;
+EVT_WDF_FILE_CLEANUP BkctlEvtFileCleanup;
+EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL BkctlEvtIoDeviceControl;
 
-NTSTATUS BLACKBIRDHandleSubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
-NTSTATUS BLACKBIRDHandleUnsubscribeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
-NTSTATUS BLACKBIRDHandleGetEventIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
-NTSTATUS BLACKBIRDHandleGetStatsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
-NTSTATUS BLACKBIRDHandleGetHealthIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
-NTSTATUS BLACKBIRDHandleSetPidsIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
-NTSTATUS BLACKBIRDHandleArmPendingLaunchIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
-NTSTATUS BLACKBIRDHandleQueryProcessImageIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request,
-                                               _Out_ size_t *BytesOut);
-NTSTATUS BLACKBIRDHandleSetShutdownModeIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
-NTSTATUS BLACKBIRDHandleControlExecutionIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
-NTSTATUS BLACKBIRDHandleSetRuntimeConfigIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
-NTSTATUS BLACKBIRDHandleGetRuntimeConfigIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request,
-                                              _Out_ size_t *BytesOut);
-NTSTATUS BLACKBIRDHandleMarkControllerReadyIoctl(_In_ PBLACKBIRD_CLIENT Client, _In_ WDFREQUEST Request);
+NTSTATUS BkctlHandleSubscribeIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
+NTSTATUS BkctlHandleUnsubscribeIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
+NTSTATUS BkctlHandleGetEventIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
+NTSTATUS BkctlHandleGetStatsIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
+NTSTATUS BkctlHandleGetHealthIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
+NTSTATUS BkctlHandleGetDiagnosticsIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
+NTSTATUS BkctlHandleSetEndpointGuardIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
+NTSTATUS BkctlHandleSetPidsIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
+NTSTATUS BkctlHandleArmPendingLaunchIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
+NTSTATUS BkctlHandleQueryProcessImageIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
+NTSTATUS BkctlHandleSetShutdownModeIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
+NTSTATUS BkctlHandleControlExecutionIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
+NTSTATUS BkctlHandleSetRuntimeConfigIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
+NTSTATUS BkctlHandleReadMemoryIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
+NTSTATUS BkctlHandleGetRuntimeConfigIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
+NTSTATUS BkctlHandleSetQpcTimingConfigIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
+NTSTATUS BkctlHandleGetQpcTimingStateIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
+NTSTATUS BkctlHandleMarkControllerReadyIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
+NTSTATUS BkctlHandleRegisterInstrumentationRangeIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
+NTSTATUS BkctlHandleRegisterHookPatchIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
 
 #endif

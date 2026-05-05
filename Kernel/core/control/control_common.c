@@ -1,61 +1,110 @@
 #include "control_private.h"
+#include "..\..\hooks\monitor\ntapi_monitor.h"
 
-BOOLEAN BLACKBIRDModeAllowed(_In_ WDFREQUEST Request)
+static volatile LONG g_BkctlClientLockBusyCounter = 0;
+
+BOOLEAN BkctlModeAllowed(_In_ WDFREQUEST Request)
 {
     return (WdfRequestGetRequestorMode(Request) == UserMode);
 }
 
-ULONG BLACKBIRDGetRequestorPid(VOID)
+ULONG BkctlGetRequestorPid(VOID)
 {
     return (ULONG)(ULONG_PTR)PsGetCurrentProcessId();
 }
 
-PCSTR BLACKBIRDIoctlName(_In_ ULONG Ioctl)
+PCSTR BkctlIoctlName(_In_ ULONG Ioctl)
 {
     switch (Ioctl)
     {
-    case IOCTL_BLACKBIRD_SUBSCRIBE:
+    case IOCTL_BK_SUBSCRIBE:
         return "SUBSCRIBE";
-    case IOCTL_BLACKBIRD_UNSUBSCRIBE:
+    case IOCTL_BK_UNSUBSCRIBE:
         return "UNSUBSCRIBE";
-    case IOCTL_BLACKBIRD_GET_EVENT:
+    case IOCTL_BK_GET_EVENT:
         return "GET_EVENT";
-    case IOCTL_BLACKBIRD_GET_STATS:
+    case IOCTL_BK_GET_STATS:
         return "GET_STATS";
-    case IOCTL_BLACKBIRD_SET_PIDS:
+    case IOCTL_BK_SET_PIDS:
         return "SET_PIDS";
-    case IOCTL_BLACKBIRD_QUERY_PROCESS_IMAGE:
+    case IOCTL_BK_QUERY_PROCESS_IMAGE:
         return "QUERY_PROCESS_IMAGE";
-    case IOCTL_BLACKBIRD_SET_SHUTDOWN_MODE:
+    case IOCTL_BK_SET_SHUTDOWN_MODE:
         return "SET_SHUTDOWN_MODE";
-    case IOCTL_BLACKBIRD_GET_HEALTH:
+    case IOCTL_BK_GET_HEALTH:
         return "GET_HEALTH";
-    case IOCTL_BLACKBIRD_ARM_PENDING_LAUNCH:
+    case IOCTL_BK_GET_DIAGNOSTICS:
+        return "GET_DIAGNOSTICS";
+    case IOCTL_BK_ARM_PENDING_LAUNCH:
         return "ARM_PENDING_LAUNCH";
-    case IOCTL_BLACKBIRD_CONTROL_EXECUTION:
+    case IOCTL_BK_CONTROL_EXECUTION:
         return "CONTROL_EXECUTION";
-    case IOCTL_BLACKBIRD_SET_RUNTIME_CONFIG:
+    case IOCTL_BK_SET_RUNTIME_CONFIG:
         return "SET_RUNTIME_CONFIG";
-    case IOCTL_BLACKBIRD_GET_RUNTIME_CONFIG:
+    case IOCTL_BK_GET_RUNTIME_CONFIG:
         return "GET_RUNTIME_CONFIG";
+    case IOCTL_BK_READ_MEMORY:
+        return "READ_MEMORY";
+    case IOCTL_BK_REGISTER_INSTRUMENTATION_RANGE:
+        return "REGISTER_INSTRUMENTATION_RANGE";
+    case IOCTL_BK_REGISTER_HOOK_PATCH:
+        return "REGISTER_HOOK_PATCH";
+    case IOCTL_BK_SET_ENDPOINT_GUARD:
+        return "SET_ENDPOINT_GUARD";
+    case IOCTL_BK_SET_QPC_TIMING_CONFIG:
+        return "SET_QPC_TIMING_CONFIG";
+    case IOCTL_BK_GET_QPC_TIMING_STATE:
+        return "GET_QPC_TIMING_STATE";
     default:
         return "UNKNOWN_IOCTL";
     }
 }
 
-BOOLEAN BLACKBIRDControlIsShutdown(VOID)
+BOOLEAN BkctlIsShutdown(VOID)
 {
     return (InterlockedCompareExchange(&g_ControlShutdown, 0, 0) != 0);
 }
 
-static BOOLEAN BLACKBIRDTryAcquireGlobalQueueSlot(VOID)
+VOID BkctlSetTelemetryArmed(_In_ BOOLEAN Armed)
+{
+    InterlockedExchange(&g_ControlTelemetryArmed, Armed ? 1 : 0);
+    if (KeGetCurrentIrql() == PASSIVE_LEVEL)
+    {
+        BkntkiMonitorSetArmedState(Armed);
+    }
+}
+
+static BOOLEAN BkctlTryAcquireClientLock(_Inout_ PBK_CLIENT Client, _In_z_ PCSTR Reason)
+{
+    LONG busyCount;
+
+    if (Client == NULL)
+    {
+        return FALSE;
+    }
+    if (ExTryToAcquireFastMutex(&Client->Lock))
+    {
+        return TRUE;
+    }
+
+    busyCount = InterlockedIncrement(&g_BkctlClientLockBusyCounter);
+    if (busyCount == 1 || ((busyCount & 0xFF) == 0))
+    {
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+                   "BK: client lock busy reason=%s busyCount=%ld client=0x%p subscriptions=%lu queueDepth=%lu.\n",
+                   Reason, busyCount, Client, Client->SubscriptionCount, Client->QueueDepth);
+    }
+    return FALSE;
+}
+
+static BOOLEAN BkctlTryAcquireGlobalQueueSlot(VOID)
 {
     LONG current;
 
     for (;;)
     {
         current = InterlockedCompareExchange(&g_ControlTotalQueuedEvents, 0, 0);
-        if (current >= BLACKBIRD_MAX_TOTAL_QUEUED_EVENTS)
+        if (current >= BK_MAX_TOTAL_QUEUED_EVENTS)
         {
             return FALSE;
         }
@@ -66,7 +115,7 @@ static BOOLEAN BLACKBIRDTryAcquireGlobalQueueSlot(VOID)
     }
 }
 
-VOID BLACKBIRDReleaseGlobalQueueSlot(VOID)
+VOID BkctlReleaseGlobalQueueSlot(VOID)
 {
     LONG remaining;
 
@@ -78,20 +127,20 @@ VOID BLACKBIRDReleaseGlobalQueueSlot(VOID)
     }
 }
 
-BOOLEAN BLACKBIRDClientConsumeQueryBudgetLocked(_Inout_ PBLACKBIRD_CLIENT Client)
+BOOLEAN BkctlClientConsumeQueryBudgetLocked(_Inout_ PBK_CLIENT Client)
 {
     ULONGLONG now;
 
     now = KeQueryInterruptTime();
     if (Client->QueryWindowStart100ns == 0 || now < Client->QueryWindowStart100ns ||
-        (now - Client->QueryWindowStart100ns) >= BLACKBIRD_QUERY_IMAGE_WINDOW_100NS)
+        (now - Client->QueryWindowStart100ns) >= BK_QUERY_IMAGE_WINDOW_100NS)
     {
         Client->QueryWindowStart100ns = now;
         Client->QueryWindowCount = 1;
         return TRUE;
     }
 
-    if (Client->QueryWindowCount >= BLACKBIRD_QUERY_IMAGE_MAX_PER_WINDOW)
+    if (Client->QueryWindowCount >= BK_QUERY_IMAGE_MAX_PER_WINDOW)
     {
         return FALSE;
     }
@@ -100,14 +149,14 @@ BOOLEAN BLACKBIRDClientConsumeQueryBudgetLocked(_Inout_ PBLACKBIRD_CLIENT Client
     return TRUE;
 }
 
-BOOLEAN BLACKBIRDTryAcquireQueryInflightSlot(VOID)
+BOOLEAN BkctlTryAcquireQueryInflightSlot(VOID)
 {
     LONG current;
 
     for (;;)
     {
         current = InterlockedCompareExchange(&g_QueryImageInflight, 0, 0);
-        if (current >= BLACKBIRD_QUERY_IMAGE_MAX_INFLIGHT)
+        if (current >= BK_QUERY_IMAGE_MAX_INFLIGHT)
         {
             return FALSE;
         }
@@ -118,7 +167,7 @@ BOOLEAN BLACKBIRDTryAcquireQueryInflightSlot(VOID)
     }
 }
 
-VOID BLACKBIRDReleaseQueryInflightSlot(VOID)
+VOID BkctlReleaseQueryInflightSlot(VOID)
 {
     LONG remaining;
 
@@ -130,19 +179,87 @@ VOID BLACKBIRDReleaseQueryInflightSlot(VOID)
     }
 }
 
-VOID BLACKBIRDClientFreeQueuedEvents(_Inout_ PBLACKBIRD_CLIENT Client)
+VOID BkctlClientFreeQueuedEvents(_Inout_ PBK_CLIENT Client)
 {
     while (!IsListEmpty(&Client->EventQueue))
     {
         PLIST_ENTRY entry = RemoveHeadList(&Client->EventQueue);
-        PBLACKBIRD_EVENT_NODE node = CONTAINING_RECORD(entry, BLACKBIRD_EVENT_NODE, Link);
-        ExFreePoolWithTag(node, BLACKBIRD_POOL_TAG);
-        BLACKBIRDReleaseGlobalQueueSlot();
+        PBK_EVENT_NODE node = CONTAINING_RECORD(entry, BK_EVENT_NODE, Link);
+        ExFreePoolWithTag(node, BK_POOL_TAG);
+        BkctlReleaseGlobalQueueSlot();
     }
     Client->QueueDepth = 0;
 }
 
-VOID BLACKBIRDClientRelease(_Inout_ PBLACKBIRD_CLIENT Client)
+static VOID BkctlClientFreeSubscriptions(_Inout_ PBK_CLIENT Client)
+{
+    if (Client == NULL || Client->Subscriptions == NULL)
+    {
+        return;
+    }
+
+    ExFreePoolWithTag(Client->Subscriptions, BK_POOL_TAG);
+    Client->Subscriptions = NULL;
+    Client->SubscriptionCount = 0;
+    Client->SubscriptionCapacity = 0;
+}
+
+static BOOLEAN BkctlClientEnsureSubscriptionCapacityLocked(_Inout_ PBK_CLIENT Client, _In_ UINT32 RequiredCount)
+{
+    PBK_SUBSCRIPTION newSubscriptions;
+    UINT32 newCapacity;
+    SIZE_T bytes;
+
+    if (Client == NULL || RequiredCount == 0 || RequiredCount > BK_MAX_CLIENT_SUBSCRIPTIONS)
+    {
+        return FALSE;
+    }
+    if (Client->SubscriptionCapacity >= RequiredCount && Client->Subscriptions != NULL)
+    {
+        return TRUE;
+    }
+
+    newCapacity = Client->SubscriptionCapacity;
+    if (newCapacity == 0)
+    {
+        newCapacity = BK_INITIAL_CLIENT_SUBSCRIPTIONS;
+    }
+    while (newCapacity < RequiredCount && newCapacity < BK_MAX_CLIENT_SUBSCRIPTIONS)
+    {
+        UINT32 grown = newCapacity * 2;
+        if (grown <= newCapacity)
+        {
+            newCapacity = BK_MAX_CLIENT_SUBSCRIPTIONS;
+            break;
+        }
+        newCapacity = (grown > BK_MAX_CLIENT_SUBSCRIPTIONS) ? BK_MAX_CLIENT_SUBSCRIPTIONS : grown;
+    }
+    if (newCapacity < RequiredCount)
+    {
+        return FALSE;
+    }
+
+    bytes = sizeof(BK_SUBSCRIPTION) * (SIZE_T)newCapacity;
+    newSubscriptions = (PBK_SUBSCRIPTION)BkpoolAllocateCompat(POOL_FLAG_NON_PAGED, bytes, BK_POOL_TAG);
+    if (newSubscriptions == NULL)
+    {
+        return FALSE;
+    }
+
+    RtlZeroMemory(newSubscriptions, bytes);
+    if (Client->Subscriptions != NULL && Client->SubscriptionCount != 0)
+    {
+        RtlCopyMemory(newSubscriptions, Client->Subscriptions,
+                      sizeof(BK_SUBSCRIPTION) * (SIZE_T)Client->SubscriptionCount);
+        ExFreePoolWithTag(Client->Subscriptions, BK_POOL_TAG);
+    }
+
+    Client->Subscriptions = newSubscriptions;
+    Client->SubscriptionCapacity = newCapacity;
+    return TRUE;
+}
+
+VOID BkctlClientRelease(_Inout_ PBK_CLIENT Client)
 {
     if (InterlockedDecrement(&Client->RefCount) != 0)
     {
@@ -150,23 +267,24 @@ VOID BLACKBIRDClientRelease(_Inout_ PBLACKBIRD_CLIENT Client)
     }
 
     ExAcquireFastMutex(&Client->Lock);
-    BLACKBIRDClientFreeQueuedEvents(Client);
+    BkctlClientFreeQueuedEvents(Client);
+    BkctlClientFreeSubscriptions(Client);
     ExReleaseFastMutex(&Client->Lock);
-    ExFreePoolWithTag(Client, BLACKBIRD_POOL_TAG);
+    ExFreePoolWithTag(Client, BK_POOL_TAG);
 }
 
-VOID BLACKBIRDClientReference(_Inout_ PBLACKBIRD_CLIENT Client)
+VOID BkctlClientReference(_Inout_ PBK_CLIENT Client)
 {
     (void)InterlockedIncrement(&Client->RefCount);
 }
 
-BOOLEAN BLACKBIRDControlIsValidStreamMask(_In_ UINT32 StreamMask)
+BOOLEAN BkctlIsValidStreamMask(_In_ UINT32 StreamMask)
 {
-    return ((StreamMask & (BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD |
-                           BLACKBIRD_STREAM_FILESYSTEM)) != 0);
+    return ((StreamMask & (BK_STREAM_HANDLE | BK_STREAM_MEMORY | BK_STREAM_THREAD | BK_STREAM_FILESYSTEM |
+                           BK_STREAM_REGISTRY | BK_STREAM_TIMING | BK_STREAM_ENTERPRISE)) != 0);
 }
 
-VOID BLACKBIRDClientClearPendingLaunchLocked(_Inout_ PBLACKBIRD_CLIENT Client)
+VOID BkctlClientClearPendingLaunchLocked(_Inout_ PBK_CLIENT Client)
 {
     if (Client == NULL)
     {
@@ -175,21 +293,26 @@ VOID BLACKBIRDClientClearPendingLaunchLocked(_Inout_ PBLACKBIRD_CLIENT Client)
 
     Client->PendingLaunchArmed = FALSE;
     Client->PendingLaunchStreamMask = 0;
+    Client->PendingAnalysisSubjectKind = BlackbirdAnalysisSubjectProcess;
     Client->PendingLaunchPathNormDos[0] = L'\0';
     Client->PendingLaunchPathNormNt[0] = L'\0';
     Client->PendingLaunchPathTail[0] = L'\0';
+    Client->PendingSubjectPathNormDos[0] = L'\0';
+    Client->PendingSubjectPathNormNt[0] = L'\0';
+    Client->PendingSubjectPathTail[0] = L'\0';
 }
 
-VOID BLACKBIRDClientConfigurePendingLaunchLocked(_Inout_ PBLACKBIRD_CLIENT Client,
-                                                 _In_opt_ const BLACKBIRD_ARM_PENDING_LAUNCH_REQUEST *Request)
+VOID BkctlClientConfigurePendingLaunchLocked(_Inout_ PBK_CLIENT Client,
+                                             _In_opt_ const BK_ARM_PENDING_LAUNCH_REQUEST *Request)
 {
-    BLACKBIRDClientClearPendingLaunchLocked(Client);
+    BkctlClientClearPendingLaunchLocked(Client);
     if (Client == NULL || Request == NULL)
     {
         return;
     }
 
     Client->PendingLaunchStreamMask = Request->StreamMask;
+    Client->PendingAnalysisSubjectKind = Request->AnalysisSubjectKind;
     Client->PendingLaunchArmed = TRUE;
     (void)RtlStringCchCopyW(Client->PendingLaunchPathNormDos, RTL_NUMBER_OF(Client->PendingLaunchPathNormDos),
                             Request->ImagePathNormDos);
@@ -197,28 +320,36 @@ VOID BLACKBIRDClientConfigurePendingLaunchLocked(_Inout_ PBLACKBIRD_CLIENT Clien
                             Request->ImagePathNormNt);
     (void)RtlStringCchCopyW(Client->PendingLaunchPathTail, RTL_NUMBER_OF(Client->PendingLaunchPathTail),
                             Request->ImagePathTail);
+    (void)RtlStringCchCopyW(Client->PendingSubjectPathNormDos, RTL_NUMBER_OF(Client->PendingSubjectPathNormDos),
+                            Request->AnalysisSubjectNormDos);
+    (void)RtlStringCchCopyW(Client->PendingSubjectPathNormNt, RTL_NUMBER_OF(Client->PendingSubjectPathNormNt),
+                            Request->AnalysisSubjectNormNt);
+    (void)RtlStringCchCopyW(Client->PendingSubjectPathTail, RTL_NUMBER_OF(Client->PendingSubjectPathTail),
+                            Request->AnalysisSubjectTail);
 }
 
-static PCWSTR BLACKBIRDSkipKnownPathPrefixes(_In_opt_z_ PCWSTR Input)
+static SIZE_T BkctlKnownPathPrefixChars(_In_reads_opt_(InputChars) PCWSTR Input, _In_ SIZE_T InputChars)
 {
-    if (Input == NULL)
+    if (Input == NULL || InputChars < 4)
     {
-        return NULL;
+        return 0;
     }
 
     if ((Input[0] == L'\\' && Input[1] == L'\\' && Input[2] == L'?' && Input[3] == L'\\') ||
         (Input[0] == L'\\' && Input[1] == L'?' && Input[2] == L'?' && Input[3] == L'\\'))
     {
-        return Input + 4;
+        return 4;
     }
 
-    return Input;
+    return 0;
 }
 
-static VOID BLACKBIRDNormalizeWidePathForCompare(_In_opt_z_ PCWSTR Input, _Out_writes_z_(OutputChars) PWSTR Output,
-                                                 _In_ SIZE_T OutputChars)
+static VOID BkctlNormalizeWidePathForCompare(_In_opt_z_ PCWSTR Input, _Out_writes_z_(OutputChars) PWSTR Output,
+                                             _In_ SIZE_T OutputChars)
 {
     SIZE_T i;
+    SIZE_T inputChars = 0;
+    SIZE_T skippedChars;
     SIZE_T written = 0;
 
     if (Output == NULL || OutputChars == 0)
@@ -232,13 +363,15 @@ static VOID BLACKBIRDNormalizeWidePathForCompare(_In_opt_z_ PCWSTR Input, _Out_w
         return;
     }
 
-    Input = BLACKBIRDSkipKnownPathPrefixes(Input);
-    if (Input == NULL)
+    if (!NT_SUCCESS(RtlStringCchLengthW(Input, OutputChars * 2, &inputChars)))
     {
         return;
     }
+    skippedChars = BkctlKnownPathPrefixChars(Input, inputChars);
+    Input += skippedChars;
+    inputChars -= skippedChars;
 
-    for (i = 0; Input[i] != L'\0' && (written + 1) < OutputChars; ++i)
+    for (i = 0; i < inputChars && (written + 1) < OutputChars; ++i)
     {
         WCHAR ch = Input[i];
         if (ch == L'/')
@@ -250,11 +383,12 @@ static VOID BLACKBIRDNormalizeWidePathForCompare(_In_opt_z_ PCWSTR Input, _Out_w
     Output[written] = L'\0';
 }
 
-static VOID BLACKBIRDNormalizeUnicodePathForCompare(_In_opt_ PCUNICODE_STRING Input,
-                                                    _Out_writes_z_(OutputChars) PWSTR Output, _In_ SIZE_T OutputChars)
+static VOID BkctlNormalizeUnicodePathForCompare(_In_opt_ PCUNICODE_STRING Input,
+                                                _Out_writes_z_(OutputChars) PWSTR Output, _In_ SIZE_T OutputChars)
 {
     SIZE_T i;
     SIZE_T inputChars;
+    SIZE_T skippedChars;
     SIZE_T written = 0;
     PCWSTR inputBuffer;
 
@@ -264,40 +398,37 @@ static VOID BLACKBIRDNormalizeUnicodePathForCompare(_In_opt_ PCUNICODE_STRING In
     }
     Output[0] = L'\0';
 
-    if (Input == NULL || Input->Buffer == NULL || Input->Length == 0)
+    __try
     {
-        return;
-    }
-
-    inputBuffer = BLACKBIRDSkipKnownPathPrefixes(Input->Buffer);
-    if (inputBuffer == NULL)
-    {
-        return;
-    }
-    inputChars = Input->Length / sizeof(WCHAR);
-    if (inputBuffer > Input->Buffer)
-    {
-        SIZE_T skippedChars = (SIZE_T)(inputBuffer - Input->Buffer);
-        if (skippedChars >= inputChars)
+        if (Input == NULL || Input->Buffer == NULL || Input->Length == 0)
         {
             return;
         }
-        inputChars -= skippedChars;
-    }
 
-    for (i = 0; i < inputChars && (written + 1) < OutputChars; ++i)
-    {
-        WCHAR ch = inputBuffer[i];
-        if (ch == L'/')
+        inputBuffer = Input->Buffer;
+        inputChars = Input->Length / sizeof(WCHAR);
+        skippedChars = BkctlKnownPathPrefixChars(inputBuffer, inputChars);
+        inputBuffer += skippedChars;
+        inputChars -= skippedChars;
+
+        for (i = 0; i < inputChars && (written + 1) < OutputChars; ++i)
         {
-            ch = L'\\';
+            WCHAR ch = inputBuffer[i];
+            if (ch == L'/')
+            {
+                ch = L'\\';
+            }
+            Output[written++] = RtlDowncaseUnicodeChar(ch);
         }
-        Output[written++] = RtlDowncaseUnicodeChar(ch);
+        Output[written] = L'\0';
     }
-    Output[written] = L'\0';
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        Output[0] = L'\0';
+    }
 }
 
-static BOOLEAN BLACKBIRDPathHasTrailingSegmentInsensitive(_In_z_ PCWSTR Path, _In_z_ PCWSTR Tail)
+static BOOLEAN BkctlPathHasTrailingSegmentInsensitive(_In_z_ PCWSTR Path, _In_z_ PCWSTR Tail)
 {
     SIZE_T pathLen;
     SIZE_T tailLen;
@@ -328,8 +459,7 @@ static BOOLEAN BLACKBIRDPathHasTrailingSegmentInsensitive(_In_z_ PCWSTR Path, _I
     return (end[-1] == L'\\');
 }
 
-static BOOLEAN BLACKBIRDClientPathMatchesPendingLaunchLocked(_In_ const BLACKBIRD_CLIENT *Client,
-                                                             _In_z_ PCWSTR CandidateNorm)
+static BOOLEAN BkctlClientPathMatchesPendingLaunchLocked(_In_ const BK_CLIENT *Client, _In_z_ PCWSTR CandidateNorm)
 {
     if (Client == NULL || CandidateNorm == NULL || CandidateNorm[0] == L'\0' || !Client->PendingLaunchArmed)
     {
@@ -347,7 +477,7 @@ static BOOLEAN BLACKBIRDClientPathMatchesPendingLaunchLocked(_In_ const BLACKBIR
     }
 
     if (Client->PendingLaunchPathTail[0] != L'\0' &&
-        BLACKBIRDPathHasTrailingSegmentInsensitive(CandidateNorm, Client->PendingLaunchPathTail))
+        BkctlPathHasTrailingSegmentInsensitive(CandidateNorm, Client->PendingLaunchPathTail))
     {
         return TRUE;
     }
@@ -355,12 +485,77 @@ static BOOLEAN BLACKBIRDClientPathMatchesPendingLaunchLocked(_In_ const BLACKBIR
     return FALSE;
 }
 
-BOOLEAN BLACKBIRDClientAddOrUpdateSubscriptionLocked(_Inout_ PBLACKBIRD_CLIENT Client, _In_ UINT32 ProcessId,
-                                                     _In_ UINT32 StreamMask)
+static BOOLEAN BkctlClientPathMatchesAnalysisSubjectLocked(_In_ const BK_CLIENT *Client, _In_z_ PCWSTR CandidateNorm)
+{
+    if (Client == NULL || CandidateNorm == NULL || CandidateNorm[0] == L'\0' || Client->AnalysisSubjectProcessId == 0 ||
+        Client->AnalysisSubjectKind != BlackbirdAnalysisSubjectDll)
+    {
+        return FALSE;
+    }
+
+    if (Client->AnalysisSubjectPathNormNt[0] != L'\0' &&
+        _wcsicmp(Client->AnalysisSubjectPathNormNt, CandidateNorm) == 0)
+    {
+        return TRUE;
+    }
+
+    if (Client->AnalysisSubjectPathNormDos[0] != L'\0' &&
+        _wcsicmp(Client->AnalysisSubjectPathNormDos, CandidateNorm) == 0)
+    {
+        return TRUE;
+    }
+
+    if (Client->AnalysisSubjectPathTail[0] != L'\0' &&
+        BkctlPathHasTrailingSegmentInsensitive(CandidateNorm, Client->AnalysisSubjectPathTail))
+    {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+static VOID BkctlClientBindAnalysisSubjectLocked(_Inout_ PBK_CLIENT Client, _In_ UINT32 ProcessId)
+{
+    if (Client == NULL || ProcessId == 0)
+    {
+        return;
+    }
+
+    Client->AnalysisSubjectProcessId = 0;
+    Client->AnalysisSubjectKind = BlackbirdAnalysisSubjectProcess;
+    Client->AnalysisSubjectImageBase = 0;
+    Client->AnalysisSubjectImageSize = 0;
+    Client->AnalysisSubjectPathNormDos[0] = L'\0';
+    Client->AnalysisSubjectPathNormNt[0] = L'\0';
+    Client->AnalysisSubjectPathTail[0] = L'\0';
+
+    if (Client->PendingAnalysisSubjectKind != BlackbirdAnalysisSubjectDll ||
+        (Client->PendingSubjectPathNormDos[0] == L'\0' && Client->PendingSubjectPathNormNt[0] == L'\0' &&
+         Client->PendingSubjectPathTail[0] == L'\0'))
+    {
+        return;
+    }
+
+    Client->AnalysisSubjectProcessId = ProcessId;
+    Client->AnalysisSubjectKind = Client->PendingAnalysisSubjectKind;
+    (void)RtlStringCchCopyW(Client->AnalysisSubjectPathNormDos, RTL_NUMBER_OF(Client->AnalysisSubjectPathNormDos),
+                            Client->PendingSubjectPathNormDos);
+    (void)RtlStringCchCopyW(Client->AnalysisSubjectPathNormNt, RTL_NUMBER_OF(Client->AnalysisSubjectPathNormNt),
+                            Client->PendingSubjectPathNormNt);
+    (void)RtlStringCchCopyW(Client->AnalysisSubjectPathTail, RTL_NUMBER_OF(Client->AnalysisSubjectPathTail),
+                            Client->PendingSubjectPathTail);
+}
+
+BOOLEAN BkctlClientAddOrUpdateSubscriptionLocked(_Inout_ PBK_CLIENT Client, _In_ UINT32 ProcessId,
+                                                 _In_ UINT32 StreamMask)
 {
     UINT32 i;
 
     if (Client == NULL || ProcessId == 0 || StreamMask == 0)
+    {
+        return FALSE;
+    }
+    if (Client->Subscriptions == NULL && !BkctlClientEnsureSubscriptionCapacityLocked(Client, 1))
     {
         return FALSE;
     }
@@ -374,7 +569,7 @@ BOOLEAN BLACKBIRDClientAddOrUpdateSubscriptionLocked(_Inout_ PBLACKBIRD_CLIENT C
         }
     }
 
-    if (Client->SubscriptionCount >= BLACKBIRD_MAX_CLIENT_SUBSCRIPTIONS)
+    if (!BkctlClientEnsureSubscriptionCapacityLocked(Client, Client->SubscriptionCount + 1))
     {
         return FALSE;
     }
@@ -385,11 +580,15 @@ BOOLEAN BLACKBIRDClientAddOrUpdateSubscriptionLocked(_Inout_ PBLACKBIRD_CLIENT C
     return TRUE;
 }
 
-BOOLEAN BLACKBIRDClientRemoveSubscriptionLocked(_Inout_ PBLACKBIRD_CLIENT Client, _In_ UINT32 ProcessId)
+BOOLEAN BkctlClientRemoveSubscriptionLocked(_Inout_ PBK_CLIENT Client, _In_ UINT32 ProcessId)
 {
     UINT32 i;
 
     if (Client == NULL || ProcessId == 0)
+    {
+        return FALSE;
+    }
+    if (Client->Subscriptions == NULL || Client->SubscriptionCount == 0)
     {
         return FALSE;
     }
@@ -411,18 +610,27 @@ BOOLEAN BLACKBIRDClientRemoveSubscriptionLocked(_Inout_ PBLACKBIRD_CLIENT Client
     return FALSE;
 }
 
-UINT32 BLACKBIRDClientReplaceSubscriptionsLocked(_Inout_ PBLACKBIRD_CLIENT Client,
-                                                 _In_reads_(ProcessCount) const UINT32 *ProcessIds,
-                                                 _In_ UINT32 ProcessCount, _In_ UINT32 StreamMask)
+UINT32 BkctlClientReplaceSubscriptionsLocked(_Inout_ PBK_CLIENT Client,
+                                             _In_reads_(ProcessCount) const UINT32 *ProcessIds,
+                                             _In_ UINT32 ProcessCount, _In_ UINT32 StreamMask)
 {
     UINT32 i;
 
     if (Client == NULL || ProcessIds == NULL || ProcessCount == 0 || StreamMask == 0)
     {
+        if (Client != NULL)
+        {
+            Client->SubscriptionCount = 0;
+        }
         return 0;
     }
 
     Client->SubscriptionCount = 0;
+    if (!BkctlClientEnsureSubscriptionCapacityLocked(
+            Client, (ProcessCount > BK_MAX_CLIENT_SUBSCRIPTIONS) ? BK_MAX_CLIENT_SUBSCRIPTIONS : ProcessCount))
+    {
+        return 0;
+    }
     for (i = 0; i < ProcessCount; ++i)
     {
         UINT32 pid = ProcessIds[i];
@@ -431,15 +639,15 @@ UINT32 BLACKBIRDClientReplaceSubscriptionsLocked(_Inout_ PBLACKBIRD_CLIENT Clien
             continue;
         }
 
-        (void)BLACKBIRDClientAddOrUpdateSubscriptionLocked(Client, pid, StreamMask);
+        (void)BkctlClientAddOrUpdateSubscriptionLocked(Client, pid, StreamMask);
     }
 
     return Client->SubscriptionCount;
 }
 
-static VOID BLACKBIRDControlFlushAllClientState(VOID)
+static VOID BkctlFlushAllClientState(VOID)
 {
-    PBLACKBIRD_CLIENT snapshot[BLACKBIRD_MAX_TOTAL_CLIENTS];
+    PBK_CLIENT snapshot[BK_MAX_TOTAL_CLIENTS];
     UINT32 snapshotCount = 0;
     UINT32 i;
     PLIST_ENTRY e;
@@ -447,38 +655,38 @@ static VOID BLACKBIRDControlFlushAllClientState(VOID)
     ExAcquireFastMutex(&g_ClientListLock);
     for (e = g_ClientList.Flink; e != &g_ClientList; e = e->Flink)
     {
-        PBLACKBIRD_CLIENT c = CONTAINING_RECORD(e, BLACKBIRD_CLIENT, Link);
+        PBK_CLIENT c = CONTAINING_RECORD(e, BK_CLIENT, Link);
         if (snapshotCount >= RTL_NUMBER_OF(snapshot))
         {
             break;
         }
-        BLACKBIRDClientReference(c);
+        BkctlClientReference(c);
         snapshot[snapshotCount++] = c;
     }
     ExReleaseFastMutex(&g_ClientListLock);
 
     for (i = 0; i < snapshotCount; ++i)
     {
-        PBLACKBIRD_CLIENT c = snapshot[i];
+        PBK_CLIENT c = snapshot[i];
         WDFQUEUE pendingQueue = NULL;
         ExAcquireFastMutex(&c->Lock);
         pendingQueue = c->PendingGetEventQueue;
         c->PendingGetEventQueue = NULL;
         c->SubscriptionCount = 0;
-        BLACKBIRDClientClearPendingLaunchLocked(c);
-        BLACKBIRDClientFreeQueuedEvents(c);
+        BkctlClientClearPendingLaunchLocked(c);
+        BkctlClientFreeQueuedEvents(c);
         ExReleaseFastMutex(&c->Lock);
         if (pendingQueue != NULL)
         {
             WdfIoQueuePurgeSynchronously(pendingQueue);
         }
-        BLACKBIRDClientRelease(c);
+        BkctlClientRelease(c);
     }
 }
 
-VOID BLACKBIRDControlRefreshArmedState(VOID)
+VOID BkctlRefreshArmedState(VOID)
 {
-    PBLACKBIRD_CLIENT snapshot[BLACKBIRD_MAX_TOTAL_CLIENTS];
+    PBK_CLIENT snapshot[BK_MAX_TOTAL_CLIENTS];
     UINT32 snapshotCount = 0;
     UINT32 i;
     PLIST_ENTRY entry;
@@ -487,26 +695,31 @@ VOID BLACKBIRDControlRefreshArmedState(VOID)
     ExAcquireFastMutex(&g_ClientListLock);
     for (entry = g_ClientList.Flink; entry != &g_ClientList; entry = entry->Flink)
     {
-        PBLACKBIRD_CLIENT client = CONTAINING_RECORD(entry, BLACKBIRD_CLIENT, Link);
+        PBK_CLIENT client = CONTAINING_RECORD(entry, BK_CLIENT, Link);
         if (snapshotCount >= RTL_NUMBER_OF(snapshot))
         {
             break;
         }
-        BLACKBIRDClientReference(client);
+        BkctlClientReference(client);
         snapshot[snapshotCount++] = client;
     }
     ExReleaseFastMutex(&g_ClientListLock);
 
     for (i = 0; i < snapshotCount; ++i)
     {
-        PBLACKBIRD_CLIENT client = snapshot[i];
-        ExAcquireFastMutex(&client->Lock);
-        if (client->SubscriptionCount != 0)
+        PBK_CLIENT client = snapshot[i];
+        if (!BkctlTryAcquireClientLock(client, "refresh-armed"))
+        {
+            armed = TRUE;
+            BkctlClientRelease(client);
+            break;
+        }
+        if (client->SubscriptionCount != 0 || client->PendingLaunchArmed)
         {
             armed = TRUE;
         }
         ExReleaseFastMutex(&client->Lock);
-        BLACKBIRDClientRelease(client);
+        BkctlClientRelease(client);
         if (armed)
         {
             break;
@@ -515,27 +728,27 @@ VOID BLACKBIRDControlRefreshArmedState(VOID)
 
     for (++i; i < snapshotCount; ++i)
     {
-        BLACKBIRDClientRelease(snapshot[i]);
+        BkctlClientRelease(snapshot[i]);
     }
 
-    InterlockedExchange(&g_ControlTelemetryArmed, armed ? 1 : 0);
+    BkctlSetTelemetryArmed(armed);
 }
 
-VOID BLACKBIRDControlBeginShutdown(VOID)
+VOID BkctlBeginShutdown(VOID)
 {
     if (InterlockedExchange(&g_ControlShutdown, 1) == 0)
     {
-        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BLACKBIRD: control plane entering shutdown mode.\n");
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BK: control plane entering shutdown mode.\n");
     }
-    BLACKBIRDControlFlushAllClientState();
-    InterlockedExchange(&g_ControlTelemetryArmed, 0);
+    BkctlFlushAllClientState();
+    BkctlSetTelemetryArmed(FALSE);
 }
 
-static PBLACKBIRD_CLIENT BLACKBIRDClientCreate(VOID)
+static PBK_CLIENT BkctlClientCreate(VOID)
 {
-    PBLACKBIRD_CLIENT client;
+    PBK_CLIENT client;
 
-    client = (PBLACKBIRD_CLIENT)BLACKBIRDAllocatePoolCompat(POOL_FLAG_NON_PAGED, sizeof(*client), BLACKBIRD_POOL_TAG);
+    client = (PBK_CLIENT)BkpoolAllocateCompat(POOL_FLAG_NON_PAGED, sizeof(*client), BK_POOL_TAG);
     if (client == NULL)
     {
         return NULL;
@@ -546,13 +759,23 @@ static PBLACKBIRD_CLIENT BLACKBIRDClientCreate(VOID)
     client->PendingGetEventQueue = NULL;
     ExInitializeFastMutex(&client->Lock);
     client->RefCount = 1;
+    if (!BkctlClientEnsureSubscriptionCapacityLocked(client, BK_INITIAL_CLIENT_SUBSCRIPTIONS))
+    {
+        ExFreePoolWithTag(client, BK_POOL_TAG);
+        return NULL;
+    }
     return client;
 }
 
-BOOLEAN BLACKBIRDClientMatchSubscriptionEither(_In_ PBLACKBIRD_CLIENT Client, _In_ UINT32 PrimaryProcessId,
-                                               _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask)
+BOOLEAN BkctlClientMatchSubscriptionEither(_In_ PBK_CLIENT Client, _In_ UINT32 PrimaryProcessId,
+                                           _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask)
 {
     UINT32 i;
+
+    if (Client == NULL || Client->Subscriptions == NULL || Client->SubscriptionCount == 0)
+    {
+        return FALSE;
+    }
 
     for (i = 0; i < Client->SubscriptionCount; ++i)
     {
@@ -576,10 +799,10 @@ BOOLEAN BLACKBIRDClientMatchSubscriptionEither(_In_ PBLACKBIRD_CLIENT Client, _I
 }
 
 BOOLEAN
-BLACKBIRDControlBindPendingLaunchProcess(_In_ UINT32 ProcessId, _In_opt_ PCUNICODE_STRING ImagePath)
+BkctlBindPendingLaunchProcess(_In_ UINT32 ProcessId, _In_opt_ PCUNICODE_STRING ImagePath)
 {
-    PBLACKBIRD_CLIENT snapshot[BLACKBIRD_MAX_TOTAL_CLIENTS];
-    WCHAR candidateNorm[BLACKBIRD_MAX_IMAGE_PATH_CHARS];
+    PBK_CLIENT snapshot[BK_MAX_TOTAL_CLIENTS];
+    WCHAR candidateNorm[BK_MAX_IMAGE_PATH_CHARS];
     UINT32 snapshotCount = 0;
     UINT32 i;
     PLIST_ENTRY entry;
@@ -589,12 +812,12 @@ BLACKBIRDControlBindPendingLaunchProcess(_In_ UINT32 ProcessId, _In_opt_ PCUNICO
     {
         return FALSE;
     }
-    if (!BLACKBIRDControlHasClientsFast())
+    if (!BkctlIsArmedFast())
     {
         return FALSE;
     }
 
-    BLACKBIRDNormalizeUnicodePathForCompare(ImagePath, candidateNorm, RTL_NUMBER_OF(candidateNorm));
+    BkctlNormalizeUnicodePathForCompare(ImagePath, candidateNorm, RTL_NUMBER_OF(candidateNorm));
     if (candidateNorm[0] == L'\0')
     {
         return FALSE;
@@ -603,92 +826,152 @@ BLACKBIRDControlBindPendingLaunchProcess(_In_ UINT32 ProcessId, _In_opt_ PCUNICO
     ExAcquireFastMutex(&g_ClientListLock);
     for (entry = g_ClientList.Flink; entry != &g_ClientList; entry = entry->Flink)
     {
-        PBLACKBIRD_CLIENT client = CONTAINING_RECORD(entry, BLACKBIRD_CLIENT, Link);
+        PBK_CLIENT client = CONTAINING_RECORD(entry, BK_CLIENT, Link);
         if (snapshotCount >= RTL_NUMBER_OF(snapshot))
         {
             break;
         }
-        BLACKBIRDClientReference(client);
+        BkctlClientReference(client);
         snapshot[snapshotCount++] = client;
     }
     ExReleaseFastMutex(&g_ClientListLock);
 
     for (i = 0; i < snapshotCount; ++i)
     {
-        PBLACKBIRD_CLIENT client = snapshot[i];
+        PBK_CLIENT client = snapshot[i];
         ExAcquireFastMutex(&client->Lock);
-        if (BLACKBIRDClientPathMatchesPendingLaunchLocked(client, candidateNorm))
+        if (BkctlClientPathMatchesPendingLaunchLocked(client, candidateNorm))
         {
             UINT32 streamMask = client->PendingLaunchStreamMask;
-            BOOLEAN subscribed = BLACKBIRDClientAddOrUpdateSubscriptionLocked(client, ProcessId, streamMask);
+            BOOLEAN subscribed = BkctlClientAddOrUpdateSubscriptionLocked(client, ProcessId, streamMask);
+            BkctlClientBindAnalysisSubjectLocked(client, ProcessId);
 
-            BLACKBIRDClientClearPendingLaunchLocked(client);
+            BkctlClientClearPendingLaunchLocked(client);
             if (subscribed)
             {
                 matchedAny = TRUE;
-                InterlockedExchange(&g_ControlTelemetryArmed, 1);
+                BkctlSetTelemetryArmed(TRUE);
                 DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
-                           "BLACKBIRD: pending launch bound targetPid=%lu streamMask=0x%08X image=%ws.\n", ProcessId,
+                           "BK: pending launch bound targetPid=%lu streamMask=0x%08X image=%ws.\n", ProcessId,
                            streamMask, candidateNorm);
             }
             else
             {
                 DbgPrintEx(
                     DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                    "BLACKBIRD: pending launch match could not bind targetPid=%lu image=%ws reason=subscription-capacity.\n",
+                    "BK: pending launch match could not bind targetPid=%lu image=%ws reason=subscription-capacity.\n",
                     ProcessId, candidateNorm);
             }
         }
         ExReleaseFastMutex(&client->Lock);
-        BLACKBIRDClientRelease(client);
+        BkctlClientRelease(client);
     }
 
     return matchedAny;
 }
 
-static VOID BLACKBIRDClientEnqueueEvent(_Inout_ PBLACKBIRD_CLIENT Client, _In_ const BLACKBIRD_EVENT_RECORD *Source)
+BOOLEAN
+BkctlMarkAnalysisSubjectImageLoad(_In_ UINT32 ProcessId, _In_opt_ PCUNICODE_STRING ImagePath, _In_ UINT64 ImageBase,
+                                  _In_ UINT64 ImageSize)
 {
-    PBLACKBIRD_EVENT_NODE node;
+    PBK_CLIENT snapshot[BK_MAX_TOTAL_CLIENTS];
+    WCHAR candidateNorm[BK_MAX_IMAGE_PATH_CHARS];
+    UINT32 snapshotCount = 0;
+    UINT32 i;
+    PLIST_ENTRY entry;
+    BOOLEAN matchedAny = FALSE;
+
+    if (ProcessId == 0 || ImagePath == NULL || ImagePath->Buffer == NULL || ImagePath->Length == 0)
+    {
+        return FALSE;
+    }
+    if (!BkctlIsArmedFast())
+    {
+        return FALSE;
+    }
+
+    BkctlNormalizeUnicodePathForCompare(ImagePath, candidateNorm, RTL_NUMBER_OF(candidateNorm));
+    if (candidateNorm[0] == L'\0')
+    {
+        return FALSE;
+    }
+
+    ExAcquireFastMutex(&g_ClientListLock);
+    for (entry = g_ClientList.Flink; entry != &g_ClientList; entry = entry->Flink)
+    {
+        PBK_CLIENT client = CONTAINING_RECORD(entry, BK_CLIENT, Link);
+        if (snapshotCount >= RTL_NUMBER_OF(snapshot))
+        {
+            break;
+        }
+        BkctlClientReference(client);
+        snapshot[snapshotCount++] = client;
+    }
+    ExReleaseFastMutex(&g_ClientListLock);
+
+    for (i = 0; i < snapshotCount; ++i)
+    {
+        PBK_CLIENT client = snapshot[i];
+        ExAcquireFastMutex(&client->Lock);
+        if (client->AnalysisSubjectProcessId == ProcessId &&
+            BkctlClientPathMatchesAnalysisSubjectLocked(client, candidateNorm))
+        {
+            client->AnalysisSubjectImageBase = ImageBase;
+            client->AnalysisSubjectImageSize = ImageSize;
+            matchedAny = TRUE;
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
+                       "BK: analysis subject image loaded targetPid=%lu base=0x%llX size=0x%llX image=%ws.\n",
+                       ProcessId, ImageBase, ImageSize, candidateNorm);
+        }
+        ExReleaseFastMutex(&client->Lock);
+        BkctlClientRelease(client);
+    }
+
+    return matchedAny;
+}
+
+static VOID BkctlClientEnqueueEvent(_Inout_ PBK_CLIENT Client, _In_ const BK_EVENT_RECORD *Source)
+{
+    PBK_EVENT_NODE node;
     LONG dropLogCounter;
 
-    if (Client->QueueDepth >= BLACKBIRD_MAX_CLIENT_QUEUE_DEPTH)
+    if (Client->QueueDepth >= BK_MAX_CLIENT_QUEUE_DEPTH)
     {
         Client->DroppedEvents += 1;
         dropLogCounter = InterlockedIncrement(&g_ControlQueueDropLogCounter);
         if (dropLogCounter == 1 || ((dropLogCounter & 0xFF) == 0))
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                       "BLACKBIRD: queue drop (client depth cap=%lu) totalDrops=%lu clientDrops=%u queueDepth=%u.\n",
-                       BLACKBIRD_MAX_CLIENT_QUEUE_DEPTH, (ULONG)dropLogCounter, Client->DroppedEvents,
-                       Client->QueueDepth);
+                       "BK: queue drop (client depth cap=%lu) totalDrops=%lu clientDrops=%u queueDepth=%u.\n",
+                       BK_MAX_CLIENT_QUEUE_DEPTH, (ULONG)dropLogCounter, Client->DroppedEvents, Client->QueueDepth);
         }
         return;
     }
 
-    if (!BLACKBIRDTryAcquireGlobalQueueSlot())
+    if (!BkctlTryAcquireGlobalQueueSlot())
     {
         Client->DroppedEvents += 1;
         dropLogCounter = InterlockedIncrement(&g_ControlQueueDropLogCounter);
         if (dropLogCounter == 1 || ((dropLogCounter & 0xFF) == 0))
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                       "BLACKBIRD: queue drop (global cap=%lu) totalDrops=%lu clientDrops=%u globalQueued=%ld.\n",
-                       BLACKBIRD_MAX_TOTAL_QUEUED_EVENTS, (ULONG)dropLogCounter, Client->DroppedEvents,
+                       "BK: queue drop (global cap=%lu) totalDrops=%lu clientDrops=%u globalQueued=%ld.\n",
+                       BK_MAX_TOTAL_QUEUED_EVENTS, (ULONG)dropLogCounter, Client->DroppedEvents,
                        InterlockedCompareExchange(&g_ControlTotalQueuedEvents, 0, 0));
         }
         return;
     }
 
-    node = (PBLACKBIRD_EVENT_NODE)BLACKBIRDAllocatePoolCompat(POOL_FLAG_NON_PAGED, sizeof(*node), BLACKBIRD_POOL_TAG);
+    node = (PBK_EVENT_NODE)BkpoolAllocateCompat(POOL_FLAG_NON_PAGED, sizeof(*node), BK_POOL_TAG);
     if (node == NULL)
     {
-        BLACKBIRDReleaseGlobalQueueSlot();
+        BkctlReleaseGlobalQueueSlot();
         Client->DroppedEvents += 1;
         dropLogCounter = InterlockedIncrement(&g_ControlQueueDropLogCounter);
         if (dropLogCounter == 1 || ((dropLogCounter & 0xFF) == 0))
         {
             DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                       "BLACKBIRD: queue drop (alloc failure) totalDrops=%lu clientDrops=%u queueDepth=%u.\n",
+                       "BK: queue drop (alloc failure) totalDrops=%lu clientDrops=%u queueDepth=%u.\n",
                        (ULONG)dropLogCounter, Client->DroppedEvents, Client->QueueDepth);
         }
         return;
@@ -700,8 +983,7 @@ static VOID BLACKBIRDClientEnqueueEvent(_Inout_ PBLACKBIRD_CLIENT Client, _In_ c
     Client->QueueDepth += 1;
 }
 
-static BOOLEAN BLACKBIRDClientTryTakePendingGetEventRequestLocked(_In_ PBLACKBIRD_CLIENT Client,
-                                                                  _Out_ WDFREQUEST *Request)
+static BOOLEAN BkctlClientTryTakePendingGetEventRequestLocked(_In_ PBK_CLIENT Client, _Out_ WDFREQUEST *Request)
 {
     NTSTATUS status;
 
@@ -720,11 +1002,10 @@ static BOOLEAN BLACKBIRDClientTryTakePendingGetEventRequestLocked(_In_ PBLACKBIR
     return NT_SUCCESS(status);
 }
 
-static NTSTATUS BLACKBIRDCompleteGetEventRequestWithRecord(_In_ WDFREQUEST Request,
-                                                           _In_ const BLACKBIRD_EVENT_RECORD *Record)
+static NTSTATUS BkctlCompleteGetEventRequestWithRecord(_In_ WDFREQUEST Request, _In_ const BK_EVENT_RECORD *Record)
 {
     NTSTATUS status;
-    PBLACKBIRD_EVENT_RECORD out;
+    PBK_EVENT_RECORD out;
     size_t outSize;
     LONG deliverCounter;
     ULONG requesterPid;
@@ -752,97 +1033,100 @@ static NTSTATUS BLACKBIRDCompleteGetEventRequestWithRecord(_In_ WDFREQUEST Reque
     deliverCounter = InterlockedIncrement(&g_IoctlGetEventDeliverCounter);
     if (deliverCounter == 1 || ((deliverCounter & 0x1FF) == 0))
     {
-        requesterPid = BLACKBIRDGetRequestorPid();
-        DbgPrintEx(
-            DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
-            "BLACKBIRD: get-event delivered(pended) requesterPid=%lu deliveredCount=%ld eventType=%lu seq=%lu.\n",
-            requesterPid, deliverCounter, Record->Header.Type, Record->Header.Sequence);
+        requesterPid = BkctlGetRequestorPid();
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
+                   "BK: get-event delivered(pended) requesterPid=%lu deliveredCount=%ld eventType=%lu seq=%lu.\n",
+                   requesterPid, deliverCounter, Record->Header.Type, Record->Header.Sequence);
     }
 
     return STATUS_SUCCESS;
 }
 
-VOID BLACKBIRDPublishRecordToSubscribers(_In_ UINT32 PrimaryPid, _In_ UINT32 SecondaryPid, _In_ UINT32 StreamMask,
-                                         _In_ BLACKBIRD_EVENT_RECORD *Record)
+VOID BkctlPublishRecordToSubscribers(_In_ UINT32 PrimaryPid, _In_ UINT32 SecondaryPid, _In_ UINT32 StreamMask,
+                                     _In_ BK_EVENT_RECORD *Record)
 {
-    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemControl);
-    PBLACKBIRD_CLIENT snapshot[BLACKBIRD_MAX_TOTAL_CLIENTS];
+    ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemControl);
+    PBK_CLIENT snapshot[BK_MAX_TOTAL_CLIENTS];
     UINT32 snapshotCount = 0;
     UINT32 i;
     PLIST_ENTRY e;
 
     if (InterlockedCompareExchange(&g_ControlInitialized, 0, 0) == 0)
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemControl, tempusStartQpc);
         return;
     }
-    if (BLACKBIRDControlIsShutdown())
+    if (BkctlIsShutdown())
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemControl, tempusStartQpc);
         return;
     }
 
     ExAcquireFastMutex(&g_ClientListLock);
     for (e = g_ClientList.Flink; e != &g_ClientList; e = e->Flink)
     {
-        PBLACKBIRD_CLIENT c = CONTAINING_RECORD(e, BLACKBIRD_CLIENT, Link);
+        PBK_CLIENT c = CONTAINING_RECORD(e, BK_CLIENT, Link);
         if (snapshotCount >= RTL_NUMBER_OF(snapshot))
         {
             break;
         }
-        BLACKBIRDClientReference(c);
+        BkctlClientReference(c);
         snapshot[snapshotCount++] = c;
     }
     ExReleaseFastMutex(&g_ClientListLock);
 
     for (i = 0; i < snapshotCount; ++i)
     {
-        PBLACKBIRD_CLIENT c = snapshot[i];
+        PBK_CLIENT c = snapshot[i];
         WDFREQUEST pendingRequest = NULL;
-        BLACKBIRD_EVENT_RECORD stagedRecord;
+        BK_EVENT_RECORD stagedRecord;
         BOOLEAN matched = FALSE;
         NTSTATUS deliverStatus = STATUS_UNSUCCESSFUL;
 
         RtlZeroMemory(&stagedRecord, sizeof(stagedRecord));
-        ExAcquireFastMutex(&c->Lock);
-        if (BLACKBIRDClientMatchSubscriptionEither(c, PrimaryPid, SecondaryPid, StreamMask))
+        if (!BkctlTryAcquireClientLock(c, "publish-record"))
+        {
+            BkctlClientRelease(c);
+            continue;
+        }
+        if (BkctlClientMatchSubscriptionEither(c, PrimaryPid, SecondaryPid, StreamMask))
         {
             matched = TRUE;
             RtlCopyMemory(&stagedRecord, Record, sizeof(stagedRecord));
             stagedRecord.Header.Sequence = ++c->Sequence;
 
-            if (!BLACKBIRDClientTryTakePendingGetEventRequestLocked(c, &pendingRequest))
+            if (!BkctlClientTryTakePendingGetEventRequestLocked(c, &pendingRequest))
             {
-                BLACKBIRDClientEnqueueEvent(c, &stagedRecord);
+                BkctlClientEnqueueEvent(c, &stagedRecord);
             }
         }
         ExReleaseFastMutex(&c->Lock);
 
         if (matched && pendingRequest != NULL)
         {
-            deliverStatus = BLACKBIRDCompleteGetEventRequestWithRecord(pendingRequest, &stagedRecord);
-            if (!NT_SUCCESS(deliverStatus) && !BLACKBIRDControlIsShutdown())
+            deliverStatus = BkctlCompleteGetEventRequestWithRecord(pendingRequest, &stagedRecord);
+            if (!NT_SUCCESS(deliverStatus) && !BkctlIsShutdown())
             {
                 ExAcquireFastMutex(&c->Lock);
-                BLACKBIRDClientEnqueueEvent(c, &stagedRecord);
+                BkctlClientEnqueueEvent(c, &stagedRecord);
                 ExReleaseFastMutex(&c->Lock);
             }
         }
 
-        BLACKBIRDClientRelease(c);
+        BkctlClientRelease(c);
     }
 
-    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemControl, tempusStartQpc);
+    BktmpLeave(BktmpSubsystemControl, tempusStartQpc);
 }
 
-EVT_WDF_DEVICE_FILE_CREATE BLACKBIRDEvtFileCreate;
-EVT_WDF_FILE_CLEANUP BLACKBIRDEvtFileCleanup;
-EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL BLACKBIRDEvtIoDeviceControl;
+EVT_WDF_DEVICE_FILE_CREATE BkctlEvtFileCreate;
+EVT_WDF_FILE_CLEANUP BkctlEvtFileCleanup;
+EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL BkctlEvtIoDeviceControl;
 
-_Use_decl_annotations_ VOID BLACKBIRDEvtFileCreate(WDFDEVICE Device, WDFREQUEST Request, WDFFILEOBJECT FileObject)
+_Use_decl_annotations_ VOID BkctlEvtFileCreate(WDFDEVICE Device, WDFREQUEST Request, WDFFILEOBJECT FileObject)
 {
-    PBLACKBIRD_FILE_CONTEXT ctx;
-    PBLACKBIRD_CLIENT client;
+    PBK_FILE_CONTEXT ctx;
+    PBK_CLIENT client;
     WDF_IO_QUEUE_CONFIG queueConfig;
     WDF_OBJECT_ATTRIBUTES queueAttrs;
     WDFQUEUE pendingQueue = NULL;
@@ -855,13 +1139,13 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtFileCreate(WDFDEVICE Device, WDFREQUEST 
         WdfRequestComplete(Request, STATUS_INVALID_DEVICE_STATE);
         return;
     }
-    if (BLACKBIRDControlIsShutdown())
+    if (BkctlIsShutdown())
     {
         WdfRequestComplete(Request, STATUS_DELETE_PENDING);
         return;
     }
 
-    client = BLACKBIRDClientCreate();
+    client = BkctlClientCreate();
     if (client == NULL)
     {
         WdfRequestComplete(Request, STATUS_INSUFFICIENT_RESOURCES);
@@ -869,10 +1153,10 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtFileCreate(WDFDEVICE Device, WDFREQUEST 
     }
 
     ExAcquireFastMutex(&g_ClientListLock);
-    if (g_ClientCount >= BLACKBIRD_MAX_TOTAL_CLIENTS)
+    if (g_ClientCount >= BK_MAX_TOTAL_CLIENTS)
     {
         ExReleaseFastMutex(&g_ClientListLock);
-        BLACKBIRDClientRelease(client);
+        BkctlClientRelease(client);
         WdfRequestComplete(Request, STATUS_QUOTA_EXCEEDED);
         return;
     }
@@ -896,27 +1180,26 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtFileCreate(WDFDEVICE Device, WDFREQUEST 
             g_ClientCount -= 1;
         }
         ExReleaseFastMutex(&g_ClientListLock);
-        BLACKBIRDClientRelease(client);
+        BkctlClientRelease(client);
         WdfRequestComplete(Request, queueStatus);
         return;
     }
     client->PendingGetEventQueue = pendingQueue;
 
-    ctx = BLACKBIRDGetFileContext(FileObject);
+    ctx = BkctlGetFileContext(FileObject);
     ctx->Client = client;
 
-    requesterPid = BLACKBIRDGetRequestorPid();
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
-               "BLACKBIRD: client attached pid=%lu activeClients=%ld fileObj=0x%p.\n", requesterPid,
-               clientCountSnapshot, FileObject);
+    requesterPid = BkctlGetRequestorPid();
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL, "BK: client attached pid=%lu activeClients=%ld fileObj=0x%p.\n",
+               requesterPid, clientCountSnapshot, FileObject);
 
     WdfRequestComplete(Request, STATUS_SUCCESS);
 }
 
-_Use_decl_annotations_ VOID BLACKBIRDEvtFileCleanup(WDFFILEOBJECT FileObject)
+_Use_decl_annotations_ VOID BkctlEvtFileCleanup(WDFFILEOBJECT FileObject)
 {
-    PBLACKBIRD_FILE_CONTEXT ctx = BLACKBIRDGetFileContext(FileObject);
-    PBLACKBIRD_CLIENT client = ctx->Client;
+    PBK_FILE_CONTEXT ctx = BkctlGetFileContext(FileObject);
+    PBK_CLIENT client = ctx->Client;
     PLIST_ENTRY e;
     LONG clientCountSnapshot = 0;
     UINT32 subscriptionCountSnapshot = 0;
@@ -936,7 +1219,7 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtFileCleanup(WDFFILEOBJECT FileObject)
     ExAcquireFastMutex(&g_ClientListLock);
     for (e = g_ClientList.Flink; e != &g_ClientList; e = e->Flink)
     {
-        if (CONTAINING_RECORD(e, BLACKBIRD_CLIENT, Link) == client)
+        if (CONTAINING_RECORD(e, BK_CLIENT, Link) == client)
         {
             RemoveEntryList(e);
             if (g_ClientCount > 0)
@@ -951,11 +1234,11 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtFileCleanup(WDFFILEOBJECT FileObject)
 
     if (clientCountSnapshot == 0)
     {
-        InterlockedExchange(&g_ControlTelemetryArmed, 0);
+        BkctlSetTelemetryArmed(FALSE);
     }
     else
     {
-        BLACKBIRDControlRefreshArmedState();
+        BkctlRefreshArmedState();
     }
 
     ExAcquireFastMutex(&client->Lock);
@@ -975,9 +1258,9 @@ _Use_decl_annotations_ VOID BLACKBIRDEvtFileCleanup(WDFFILEOBJECT FileObject)
     requesterPid = (ULONG)(ULONG_PTR)PsGetCurrentProcessId();
     DbgPrintEx(
         DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
-        "BLACKBIRD: client detached pid=%lu activeClients=%ld subscriptions=%lu queueDepth=%lu dropped=%lu fileObj=0x%p.\n",
+        "BK: client detached pid=%lu activeClients=%ld subscriptions=%lu queueDepth=%lu dropped=%lu fileObj=0x%p.\n",
         requesterPid, clientCountSnapshot, subscriptionCountSnapshot, queueDepthSnapshot, droppedSnapshot, FileObject);
 
-    BLACKBIRDClientRelease(client);
+    BkctlClientRelease(client);
     ctx->Client = NULL;
 }

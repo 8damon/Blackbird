@@ -3,7 +3,7 @@
 #if defined(_AMD64_)
 
 #pragma pack(push, 1)
-typedef struct _BLACKBIRD_RAW_SMBIOS_DATA
+typedef struct _BK_RAW_SMBIOS_DATA
 {
     UCHAR Used20CallingMethod;
     UCHAR SMBIOSMajorVersion;
@@ -11,18 +11,18 @@ typedef struct _BLACKBIRD_RAW_SMBIOS_DATA
     UCHAR DmiRevision;
     ULONG Length;
     UCHAR SMBIOSTableData[1];
-} BLACKBIRD_RAW_SMBIOS_DATA, *PBLACKBIRD_RAW_SMBIOS_DATA;
+} BK_RAW_SMBIOS_DATA, *PBK_RAW_SMBIOS_DATA;
 
-typedef struct _BLACKBIRD_SMBIOS_HEADER
+typedef struct _BK_SMBIOS_HEADER
 {
     UCHAR Type;
     UCHAR Length;
     USHORT Handle;
-} BLACKBIRD_SMBIOS_HEADER, *PBLACKBIRD_SMBIOS_HEADER;
+} BK_SMBIOS_HEADER, *PBK_SMBIOS_HEADER;
 #pragma pack(pop)
 
-static VOID BLACKBIRDNtApiPatchBoundedString(_Inout_updates_bytes_(CurrentLength) PUCHAR CurrentValue,
-                                             _In_ SIZE_T CurrentLength, _In_z_ PCSTR Replacement)
+static VOID BkavNtPatchBoundedString(_Inout_updates_bytes_(CurrentLength) PUCHAR CurrentValue,
+                                     _In_ SIZE_T CurrentLength, _In_z_ PCSTR Replacement)
 {
     SIZE_T replacementLength;
     SIZE_T copyLength;
@@ -45,8 +45,8 @@ static VOID BLACKBIRDNtApiPatchBoundedString(_Inout_updates_bytes_(CurrentLength
 }
 
 _Success_(return != FALSE) static BOOLEAN
-    BLACKBIRDNtApiFindSmbiosStringByIndex(_Inout_ PUCHAR StringsStart, _In_ PUCHAR NextStructure,
-                                          _In_ UCHAR StringIndex, _Out_ PUCHAR *StringStart, _Out_ PUCHAR *StringEnd)
+    BkavNtFindSmbiosStringByIndex(_Inout_ PUCHAR StringsStart, _In_ PUCHAR NextStructure, _In_ UCHAR StringIndex,
+                                  _Out_ PUCHAR *StringStart, _Out_ PUCHAR *StringEnd)
 {
     PUCHAR cursor;
     UCHAR currentIndex;
@@ -91,9 +91,8 @@ _Success_(return != FALSE) static BOOLEAN
     return FALSE;
 }
 
-static VOID BLACKBIRDNtApiPatchSmbiosString(_Inout_ PUCHAR Structure, _In_ UCHAR StructureLength,
-                                            _In_ UCHAR StringOffset, _Inout_ PUCHAR StringsStart,
-                                            _In_ PUCHAR NextStructure, _In_z_ PCSTR Replacement)
+static VOID BkavNtPatchSmbiosString(_Inout_ PUCHAR Structure, _In_ UCHAR StructureLength, _In_ UCHAR StringOffset,
+                                    _Inout_ PUCHAR StringsStart, _In_ PUCHAR NextStructure, _In_z_ PCSTR Replacement)
 {
     UCHAR stringIndex;
     PUCHAR stringStart;
@@ -111,7 +110,7 @@ static VOID BLACKBIRDNtApiPatchSmbiosString(_Inout_ PUCHAR Structure, _In_ UCHAR
         return;
     }
 
-    if (!BLACKBIRDNtApiFindSmbiosStringByIndex(StringsStart, NextStructure, stringIndex, &stringStart, &stringEnd))
+    if (!BkavNtFindSmbiosStringByIndex(StringsStart, NextStructure, stringIndex, &stringStart, &stringEnd))
     {
         return;
     }
@@ -120,10 +119,10 @@ static VOID BLACKBIRDNtApiPatchSmbiosString(_Inout_ PUCHAR Structure, _In_ UCHAR
         return;
     }
 
-    BLACKBIRDNtApiPatchBoundedString(stringStart, (SIZE_T)(stringEnd - stringStart), Replacement);
+    BkavNtPatchBoundedString(stringStart, (SIZE_T)(stringEnd - stringStart), Replacement);
 }
 
-static VOID BLACKBIRDNtApiRandomizeUuid(_Out_writes_(16) PUCHAR UuidBytes)
+static VOID BkavNtRandomizeUuid(_Out_writes_(16) PUCHAR UuidBytes)
 {
     LARGE_INTEGER qpc;
     ULONG seed;
@@ -146,20 +145,20 @@ static VOID BLACKBIRDNtApiRandomizeUuid(_Out_writes_(16) PUCHAR UuidBytes)
     UuidBytes[8] = (UCHAR)((UuidBytes[8] & 0x3Fu) | 0x80u);
 }
 
-static VOID BLACKBIRDNtApiSanitizeSmbiosBlob(_Inout_updates_bytes_(RawLength) PUCHAR RawTable, _In_ ULONG RawLength)
+static VOID BkavNtSanitizeSmbiosBlob(_Inout_updates_bytes_(RawLength) PUCHAR RawTable, _In_ ULONG RawLength)
 {
     PUCHAR cursor;
     PUCHAR end;
     ULONG sanitizedCount = 0;
 
-    if (RawTable == NULL || RawLength < sizeof(BLACKBIRD_SMBIOS_HEADER))
+    if (RawTable == NULL || RawLength < sizeof(BK_SMBIOS_HEADER))
     {
         return;
     }
 
     cursor = RawTable;
     end = RawTable + RawLength;
-    while ((cursor + sizeof(BLACKBIRD_SMBIOS_HEADER)) <= end)
+    while ((cursor + sizeof(BK_SMBIOS_HEADER)) <= end)
     {
         UCHAR structureType;
         UCHAR structureLength;
@@ -168,7 +167,7 @@ static VOID BLACKBIRDNtApiSanitizeSmbiosBlob(_Inout_updates_bytes_(RawLength) PU
 
         structureType = cursor[0];
         structureLength = cursor[1];
-        if (structureLength < sizeof(BLACKBIRD_SMBIOS_HEADER))
+        if (structureLength < sizeof(BK_SMBIOS_HEADER))
         {
             break;
         }
@@ -195,36 +194,36 @@ static VOID BLACKBIRDNtApiSanitizeSmbiosBlob(_Inout_updates_bytes_(RawLength) PU
 
         if (structureType == 0)
         {
-            BLACKBIRDNtApiPatchSmbiosString(cursor, structureLength, 4, stringsStart, nextStructure,
-                                            "American Megatrends Inc.");
-            BLACKBIRDNtApiPatchSmbiosString(cursor, structureLength, 5, stringsStart, nextStructure, "F.27");
-            BLACKBIRDNtApiPatchSmbiosString(cursor, structureLength, 8, stringsStart, nextStructure, "07/15/2021");
+            BkavNtPatchSmbiosString(cursor, structureLength, 4, stringsStart, nextStructure,
+                                    "American Megatrends Inc.");
+            BkavNtPatchSmbiosString(cursor, structureLength, 5, stringsStart, nextStructure, "F.27");
+            BkavNtPatchSmbiosString(cursor, structureLength, 8, stringsStart, nextStructure, "07/15/2021");
             sanitizedCount++;
         }
         else if (structureType == 1)
         {
-            BLACKBIRDNtApiPatchSmbiosString(cursor, structureLength, 4, stringsStart, nextStructure, "Dell Inc.");
-            BLACKBIRDNtApiPatchSmbiosString(cursor, structureLength, 5, stringsStart, nextStructure, "XPS 8940");
-            BLACKBIRDNtApiPatchSmbiosString(cursor, structureLength, 6, stringsStart, nextStructure, "1.0");
-            BLACKBIRDNtApiPatchSmbiosString(cursor, structureLength, 7, stringsStart, nextStructure, "8CG1234");
+            BkavNtPatchSmbiosString(cursor, structureLength, 4, stringsStart, nextStructure, "Dell Inc.");
+            BkavNtPatchSmbiosString(cursor, structureLength, 5, stringsStart, nextStructure, "XPS 8940");
+            BkavNtPatchSmbiosString(cursor, structureLength, 6, stringsStart, nextStructure, "1.0");
+            BkavNtPatchSmbiosString(cursor, structureLength, 7, stringsStart, nextStructure, "8CG1234");
             if (structureLength >= 0x18)
             {
-                BLACKBIRDNtApiRandomizeUuid(cursor + 8);
+                BkavNtRandomizeUuid(cursor + 8);
             }
             sanitizedCount++;
         }
         else if (structureType == 2)
         {
-            BLACKBIRDNtApiPatchSmbiosString(cursor, structureLength, 4, stringsStart, nextStructure, "Dell Inc.");
-            BLACKBIRDNtApiPatchSmbiosString(cursor, structureLength, 5, stringsStart, nextStructure, "0K3CM7");
-            BLACKBIRDNtApiPatchSmbiosString(cursor, structureLength, 6, stringsStart, nextStructure, "A00");
-            BLACKBIRDNtApiPatchSmbiosString(cursor, structureLength, 7, stringsStart, nextStructure, "CN12345678ABCD");
+            BkavNtPatchSmbiosString(cursor, structureLength, 4, stringsStart, nextStructure, "Dell Inc.");
+            BkavNtPatchSmbiosString(cursor, structureLength, 5, stringsStart, nextStructure, "0K3CM7");
+            BkavNtPatchSmbiosString(cursor, structureLength, 6, stringsStart, nextStructure, "A00");
+            BkavNtPatchSmbiosString(cursor, structureLength, 7, stringsStart, nextStructure, "CN12345678ABCD");
             sanitizedCount++;
         }
         else if (structureType == 17)
         {
-            BLACKBIRDNtApiPatchSmbiosString(cursor, structureLength, 0x10, stringsStart, nextStructure, "DIMM A1");
-            BLACKBIRDNtApiPatchSmbiosString(cursor, structureLength, 0x11, stringsStart, nextStructure, "BANK 0");
+            BkavNtPatchSmbiosString(cursor, structureLength, 0x10, stringsStart, nextStructure, "DIMM A1");
+            BkavNtPatchSmbiosString(cursor, structureLength, 0x11, stringsStart, nextStructure, "BANK 0");
         }
 
         if (structureType == 127)
@@ -236,22 +235,24 @@ static VOID BLACKBIRDNtApiSanitizeSmbiosBlob(_Inout_updates_bytes_(RawLength) PU
 
     if (sanitizedCount != 0 && InterlockedDecrement(&g_NtApiSmbiosSanitizeApplyBudget) >= 0)
     {
-        BLACKBIRD_NTAPI_LOG(DPFLTR_INFO_LEVEL, "BLACKBIRD: ntapi sanitized smbios structures count=%lu.\n",
-                            sanitizedCount);
+        BK_NTAPI_LOG(DPFLTR_INFO_LEVEL, "BK: ntapi sanitized smbios structures count=%lu.\n", sanitizedCount);
+    }
+    if (sanitizedCount != 0)
+    {
+        BkntkiRecordSanitizerHit(BkDiagSanitizerFirmwareTable);
     }
 }
 
-VOID BLACKBIRDNtApiSanitizeFirmwareTableInformation(_In_ ULONG SystemInformationClass,
-                                                    _Inout_updates_bytes_opt_(SystemInformationLength)
-                                                        PVOID SystemInformation,
-                                                    _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status)
+VOID BkavNtSanitizeFirmwareTableInformation(_In_ ULONG SystemInformationClass,
+                                            _Inout_updates_bytes_opt_(SystemInformationLength) PVOID SystemInformation,
+                                            _In_ ULONG SystemInformationLength, _In_ NTSTATUS Status)
 {
     PSYSTEM_FIRMWARE_TABLE_INFORMATION firmwareInfo;
-    PBLACKBIRD_RAW_SMBIOS_DATA rawSmbios;
+    PBK_RAW_SMBIOS_DATA rawSmbios;
     ULONG availableTableBytes;
     ULONG smbiosPayloadLength;
 
-    if (SystemInformationClass != BLACKBIRD_SYSTEM_INFORMATION_CLASS_FIRMWARE_TABLE || !NT_SUCCESS(Status) ||
+    if (SystemInformationClass != BK_SYSTEM_INFORMATION_CLASS_FIRMWARE_TABLE || !NT_SUCCESS(Status) ||
         SystemInformation == NULL || SystemInformationLength < sizeof(SYSTEM_FIRMWARE_TABLE_INFORMATION))
     {
         return;
@@ -260,7 +261,7 @@ VOID BLACKBIRDNtApiSanitizeFirmwareTableInformation(_In_ ULONG SystemInformation
     __try
     {
         firmwareInfo = (PSYSTEM_FIRMWARE_TABLE_INFORMATION)SystemInformation;
-        if (firmwareInfo->ProviderSignature != BLACKBIRD_FIRMWARE_PROVIDER_RSMB ||
+        if (firmwareInfo->ProviderSignature != BK_FIRMWARE_PROVIDER_RSMB ||
             firmwareInfo->Action != SystemFirmwareTable_Get)
         {
             return;
@@ -268,14 +269,13 @@ VOID BLACKBIRDNtApiSanitizeFirmwareTableInformation(_In_ ULONG SystemInformation
 
         availableTableBytes = SystemInformationLength - FIELD_OFFSET(SYSTEM_FIRMWARE_TABLE_INFORMATION, TableBuffer);
         if (firmwareInfo->TableBufferLength > availableTableBytes ||
-            firmwareInfo->TableBufferLength < sizeof(BLACKBIRD_RAW_SMBIOS_DATA))
+            firmwareInfo->TableBufferLength < sizeof(BK_RAW_SMBIOS_DATA))
         {
             return;
         }
 
-        rawSmbios = (PBLACKBIRD_RAW_SMBIOS_DATA)firmwareInfo->TableBuffer;
-        if (rawSmbios->Length >
-            (firmwareInfo->TableBufferLength - FIELD_OFFSET(BLACKBIRD_RAW_SMBIOS_DATA, SMBIOSTableData)))
+        rawSmbios = (PBK_RAW_SMBIOS_DATA)firmwareInfo->TableBuffer;
+        if (rawSmbios->Length > (firmwareInfo->TableBufferLength - FIELD_OFFSET(BK_RAW_SMBIOS_DATA, SMBIOSTableData)))
         {
             return;
         }
@@ -285,15 +285,14 @@ VOID BLACKBIRDNtApiSanitizeFirmwareTableInformation(_In_ ULONG SystemInformation
             return;
         }
 
-        BLACKBIRDNtApiSanitizeSmbiosBlob(rawSmbios->SMBIOSTableData, smbiosPayloadLength);
+        BkavNtSanitizeSmbiosBlob(rawSmbios->SMBIOSTableData, smbiosPayloadLength);
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
         if (InterlockedDecrement(&g_NtApiSmbiosSanitizeBudget) >= 0)
         {
-            BLACKBIRD_NTAPI_LOG(DPFLTR_WARNING_LEVEL,
-                                "BLACKBIRD: ntapi smbios sanitize failed status=0x%08X ex=0x%08X.\n", Status,
-                                GetExceptionCode());
+            BK_NTAPI_LOG(DPFLTR_WARNING_LEVEL, "BK: ntapi smbios sanitize failed status=0x%08X ex=0x%08X.\n", Status,
+                         GetExceptionCode());
         }
     }
 }

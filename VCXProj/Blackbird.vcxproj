@@ -30,9 +30,12 @@
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == '' or '$(VisualStudioVersion)' == '18.0'">17.0</VisualStudioVersion>
     <Configuration>Debug</Configuration>
     <Platform Condition="'$(Platform)' == ''">x64</Platform>
-    <RootNamespace>BLACKBIRD</RootNamespace>
+    <RootNamespace>Bk</RootNamespace>
     <WindowsTargetPlatformVersion>$(LatestTargetPlatformVersion)</WindowsTargetPlatformVersion>
     <TargetName>blackbird</TargetName>
+    <BlackbirdFileDescription>Blackbird kernel telemetry and protection driver</BlackbirdFileDescription>
+    <BlackbirdInternalName>blackbird</BlackbirdInternalName>
+    <BlackbirdOriginalFilename>blackbird.sys</BlackbirdOriginalFilename>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
@@ -117,10 +120,10 @@
     </ClCompile>
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
-      <AdditionalOptions>/d "BLACKBIRD"</AdditionalOptions>
+      <AdditionalOptions>/d "Blackbird"</AdditionalOptions>
     </DriverSign>
     <Link>
-      <AdditionalDependencies>fltmgr.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>fltmgr.lib;ksecdd.lib;fwpkclnt.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
@@ -141,10 +144,10 @@
     </ClCompile>
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
-      <AdditionalOptions>/d "BLACKBIRD"</AdditionalOptions>
+      <AdditionalOptions>/d "Blackbird"</AdditionalOptions>
     </DriverSign>
     <Link>
-      <AdditionalDependencies>fltmgr.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>fltmgr.lib;ksecdd.lib;fwpkclnt.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
@@ -162,15 +165,15 @@
       <StringPooling>true</StringPooling>
       <BufferSecurityCheck>true</BufferSecurityCheck>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>BLACKBIRD_TEMPUS_DEBUG=1;TEMPUS_DEBUG=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>BK_TEMPUS_DEBUG=1;TEMPUS_DEBUG=1;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DisableSpecificWarnings>4996;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
-      <AdditionalOptions>/d "BLACKBIRD"</AdditionalOptions>
+      <AdditionalOptions>/d "Blackbird"</AdditionalOptions>
     </DriverSign>
     <Link>
-      <AdditionalDependencies>fltmgr.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>fltmgr.lib;ksecdd.lib;fwpkclnt.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
@@ -192,10 +195,10 @@
     </ClCompile>
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
-      <AdditionalOptions>/d "BLACKBIRD"</AdditionalOptions>
+      <AdditionalOptions>/d "Blackbird"</AdditionalOptions>
     </DriverSign>
     <Link>
-      <AdditionalDependencies>fltmgr.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>fltmgr.lib;ksecdd.lib;fwpkclnt.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <AdditionalOptions>/INTEGRITYCHECK %(AdditionalOptions)</AdditionalOptions>
@@ -212,10 +215,10 @@
     </ClCompile>
     <DriverSign>
       <FileDigestAlgorithm>sha256</FileDigestAlgorithm>
-      <AdditionalOptions>/d "BLACKBIRD"</AdditionalOptions>
+      <AdditionalOptions>/d "Blackbird"</AdditionalOptions>
     </DriverSign>
     <Link>
-      <AdditionalDependencies>fltmgr.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>fltmgr.lib;ksecdd.lib;fwpkclnt.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -226,6 +229,14 @@
       <TimeStamp>1.0.0.0</TimeStamp>
     </Inf>
   </ItemGroup>
+  <ItemDefinitionGroup>
+    <ResourceCompile>
+      <PreprocessorDefinitions>BK_FILE_DESCRIPTION=\"$(BlackbirdFileDescription)\";BK_INTERNAL_NAME=\"$(BlackbirdInternalName)\";BK_ORIGINAL_FILENAME=\"$(BlackbirdOriginalFilename)\";BK_FILE_TYPE=VFT_DRV;BK_FILE_SUBTYPE=VFT2_DRV_SYSTEM;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ResourceCompile Include="Blackbird.Version.rc" />
+  </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\kernel\core\control.c" />
     <ClCompile Include="..\kernel\core\control\control_common.c" />
@@ -233,20 +244,23 @@
     <ClCompile Include="..\kernel\core\control\control_dispatch_init.c" />
     <ClCompile Include="..\kernel\core\control\control_uninit_exports.c" />
     <ClCompile Include="..\kernel\core\crt_compat.c" />
+    <ClCompile Include="..\kernel\core\diagnostics.c" />
     <ClCompile Include="..\kernel\core\driver.c" />
+    <ClCompile Include="..\kernel\core\optional_feature_stubs.c" />
     <ClCompile Include="..\kernel\core\tempus_debug.c" />
     <ClCompile Include="..\kernel\correlation\hollowing_engine.c" />
     <ClCompile Include="..\kernel\correlation\intent_store.c" />
     <ClCompile Include="..\kernel\telemetry\etw.c" />
     <ClCompile Include="..\kernel\monitors\anti_tamper.c" />
     <ClCompile Include="..\kernel\monitors\apc_monitor.c" />
-    <ClCompile Include="..\kernel\monitors\handle_monitor.c" />
-    <ClCompile Include="..\kernel\monitors\image_monitor.c" />
-    <ClCompile Include="..\kernel\monitors\process_monitor.c" />
+    <ClCompile Include="..\kernel\callbacks\handle_monitor.c" />
+    <ClCompile Include="..\kernel\callbacks\image_monitor.c" />
+    <ClCompile Include="..\kernel\callbacks\process_monitor.c" />
     <ClCompile Include="..\kernel\antivirt\registry_concealment.c" />
-    <ClCompile Include="..\kernel\monitors\registry_monitor.c" />
-    <ClCompile Include="..\kernel\monitors\thread_monitor.c" />
-    <ClCompile Include="..\kernel\monitors\filesystem_monitor.c" />
+    <ClCompile Include="..\kernel\antivirt\qpc_timing.c" />
+    <ClCompile Include="..\kernel\callbacks\registry_monitor.c" />
+    <ClCompile Include="..\kernel\callbacks\thread_monitor.c" />
+    <ClCompile Include="..\kernel\callbacks\filesystem_monitor.c" />
     <ClCompile Include="..\kernel\hooks\hook\ntapi_hook.c" />
     <ClCompile Include="..\kernel\hooks\hook\ntapi_hook_ldasm.c" />
     <ClCompile Include="..\kernel\hooks\hook\ntapi_hook_resolve.c" />
@@ -261,21 +275,26 @@
     <ClInclude Include="..\ABI\blackbird_ioctl.h" />
     <ClInclude Include="..\kernel\core\control.h" />
     <ClInclude Include="..\kernel\core\control\control_private.h" />
+    <ClInclude Include="..\kernel\core\crashdump.h" />
+    <ClInclude Include="..\kernel\core\diagnostics.h" />
+    <ClInclude Include="..\kernel\core\optional_features.h" />
     <ClInclude Include="..\kernel\core\protection_utils.h" />
     <ClInclude Include="..\kernel\core\tempus_debug.h" />
     <ClInclude Include="..\kernel\core\unicode_utils.h" />
     <ClInclude Include="..\kernel\correlation\hollowing_engine.h" />
     <ClInclude Include="..\kernel\correlation\intent_store.h" />
+    <ClInclude Include="..\Kernel\include\ntpebteb.h" />
     <ClInclude Include="..\kernel\telemetry\etw.h" />
     <ClInclude Include="..\kernel\monitors\anti_tamper.h" />
     <ClInclude Include="..\kernel\monitors\apc_monitor.h" />
-    <ClInclude Include="..\kernel\monitors\handle_monitor.h" />
-    <ClInclude Include="..\kernel\monitors\image_monitor.h" />
-    <ClInclude Include="..\kernel\monitors\process_monitor.h" />
+    <ClInclude Include="..\kernel\callbacks\handle_monitor.h" />
+    <ClInclude Include="..\kernel\callbacks\image_monitor.h" />
+    <ClInclude Include="..\kernel\callbacks\process_monitor.h" />
     <ClInclude Include="..\kernel\antivirt\registry_concealment.h" />
-    <ClInclude Include="..\kernel\monitors\registry_monitor.h" />
-    <ClInclude Include="..\kernel\monitors\thread_monitor.h" />
-    <ClInclude Include="..\kernel\monitors\filesystem_monitor.h" />
+    <ClInclude Include="..\kernel\antivirt\qpc_timing.h" />
+    <ClInclude Include="..\kernel\callbacks\registry_monitor.h" />
+    <ClInclude Include="..\kernel\callbacks\thread_monitor.h" />
+    <ClInclude Include="..\kernel\callbacks\filesystem_monitor.h" />
     <ClInclude Include="..\kernel\hooks\hook\ntapi_hook.h" />
     <ClInclude Include="..\kernel\hooks\hook\ntapi_hook_ldasm.h" />
     <ClInclude Include="..\kernel\hooks\monitor\ntapi_monitor.h" />

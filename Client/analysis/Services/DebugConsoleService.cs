@@ -134,6 +134,11 @@ namespace BlackbirdInterface
             WriteEntry("INTERFACE", Environment.ProcessId, message);
         }
 
+        public static void WriteExternal(string source, int processId, string? message)
+        {
+            WriteEntry(source, processId, message);
+        }
+
         private static void OnOutputCaptureLineReceived(string line)
         {
             WriteEntry("INTERFACE", Environment.ProcessId, line);
@@ -148,7 +153,7 @@ namespace BlackbirdInterface
 
             Console.OutputEncoding = Encoding.UTF8;
             Console.InputEncoding = Encoding.UTF8;
-            _ = SetConsoleTitleW("Blackbird Interface Debug Console");
+            _ = SetConsoleTitleW("BK Interface Debug Console");
             s_consoleAttached = true;
         }
 
@@ -160,13 +165,8 @@ namespace BlackbirdInterface
             }
 
             string trimmed = message.TrimEnd('\r', '\n');
-            var entry = new DebugConsoleEntry
-            {
-                TimestampLocal = DateTime.Now,
-                ProcessId = processId,
-                Source = source ?? string.Empty,
-                Message = trimmed
-            };
+            var entry = new DebugConsoleEntry { TimestampLocal = DateTime.Now, ProcessId = processId,
+                                                Source = source ?? string.Empty, Message = trimmed };
 
             lock (s_gate)
             {
@@ -202,15 +202,18 @@ namespace BlackbirdInterface
             {
                 bufferReady = new EventWaitHandle(false, EventResetMode.AutoReset, "DBWIN_BUFFER_READY");
                 dataReady = new EventWaitHandle(false, EventResetMode.AutoReset, "DBWIN_DATA_READY");
-                using MemoryMappedFile mapping = MemoryMappedFile.CreateOrOpen("DBWIN_BUFFER", bufferSize, MemoryMappedFileAccess.ReadWrite);
-                using MemoryMappedViewAccessor accessor = mapping.CreateViewAccessor(0, bufferSize, MemoryMappedFileAccess.Read);
+                using MemoryMappedFile mapping =
+                    MemoryMappedFile.CreateOrOpen("DBWIN_BUFFER", bufferSize, MemoryMappedFileAccess.ReadWrite);
+                using MemoryMappedViewAccessor accessor =
+                    mapping.CreateViewAccessor(0, bufferSize, MemoryMappedFileAccess.Read);
 
                 WriteLocal("OutputDebugString listener online");
 
                 while (!cancellationToken.IsCancellationRequested)
                 {
                     bufferReady.Set();
-                    int signaled = WaitHandle.WaitAny(new WaitHandle[] { dataReady, cancellationToken.WaitHandle }, 250);
+                    int signaled =
+                        WaitHandle.WaitAny(new WaitHandle[] { dataReady, cancellationToken.WaitHandle }, 250);
                     if (signaled != 0)
                     {
                         continue;

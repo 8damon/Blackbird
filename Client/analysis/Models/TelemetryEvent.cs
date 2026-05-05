@@ -16,9 +16,9 @@ namespace BlackbirdInterface
         // Backward compat if you still set Type only.
         public string Type
         {
-            get
-            {
-                if (string.IsNullOrWhiteSpace(SubType)) return Group;
+            get {
+                if (string.IsNullOrWhiteSpace(SubType))
+                    return Group;
                 return $"{Group}/{SubType}";
             }
         }
@@ -29,4 +29,3 @@ namespace BlackbirdInterface
         public string Details { get; init; } = "";
     }
 }
-

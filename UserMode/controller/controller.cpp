@@ -131,8 +131,7 @@ class ControllerLogger
         }
 
         if (ConvertStringSecurityDescriptorToSecurityDescriptorA(
-                "D:P(A;OICI;GA;;;SY)(A;OICI;GA;;;BA)(A;OICI;GRGW;;;BU)", SDDL_REVISION_1, &securityDescriptor,
-                NULL) &&
+                "D:P(A;OICI;GA;;;SY)(A;OICI;GA;;;BA)(A;OICI;GRGW;;;BU)", SDDL_REVISION_1, &securityDescriptor, NULL) &&
             securityDescriptor != NULL)
         {
             (void)SetFileSecurityA(logDir, DACL_SECURITY_INFORMATION, securityDescriptor);

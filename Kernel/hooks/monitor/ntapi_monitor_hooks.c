@@ -249,13 +249,12 @@ static BOOLEAN BkntkiUnicodeContainsBlackbirdRuntimeAccessArtifact(_In_opt_ PCUN
             return FALSE;
         }
 
-        match =
-            (BkstrUnicodeContainsInsensitive(Text, L"BlackbirdHookIngest",
-                                             BK_NTAPI_LIT_CHARS(L"BlackbirdHookIngest")) ||
-             BkstrUnicodeContainsInsensitive(Text, L"sr71.dll", BK_NTAPI_LIT_CHARS(L"sr71.dll")) ||
-             BkstrUnicodeContainsInsensitive(Text, L"j58.dll", BK_NTAPI_LIT_CHARS(L"j58.dll")) ||
-             BkstrUnicodeContainsInsensitive(Text, L"bkdc.dll", BK_NTAPI_LIT_CHARS(L"bkdc.dll")) ||
-             BkstrUnicodeContainsInsensitive(Text, L"sr71-", BK_NTAPI_LIT_CHARS(L"sr71-")));
+        match = (BkstrUnicodeContainsInsensitive(Text, L"BlackbirdHookIngest",
+                                                 BK_NTAPI_LIT_CHARS(L"BlackbirdHookIngest")) ||
+                 BkstrUnicodeContainsInsensitive(Text, L"sr71.dll", BK_NTAPI_LIT_CHARS(L"sr71.dll")) ||
+                 BkstrUnicodeContainsInsensitive(Text, L"j58.dll", BK_NTAPI_LIT_CHARS(L"j58.dll")) ||
+                 BkstrUnicodeContainsInsensitive(Text, L"bkdc.dll", BK_NTAPI_LIT_CHARS(L"bkdc.dll")) ||
+                 BkstrUnicodeContainsInsensitive(Text, L"sr71-", BK_NTAPI_LIT_CHARS(L"sr71-")));
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
@@ -265,8 +264,8 @@ static BOOLEAN BkntkiUnicodeContainsBlackbirdRuntimeAccessArtifact(_In_opt_ PCUN
     return match;
 }
 
-static BOOLEAN BkntkiObjectAttributesNameContainsBlackbirdRuntimeAccessArtifact(
-    _In_opt_ POBJECT_ATTRIBUTES ObjectAttributes)
+static BOOLEAN
+BkntkiObjectAttributesNameContainsBlackbirdRuntimeAccessArtifact(_In_opt_ POBJECT_ATTRIBUTES ObjectAttributes)
 {
     PUNICODE_STRING objectName = NULL;
 

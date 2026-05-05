@@ -7,10 +7,10 @@ static volatile LONG g_RuntimeConfigInitialized = 0;
 static volatile ULONG g_RuntimePersistentFlags = 0;
 static volatile LONG64 g_RuntimeOverride = 0;
 
-#define BK_RUNTIME_MUTABLE_MASK                                                                                    \
-    (BK_RUNTIME_FLAG_ANTI_VIRTUALIZATION | BK_RUNTIME_FLAG_SELF_HIDE |                                           \
-     BK_RUNTIME_FLAG_INTERFACE_PROTECTED_ACCESS | BK_RUNTIME_FLAG_CONTROLLER_PROTECTED_ACCESS |                  \
-     BK_RUNTIME_FLAG_NTAPI_HOOKS_DISARMED | BK_RUNTIME_FLAG_QPC_TIMING_DISABLED)
+#define BK_RUNTIME_MUTABLE_MASK                                                                                     \
+    (BK_RUNTIME_FLAG_ANTI_VIRTUALIZATION | BK_RUNTIME_FLAG_SELF_HIDE | BK_RUNTIME_FLAG_INTERFACE_PROTECTED_ACCESS | \
+     BK_RUNTIME_FLAG_CONTROLLER_PROTECTED_ACCESS | BK_RUNTIME_FLAG_NTAPI_HOOKS_DISARMED |                           \
+     BK_RUNTIME_FLAG_QPC_TIMING_DISABLED)
 
 static ULONGLONG BkrtPackRuntimeOverride(_In_ UINT32 Flags, _In_ UINT32 Mask)
 {

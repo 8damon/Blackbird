@@ -51,9 +51,9 @@ static PCSTR ControllerDriverSubscriptionApplyPhaseName(_In_ LONG Phase)
     }
 }
 
-static VOID ControllerSetDriverSubscriptionApplyPhase(
-    _In_ BK_CONTROLLER_DRIVER_SUBSCRIPTION_APPLY_PHASE Phase, _In_ DWORD DesiredCount, _In_ DWORD ProgrammedCount,
-    _In_ DWORD IoctlCount)
+static VOID ControllerSetDriverSubscriptionApplyPhase(_In_ BK_CONTROLLER_DRIVER_SUBSCRIPTION_APPLY_PHASE Phase,
+                                                      _In_ DWORD DesiredCount, _In_ DWORD ProgrammedCount,
+                                                      _In_ DWORD IoctlCount)
 {
     (void)InterlockedExchange(&g_DriverSubscriptionApplyDesiredCount, (LONG)DesiredCount);
     (void)InterlockedExchange(&g_DriverSubscriptionApplyProgrammedCount, (LONG)ProgrammedCount);
@@ -211,7 +211,8 @@ BOOL ControllerStartDriverSubscriptionWorker(VOID)
         }
     }
 
-    g_DriverSubscriptionApplyThread = CreateThread(NULL, 0, ControllerDriverSubscriptionWorkerThreadProc, NULL, 0, NULL);
+    g_DriverSubscriptionApplyThread =
+        CreateThread(NULL, 0, ControllerDriverSubscriptionWorkerThreadProc, NULL, 0, NULL);
     if (g_DriverSubscriptionApplyThread == NULL)
     {
         return FALSE;
@@ -687,8 +688,8 @@ BOOL ControllerDropProcessSubscriptions(_In_ DWORD ProcessId, _In_z_ PCSTR Reaso
             {
                 ControllerRemoveSubscriptionAtLocked(client, i);
                 clientChanged = TRUE;
-                ControllerLog("[MON] subscription removed clientPid=%lu targetPid=%lu reason=%s\n",
-                              client->ProcessId, ProcessId, reason);
+                ControllerLog("[MON] subscription removed clientPid=%lu targetPid=%lu reason=%s\n", client->ProcessId,
+                              ProcessId, reason);
                 continue;
             }
             i += 1;

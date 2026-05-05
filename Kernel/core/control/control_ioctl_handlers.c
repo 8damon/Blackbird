@@ -189,11 +189,11 @@ static VOID BkctlFillComponentDiagnostics(_Inout_ PBK_DIAGNOSTICS_RESPONSE Respo
     BkctlPutComponentState(Response, BK_DIAG_COMPONENT_WFP_ENDPOINT_GUARD, BktmpSubsystemDriver,
                            BkwfpEndpointGuardSelfCheck(), BK_DIAG_STATE_CALLBACK | BK_DIAG_STATE_REGISTERED, 4, 0);
     BkbugQueryState(&bugCheckExRoutine, &bugCheck2Routine);
-    BkctlPutComponentState(Response, BK_DIAG_COMPONENT_BUGCHECK_MONITOR, BktmpSubsystemDriver, BkbugSelfCheck(),
-                           BK_DIAG_STATE_TELEMETRY | BK_DIAG_STATE_FAST_PATH |
-                               ((bugCheckExRoutine != 0 || bugCheck2Routine != 0) ? BK_DIAG_STATE_HOOK
-                                                                                  : BK_DIAG_STATE_POLICY_DISABLED),
-                           bugCheckExRoutine, bugCheck2Routine);
+    BkctlPutComponentState(
+        Response, BK_DIAG_COMPONENT_BUGCHECK_MONITOR, BktmpSubsystemDriver, BkbugSelfCheck(),
+        BK_DIAG_STATE_TELEMETRY | BK_DIAG_STATE_FAST_PATH |
+            ((bugCheckExRoutine != 0 || bugCheck2Routine != 0) ? BK_DIAG_STATE_HOOK : BK_DIAG_STATE_POLICY_DISABLED),
+        bugCheckExRoutine, bugCheck2Routine);
     if (BkchdlSelfCheck())
     {
         enterpriseProducers |= BK_ENTERPRISE_PRODUCER_HANDLE;
@@ -489,8 +489,7 @@ NTSTATUS BkctlHandleGetHealthIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Reque
     out->TamperMask = BkatGetLastMask();
     out->Reserved0 = BK_HEALTH_BUILD_MAGIC;
     out->Reserved1 = BkoptEndpointGuardIsCompiled()
-                         ? (BK_HEALTH_FEATURE_ENDPOINT_GUARD_DYNAMIC_ALE |
-                            BK_HEALTH_FEATURE_ENDPOINT_GUARD_FILTER_DIAG)
+                         ? (BK_HEALTH_FEATURE_ENDPOINT_GUARD_DYNAMIC_ALE | BK_HEALTH_FEATURE_ENDPOINT_GUARD_FILTER_DIAG)
                          : 0;
     *BytesOut = sizeof(*out);
     return STATUS_SUCCESS;

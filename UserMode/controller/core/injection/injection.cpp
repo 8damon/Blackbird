@@ -109,8 +109,8 @@ static VOID ControllerInjectionTerminatePidBestEffort(_In_ DWORD ProcessId, _In_
         DWORD err = GetLastError();
         if (err != ERROR_INVALID_PARAMETER && err != ERROR_NOT_FOUND)
         {
-            ControllerLog("[INJ][WARN] abort open failed pid=%lu reason=%s err=%lu\n", (unsigned long)ProcessId,
-                          Reason, (unsigned long)err);
+            ControllerLog("[INJ][WARN] abort open failed pid=%lu reason=%s err=%lu\n", (unsigned long)ProcessId, Reason,
+                          (unsigned long)err);
         }
         return;
     }
@@ -175,8 +175,7 @@ static VOID ControllerInjectionAbortLaunchedProcessTree(_In_opt_ HANDLE ProcessH
 VOID ControllerInjectionTerminateProcessTreeBestEffort(_In_ DWORD RootProcessId, _In_z_ PCSTR Reason)
 {
     ControllerInjectionAbortLaunchedProcessTree(NULL, RootProcessId,
-                                                (Reason != NULL && Reason[0] != '\0') ? Reason
-                                                                                      : "analysis-teardown");
+                                                (Reason != NULL && Reason[0] != '\0') ? Reason : "analysis-teardown");
 }
 
 DWORD ControllerInjectionAttachAndVerify(_In_ DWORD ProcessId, _In_z_ PCWSTR HookDllPath, _In_ DWORD VerifyTimeoutMs)

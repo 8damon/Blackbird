@@ -28,6 +28,9 @@
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <ProjectName>BlackbirdController</ProjectName>
     <TargetName>BlackbirdController</TargetName>
+    <BlackbirdFileDescription>Blackbird service broker and communication relay</BlackbirdFileDescription>
+    <BlackbirdInternalName>BlackbirdController</BlackbirdInternalName>
+    <BlackbirdOriginalFilename>BlackbirdController.exe</BlackbirdOriginalFilename>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
@@ -99,7 +102,7 @@
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>Ws2_32.lib;Bcrypt.lib;Crypt32.lib;Wtsapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Wtsapi32.lib;Userenv.lib;Iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -126,7 +129,7 @@
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Ws2_32.lib;Bcrypt.lib;Crypt32.lib;Wtsapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Wtsapi32.lib;Userenv.lib;Iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='TEMPUS_DEBUG|x64'">
@@ -153,7 +156,7 @@
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Ws2_32.lib;Bcrypt.lib;Crypt32.lib;Wtsapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Wtsapi32.lib;Userenv.lib;Iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|ARM64'">
@@ -166,7 +169,7 @@
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>Ws2_32.lib;Bcrypt.lib;Crypt32.lib;Wtsapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Wtsapi32.lib;Userenv.lib;Iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
@@ -192,29 +195,42 @@
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>Ws2_32.lib;Bcrypt.lib;Crypt32.lib;Wtsapi32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>Wtsapi32.lib;Userenv.lib;Iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\UserMode\controller\controller.cpp" />
     <ClCompile Include="..\UserMode\controller\core\injection\injection.cpp" />
-    <ClCompile Include="..\UserMode\controller\core\monitoring\ubscriptions.cpp" />
+    <ClCompile Include="..\UserMode\controller\core\injection\common.cpp" />
+    <ClCompile Include="..\UserMode\controller\core\injection\environment.cpp" />
+    <ClCompile Include="..\UserMode\controller\core\injection\hook.cpp" />
+    <ClCompile Include="..\UserMode\controller\core\injection\image.cpp" />
+    <ClCompile Include="..\UserMode\controller\core\injection\launch.cpp" />
+    <ClCompile Include="..\UserMode\controller\core\injection\token.cpp" />
+    <ClCompile Include="..\UserMode\controller\core\monitoring\subscriptions.cpp" />
     <ClCompile Include="..\UserMode\controller\core\monitoring\etw_monitor.cpp" />
     <ClCompile Include="..\UserMode\controller\core\correlation\hollowing.cpp" />
     <ClCompile Include="..\UserMode\controller\core\heuristics\heuristics.cpp" />
     <ClCompile Include="..\UserMode\controller\core\ipc\ipc.cpp" />
-    <ClCompile Include="..\UserMode\controller\core\runtime\node_runtime.cpp" />
+    <ClCompile Include="..\UserMode\controller\core\ipc\ipc_hook_support.cpp" />
+    <ClCompile Include="..\UserMode\controller\core\ipc\ipc_launch.cpp" />
+    <ClCompile Include="..\UserMode\controller\core\ipc\ipc_proxy.cpp" />
+    <ClCompile Include="..\UserMode\controller\core\ipc\ipc_shared_ring.cpp" />
     <ClCompile Include="..\UserMode\controller\core\runtime\symbol_service.cpp" />
     <ClCompile Include="..\UserMode\controller\core\runtime\runtime.cpp" />
+    <ClCompile Include="..\UserMode\controller\core\runtime\ns\ns_launcher.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\ABI\Blackbird_ipc.h" />
+    <ClInclude Include="..\ABI\blackbird_ipc.h" />
     <ClInclude Include="..\ABI\blackbird_ioctl.h" />
-    <ClInclude Include="..\UserMode\controller\core\Blackbird_controller_private.h" />
+    <ClInclude Include="..\UserMode\controller\core\controller_private.h" />
     <ClInclude Include="..\UserMode\controller\core\util\handles.h" />
-    <ClInclude Include="..\UserMode\controller\core\injection\Blackbird_controller_injection.h" />
+    <ClInclude Include="..\UserMode\controller\core\injection\injection.h" />
+    <ClInclude Include="..\UserMode\controller\core\injection\internal.h" />
     <ClInclude Include="..\UserMode\controller\core\heuristics\heuristics.h" />
-    <ClInclude Include="..\UserMode\sensor\Blackbird_sensor_core.h" />
+    <ClInclude Include="..\UserMode\controller\core\ipc\ipc_internal.h" />
+    <ClInclude Include="..\UserMode\controller\core\runtime\ns\ns_launcher.h" />
+    <ClInclude Include="..\UserMode\sensor\sensor_core.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\UserMode\controller\core\README.md" />

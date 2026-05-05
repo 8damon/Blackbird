@@ -23,7 +23,7 @@ namespace BlackbirdInterface
 
         private const uint IMAGE_FILE_MACHINE_AMD64 = 0x8664;
         private const uint AddrModeFlat = 3;
-        private const int MaxFrames = 192;
+        private const int MaxFrames = 128;
         private const int MaxSymbolName = 1024;
 
         private const uint SYMOPT_UNDNAME = 0x00000002;
@@ -32,11 +32,14 @@ namespace BlackbirdInterface
 
         private static readonly FunctionTableAccessRoutine64 s_functionTableAccess = SymFunctionTableAccess64;
         private static readonly GetModuleBaseRoutine64 s_getModuleBase = SymGetModuleBase64;
+        private static readonly object s_dbgHelpLock = new();
 
         public static ThreadStackResolveResult Resolve(int pid, int tid, string state)
         {
             if (!Environment.Is64BitProcess)
                 return new ThreadStackResolveResult(new List<StackFrameRow>(), "", 0, 0, 0, null, 0, null);
+
+            bool debugPrivilegeEnabled = Kernel32Native.EnableDebugPrivilege(out int debugPrivilegeError);
 
             if (tid == GetCurrentThreadId())
                 return ResolveCurrentThreadManaged(pid, tid, state);
@@ -46,59 +49,108 @@ namespace BlackbirdInterface
             bool closeProcess = false;
             bool threadSuspended = false;
             bool symbolsReady = false;
+            bool processMemoryAvailable = false;
+            string note = string.Empty;
 
             try
             {
-                hProcess = Kernel32Native.OpenProcess(
-                    PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
-                    false,
-                    unchecked((uint)pid));
+                hProcess = Kernel32Native.OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false,
+                                                      unchecked((uint)pid));
                 if (hProcess == IntPtr.Zero)
                 {
+                    int err = Marshal.GetLastWin32Error();
                     if (pid != Environment.ProcessId)
                     {
-                        return new ThreadStackResolveResult(new List<StackFrameRow>(), "Process handle unavailable.", 0, 0, 0, null, 0, null);
+                        string debugState = debugPrivilegeEnabled
+                                                ? "SeDebugPrivilege enabled"
+                                                : $"SeDebugPrivilege unavailable win32={debugPrivilegeError}";
+                        note =
+                            $"OpenProcess(PROCESS_QUERY_INFORMATION|PROCESS_VM_READ) failed win32={err}; {debugState}; showing thread context only if available.";
+                        hProcess = GetCurrentProcess();
                     }
-
-                    hProcess = GetCurrentProcess();
+                    else
+                    {
+                        hProcess = GetCurrentProcess();
+                        processMemoryAvailable = true;
+                    }
                 }
                 else
+                {
                     closeProcess = true;
+                    processMemoryAvailable = true;
+                }
 
-                hThread = OpenThread(THREAD_QUERY_INFORMATION | THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, false, (uint)tid);
+                hThread =
+                    OpenThread(THREAD_QUERY_INFORMATION | THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, false, (uint)tid);
                 if (hThread == IntPtr.Zero)
-                    return new ThreadStackResolveResult(new List<StackFrameRow>(), "", 0, 0, 0, null, 0, null);
+                {
+                    int err = Marshal.GetLastWin32Error();
+                    string prefix = string.IsNullOrWhiteSpace(note) ? string.Empty : $"{note} ";
+                    return new ThreadStackResolveResult(new List<StackFrameRow>(),
+                                                        $"{prefix}Thread handle unavailable (win32={err}).", 0, 0, 0,
+                                                        null, 0, null);
+                }
 
-                TryReadThreadMetadata(hProcess, hThread, out ulong tebAddress, out ulong stackBase, out ulong stackTop, out ushort? tebFlags);
-
-                SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
-                symbolsReady = SymInitialize(hProcess, null, true);
+                ulong tebAddress = 0;
+                ulong stackBase = 0;
+                ulong stackTop = 0;
+                ushort? tebFlags = null;
+                if (processMemoryAvailable)
+                {
+                    TryReadThreadMetadata(hProcess, hThread, out tebAddress, out stackBase, out stackTop, out tebFlags);
+                }
 
                 if (SuspendThread(hThread) != uint.MaxValue)
                     threadSuspended = true;
 
-                var context = new CONTEXT64
-                {
-                    ContextFlags = CONTEXT_FULL,
-                    DUMMYUNIONNAME = new XMM_SAVE_AREA32
-                    {
-                        FloatRegisters = new M128A[8],
-                        XmmRegisters = new M128A[16],
-                        Reserved4 = new byte[96]
-                    },
-                    VectorRegister = new M128A[26]
-                };
+                var context = new CONTEXT64 { ContextFlags = CONTEXT_FULL,
+                                              DUMMYUNIONNAME = new XMM_SAVE_AREA32 { FloatRegisters = new M128A[8],
+                                                                                     XmmRegisters = new M128A[16],
+                                                                                     Reserved4 = new byte[96] },
+                                              VectorRegister = new M128A[26] };
 
                 if (!GetThreadContext(hThread, ref context))
-                    return new ThreadStackResolveResult(new List<StackFrameRow>(), "", tebAddress, stackBase, stackTop, tebFlags, 0, null);
+                {
+                    int err = Marshal.GetLastWin32Error();
+                    string prefix = string.IsNullOrWhiteSpace(note) ? string.Empty : $"{note} ";
+                    return new ThreadStackResolveResult(new List<StackFrameRow>(),
+                                                        $"{prefix}GetThreadContext failed (win32={err}).", tebAddress,
+                                                        stackBase, stackTop, tebFlags, 0, null);
+                }
+
+                if (!processMemoryAvailable)
+                {
+                    return new ThreadStackResolveResult(new List<StackFrameRow>(), note, tebAddress, stackBase,
+                                                        stackTop, tebFlags, context.Rsp, BuildSnapshot(context));
+                }
 
                 var moduleRanges = BuildModuleRanges(pid);
-                var frames = WalkFrames(hProcess, hThread, ref context, moduleRanges, symbolsReady);
-                return new ThreadStackResolveResult(frames, "", tebAddress, stackBase, stackTop, tebFlags, context.Rsp, BuildSnapshot(context));
+                List<StackFrameRow> frames;
+                lock (s_dbgHelpLock)
+                {
+                    SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
+                    symbolsReady = SymInitialize(hProcess, null, true);
+                    try
+                    {
+                        frames = WalkFrames(hProcess, hThread, ref context, moduleRanges, symbolsReady);
+                    }
+                    finally
+                    {
+                        if (symbolsReady)
+                        {
+                            _ = SymCleanup(hProcess);
+                            symbolsReady = false;
+                        }
+                    }
+                }
+
+                return new ThreadStackResolveResult(frames, note, tebAddress, stackBase, stackTop, tebFlags,
+                                                    context.Rsp, BuildSnapshot(context));
             }
-            catch
+            catch (Exception ex)
             {
-                return new ThreadStackResolveResult(new List<StackFrameRow>(), "", 0, 0, 0, null, 0, null);
+                return new ThreadStackResolveResult(new List<StackFrameRow>(), $"Stack resolve failed: {ex.Message}", 0,
+                                                    0, 0, null, 0, null);
             }
             finally
             {
@@ -107,7 +159,12 @@ namespace BlackbirdInterface
                 if (hThread != IntPtr.Zero)
                     _ = Kernel32Native.CloseHandle(hThread);
                 if (symbolsReady)
-                    _ = SymCleanup(hProcess);
+                {
+                    lock (s_dbgHelpLock)
+                    {
+                        _ = SymCleanup(hProcess);
+                    }
+                }
                 if (closeProcess && hProcess != IntPtr.Zero)
                     _ = Kernel32Native.CloseHandle(hProcess);
             }
@@ -130,13 +187,7 @@ namespace BlackbirdInterface
                 if (!string.IsNullOrWhiteSpace(source) && line > 0)
                     symbol += $"  ({source}:{line})";
 
-                frames.Add(new StackFrameRow
-                {
-                    Index = idx++,
-                    Address = "managed",
-                    Module = module,
-                    Symbol = symbol
-                });
+                frames.Add(new StackFrameRow { Index = idx++, Address = "managed", Module = module, Symbol = symbol });
             }
 
             return new ThreadStackResolveResult(frames, "", 0, 0, 0, null, 0, null);
@@ -144,42 +195,17 @@ namespace BlackbirdInterface
 
         private static ThreadContextSnapshot BuildSnapshot(CONTEXT64 context)
         {
-            return new ThreadContextSnapshot
-            {
-                Rip = context.Rip,
-                Rsp = context.Rsp,
-                Rbp = context.Rbp,
-                Rax = context.Rax,
-                Rbx = context.Rbx,
-                Rcx = context.Rcx,
-                Rdx = context.Rdx,
-                Rsi = context.Rsi,
-                Rdi = context.Rdi,
-                R8 = context.R8,
-                R9 = context.R9,
-                R10 = context.R10,
-                R11 = context.R11,
-                R12 = context.R12,
-                R13 = context.R13,
-                R14 = context.R14,
-                R15 = context.R15,
-                Dr0 = context.Dr0,
-                Dr1 = context.Dr1,
-                Dr2 = context.Dr2,
-                Dr3 = context.Dr3,
-                Dr6 = context.Dr6,
-                Dr7 = context.Dr7,
-                EFlags = context.EFlags
+            return new ThreadContextSnapshot {
+                Rip = context.Rip, Rsp = context.Rsp, Rbp = context.Rbp, Rax = context.Rax,      Rbx = context.Rbx,
+                Rcx = context.Rcx, Rdx = context.Rdx, Rsi = context.Rsi, Rdi = context.Rdi,      R8 = context.R8,
+                R9 = context.R9,   R10 = context.R10, R11 = context.R11, R12 = context.R12,      R13 = context.R13,
+                R14 = context.R14, R15 = context.R15, Dr0 = context.Dr0, Dr1 = context.Dr1,      Dr2 = context.Dr2,
+                Dr3 = context.Dr3, Dr6 = context.Dr6, Dr7 = context.Dr7, EFlags = context.EFlags
             };
         }
 
-        private static void TryReadThreadMetadata(
-            IntPtr hProcess,
-            IntPtr hThread,
-            out ulong tebAddress,
-            out ulong stackBase,
-            out ulong stackTop,
-            out ushort? tebFlags)
+        private static void TryReadThreadMetadata(IntPtr hProcess, IntPtr hThread, out ulong tebAddress,
+                                                  out ulong stackBase, out ulong stackTop, out ushort? tebFlags)
         {
             tebAddress = 0;
             stackBase = 0;
@@ -188,12 +214,8 @@ namespace BlackbirdInterface
 
             try
             {
-                int status = NtQueryInformationThread(
-                    hThread,
-                    0,
-                    out THREAD_BASIC_INFORMATION tbi,
-                    Marshal.SizeOf<THREAD_BASIC_INFORMATION>(),
-                    out _);
+                int status = NtQueryInformationThread(hThread, 0, out THREAD_BASIC_INFORMATION tbi,
+                                                      Marshal.SizeOf<THREAD_BASIC_INFORMATION>(), out _);
                 if (status != 0 || tbi.TebBaseAddress == IntPtr.Zero)
                     return;
 
@@ -231,29 +253,23 @@ namespace BlackbirdInterface
             }
         }
 
-        private static List<StackFrameRow> WalkFrames(IntPtr hProcess, IntPtr hThread, ref CONTEXT64 context, List<ModuleRange> modules, bool symbolsReady)
+        private static List<StackFrameRow> WalkFrames(IntPtr hProcess, IntPtr hThread, ref CONTEXT64 context,
+                                                      List<ModuleRange> modules, bool symbolsReady)
         {
             var rows = new List<StackFrameRow>();
 
-            var frame = new STACKFRAME64
-            {
-                AddrPC = new ADDRESS64 { Offset = context.Rip, Mode = AddrModeFlat },
-                AddrFrame = new ADDRESS64 { Offset = context.Rbp, Mode = AddrModeFlat },
-                AddrStack = new ADDRESS64 { Offset = context.Rsp, Mode = AddrModeFlat }
-            };
+            var frame = new STACKFRAME64 { AddrPC = new ADDRESS64 { Offset = context.Rip, Mode = AddrModeFlat },
+                                           AddrFrame = new ADDRESS64 { Offset = context.Rbp, Mode = AddrModeFlat },
+                                           AddrStack = new ADDRESS64 { Offset = context.Rsp, Mode = AddrModeFlat },
+                                           Params = new ulong[4], Reserved = new ulong[3] };
+
+            AddFrameRow(rows, hProcess, context.Rip, context.Rbp, modules, symbolsReady);
+            ulong lastAddress = context.Rip;
 
             for (int i = 0; i < MaxFrames; i++)
             {
-                bool ok = StackWalk64(
-                    IMAGE_FILE_MACHINE_AMD64,
-                    hProcess,
-                    hThread,
-                    ref frame,
-                    ref context,
-                    IntPtr.Zero,
-                    s_functionTableAccess,
-                    s_getModuleBase,
-                    IntPtr.Zero);
+                bool ok = StackWalk64(IMAGE_FILE_MACHINE_AMD64, hProcess, hThread, ref frame, ref context, IntPtr.Zero,
+                                      s_functionTableAccess, s_getModuleBase, IntPtr.Zero);
 
                 if (!ok)
                     break;
@@ -262,26 +278,39 @@ namespace BlackbirdInterface
                 if (addr == 0)
                     break;
 
-                ResolveFrame(hProcess, addr, modules, symbolsReady, out var module, out var symbol);
-
-                rows.Add(new StackFrameRow
+                if (addr == lastAddress)
                 {
-                    Index = rows.Count,
-                    Address = $"0x{addr:X}",
-                    Module = module,
-                    Symbol = symbol,
-                    InstructionPointerRaw = addr,
-                    FramePointerRaw = frame.AddrFrame.Offset
-                });
+                    break;
+                }
+
+                AddFrameRow(rows, hProcess, addr, frame.AddrFrame.Offset, modules, symbolsReady);
+                lastAddress = addr;
             }
 
             return rows;
         }
 
-        private static void ResolveFrame(IntPtr hProcess, ulong address, List<ModuleRange> modules, bool symbolsReady, out string module, out string symbol)
+        private static void AddFrameRow(List<StackFrameRow> rows, IntPtr hProcess, ulong address, ulong framePointer,
+                                        List<ModuleRange> modules, bool symbolsReady)
         {
-            module = ResolveModule(modules, address);
-            symbol = module + "+0x0";
+            if (address == 0 || rows.Count >= MaxFrames)
+            {
+                return;
+            }
+
+            ResolveFrame(hProcess, address, modules, symbolsReady, out var module, out var symbol,
+                         out var displayAddress);
+            rows.Add(new StackFrameRow { Index = rows.Count, Address = displayAddress, Module = module, Symbol = symbol,
+                                         InstructionPointerRaw = address, FramePointerRaw = framePointer });
+        }
+
+        private static void ResolveFrame(IntPtr hProcess, ulong address, List<ModuleRange> modules, bool symbolsReady,
+                                         out string module, out string symbol, out string displayAddress)
+        {
+            ModuleRange? moduleRange = FindModule(modules, address);
+            module = moduleRange?.Name ?? "<unknown>";
+            displayAddress = FormatAddress(moduleRange, address);
+            symbol = displayAddress;
 
             if (!symbolsReady)
                 return;
@@ -293,15 +322,25 @@ namespace BlackbirdInterface
                 symbol = $"{symbol} ({fileLine})";
         }
 
-        private static string ResolveModule(List<ModuleRange> modules, ulong address)
+        private static ModuleRange? FindModule(List<ModuleRange> modules, ulong address)
         {
             foreach (var m in modules)
             {
                 if (address >= m.Start && address < m.End)
-                    return m.Name;
+                    return m;
             }
 
-            return "<unknown>";
+            return null;
+        }
+
+        private static string FormatAddress(ModuleRange? module, ulong address)
+        {
+            if (module is not ModuleRange range)
+            {
+                return $"0x{address:X}";
+            }
+
+            return $"{range.Name}+0x{address - range.Start:X}";
         }
 
         private static bool TryResolveSymbol(IntPtr hProcess, ulong address, out string symbol)
@@ -311,12 +350,8 @@ namespace BlackbirdInterface
             IntPtr mem = Marshal.AllocHGlobal(headerSize + MaxSymbolName);
             try
             {
-                var info = new SYMBOL_INFO
-                {
-                    SizeOfStruct = (uint)headerSize,
-                    MaxNameLen = MaxSymbolName,
-                    Reserved = new ulong[2]
-                };
+                var info = new SYMBOL_INFO { SizeOfStruct = (uint)headerSize, MaxNameLen = MaxSymbolName,
+                                             Reserved = new ulong[2] };
                 Marshal.StructureToPtr(info, mem, false);
 
                 if (!SymFromAddr(hProcess, address, out ulong displacement, mem))
@@ -336,10 +371,7 @@ namespace BlackbirdInterface
         private static bool TryResolveLine(IntPtr hProcess, ulong address, out string fileLine)
         {
             fileLine = "";
-            var line = new IMAGEHLP_LINE64
-            {
-                SizeOfStruct = (uint)Marshal.SizeOf<IMAGEHLP_LINE64>()
-            };
+            var line = new IMAGEHLP_LINE64 { SizeOfStruct = (uint)Marshal.SizeOf<IMAGEHLP_LINE64>() };
 
             if (!SymGetLineFromAddr64(hProcess, address, out uint displacement, ref line))
                 return false;
@@ -351,9 +383,7 @@ namespace BlackbirdInterface
             if (string.IsNullOrWhiteSpace(file))
                 return false;
 
-            fileLine = displacement > 0
-                ? $"{file}:{line.LineNumber}+0x{displacement:X}"
-                : $"{file}:{line.LineNumber}";
+            fileLine = displacement > 0 ? $"{file}:{line.LineNumber}+0x{displacement:X}" : $"{file}:{line.LineNumber}";
             return true;
         }
 
@@ -591,18 +621,16 @@ namespace BlackbirdInterface
         private static extern bool GetThreadContext(IntPtr hThread, ref CONTEXT64 lpContext);
 
         [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr baseAddress, byte[] buffer, int size, out IntPtr bytesRead);
+        private static extern bool ReadProcessMemory(IntPtr hProcess, IntPtr baseAddress, byte[] buffer, int size,
+                                                     out IntPtr bytesRead);
 
         [DllImport("kernel32.dll")]
         private static extern int GetCurrentThreadId();
 
         [DllImport("ntdll.dll")]
-        private static extern int NtQueryInformationThread(
-            IntPtr threadHandle,
-            int threadInformationClass,
-            out THREAD_BASIC_INFORMATION threadInformation,
-            int threadInformationLength,
-            out int returnLength);
+        private static extern int NtQueryInformationThread(IntPtr threadHandle, int threadInformationClass,
+                                                           out THREAD_BASIC_INFORMATION threadInformation,
+                                                           int threadInformationLength, out int returnLength);
 
         [DllImport("dbghelp.dll", SetLastError = true)]
         private static extern bool SymInitialize(IntPtr hProcess, string? UserSearchPath, bool fInvadeProcess);
@@ -623,19 +651,15 @@ namespace BlackbirdInterface
         private static extern bool SymFromAddr(IntPtr hProcess, ulong Address, out ulong Displacement, IntPtr Symbol);
 
         [DllImport("dbghelp.dll", SetLastError = true, CharSet = CharSet.Ansi)]
-        private static extern bool SymGetLineFromAddr64(IntPtr hProcess, ulong qwAddr, out uint pdwDisplacement, ref IMAGEHLP_LINE64 Line64);
+        private static extern bool SymGetLineFromAddr64(IntPtr hProcess, ulong qwAddr, out uint pdwDisplacement,
+                                                        ref IMAGEHLP_LINE64 Line64);
 
         [DllImport("dbghelp.dll", SetLastError = true)]
-        private static extern bool StackWalk64(
-            uint MachineType,
-            IntPtr hProcess,
-            IntPtr hThread,
-            ref STACKFRAME64 StackFrame,
-            ref CONTEXT64 ContextRecord,
-            IntPtr ReadMemoryRoutine,
-            FunctionTableAccessRoutine64 FunctionTableAccessRoutine,
-            GetModuleBaseRoutine64 GetModuleBaseRoutine,
-            IntPtr TranslateAddress);
+        private static extern bool StackWalk64(uint MachineType, IntPtr hProcess, IntPtr hThread,
+                                               ref STACKFRAME64 StackFrame, ref CONTEXT64 ContextRecord,
+                                               IntPtr ReadMemoryRoutine,
+                                               FunctionTableAccessRoutine64 FunctionTableAccessRoutine,
+                                               GetModuleBaseRoutine64 GetModuleBaseRoutine, IntPtr TranslateAddress);
     }
 
     internal sealed class ThreadStackResolveResult
@@ -649,15 +673,9 @@ namespace BlackbirdInterface
         public ulong StackPointer { get; }
         public ThreadContextSnapshot? ContextSnapshot { get; }
 
-        public ThreadStackResolveResult(
-            IReadOnlyList<StackFrameRow> frames,
-            string note,
-            ulong tebAddress,
-            ulong stackBase,
-            ulong stackTop,
-            ushort? tebFlags,
-            ulong stackPointer,
-            ThreadContextSnapshot? contextSnapshot)
+        public ThreadStackResolveResult(IReadOnlyList<StackFrameRow> frames, string note, ulong tebAddress,
+                                        ulong stackBase, ulong stackTop, ushort? tebFlags, ulong stackPointer,
+                                        ThreadContextSnapshot? contextSnapshot)
         {
             Frames = frames;
             Note = note;
@@ -698,4 +716,3 @@ namespace BlackbirdInterface
         public uint EFlags { get; set; }
     }
 }
-

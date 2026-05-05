@@ -23,19 +23,21 @@ namespace BlackbirdInterface
             sb.AppendLine();
             sb.AppendLine($"CPUID supported: {(CpuidSupported ? "yes" : "no")}");
             sb.AppendLine($"Hypervisor bit: {(HypervisorPresent ? "set" : "not set")}");
-            sb.AppendLine($"Hypervisor vendor: {(string.IsNullOrWhiteSpace(HypervisorVendor) ? "<none>" : HypervisorVendor)}");
+            sb.AppendLine(
+                $"Hypervisor vendor: {(string.IsNullOrWhiteSpace(HypervisorVendor) ? "<none>" : HypervisorVendor)}");
             sb.AppendLine($"VM likely: {(VmLikely ? "yes" : "no")}");
             sb.AppendLine($"Evidence score: {EvidenceScore} / {DetectionThreshold}");
 
             sb.AppendLine();
             if (VmLikely)
             {
-                sb.AppendLine("Result: virtualized environment detected. This is suitable for anti-VM-aware analysis workflows.");
+                sb.AppendLine(
+                    "Result: virtualized environment detected. This is suitable for anti-VM-aware analysis workflows.");
             }
             else
             {
                 sb.AppendLine("Result: no strong VM signal detected.");
-                sb.AppendLine("If samples use anti-VM checks, run Blackbird inside a dedicated VM.");
+                sb.AppendLine("If samples use anti-VM checks, run BK inside a dedicated VM.");
                 sb.AppendLine("Recommended: Hyper-V, VMware, or VirtualBox with hardware virtualization enabled.");
             }
 
@@ -59,10 +61,8 @@ namespace BlackbirdInterface
 
     internal static class VirtualizationProbe
     {
-        private static readonly string[] VmIndicators =
-        {
-            "vmware", "virtualbox", "vbox", "kvm", "qemu", "xen", "hyper-v", "hyperv", "parallels", "bhyve"
-        };
+        private static readonly string[] VmIndicators = { "vmware", "virtualbox", "vbox",   "kvm",       "qemu",
+                                                          "xen",    "hyper-v",    "hyperv", "parallels", "bhyve" };
         private const int VmDetectionThreshold = 4;
         private const int WeightCpuidHypervisorBit = 8;
         private const int WeightCpuidVendor = 5;
@@ -91,10 +91,7 @@ namespace BlackbirdInterface
                         signals.Add($"+{WeightCpuidHypervisorBit} CPUID hypervisor bit is set.");
 
                         var hvLeaf = X86Base.CpuId(unchecked((int)0x40000000), 0);
-                        hypervisorVendor = DecodeVendorString(
-                            hvLeaf.Ebx,
-                            hvLeaf.Ecx,
-                            hvLeaf.Edx);
+                        hypervisorVendor = DecodeVendorString(hvLeaf.Ebx, hvLeaf.Ecx, hvLeaf.Edx);
                         if (!string.IsNullOrWhiteSpace(hypervisorVendor))
                         {
                             score += WeightCpuidVendor;
@@ -110,37 +107,26 @@ namespace BlackbirdInterface
             score += TryCollectRegistryVmSignals(signals);
             bool vmLikely = score >= VmDetectionThreshold;
 
-            return new VirtualizationProbeReport
-            {
-                CpuidSupported = cpuidSupported,
-                HypervisorPresent = hypervisorPresent,
-                HypervisorVendor = hypervisorVendor,
-                VmLikely = vmLikely,
-                EvidenceScore = score,
-                DetectionThreshold = VmDetectionThreshold,
-                Signals = signals
-            };
+            return new VirtualizationProbeReport { CpuidSupported = cpuidSupported,
+                                                   HypervisorPresent = hypervisorPresent,
+                                                   HypervisorVendor = hypervisorVendor,
+                                                   VmLikely = vmLikely,
+                                                   EvidenceScore = score,
+                                                   DetectionThreshold = VmDetectionThreshold,
+                                                   Signals = signals };
         }
 
         private static int TryCollectRegistryVmSignals(List<string> signals)
         {
             int score = 0;
-            string? biosVendor = ReadRegistryString(
-                Registry.LocalMachine,
-                @"HARDWARE\DESCRIPTION\System\BIOS",
-                "BIOSVendor");
-            string? systemManufacturer = ReadRegistryString(
-                Registry.LocalMachine,
-                @"HARDWARE\DESCRIPTION\System\BIOS",
-                "SystemManufacturer");
-            string? systemProductName = ReadRegistryString(
-                Registry.LocalMachine,
-                @"HARDWARE\DESCRIPTION\System\BIOS",
-                "SystemProductName");
-            string? videoBiosVersion = ReadRegistryString(
-                Registry.LocalMachine,
-                @"HARDWARE\DESCRIPTION\System",
-                "VideoBiosVersion");
+            string? biosVendor =
+                ReadRegistryString(Registry.LocalMachine, @"HARDWARE\DESCRIPTION\System\BIOS", "BIOSVendor");
+            string? systemManufacturer =
+                ReadRegistryString(Registry.LocalMachine, @"HARDWARE\DESCRIPTION\System\BIOS", "SystemManufacturer");
+            string? systemProductName =
+                ReadRegistryString(Registry.LocalMachine, @"HARDWARE\DESCRIPTION\System\BIOS", "SystemProductName");
+            string? videoBiosVersion =
+                ReadRegistryString(Registry.LocalMachine, @"HARDWARE\DESCRIPTION\System", "VideoBiosVersion");
 
             score += AddSignalIfVmIndicator(signals, "BIOSVendor", biosVendor);
             score += AddSignalIfVmIndicator(signals, "SystemManufacturer", systemManufacturer);
@@ -168,11 +154,12 @@ namespace BlackbirdInterface
                     signals.Add($"+{WeightVmServicePresent} VM-related service key present: {serviceName}");
 
                     object? rawStart = key.GetValue("Start");
-                    int? startType = rawStart as int?;
+                    int? startType = rawStart as int ? ;
                     if (startType.HasValue && startType.Value != 4)
                     {
                         score += WeightVmServiceEnabled;
-                        signals.Add($"+{WeightVmServiceEnabled} VM-related service enabled: {serviceName} (Start={startType.Value})");
+                        signals.Add(
+                            $"+{WeightVmServiceEnabled} VM-related service enabled: {serviceName} (Start={startType.Value})");
                     }
 
                     return score;
@@ -236,4 +223,3 @@ namespace BlackbirdInterface
         }
     }
 }
-

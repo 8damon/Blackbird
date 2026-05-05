@@ -1,5 +1,5 @@
-#ifndef BLACKBIRD_IOCTL_TEST_INTERNAL_H
-#define BLACKBIRD_IOCTL_TEST_INTERNAL_H
+#ifndef BK_IOCTL_TEST_INTERNAL_H
+#define BK_IOCTL_TEST_INTERNAL_H
 
 #define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
@@ -14,10 +14,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include "..\\..\\..\\abi\\blackbird_ioctl.h"
-#include "..\\blackbird_event_printer.h"
-#include "..\\blackbird_sensor_core.h"
-#include "..\\blackbird_symbol_resolver.h"
-#include "..\\blackbird_test_report_html.h"
+#include "..\\event_printer.h"
+#include "..\\sensor_core.h"
+#include "..\\symbol_resolver.h"
+#include "..\\test_report_html.h"
 
 typedef struct _TEST_STATE
 {
@@ -47,7 +47,7 @@ typedef struct _CHILD_CTX
 typedef struct _ETW_CAPTURE
 {
     WCHAR SessionName[64];
-    BLACKBIRDSC_ETW_SESSION *Session;
+    BKSC_ETW_SESSION *Session;
     TRACEHANDLE SessionHandle;
     TRACEHANDLE TraceHandle;
     HANDLE TraceThread;
@@ -116,10 +116,10 @@ typedef struct _SUITE_RESULTS
     INT Skipped;
     FILE *Report;
     UINT32 NextCheckId;
-    BLACKBIRD_REPORT_META *Meta;
+    BK_REPORT_META *Meta;
     size_t MetaCount;
     size_t MetaCapacity;
-    BLACKBIRD_REPORT_CHECK *Checks;
+    BK_REPORT_CHECK *Checks;
     size_t CheckCount;
     size_t CheckCapacity;
     CHAR ReportPath[MAX_PATH];
@@ -132,7 +132,7 @@ typedef struct _SUITE_RESULTS
     BOOL CycleCounterAvailable;
 } SUITE_RESULTS;
 
-typedef struct _BLACKBIRD_MULTI_CLIENT_WORKER
+typedef struct _BK_MULTI_CLIENT_WORKER
 {
     HANDLE Device;
     DWORD MaxMs;
@@ -140,31 +140,31 @@ typedef struct _BLACKBIRD_MULTI_CLIENT_WORKER
     BOOL SawThread;
     DWORD Polls;
     DWORD UnexpectedError;
-} BLACKBIRD_MULTI_CLIENT_WORKER;
+} BK_MULTI_CLIENT_WORKER;
 
-#define BLACKBIRD_CHILD_ARG "--idle-child"
-#define BLACKBIRD_CHILD_ARGW L"--idle-child"
-#define BLACKBIRD_CHILD_SPAWN_AND_TOUCH_ARG "--spawn-and-touch"
-#define BLACKBIRD_CHILD_SPAWN_AND_TOUCH_ARGW L"--spawn-and-touch"
-#define BLACKBIRD_SUITE_ETW_SESSION L"BlackbirdTestSuiteSession"
-#define BLACKBIRD_MULTI_CLIENT_COUNT 3
-#define BLACKBIRD_MULTI_CLIENT_TIMEOUT_MS 8000
-#define BLACKBIRD_SYSTEM_CODEINTEGRITY_INFORMATION_CLASS 103
-#define BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION_CLASS 35
+#define BK_CHILD_ARG "--idle-child"
+#define BK_CHILD_ARGW L"--idle-child"
+#define BK_CHILD_SPAWN_AND_TOUCH_ARG "--spawn-and-touch"
+#define BK_CHILD_SPAWN_AND_TOUCH_ARGW L"--spawn-and-touch"
+#define BK_SUITE_ETW_SESSION L"BlackbirdTestSuiteSession"
+#define BK_MULTI_CLIENT_COUNT 3
+#define BK_MULTI_CLIENT_TIMEOUT_MS 8000
+#define BK_SYSTEM_CODEINTEGRITY_INFORMATION_CLASS 103
+#define BK_SYSTEM_KERNEL_DEBUGGER_INFORMATION_CLASS 35
 
 #ifndef NT_SUCCESS
 #define NT_SUCCESS(Status) (((NTSTATUS)(Status)) >= 0)
 #endif
 
-#define BLACKBIRD_CI_OPTION_ENABLED 0x0001
-#define BLACKBIRD_CI_OPTION_TESTSIGN 0x0002
-#define BLACKBIRD_CI_OPTION_UMCI_ENABLED 0x0004
-#define BLACKBIRD_CI_OPTION_DEBUGMODE 0x0080
-#define BLACKBIRD_CI_OPTION_FLIGHTING 0x0200
-#define BLACKBIRD_CI_OPTION_HVCI_KMCI_ENABLED 0x0400
-#define BLACKBIRD_CI_OPTION_HVCI_KMCI_AUDIT 0x0800
-#define BLACKBIRD_CI_OPTION_HVCI_KMCI_STRICT 0x1000
-#define BLACKBIRD_CI_OPTION_WHQL_ENFORCEMENT_ENABLED 0x4000
+#define BK_CI_OPTION_ENABLED 0x0001
+#define BK_CI_OPTION_TESTSIGN 0x0002
+#define BK_CI_OPTION_UMCI_ENABLED 0x0004
+#define BK_CI_OPTION_DEBUGMODE 0x0080
+#define BK_CI_OPTION_FLIGHTING 0x0200
+#define BK_CI_OPTION_HVCI_KMCI_ENABLED 0x0400
+#define BK_CI_OPTION_HVCI_KMCI_AUDIT 0x0800
+#define BK_CI_OPTION_HVCI_KMCI_STRICT 0x1000
+#define BK_CI_OPTION_WHQL_ENFORCEMENT_ENABLED 0x4000
 
 extern ETW_CAPTURE *g_ActiveEtwCapture;
 

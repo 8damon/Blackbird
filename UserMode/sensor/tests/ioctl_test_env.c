@@ -1,4 +1,4 @@
-#include "blackbird_ioctl_test_internal.h"
+#include "ioctl_test_internal.h"
 BOOL EnvFlagEnabled(_In_z_ const char *Name, _In_ BOOL DefaultValue)
 {
     char value[16];

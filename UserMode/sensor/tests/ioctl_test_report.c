@@ -1,4 +1,4 @@
-#include "blackbird_ioctl_test_internal.h"
+#include "ioctl_test_internal.h"
 
 static unsigned __int64 SuiteReadCycles(_In_ const SUITE_RESULTS *Results)
 {
@@ -13,34 +13,34 @@ static unsigned __int64 SuiteReadCycles(_In_ const SUITE_RESULTS *Results)
     return 0;
 }
 
-typedef NTSTATUS(NTAPI *BLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_FN)(_In_ SYSTEM_INFORMATION_CLASS SystemInformationClass,
-                                                                  _Out_writes_bytes_opt_(SystemInformationLength)
-                                                                      PVOID SystemInformation,
-                                                                  _In_ ULONG SystemInformationLength,
-                                                                  _Out_opt_ PULONG ReturnLength);
+typedef NTSTATUS(NTAPI *BK_NT_QUERY_SYSTEM_INFORMATION_FN)(_In_ SYSTEM_INFORMATION_CLASS SystemInformationClass,
+                                                           _Out_writes_bytes_opt_(SystemInformationLength)
+                                                               PVOID SystemInformation,
+                                                           _In_ ULONG SystemInformationLength,
+                                                           _Out_opt_ PULONG ReturnLength);
 
-typedef NTSTATUS(NTAPI *BLACKBIRD_RTL_GET_VERSION_FN)(_Inout_ PRTL_OSVERSIONINFOW VersionInformation);
+typedef NTSTATUS(NTAPI *BK_RTL_GET_VERSION_FN)(_Inout_ PRTL_OSVERSIONINFOW VersionInformation);
 
-typedef struct _BLACKBIRD_SYSTEM_CODEINTEGRITY_INFORMATION
+typedef struct _BK_SYSTEM_CODEINTEGRITY_INFORMATION
 {
     ULONG Length;
     ULONG CodeIntegrityOptions;
-} BLACKBIRD_SYSTEM_CODEINTEGRITY_INFORMATION;
+} BK_SYSTEM_CODEINTEGRITY_INFORMATION;
 
-typedef struct _BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION
+typedef struct _BK_SYSTEM_KERNEL_DEBUGGER_INFORMATION
 {
     BOOLEAN KernelDebuggerEnabled;
     BOOLEAN KernelDebuggerNotPresent;
-} BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION;
+} BK_SYSTEM_KERNEL_DEBUGGER_INFORMATION;
 
-#define BLACKBIRD_SHARED_USER_DATA_BASE ((ULONG_PTR)0x7FFE0000u)
-#define BLACKBIRD_SHARED_USER_DATA_KD_OFFSET 0x2D4u
+#define BK_SHARED_USER_DATA_BASE ((ULONG_PTR)0x7FFE0000u)
+#define BK_SHARED_USER_DATA_KD_OFFSET 0x2D4u
 
 BOOL QueryKernelDebuggerState(_Out_opt_ BOOLEAN *Enabled, _Out_opt_ BOOLEAN *NotPresent)
 {
-    BLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_FN ntQuerySystemInformation;
+    BK_NT_QUERY_SYSTEM_INFORMATION_FN ntQuerySystemInformation;
     HMODULE ntdll;
-    BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION kdInfo;
+    BK_SYSTEM_KERNEL_DEBUGGER_INFORMATION kdInfo;
     NTSTATUS status;
 
     if (Enabled != NULL)
@@ -58,16 +58,15 @@ BOOL QueryKernelDebuggerState(_Out_opt_ BOOLEAN *Enabled, _Out_opt_ BOOLEAN *Not
         return FALSE;
     }
 
-    ntQuerySystemInformation =
-        (BLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_FN)GetProcAddress(ntdll, "NtQuerySystemInformation");
+    ntQuerySystemInformation = (BK_NT_QUERY_SYSTEM_INFORMATION_FN)GetProcAddress(ntdll, "NtQuerySystemInformation");
     if (ntQuerySystemInformation == NULL)
     {
         return FALSE;
     }
 
     ZeroMemory(&kdInfo, sizeof(kdInfo));
-    status = ntQuerySystemInformation((SYSTEM_INFORMATION_CLASS)BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION_CLASS,
-                                      &kdInfo, sizeof(kdInfo), NULL);
+    status = ntQuerySystemInformation((SYSTEM_INFORMATION_CLASS)BK_SYSTEM_KERNEL_DEBUGGER_INFORMATION_CLASS, &kdInfo,
+                                      sizeof(kdInfo), NULL);
     if (!NT_SUCCESS(status))
     {
         return FALSE;
@@ -94,7 +93,7 @@ BOOL QuerySharedUserDataKernelDebuggerByte(_Out_ BYTE *Value)
         return FALSE;
     }
 
-    sharedKdByte = (const volatile BYTE *)(BLACKBIRD_SHARED_USER_DATA_BASE + BLACKBIRD_SHARED_USER_DATA_KD_OFFSET);
+    sharedKdByte = (const volatile BYTE *)(BK_SHARED_USER_DATA_BASE + BK_SHARED_USER_DATA_KD_OFFSET);
     *Value = *sharedKdByte;
     return TRUE;
 }
@@ -210,7 +209,7 @@ static char *SuiteDupString(_In_z_ const char *Text)
 
 static BOOL SuiteEnsureMetaCapacity(_Inout_ SUITE_RESULTS *Results)
 {
-    BLACKBIRD_REPORT_META *grown;
+    BK_REPORT_META *grown;
     size_t nextCapacity;
 
     if (Results == NULL)
@@ -224,13 +223,13 @@ static BOOL SuiteEnsureMetaCapacity(_Inout_ SUITE_RESULTS *Results)
     }
 
     nextCapacity = (Results->MetaCapacity == 0) ? 16 : (Results->MetaCapacity * 2);
-    grown = (BLACKBIRD_REPORT_META *)realloc(Results->Meta, nextCapacity * sizeof(BLACKBIRD_REPORT_META));
+    grown = (BK_REPORT_META *)realloc(Results->Meta, nextCapacity * sizeof(BK_REPORT_META));
     if (grown == NULL)
     {
         return FALSE;
     }
 
-    ZeroMemory(grown + Results->MetaCapacity, (nextCapacity - Results->MetaCapacity) * sizeof(BLACKBIRD_REPORT_META));
+    ZeroMemory(grown + Results->MetaCapacity, (nextCapacity - Results->MetaCapacity) * sizeof(BK_REPORT_META));
     Results->Meta = grown;
     Results->MetaCapacity = nextCapacity;
     return TRUE;
@@ -238,7 +237,7 @@ static BOOL SuiteEnsureMetaCapacity(_Inout_ SUITE_RESULTS *Results)
 
 static BOOL SuiteEnsureCheckCapacity(_Inout_ SUITE_RESULTS *Results)
 {
-    BLACKBIRD_REPORT_CHECK *grown;
+    BK_REPORT_CHECK *grown;
     size_t nextCapacity;
 
     if (Results == NULL)
@@ -252,20 +251,19 @@ static BOOL SuiteEnsureCheckCapacity(_Inout_ SUITE_RESULTS *Results)
     }
 
     nextCapacity = (Results->CheckCapacity == 0) ? 64 : (Results->CheckCapacity * 2);
-    grown = (BLACKBIRD_REPORT_CHECK *)realloc(Results->Checks, nextCapacity * sizeof(BLACKBIRD_REPORT_CHECK));
+    grown = (BK_REPORT_CHECK *)realloc(Results->Checks, nextCapacity * sizeof(BK_REPORT_CHECK));
     if (grown == NULL)
     {
         return FALSE;
     }
 
-    ZeroMemory(grown + Results->CheckCapacity,
-               (nextCapacity - Results->CheckCapacity) * sizeof(BLACKBIRD_REPORT_CHECK));
+    ZeroMemory(grown + Results->CheckCapacity, (nextCapacity - Results->CheckCapacity) * sizeof(BK_REPORT_CHECK));
     Results->Checks = grown;
     Results->CheckCapacity = nextCapacity;
     return TRUE;
 }
 
-static const char *SuiteCheckStatusText(_In_ BLACKBIRD_REPORT_CHECK_STATUS Status)
+static const char *SuiteCheckStatusText(_In_ BK_REPORT_CHECK_STATUS Status)
 {
     switch (Status)
     {
@@ -280,7 +278,7 @@ static const char *SuiteCheckStatusText(_In_ BLACKBIRD_REPORT_CHECK_STATUS Statu
     }
 }
 
-static INT SuiteCheckSortPriority(_In_ BLACKBIRD_REPORT_CHECK_STATUS Status)
+static INT SuiteCheckSortPriority(_In_ BK_REPORT_CHECK_STATUS Status)
 {
     switch (Status)
     {
@@ -297,8 +295,8 @@ static INT SuiteCheckSortPriority(_In_ BLACKBIRD_REPORT_CHECK_STATUS Status)
 
 static int __cdecl SuiteCompareChecks(_In_ const VOID *Left, _In_ const VOID *Right)
 {
-    const BLACKBIRD_REPORT_CHECK *a = (const BLACKBIRD_REPORT_CHECK *)Left;
-    const BLACKBIRD_REPORT_CHECK *b = (const BLACKBIRD_REPORT_CHECK *)Right;
+    const BK_REPORT_CHECK *a = (const BK_REPORT_CHECK *)Left;
+    const BK_REPORT_CHECK *b = (const BK_REPORT_CHECK *)Right;
     INT ap;
     INT bp;
 
@@ -320,10 +318,10 @@ static int __cdecl SuiteCompareChecks(_In_ const VOID *Left, _In_ const VOID *Ri
 }
 
 static BOOL SuiteBuildSortedChecks(_In_ const SUITE_RESULTS *Results,
-                                   _Outptr_result_buffer_(*OutCount) BLACKBIRD_REPORT_CHECK **OutChecks,
+                                   _Outptr_result_buffer_(*OutCount) BK_REPORT_CHECK **OutChecks,
                                    _Out_ size_t *OutCount)
 {
-    BLACKBIRD_REPORT_CHECK *sorted;
+    BK_REPORT_CHECK *sorted;
 
     if (Results == NULL || OutChecks == NULL || OutCount == NULL)
     {
@@ -337,14 +335,14 @@ static BOOL SuiteBuildSortedChecks(_In_ const SUITE_RESULTS *Results,
         return TRUE;
     }
 
-    sorted = (BLACKBIRD_REPORT_CHECK *)malloc(Results->CheckCount * sizeof(BLACKBIRD_REPORT_CHECK));
+    sorted = (BK_REPORT_CHECK *)malloc(Results->CheckCount * sizeof(BK_REPORT_CHECK));
     if (sorted == NULL)
     {
         return FALSE;
     }
 
-    (void)memcpy(sorted, Results->Checks, Results->CheckCount * sizeof(BLACKBIRD_REPORT_CHECK));
-    qsort(sorted, Results->CheckCount, sizeof(BLACKBIRD_REPORT_CHECK), SuiteCompareChecks);
+    (void)memcpy(sorted, Results->Checks, Results->CheckCount * sizeof(BK_REPORT_CHECK));
+    qsort(sorted, Results->CheckCount, sizeof(BK_REPORT_CHECK), SuiteCompareChecks);
 
     *OutChecks = sorted;
     *OutCount = Results->CheckCount;
@@ -399,7 +397,7 @@ static VOID SuiteLogMetaLine(_Inout_opt_ SUITE_RESULTS *Results, _In_z_ const ch
     Results->MetaCount += 1;
 }
 
-static VOID SuiteRecordCheck(_Inout_opt_ SUITE_RESULTS *Results, _In_ BLACKBIRD_REPORT_CHECK_STATUS Status,
+static VOID SuiteRecordCheck(_Inout_opt_ SUITE_RESULTS *Results, _In_ BK_REPORT_CHECK_STATUS Status,
                              _In_z_ const char *Text)
 {
     UINT32 id;
@@ -592,10 +590,10 @@ VOID LogEnvironmentBaseline(_Inout_ SUITE_RESULTS *Results)
     OSVERSIONINFOEXW osw;
     SYSTEM_INFO si;
     HMODULE ntdll;
-    BLACKBIRD_RTL_GET_VERSION_FN rtlGetVersion;
-    BLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_FN ntQuerySystemInformation;
-    BLACKBIRD_SYSTEM_CODEINTEGRITY_INFORMATION ci;
-    BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION kdInfo;
+    BK_RTL_GET_VERSION_FN rtlGetVersion;
+    BK_NT_QUERY_SYSTEM_INFORMATION_FN ntQuerySystemInformation;
+    BK_SYSTEM_CODEINTEGRITY_INFORMATION ci;
+    BK_SYSTEM_KERNEL_DEBUGGER_INFORMATION kdInfo;
     BYTE sharedKdByte = 0;
     char line[512];
     char arch[32];
@@ -634,10 +632,9 @@ VOID LogEnvironmentBaseline(_Inout_ SUITE_RESULTS *Results)
     }
 
     ntdll = GetModuleHandleW(L"ntdll.dll");
-    rtlGetVersion = (ntdll != NULL) ? (BLACKBIRD_RTL_GET_VERSION_FN)GetProcAddress(ntdll, "RtlGetVersion") : NULL;
+    rtlGetVersion = (ntdll != NULL) ? (BK_RTL_GET_VERSION_FN)GetProcAddress(ntdll, "RtlGetVersion") : NULL;
     ntQuerySystemInformation =
-        (ntdll != NULL) ? (BLACKBIRD_NT_QUERY_SYSTEM_INFORMATION_FN)GetProcAddress(ntdll, "NtQuerySystemInformation")
-                        : NULL;
+        (ntdll != NULL) ? (BK_NT_QUERY_SYSTEM_INFORMATION_FN)GetProcAddress(ntdll, "NtQuerySystemInformation") : NULL;
 
     if (rtlGetVersion != NULL && NT_SUCCESS(rtlGetVersion((PRTL_OSVERSIONINFOW)&osw)))
     {
@@ -672,23 +669,22 @@ VOID LogEnvironmentBaseline(_Inout_ SUITE_RESULTS *Results)
 
     if (ntQuerySystemInformation != NULL)
     {
-        status = ntQuerySystemInformation((SYSTEM_INFORMATION_CLASS)BLACKBIRD_SYSTEM_CODEINTEGRITY_INFORMATION_CLASS,
-                                          &ci, sizeof(ci), NULL);
+        status = ntQuerySystemInformation((SYSTEM_INFORMATION_CLASS)BK_SYSTEM_CODEINTEGRITY_INFORMATION_CLASS, &ci,
+                                          sizeof(ci), NULL);
         if (NT_SUCCESS(status))
         {
             (void)sprintf_s(line, RTL_NUMBER_OF(line),
                             "0x%08lX enabled %s testsigning %s umci %s hvci %s hvciAudit %s hvciStrict %s debug %s "
                             "flighting %s whqlEnforce %s",
-                            ci.CodeIntegrityOptions,
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_ENABLED) ? "yes" : "no",
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_TESTSIGN) ? "yes" : "no",
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_UMCI_ENABLED) ? "yes" : "no",
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_HVCI_KMCI_ENABLED) ? "yes" : "no",
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_HVCI_KMCI_AUDIT) ? "yes" : "no",
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_HVCI_KMCI_STRICT) ? "yes" : "no",
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_DEBUGMODE) ? "yes" : "no",
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_FLIGHTING) ? "yes" : "no",
-                            (ci.CodeIntegrityOptions & BLACKBIRD_CI_OPTION_WHQL_ENFORCEMENT_ENABLED) ? "yes" : "no");
+                            ci.CodeIntegrityOptions, (ci.CodeIntegrityOptions & BK_CI_OPTION_ENABLED) ? "yes" : "no",
+                            (ci.CodeIntegrityOptions & BK_CI_OPTION_TESTSIGN) ? "yes" : "no",
+                            (ci.CodeIntegrityOptions & BK_CI_OPTION_UMCI_ENABLED) ? "yes" : "no",
+                            (ci.CodeIntegrityOptions & BK_CI_OPTION_HVCI_KMCI_ENABLED) ? "yes" : "no",
+                            (ci.CodeIntegrityOptions & BK_CI_OPTION_HVCI_KMCI_AUDIT) ? "yes" : "no",
+                            (ci.CodeIntegrityOptions & BK_CI_OPTION_HVCI_KMCI_STRICT) ? "yes" : "no",
+                            (ci.CodeIntegrityOptions & BK_CI_OPTION_DEBUGMODE) ? "yes" : "no",
+                            (ci.CodeIntegrityOptions & BK_CI_OPTION_FLIGHTING) ? "yes" : "no",
+                            (ci.CodeIntegrityOptions & BK_CI_OPTION_WHQL_ENFORCEMENT_ENABLED) ? "yes" : "no");
             SuiteLogMetaLine(Results, "environmentCiOptions", line);
         }
         else
@@ -697,7 +693,7 @@ VOID LogEnvironmentBaseline(_Inout_ SUITE_RESULTS *Results)
             SuiteLogMetaLine(Results, "environmentCiOptions", line);
         }
 
-        status = ntQuerySystemInformation((SYSTEM_INFORMATION_CLASS)BLACKBIRD_SYSTEM_KERNEL_DEBUGGER_INFORMATION_CLASS,
+        status = ntQuerySystemInformation((SYSTEM_INFORMATION_CLASS)BK_SYSTEM_KERNEL_DEBUGGER_INFORMATION_CLASS,
                                           &kdInfo, sizeof(kdInfo), NULL);
         if (NT_SUCCESS(status))
         {
@@ -816,9 +812,9 @@ BOOL SuiteInitReport(_Inout_ SUITE_RESULTS *Results)
 }
 VOID SuiteCloseReport(_Inout_ SUITE_RESULTS *Results, _In_ DWORD Polls)
 {
-    BLACKBIRD_REPORT_CHECK *sortedChecks = NULL;
+    BK_REPORT_CHECK *sortedChecks = NULL;
     size_t sortedCount = 0;
-    const BLACKBIRD_REPORT_CHECK *checksForOutput;
+    const BK_REPORT_CHECK *checksForOutput;
     size_t checksForOutputCount;
     INT failed;
     CHAR summary[256];
@@ -887,8 +883,8 @@ VOID SuiteCloseReport(_Inout_ SUITE_RESULTS *Results, _In_ DWORD Polls)
 
     if (Results->HtmlReportPath[0] != '\0')
     {
-        htmlWritten = BLACKBIRDWriteHtmlReport(Results->HtmlReportPath, "BlackbirdTestSuite Report", Results->Meta,
-                                               Results->MetaCount, checksForOutput, checksForOutputCount);
+        htmlWritten = BkhtmlWriteReport(Results->HtmlReportPath, "BlackbirdTestSuite Report", Results->Meta,
+                                        Results->MetaCount, checksForOutput, checksForOutputCount);
         if (!htmlWritten)
         {
             printf("reportHtmlStatus=failed\n");

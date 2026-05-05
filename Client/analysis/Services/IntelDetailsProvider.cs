@@ -25,4 +25,3 @@ namespace BlackbirdInterface
         IntelScopeStatus GetIntelScopeStatus();
     }
 }
-

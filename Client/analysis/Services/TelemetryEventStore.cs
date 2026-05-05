@@ -22,19 +22,16 @@ namespace BlackbirdInterface
                     throw new ArgumentOutOfRangeException(nameof(index));
                 }
 
-                int remaining = index;
-                for (int i = 0; i < _chunks.Count; i += 1)
+                Chunk first = _chunks[0];
+                if (index < first.Count)
                 {
-                    Chunk chunk = _chunks[i];
-                    if (remaining < chunk.Count)
-                    {
-                        return chunk.Items[chunk.Start + remaining]!;
-                    }
-
-                    remaining -= chunk.Count;
+                    return first.Items[first.Start + index]!;
                 }
 
-                throw new ArgumentOutOfRangeException(nameof(index));
+                int remaining = index - first.Count;
+                int chunkIndex = 1 + (remaining / ChunkCapacity);
+                int chunkOffset = remaining % ChunkCapacity;
+                return _chunks[chunkIndex].Items[chunkOffset]!;
             }
         }
 
@@ -120,4 +117,3 @@ namespace BlackbirdInterface
         }
     }
 }
-

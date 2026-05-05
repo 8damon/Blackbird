@@ -2,24 +2,24 @@
 #include "..\core\tempus_debug.h"
 #include "intent_store.h"
 
-#define BLACKBIRD_CORRELATION_RING_SIZE 256
+#define BK_CORRELATION_RING_SIZE 256
 
-typedef struct _BLACKBIRD_INTENT_ENTRY
+typedef struct _BK_INTENT_ENTRY
 {
     UINT64 CallerPid;
     UINT64 TargetPid;
     UINT32 AccessMask;
     UINT32 IntentFlags;
     INT64 TimestampQpc;
-} BLACKBIRD_INTENT_ENTRY, *PBLACKBIRD_INTENT_ENTRY;
+} BK_INTENT_ENTRY, *PBK_INTENT_ENTRY;
 
-static BLACKBIRD_INTENT_ENTRY g_IntentRing[BLACKBIRD_CORRELATION_RING_SIZE];
+static BK_INTENT_ENTRY g_IntentRing[BK_CORRELATION_RING_SIZE];
 static volatile LONG g_IntentWriteIndex = -1;
 static KSPIN_LOCK g_IntentLock;
 static volatile LONG g_CorrelationInitialized = 0;
 static ULONGLONG g_QpcFrequency = 1;
 
-static UINT32 BLACKBIRDCorrelationQpcDeltaToMs(_In_ INT64 DeltaQpc)
+static UINT32 BkcorQpcDeltaToMs(_In_ INT64 DeltaQpc)
 {
     ULONGLONG deltaValue;
 
@@ -32,7 +32,7 @@ static UINT32 BLACKBIRDCorrelationQpcDeltaToMs(_In_ INT64 DeltaQpc)
     return (UINT32)((deltaValue * 1000ULL) / g_QpcFrequency);
 }
 
-static ULONGLONG BLACKBIRDCorrelationMsToQpc(_In_ UINT32 Ms)
+static ULONGLONG BkcorMsToQpc(_In_ UINT32 Ms)
 {
     ULONGLONG ticks;
 
@@ -50,7 +50,7 @@ static ULONGLONG BLACKBIRDCorrelationMsToQpc(_In_ UINT32 Ms)
 }
 
 NTSTATUS
-BLACKBIRDCorrelationInitialize(VOID)
+BkcorInitialize(VOID)
 {
     LARGE_INTEGER freq;
 
@@ -68,7 +68,7 @@ BLACKBIRDCorrelationInitialize(VOID)
     return STATUS_SUCCESS;
 }
 
-VOID BLACKBIRDCorrelationUninitialize(VOID)
+VOID BkcorUninitialize(VOID)
 {
     if (InterlockedExchange(&g_CorrelationInitialized, 0) == 0)
     {
@@ -79,25 +79,25 @@ VOID BLACKBIRDCorrelationUninitialize(VOID)
     InterlockedExchange(&g_IntentWriteIndex, -1);
 }
 
-VOID BLACKBIRDCorrelationRecordHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ ACCESS_MASK AccessMask,
-                                            _In_ UINT32 IntentFlags)
+VOID BkcorRecordHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ ACCESS_MASK AccessMask,
+                             _In_ UINT32 IntentFlags)
 {
-    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemCorrelation);
+    ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemCorrelation);
     LONG idx;
     KIRQL oldIrql;
     INT64 nowQpc;
 
     if (InterlockedCompareExchange(&g_CorrelationInitialized, 0, 0) == 0)
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemCorrelation, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemCorrelation, tempusStartQpc);
         return;
     }
 
     idx = InterlockedIncrement(&g_IntentWriteIndex);
-    idx = idx % BLACKBIRD_CORRELATION_RING_SIZE;
+    idx = idx % BK_CORRELATION_RING_SIZE;
     if (idx < 0)
     {
-        idx += BLACKBIRD_CORRELATION_RING_SIZE;
+        idx += BK_CORRELATION_RING_SIZE;
     }
 
     nowQpc = KeQueryPerformanceCounter(NULL).QuadPart;
@@ -111,15 +111,14 @@ VOID BLACKBIRDCorrelationRecordHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE T
     g_IntentRing[idx].TimestampQpc = nowQpc;
 
     KeReleaseSpinLock(&g_IntentLock, oldIrql);
-    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemCorrelation, tempusStartQpc);
+    BktmpLeave(BktmpSubsystemCorrelation, tempusStartQpc);
 }
 
 BOOLEAN
-BLACKBIRDCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ UINT32 WindowMs,
-                                      _Out_opt_ UINT32 *IntentFlags, _Out_opt_ UINT32 *AccessMask,
-                                      _Out_opt_ UINT32 *AgeMs)
+BkcorQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid, _In_ UINT32 WindowMs,
+                       _Out_opt_ UINT32 *IntentFlags, _Out_opt_ UINT32 *AccessMask, _Out_opt_ UINT32 *AgeMs)
 {
-    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemCorrelation);
+    ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemCorrelation);
     UINT64 caller = (UINT64)(ULONG_PTR)CallerPid;
     UINT64 target = (UINT64)(ULONG_PTR)TargetPid;
     INT64 nowQpc = KeQueryPerformanceCounter(NULL).QuadPart;
@@ -146,13 +145,13 @@ BLACKBIRDCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetP
 
     if (InterlockedCompareExchange(&g_CorrelationInitialized, 0, 0) == 0)
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemCorrelation, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemCorrelation, tempusStartQpc);
         return FALSE;
     }
 
-    windowQpc = BLACKBIRDCorrelationMsToQpc(WindowMs);
+    windowQpc = BkcorMsToQpc(WindowMs);
     KeAcquireSpinLock(&g_IntentLock, &oldIrql);
-    for (i = 0; i < BLACKBIRD_CORRELATION_RING_SIZE; ++i)
+    for (i = 0; i < BK_CORRELATION_RING_SIZE; ++i)
     {
         INT64 deltaQpc;
 
@@ -188,7 +187,7 @@ BLACKBIRDCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetP
 
     if (!found)
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemCorrelation, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemCorrelation, tempusStartQpc);
         return FALSE;
     }
 
@@ -202,17 +201,16 @@ BLACKBIRDCorrelationQueryRecentIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetP
     }
     if (AgeMs != NULL)
     {
-        *AgeMs = BLACKBIRDCorrelationQpcDeltaToMs(newestDeltaQpc);
+        *AgeMs = BkcorQpcDeltaToMs(newestDeltaQpc);
     }
-    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemCorrelation, tempusStartQpc);
+    BktmpLeave(BktmpSubsystemCorrelation, tempusStartQpc);
     return TRUE;
 }
 
 BOOLEAN
-BLACKBIRDCorrelationQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UINT32 WindowMs,
-                                               _In_ BOOLEAN PreferExternalCaller, _Out_opt_ HANDLE *CallerPid,
-                                               _Out_opt_ UINT32 *IntentFlags, _Out_opt_ UINT32 *AccessMask,
-                                               _Out_opt_ UINT32 *AgeMs)
+BkcorQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UINT32 WindowMs, _In_ BOOLEAN PreferExternalCaller,
+                                _Out_opt_ HANDLE *CallerPid, _Out_opt_ UINT32 *IntentFlags,
+                                _Out_opt_ UINT32 *AccessMask, _Out_opt_ UINT32 *AgeMs)
 {
     UINT64 target = (UINT64)(ULONG_PTR)TargetPid;
     INT64 nowQpc = KeQueryPerformanceCounter(NULL).QuadPart;
@@ -252,9 +250,9 @@ BLACKBIRDCorrelationQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UINT3
         return FALSE;
     }
 
-    windowQpc = BLACKBIRDCorrelationMsToQpc(WindowMs);
+    windowQpc = BkcorMsToQpc(WindowMs);
     KeAcquireSpinLock(&g_IntentLock, &oldIrql);
-    for (i = 0; i < BLACKBIRD_CORRELATION_RING_SIZE; ++i)
+    for (i = 0; i < BK_CORRELATION_RING_SIZE; ++i)
     {
         INT64 deltaQpc;
         BOOLEAN isExternal;
@@ -310,7 +308,7 @@ BLACKBIRDCorrelationQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UINT3
 
     if (selectedCaller != 0)
     {
-        for (i = 0; i < BLACKBIRD_CORRELATION_RING_SIZE; ++i)
+        for (i = 0; i < BK_CORRELATION_RING_SIZE; ++i)
         {
             INT64 deltaQpc;
 
@@ -364,13 +362,13 @@ BLACKBIRDCorrelationQueryRecentIntentForTarget(_In_ HANDLE TargetPid, _In_ UINT3
     }
     if (AgeMs != NULL)
     {
-        *AgeMs = BLACKBIRDCorrelationQpcDeltaToMs(newestDeltaQpc);
+        *AgeMs = BkcorQpcDeltaToMs(newestDeltaQpc);
     }
     return TRUE;
 }
 
 BOOLEAN
-BLACKBIRDCorrelationSelfCheck(VOID)
+BkcorSelfCheck(VOID)
 {
     return (InterlockedCompareExchange(&g_CorrelationInitialized, 0, 0) != 0);
 }

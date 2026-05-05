@@ -7,22 +7,22 @@
 #define TRACE_LEVEL_INFORMATION 4
 #endif
 
-#ifndef BLACKBIRD_MAX_DEEP_SAMPLE_BYTES
-#define BLACKBIRD_MAX_DEEP_SAMPLE_BYTES 64
+#ifndef BK_MAX_DEEP_SAMPLE_BYTES
+#define BK_MAX_DEEP_SAMPLE_BYTES 64
 #endif
 
-TRACELOGGING_DEFINE_PROVIDER(g_BlackbirdEtwProvider, "Blackbird.Kernel",
+TRACELOGGING_DEFINE_PROVIDER(g_BlackbirdEtwProvider, "BK.Kernel",
                              (0xd6c73f8a, 0x6ad8, 0x4f4b, 0xa3, 0x63, 0x3d, 0x2f, 0xa3, 0x1c, 0xd0, 0xe2));
 
 static volatile LONG g_EtwState = 0; // 0=stopped, 1=starting, 2=started
 
-static BOOLEAN BLACKBIRDEtwIsStarted(VOID)
+static BOOLEAN BketwIsStarted(VOID)
 {
     return (InterlockedCompareExchange(&g_EtwState, 0, 0) == 2);
 }
 
 NTSTATUS
-BLACKBIRDEtwInitialize(VOID)
+BketwInitialize(VOID)
 {
     NTSTATUS status;
     LONG prior;
@@ -48,7 +48,7 @@ BLACKBIRDEtwInitialize(VOID)
     return STATUS_SUCCESS;
 }
 
-VOID BLACKBIRDEtwUninitialize(VOID)
+VOID BketwUninitialize(VOID)
 {
     LONG prior = InterlockedExchange(&g_EtwState, 0);
     if (prior == 2)
@@ -58,32 +58,32 @@ VOID BLACKBIRDEtwUninitialize(VOID)
 }
 
 BOOLEAN
-BLACKBIRDEtwSelfCheck(VOID)
+BketwSelfCheck(VOID)
 {
-    return BLACKBIRDEtwIsStarted();
+    return BketwIsStarted();
 }
 
-VOID BLACKBIRDEtwLogHandleEvent(_In_z_ PCSTR EventClass, _In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
-                                _In_ ACCESS_MASK DesiredAccess, _In_ PVOID OriginAddress, _In_ ULONG OriginProtect,
-                                _In_ BOOLEAN ExecProtect, _In_ BOOLEAN FromNtdll, _In_ BOOLEAN FromExe,
-                                _In_opt_z_ PCWSTR OriginPath, _In_ ULONG FrameCount,
-                                _In_reads_opt_(FrameCount) PVOID const *Frames, _In_ NTSTATUS OpenProcessStatus,
-                                _In_ NTSTATUS BasicInfoStatus, _In_ NTSTATUS SectionNameStatus,
-                                _In_ UINT64 DeepAllocationBase, _In_ UINT64 DeepRegionSize,
-                                _In_ ULONG DeepRegionProtect, _In_ ULONG DeepRegionState, _In_ ULONG DeepRegionType,
-                                _In_ ULONG DeepSampleSize, _In_reads_bytes_opt_(DeepSampleSize) const UCHAR *DeepSample)
+VOID BketwLogHandleEvent(_In_z_ PCSTR EventClass, _In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
+                         _In_ ACCESS_MASK DesiredAccess, _In_ PVOID OriginAddress, _In_ ULONG OriginProtect,
+                         _In_ BOOLEAN ExecProtect, _In_ BOOLEAN FromNtdll, _In_ BOOLEAN FromExe,
+                         _In_opt_z_ PCWSTR OriginPath, _In_ ULONG FrameCount,
+                         _In_reads_opt_(FrameCount) PVOID const *Frames, _In_ NTSTATUS OpenProcessStatus,
+                         _In_ NTSTATUS BasicInfoStatus, _In_ NTSTATUS SectionNameStatus, _In_ UINT64 DeepAllocationBase,
+                         _In_ UINT64 DeepRegionSize, _In_ ULONG DeepRegionProtect, _In_ ULONG DeepRegionState,
+                         _In_ ULONG DeepRegionType, _In_ ULONG DeepSampleSize,
+                         _In_reads_bytes_opt_(DeepSampleSize) const UCHAR *DeepSample)
 {
-    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemEtw);
+    ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemEtw);
     PVOID safeFrames[8] = {0};
-    UCHAR safeDeepSample[BLACKBIRD_MAX_DEEP_SAMPLE_BYTES] = {0};
+    UCHAR safeDeepSample[BK_MAX_DEEP_SAMPLE_BYTES] = {0};
     ULONG safeFrameCount = 0;
     ULONG safeDeepSampleSize = 0;
     ULONG i;
     PCWSTR path;
 
-    if (!BLACKBIRDEtwIsStarted())
+    if (!BketwIsStarted())
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
         return;
     }
 
@@ -127,26 +127,24 @@ VOID BLACKBIRDEtwLogHandleEvent(_In_z_ PCSTR EventClass, _In_ HANDLE CallerPid, 
                       TraceLoggingHexUInt32(DeepRegionType, "deepRegionType"),
                       TraceLoggingUInt32(safeDeepSampleSize, "deepSampleSize"),
                       TraceLoggingBinary(safeDeepSample, safeDeepSampleSize, "deepSample"));
-    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+    BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
 }
 
-VOID BLACKBIRDEtwLogThreadEvent(_In_ HANDLE ProcessId, _In_ HANDLE ThreadId, _In_ HANDLE CreatorPid,
-                                _In_ PVOID StartAddress, _In_ PVOID ImageBase, _In_ SIZE_T ImageSize,
-                                _In_ BOOLEAN GotStart, _In_ BOOLEAN GotRange, _In_ BOOLEAN IsRemoteCreator,
-                                _In_ BOOLEAN OutsideMainImage, _In_ UINT32 CorrelationFlags,
-                                _In_ UINT32 CorrelationAccessMask, _In_ UINT32 CorrelationAgeMs,
-                                _In_ ULONG StartRegionProtect, _In_ ULONG StartRegionState, _In_ ULONG StartRegionType,
-                                _In_ NTSTATUS StartRegionStatus, _In_ ULONG WorkerFrameCount,
-                                _In_reads_opt_(WorkerFrameCount) PVOID const *WorkerFrames)
+VOID BketwLogThreadEvent(_In_ HANDLE ProcessId, _In_ HANDLE ThreadId, _In_ HANDLE CreatorPid, _In_ PVOID StartAddress,
+                         _In_ PVOID ImageBase, _In_ SIZE_T ImageSize, _In_ BOOLEAN GotStart, _In_ BOOLEAN GotRange,
+                         _In_ BOOLEAN IsRemoteCreator, _In_ BOOLEAN OutsideMainImage, _In_ UINT32 CorrelationFlags,
+                         _In_ UINT32 CorrelationAccessMask, _In_ UINT32 CorrelationAgeMs, _In_ ULONG StartRegionProtect,
+                         _In_ ULONG StartRegionState, _In_ ULONG StartRegionType, _In_ NTSTATUS StartRegionStatus,
+                         _In_ ULONG WorkerFrameCount, _In_reads_opt_(WorkerFrameCount) PVOID const *WorkerFrames)
 {
-    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemEtw);
+    ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemEtw);
     PVOID safeFrames[8] = {0};
     ULONG safeFrameCount = 0;
     ULONG i;
 
-    if (!BLACKBIRDEtwIsStarted())
+    if (!BketwIsStarted())
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
         return;
     }
 
@@ -179,18 +177,17 @@ VOID BLACKBIRDEtwLogThreadEvent(_In_ HANDLE ProcessId, _In_ HANDLE ThreadId, _In
                       TraceLoggingPointer(safeFrames[2], "stack2"), TraceLoggingPointer(safeFrames[3], "stack3"),
                       TraceLoggingPointer(safeFrames[4], "stack4"), TraceLoggingPointer(safeFrames[5], "stack5"),
                       TraceLoggingPointer(safeFrames[6], "stack6"), TraceLoggingPointer(safeFrames[7], "stack7"));
-    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+    BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
 }
 
-VOID BLACKBIRDEtwLogApcEvent(_In_z_ PCSTR EventClass, _In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
-                             _In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsDuplicateOperation,
-                             _In_ UINT32 CorrelationFlags, _In_ UINT32 CorrelationAccessMask,
-                             _In_ UINT32 CorrelationAgeMs)
+VOID BketwLogApcEvent(_In_z_ PCSTR EventClass, _In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
+                      _In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsDuplicateOperation, _In_ UINT32 CorrelationFlags,
+                      _In_ UINT32 CorrelationAccessMask, _In_ UINT32 CorrelationAgeMs)
 {
-    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemEtw);
-    if (!BLACKBIRDEtwIsStarted())
+    ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemEtw);
+    if (!BketwIsStarted())
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
         return;
     }
 
@@ -203,21 +200,21 @@ VOID BLACKBIRDEtwLogApcEvent(_In_z_ PCSTR EventClass, _In_ HANDLE CallerPid, _In
                       TraceLoggingHexUInt32(CorrelationFlags, "correlationFlags"),
                       TraceLoggingHexUInt32(CorrelationAccessMask, "correlationAccessMask"),
                       TraceLoggingUInt32(CorrelationAgeMs, "correlationAgeMs"));
-    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+    BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
 }
 
-VOID BLACKBIRDEtwLogProcessEvent(_In_ HANDLE ProcessId, _In_ HANDLE ParentProcessId, _In_ HANDLE CreatorProcessId,
-                                 _In_ HANDLE CreatorThreadId, _In_ ULONGLONG ProcessStartKey, _In_ ULONG SessionId,
-                                 _In_ BOOLEAN IsCreate, _In_ NTSTATUS CreateStatus, _In_opt_z_ PCWSTR ImagePath,
-                                 _In_opt_z_ PCWSTR CommandLine)
+VOID BketwLogProcessEvent(_In_ HANDLE ProcessId, _In_ HANDLE ParentProcessId, _In_ HANDLE CreatorProcessId,
+                          _In_ HANDLE CreatorThreadId, _In_ ULONGLONG ProcessStartKey, _In_ ULONG SessionId,
+                          _In_ BOOLEAN IsCreate, _In_ NTSTATUS CreateStatus, _In_opt_z_ PCWSTR ImagePath,
+                          _In_opt_z_ PCWSTR CommandLine)
 {
-    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemEtw);
+    ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemEtw);
     PCWSTR safeImagePath;
     PCWSTR safeCommandLine;
 
-    if (!BLACKBIRDEtwIsStarted())
+    if (!BketwIsStarted())
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
         return;
     }
 
@@ -233,19 +230,19 @@ VOID BLACKBIRDEtwLogProcessEvent(_In_ HANDLE ProcessId, _In_ HANDLE ParentProces
                       TraceLoggingHexUInt64(ProcessStartKey, "processStartKey"),
                       TraceLoggingUInt32(SessionId, "sessionId"), TraceLoggingWideString(safeImagePath, "imagePath"),
                       TraceLoggingWideString(safeCommandLine, "commandLine"));
-    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+    BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
 }
 
-VOID BLACKBIRDEtwLogImageLoadEvent(_In_ HANDLE ProcessId, _In_ PVOID ImageBase, _In_ SIZE_T ImageSize,
-                                   _In_ BOOLEAN IsSystemModeImage, _In_ BOOLEAN IsSignatureLevelKnown,
-                                   _In_ UCHAR SignatureLevel, _In_ UCHAR SignatureType, _In_opt_z_ PCWSTR ImagePath)
+VOID BketwLogImageLoadEvent(_In_ HANDLE ProcessId, _In_ PVOID ImageBase, _In_ SIZE_T ImageSize,
+                            _In_ BOOLEAN IsSystemModeImage, _In_ BOOLEAN IsSignatureLevelKnown,
+                            _In_ UCHAR SignatureLevel, _In_ UCHAR SignatureType, _In_opt_z_ PCWSTR ImagePath)
 {
-    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemEtw);
+    ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemEtw);
     PCWSTR safePath;
 
-    if (!BLACKBIRDEtwIsStarted())
+    if (!BketwIsStarted())
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
         return;
     }
 
@@ -259,21 +256,21 @@ VOID BLACKBIRDEtwLogImageLoadEvent(_In_ HANDLE ProcessId, _In_ PVOID ImageBase, 
                       TraceLoggingBool(IsSignatureLevelKnown, "isSignatureLevelKnown"),
                       TraceLoggingUInt8(SignatureLevel, "signatureLevel"),
                       TraceLoggingUInt8(SignatureType, "signatureType"), TraceLoggingWideString(safePath, "imagePath"));
-    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+    BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
 }
 
-VOID BLACKBIRDEtwLogRegistryEvent(_In_z_ PCSTR Operation, _In_ HANDLE ProcessId, _In_ ULONG SessionId,
-                                  _In_ ULONG NotifyClass, _In_ ULONG DataType, _In_ ULONG DataSize,
-                                  _In_ BOOLEAN IsHighValuePath, _In_opt_z_ PCWSTR KeyPath, _In_opt_z_ PCWSTR ValueName)
+VOID BketwLogRegistryEvent(_In_z_ PCSTR Operation, _In_ HANDLE ProcessId, _In_ ULONG SessionId, _In_ ULONG NotifyClass,
+                           _In_ ULONG DataType, _In_ ULONG DataSize, _In_ BOOLEAN IsHighValuePath,
+                           _In_opt_z_ PCWSTR KeyPath, _In_opt_z_ PCWSTR ValueName)
 {
-    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemEtw);
+    ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemEtw);
     PCSTR safeOperation;
     PCWSTR safeKeyPath;
     PCWSTR safeValueName;
 
-    if (!BLACKBIRDEtwIsStarted())
+    if (!BketwIsStarted())
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
         return;
     }
 
@@ -288,21 +285,20 @@ VOID BLACKBIRDEtwLogRegistryEvent(_In_z_ PCSTR Operation, _In_ HANDLE ProcessId,
         TraceLoggingUInt32(NotifyClass, "notifyClass"), TraceLoggingUInt32(DataType, "dataType"),
         TraceLoggingUInt32(DataSize, "dataSize"), TraceLoggingBool(IsHighValuePath, "isHighValuePath"),
         TraceLoggingWideString(safeKeyPath, "keyPath"), TraceLoggingWideString(safeValueName, "valueName"));
-    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+    BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
 }
 
-VOID BLACKBIRDEtwLogDetectionEvent(_In_z_ PCSTR DetectionName, _In_ ULONG Severity, _In_ HANDLE ProcessId,
-                                   _In_ HANDLE TargetPid, _In_ UINT32 CorrelationFlags,
-                                   _In_ UINT32 CorrelationAccessMask, _In_ UINT32 CorrelationAgeMs,
-                                   _In_opt_z_ PCWSTR Reason)
+VOID BketwLogDetectionEvent(_In_z_ PCSTR DetectionName, _In_ ULONG Severity, _In_ HANDLE ProcessId,
+                            _In_ HANDLE TargetPid, _In_ UINT32 CorrelationFlags, _In_ UINT32 CorrelationAccessMask,
+                            _In_ UINT32 CorrelationAgeMs, _In_opt_z_ PCWSTR Reason)
 {
-    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemEtw);
+    ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemEtw);
     PCSTR safeName;
     PCWSTR safeReason;
 
-    if (!BLACKBIRDEtwIsStarted())
+    if (!BketwIsStarted())
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
         return;
     }
 
@@ -317,17 +313,16 @@ VOID BLACKBIRDEtwLogDetectionEvent(_In_z_ PCSTR DetectionName, _In_ ULONG Severi
                       TraceLoggingHexUInt32(CorrelationAccessMask, "correlationAccessMask"),
                       TraceLoggingUInt32(CorrelationAgeMs, "correlationAgeMs"),
                       TraceLoggingWideString(safeReason, "reason"));
-    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+    BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
 }
 
-VOID BLACKBIRDEtwLogSystemInfoEvent(_In_ HANDLE CallerPid, _In_ HANDLE CallerTid, _In_ ULONG SystemInformationClass,
-                                    _In_ ULONG SystemInformationLength, _In_ ULONG ReturnLength,
-                                    _In_ NTSTATUS QueryStatus)
+VOID BketwLogSystemInfoEvent(_In_ HANDLE CallerPid, _In_ HANDLE CallerTid, _In_ ULONG SystemInformationClass,
+                             _In_ ULONG SystemInformationLength, _In_ ULONG ReturnLength, _In_ NTSTATUS QueryStatus)
 {
-    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemEtw);
-    if (!BLACKBIRDEtwIsStarted())
+    ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemEtw);
+    if (!BketwIsStarted())
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
         return;
     }
 
@@ -338,27 +333,53 @@ VOID BLACKBIRDEtwLogSystemInfoEvent(_In_ HANDLE CallerPid, _In_ HANDLE CallerTid
                       TraceLoggingUInt32(SystemInformationLength, "systemInformationLength"),
                       TraceLoggingUInt32(ReturnLength, "returnLength"),
                       TraceLoggingHexInt32((LONG)QueryStatus, "queryStatus"));
-    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+    BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
 }
 
-VOID BLACKBIRDEtwLogNtApiEvent(_In_z_ PCSTR ApiName, _In_ HANDLE CallerPid, _In_ HANDLE CallerTid, _In_ UINT64 Arg0,
-                               _In_ UINT64 Arg1, _In_ UINT64 Arg2, _In_ UINT64 Arg3, _In_ UINT64 Arg4, _In_ UINT64 Arg5,
-                               _In_ UINT64 Arg6, _In_ UINT64 Arg7, _In_ NTSTATUS CallStatus)
+VOID BketwLogQpcTimingEvent(_In_ HANDLE CallerPid, _In_ HANDLE CallerTid, _In_ UINT64 RawCounter,
+                            _In_ UINT64 VirtualCounter, _In_ UINT64 RawDelta, _In_ UINT64 VirtualDelta,
+                            _In_ INT64 CorrectionTicks, _In_ UINT32 SourceFlags, _In_ INT64 AutoBiasTicks,
+                            _In_ NTSTATUS QueryStatus)
 {
-    ULONGLONG tempusStartQpc = BLACKBIRDTempusEnter(BlackbirdTempusSubsystemEtw);
-    if (!BLACKBIRDEtwIsStarted())
+    ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemEtw);
+    if (!BketwIsStarted())
     {
-        BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+        BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
         return;
     }
 
-    TraceLoggingWrite(
-        g_BlackbirdEtwProvider, "NtApiTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
-        TraceLoggingString((ApiName != NULL) ? ApiName : "UNKNOWN", "api"),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerPid, "callerPid"),
-        TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerTid, "callerTid"), TraceLoggingHexUInt64(Arg0, "arg0"),
-        TraceLoggingHexUInt64(Arg1, "arg1"), TraceLoggingHexUInt64(Arg2, "arg2"), TraceLoggingHexUInt64(Arg3, "arg3"),
-        TraceLoggingHexUInt64(Arg4, "arg4"), TraceLoggingHexUInt64(Arg5, "arg5"), TraceLoggingHexUInt64(Arg6, "arg6"),
-        TraceLoggingHexUInt64(Arg7, "arg7"), TraceLoggingHexInt32((LONG)CallStatus, "status"));
-    BLACKBIRDTempusLeave(BlackbirdTempusSubsystemEtw, tempusStartQpc);
+    TraceLoggingWrite(g_BlackbirdEtwProvider, "QpcTimingTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerPid, "callerPid"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerTid, "callerTid"),
+                      TraceLoggingUInt64(RawCounter, "rawCounter"),
+                      TraceLoggingUInt64(VirtualCounter, "virtualCounter"), TraceLoggingUInt64(RawDelta, "rawDelta"),
+                      TraceLoggingUInt64(VirtualDelta, "virtualDelta"),
+                      TraceLoggingHexUInt64((UINT64)CorrectionTicks, "correctionTicks"),
+                      TraceLoggingHexUInt32(SourceFlags, "sourceFlags"),
+                      TraceLoggingHexUInt64((UINT64)AutoBiasTicks, "autoBiasTicks"),
+                      TraceLoggingHexInt32((LONG)QueryStatus, "queryStatus"));
+    BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
+}
+
+VOID BketwLogNtApiEvent(_In_z_ PCSTR ApiName, _In_ HANDLE CallerPid, _In_ HANDLE CallerTid, _In_ UINT64 Arg0,
+                        _In_ UINT64 Arg1, _In_ UINT64 Arg2, _In_ UINT64 Arg3, _In_ UINT64 Arg4, _In_ UINT64 Arg5,
+                        _In_ UINT64 Arg6, _In_ UINT64 Arg7, _In_ UINT32 ExecFlags, _In_ NTSTATUS CallStatus)
+{
+    ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemEtw);
+    if (!BketwIsStarted())
+    {
+        BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
+        return;
+    }
+
+    TraceLoggingWrite(g_BlackbirdEtwProvider, "NtApiTelemetry", TraceLoggingLevel(TRACE_LEVEL_INFORMATION),
+                      TraceLoggingString((ApiName != NULL) ? ApiName : "UNKNOWN", "api"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerPid, "callerPid"),
+                      TraceLoggingHexUInt64((ULONGLONG)(ULONG_PTR)CallerTid, "callerTid"),
+                      TraceLoggingHexUInt64(Arg0, "arg0"), TraceLoggingHexUInt64(Arg1, "arg1"),
+                      TraceLoggingHexUInt64(Arg2, "arg2"), TraceLoggingHexUInt64(Arg3, "arg3"),
+                      TraceLoggingHexUInt64(Arg4, "arg4"), TraceLoggingHexUInt64(Arg5, "arg5"),
+                      TraceLoggingHexUInt64(Arg6, "arg6"), TraceLoggingHexUInt64(Arg7, "arg7"),
+                      TraceLoggingHexUInt32(ExecFlags, "execFlags"), TraceLoggingHexInt32((LONG)CallStatus, "status"));
+    BktmpLeave(BktmpSubsystemEtw, tempusStartQpc);
 }

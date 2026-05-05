@@ -19,7 +19,7 @@
 static bool ShouldUnlinkModule() noexcept
 {
     char value[8]{};
-    DWORD read = GetEnvironmentVariableA("BLACKBIRD_HOOK_UNLINK", value, (DWORD)RTL_NUMBER_OF(value));
+    DWORD read = GetEnvironmentVariableA("BK_HOOK_UNLINK", value, (DWORD)RTL_NUMBER_OF(value));
     if (read == 0 || read >= RTL_NUMBER_OF(value))
     {
         return false;
@@ -31,7 +31,7 @@ static bool ShouldUnlinkModule() noexcept
 static bool ShouldPrepareLaunchGate() noexcept
 {
     char value[8]{};
-    DWORD read = GetEnvironmentVariableA("BLACKBIRD_HOOK_LAUNCH_GATE", value, (DWORD)RTL_NUMBER_OF(value));
+    DWORD read = GetEnvironmentVariableA("BK_HOOK_LAUNCH_GATE", value, (DWORD)RTL_NUMBER_OF(value));
     if (read == 0 || read >= RTL_NUMBER_OF(value))
     {
         return false;
@@ -63,8 +63,7 @@ static DWORD WINAPI BkDispatchFlightThread(LPVOID)
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
-        BkDbgLog("BkDispatchFlightThread: runtime thread exception=0x%08lX",
-                          (unsigned long)GetExceptionCode());
+        BkDbgLog("BkDispatchFlightThread: runtime thread exception=0x%08lX", (unsigned long)GetExceptionCode());
         return 0;
     }
 }

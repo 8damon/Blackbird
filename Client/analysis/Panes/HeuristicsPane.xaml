@@ -40,7 +40,7 @@
                       Height="24"
                       Margin="2,4,6,4"
                       VerticalAlignment="Center"
-                      Background="{DynamicResource HeuristicsHeaderBrush}"
+                      Background="{DynamicResource WinHeaderBrush}"
                       BorderBrush="{DynamicResource WinBorderBrush}"
                       Style="{StaticResource PaneFilterComboStyle}"
                       ItemContainerStyle="{StaticResource PaneFilterComboItemStyle}"
@@ -104,7 +104,15 @@
                           RowHeight="22"
                           ScrollViewer.VerticalScrollBarVisibility="Hidden"
                           ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                          MouseDoubleClick="HeuristicsGrid_MouseDoubleClick">
+                          MouseDoubleClick="HeuristicsGrid_MouseDoubleClick"
+                          PreviewMouseRightButtonDown="HeuristicsGrid_PreviewMouseRightButtonDown">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Inspect Group" Click="HeuristicsContextInspect_Click"/>
+                            <MenuItem Header="Copy Summary" Click="HeuristicsContextCopySummary_Click"/>
+                            <MenuItem Header="Copy Details" Click="HeuristicsContextCopyDetails_Click"/>
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
                     <DataGrid.RowStyle>
                         <Style TargetType="DataGridRow">
                             <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>

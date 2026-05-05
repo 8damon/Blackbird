@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 
 namespace BlackbirdInterface
 {
@@ -15,38 +16,38 @@ namespace BlackbirdInterface
         public event RoutedEventHandler? CloseRequested;
         public event RoutedEventHandler? InspectRequested;
 
-        private readonly BulkObservableCollection<GroupedEventRow> _items = new();
-        private readonly List<GroupedEventRow> _allItems = new();
-        private readonly Dictionary<string, GroupedEventRow> _byKey = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, GroupedEventRow> _visibleByKey = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, Dictionary<string, GroupedEventDetailRow>> _detailSigByGroupKey = new(StringComparer.Ordinal);
-        private int _totalRawCount;
-        private int _totalDetailRows;
+        private readonly GroupedEventPaneState _state = new();
         private string _operationFilter = "ALL";
         private string _searchFilter = string.Empty;
+        private int _focusedPid;
 
-        internal int ItemCount => _items.Count;
-        internal int TotalRawCount => _totalRawCount;
-        internal int DetailRowCount => _totalDetailRows;
+        public int FocusedPid
+        {
+            set {
+                _focusedPid = value;
+                ApplyFilters();
+            }
+        }
+
+        internal int ItemCount => _state.ItemCount;
+        internal int TotalRawCount => _state.TotalRawCount;
+        internal int DetailRowCount => _state.TotalDetailRows;
 
         public FilesystemPane()
         {
             InitializeComponent();
-            FilesystemGrid.ItemsSource = _items;
+            FilesystemGrid.ItemsSource = _state.VisibleItems;
 
-            OperationFilter.ItemsSource = new[]
-            {
-                "ALL",
-                "CREATE",
-                "READ",
-                "WRITE",
-                "CLOSE",
-                "CLEANUP",
-                "SET_INFORMATION",
-                "QUERY_INFORMATION",
-                "DIRECTORY_CONTROL",
-                "FS_CONTROL"
-            };
+            OperationFilter.ItemsSource = new[] { "ALL",
+                                                  "CREATE",
+                                                  "READ",
+                                                  "WRITE",
+                                                  "CLOSE",
+                                                  "CLEANUP",
+                                                  "SET_INFORMATION",
+                                                  "QUERY_INFORMATION",
+                                                  "DIRECTORY_CONTROL",
+                                                  "FS_CONTROL" };
             OperationFilter.SelectedIndex = 0;
 
             UpdateSummary();
@@ -71,6 +72,11 @@ namespace BlackbirdInterface
 
         private void PushFileEventCore(IoctlParsedEvent record)
         {
+            if (IsBlackbirdInternalFilesystemPath(record.FilePath))
+            {
+                return;
+            }
+
             DateTime now = DateTime.UtcNow;
             string operation = DescribeOperation(record.FileOperation);
             string severity = DetermineSeverityLabel(record);
@@ -89,17 +95,16 @@ namespace BlackbirdInterface
 
             string key = $"{record.FileProcessPid}|{operation}|{normalizedPath}";
             string detailSig = BuildDetailSignature(record);
-            _totalRawCount += 1;
+            _state.IncrementRawCount(1);
 
-            if (_byKey.TryGetValue(key, out GroupedEventRow? existing))
+            if (_state.TryGetRow(key, out GroupedEventRow? existing))
             {
                 existing.LastSeenUtc = now;
                 existing.Hits = Math.Max(1, existing.Hits + 1);
                 existing.Severity = PickHigherSeverity(existing.Severity, severity);
 
                 bool aggregated = false;
-                if (_detailSigByGroupKey.TryGetValue(key, out Dictionary<string, GroupedEventDetailRow>? sigMap) &&
-                    sigMap.TryGetValue(detailSig, out GroupedEventDetailRow? matchingDetail))
+                if (_state.TryGetDetail(key, detailSig, out GroupedEventDetailRow? matchingDetail))
                 {
                     matchingDetail.HitCount += 1;
                     matchingDetail.TimestampUtc = now;
@@ -109,44 +114,28 @@ namespace BlackbirdInterface
 
                 if (!aggregated)
                 {
-                    var newDetail = new GroupedEventDetailRow
-                    {
-                        TimestampUtc = now,
-                        Event = operation,
-                        Severity = severity,
-                        Detection = path,
-                        Source = "Kernel-IOCTL",
-                        Actor = actor,
-                        Target = path,
-                        ActorPid = record.FileProcessPid,
-                        TargetPid = 0,
-                        ActorToolTip = actorToolTip,
-                        ArgumentSummary = detailSig,
-                        HitCount = 1,
-                        Details = details
-                    };
+                    var newDetail = new GroupedEventDetailRow { TimestampUtc = now,
+                                                                Event = operation,
+                                                                Severity = severity,
+                                                                Detection = path,
+                                                                Source = "Kernel-IOCTL",
+                                                                Actor = actor,
+                                                                Target = path,
+                                                                ActorPid = record.FileProcessPid,
+                                                                TargetPid = 0,
+                                                                ActorToolTip = actorToolTip,
+                                                                ArgumentSummary = detailSig,
+                                                                HitCount = 1,
+                                                                Details = details };
                     existing.Details.Add(newDetail);
-                    _totalDetailRows += 1;
-
-                    if (!_detailSigByGroupKey.TryGetValue(key, out Dictionary<string, GroupedEventDetailRow>? map))
-                    {
-                        map = new Dictionary<string, GroupedEventDetailRow>(StringComparer.Ordinal);
-                        _detailSigByGroupKey[key] = map;
-                    }
-                    map[detailSig] = newDetail;
+                    _state.RegisterDetail(existing, newDetail);
 
                     if (existing.Details.Count > MaxDetailRowsPerGroup)
                     {
                         GroupedEventDetailRow evictedDetail = existing.Details[0];
                         existing.Details.RemoveAt(0);
-                        _totalDetailRows = Math.Max(0, _totalDetailRows - 1);
-                        if (!string.IsNullOrEmpty(evictedDetail.ArgumentSummary) &&
-                            _detailSigByGroupKey.TryGetValue(key, out Dictionary<string, GroupedEventDetailRow>? evictMap) &&
-                            evictMap.TryGetValue(evictedDetail.ArgumentSummary, out GroupedEventDetailRow? mapped) &&
-                            ReferenceEquals(mapped, evictedDetail))
-                        {
-                            evictMap.Remove(evictedDetail.ArgumentSummary);
-                        }
+                        _state.ReplaceDetailCount(_state.TotalDetailRows - 1);
+                        _state.RemoveDetailReference(key, evictedDetail);
                     }
                 }
 
@@ -154,86 +143,38 @@ namespace BlackbirdInterface
             }
             else
             {
-                var row = new GroupedEventRow
-                {
-                    GroupKey = key,
-                    LastSeenUtc = now,
-                    Event = operation,
-                    Severity = severity,
-                    Detection = path,
-                    Hits = 1,
-                    Details =
-                    {
-                        new GroupedEventDetailRow
-                        {
-                            TimestampUtc = now,
-                            Event = operation,
-                            Severity = severity,
-                            Detection = path,
-                            Source = "Kernel-IOCTL",
-                            Actor = actor,
-                            Target = path,
-                            ActorPid = record.FileProcessPid,
-                            TargetPid = 0,
-                            ActorToolTip = actorToolTip,
-                            ArgumentSummary = detailSig,
-                            HitCount = 1,
-                            Details = details
-                        }
-                    }
-                };
-                _allItems.Add(row);
-                _byKey[key] = row;
-                _detailSigByGroupKey[key] = new Dictionary<string, GroupedEventDetailRow>(StringComparer.Ordinal)
-                {
-                    [detailSig] = row.Details[0]
-                };
-                _totalDetailRows += row.Details.Count;
+                var row = new GroupedEventRow { GroupKey = key,
+                                                LastSeenUtc = now,
+                                                Event = operation,
+                                                Severity = severity,
+                                                Detection = path,
+                                                Hits = 1,
+                                                Details = { new GroupedEventDetailRow {
+                                                    TimestampUtc = now, Event = operation, Severity = severity,
+                                                    Detection = path, Source = "Kernel-IOCTL", Actor = actor,
+                                                    Target = path, ActorPid = record.FileProcessPid, TargetPid = 0,
+                                                    ActorToolTip = actorToolTip, ArgumentSummary = detailSig,
+                                                    HitCount = 1, Details = details
+                                                } } };
+                _state.TrackRow(row);
                 SyncVisibleRow(row);
             }
 
-            while (_allItems.Count > MaxGroupCount)
-            {
-                GroupedEventRow evicted = _allItems[0];
-                string evictKey = evicted.GroupKey;
-                _allItems.RemoveAt(0);
-                _byKey.Remove(evictKey);
-                _detailSigByGroupKey.Remove(evictKey);
-                _totalDetailRows = Math.Max(0, _totalDetailRows - evicted.Details.Count);
-                if (_visibleByKey.Remove(evictKey))
-                {
-                    _items.Remove(evicted);
-                }
-            }
+            _state.EvictOverflow(MaxGroupCount);
         }
 
-        internal IReadOnlyList<GroupedEventRow> SnapshotItems()
-            => _allItems.Select(x => x.Clone()).ToList();
+        internal IReadOnlyList<GroupedEventRow> SnapshotItems() => _state.SnapshotItems();
 
-        internal GroupedEventRow? GetSelectedGroupClone()
-            => (FilesystemGrid.SelectedItem as GroupedEventRow)?.Clone();
+        internal GroupedEventRow? GetSelectedGroupClone() => _state.GetSelectedGroupClone(FilesystemGrid.SelectedItem);
 
         internal void LoadHistory(IEnumerable<GroupedEventRow> groups)
         {
-            _items.Clear();
-            _allItems.Clear();
-            _byKey.Clear();
-            _visibleByKey.Clear();
-            _detailSigByGroupKey.Clear();
-            _totalRawCount = 0;
-            _totalDetailRows = 0;
-
-            foreach (GroupedEventRow source in groups)
-            {
-                GroupedEventRow clone = source.Clone();
-                clone.Hits = Math.Max(1, clone.Hits);
-                clone.Details = clone.Details.OrderBy(x => x.TimestampUtc).ToList();
-                _allItems.Add(clone);
-                _byKey[clone.GroupKey] = clone;
-                _totalRawCount += clone.Hits;
-                _totalDetailRows += clone.Details.Count;
-                RebuildDetailSigMap(clone);
-            }
+            _state.LoadHistory(groups, clone =>
+                                       {
+                                           clone.Hits = Math.Max(1, clone.Hits);
+                                           clone.Details = clone.Details.OrderBy(x => x.TimestampUtc).ToList();
+                                           return clone;
+                                       });
 
             ApplyFilters();
             UpdateSummary();
@@ -242,13 +183,7 @@ namespace BlackbirdInterface
 
         internal void ClearAll()
         {
-            _items.Clear();
-            _allItems.Clear();
-            _byKey.Clear();
-            _visibleByKey.Clear();
-            _detailSigByGroupKey.Clear();
-            _totalRawCount = 0;
-            _totalDetailRows = 0;
+            _state.Clear();
             UpdateSummary();
             UpdateNoDataOverlay();
         }
@@ -256,85 +191,30 @@ namespace BlackbirdInterface
         internal void TrimDetailPayload(int keepPerGroup)
         {
             int keep = Math.Max(1, keepPerGroup);
-            for (int i = 0; i < _allItems.Count; i += 1)
-            {
-                GroupedEventRow row = _allItems[i];
-                if (row.Details.Count <= keep)
-                {
-                    continue;
-                }
-
-                int originalCount = row.Details.Count;
-                row.Details = GroupedEventCompaction.SelectImportantDetails(row.Details, keep);
-                _totalDetailRows -= Math.Max(0, originalCount - row.Details.Count);
-                _byKey[row.GroupKey] = row;
-                RebuildDetailSigMap(row);
-            }
+            _state.TrimDetailPayload(keep);
             ApplyFilters();
-        }
-
-        private void RebuildDetailSigMap(GroupedEventRow row)
-        {
-            _detailSigByGroupKey.Remove(row.GroupKey);
-            var map = new Dictionary<string, GroupedEventDetailRow>(StringComparer.Ordinal);
-            foreach (GroupedEventDetailRow detail in row.Details)
-            {
-                if (!string.IsNullOrEmpty(detail.ArgumentSummary))
-                {
-                    map[detail.ArgumentSummary] = detail;
-                }
-            }
-
-            if (map.Count > 0)
-            {
-                _detailSigByGroupKey[row.GroupKey] = map;
-            }
         }
 
         private void ApplyFilters()
         {
-            var visibleItems = new List<GroupedEventRow>();
-            _visibleByKey.Clear();
-            foreach (GroupedEventRow row in _allItems)
-            {
-                if (!MatchesFilters(row))
-                {
-                    continue;
-                }
-
-                visibleItems.Add(row);
-                _visibleByKey[row.GroupKey] = row;
-            }
-
-            _items.ReplaceAll(visibleItems);
+            _state.ApplyFilter(MatchesFilters);
         }
 
-        private void SyncVisibleRow(GroupedEventRow row)
-        {
-            bool matches = MatchesFilters(row);
-            bool isVisible = _visibleByKey.ContainsKey(row.GroupKey);
-
-            if (matches)
-            {
-                if (!isVisible)
-                {
-                    _items.Add(row);
-                    _visibleByKey[row.GroupKey] = row;
-                }
-                return;
-            }
-
-            if (!isVisible)
-            {
-                return;
-            }
-
-            _visibleByKey.Remove(row.GroupKey);
-            _items.Remove(row);
-        }
+        private void SyncVisibleRow(GroupedEventRow row) => _state.SyncVisibleRow(row, MatchesFilters);
 
         private bool MatchesFilters(GroupedEventRow row)
         {
+            if (IsBlackbirdInternalFilesystemPath(row.Detection) ||
+                row.Details.Any(static detail => IsBlackbirdInternalFilesystemPath(detail.Detection) ||
+                                                 IsBlackbirdInternalFilesystemPath(detail.Target)))
+            {
+                return false;
+            }
+
+            if (_focusedPid != 0 &&
+                !row.Details.Any(d => d.ActorPid == (uint)_focusedPid || d.TargetPid == (uint)_focusedPid))
+                return false;
+
             if (!string.Equals(_operationFilter, "ALL", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(row.Event, _operationFilter, StringComparison.OrdinalIgnoreCase))
             {
@@ -346,8 +226,7 @@ namespace BlackbirdInterface
                 return true;
             }
 
-            if (ContainsIgnoreCase(row.Event, _searchFilter) ||
-                ContainsIgnoreCase(row.Severity, _searchFilter) ||
+            if (ContainsIgnoreCase(row.Event, _searchFilter) || ContainsIgnoreCase(row.Severity, _searchFilter) ||
                 ContainsIgnoreCase(row.Detection, _searchFilter))
             {
                 return true;
@@ -381,7 +260,7 @@ namespace BlackbirdInterface
                 return;
             }
 
-            SummaryBlock.Text = $"Shown {_items.Count}/{_allItems.Count} | Events {_totalRawCount}";
+            SummaryBlock.Text = $"Shown {_state.ItemCount}/{_state.AllItems.Count} | Events {_state.TotalRawCount}";
         }
 
         private void UpdateNoDataOverlay()
@@ -391,32 +270,28 @@ namespace BlackbirdInterface
                 return;
             }
 
-            NoDataOverlay.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            NoDataOverlay.Visibility = _state.ItemCount == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private static string DescribeOperation(uint operation)
         {
-            return operation switch
-            {
-                BlackbirdNative.FileOperationCreate => "CREATE",
-                BlackbirdNative.FileOperationRead => "READ",
-                BlackbirdNative.FileOperationWrite => "WRITE",
-                BlackbirdNative.FileOperationClose => "CLOSE",
-                BlackbirdNative.FileOperationCleanup => "CLEANUP",
-                BlackbirdNative.FileOperationSetInformation => "SET_INFORMATION",
-                BlackbirdNative.FileOperationQueryInformation => "QUERY_INFORMATION",
-                BlackbirdNative.FileOperationDirectoryControl => "DIRECTORY_CONTROL",
-                BlackbirdNative.FileOperationFsControl => "FS_CONTROL",
-                _ => "UNKNOWN"
-            };
+            return operation switch { BlackbirdNative.FileOperationCreate => "CREATE",
+                                      BlackbirdNative.FileOperationRead => "READ",
+                                      BlackbirdNative.FileOperationWrite => "WRITE",
+                                      BlackbirdNative.FileOperationClose => "CLOSE",
+                                      BlackbirdNative.FileOperationCleanup => "CLEANUP",
+                                      BlackbirdNative.FileOperationSetInformation => "SET_INFORMATION",
+                                      BlackbirdNative.FileOperationQueryInformation => "QUERY_INFORMATION",
+                                      BlackbirdNative.FileOperationDirectoryControl => "DIRECTORY_CONTROL",
+                                      BlackbirdNative.FileOperationFsControl => "FS_CONTROL",
+                                      _ => "UNKNOWN" };
         }
 
         private static string DetermineSeverityLabel(IoctlParsedEvent record)
         {
-            bool isWriteLike =
-                record.FileOperation == BlackbirdNative.FileOperationWrite ||
-                record.FileOperation == BlackbirdNative.FileOperationSetInformation ||
-                record.FileOperation == BlackbirdNative.FileOperationFsControl;
+            bool isWriteLike = record.FileOperation == BlackbirdNative.FileOperationWrite ||
+                               record.FileOperation == BlackbirdNative.FileOperationSetInformation ||
+                               record.FileOperation == BlackbirdNative.FileOperationFsControl;
 
             if (record.FileStatus != 0 && record.FileStatus != 0x00000000UL)
             {
@@ -426,15 +301,28 @@ namespace BlackbirdInterface
             return isWriteLike ? "Medium" : "Low";
         }
 
-        private static string NormalizePathForKey(string path)
-            => string.IsNullOrWhiteSpace(path) ? "<unknown>" : path.Trim().ToUpperInvariant();
+        private static string NormalizePathForKey(string path) => string.IsNullOrWhiteSpace(path)
+                                                                      ? "<unknown>"
+                                                                      : path.Trim().ToUpperInvariant();
+
+        private static bool IsBlackbirdInternalFilesystemPath(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            string normalized = path.Replace('/', '\\').Trim();
+            return normalized.Contains("\\ProgramData\\Blackbird", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.EndsWith("\\controller.log", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.EndsWith("\\controller.log.1", StringComparison.OrdinalIgnoreCase);
+        }
 
         private static string BuildDetailSignature(IoctlParsedEvent record)
         {
-            return
-                $"{record.FileProcessPid}|{record.FileThreadId}|{record.FileOperation:X}|{record.FileStatus:X}|{record.FileMajorCode:X}|{record.FileMinorCode:X}|" +
-                $"{record.FileCreateDisposition:X}|{record.FileDesiredAccess:X}|{record.FileShareAccess:X}|{record.FileFlags:X}|" +
-                $"{record.FileObject:X}|{record.FileId:X}|{record.FileByteOffset:X}|{record.FileLength:X}|{record.FileInformation:X}|{record.FileIrpFlags:X8}";
+            return $"{record.FileProcessPid}|{record.FileThreadId}|{record.FileOperation:X}|{record.FileStatus:X}|{record.FileMajorCode:X}|{record.FileMinorCode:X}|" +
+                   $"{record.FileCreateDisposition:X}|{record.FileDesiredAccess:X}|{record.FileShareAccess:X}|{record.FileFlags:X}|" +
+                   $"{record.FileObject:X}|{record.FileId:X}|{record.FileByteOffset:X}|{record.FileLength:X}|{record.FileInformation:X}|{record.FileIrpFlags:X8}";
         }
 
         private static string PickHigherSeverity(string current, string incoming)
@@ -444,21 +332,17 @@ namespace BlackbirdInterface
 
         private static int SeverityRank(string severity)
         {
-            return severity?.Trim().ToUpperInvariant() switch
-            {
-                "CRITICAL" => 4,
-                "HIGH" => 3,
-                "MEDIUM" => 2,
-                "LOW" => 1,
-                _ => 0
-            };
+            return severity?.Trim().ToUpperInvariant() switch { "CRITICAL" => 4, "HIGH" => 3, "MEDIUM" => 2, "LOW" => 1,
+                                                                _ => 0 };
         }
 
         private void OperationFilter_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             _ = e;
             ComboBox? combo = sender as ComboBox ?? OperationFilter;
-            _operationFilter = ((combo?.SelectedItem as string) ?? ((combo?.SelectedItem as ComboBoxItem)?.Content as string) ?? "ALL").Trim();
+            _operationFilter =
+                ((combo?.SelectedItem as string) ?? ((combo?.SelectedItem as ComboBoxItem)?.Content as string) ?? "ALL")
+                    .Trim();
             if (_operationFilter.Length == 0)
             {
                 _operationFilter = "ALL";
@@ -484,15 +368,61 @@ namespace BlackbirdInterface
             _ = e;
             if (FilesystemGrid.SelectedItem is GroupedEventRow row)
             {
-                var detail = new SimpleEventDetailWindow("Filesystem Event", row.Clone())
-                {
-                    Owner = Window.GetWindow(this)
-                };
+                var detail =
+                    new SimpleEventDetailWindow("Filesystem Event", row.Clone()) { Owner = Window.GetWindow(this) };
                 detail.Show();
             }
         }
 
         private void FilesystemBtnInspect_Click(object sender, RoutedEventArgs e) => InspectRequested?.Invoke(this, e);
+
+        private void FilesystemContextInspect_Click(object sender, RoutedEventArgs e) => InspectRequested?.Invoke(this,
+                                                                                                                  e);
+
+        private void FilesystemContextCopySummary_Click(object sender, RoutedEventArgs e)
+        {
+            if (FilesystemGrid.SelectedItem is GroupedEventRow row)
+            {
+                Clipboard.SetText(
+                    $"{row.LastSeenUtc:O} {row.Event} {row.Severity} hits={row.Hits} {row.Detection} {row.ArgumentPreview}");
+            }
+        }
+
+        private void FilesystemContextCopyDetails_Click(object sender, RoutedEventArgs e)
+        {
+            if (FilesystemGrid.SelectedItem is GroupedEventRow row)
+            {
+                Clipboard.SetText(string.Join(Environment.NewLine, row.Details.Select(d => d.Details)));
+            }
+        }
+
+        private void FilesystemGrid_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            DataGridRow? row = FindAncestor<DataGridRow>(e.OriginalSource as DependencyObject);
+            if (row == null)
+            {
+                return;
+            }
+
+            row.IsSelected = true;
+            row.Focus();
+        }
+
+        private static T? FindAncestor<T>(DependencyObject? source)
+            where T : DependencyObject
+        {
+            while (source != null)
+            {
+                if (source is T match)
+                {
+                    return match;
+                }
+
+                source = VisualTreeHelper.GetParent(source);
+            }
+
+            return null;
+        }
 
         private void FilesystemBtnClose_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, e);
     }

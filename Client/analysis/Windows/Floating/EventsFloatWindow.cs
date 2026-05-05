@@ -13,8 +13,7 @@ namespace BlackbirdInterface
             Content = pane;
 
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
-            WindowThemeHelper.ApplyDarkTitleBar(this);
+            WindowThemeHelper.WireThemeAwareTitleBar(this);
         }
     }
 }
-

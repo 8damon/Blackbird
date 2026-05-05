@@ -3,7 +3,7 @@
   <assemblyIdentity
       type="win32"
       name="Blackbird.Platform.Component"
-      version="1.7.0.0"
+      version="2.0.0.0"
       processorArchitecture="*"/>
   <description>Blackbird Platform User-Mode Component</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">

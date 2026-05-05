@@ -1,50 +1,51 @@
 #include <winver.h>
 
-#ifndef BLACKBIRD_FILE_VERSION
-#define BLACKBIRD_FILE_VERSION 1,7,0,0
+#ifndef BK_FILE_VERSION
+#define BK_FILE_VERSION 2, 0, 0, 0
 #endif
 
-#ifndef BLACKBIRD_FILE_VERSION_STR
-#define BLACKBIRD_FILE_VERSION_STR "1.7.0.0"
+#ifndef BK_FILE_VERSION_STR
+#define BK_FILE_VERSION_STR "2.0.0.0"
 #endif
 
-#ifndef BLACKBIRD_PRODUCT_VERSION_STR
-#define BLACKBIRD_PRODUCT_VERSION_STR "1.7.0.0"
+#ifndef BK_PRODUCT_VERSION_STR
+#define BK_PRODUCT_VERSION_STR "2.0.0.0"
 #endif
 
-VS_VERSION_INFO VERSIONINFO
- FILEVERSION BLACKBIRD_FILE_VERSION
- PRODUCTVERSION BLACKBIRD_FILE_VERSION
- FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
-#ifdef _DEBUG
- FILEFLAGS VS_FF_DEBUG
-#else
- FILEFLAGS 0x0L
+#ifndef BK_FILE_DESCRIPTION
+#define BK_FILE_DESCRIPTION "Blackbird Platform User-Mode Component"
 #endif
- FILEOS VOS_NT_WINDOWS32
+
+#ifndef BK_INTERNAL_NAME
+#define BK_INTERNAL_NAME "Blackbird"
+#endif
+
+#ifndef BK_ORIGINAL_FILENAME
+#define BK_ORIGINAL_FILENAME "Blackbird.bin"
+#endif
+
+#ifndef BK_FILE_TYPE
 #ifdef _USRDLL
- FILETYPE VFT_DLL
+#define BK_FILE_TYPE VFT_DLL
 #else
- FILETYPE VFT_APP
+#define BK_FILE_TYPE VFT_APP
 #endif
- FILESUBTYPE 0x0L
-BEGIN
-    BLOCK "StringFileInfo"
-    BEGIN
-        BLOCK "040904B0"
-        BEGIN
-            VALUE "CompanyName", "TITAN Softwork Solutions"
-            VALUE "FileDescription", "Blackbird Platform User-Mode Component"
-            VALUE "FileVersion", BLACKBIRD_FILE_VERSION_STR
-            VALUE "InternalName", "Blackbird"
-            VALUE "OriginalFilename", "blackbird.bin"
-            VALUE "ProductName", "Blackbird Platform"
-            VALUE "ProductVersion", BLACKBIRD_PRODUCT_VERSION_STR
-        END
-    END
-    BLOCK "VarFileInfo"
-    BEGIN
-        VALUE "Translation", 0x0409, 1200
-    END
-END
+#endif
 
+#ifndef BK_FILE_SUBTYPE
+#define BK_FILE_SUBTYPE 0x0L
+#endif
+
+VS_VERSION_INFO VERSIONINFO FILEVERSION BK_FILE_VERSION PRODUCTVERSION BK_FILE_VERSION FILEFLAGSMASK
+    VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+        FILEFLAGS VS_FF_DEBUG
+#else
+        FILEFLAGS 0x0L
+#endif
+            FILEOS VOS_NT_WINDOWS32 FILETYPE BK_FILE_TYPE FILESUBTYPE BK_FILE_SUBTYPE BEGIN BLOCK
+    "StringFileInfo" BEGIN BLOCK "040904B0" BEGIN VALUE "CompanyName",
+    "TITAN Softwork Solutions" VALUE "FileDescription", BK_FILE_DESCRIPTION VALUE "FileVersion",
+    BK_FILE_VERSION_STR VALUE "InternalName", BK_INTERNAL_NAME VALUE "OriginalFilename",
+    BK_ORIGINAL_FILENAME VALUE "ProductName", "Blackbird Platform" VALUE "ProductVersion",
+    BK_PRODUCT_VERSION_STR END END BLOCK "VarFileInfo" BEGIN VALUE "Translation", 0x0409, 1200 END END

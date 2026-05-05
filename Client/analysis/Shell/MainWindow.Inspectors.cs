@@ -16,13 +16,9 @@ namespace BlackbirdInterface
                 return;
             }
 
-            TelemetryInspectorWindow.ShowForRows(
-                this,
-                "ETW Inspector",
-                "Grouped ETW uplink with per-occurrence drill-down",
-                snapshot,
-                EtwPaneHost.GetSelectedGroupClone(),
-                ResolveHandleEvidenceClone);
+            TelemetryInspectorWindow.ShowForRows(this, "ETW Inspector",
+                                                 "Grouped ETW uplink with per-occurrence drill-down", snapshot,
+                                                 EtwPaneHost.GetSelectedGroupClone(), ResolveHandleEvidenceClone);
         }
 
         private void OpenHeuristicsInspector()
@@ -34,12 +30,8 @@ namespace BlackbirdInterface
             }
 
             TelemetryInspectorWindow.ShowForRows(
-                this,
-                "Detection Chain",
-                "Grouped detections with embedded evidence and correlation context",
-                snapshot,
-                HeuristicsPaneHost.GetSelectedGroupClone(),
-                ResolveHandleEvidenceClone);
+                this, "Detection Chain", "Grouped detections with embedded evidence and correlation context", snapshot,
+                HeuristicsPaneHost.GetSelectedGroupClone(), ResolveHandleEvidenceClone);
         }
 
         private void OpenProcessRelationsInspector()
@@ -51,12 +43,8 @@ namespace BlackbirdInterface
             }
 
             TelemetryInspectorWindow.ShowForRows(
-                this,
-                "Process Relations",
-                "Cross-process relation browser with actor-target drill-down",
-                snapshot,
-                ProcessRelationsPaneHost.GetSelectedGroupClone(),
-                ResolveHandleEvidenceClone);
+                this, "Process Relations", "Cross-process relation browser with actor-target drill-down", snapshot,
+                ProcessRelationsPaneHost.GetSelectedGroupClone(), ResolveHandleEvidenceClone);
         }
 
         private void OpenFilesystemInspector()
@@ -68,12 +56,21 @@ namespace BlackbirdInterface
             }
 
             TelemetryInspectorWindow.ShowForRows(
-                this,
-                "Filesystem",
-                "Grouped filesystem activity with path and operation filters",
-                snapshot,
-                FilesystemPaneHost.GetSelectedGroupClone(),
-                ResolveHandleEvidenceClone);
+                this, "Filesystem", "Grouped filesystem activity with path and operation filters", snapshot,
+                FilesystemPaneHost.GetSelectedGroupClone(), ResolveHandleEvidenceClone);
+        }
+
+        private void OpenRegistryInspector()
+        {
+            var snapshot = RegistryPaneHost.SnapshotItems();
+            if (snapshot.Count == 0)
+            {
+                return;
+            }
+
+            TelemetryInspectorWindow.ShowForRows(
+                this, "Registry", "Grouped registry operations with key path and operation filters", snapshot,
+                RegistryPaneHost.GetSelectedGroupClone(), ResolveHandleEvidenceClone);
         }
 
         private void SelectApiViewRowByApiName(string apiName)
@@ -83,11 +80,11 @@ namespace BlackbirdInterface
                 return;
             }
 
-            ApiCallGraphMainRowView? match = _apiViewRows
-                .Where(x => string.Equals(x.ApiName, apiName, StringComparison.OrdinalIgnoreCase))
-                .OrderByDescending(x => x.Hits)
-                .ThenByDescending(x => x.LastSeen, StringComparer.Ordinal)
-                .FirstOrDefault();
+            ApiCallGraphMainRowView? match =
+                _apiViewRows.Where(x => string.Equals(x.ApiName, apiName, StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(x => x.Hits)
+                    .ThenByDescending(x => x.LastSeen, StringComparer.Ordinal)
+                    .FirstOrDefault();
             if (match == null)
             {
                 return;
@@ -115,17 +112,13 @@ namespace BlackbirdInterface
             if (ApiViewDataGrid?.SelectedItem is ApiCallGraphMainRowView selectedRow &&
                 string.Equals(selectedRow.ApiName, apiName, StringComparison.OrdinalIgnoreCase))
             {
-                selectedGroup = snapshot.FirstOrDefault(x => string.Equals(x.GroupKey, selectedRow.GraphKey, StringComparison.Ordinal));
+                selectedGroup = snapshot.FirstOrDefault(
+                    x => string.Equals(x.GroupKey, selectedRow.GraphKey, StringComparison.Ordinal));
             }
 
             string subtitle = $"{apiName} grouped by caller, target, thread, and sensor";
-            TelemetryInspectorWindow.ShowForRows(
-                this,
-                $"{apiName} Inspector",
-                subtitle,
-                snapshot,
-                selectedGroup,
-                ResolveHandleEvidenceClone);
+            TelemetryInspectorWindow.ShowForRows(this, $"{apiName} Inspector", subtitle, snapshot, selectedGroup,
+                                                 ResolveHandleEvidenceClone);
         }
 
         private List<GroupedEventRow> BuildApiInspectorSnapshot(string apiName)
@@ -143,36 +136,32 @@ namespace BlackbirdInterface
                 string decodedAction = _apiGraphActionByKey.TryGetValue(graphKey, out string? actionText) ? actionText : row.ApiName;
                 string detailText = _apiGraphDecodedByKey.TryGetValue(graphKey, out string? detail) ? detail : string.Empty;
 
-                var grouped = new GroupedEventRow
-                {
-                    GroupKey = graphKey,
-                    LastSeenUtc = row.LastSeenUtc,
-                    Event = row.ApiName,
-                    Severity = string.IsNullOrWhiteSpace(sensor) ? "API" : sensor,
-                    Detection = decodedAction,
-                    Hits = Math.Max(1, row.Hits)
+                var grouped = new GroupedEventRow {
+                    GroupKey = graphKey,       LastSeenUtc = row.LastSeenUtc,
+                    Event = row.ApiName,       Severity = string.IsNullOrWhiteSpace(sensor) ? "API" : sensor,
+                    Detection = decodedAction, Hits = Math.Max(1, row.Hits)
                 };
 
-                grouped.Details.Add(new GroupedEventDetailRow
-                {
-                    TimestampUtc = row.LastSeenUtc,
-                    Event = row.ApiName,
-                    Severity = string.IsNullOrWhiteSpace(sensor) ? "API" : sensor,
-                    Detection = decodedAction,
+                grouped.Details.Add(new GroupedEventDetailRow {
+                    TimestampUtc = row.LastSeenUtc, Event = row.ApiName,
+                    Severity = string.IsNullOrWhiteSpace(sensor) ? "API" : sensor, Detection = decodedAction,
                     Source = string.IsNullOrWhiteSpace(sensor) ? "API Graph" : sensor,
                     Actor = string.IsNullOrWhiteSpace(sourceName)
-                        ? $"pid:{row.SourcePid.ToString(CultureInfo.InvariantCulture)}"
-                        : sourceName,
+                                ? $"pid:{row.SourcePid.ToString(CultureInfo.InvariantCulture)}"
+                                : sourceName,
                     Target = string.IsNullOrWhiteSpace(targetName)
-                        ? (targetPid == 0 ? string.Empty : $"pid:{targetPid.ToString(CultureInfo.InvariantCulture)}")
-                        : targetName,
-                    ActorPid = row.SourcePid,
-                    TargetPid = targetPid,
-                    ActorToolTip = row.SourcePid == 0 ? string.Empty : $"PID {row.SourcePid.ToString(CultureInfo.InvariantCulture)}",
-                    TargetToolTip = targetPid == 0 ? string.Empty : $"PID {targetPid.ToString(CultureInfo.InvariantCulture)}",
-                    ArgumentSummary = row.ThreadId == 0
-                        ? string.Empty
-                        : $"thread={row.ThreadId.ToString(CultureInfo.InvariantCulture)} hits={Math.Max(1, row.Hits).ToString(CultureInfo.InvariantCulture)}",
+                                 ? (targetPid == 0 ? string.Empty
+                                                   : $"pid:{targetPid.ToString(CultureInfo.InvariantCulture)}")
+                                 : targetName,
+                    ActorPid = row.SourcePid, TargetPid = targetPid,
+                    ActorToolTip = row.SourcePid == 0 ? string.Empty
+                                                      : $"PID {row.SourcePid.ToString(CultureInfo.InvariantCulture)}",
+                    TargetToolTip =
+                        targetPid == 0 ? string.Empty : $"PID {targetPid.ToString(CultureInfo.InvariantCulture)}",
+                    ArgumentSummary =
+                        row.ThreadId == 0
+                            ? string.Empty
+                            : $"thread={row.ThreadId.ToString(CultureInfo.InvariantCulture)} hits={Math.Max(1, row.Hits).ToString(CultureInfo.InvariantCulture)}",
                     Details = detailText
                 });
 
@@ -198,4 +187,3 @@ namespace BlackbirdInterface
         }
     }
 }
-

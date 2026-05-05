@@ -2,6 +2,7 @@ using BlackbirdInterface.Capture;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
@@ -21,23 +22,36 @@ namespace BlackbirdInterface
         private Action<IoctlParsedEvent>? _sessionIoctlHandler;
         private Action<BlackbirdNative.BkIpcEtwEvent>? _sessionEtwHandler;
         private Action<BackendStatsView>? _sessionStatsHandler;
-        private Action<BackendIpcDiagnosticsView>? _sessionIpcDiagnosticsHandler;
         private Action<string>? _sessionStatusHandler;
+        private CaptureProjectionEngine? _captureProjection;
         private readonly Dictionary<int, List<GroupedEventRow>> _etwHistoryByPid = new();
         private readonly Dictionary<int, List<GroupedEventRow>> _heuristicsHistoryByPid = new();
         private readonly Dictionary<int, List<GroupedEventRow>> _filesystemHistoryByPid = new();
+        private readonly Dictionary<int, List<GroupedEventRow>> _registryHistoryByPid = new();
         private readonly Dictionary<int, List<GroupedEventRow>> _relationsHistoryByPid = new();
         private readonly Dictionary<int, List<ApiCallGraphRowSnapshot>> _apiGraphHistoryByPid = new();
+        private readonly Dictionary<int, List<ExtendedActivityRowSnapshot>> _extendedHistoryByPid = new();
         private readonly Dictionary<string, ApiCallGraphRowSnapshot> _apiGraphRowsByKey = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, ExtendedActivityRowSnapshot> _extendedRowsByKey =
+            new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _apiGraphReasonByKey = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _apiGraphActionByKey = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _apiGraphDecodedByKey = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _apiGraphFramesByKey = new(StringComparer.Ordinal);
         private readonly Dictionary<string, string> _apiGraphSensorByKey = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, BrokerEtwEventView> _apiGraphViewByKey = new(StringComparer.Ordinal);
         private readonly Dictionary<string, DateTime> _apiGraphTimelineLastEmitByKey = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, DateTime> _observedHookStackLastPersistByThread =
+            new(StringComparer.Ordinal);
+        private readonly Dictionary<string, DateTime> _threadStackFallbackLastCaptureByThread =
+            new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, byte> _pendingThreadStackFallbackCaptures =
+            new(StringComparer.Ordinal);
         private readonly Dictionary<ulong, ApiMemoryPageSignal> _apiMemorySignalsByPage = new();
+        private readonly Dictionary<uint, string> _targetExitReasonByPid = new();
+        private long _usermodeHookEventCount;
+        private long _kernelHookEventCount;
         private bool _apiGraphSnapshotDirty;
+        private bool _extendedViewSnapshotDirty;
 
         private BlackbirdPreflightReport? _lastPreflight;
         private string? _lastConnectivityIssueSignature;
@@ -48,6 +62,7 @@ namespace BlackbirdInterface
         private readonly AutoResetEvent _backendTransformSignal = new(false);
         private CancellationTokenSource? _backendTransformCts;
         private Task? _backendTransformTask;
+        private readonly ConcurrentDictionary<uint, byte> _pendingMonitoredProcessRegistrations = new();
         private long _pendingIoctlCount;
         private long _pendingEtwCount;
         private long _pendingStatusCount;
@@ -62,6 +77,8 @@ namespace BlackbirdInterface
         private const int MaxBackendStatusLinesPerTransformBatch = 64;
         private const int MaxBackendStatusLinesPerUiFlush = 32;
         private const int FilesystemTimelineClusterFlushCount = 600;
+        private const int MaxRecentImageFileAccesses = 2048;
+        private const int MaxRecentImageMapStates = 2048;
         private const int MaxPendingIoctlEvents = 30000;
         private const int MaxPendingEtwEvents = 18000;
         private const int MaxPendingUiWorkItems = 20000;
@@ -69,8 +86,22 @@ namespace BlackbirdInterface
         private const int IoctlPressureCriticalLimit = (MaxPendingIoctlEvents * 9) / 10;
         private const int EtwPressureSoftLimit = (MaxPendingEtwEvents * 7) / 10;
         private const int EtwPressureCriticalLimit = (MaxPendingEtwEvents * 9) / 10;
+        private const double MemoryHighEntropyBits = 7.15;
+        private const double MemoryEntropyFlipDeltaBits = 0.55;
+        private const uint MemoryEntropyMinSampleBytes = 32;
         private const uint CorrelationIntentMask = 0x00000007u;
-        private const uint HighSignalHandleMask = 0x00000800u | 0x00002000u;
+        private const uint HandleFlagExecProtect = 0x00000001u;
+        private const uint HandleFlagFromNtdll = 0x00000002u;
+        private const uint HandleFlagFromExe = 0x00000004u;
+        private const uint HandleFlagThreadObject = 0x00000010u;
+        private const uint HandleFlagDuplicateOperation = 0x00000020u;
+        private const uint HandleFlagStackValidated = 0x00000400u;
+        private const uint HandleFlagStackSpoofSuspect = 0x00000800u;
+        private const uint HandleFlagSyscallExportMatch = 0x00001000u;
+        private const uint HandleFlagSyscallExportMismatch = 0x00002000u;
+        private const uint HandleFlagTebStackBoundsValid = 0x00010000u;
+        private const uint HandleFlagFramesOutsideTebStack = 0x00020000u;
+        private const uint HighSignalHandleMask = HandleFlagStackSpoofSuspect | HandleFlagSyscallExportMismatch;
         private const uint ThreadHighSignalMask =
             0x00000004u | 0x00000008u | 0x00000010u | 0x00000020u | 0x00000040u | 0x00000080u | 0x00000100u;
         private static readonly TimeSpan BackendUiFlushBudget = TimeSpan.FromMilliseconds(5);
@@ -78,6 +109,49 @@ namespace BlackbirdInterface
         private static readonly TimeSpan FilesystemTimelineClusterWindow = TimeSpan.FromMilliseconds(15000);
         private static readonly TimeSpan FilesystemTimelineClusterIdleFlush = TimeSpan.FromMilliseconds(1500);
         private static readonly TimeSpan ApiTimelineEmissionWindow = TimeSpan.FromSeconds(5);
+        private static readonly TimeSpan ImageMapFileCorrelationWindow = TimeSpan.FromSeconds(4);
+        private static readonly TimeSpan ImageMapRepeatWindow = TimeSpan.FromSeconds(45);
+        private static readonly(string Token, string Label)[] VirtualizationArtifactPatterns = {
+            ("\\VBoxGuest", "VirtualBox guest driver"),
+            ("\\VBoxMouse", "VirtualBox mouse driver"),
+            ("\\VBoxMini", "VirtualBox mini redirector"),
+            ("\\VBoxSF", "VirtualBox shared folders"),
+            ("\\VBoxVideo", "VirtualBox video driver"),
+            ("VirtualBox Guest Additions", "VirtualBox guest additions"),
+            ("Oracle\\VirtualBox", "VirtualBox registry key"),
+            ("VBOX__", "VirtualBox ACPI firmware marker"),
+            ("VEN_80EE", "VirtualBox PCI vendor"),
+            ("DiskVBOX", "VirtualBox disk vendor"),
+            ("SystemBiosVersion\\VBOX", "VirtualBox BIOS marker"),
+            ("\\vmhgfs", "VMware shared folders"),
+            ("\\vmmouse", "VMware mouse driver"),
+            ("\\vmci", "VMware VMCI driver"),
+            ("\\vmx_svga", "VMware SVGA driver"),
+            ("VMware Tools", "VMware tools"),
+            ("VMware, Inc.", "VMware registry key"),
+            ("VEN_15AD", "VMware PCI vendor"),
+            ("DiskVMware", "VMware disk vendor"),
+            ("VMW0003", "VMware ACPI marker"),
+            ("qemu-ga", "QEMU guest agent"),
+            ("\\qemufwcfg", "QEMU firmware config driver"),
+            ("QEMU HARDDISK", "QEMU disk vendor"),
+            ("Red Hat VirtIO", "QEMU/VirtIO vendor"),
+            ("\\viostor", "VirtIO storage driver"),
+            ("\\viofs", "VirtIO filesystem driver"),
+            ("\\netkvm", "VirtIO network driver"),
+            ("\\balloon", "VirtIO balloon driver"),
+            ("VEN_1AF4", "VirtIO PCI vendor"),
+            ("\\xen", "Xen driver or registry key"),
+            ("XenTools", "Xen tools"),
+            ("VEN_5853", "Xen PCI vendor"),
+            ("\\prl_", "Parallels driver"),
+            ("Parallels Tools", "Parallels tools"),
+            ("VEN_1AB8", "Parallels PCI vendor"),
+            ("Hyper-V", "Hyper-V registry key"),
+            ("\\VMBus", "Hyper-V VMBus driver"),
+            ("VID_1414", "Microsoft Hyper-V vendor"),
+            ("SystemManufacturer\\Microsoft Corporation", "Microsoft virtual machine manufacturer")
+        };
         private string? _lastEtwTimelineSignature;
         private DateTime _lastEtwTimelineTimestampUtc;
         private readonly Dictionary<ulong, IoctlParsedEvent> _recentHandleEvidenceByPair = new();
@@ -87,63 +161,220 @@ namespace BlackbirdInterface
             _filesystemClusterSamplesByOperation = new(StringComparer.Ordinal);
         private readonly Dictionary<string, int> _crossProcWriteCountByPair = new(StringComparer.Ordinal);
         private readonly Dictionary<string, int> _crossProcRwxAllocCountByPair = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> _antiAnalysisCountByEvidence = new(StringComparer.OrdinalIgnoreCase);
+        private readonly object _imageMapCorrelationLock = new();
+        private readonly List<RecentImageFileAccess> _recentImageFileAccesses = new();
+        private readonly Dictionary<string, RecentImageMapState> _recentImageMapByPidPath =
+            new(StringComparer.OrdinalIgnoreCase);
+        private DateTime _lastImageMapCorrelationPruneUtc = DateTime.MinValue;
         private readonly Dictionary<uint, DateTime> _observedProcessStartUtcByPid = new();
         private readonly Dictionary<uint, ulong> _observedProcessStartKeyByPid = new();
         private readonly Dictionary<uint, uint> _observedInitialThreadIdByPid = new();
-        private readonly Dictionary<string, RegionLifecycleState> _regionLifecycleByIdentity = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, RegionLifecycleState> _regionLifecycleByIdentity =
+            new(StringComparer.Ordinal);
         private readonly Dictionary<string, ulong> _functionTableBaseByPointer = new(StringComparer.Ordinal);
         private volatile int _filterRootPid;
         private readonly ConcurrentDictionary<uint, byte> _filterTrackedPids = new();
+        private volatile int _focusedPid;
+        internal ObservableCollection<MonitoredProcessEntry> MonitoredProcesses { get; } = new();
+        private readonly HashSet<uint> _monitoredProcessSet = new();
         private int _filesystemClusterTotal;
         private DateTime _filesystemClusterWindowStartUtc = DateTime.MinValue;
         private DateTime _filesystemClusterLastSeenUtc = DateTime.MinValue;
+
+        public void SetFocusedPid(int pid)
+        {
+            _focusedPid = pid;
+            BroadcastFocusedPid(pid);
+            RefreshProcessSelectorBar();
+        }
+
+        private void BroadcastFocusedPid(int pid)
+        {
+            EtwPaneHost.FocusedPid = pid;
+            EventsPaneHost.FocusedPid = pid;
+            HeuristicsPaneHost.FocusedPid = pid;
+            FilesystemPaneHost.FocusedPid = pid;
+            ProcessRelationsPaneHost.FocusedPid = pid;
+        }
+
+        private void RefreshProcessSelectorBar()
+        {
+            ProcessSelectorBarPanel.Children.Clear();
+
+            /* "All" chip */
+            var allBtn =
+                new System.Windows.Controls.Button { Content = "All", Margin = new System.Windows.Thickness(2, 2, 2, 2),
+                                                     Padding = new System.Windows.Thickness(8, 2, 8, 2), FontSize = 11,
+                                                     Tag = 0 };
+            allBtn.Click += (_, __) => SetFocusedPid(0);
+            ProcessSelectorBarPanel.Children.Add(allBtn);
+
+            foreach (MonitoredProcessEntry entry in MonitoredProcesses)
+            {
+                var btn = new System.Windows.Controls.Button { Content = entry.Label,
+                                                               Margin = new System.Windows.Thickness(2, 2, 2, 2),
+                                                               Padding = new System.Windows.Thickness(8, 2, 8, 2),
+                                                               FontSize = 11,
+                                                               Tag = (int)entry.Pid,
+                                                               FontWeight = (_focusedPid == (int)entry.Pid)
+                                                                                ? System.Windows.FontWeights.Bold
+                                                                                : System.Windows.FontWeights.Normal };
+                var capturedPid = (int)entry.Pid;
+                btn.Click += (_, __) => SetFocusedPid(capturedPid);
+                ProcessSelectorBarPanel.Children.Add(btn);
+            }
+
+            ProcessSelectorBarBorder.Visibility =
+                MonitoredProcesses.Count > 1 ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+        }
+
+        private void TryRegisterMonitoredProcess(uint pid)
+        {
+            if (pid == 0 || _monitoredProcessSet.Contains(pid))
+                return;
+
+            _monitoredProcessSet.Add(pid);
+
+            string imageName = string.Empty;
+            try
+            {
+                imageName = ProcessIdentityResolver.Resolve(pid) ?? string.Empty;
+            }
+            catch
+            {
+            }
+
+            MonitoredProcesses.Add(
+                new MonitoredProcessEntry { Pid = pid, ImageName = imageName, FirstSeenUtc = DateTime.UtcNow });
+
+            RefreshProcessSelectorBar();
+        }
+
+        private void RefreshSubsystemSegmentationDiagnostics()
+        {
+            bool kernelHooksEnabled = _currentSession?.KernelHooksEnabled ?? _kernelHooksArmed;
+            bool usermodeHooksEnabled = _currentSession?.UseUsermodeHooks ?? false;
+            bool signatureIntelEnabled = _currentSession?.SignatureIntelEnabled ?? _signatureIntelEnabled;
+            bool memoryScanEnabled =
+                _currentSession?.SignatureIntelMemoryScanEnabled ?? _signatureIntelMemoryScanEnabled;
+            bool pageScanEnabled = _currentSession?.SignatureIntelPageScanEnabled ?? _signatureIntelPageScanEnabled;
+
+            if (!kernelHooksEnabled)
+            {
+                DiagnosticsState.SetValue("Kernel Hooks", "Disabled by operator");
+            }
+            else
+            {
+                string? kernelHooks = DiagnosticsState.GetValue("Kernel Hooks");
+                if (string.IsNullOrWhiteSpace(kernelHooks) ||
+                    kernelHooks.Contains("Disabled", StringComparison.OrdinalIgnoreCase) ||
+                    kernelHooks.Contains("Inactive", StringComparison.OrdinalIgnoreCase) ||
+                    kernelHooks.Contains("Awaiting", StringComparison.OrdinalIgnoreCase))
+                {
+                    DiagnosticsState.SetValue("Kernel Hooks", "Awaiting telemetry");
+                }
+            }
+
+            if (!usermodeHooksEnabled)
+            {
+                DiagnosticsState.SetValue("Usermode Hooks", "Disabled by operator");
+                DiagnosticsState.SetValue("Hook Integrity", "Disabled (no usermode hooks)");
+                DiagnosticsState.SetValue("AMSI Integrity", "Disabled (no usermode hooks)");
+            }
+            else
+            {
+                string? usermode = DiagnosticsState.GetValue("Usermode Hooks");
+                if (string.IsNullOrWhiteSpace(usermode) ||
+                    usermode.Contains("Inactive", StringComparison.OrdinalIgnoreCase) ||
+                    usermode.Contains("Disabled", StringComparison.OrdinalIgnoreCase))
+                {
+                    DiagnosticsState.SetValue("Usermode Hooks", "Awaiting hook-ready");
+                }
+
+                if (string.Equals(DiagnosticsState.GetValue("Hook Integrity"), "Disabled (no usermode hooks)",
+                                  StringComparison.OrdinalIgnoreCase))
+                {
+                    DiagnosticsState.SetValue("Hook Integrity", "Unknown");
+                }
+                if (string.Equals(DiagnosticsState.GetValue("AMSI Integrity"), "Disabled (no usermode hooks)",
+                                  StringComparison.OrdinalIgnoreCase))
+                {
+                    DiagnosticsState.SetValue("AMSI Integrity", "Unknown");
+                }
+            }
+
+            DiagnosticsState.SetValue(
+                "Signature Intel",
+                signatureIntelEnabled
+                    ? $"Enabled memory={(memoryScanEnabled ? "on" : "off")} page={(pageScanEnabled ? "on" : "off")} hash=on"
+                    : "Disabled by operator");
+        }
 
         private void InitializeBackendUi()
         {
             EtwPaneHost.ClearAll();
             HeuristicsPaneHost.ClearAll();
             FilesystemPaneHost.ClearAll();
+            RegistryPaneHost.ClearAll();
             ProcessRelationsPaneHost.ClearAll();
             _apiGraphRowsByKey.Clear();
+            _captureProjection = null;
+            _extendedRowsByKey.Clear();
             _apiGraphReasonByKey.Clear();
             _apiGraphActionByKey.Clear();
             _apiGraphDecodedByKey.Clear();
             _apiGraphFramesByKey.Clear();
             _apiGraphSensorByKey.Clear();
-            _apiGraphViewByKey.Clear();
             _apiGraphTimelineLastEmitByKey.Clear();
+            _observedHookStackLastPersistByThread.Clear();
+            _threadStackFallbackLastCaptureByThread.Clear();
+            _pendingThreadStackFallbackCaptures.Clear();
             _apiMemorySignalsByPage.Clear();
             _crossProcWriteCountByPair.Clear();
             _crossProcRwxAllocCountByPair.Clear();
+            _antiAnalysisCountByEvidence.Clear();
+            ResetImageMapCorrelationCaches();
             _observedProcessStartUtcByPid.Clear();
+            _targetExitReasonByPid.Clear();
+            _extendedViewRows.Clear();
+            _extendedComRows.Clear();
+            _extendedEtwRows.Clear();
+            _extendedJobRows.Clear();
+            _extendedYaraRows.Clear();
+            _extendedViewSnapshotDirty = false;
+            _extendedViewRefreshTimer.Stop();
+            if (ExtendedViewSummaryBlock != null)
+            {
+                ExtendedViewSummaryBlock.Text = "No extended activity yet";
+            }
             _observedProcessStartKeyByPid.Clear();
             _observedInitialThreadIdByPid.Clear();
             _regionLifecycleByIdentity.Clear();
             _functionTableBaseByPointer.Clear();
             PublishApiGraphSnapshot();
-            IpcUplinkPaneHost.SetInactive("No transport diagnostics yet",
-                                          "Enable the uplink and wait for the first transport sample.");
             ResetFilesystemTimelineCluster();
             ProcessRelationsPaneHost.SetRootPid(0);
             RefreshExplorerDataBadges();
             DiagnosticsState.SetValue("UI", "Initialized");
-            DiagnosticsState.SetValue("Kernel Hooks", "Awaiting telemetry");
-            DiagnosticsState.SetValue("Usermode Hooks", "Inactive");
             DiagnosticsState.SetValue("Operator Connection Established", "Disabled in analyst interface");
             DiagnosticsState.SetValue("Hook Integrity", "Unknown");
             DiagnosticsState.SetValue("AMSI Integrity", "Unknown");
             DiagnosticsState.SetValue("ETW Integrity", "Unknown");
             DiagnosticsState.SetValue("ETW Status", "Ready");
             DiagnosticsState.SetValue("API Graph", "patterns=0/0 visible=False");
+            RefreshSubsystemSegmentationDiagnostics();
         }
 
-        private void StartBackendForPid(int pid, bool useUsermodeHooks, bool stopExistingSession = true)
+        private void StartBackendForPid(int pid, bool useUsermodeHooks, bool stopExistingSession = true,
+                                        bool fastStopExistingSession = false)
         {
             BlackbirdBackendSession? preparedSession = null;
 
             if (stopExistingSession)
             {
-                StopBackendSession();
+                StopBackendSession(fastTeardown: fastStopExistingSession);
+                OutputCapture.Clear();
             }
             else
             {
@@ -170,20 +401,34 @@ namespace BlackbirdInterface
                 }
             }
 
-            _hasIpcUplinkData = false;
             _lastEtwTimelineSignature = null;
             _lastEtwTimelineTimestampUtc = DateTime.MinValue;
             ResetFilesystemTimelineCluster();
-            SetIpcUplinkExplorerDetails("Enable to inspect IPC internals", "Waiting for session diagnostics...",
-                                        hasData: false);
+            ResetImageMapCorrelationCaches();
 
             int generation = ++_backendGeneration;
             try
             {
                 _filterRootPid = pid;
+                _captureProjection = new CaptureProjectionEngine(pid, $"ui-{pid}", "BlackbirdInterface");
                 _filterTrackedPids.Clear();
                 _filterTrackedPids.TryAdd((uint)pid, 0);
+                _targetExitReasonByPid.Remove((uint)pid);
                 _observedProcessStartUtcByPid[(uint)pid] = DateTime.UtcNow;
+                MonitoredProcesses.Clear();
+                _monitoredProcessSet.Clear();
+                _focusedPid = 0;
+                BroadcastFocusedPid(0);
+                TryRegisterMonitoredProcess((uint)pid);
+                if (_currentSession != null)
+                {
+                    _currentSession.UseUsermodeHooks = useUsermodeHooks;
+                    _currentSession.KernelHooksEnabled = _kernelHooksArmed;
+                    _currentSession.SignatureIntelEnabled = _signatureIntelEnabled;
+                    _currentSession.SignatureIntelMemoryScanEnabled = _signatureIntelMemoryScanEnabled;
+                    _currentSession.SignatureIntelPageScanEnabled = _signatureIntelPageScanEnabled;
+                }
+                RefreshSubsystemSegmentationDiagnostics();
                 QueueSignatureIntelForRootPid(pid);
 
                 var session =
@@ -247,33 +492,11 @@ namespace BlackbirdInterface
                         }));
                 };
 
-                _sessionIpcDiagnosticsHandler = diag =>
-                {
-                    if (Dispatcher.HasShutdownStarted)
-                        return;
-                    Dispatcher.BeginInvoke(new Action(
-                        () =>
-                        {
-                            if (generation != _backendGeneration)
-                                return;
-                            diag.PendingIoctlUiQueue =
-                                (int)Math.Min(int.MaxValue, Math.Max(0, Interlocked.Read(ref _pendingIoctlCount)));
-                            diag.PendingEtwUiQueue =
-                                (int)Math.Min(int.MaxValue, Math.Max(0, Interlocked.Read(ref _pendingEtwCount)));
-                            diag.PendingStatusUiQueue =
-                                (int)Math.Min(int.MaxValue, Math.Max(0, Interlocked.Read(ref _pendingStatusCount) +
-                                                                            Interlocked.Read(ref _pendingUiWorkCount)));
-                            diag.DroppedIoctlForPressure = Interlocked.Read(ref _droppedIoctlForPressure);
-                            diag.DroppedEtwForPressure = Interlocked.Read(ref _droppedEtwForPressure);
-                            diag.DroppedUiWorkForPressure = Interlocked.Read(ref _droppedUiWorkForPressure);
-                            UpdateIpcUplinkExplorer(diag);
-                        }));
-                };
-
                 _sessionStatusHandler = text =>
                 {
                     if (generation != _backendGeneration)
                         return;
+                    _captureProjection?.ObserveStatus(text);
                     _pendingStatusLines.Enqueue($"[session pid={pid}] {text}");
                     Interlocked.Increment(ref _pendingStatusCount);
                     _backendTransformSignal.Set();
@@ -282,7 +505,6 @@ namespace BlackbirdInterface
                 session.IoctlEvent += _sessionIoctlHandler;
                 session.EtwEvent += _sessionEtwHandler;
                 session.Stats += _sessionStatsHandler;
-                session.IpcDiagnostics += _sessionIpcDiagnosticsHandler;
                 session.Status += _sessionStatusHandler;
 
                 StartBackendTransformLoop(generation);
@@ -311,7 +533,6 @@ namespace BlackbirdInterface
                 OutputCapture.AppendLine($"Session start failed for PID {pid}: {displayError}");
                 DiagnosticsState.SetValue("Session", $"Start failed PID {pid}");
                 DiagnosticsState.SetValue("Connectivity", $"Session start failed: {displayError}");
-                SetIpcUplinkExplorerDetails("Session start failed", displayError, hasData: false);
                 SetBackendConnectivity(false);
             }
         }
@@ -327,6 +548,12 @@ namespace BlackbirdInterface
                 (wx.NativeErrorCode == 127 || wx.NativeErrorCode == BlackbirdNative.ErrorInvalidFunction))
             {
                 return "IPC runtime DLL/controller mismatch (missing function). Rebuild/deploy latest J58.dll and controller.";
+            }
+
+            if (ex is System.ComponentModel.Win32Exception brokerWx &&
+                (brokerWx.NativeErrorCode == 109 || brokerWx.NativeErrorCode == 233))
+            {
+                return "Broker handshake failed because the loaded J58.dll does not match the running BlackbirdController build. Rebuild/redeploy both together.";
             }
 
             return ex.Message;
@@ -349,11 +576,6 @@ namespace BlackbirdInterface
                 session.Stats -= _sessionStatsHandler;
                 _sessionStatsHandler = null;
             }
-            if (_sessionIpcDiagnosticsHandler != null)
-            {
-                session.IpcDiagnostics -= _sessionIpcDiagnosticsHandler;
-                _sessionIpcDiagnosticsHandler = null;
-            }
             if (_sessionStatusHandler != null)
             {
                 session.Status -= _sessionStatusHandler;
@@ -361,8 +583,9 @@ namespace BlackbirdInterface
             }
         }
 
-        private void StopBackendSession(bool preserveApiGraphSnapshot = false)
+        private void StopBackendSession(bool preserveApiGraphSnapshot = false, bool fastTeardown = false)
         {
+            _liveAnalysisSession = null;
             if (_backendSession == null)
             {
                 StopBackendTransformLoop();
@@ -381,8 +604,12 @@ namespace BlackbirdInterface
             }
 
             _backendSession = null;
+            _captureProjection?.WaitForPendingStackCaptures(
+                fastTeardown ? TimeSpan.FromMilliseconds(50) : TimeSpan.FromSeconds(1));
+            _captureProjection = null;
             _filterRootPid = 0;
             _filterTrackedPids.Clear();
+            _pendingMonitoredProcessRegistrations.Clear();
             StopBackendTransformLoop();
             DisposeLiveCaptureStore();
             ClearPendingBackendUiQueues();
@@ -392,28 +619,44 @@ namespace BlackbirdInterface
             Interlocked.Exchange(ref _droppedEtwForPressure, 0);
             Interlocked.Exchange(ref _droppedUiWorkForPressure, 0);
             ResetFilesystemTimelineCluster();
-            _hasIpcUplinkData = false;
+            ResetImageMapCorrelationCaches();
             if (!preserveApiGraphSnapshot)
             {
                 _apiGraphRowsByKey.Clear();
+                _extendedRowsByKey.Clear();
+                _extendedViewRows.Clear();
+                _extendedComRows.Clear();
+                _extendedEtwRows.Clear();
+                _extendedJobRows.Clear();
+                _extendedYaraRows.Clear();
                 _apiGraphReasonByKey.Clear();
                 _apiGraphActionByKey.Clear();
                 _apiGraphDecodedByKey.Clear();
                 _apiGraphFramesByKey.Clear();
                 _apiGraphSensorByKey.Clear();
-                _apiGraphViewByKey.Clear();
                 _apiGraphTimelineLastEmitByKey.Clear();
+                _observedHookStackLastPersistByThread.Clear();
+                _threadStackFallbackLastCaptureByThread.Clear();
+                _pendingThreadStackFallbackCaptures.Clear();
                 _apiMemorySignalsByPage.Clear();
                 _crossProcWriteCountByPair.Clear();
                 _crossProcRwxAllocCountByPair.Clear();
+                _antiAnalysisCountByEvidence.Clear();
+                ResetImageMapCorrelationCaches();
                 _observedProcessStartUtcByPid.Clear();
+                _targetExitReasonByPid.Clear();
+                _extendedViewSnapshotDirty = false;
+                _extendedViewRefreshTimer.Stop();
+                if (ExtendedViewSummaryBlock != null)
+                {
+                    ExtendedViewSummaryBlock.Text = "No extended activity yet";
+                }
                 _observedProcessStartKeyByPid.Clear();
                 _observedInitialThreadIdByPid.Clear();
                 _regionLifecycleByIdentity.Clear();
                 _functionTableBaseByPointer.Clear();
                 PublishApiGraphSnapshot();
             }
-            SetIpcUplinkExplorerDetails("Session stopped", "No live transport diagnostics", hasData: false);
             DiagnosticsState.SetValue("Session", "Stopped");
             DiagnosticsState.SetValue("Kernel Hooks", "Inactive");
             DiagnosticsState.SetValue("Usermode Hooks", "Inactive");
@@ -421,6 +664,7 @@ namespace BlackbirdInterface
             DiagnosticsState.SetValue("Hook Integrity", "Unknown");
             DiagnosticsState.SetValue("AMSI Integrity", "Unknown");
             DiagnosticsState.SetValue("ETW Integrity", "Unknown");
+            DiagnosticsState.SetValue("Signature Intel", "Inactive");
         }
 
         private void ScheduleApiGraphSnapshot()
@@ -480,24 +724,67 @@ namespace BlackbirdInterface
             {
                 bool producedUiWork = false;
                 int transformed = 0;
+                int etwBudget =
+                    Math.Min(MaxBackendTransformItemsPerBatch / 2, Math.Max(128, MaxBackendTransformItemsPerBatch));
+
+                while (transformed < etwBudget && _pendingEtwEvents.TryDequeue(out var etw))
+                {
+                    Interlocked.Decrement(ref _pendingEtwCount);
+                    BrokerEtwEventView view = BrokerEtwEventMapper.FromNative(etw);
+                    _captureProjection?.ObserveEtw(view);
+                    ProcessIdentityResolver.Prime(view.ActorPid);
+                    ProcessIdentityResolver.Prime(view.TargetPid);
+
+                    if (view.Family == BlackbirdNative.IpcEtwFamilyProcess &&
+                        (view.Flags & BlackbirdNative.IpcEtwFlagProcessIsCreate) != 0)
+                    {
+                        uint etwCreator = view.CreatorPid != 0 ? view.CreatorPid : view.ActorPid;
+                        uint etwChild = view.ProcessPid != 0 ? view.ProcessPid : view.TargetPid;
+                        if (etwCreator != 0 && etwChild != 0 && etwCreator != etwChild &&
+                            _filterTrackedPids.ContainsKey(etwCreator))
+                        {
+                            _filterTrackedPids.TryAdd(etwChild, 0);
+                            QueueMonitoredProcessRegistration(generation, etwChild);
+                        }
+                    }
+
+                    if (view.ActorPid != 0 && _filterTrackedPids.ContainsKey(view.ActorPid))
+                    {
+                        QueueMonitoredProcessRegistration(generation, view.ActorPid);
+                    }
+
+                    producedUiWork |= TryEnqueueUiWork(BackendUiWorkItem.FromEtw(view));
+                    transformed += 1;
+                }
 
                 while (transformed < MaxBackendTransformItemsPerBatch && _pendingIoctlEvents.TryDequeue(out var ioctl))
                 {
                     Interlocked.Decrement(ref _pendingIoctlCount);
                     DateTime nowUtc = DateTime.UtcNow;
+                    _captureProjection?.ObserveIoctl(ioctl, nowUtc);
+                    bool acceptFilesystem = ShouldAcceptFilesystemRecord(ioctl);
+                    if (acceptFilesystem)
+                    {
+                        RememberRecentImageFileAccess(ioctl, nowUtc);
+                    }
+
                     IReadOnlyList<TelemetryEvent> filesystemClusterEvents =
-                        AccumulateFilesystemTimelineCluster(ioctl, nowUtc);
+                        acceptFilesystem ? AccumulateFilesystemTimelineCluster(ioctl, nowUtc)
+                                         : Array.Empty<TelemetryEvent>();
                     if (filesystemClusterEvents.Count > 0)
                     {
                         for (int i = 0; i < filesystemClusterEvents.Count; i += 1)
                         {
-                            if (!TryEnqueueUiWork(
+                            if (TryEnqueueUiWork(
                                     BackendUiWorkItem.FromIoctl(filesystemClusterEvents[i], null, null, null, null)))
+                            {
+                                producedUiWork = true;
+                            }
+                            else
                             {
                                 break;
                             }
                         }
-                        producedUiWork = true;
                     }
 
                     if (ioctl.Type == BlackbirdNative.EventTypeThread && ioctl.ProcessPid != 0 &&
@@ -510,60 +797,68 @@ namespace BlackbirdInterface
                     TelemetryEvent? telemetry = MapIoctlRecord(ioctl);
                     ProcessRelationView? relation = MapIoctlRelation(ioctl);
                     HeuristicEventView? heuristic = MapIoctlHeuristic(ioctl);
+                    IReadOnlyList<HeuristicEventView> signatureIntelIoctlFindings =
+                        ShouldEvaluateSignatureIntelForIoctl(ioctl, acceptFilesystem)
+                            ? EvaluateSignatureIntelForIoctl(ioctl)
+                            : Array.Empty<HeuristicEventView>();
                     ThreadLifecycleEventSample? threadLifecycle = MapIoctlThreadLifecycle(ioctl);
-                    IoctlParsedEvent? filesystem = MapIoctlFilesystem(ioctl);
+                    IoctlParsedEvent? filesystem = acceptFilesystem ? MapIoctlFilesystem(ioctl) : null;
+                    IoctlParsedEvent? registry = MapIoctlRegistry(ioctl);
                     if (relation != null)
                     {
-                        _ = ProcessIdentityResolver.Resolve(relation.SourcePid);
-                        _ = ProcessIdentityResolver.Resolve(relation.TargetPid);
+                        ProcessIdentityResolver.Prime(relation.SourcePid);
+                        ProcessIdentityResolver.Prime(relation.TargetPid);
                     }
                     if (heuristic != null)
                     {
-                        _ = ProcessIdentityResolver.Resolve(heuristic.ActorPid);
-                        _ = ProcessIdentityResolver.Resolve(heuristic.TargetPid);
+                        ProcessIdentityResolver.Prime(heuristic.ActorPid);
+                        ProcessIdentityResolver.Prime(heuristic.TargetPid);
+                    }
+                    if (signatureIntelIoctlFindings.Count > 0)
+                    {
+                        for (int i = 0; i < signatureIntelIoctlFindings.Count; i += 1)
+                        {
+                            ProcessIdentityResolver.Prime(signatureIntelIoctlFindings[i].ActorPid);
+                            ProcessIdentityResolver.Prime(signatureIntelIoctlFindings[i].TargetPid);
+                        }
                     }
                     if (filesystem != null)
                     {
-                        _ = ProcessIdentityResolver.Resolve(filesystem.FileProcessPid);
+                        ProcessIdentityResolver.Prime(filesystem.FileProcessPid);
+                    }
+                    if (registry != null)
+                    {
+                        ProcessIdentityResolver.Prime(registry.RegistryProcessPid);
+                    }
+                    if (ioctl.Type == BlackbirdNative.EventTypeEnterprise)
+                    {
+                        ProcessIdentityResolver.Prime(ioctl.EnterpriseProcessPid);
+                        ProcessIdentityResolver.Prime(ioctl.EnterpriseTargetProcessPid);
                     }
 
-                    if (ShouldPersistIoctlRecord(ioctl, telemetry, relation, heuristic, filesystem))
+                    if (acceptFilesystem &&
+                        (ShouldPersistIoctlRecord(ioctl, telemetry, relation, heuristic, filesystem) ||
+                         signatureIntelIoctlFindings.Count > 0))
                     {
                         AppendIoctlToCaptureStore(nowUtc, ioctl);
                     }
 
                     if (telemetry != null || relation != null || heuristic != null || threadLifecycle != null ||
-                        filesystem != null)
+                        filesystem != null || registry != null)
                     {
-                        _ = TryEnqueueUiWork(
-                            BackendUiWorkItem.FromIoctl(telemetry, relation, heuristic, threadLifecycle, filesystem));
-                        producedUiWork = true;
+                        producedUiWork |= TryEnqueueUiWork(BackendUiWorkItem.FromIoctl(
+                            telemetry, relation, heuristic, threadLifecycle, filesystem, registry));
                     }
 
-                    transformed += 1;
-                }
-
-                while (transformed < MaxBackendTransformItemsPerBatch && _pendingEtwEvents.TryDequeue(out var etw))
-                {
-                    Interlocked.Decrement(ref _pendingEtwCount);
-                    BrokerEtwEventView view = MapBrokerEtwEvent(etw);
-                    _ = ProcessIdentityResolver.Resolve(view.ActorPid);
-                    _ = ProcessIdentityResolver.Resolve(view.TargetPid);
-
-                    if (view.Family == BlackbirdNative.IpcEtwFamilyProcess &&
-                        (view.Flags & BlackbirdNative.IpcEtwFlagProcessIsCreate) != 0)
+                    if (signatureIntelIoctlFindings.Count > 0)
                     {
-                        uint etwCreator = view.CreatorPid != 0 ? view.CreatorPid : view.ActorPid;
-                        uint etwChild = view.ProcessPid != 0 ? view.ProcessPid : view.TargetPid;
-                        if (etwCreator != 0 && etwChild != 0 && etwCreator != etwChild &&
-                            _filterTrackedPids.ContainsKey(etwCreator))
+                        for (int i = 0; i < signatureIntelIoctlFindings.Count; i += 1)
                         {
-                            _filterTrackedPids.TryAdd(etwChild, 0);
+                            producedUiWork |= TryEnqueueUiWork(
+                                BackendUiWorkItem.FromIoctl(null, null, signatureIntelIoctlFindings[i], null, null));
                         }
                     }
 
-                    _ = TryEnqueueUiWork(BackendUiWorkItem.FromEtw(view));
-                    producedUiWork = true;
                     transformed += 1;
                 }
 
@@ -572,8 +867,7 @@ namespace BlackbirdInterface
                        _pendingStatusLines.TryDequeue(out var statusLine))
                 {
                     Interlocked.Decrement(ref _pendingStatusCount);
-                    _ = TryEnqueueUiWork(BackendUiWorkItem.FromStatus(statusLine));
-                    producedUiWork = true;
+                    producedUiWork |= TryEnqueueUiWork(BackendUiWorkItem.FromStatus(statusLine));
                     statusLines += 1;
                 }
 
@@ -583,13 +877,16 @@ namespace BlackbirdInterface
                 {
                     for (int i = 0; i < idleFilesystemClusters.Count; i += 1)
                     {
-                        if (!TryEnqueueUiWork(
+                        if (TryEnqueueUiWork(
                                 BackendUiWorkItem.FromIoctl(idleFilesystemClusters[i], null, null, null, null)))
+                        {
+                            producedUiWork = true;
+                        }
+                        else
                         {
                             break;
                         }
                     }
-                    producedUiWork = true;
                 }
 
                 if (producedUiWork)
@@ -633,6 +930,7 @@ namespace BlackbirdInterface
             var heuristicBatch = new List<HeuristicEventView>(32);
             var threadLifecycleBatch = new List<ThreadLifecycleEventSample>(32);
             var filesystemBatch = new List<IoctlParsedEvent>(32);
+            var registryBatch = new List<IoctlParsedEvent>(32);
             var etwBatch = new List<BrokerEtwEventView>(96);
             var statusBatch = new List<string>(32);
             while (processed < maxItemsThisFlush && stopwatch.Elapsed < budget &&
@@ -669,6 +967,10 @@ namespace BlackbirdInterface
                     {
                         filesystemBatch.Add(uiWork.Filesystem);
                     }
+                    if (uiWork.Registry != null)
+                    {
+                        registryBatch.Add(uiWork.Registry);
+                    }
                 }
                 else if (uiWork.Kind == BackendUiWorkKind.Etw && uiWork.EtwView != null)
                 {
@@ -699,6 +1001,15 @@ namespace BlackbirdInterface
             if (heuristicBatch.Count > 0)
             {
                 HeuristicsPaneHost.PushHeuristics(heuristicBatch);
+                bool extendedChanged = false;
+                for (int i = 0; i < heuristicBatch.Count; i += 1)
+                {
+                    extendedChanged |= ObserveSignatureIntelActivity(heuristicBatch[i]);
+                }
+                if (extendedChanged)
+                {
+                    ScheduleExtendedActivitySnapshot();
+                }
                 _explorer.FirstOrDefault(x => x.Name == "Heuristics")
                     ?.PushPreviewValue(HeuristicsPaneHost.TotalRawCount);
                 SetExplorerHasData("Heuristics", HeuristicsPaneHost.ItemCount > 0);
@@ -729,6 +1040,13 @@ namespace BlackbirdInterface
                 _explorer.FirstOrDefault(x => x.Name == "Filesystem")
                     ?.PushPreviewValue(FilesystemPaneHost.TotalRawCount);
                 SetExplorerHasData("Filesystem", FilesystemPaneHost.ItemCount > 0);
+            }
+
+            if (registryBatch.Count > 0)
+            {
+                RegistryPaneHost.PushRegistryEvents(registryBatch);
+                _explorer.FirstOrDefault(x => x.Name == "Registry")?.PushPreviewValue(RegistryPaneHost.TotalRawCount);
+                SetExplorerHasData("Registry", RegistryPaneHost.ItemCount > 0);
             }
 
             SpillCurrentSessionWorkingSetIfNeeded();
@@ -793,58 +1111,22 @@ namespace BlackbirdInterface
             return true;
         }
 
-        private void UpdateIpcUplinkExplorer(BackendIpcDiagnosticsView diag)
+        private void QueueMonitoredProcessRegistration(int generation, uint pid)
         {
-            _hasIpcUplinkData = true;
-            SetExplorerHasData("IPC Uplink", true);
-            IpcUplinkPaneHost.UpdateDiagnostics(diag);
-
-            var item = FindExplorerItem("IPC Uplink");
-            if (item == null)
+            if (pid == 0 || !_pendingMonitoredProcessRegistrations.TryAdd(pid, 0) || Dispatcher.HasShutdownStarted)
             {
                 return;
             }
 
-            double queueScore = Math.Min(100.0, diag.DriverQueueDepth);
-            double backlogScore =
-                Math.Min(100.0, (diag.PendingIoctlUiQueue + diag.PendingEtwUiQueue + diag.PendingStatusUiQueue) * 2.0);
-            double dropScore =
-                diag.DriverDroppedEvents == 0 ? 0.0 : Math.Min(100.0, Math.Log10(diag.DriverDroppedEvents + 1) * 24.0);
-            double pressure = Math.Min(100.0, Math.Max(queueScore, backlogScore) + dropScore);
-
-            item.PushPreviewValue(pressure);
-
-            string transport = "shared-ring+event";
-            string ringState = diag.SharedRingEnabled ? "ring:ready" : $"ring:missing(err={diag.SharedRingError})";
-            string primary =
-                $"{transport} | {ringState} | buf {FormatIpcBytes(diag.IoctlReadBufferBytes)} | caps 0x{diag.BrokerCapabilities:X8}";
-            string secondary =
-                $"drvQ={diag.DriverQueueDepth} drop={diag.DriverDroppedEvents} uiQ i={diag.PendingIoctlUiQueue} e={diag.PendingEtwUiQueue} i/s={diag.IoctlEventsPerSec:0} e/s={diag.EtwEventsPerSec:0} shed i={diag.DroppedIoctlForPressure} e={diag.DroppedEtwForPressure} ui={diag.DroppedUiWorkForPressure}";
-
-            SetIpcUplinkExplorerDetails(primary, secondary, hasData: true);
-
-            DiagnosticsState.SetValue(
-                "IPC Uplink",
-                $"mode={transport} ringErr={diag.SharedRingError} queueDepth={diag.DriverQueueDepth} dropped={diag.DriverDroppedEvents} pending(ioctl={diag.PendingIoctlUiQueue},etw={diag.PendingEtwUiQueue},status={diag.PendingStatusUiQueue}) rate(ioctl={diag.IoctlEventsPerSec:0.0}/s,etw={diag.EtwEventsPerSec:0.0}/s) shed(ioctl={diag.DroppedIoctlForPressure},etw={diag.DroppedEtwForPressure},ui={diag.DroppedUiWorkForPressure}) errors(ioctl={diag.IoctlErrorsTotal},etw={diag.EtwErrorsTotal})");
-        }
-
-        private void SetIpcUplinkExplorerDetails(string primary, string secondary, bool hasData)
-        {
-            var item = FindExplorerItem("IPC Uplink");
-            if (item == null)
-            {
-                return;
-            }
-
-            item.DetailPrimary = primary;
-            item.DetailSecondary = secondary;
-            item.ShowDetails = false;
-            SetExplorerHasData("IPC Uplink", hasData);
-
-            if (!hasData)
-            {
-                IpcUplinkPaneHost.SetInactive(primary, secondary);
-            }
+            Dispatcher.BeginInvoke(new Action(() =>
+                                              {
+                                                  _pendingMonitoredProcessRegistrations.TryRemove(pid, out _);
+                                                  if (generation == _backendGeneration)
+                                                  {
+                                                      TryRegisterMonitoredProcess(pid);
+                                                  }
+                                              }),
+                                   DispatcherPriority.Background);
         }
 
         private void AppendIoctlToCaptureStore(DateTime timestampUtc, IoctlParsedEvent record)
@@ -881,21 +1163,6 @@ namespace BlackbirdInterface
             {
                 DiagnosticsState.SetValue("Capture Store", $"ETW append failed: {ex.Message}");
             }
-        }
-
-        private static string FormatIpcBytes(int bytes)
-        {
-            if (bytes < 1024)
-            {
-                return $"{bytes} B";
-            }
-
-            if (bytes < 1024 * 1024)
-            {
-                return $"{(bytes / 1024.0):0.0} KB";
-            }
-
-            return $"{(bytes / (1024.0 * 1024.0)):0.00} MB";
         }
 
         private static ulong BuildRelationKey(uint actorPid, uint targetPid) => ((ulong)actorPid << 32) | targetPid;
@@ -949,8 +1216,17 @@ namespace BlackbirdInterface
             return false;
         }
 
+        private static bool IsBlackbirdOwnEvent(BrokerEtwEventView view) =>
+            (view.DetectionTraits & BlackbirdNative.IpcEtwTraitBlackbirdOwn) != 0 ||
+            view.DetectionName.Equals("BK_INSTRUMENTATION", StringComparison.OrdinalIgnoreCase);
+
         private static bool ShouldKeepEtwEvent(BrokerEtwEventView view)
         {
+            /* Always surface BK-instrumentation events — but they are
+               annotated and displayed distinctly so analysts aren't confused. */
+            if (IsBlackbirdOwnEvent(view))
+                return true;
+
             if (view.Family == BlackbirdNative.IpcEtwFamilyUserHook)
             {
                 return true;
@@ -958,6 +1234,11 @@ namespace BlackbirdInterface
 
             if (view.Family == BlackbirdNative.IpcEtwFamilySocket ||
                 EventDetailFormatting.IsKernelNetworkEtwSource(view))
+            {
+                return true;
+            }
+
+            if (IsDirectSyscallDetection(view))
             {
                 return true;
             }
@@ -988,24 +1269,44 @@ namespace BlackbirdInterface
 
         private static bool ShouldPromoteHeuristic(BrokerEtwEventView view)
         {
+            if (IsDirectSyscallDetection(view))
+            {
+                return view.Severity >= 2 || IsDirectSyscallHandleTelemetry(view);
+            }
+
             if (string.IsNullOrWhiteSpace(view.DetectionName))
             {
                 return false;
             }
 
             string det = view.DetectionName;
-            if (IsHookTamperDetection(det))
+            if (IsHookTamperDetection(view))
             {
                 return true;
-            }
-            if (IsDirectSyscallDetection(det))
-            {
-                return view.Severity >= 4;
             }
             if (det.Contains("AMSI_PATCH_TAMPERED", StringComparison.OrdinalIgnoreCase) ||
                 det.Contains("ETW_PATCH_TAMPERED", StringComparison.OrdinalIgnoreCase))
             {
                 return true;
+            }
+
+            if (det.Equals("USERMODE_COM_INIT", StringComparison.OrdinalIgnoreCase) ||
+                det.Equals("USERMODE_COM_SECURITY_INIT", StringComparison.OrdinalIgnoreCase) ||
+                det.Equals("USERMODE_COM_INSTANCE_CREATE", StringComparison.OrdinalIgnoreCase) ||
+                det.Equals("USERMODE_WMI_ACTIVITY", StringComparison.OrdinalIgnoreCase) ||
+                det.Equals("USERMODE_ETW_SESSION_CONTROL", StringComparison.OrdinalIgnoreCase) ||
+                det.Equals("USERMODE_ETW_SUBSCRIPTION", StringComparison.OrdinalIgnoreCase) ||
+                det.Equals("USERMODE_ETW_PROVIDER_REGISTER", StringComparison.OrdinalIgnoreCase) ||
+                det.Equals("USERMODE_ETW_PROVIDER_UNREGISTER", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (det.Contains("ANTI_DEBUG", StringComparison.OrdinalIgnoreCase) ||
+                det.Contains("ANTI_VM", StringComparison.OrdinalIgnoreCase) ||
+                det.Contains("ANTI_VIRTUAL", StringComparison.OrdinalIgnoreCase))
+            {
+                return view.Severity >= 4;
             }
 
             if (det.Contains("HOLLOW", StringComparison.OrdinalIgnoreCase) ||
@@ -1064,7 +1365,7 @@ namespace BlackbirdInterface
                     DetectionName = "CROSS_PROCESS_WRITE_PATTERN",
                     ActorPid = actor,
                     TargetPid = target,
-                    Source = "Blackbird/MemoryPattern",
+                    Source = "BK/MemoryPattern",
                     EventName = "NtWriteVirtualMemory",
                     Reason = $"reason=cross-process write accumulation; count={count}; actor={actor}; target={target}",
                     Evidence = $"NtWriteVirtualMemory observed {count}x from pid {actor} into pid {target}",
@@ -1099,7 +1400,7 @@ namespace BlackbirdInterface
                     DetectionName = "CROSS_PROCESS_RWX_ALLOC_PATTERN",
                     ActorPid = actor,
                     TargetPid = target,
-                    Source = "Blackbird/MemoryPattern",
+                    Source = "BK/MemoryPattern",
                     EventName = "NtAllocateVirtualMemory",
                     Reason =
                         $"reason=repeated cross-process RWX allocation; count={count}; actor={actor}; target={target}",
@@ -1112,8 +1413,492 @@ namespace BlackbirdInterface
             return null;
         }
 
-        private static bool IsDirectSyscallDetection(string detection)
+        private HeuristicEventView? EvaluateMemoryLifecycleHeuristic(MemoryRegionAttributionSample sample)
         {
+            if (sample.BlackbirdOwned || sample.TargetPid == 0)
+            {
+                return null;
+            }
+
+            bool protectEvent = sample.ProtectFlipCount != 0 &&
+                                sample.EventKind.Equals("ProtectChange", StringComparison.OrdinalIgnoreCase);
+            bool guardNoAccessSignal = sample.GuardNoAccessFlipCount != 0;
+            bool writableExecutableSignal = sample.WritableExecutableFlipCount != 0;
+            bool firstHighSignalProtect = sample.ProtectFlipCount == 1 &&
+                                          (guardNoAccessSignal || writableExecutableSignal || sample.CrossProcess);
+            bool repeatedProtect = protectEvent && (IsMemoryPatternMilestone(sample.ProtectFlipCount) ||
+                                                    sample.RapidProtectFlipCount == 1 ||
+                                                    IsMemoryPatternMilestone(sample.RapidProtectFlipCount));
+            if (protectEvent && (firstHighSignalProtect || repeatedProtect))
+            {
+                uint severity = ComputeMemoryLifecycleSeverity(sample, protectSignal: true, entropySignal: false);
+                string detectionName = guardNoAccessSignal        ? "MEMORY_GUARD_NOACCESS_PROTECTION_FLIP"
+                                       : writableExecutableSignal ? "MEMORY_WRITABLE_EXECUTABLE_PROTECTION_FLIP"
+                                                                  : "MEMORY_PROTECTION_FLIP_PATTERN";
+                string transition =
+                    string.IsNullOrWhiteSpace(sample.ProtectionTransition) ? "unknown" : sample.ProtectionTransition;
+                string entropyText =
+                    sample.EntropyBits >= 0 ? sample.EntropyBits.ToString("F2", CultureInfo.InvariantCulture) : "n/a";
+                string maxEntropyText = sample.MaxEntropyBits >= 0
+                                            ? sample.MaxEntropyBits.ToString("F2", CultureInfo.InvariantCulture)
+                                            : "n/a";
+
+                return new HeuristicEventView {
+                    TimestampUtc = sample.TimestampUtc == default ? DateTime.UtcNow : sample.TimestampUtc,
+                    LastSeenUtc = sample.TimestampUtc == default ? DateTime.UtcNow : sample.TimestampUtc,
+                    Severity = severity,
+                    DetectionName = detectionName,
+                    ActorPid = sample.ActorPid != 0 ? sample.ActorPid : sample.TargetPid,
+                    TargetPid = sample.TargetPid,
+                    Source = "BK/MemoryLifecycle",
+                    EventName = string.IsNullOrWhiteSpace(sample.ApiName) ? sample.EventKind : sample.ApiName,
+                    Reason =
+                        $"reason=memory protection flip pattern; region=0x{sample.BaseAddress:X}; size=0x{sample.RegionSize:X}; " +
+                        $"transition={transition}; flips={sample.ProtectFlipCount}; rapid={sample.RapidProtectFlipCount}; " +
+                        $"execFlips={sample.ExecutableFlipCount}; guardNoAccessFlips={sample.GuardNoAccessFlipCount}; " +
+                        $"wxFlips={sample.WritableExecutableFlipCount}; writes={sample.WriteCount}; entropy={entropyText}; maxEntropy={maxEntropyText}",
+                    Evidence =
+                        $"Region 0x{sample.BaseAddress:X} changed protection {transition}; " +
+                        $"protection flips={sample.ProtectFlipCount}, rapid flips={sample.RapidProtectFlipCount}, " +
+                        $"exec/guard/WX flips={sample.ExecutableFlipCount}/{sample.GuardNoAccessFlipCount}/{sample.WritableExecutableFlipCount}, " +
+                        $"writes={sample.WriteCount}, entropy={entropyText} bits/byte"
+                };
+            }
+
+            bool entropyEvent = sample.EventKind.Equals("MemoryWrite", StringComparison.OrdinalIgnoreCase) &&
+                                HasUsableEntropySample(sample);
+            bool highEntropy = entropyEvent && sample.EntropyBits >= MemoryHighEntropyBits;
+            bool repeatedEntropyShift = entropyEvent && (IsMemoryPatternMilestone(sample.EntropyFlipCount) ||
+                                                         sample.RapidEntropyFlipCount == 1 ||
+                                                         IsMemoryPatternMilestone(sample.RapidEntropyFlipCount));
+            bool highEntropyMilestone = highEntropy && IsHighEntropyWriteMilestone(sample.HighEntropyWriteCount);
+            if (entropyEvent && (highEntropyMilestone || repeatedEntropyShift))
+            {
+                uint severity = ComputeMemoryLifecycleSeverity(sample, protectSignal: false, entropySignal: true);
+                string entropyText = sample.EntropyBits.ToString("F2", CultureInfo.InvariantCulture);
+                string maxEntropyText = sample.MaxEntropyBits >= 0
+                                            ? sample.MaxEntropyBits.ToString("F2", CultureInfo.InvariantCulture)
+                                            : entropyText;
+                string detectionName =
+                    highEntropy ? "MEMORY_HIGH_ENTROPY_WRITE_PATTERN" : "MEMORY_ENTROPY_SHIFT_PATTERN";
+
+                return new HeuristicEventView {
+                    TimestampUtc = sample.TimestampUtc == default ? DateTime.UtcNow : sample.TimestampUtc,
+                    LastSeenUtc = sample.TimestampUtc == default ? DateTime.UtcNow : sample.TimestampUtc,
+                    Severity = severity,
+                    DetectionName = detectionName,
+                    ActorPid = sample.ActorPid != 0 ? sample.ActorPid : sample.TargetPid,
+                    TargetPid = sample.TargetPid,
+                    Source = "BK/MemoryLifecycle",
+                    EventName = string.IsNullOrWhiteSpace(sample.ApiName) ? sample.EventKind : sample.ApiName,
+                    Reason =
+                        $"reason=memory entropy pattern; region=0x{sample.BaseAddress:X}; size=0x{sample.RegionSize:X}; " +
+                        $"entropy={entropyText}; maxEntropy={maxEntropyText}; entropyFlips={sample.EntropyFlipCount}; " +
+                        $"rapidEntropyFlips={sample.RapidEntropyFlipCount}; highEntropyWrites={sample.HighEntropyWriteCount}; " +
+                        $"sampleBytes={sample.SampleBytes}; protectFlips={sample.ProtectFlipCount}",
+                    Evidence =
+                        $"Region 0x{sample.BaseAddress:X} write sample entropy={entropyText} bits/byte " +
+                        $"(max={maxEntropyText}, entropy flips={sample.EntropyFlipCount}, high entropy writes={sample.HighEntropyWriteCount}, " +
+                        $"sample bytes={sample.SampleBytes})"
+                };
+            }
+
+            return null;
+        }
+
+        private HeuristicEventView? EvaluateAntiAnalysisHeuristic(BrokerEtwEventView view)
+        {
+            if (IsBlackbirdOwnEvent(view))
+            {
+                return null;
+            }
+
+            string apiName = !string.IsNullOrWhiteSpace(view.Operation)
+                                 ? view.Operation
+                                 : (!string.IsNullOrWhiteSpace(view.EventName) ? view.EventName : string.Empty);
+            if (string.IsNullOrWhiteSpace(apiName))
+            {
+                return null;
+            }
+
+            Dictionary<string, string> fields = BuildHookFieldMap(view);
+            uint actor = view.ActorPid != 0 ? view.ActorPid : view.ProcessPid;
+            uint target = view.TargetPid != 0 ? view.TargetPid : actor;
+            if (actor == 0)
+            {
+                return null;
+            }
+
+            if (apiName.Equals("NtQueryInformationProcess", StringComparison.OrdinalIgnoreCase))
+            {
+                uint infoClass = (uint)FirstU64(fields, "processInformationClass", "ProcessInformationClass",
+                                                "infoClass", "class", "a1", "c1");
+                string className = infoClass switch {
+                    7 => "ProcessDebugPort",
+                    30 => "ProcessDebugObjectHandle",
+                    31 => "ProcessDebugFlags",
+                    _ => string.Empty
+                };
+                if (string.IsNullOrWhiteSpace(className))
+                {
+                    return null;
+                }
+
+                string evidence = $"{apiName} {className} actor={actor} target={target}";
+                return BuildAntiAnalysisFinding(
+                    view.TimestampUtc, actor, target, "ANTI_DEBUG_PROCESS_QUERY", 6, "UserHook/AntiAnalysis", apiName,
+                    $"queried anti-debug process information class {className} (0x{infoClass:X})", evidence);
+            }
+
+            if (apiName.Equals("NtQuerySystemInformation", StringComparison.OrdinalIgnoreCase) ||
+                apiName.Equals("NtQuerySystemInformationEx", StringComparison.OrdinalIgnoreCase))
+            {
+                uint infoClass = (uint)FirstU64(fields, "systemInformationClass", "SystemInformationClass", "infoClass",
+                                                "class", "a0", "c0");
+                if (infoClass == 35)
+                {
+                    string evidence = $"{apiName} SystemKernelDebuggerInformation actor={actor}";
+                    return BuildAntiAnalysisFinding(
+                        view.TimestampUtc, actor, target, "ANTI_DEBUG_KERNEL_DEBUGGER_QUERY", 6,
+                        "UserHook/AntiAnalysis", apiName,
+                        "queried kernel debugger state with SystemKernelDebuggerInformation", evidence);
+                }
+
+                if (infoClass == 76)
+                {
+                    string evidence = $"{apiName} SystemFirmwareTableInformation actor={actor}";
+                    return BuildAntiAnalysisFinding(
+                        view.TimestampUtc, actor, target, "ANTI_VM_FIRMWARE_TABLE_QUERY", 5, "UserHook/AntiAnalysis",
+                        apiName, "queried firmware tables commonly used for hypervisor/vendor checks", evidence);
+                }
+            }
+
+            return null;
+        }
+
+        private HeuristicEventView? EvaluateImageSectionMapHeuristic(BrokerEtwEventView view)
+        {
+            if (IsBlackbirdOwnEvent(view))
+            {
+                return null;
+            }
+
+            string apiName = !string.IsNullOrWhiteSpace(view.Operation)
+                                 ? view.Operation
+                                 : (!string.IsNullOrWhiteSpace(view.EventName) ? view.EventName : string.Empty);
+            if (!IsImageSectionMapApi(apiName))
+            {
+                return null;
+            }
+
+            uint actor = view.ActorPid != 0     ? view.ActorPid
+                         : view.ProcessPid != 0 ? view.ProcessPid
+                                                : view.EventProcessId;
+            if (actor == 0)
+            {
+                return null;
+            }
+
+            uint tid = view.EventThreadId != 0 ? view.EventThreadId : view.ThreadId;
+            DateTime observedUtc = view.TimestampUtc == default ? DateTime.UtcNow : view.TimestampUtc;
+            Dictionary<string, string> fields = BuildHookFieldMap(view);
+            string mappedPath = ExtractMappedImagePath(view, fields);
+            RecentImageFileAccess ? linkedAccess;
+            RecentImageMapState mapState;
+
+            lock (_imageMapCorrelationLock)
+            {
+                PruneImageMapCorrelationCachesLocked(observedUtc);
+                linkedAccess = FindRecentImageFileAccessLocked(actor, tid, mappedPath, observedUtc);
+                if (string.IsNullOrWhiteSpace(mappedPath) && linkedAccess != null)
+                {
+                    mappedPath = linkedAccess.Path;
+                }
+
+                mappedPath = NormalizeCorrelationPath(mappedPath);
+                if (!IsImagePathForMapping(mappedPath))
+                {
+                    return null;
+                }
+
+                mapState = RememberImageMapLocked(actor, mappedPath, apiName, observedUtc, linkedAccess);
+            }
+
+            string fileName = ModuleNameFromPath(mappedPath);
+            bool isNtdll = fileName.Equals("ntdll.dll", StringComparison.OrdinalIgnoreCase);
+            bool hasFilesystemLink = linkedAccess != null;
+            bool emitMilestone = mapState.Count == 2 || mapState.Count == 4 || mapState.Count == 8 ||
+                                 (mapState.Count > 0 && mapState.Count % 16 == 0);
+            if (!emitMilestone)
+            {
+                return null;
+            }
+
+            if (!isNtdll && !hasFilesystemLink && mapState.Count < 4)
+            {
+                return null;
+            }
+
+            uint severity = isNtdll ? 5u : hasFilesystemLink ? 4u : 3u;
+            string fileEvidence =
+                hasFilesystemLink
+                    ? $"linkedFs={DescribeFileOperation(linkedAccess!.Operation)} pid={linkedAccess.Pid} tid={linkedAccess.Tid} path={linkedAccess.Path}"
+                    : "linkedFs=<none>";
+            string targetText = view.TargetPid == 0 || view.TargetPid == actor
+                                    ? "self"
+                                    : view.TargetPid.ToString(CultureInfo.InvariantCulture);
+            string reason =
+                isNtdll
+                    ? "repeated mapping of ntdll.dll in one process; normal loader startup maps it once, so later repeat maps are worth review"
+                    : "repeated image-backed section mapping correlated with recent filesystem image access";
+
+            return new HeuristicEventView {
+                TimestampUtc = observedUtc,
+                LastSeenUtc = observedUtc,
+                Severity = severity,
+                DetectionName = isNtdll ? "REPEATED_NTDLL_IMAGE_MAPPING" : "REPEATED_IMAGE_SECTION_MAPPING",
+                ActorPid = actor,
+                TargetPid = view.TargetPid == 0 ? actor : view.TargetPid,
+                Source = "BK/ImageMapCorrelation",
+                EventName = apiName,
+                Reason = $"reason={reason}; count={mapState.Count}; target={targetText}",
+                Evidence =
+                    $"api={apiName} path={mappedPath} firstSeen={mapState.FirstSeenUtc:O} lastSeen={mapState.LastSeenUtc:O} {fileEvidence}",
+                RepeatCount = 1
+            };
+        }
+
+        private void RememberRecentImageFileAccess(IoctlParsedEvent record, DateTime observedUtc)
+        {
+            if (record.Type != BlackbirdNative.EventTypeFileSystem || record.FileProcessPid == 0 ||
+                (record.FileOperation != BlackbirdNative.FileOperationCreate &&
+                 record.FileOperation != BlackbirdNative.FileOperationRead))
+            {
+                return;
+            }
+
+            string path = NormalizeCorrelationPath(record.FilePath);
+            if (!IsImagePathForMapping(path))
+            {
+                return;
+            }
+
+            var access = new RecentImageFileAccess { TimestampUtc = observedUtc,
+                                                     Pid = record.FileProcessPid,
+                                                     Tid = record.FileThreadId,
+                                                     Operation = record.FileOperation,
+                                                     Path = path,
+                                                     FileName = ModuleNameFromPath(path) };
+
+            lock (_imageMapCorrelationLock)
+            {
+                PruneImageMapCorrelationCachesLocked(observedUtc);
+                _recentImageFileAccesses.Add(access);
+                if (_recentImageFileAccesses.Count > MaxRecentImageFileAccesses)
+                {
+                    _recentImageFileAccesses.RemoveRange(0,
+                                                         _recentImageFileAccesses.Count - MaxRecentImageFileAccesses);
+                }
+            }
+        }
+
+        private void ResetImageMapCorrelationCaches()
+        {
+            lock (_imageMapCorrelationLock)
+            {
+                _recentImageFileAccesses.Clear();
+                _recentImageMapByPidPath.Clear();
+                _lastImageMapCorrelationPruneUtc = DateTime.MinValue;
+            }
+        }
+
+        private void PruneImageMapCorrelationCachesLocked(DateTime nowUtc)
+        {
+            if (_lastImageMapCorrelationPruneUtc != DateTime.MinValue &&
+                nowUtc < _lastImageMapCorrelationPruneUtc.AddSeconds(2))
+            {
+                return;
+            }
+
+            DateTime fileCutoff = nowUtc - ImageMapFileCorrelationWindow - TimeSpan.FromSeconds(2);
+            _recentImageFileAccesses.RemoveAll(x => x.TimestampUtc < fileCutoff);
+
+            DateTime mapCutoff = nowUtc - ImageMapRepeatWindow;
+            foreach (string key in _recentImageMapByPidPath.Where(x => x.Value.LastSeenUtc < mapCutoff)
+                         .Select(x => x.Key)
+                         .ToList())
+            {
+                _recentImageMapByPidPath.Remove(key);
+            }
+
+            if (_recentImageMapByPidPath.Count > MaxRecentImageMapStates)
+            {
+                foreach (string key in _recentImageMapByPidPath.OrderBy(x => x.Value.LastSeenUtc)
+                             .Take(_recentImageMapByPidPath.Count - MaxRecentImageMapStates)
+                             .Select(x => x.Key)
+                             .ToList())
+                {
+                    _recentImageMapByPidPath.Remove(key);
+                }
+            }
+
+            _lastImageMapCorrelationPruneUtc = nowUtc;
+        }
+
+        private RecentImageFileAccess? FindRecentImageFileAccessLocked(uint pid, uint tid, string mappedPath,
+                                                                       DateTime observedUtc)
+        {
+            string normalizedPath = NormalizeCorrelationPath(mappedPath);
+            string fileName = ModuleNameFromPath(normalizedPath);
+            bool hasPath = !string.IsNullOrWhiteSpace(normalizedPath);
+            bool hasFileName =
+                !string.IsNullOrWhiteSpace(fileName) && !fileName.Equals("unknown", StringComparison.OrdinalIgnoreCase);
+
+            return _recentImageFileAccesses
+                .Where(x => x.Pid == pid &&
+                            IsWithinCorrelationWindow(x.TimestampUtc, observedUtc, ImageMapFileCorrelationWindow) &&
+                            (!hasPath || x.Path.Equals(normalizedPath, StringComparison.OrdinalIgnoreCase) ||
+                             (hasFileName && x.FileName.Equals(fileName, StringComparison.OrdinalIgnoreCase))))
+                .OrderByDescending(x => x.Tid == tid && tid != 0)
+                .ThenByDescending(x => x.Path.Equals(normalizedPath, StringComparison.OrdinalIgnoreCase))
+                .ThenBy(x => Math.Abs((x.TimestampUtc - observedUtc).TotalMilliseconds))
+                .FirstOrDefault();
+        }
+
+        private RecentImageMapState RememberImageMapLocked(uint pid, string mappedPath, string apiName,
+                                                           DateTime observedUtc, RecentImageFileAccess? linkedAccess)
+        {
+            string key = $"{pid}|{mappedPath}";
+            if (!_recentImageMapByPidPath.TryGetValue(key, out RecentImageMapState? state) ||
+                observedUtc > state.LastSeenUtc.Add(ImageMapRepeatWindow))
+            {
+                state = new RecentImageMapState {
+                    FirstSeenUtc = observedUtc, LastSeenUtc = observedUtc,           Path = mappedPath,
+                    LastApi = apiName,          LastLinkedFileAccess = linkedAccess, Count = 0
+                };
+                _recentImageMapByPidPath[key] = state;
+            }
+
+            state.Count += 1;
+            state.LastSeenUtc = observedUtc;
+            state.LastApi = apiName;
+            if (linkedAccess != null)
+            {
+                state.LastLinkedFileAccess = linkedAccess;
+            }
+
+            return state.Clone();
+        }
+
+        private static bool IsWithinCorrelationWindow(DateTime leftUtc, DateTime rightUtc, TimeSpan window) =>
+            Math.Abs((leftUtc - rightUtc).TotalMilliseconds) <= window.TotalMilliseconds;
+
+        private static bool IsImageSectionMapApi(string apiName)
+        {
+            string api = (apiName ?? string.Empty).Trim();
+            return api.Equals("NtMapViewOfSection", StringComparison.OrdinalIgnoreCase) ||
+                   api.Equals("ZwMapViewOfSection", StringComparison.OrdinalIgnoreCase) ||
+                   api.Equals("NtCreateSection", StringComparison.OrdinalIgnoreCase) ||
+                   api.Equals("ZwCreateSection", StringComparison.OrdinalIgnoreCase) ||
+                   api.Equals("CreateFileMappingA", StringComparison.OrdinalIgnoreCase) ||
+                   api.Equals("CreateFileMappingW", StringComparison.OrdinalIgnoreCase) ||
+                   api.Equals("CreateFileMapping", StringComparison.OrdinalIgnoreCase) ||
+                   api.Equals("MapViewOfFile", StringComparison.OrdinalIgnoreCase) ||
+                   api.Equals("MapViewOfFileEx", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ExtractMappedImagePath(BrokerEtwEventView view,
+                                                     IReadOnlyDictionary<string, string> fields)
+        {
+            foreach (string candidate in new[] {
+                         view.ImagePath, ReadTrimmedField(fields, "sectionPath"), ReadTrimmedField(fields, "filePath"),
+                         ReadTrimmedField(fields, "imagePath"), ReadTrimmedField(fields, "modulePath"),
+                         ReadTrimmedField(fields, "mappedPath"), ReadTrimmedField(fields, "path"),
+                         ReadTrimmedField(fields, "objectName"), ReadTrimmedField(fields, "name")
+                     })
+            {
+                string normalized = NormalizeCorrelationPath(candidate);
+                if (IsImagePathForMapping(normalized))
+                {
+                    return normalized;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static string NormalizeCorrelationPath(string? path)
+        {
+            string value = (path ?? string.Empty).Trim().Trim('"');
+            if (value.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            value = value.Replace('/', '\\');
+            if (value.StartsWith("\\??\\", StringComparison.OrdinalIgnoreCase))
+            {
+                value = value[4..];
+            }
+            if (value.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
+            {
+                value = value[5..].TrimStart('\\');
+            }
+
+            return value.Trim();
+        }
+
+        private static bool IsImagePathForMapping(string? path)
+        {
+            string name = ModuleNameFromPath(path ?? string.Empty);
+            return name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ||
+                   name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
+                   name.EndsWith(".ocx", StringComparison.OrdinalIgnoreCase) ||
+                   name.EndsWith(".sys", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private HeuristicEventView? BuildAntiAnalysisFinding(DateTime timestampUtc, uint actor, uint target,
+                                                             string detection, uint severity, string source,
+                                                             string eventName, string reason, string evidence)
+        {
+            string key = $"{actor}|{target}|{detection}|{evidence}";
+            _antiAnalysisCountByEvidence.TryGetValue(key, out int count);
+            count += 1;
+            _antiAnalysisCountByEvidence[key] = count;
+            if (count != 1 && count != 5 && count != 25 && count != 100)
+            {
+                return null;
+            }
+
+            return new HeuristicEventView { TimestampUtc = timestampUtc,
+                                            LastSeenUtc = timestampUtc,
+                                            Severity = severity,
+                                            DetectionName = detection,
+                                            ActorPid = actor,
+                                            TargetPid = target == 0 ? actor : target,
+                                            Source = source,
+                                            EventName = eventName,
+                                            Reason = $"reason={reason}; hits={count}",
+                                            Evidence = evidence,
+                                            RepeatCount = 1 };
+        }
+
+        private static bool HasDetectionTrait(BrokerEtwEventView view, uint trait) => (view.DetectionTraits & trait) !=
+                                                                                      0;
+
+        private static bool IsDirectSyscallDetection(BrokerEtwEventView view)
+        {
+            if (HasDetectionTrait(view, BlackbirdNative.IpcEtwTraitDirectSyscall))
+            {
+                return true;
+            }
+
+            if (IsDirectSyscallHandleTelemetry(view))
+            {
+                return true;
+            }
+
+            string detection = view.DetectionName;
             if (string.IsNullOrWhiteSpace(detection))
             {
                 return false;
@@ -1125,8 +1910,33 @@ namespace BlackbirdInterface
                    detection.Contains("ANOMALY_ON_HANDLE_OP", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static bool IsHookTamperDetection(string detection)
+        private static bool IsDirectSyscallHandleTelemetry(BrokerEtwEventView view)
         {
+            if (view.Family != BlackbirdNative.IpcEtwFamilyHandle)
+            {
+                return false;
+            }
+
+            if (view.ClassName.Equals("DIRECT-SYSCALL-SUSPECT", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            bool exportMismatch = (view.Flags & HandleFlagSyscallExportMismatch) != 0;
+            bool stackSpoof = (view.Flags & HandleFlagStackSpoofSuspect) != 0;
+            bool execOutsideNtdll =
+                (view.Flags & HandleFlagExecProtect) != 0 && (view.Flags & HandleFlagFromNtdll) == 0;
+            return exportMismatch || stackSpoof || execOutsideNtdll;
+        }
+
+        private static bool IsHookTamperDetection(BrokerEtwEventView view)
+        {
+            if (HasDetectionTrait(view, BlackbirdNative.IpcEtwTraitHookTamper))
+            {
+                return true;
+            }
+
+            string detection = view.DetectionName;
             if (string.IsNullOrWhiteSpace(detection))
             {
                 return false;
@@ -1135,6 +1945,11 @@ namespace BlackbirdInterface
             return detection.Contains("USERMODE_HOOK_TAMPERED", StringComparison.OrdinalIgnoreCase) ||
                    detection.Contains("AMSI_PATCH_TAMPERED", StringComparison.OrdinalIgnoreCase) ||
                    detection.Contains("ETW_PATCH_TAMPERED", StringComparison.OrdinalIgnoreCase) ||
+                   detection.Contains("IAT_TAMPER", StringComparison.OrdinalIgnoreCase) ||
+                   detection.Contains("EAT_TAMPER", StringComparison.OrdinalIgnoreCase) ||
+                   detection.Contains("NTDLL_IMAGE_TAMPER", StringComparison.OrdinalIgnoreCase) ||
+                   detection.Contains("SR71_HOOK_WRITE_BLOCKED", StringComparison.OrdinalIgnoreCase) ||
+                   detection.Contains("SR71_HOOK_PROTECT_BLOCKED", StringComparison.OrdinalIgnoreCase) ||
                    detection.Contains("HOOK_TAMPER", StringComparison.OrdinalIgnoreCase);
         }
 
@@ -1146,11 +1961,12 @@ namespace BlackbirdInterface
             string disasm = EventDetailFormatting.InferSampleDisassembly(record.DeepSample, (int)record.DeepSampleSize);
             string stackSnapshotHex =
                 EventDetailFormatting.FormatSampleHex(record.StackSnapshot, (int)record.StackSnapshotSize);
-            string stack0 = record.Frames.Length > 0 ? $"0x{record.Frames[0]:X}" : "n/a";
-            string stack1 = record.Frames.Length > 1 ? $"0x{record.Frames[1]:X}" : "n/a";
+            string stack0 = record.Frames.Length > 0 ? FormatIoctlCodeAddress(record, record.Frames[0]) : "n/a";
+            string stack1 = record.Frames.Length > 1 ? FormatIoctlCodeAddress(record, record.Frames[1]) : "n/a";
             string moduleName = EventDetailFormatting.ModuleNameFromPath(record.OriginPath);
-            ulong pageBase = record.OriginAddress & ~0xFFFUL;
-            string fullFrames = BuildFrameList(record.FullFrames, record.FullFrameCount);
+            string originAddress = FormatIoctlCodeAddress(record, record.OriginAddress);
+            string allocationBase = FormatIoctlCodeAddress(record, record.DeepAllocationBase);
+            string fullFrames = BuildFrameList(record, record.FullFrames, record.FullFrameCount);
             string captureFlags = DescribeCaptureFlags(record.CaptureFlags);
             string directSyscallName =
                 EventDetailFormatting.ResolveDirectSyscallApi(record.DesiredAccess, record.HandleFlags);
@@ -1184,8 +2000,8 @@ namespace BlackbirdInterface
                     : "stackSnapshotAddress=0x0 stackSnapshotSize=0 stackSnapshot=<none> ";
 
             return $"ioctlEvidence class={record.HandleClass} syscallName={directSyscallName} syscallLabel={directSyscallLabel.Replace(' ', '_')} access=0x{record.DesiredAccess:X8} ({accessDecoded}) flags=0x{record.HandleFlags:X8} ({flagsDecoded}) " +
-                   $"origin=0x{record.OriginAddress:X} protect=0x{record.OriginProtect:X8} module={moduleName} pageBase=0x{pageBase:X} " +
-                   $"allocationBase=0x{record.DeepAllocationBase:X} regionSize=0x{record.DeepRegionSize:X} regionProtect=0x{record.DeepRegionProtect:X8} ({EventDetailFormatting.DescribeMemoryProtection(record.DeepRegionProtect)}) " +
+                   $"origin={originAddress} protect=0x{record.OriginProtect:X8} module={moduleName} " +
+                   $"allocationBase={allocationBase} regionSize=0x{record.DeepRegionSize:X} regionProtect=0x{record.DeepRegionProtect:X8} ({EventDetailFormatting.DescribeMemoryProtection(record.DeepRegionProtect)}) " +
                    $"regionState=0x{record.DeepRegionState:X8} ({EventDetailFormatting.DescribeMemoryState(record.DeepRegionState)}) regionType=0x{record.DeepRegionType:X8} ({EventDetailFormatting.DescribeMemoryType(record.DeepRegionType)}) " +
                    $"path={record.OriginPath} stack0={stack0} stack1={stack1} " +
                    $"captureFlags=0x{record.CaptureFlags:X8} ({captureFlags}) " + frameSegment + registerSegment +
@@ -1216,7 +2032,7 @@ namespace BlackbirdInterface
             return labels.Count == 0 ? "NONE" : string.Join("|", labels);
         }
 
-        private static string BuildFrameList(ulong[]? frames, uint frameCount)
+        private static string BuildFrameList(IoctlParsedEvent record, ulong[]? frames, uint frameCount)
         {
             if (frames == null || frames.Length == 0 || frameCount == 0)
             {
@@ -1233,10 +2049,32 @@ namespace BlackbirdInterface
                     continue;
                 }
 
-                list.Add($"0x{frame:X}");
+                list.Add(FormatIoctlCodeAddress(record, frame));
             }
 
             return list.Count == 0 ? "<none>" : string.Join(",", list);
+        }
+
+        private static string FormatIoctlCodeAddress(IoctlParsedEvent record, ulong address)
+        {
+            if (address == 0)
+            {
+                return "n/a";
+            }
+
+            string moduleName = EventDetailFormatting.ModuleNameFromPath(record.OriginPath);
+            ulong allocationBase = record.DeepAllocationBase;
+            ulong regionSize = record.DeepRegionSize;
+            bool inRange = regionSize == 0 ||
+                           (regionSize <= ulong.MaxValue - allocationBase && address < allocationBase + regionSize);
+            if (!moduleName.Equals("unknown", StringComparison.OrdinalIgnoreCase) && allocationBase != 0 &&
+                address >= allocationBase && inRange)
+            {
+                string section = (record.DeepRegionType & 0x01000000u) != 0 ? ".image" : ".region";
+                return $"{moduleName}{section}+0x{address - allocationBase:X}";
+            }
+
+            return $"unresolved+0x{address:X}";
         }
 
         private static bool IsHighRiskIoctlAccess(uint desiredAccess, bool isThreadObject)
@@ -1253,17 +2091,28 @@ namespace BlackbirdInterface
 
         private static bool ShouldKeepDirectSyscallHeuristicFromEvidence(IoctlParsedEvent record)
         {
-            bool isThreadObject = (record.HandleFlags & 0x00000010u) != 0;
-            if (!IsHighRiskIoctlAccess(record.DesiredAccess, isThreadObject))
+            if (record.HandleClass == 2)
+            {
+                return true;
+            }
+
+            bool exportMismatch = (record.HandleFlags & HandleFlagSyscallExportMismatch) != 0;
+            bool stackSpoof = (record.HandleFlags & HandleFlagStackSpoofSuspect) != 0;
+            bool execOutsideNtdll =
+                (record.HandleFlags & HandleFlagExecProtect) != 0 && (record.HandleFlags & HandleFlagFromNtdll) == 0;
+            bool framesOutsideTeb = (record.HandleFlags & HandleFlagFramesOutsideTebStack) != 0;
+            return exportMismatch || stackSpoof || execOutsideNtdll || framesOutsideTeb;
+        }
+
+        private static bool IsGdiSubsystemModule(string? originPath)
+        {
+            if (string.IsNullOrWhiteSpace(originPath))
             {
                 return false;
             }
 
-            bool exportMismatch = (record.HandleFlags & 0x00002000u) != 0;
-            bool stackSpoof = (record.HandleFlags & 0x00000800u) != 0;
-            bool stackValidated = (record.HandleFlags & 0x00000400u) != 0;
-            bool tebBoundsValid = (record.HandleFlags & 0x00010000u) != 0;
-            return exportMismatch || (stackSpoof && (!stackValidated || !tebBoundsValid));
+            string module = EventDetailFormatting.ModuleNameFromPath(originPath).ToLowerInvariant();
+            return module is "win32u.dll" or "gdi32.dll" or "gdi32full.dll" or "user32.dll" or "user32full.dll";
         }
 
         private static string DescribeFileOperation(uint operation)
@@ -1465,12 +2314,116 @@ namespace BlackbirdInterface
                 return null;
             }
 
+            if (record.Type == BlackbirdNative.EventTypeEnterprise)
+            {
+                uint actor = record.EnterpriseProcessPid;
+                uint target = record.EnterpriseTargetProcessPid;
+                if (actor != 0 && !_filterTrackedPids.IsEmpty && !_filterTrackedPids.ContainsKey(actor))
+                {
+                    return null;
+                }
+
+                string operation = DescribeEnterpriseOperation(record.EnterpriseOperation);
+                string flags = DescribeEnterpriseFlags(record.EnterpriseFlags);
+                return new TelemetryEvent {
+                    TimestampUtc = now,
+                    PID = unchecked((int)actor),
+                    TID = unchecked((int)record.EnterpriseThreadId),
+                    Group = "Kernel-IOCTL",
+                    SubType = "Enterprise",
+                    Summary = $"{operation} actor={actor} target={target} flags=0x{record.EnterpriseFlags:X8}",
+                    Details =
+                        $"seq={record.Sequence} op={operation} subOp={record.EnterpriseSubOperation} actor={actor} tid={record.EnterpriseThreadId} " +
+                        $"target={target} targetTid={record.EnterpriseTargetThreadId} desired=0x{record.EnterpriseDesiredAccess:X8} " +
+                        $"granted=0x{record.EnterpriseGrantedAccess:X8} status=0x{record.EnterpriseStatus:X8} " +
+                        $"object=0x{record.EnterpriseObjectAddress:X} aux0=0x{record.EnterpriseAux0:X} aux1=0x{record.EnterpriseAux1:X} " +
+                        $"protocol={record.EnterpriseProtocol} localPort={record.EnterpriseLocalPort} remotePort={record.EnterpriseRemotePort} flags={flags}"
+                };
+            }
+
             return null;
+        }
+
+        private bool ShouldAcceptFilesystemRecord(IoctlParsedEvent record)
+        {
+            if (record.Type != BlackbirdNative.EventTypeFileSystem)
+            {
+                return true;
+            }
+
+            uint pid = record.FileProcessPid;
+            if (pid == 0 || (!_filterTrackedPids.IsEmpty && !_filterTrackedPids.ContainsKey(pid)))
+            {
+                return false;
+            }
+
+            return !IsBlackbirdInternalFilesystemPath(record.FilePath);
+        }
+
+        private bool ShouldEvaluateSignatureIntelForIoctl(IoctlParsedEvent record, bool acceptFilesystem)
+        {
+            if (record.Type == BlackbirdNative.EventTypeFileSystem)
+            {
+                return acceptFilesystem;
+            }
+
+            if (record.Type == BlackbirdNative.EventTypeRegistry)
+            {
+                return record.RegistryProcessPid != 0 && IsTrackedPid(record.RegistryProcessPid);
+            }
+
+            if (record.Type == BlackbirdNative.EventTypeEnterprise)
+            {
+                return record.EnterpriseProcessPid != 0 && IsTrackedPid(record.EnterpriseProcessPid);
+            }
+
+            if (record.Type == BlackbirdNative.EventTypeHandle)
+            {
+                if (record.CallerPid != 0 && !IsTrackedPid(record.CallerPid))
+                {
+                    return false;
+                }
+
+                string originModule = EventDetailFormatting.ModuleNameFromPath(record.OriginPath);
+                return !EventDetailFormatting.IsSr71Module(originModule);
+            }
+
+            if (record.Type == BlackbirdNative.EventTypeThread)
+            {
+                if (record.CreatorPid != 0 && record.ProcessPid != 0 && record.CreatorPid != record.ProcessPid)
+                {
+                    return IsTrackedPid(record.CreatorPid);
+                }
+
+                return IsTrackedPid(record.ProcessPid);
+            }
+
+            return true;
+        }
+
+        private static bool IsBlackbirdInternalFilesystemPath(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return false;
+            }
+
+            string normalized = path.Replace('/', '\\').Trim();
+            return normalized.Contains("\\ProgramData\\Blackbird", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.Contains("\\Device\\HarddiskVolume3\\ProgramData\\Blackbird",
+                                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.EndsWith("\\controller.log", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.EndsWith("\\controller.log.1", StringComparison.OrdinalIgnoreCase);
         }
 
         private static IoctlParsedEvent? MapIoctlFilesystem(IoctlParsedEvent record)
         {
             return record.Type == BlackbirdNative.EventTypeFileSystem ? record : null;
+        }
+
+        private static IoctlParsedEvent? MapIoctlRegistry(IoctlParsedEvent record)
+        {
+            return record.Type == BlackbirdNative.EventTypeRegistry ? record : null;
         }
 
         private static ThreadLifecycleEventSample? MapIoctlThreadLifecycle(IoctlParsedEvent record)
@@ -1583,6 +2536,38 @@ namespace BlackbirdInterface
                                                  RepeatCount = 1 };
             }
 
+            if (record.Type == BlackbirdNative.EventTypeEnterprise)
+            {
+                uint source = record.EnterpriseProcessPid;
+                uint target = record.EnterpriseTargetProcessPid;
+                if (source == 0 || target == 0 || source == target)
+                {
+                    return null;
+                }
+                if (!_filterTrackedPids.IsEmpty && !_filterTrackedPids.ContainsKey(source))
+                {
+                    return null;
+                }
+
+                string operation = DescribeEnterpriseOperation(record.EnterpriseOperation);
+                return new ProcessRelationView {
+                    FirstSeenUtc = now,
+                    LastSeenUtc = now,
+                    SourcePid = source,
+                    TargetPid = target,
+                    RelationType = "EnterpriseAccess",
+                    LastAccessMask = record.EnterpriseDesiredAccess,
+                    LastFlags = record.EnterpriseFlags,
+                    OriginSource = "Kernel-IOCTL",
+                    OriginModule = operation,
+                    DetailSignature = $"enterprise|{source}|{target}|{record.EnterpriseOperation}|{record.EnterpriseFlags:X8}",
+                    DetailText =
+                        $"sourcePid={source} targetPid={target} relationType=EnterpriseAccess operation={operation} " +
+                        $"access=0x{record.EnterpriseDesiredAccess:X8} flags=0x{record.EnterpriseFlags:X8}",
+                    RepeatCount = 1
+                };
+            }
+
             return null;
         }
 
@@ -1625,6 +2610,47 @@ namespace BlackbirdInterface
 
         private HeuristicEventView? MapIoctlHeuristic(IoctlParsedEvent record)
         {
+            HeuristicEventView? antiAnalysis = EvaluateAntiAnalysisIoctlHeuristic(record);
+            if (antiAnalysis != null)
+            {
+                return antiAnalysis;
+            }
+
+            if (record.Type == BlackbirdNative.EventTypeEnterprise)
+            {
+                uint actor = record.EnterpriseProcessPid;
+                uint target = record.EnterpriseTargetProcessPid;
+                if (actor == 0 || (!_filterTrackedPids.IsEmpty && !_filterTrackedPids.ContainsKey(actor)))
+                {
+                    return null;
+                }
+
+                string operation = DescribeEnterpriseOperation(record.EnterpriseOperation);
+                string flags = DescribeEnterpriseFlags(record.EnterpriseFlags);
+                uint enterpriseSeverity =
+                    (record.EnterpriseFlags & BlackbirdNative.EnterpriseFlagCritical) != 0 ? 8u : 6u;
+                return new HeuristicEventView {
+                    TimestampUtc = DateTime.UtcNow,
+                    LastSeenUtc = DateTime.UtcNow,
+                    Severity = enterpriseSeverity,
+                    DetectionName = $"ENTERPRISE_{operation}",
+                    ActorPid = actor,
+                    TargetPid = target,
+                    Source = "Kernel-IOCTL/Enterprise",
+                    EventName = "EnterpriseTelemetry",
+                    CorrelationFlags = record.EnterpriseFlags,
+                    CorrelationAccessMask = record.EnterpriseDesiredAccess,
+                    CorrelationAgeMs = 0,
+                    Reason =
+                        $"enterprise operation={operation}; flags={flags}; desired=0x{record.EnterpriseDesiredAccess:X8}; " +
+                        $"status=0x{record.EnterpriseStatus:X8}",
+                    Evidence =
+                        $"actor={actor} tid={record.EnterpriseThreadId} target={target} targetTid={record.EnterpriseTargetThreadId} " +
+                        $"object=0x{record.EnterpriseObjectAddress:X} aux0=0x{record.EnterpriseAux0:X} aux1=0x{record.EnterpriseAux1:X}",
+                    RepeatCount = 1
+                };
+            }
+
             if (record.Type != BlackbirdNative.EventTypeHandle || record.CallerPid == 0 || record.TargetPid == 0)
             {
                 return null;
@@ -1635,23 +2661,16 @@ namespace BlackbirdInterface
                 return null;
             }
 
-            bool isThreadObject = (record.HandleFlags & 0x00000010u) != 0;
-            if (!IsHighRiskIoctlAccess(record.DesiredAccess, isThreadObject))
-            {
-                return null;
-            }
-
-            bool exportMismatch = (record.HandleFlags & 0x00002000u) != 0;
-            bool stackSpoof = (record.HandleFlags & 0x00000800u) != 0;
-            bool stackValidated = (record.HandleFlags & 0x00000400u) != 0;
-            bool tebBoundsValid = (record.HandleFlags & 0x00010000u) != 0;
-            if (!exportMismatch && (!stackSpoof || (stackValidated && tebBoundsValid)))
-            {
-                return null;
-            }
-
             DateTime now = DateTime.UtcNow;
-            uint severity = exportMismatch ? 6u : 5u;
+            bool isThreadObject = (record.HandleFlags & HandleFlagThreadObject) != 0;
+            bool highRiskAccess = IsHighRiskIoctlAccess(record.DesiredAccess, isThreadObject);
+            bool exportMismatch = (record.HandleFlags & HandleFlagSyscallExportMismatch) != 0;
+            bool stackSpoof = (record.HandleFlags & HandleFlagStackSpoofSuspect) != 0;
+            bool stackValidated = (record.HandleFlags & HandleFlagStackValidated) != 0;
+            bool tebBoundsValid = (record.HandleFlags & HandleFlagTebStackBoundsValid) != 0;
+            bool execOutsideNtdll =
+                (record.HandleFlags & HandleFlagExecProtect) != 0 && (record.HandleFlags & HandleFlagFromNtdll) == 0;
+            uint severity = exportMismatch ? 6u : highRiskAccess ? 5u : (stackSpoof || execOutsideNtdll) ? 4u : 3u;
 
             string handleFlagsDecoded = EventDetailFormatting.DescribeHandleFlags(record.HandleFlags);
             string corrAccessDecoded = EventDetailFormatting.DescribeHandleAccess(record.DesiredAccess);
@@ -1675,145 +2694,195 @@ namespace BlackbirdInterface
                 CorrelationAccessMask = record.DesiredAccess,
                 CorrelationAgeMs = 0,
                 Reason =
-                    $"{syscallSummary}; ioctlClass={record.HandleClass}; handleFlags={handleFlagsDecoded}; access={corrAccessDecoded}",
+                    $"{syscallSummary}; ioctlClass={record.HandleClass}; directClass=true; highRiskAccess={highRiskAccess}; " +
+                    $"exportMismatch={exportMismatch}; stackSpoof={stackSpoof}; stackValidated={stackValidated}; " +
+                    $"tebBoundsValid={tebBoundsValid}; execOutsideNtdll={execOutsideNtdll}; " +
+                    $"handleFlags={handleFlagsDecoded}; access={corrAccessDecoded}",
                 Evidence = BuildHandleEvidenceText(record),
                 RepeatCount = 1
             };
         }
 
-        private static BrokerEtwEventView MapBrokerEtwEvent(BlackbirdNative.BkIpcEtwEvent etw)
+        private HeuristicEventView? EvaluateAntiAnalysisIoctlHeuristic(IoctlParsedEvent record)
         {
-            string source = etw.Source switch { BlackbirdNative.IpcEtwSourceBlackbird => "Blackbird",
-                                                BlackbirdNative.IpcEtwSourceThreatIntel => "ThreatIntel",
-                                                BlackbirdNative.IpcEtwSourceKernelNetwork => "KernelNetwork",
-                                                BlackbirdNative.IpcEtwSourceUserHook => "UserHook",
-                                                _ => "Unknown" };
-
-            string eventName = BlackbirdNative.WideBufferToString(etw.EventName);
-            if (string.IsNullOrWhiteSpace(eventName))
+            DateTime now = DateTime.UtcNow;
+            if (record.Type == BlackbirdNative.EventTypeFileSystem)
             {
-                eventName = "unknown";
+                if (!ShouldAcceptFilesystemRecord(record))
+                {
+                    return null;
+                }
+
+                uint pid = record.FileProcessPid;
+                string path = record.FilePath ?? string.Empty;
+                if (!TryMatchVirtualizationArtifact(path, out string artifact))
+                {
+                    return null;
+                }
+
+                string evidence =
+                    $"filesystem operation=0x{record.FileOperation:X} pid={pid} tid={record.FileThreadId} artifact={artifact} path={path}";
+                return BuildAntiAnalysisFinding(now, pid, pid, "ANTI_VM_FILESYSTEM_ARTIFACT_PROBE", 5,
+                                                "Kernel-IOCTL/AntiAnalysis", "FileSystemTelemetry",
+                                                $"probed virtualization filesystem artifact {artifact}", evidence);
             }
 
-            string detection = BlackbirdNative.AnsiBufferToString(etw.DetectionName);
-            string reason = BlackbirdNative.WideBufferToString(etw.Reason);
-            uint actor = ResolveBrokerEtwActorPid(etw);
-            uint target = ResolveBrokerEtwTargetPid(etw);
-            DateTime now = DateTime.UtcNow;
-            string operation = BlackbirdNative.AnsiBufferToString(etw.Operation);
-            string actorDisplay = ProcessIdentityResolver.Resolve(actor);
-            string targetDisplay = ProcessIdentityResolver.Resolve(target);
-            Dictionary<string, string> hookFields =
-                BuildHookFieldMap(reason, etw.HookArgs ?? Array.Empty<ulong>(), etw.HookArgCount);
-            string argumentSummary = EventDetailFormatting.BuildNtApiArgumentSummary(
-                !string.IsNullOrWhiteSpace(operation) ? operation : eventName, hookFields, actorDisplay, targetDisplay);
+            if (record.Type == BlackbirdNative.EventTypeRegistry)
+            {
+                uint pid = record.RegistryProcessPid;
+                if (pid == 0 || (!_filterTrackedPids.IsEmpty && !_filterTrackedPids.ContainsKey(pid)))
+                {
+                    return null;
+                }
+                if (!IsRegistryProbeOperation(record.RegistryOperation))
+                {
+                    return null;
+                }
 
-            return new BrokerEtwEventView {
-                TimestampUtc = now,
-                LastSeenUtc = now,
-                Source = source,
-                SourceId = etw.Source,
-                Family = etw.Family,
-                EventName = eventName,
-                Task = etw.Task,
-                Opcode = etw.Opcode,
-                EventId = etw.EventId,
-                EventProcessId = etw.EventProcessId,
-                EventThreadId = etw.EventThreadId,
-                Severity = etw.Severity,
-                Flags = etw.Flags,
-                ActorPid = actor,
-                TargetPid = target,
-                ProcessPid = etw.ProcessId is > 0 and <= uint.MaxValue ? (uint)etw.ProcessId : 0,
-                ThreadId = etw.ThreadId is > 0 and <= uint.MaxValue ? (uint)etw.ThreadId : 0,
-                CallerPid = etw.CallerPid is > 0 and <= uint.MaxValue ? (uint)etw.CallerPid : 0,
-                ExplicitTargetPid = etw.TargetPid is > 0 and <= uint.MaxValue ? (uint)etw.TargetPid : 0,
-                ParentPid = etw.ParentProcessId is > 0 and <= uint.MaxValue ? (uint)etw.ParentProcessId : 0,
-                CreatorPid = etw.CreatorProcessId is > 0 and <= uint.MaxValue ? (uint)etw.CreatorProcessId : 0,
-                CreatorThreadId = etw.CreatorThreadId is > 0 and <= uint.MaxValue ? (uint)etw.CreatorThreadId : 0,
-                CorrelationFlags = etw.CorrelationFlags,
-                CorrelationAccessMask = etw.CorrelationAccessMask,
-                CorrelationAgeMs = etw.CorrelationAgeMs,
-                DetectionName = detection,
-                Reason = reason,
-                ClassName = BlackbirdNative.AnsiBufferToString(etw.ClassName),
-                Operation = operation,
-                DesiredAccess = etw.DesiredAccess,
-                OriginAddress = etw.OriginAddress,
-                OriginProtect = etw.OriginProtect,
-                StatusOpenProcess = etw.StatusOpenProcess,
-                StatusBasicInfo = etw.StatusBasicInfo,
-                StatusSectionName = etw.StatusSectionName,
-                StackCount = etw.StackCount,
-                Stack = etw.Stack ?? Array.Empty<ulong>(),
-                DeepAllocationBase = etw.DeepAllocationBase,
-                DeepRegionSize = etw.DeepRegionSize,
-                DeepRegionProtect = etw.DeepRegionProtect,
-                DeepRegionState = etw.DeepRegionState,
-                DeepRegionType = etw.DeepRegionType,
-                DeepSampleSize = etw.DeepSampleSize,
-                DeepSample = etw.DeepSample ?? Array.Empty<byte>(),
-                OriginPath = BlackbirdNative.WideBufferToString(etw.OriginPath),
-                StartAddress = etw.StartAddress,
-                ImageBase = etw.ImageBase,
-                ImageSize = etw.ImageSize,
-                StartRegionProtect = etw.StartRegionProtect,
-                StartRegionState = etw.StartRegionState,
-                StartRegionType = etw.StartRegionType,
-                StartRegionStatus = etw.StartRegionStatus,
-                SessionId = etw.SessionId,
-                CreateStatus = etw.CreateStatus,
-                ProcessStartKey = etw.ProcessStartKey,
-                SignatureLevel = etw.SignatureLevel,
-                SignatureType = etw.SignatureType,
-                NotifyClass = etw.NotifyClass,
-                DataType = etw.DataType,
-                DataSize = etw.DataSize,
-                HookArgCount = etw.HookArgCount,
-                HookArgs = etw.HookArgs ?? Array.Empty<ulong>(),
-                ImagePath = BlackbirdNative.WideBufferToString(etw.ImagePath),
-                CommandLine = BlackbirdNative.WideBufferToString(etw.CommandLine),
-                KeyPath = BlackbirdNative.WideBufferToString(etw.KeyPath),
-                ValueName = BlackbirdNative.WideBufferToString(etw.ValueName),
-                RepeatCount = 1,
-                ArgumentSummary = argumentSummary
+                string registryPath = BuildRegistryProbePath(record);
+                if (!TryMatchVirtualizationArtifact(registryPath, out string artifact))
+                {
+                    return null;
+                }
+
+                string operation = DescribeRegistryProbeOperation(record.RegistryOperation);
+                string evidence =
+                    $"registry operation={operation} pid={pid} tid={record.RegistryThreadId} artifact={artifact} path={registryPath}";
+                return BuildAntiAnalysisFinding(now, pid, pid, "ANTI_VM_REGISTRY_ARTIFACT_PROBE", 5,
+                                                "Kernel-IOCTL/AntiAnalysis", "RegistryTelemetry",
+                                                $"queried virtualization registry artifact {artifact}", evidence);
+            }
+
+            return null;
+        }
+
+        private static string BuildRegistryProbePath(IoctlParsedEvent record)
+        {
+            string key = record.RegistryKeyPath ?? string.Empty;
+            string value = record.RegistryValueName ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return key;
+            }
+
+            return string.IsNullOrWhiteSpace(key) ? value : $"{key}\\{value}";
+        }
+
+        private static string DescribeEnterpriseOperation(uint operation)
+        {
+            return operation switch {
+                BlackbirdNative.EnterpriseOperationProcessCredentialAccess => "PROCESS_CREDENTIAL_ACCESS",
+                BlackbirdNative.EnterpriseOperationProcessPrivilegedAccess => "PROCESS_PRIVILEGED_ACCESS",
+                BlackbirdNative.EnterpriseOperationTokenAccess => "TOKEN_ACCESS",
+                BlackbirdNative.EnterpriseOperationRegistryCredentialHiveAccess => "REGISTRY_CREDENTIAL_HIVE",
+                BlackbirdNative.EnterpriseOperationRegistryLsaPolicyAccess => "REGISTRY_LSA_POLICY",
+                BlackbirdNative.EnterpriseOperationRegistryKerberosNtlmAccess => "REGISTRY_KERBEROS_NTLM",
+                BlackbirdNative.EnterpriseOperationRegistryServiceConfigAccess => "REGISTRY_SERVICE_CONFIG",
+                BlackbirdNative.EnterpriseOperationRegistryLpePersistenceAccess => "REGISTRY_LPE_PERSISTENCE",
+                BlackbirdNative.EnterpriseOperationFileCredentialStoreAccess => "FILE_CREDENTIAL_STORE",
+                BlackbirdNative.EnterpriseOperationFileDirectoryCredentialAccess => "FILE_CREDENTIAL_DIRECTORY",
+                BlackbirdNative.EnterpriseOperationFileDriverArtifactAccess => "FILE_DRIVER_ARTIFACT",
+                BlackbirdNative.EnterpriseOperationNetworkAdProtocolConnect => "NETWORK_AD_PROTOCOL",
+                _ => $"UNKNOWN_{operation}"
             };
         }
 
-        private static uint ResolveBrokerEtwActorPid(BlackbirdNative.BkIpcEtwEvent etw)
+        private static string DescribeEnterpriseFlags(uint flags)
         {
-            return etw.Family switch {
-                BlackbirdNative.IpcEtwFamilyHandle or BlackbirdNative.IpcEtwFamilyApc =>
-                    NarrowPid(etw.CallerPid) ?? NarrowPid(etw.ProcessId) ?? etw.EventProcessId,
-                BlackbirdNative.IpcEtwFamilyThread =>
-                    NarrowPid(etw.CreatorProcessId) ?? NarrowPid(etw.ProcessId) ?? etw.EventProcessId,
-                BlackbirdNative.IpcEtwFamilyProcess => NarrowPid(etw.CreatorProcessId) ??
-                                                       NarrowPid(etw.ParentProcessId) ?? NarrowPid(etw.ProcessId) ??
-                                                       etw.EventProcessId,
-                BlackbirdNative.IpcEtwFamilyImage or BlackbirdNative.IpcEtwFamilyRegistry or
-                    BlackbirdNative.IpcEtwFamilyDetection or BlackbirdNative.IpcEtwFamilyThreatIntel or
-                        BlackbirdNative.IpcEtwFamilyUserHook or BlackbirdNative.IpcEtwFamilySocket =>
-                    NarrowPid(etw.ProcessId) ?? etw.EventProcessId,
-                _ => NarrowPid(etw.ProcessId) ?? NarrowPid(etw.CallerPid) ?? etw.EventProcessId
-            };
+            var parts = new List<string>(8);
+            if ((flags & BlackbirdNative.EnterpriseFlagCritical) != 0)
+                parts.Add("Critical");
+            if ((flags & BlackbirdNative.EnterpriseFlagQuery) != 0)
+                parts.Add("Query");
+            if ((flags & BlackbirdNative.EnterpriseFlagWrite) != 0)
+                parts.Add("Write");
+            if ((flags & BlackbirdNative.EnterpriseFlagCreate) != 0)
+                parts.Add("Create");
+            if ((flags & BlackbirdNative.EnterpriseFlagDelete) != 0)
+                parts.Add("Delete");
+            if ((flags & BlackbirdNative.EnterpriseFlagDuplicateHandle) != 0)
+                parts.Add("DuplicateHandle");
+            if ((flags & BlackbirdNative.EnterpriseFlagProcessObject) != 0)
+                parts.Add("ProcessObject");
+            if ((flags & BlackbirdNative.EnterpriseFlagThreadObject) != 0)
+                parts.Add("ThreadObject");
+            if ((flags & BlackbirdNative.EnterpriseFlagVmRead) != 0)
+                parts.Add("VmRead");
+            if ((flags & BlackbirdNative.EnterpriseFlagVmWrite) != 0)
+                parts.Add("VmWrite");
+            if ((flags & BlackbirdNative.EnterpriseFlagVmOperation) != 0)
+                parts.Add("VmOperation");
+            if ((flags & BlackbirdNative.EnterpriseFlagCreateThread) != 0)
+                parts.Add("CreateThread");
+            if ((flags & BlackbirdNative.EnterpriseFlagCredentialProcess) != 0)
+                parts.Add("CredentialProcess");
+            if ((flags & BlackbirdNative.EnterpriseFlagPrivilegedTarget) != 0)
+                parts.Add("PrivilegedTarget");
+            if ((flags & BlackbirdNative.EnterpriseFlagLsassTarget) != 0)
+                parts.Add("LsassTarget");
+            if ((flags & BlackbirdNative.EnterpriseFlagWinlogonTarget) != 0)
+                parts.Add("WinlogonTarget");
+            if ((flags & BlackbirdNative.EnterpriseFlagServiceConfig) != 0)
+                parts.Add("ServiceConfig");
+            if ((flags & BlackbirdNative.EnterpriseFlagSecurityHive) != 0)
+                parts.Add("SecurityHive");
+            if ((flags & BlackbirdNative.EnterpriseFlagLsaPolicy) != 0)
+                parts.Add("LsaPolicy");
+            if ((flags & BlackbirdNative.EnterpriseFlagKerberosNtlm) != 0)
+                parts.Add("KerberosNtlm");
+            if ((flags & BlackbirdNative.EnterpriseFlagCredentialFile) != 0)
+                parts.Add("CredentialFile");
+            if ((flags & BlackbirdNative.EnterpriseFlagDriverArtifact) != 0)
+                parts.Add("DriverArtifact");
+            if ((flags & BlackbirdNative.EnterpriseFlagAdNetwork) != 0)
+                parts.Add("AdNetwork");
+            if ((flags & BlackbirdNative.EnterpriseFlagDirectSyscallSuspect) != 0)
+                parts.Add("DirectSyscallSuspect");
+            if ((flags & BlackbirdNative.EnterpriseFlagQueryAccess) != 0)
+                parts.Add("QueryAccess");
+            if ((flags & BlackbirdNative.EnterpriseFlagThreadContext) != 0)
+                parts.Add("ThreadContext");
+            if ((flags & BlackbirdNative.EnterpriseFlagSetOrTerminate) != 0)
+                parts.Add("SetOrTerminate");
+            return parts.Count == 0 ? "<none>" : string.Join("|", parts);
         }
 
-        private static uint ResolveBrokerEtwTargetPid(BlackbirdNative.BkIpcEtwEvent etw)
+        private static bool IsRegistryProbeOperation(uint operation)
         {
-            return etw.Family switch {
-                BlackbirdNative.IpcEtwFamilyHandle or BlackbirdNative.IpcEtwFamilyApc or BlackbirdNative
-                    .IpcEtwFamilyDetection or BlackbirdNative.IpcEtwFamilyThreatIntel => NarrowPid(etw.TargetPid) ?? 0,
-                BlackbirdNative.IpcEtwFamilyThread or BlackbirdNative.IpcEtwFamilyProcess =>
-                    NarrowPid(etw.ProcessId) ?? 0,
-                BlackbirdNative.IpcEtwFamilyUserHook => NarrowPid(etw.TargetPid) ?? NarrowPid(etw.ProcessId) ?? 0,
-                BlackbirdNative.IpcEtwFamilySocket => NarrowPid(etw.TargetPid) ?? NarrowPid(etw.ProcessId) ?? 0,
-                _ => NarrowPid(etw.TargetPid) ?? 0
-            };
+            return operation is BlackbirdNative.RegistryOperationQueryValue or BlackbirdNative
+                .RegistryOperationQueryKey or BlackbirdNative.RegistryOperationEnumerateKey or
+                    BlackbirdNative.RegistryOperationEnumerateValue or BlackbirdNative.RegistryOperationOpenKey;
         }
 
-        private static uint? NarrowPid(ulong value)
+        private static string DescribeRegistryProbeOperation(uint operation)
         {
-            return value is > 0 and <= uint.MaxValue ? (uint)value : null;
+            return operation switch { BlackbirdNative.RegistryOperationQueryValue => "QUERY_VALUE",
+                                      BlackbirdNative.RegistryOperationQueryKey => "QUERY_KEY",
+                                      BlackbirdNative.RegistryOperationEnumerateKey => "ENUMERATE_KEY",
+                                      BlackbirdNative.RegistryOperationEnumerateValue => "ENUMERATE_VALUE",
+                                      BlackbirdNative.RegistryOperationOpenKey => "OPEN_KEY",
+                                      _ => $"0x{operation:X}" };
+        }
+
+        private static bool TryMatchVirtualizationArtifact(string? text, out string artifact)
+        {
+            artifact = string.Empty;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return false;
+            }
+
+            string normalized = text.Replace('/', '\\').Trim();
+            for (int i = 0; i < VirtualizationArtifactPatterns.Length; i += 1)
+            {
+                if (normalized.Contains(VirtualizationArtifactPatterns[i].Token, StringComparison.OrdinalIgnoreCase))
+                {
+                    artifact = VirtualizationArtifactPatterns[i].Label;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void RememberObservedProcessStart(BrokerEtwEventView view)
@@ -1961,13 +3030,25 @@ namespace BlackbirdInterface
                 BrokerEtwEventView view = views[i];
                 RememberObservedProcessStart(view);
                 TelemetryEvent? apiTimelineEvent = null;
-                view.DisplayDetails = BuildEtwDisplayDetail(view);
                 UpdateHookPipelineDiagnostics(view);
-                QueueSignatureIntelForView(view);
+                ObserveTargetOutputEvent(view);
+                ObserveTargetLifecycleEvent(view);
+                IReadOnlyList<HeuristicEventView> signatureIntelFindings = QueueSignatureIntelForView(view);
+                if (signatureIntelFindings.Count > 0)
+                {
+                    heuristics.AddRange(signatureIntelFindings);
+                }
+                PersistObservedHookStackSnapshot(view);
+                QueueThreadStackFallbackCapture(view);
                 MemoryRegionAttributionSample? memoryAttribution = CreateMemoryRegionAttributionSample(view);
                 if (memoryAttribution != null)
                 {
                     memoryAttributions.Add(memoryAttribution);
+                    HeuristicEventView? memoryLifecycleHeuristic = EvaluateMemoryLifecycleHeuristic(memoryAttribution);
+                    if (memoryLifecycleHeuristic != null)
+                    {
+                        heuristics.Add(memoryLifecycleHeuristic);
+                    }
                 }
                 if (EventDetailFormatting.IsApiGraphCandidate(view))
                 {
@@ -1982,12 +3063,29 @@ namespace BlackbirdInterface
                     {
                         heuristics.Add(memPatternHeuristic);
                     }
+
+                    HeuristicEventView? antiAnalysisHeuristic = EvaluateAntiAnalysisHeuristic(view);
+                    if (antiAnalysisHeuristic != null)
+                    {
+                        heuristics.Add(antiAnalysisHeuristic);
+                    }
+
+                    HeuristicEventView? imageMapHeuristic = EvaluateImageSectionMapHeuristic(view);
+                    if (imageMapHeuristic != null)
+                    {
+                        heuristics.Add(imageMapHeuristic);
+                    }
                 }
 
                 bool keepEtw = ShouldKeepEtwEvent(view);
                 if (keepEtw)
                 {
                     etwRows.Add(view);
+                }
+
+                if (ObserveExtendedActivity(view))
+                {
+                    ScheduleExtendedActivitySnapshot();
                 }
 
                 ProcessRelationView? relation = MapEtwRelation(view);
@@ -1998,6 +3096,18 @@ namespace BlackbirdInterface
 
                 string detection = view.DetectionName;
                 DiagnosticsState.SetValue("ETW Status", "Live");
+                if (detection.Equals("USERMODE_PROCESS_TERMINATE_BREAKPOINT", StringComparison.OrdinalIgnoreCase))
+                {
+                    uint terminatedPid = view.TargetPid != 0    ? view.TargetPid
+                                         : view.ProcessPid != 0 ? view.ProcessPid
+                                                                : view.ActorPid;
+                    string reason =
+                        string.IsNullOrWhiteSpace(view.Reason)
+                            ? $"NtTerminateProcess observed from {ProcessIdentityResolver.Describe(view.ActorPid)}"
+                            : view.Reason;
+                    RememberTargetExitReason(terminatedPid, reason);
+                    DiagnosticsState.SetValue("Target Exit Cause", reason);
+                }
                 if (detection.Equals("KERNEL_HOOK_STATUS", StringComparison.OrdinalIgnoreCase))
                 {
                     uint installed = view.CorrelationFlags;
@@ -2008,13 +3118,14 @@ namespace BlackbirdInterface
                                             : $"DEGRADED ({installed}/{total}, {requiredMiss} required miss)";
                     DiagnosticsState.SetValue("Kernel Hooks", hookStatus);
                 }
-                if (IsHookTamperDetection(detection))
+                if (IsHookTamperDetection(view))
                 {
                     DiagnosticsState.SetValue("Hook Integrity", "TAMPERED");
                 }
                 else if (detection.Equals("USERMODE_HOOK_INTEGRITY_OK", StringComparison.OrdinalIgnoreCase))
                 {
                     DiagnosticsState.SetValue("Hook Integrity", "OK");
+                    MarkSr71HookReadyFromTelemetry();
                 }
                 if (detection.Equals("AMSI_PATCH_TAMPERED", StringComparison.OrdinalIgnoreCase))
                 {
@@ -2023,6 +3134,7 @@ namespace BlackbirdInterface
                 else if (detection.Equals("AMSI_PATCH_OK", StringComparison.OrdinalIgnoreCase))
                 {
                     DiagnosticsState.SetValue("AMSI Integrity", "OK");
+                    MarkSr71HookReadyFromTelemetry();
                 }
                 if (detection.Equals("ETW_PATCH_TAMPERED", StringComparison.OrdinalIgnoreCase))
                 {
@@ -2031,6 +3143,7 @@ namespace BlackbirdInterface
                 else if (detection.Equals("ETW_PATCH_OK", StringComparison.OrdinalIgnoreCase))
                 {
                     DiagnosticsState.SetValue("ETW Integrity", "OK");
+                    MarkSr71HookReadyFromTelemetry();
                 }
 
                 string eventName = view.EventName ?? string.Empty;
@@ -2040,12 +3153,16 @@ namespace BlackbirdInterface
                 uint actor = view.ActorPid;
                 bool isSocketEvent = view.Family == BlackbirdNative.IpcEtwFamilySocket ||
                                      EventDetailFormatting.IsKernelNetworkEtwSource(view);
+                if (isSocketEvent)
+                {
+                    PerformancePaneHost.IngestNetworkView(view);
+                }
                 string socketOperation = string.IsNullOrWhiteSpace(view.Operation) ? eventName : view.Operation;
                 if (string.IsNullOrWhiteSpace(socketOperation))
                 {
                     socketOperation = $"OP{view.Opcode}";
                 }
-                string timelineGroup = isSocketEvent ? "Sockets" : "Blackbird-ETW";
+                string timelineGroup = isSocketEvent ? "Sockets" : "BK-ETW";
                 string timelineSubtype = isSocketEvent ? socketOperation : eventName;
                 string summary = isSocketEvent ? $"{socketOperation} pid={actor} task={view.Task} opcode={view.Opcode}"
                                                : (!string.IsNullOrWhiteSpace(displayDetection)
@@ -2055,17 +3172,6 @@ namespace BlackbirdInterface
                 bool duplicateTimelineEvent =
                     string.Equals(_lastEtwTimelineSignature, timelineSignature, StringComparison.OrdinalIgnoreCase) &&
                     (view.TimestampUtc - _lastEtwTimelineTimestampUtc).TotalMilliseconds <= 900;
-                if (keepEtw && !duplicateTimelineEvent)
-                {
-                    int timelinePid =
-                        view.EventProcessId == 0 ? unchecked((int)actor) : unchecked((int)view.EventProcessId);
-                    timelineEvents.Add(new TelemetryEvent { TimestampUtc = view.TimestampUtc, PID = timelinePid,
-                                                            TID = unchecked((int)view.EventThreadId),
-                                                            Group = timelineGroup, SubType = timelineSubtype,
-                                                            Summary = summary, Details = view.DisplayDetails });
-                    _lastEtwTimelineSignature = timelineSignature;
-                    _lastEtwTimelineTimestampUtc = view.TimestampUtc;
-                }
 
                 HeuristicEventView? heuristic = CreatePromotedHeuristic(view);
                 if (heuristic != null)
@@ -2073,9 +3179,32 @@ namespace BlackbirdInterface
                     heuristics.Add(heuristic);
                 }
 
-                if (ShouldPersistEtwView(view, keepEtw, relation != null, heuristic != null, apiTimelineEvent != null))
+                bool persistView = ShouldPersistEtwView(view, keepEtw, relation != null,
+                                                        heuristic != null || signatureIntelFindings.Count > 0,
+                                                        apiTimelineEvent != null);
+
+                string displayDetails = string.Empty;
+                if (keepEtw || apiTimelineEvent != null || persistView)
+                {
+                    EnsureEtwDisplayDetails(view);
+                    displayDetails = view.DisplayDetails;
+                }
+
+                if (persistView)
                 {
                     AppendEtwToCaptureStore(view);
+                }
+
+                if (keepEtw && !duplicateTimelineEvent)
+                {
+                    int timelinePid =
+                        view.EventProcessId == 0 ? unchecked((int)actor) : unchecked((int)view.EventProcessId);
+                    timelineEvents.Add(new TelemetryEvent { TimestampUtc = view.TimestampUtc, PID = timelinePid,
+                                                            TID = unchecked((int)view.EventThreadId),
+                                                            Group = timelineGroup, SubType = timelineSubtype,
+                                                            Summary = summary, Details = displayDetails });
+                    _lastEtwTimelineSignature = timelineSignature;
+                    _lastEtwTimelineTimestampUtc = view.TimestampUtc;
                 }
             }
 
@@ -2113,6 +3242,15 @@ namespace BlackbirdInterface
             if (heuristics.Count > 0)
             {
                 HeuristicsPaneHost.PushHeuristics(heuristics);
+                bool extendedChanged = false;
+                for (int i = 0; i < heuristics.Count; i += 1)
+                {
+                    extendedChanged |= ObserveSignatureIntelActivity(heuristics[i]);
+                }
+                if (extendedChanged)
+                {
+                    ScheduleExtendedActivitySnapshot();
+                }
                 _explorer.FirstOrDefault(x => x.Name == "Heuristics")
                     ?.PushPreviewValue(HeuristicsPaneHost.TotalRawCount);
                 SetExplorerHasData("Heuristics", HeuristicsPaneHost.ItemCount > 0);
@@ -2125,6 +3263,71 @@ namespace BlackbirdInterface
                 _explorer.FirstOrDefault(x => x.Name == "Process Relations")
                     ?.PushPreviewValue(ProcessRelationsPaneHost.TotalRawCount);
                 SetExplorerHasData("Process Relations", ProcessRelationsPaneHost.ItemCount > 0);
+            }
+        }
+
+        private static bool IsTargetOutputEvent(BrokerEtwEventView view) =>
+            view.SourceId == BlackbirdNative.IpcEtwSourceBlackbird
+            && view.EventName.Equals("TargetOutput", StringComparison.OrdinalIgnoreCase);
+
+        private static bool IsTargetLifecycleEvent(BrokerEtwEventView view) =>
+            view.SourceId == BlackbirdNative.IpcEtwSourceBlackbird
+            && view.EventName.Equals("TargetExit", StringComparison.OrdinalIgnoreCase);
+
+        private static void ObserveTargetOutputEvent(BrokerEtwEventView view)
+        {
+            if (!IsTargetOutputEvent(view))
+            {
+                return;
+            }
+
+            uint pid = view.ProcessPid != 0 ? view.ProcessPid : view.ActorPid;
+            if (pid == 0 || pid > int.MaxValue)
+            {
+                return;
+            }
+
+            string stream = string.IsNullOrWhiteSpace(view.Operation) ? "stdout" : view.Operation.Trim();
+            string message = !string.IsNullOrWhiteSpace(view.CommandLine) ? view.CommandLine : view.Reason;
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return;
+            }
+
+            DebugConsoleService.WriteExternal($"TARGET/{stream}", unchecked((int)pid), message);
+        }
+
+        private void ObserveTargetLifecycleEvent(BrokerEtwEventView view)
+        {
+            if (!IsTargetLifecycleEvent(view))
+            {
+                return;
+            }
+
+            uint pid = view.ProcessPid != 0 ? view.ProcessPid : view.ActorPid;
+            if (pid == 0 || pid > int.MaxValue)
+            {
+                return;
+            }
+
+            string message =
+                string.IsNullOrWhiteSpace(view.Reason) ? $"target exited status=0x{view.CreateStatus:X8}" : view.Reason;
+            RememberTargetExitReason(pid, message);
+            DebugConsoleService.WriteExternal("TARGET/lifecycle", unchecked((int)pid), message);
+        }
+
+        private void RememberTargetExitReason(uint pid, string reason)
+        {
+            if (pid == 0 || string.IsNullOrWhiteSpace(reason))
+            {
+                return;
+            }
+
+            string normalized = reason.Trim();
+            _targetExitReasonByPid[pid] = normalized;
+            if (_currentSession != null && _currentSession.Pid == unchecked((int)pid))
+            {
+                _currentSession.TargetExitReason = normalized;
             }
         }
 
@@ -2152,11 +3355,37 @@ namespace BlackbirdInterface
 
         private void UpdateHookPipelineDiagnostics(BrokerEtwEventView view)
         {
+            if (view.Family == BlackbirdNative.IpcEtwFamilyUserHook &&
+                view.SourceId == BlackbirdNative.IpcEtwSourceUserHook)
+            {
+                long count = Interlocked.Increment(ref _usermodeHookEventCount);
+                string kind = EventDetailFormatting.HookKindName(view.NotifyClass);
+                string api = !string.IsNullOrWhiteSpace(view.Operation) ? view.Operation : view.EventName;
+                string label = !string.IsNullOrWhiteSpace(api)    ? api
+                               : !string.IsNullOrWhiteSpace(kind) ? kind
+                                                                  : "event";
+                DiagnosticsState.SetValue("Usermode Hooks", $"Active ({count} SR71 events, last={label})");
+                DiagnosticsState.SetValue("HookDLL->Controller IPC", "Ready (SR71 telemetry)");
+                DiagnosticsState.SetValue("HookDLL Hooks Set", $"OK ({kind})");
+                MarkSr71HookReadyFromTelemetry();
+                if (ShouldPromoteIntegrityStatus(DiagnosticsState.GetValue("Hook Integrity")))
+                {
+                    DiagnosticsState.SetValue("Hook Integrity", "OK");
+                }
+                if (ShouldPromoteIntegrityStatus(DiagnosticsState.GetValue("AMSI Integrity")))
+                {
+                    DiagnosticsState.SetValue("AMSI Integrity", "OK");
+                }
+                return;
+            }
+
             if (EventDetailFormatting.IsKernelHookTelemetry(view))
             {
+                long count = Interlocked.Increment(ref _kernelHookEventCount);
                 string api = !string.IsNullOrWhiteSpace(view.Operation) ? view.Operation : view.EventName;
-                DiagnosticsState.SetValue("Kernel Hooks",
-                                          string.IsNullOrWhiteSpace(api) ? "Active" : $"Active ({api})");
+                DiagnosticsState.SetValue("Kernel Hooks", string.IsNullOrWhiteSpace(api)
+                                                              ? $"Active ({count} events)"
+                                                              : $"Active ({count} events, last={api})");
                 return;
             }
 
@@ -2164,22 +3393,410 @@ namespace BlackbirdInterface
             {
                 string kind = EventDetailFormatting.HookKindName(view.NotifyClass);
                 DiagnosticsState.SetValue("Usermode Hooks", $"Active ({kind})");
-                if (string.Equals(DiagnosticsState.GetValue("Hook Integrity"), "Unknown",
-                                  StringComparison.OrdinalIgnoreCase))
+                DiagnosticsState.SetValue("HookDLL->Controller IPC", "Ready (SR71 telemetry)");
+                DiagnosticsState.SetValue("HookDLL Hooks Set", $"OK ({kind})");
+                MarkSr71HookReadyFromTelemetry();
+                if (ShouldPromoteIntegrityStatus(DiagnosticsState.GetValue("Hook Integrity")))
                 {
                     DiagnosticsState.SetValue("Hook Integrity", "OK");
                 }
-                if (string.Equals(DiagnosticsState.GetValue("AMSI Integrity"), "Unknown",
-                                  StringComparison.OrdinalIgnoreCase))
+                if (ShouldPromoteIntegrityStatus(DiagnosticsState.GetValue("AMSI Integrity")))
                 {
                     DiagnosticsState.SetValue("AMSI Integrity", "OK");
                 }
             }
         }
 
+        private static bool ShouldPromoteIntegrityStatus(string? current)
+        {
+            if (string.IsNullOrWhiteSpace(current))
+            {
+                return true;
+            }
+
+            return current.Contains("Unknown", StringComparison.OrdinalIgnoreCase) ||
+                   current.Contains("Awaiting", StringComparison.OrdinalIgnoreCase) ||
+                   current.Contains("Review", StringComparison.OrdinalIgnoreCase) ||
+                   current.Contains("Disabled (no usermode hooks)", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void MarkSr71HookReadyFromTelemetry()
+        {
+            string? hookReady = DiagnosticsState.GetValue("SR71 Hook Ready");
+            if (string.IsNullOrWhiteSpace(hookReady) ||
+                hookReady.Contains("Awaiting", StringComparison.OrdinalIgnoreCase) ||
+                hookReady.Contains("DEGRADED", StringComparison.OrdinalIgnoreCase) ||
+                hookReady.Contains("missing", StringComparison.OrdinalIgnoreCase))
+            {
+                DiagnosticsState.SetValue("SR71 Hook Ready", "OK observed via SR71 telemetry");
+            }
+
+            string? instrumentation = DiagnosticsState.GetValue("SR71 Instrumentation");
+            if (string.IsNullOrWhiteSpace(instrumentation) ||
+                instrumentation.Contains("Awaiting", StringComparison.OrdinalIgnoreCase) ||
+                instrumentation.Contains("DEGRADED", StringComparison.OrdinalIgnoreCase))
+            {
+                DiagnosticsState.SetValue("SR71 Instrumentation", "OK observed via SR71 telemetry");
+            }
+        }
+
+        private static void TryAppendObservedModule(BrokerEtwEventView view, List<ModuleInfoRow> rows)
+        {
+            string path = view.ImagePath ?? string.Empty;
+            ulong baseAddress = view.ImageBase;
+            ulong imageSize = view.ImageSize;
+
+            if (string.IsNullOrWhiteSpace(path) && view.Family == BlackbirdNative.IpcEtwFamilyUserHook)
+            {
+                string apiName = !string.IsNullOrWhiteSpace(view.Operation) ? view.Operation : view.EventName;
+                if (apiName.Equals("LdrLoadDll", StringComparison.OrdinalIgnoreCase) ||
+                    apiName.StartsWith("LoadLibrary", StringComparison.OrdinalIgnoreCase))
+                {
+                    Dictionary<string, string> fields = BuildHookFieldMap(view);
+                    path = DecodeModuleHookName(apiName, view);
+                    baseAddress = FirstU64(fields, "handle", "module", "moduleHandle");
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            rows.Add(new ModuleInfoRow {
+                Name = ModuleNameFromPath(path), BaseAddress = baseAddress == 0 ? "observed" : $"0x{baseAddress:X}",
+                Size =
+                    imageSize == 0 ? "observed" : FormatObservedBytes((long)Math.Min(imageSize, (ulong) long.MaxValue)),
+                Path = path
+            });
+        }
+
+        private static string FormatObservedBytes(long bytes)
+        {
+            string[] units = { "B", "KB", "MB", "GB", "TB" };
+            double value = Math.Max(0, bytes);
+            int unit = 0;
+            while (value >= 1024 && unit < units.Length - 1)
+            {
+                value /= 1024;
+                unit += 1;
+            }
+
+            return unit == 0 ? $"{bytes} B" : $"{value:0.0} {units[unit]}";
+        }
+
+        private static string ModuleNameFromPath(string path)
+        {
+            string value = (path ?? string.Empty).Trim();
+            if (value.Length == 0)
+            {
+                return "unknown";
+            }
+
+            int slash = Math.Max(value.LastIndexOf('\\'), value.LastIndexOf('/'));
+            return slash >= 0 && slash + 1 < value.Length ? value[(slash + 1)..] : value;
+        }
+
+        private void PersistObservedHookStackSnapshot(BrokerEtwEventView view)
+        {
+            if (view.Family != BlackbirdNative.IpcEtwFamilyUserHook ||
+                view.SourceId != BlackbirdNative.IpcEtwSourceUserHook || view.StackCount == 0)
+            {
+                return;
+            }
+
+            uint pid = view.ProcessPid != 0 ? view.ProcessPid : view.ActorPid;
+            uint tid = view.EventThreadId != 0 ? view.EventThreadId : view.ThreadId;
+            if (pid == 0 || tid == 0 || pid > int.MaxValue || tid > int.MaxValue)
+            {
+                return;
+            }
+
+            DateTime capturedUtc = view.TimestampUtc == default ? DateTime.UtcNow : view.TimestampUtc;
+            string throttleKey = $"{pid}:{tid}";
+            if (_observedHookStackLastPersistByThread.TryGetValue(throttleKey, out DateTime lastPersistUtc) &&
+                capturedUtc < lastPersistUtc.AddMilliseconds(250))
+            {
+                return;
+            }
+
+            ThreadStackSessionSnapshot? snapshot = CreateObservedHookStackSnapshot(view, capturedUtc);
+            if (snapshot == null || snapshot.Frames.Count == 0)
+            {
+                return;
+            }
+
+            _observedHookStackLastPersistByThread[throttleKey] = capturedUtc;
+            PersistThreadStackSnapshot(unchecked((int)pid), unchecked((int)tid), string.Empty, snapshot);
+        }
+
+        private void QueueThreadStackFallbackCapture(BrokerEtwEventView view)
+        {
+            if (view.StackCount != 0 || !ShouldCaptureThreadStackFallback(view))
+            {
+                return;
+            }
+
+            uint pid = view.ProcessPid != 0 ? view.ProcessPid
+                       : view.ActorPid != 0 ? view.ActorPid
+                                            : view.EventProcessId;
+            uint tid = view.EventThreadId != 0 ? view.EventThreadId : view.ThreadId;
+            if (pid == 0 || tid == 0 || pid > int.MaxValue || tid > int.MaxValue)
+            {
+                return;
+            }
+
+            DateTime capturedUtc = view.TimestampUtc == default ? DateTime.UtcNow : view.TimestampUtc;
+            string key = $"{pid}:{tid}";
+            if (_threadStackFallbackLastCaptureByThread.TryGetValue(key, out DateTime lastCaptureUtc) &&
+                capturedUtc < lastCaptureUtc.AddSeconds(6))
+            {
+                return;
+            }
+
+            if (_pendingThreadStackFallbackCaptures.Count >= 32)
+            {
+                return;
+            }
+
+            if (!_pendingThreadStackFallbackCaptures.TryAdd(key, 0))
+            {
+                return;
+            }
+
+            _threadStackFallbackLastCaptureByThread[key] = capturedUtc;
+            int capturePid = unchecked((int)pid);
+            int captureTid = unchecked((int)tid);
+            _ = Task.Run(() =>
+                         {
+                             ThreadStackResolveResult result =
+                                 ThreadStackResolver.Resolve(capturePid, captureTid, string.Empty);
+                             return CreateThreadStackFallbackSnapshot(capturedUtc, result);
+                         })
+                    .ContinueWith(
+                        task =>
+                        {
+                            _pendingThreadStackFallbackCaptures.TryRemove(key, out _);
+                            if (task.Status != TaskStatus.RanToCompletion || task.Result == null ||
+                                task.Result.Frames.Count == 0)
+                            {
+                                return;
+                            }
+
+                            Dispatcher.BeginInvoke(
+                                new Action(
+                                    () =>
+                                    {
+                                        PersistThreadStackSnapshot(capturePid, captureTid, string.Empty, task.Result);
+                                        DebugConsoleService.WriteLocal(
+                                            $"[STACK] captured fallback thread stack pid={capturePid} tid={captureTid} frames={task.Result.Frames.Count}");
+                                    }),
+                                DispatcherPriority.Background);
+                        },
+                        TaskScheduler.Default);
+        }
+
+        private static bool ShouldCaptureThreadStackFallback(BrokerEtwEventView view)
+        {
+            if (view.Family != BlackbirdNative.IpcEtwFamilyUserHook)
+            {
+                return false;
+            }
+
+            string api = !string.IsNullOrWhiteSpace(view.Operation) ? view.Operation : view.EventName;
+            if (string.IsNullOrWhiteSpace(api))
+            {
+                return false;
+            }
+
+            if (!api.StartsWith("Nt", StringComparison.OrdinalIgnoreCase) &&
+                !api.StartsWith("Zw", StringComparison.OrdinalIgnoreCase) &&
+                !api.StartsWith("Co", StringComparison.OrdinalIgnoreCase) &&
+                !api.Contains("Trace", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            bool highSignal = view.Severity >= 4 || IsDirectSyscallDetection(view) ||
+                              api.Equals("NtMapViewOfSection", StringComparison.OrdinalIgnoreCase) ||
+                              api.Equals("ZwMapViewOfSection", StringComparison.OrdinalIgnoreCase) ||
+                              api.Equals("NtCreateSection", StringComparison.OrdinalIgnoreCase) ||
+                              api.Equals("ZwCreateSection", StringComparison.OrdinalIgnoreCase) ||
+                              api.Equals("NtWriteVirtualMemory", StringComparison.OrdinalIgnoreCase) ||
+                              api.Equals("NtProtectVirtualMemory", StringComparison.OrdinalIgnoreCase) ||
+                              api.Equals("NtCreateThreadEx", StringComparison.OrdinalIgnoreCase);
+            if (!highSignal)
+            {
+                return false;
+            }
+
+            return view.SourceId == BlackbirdNative.IpcEtwSourceBlackbird ||
+                   view.SourceId == BlackbirdNative.IpcEtwSourceUserHook ||
+                   EventDetailFormatting.IsKernelHookTelemetry(view);
+        }
+
+        private static ThreadStackSessionSnapshot? CreateThreadStackFallbackSnapshot(DateTime capturedUtc,
+                                                                                     ThreadStackResolveResult result)
+        {
+            if (result.Frames.Count == 0)
+            {
+                return null;
+            }
+
+            return new ThreadStackSessionSnapshot { CapturedAtUtc = capturedUtc,
+                                                    TebAddress = result.TebAddress,
+                                                    StackBase = result.StackBase,
+                                                    StackTop = result.StackTop,
+                                                    TebFlags = result.TebFlags,
+                                                    StackPointer = result.StackPointer,
+                                                    ContextSnapshot =
+                                                        CloneThreadContextSnapshot(result.ContextSnapshot),
+                                                    Frames = result.Frames.Select(CloneStackFrameRow).ToList() };
+        }
+
+        private static StackFrameRow
+        CloneStackFrameRow(StackFrameRow frame) => new() { Index = frame.Index,
+                                                           Address = frame.Address,
+                                                           Module = frame.Module,
+                                                           Symbol = frame.Symbol,
+                                                           InstructionPointerRaw = frame.InstructionPointerRaw,
+                                                           FramePointerRaw = frame.FramePointerRaw,
+                                                           FrameSpanBytes = frame.FrameSpanBytes,
+                                                           IsCurrent = frame.IsCurrent };
+
+        private static ThreadContextSnapshot? CloneThreadContextSnapshot(ThreadContextSnapshot? snapshot)
+        {
+            if (snapshot == null)
+            {
+                return null;
+            }
+
+            return new ThreadContextSnapshot {
+                Rip = snapshot.Rip, Rsp = snapshot.Rsp, Rbp = snapshot.Rbp, Rax = snapshot.Rax,      Rbx = snapshot.Rbx,
+                Rcx = snapshot.Rcx, Rdx = snapshot.Rdx, Rsi = snapshot.Rsi, Rdi = snapshot.Rdi,      R8 = snapshot.R8,
+                R9 = snapshot.R9,   R10 = snapshot.R10, R11 = snapshot.R11, R12 = snapshot.R12,      R13 = snapshot.R13,
+                R14 = snapshot.R14, R15 = snapshot.R15, Dr0 = snapshot.Dr0, Dr1 = snapshot.Dr1,      Dr2 = snapshot.Dr2,
+                Dr3 = snapshot.Dr3, Dr6 = snapshot.Dr6, Dr7 = snapshot.Dr7, EFlags = snapshot.EFlags
+            };
+        }
+
+        private static ThreadStackSessionSnapshot? CreateObservedHookStackSnapshot(BrokerEtwEventView view,
+                                                                                   DateTime capturedUtc)
+        {
+            ulong[] stack = view.Stack ?? Array.Empty<ulong>();
+            int count = Math.Min(Math.Min((int)view.StackCount, stack.Length), BlackbirdNative.MaxIpcStackFrames);
+            if (count <= 0)
+            {
+                return null;
+            }
+
+            Dictionary<string, string> fields = BuildHookFieldMap(view);
+            var frames = new List<StackFrameRow>(count);
+            for (int i = 0; i < count; i += 1)
+            {
+                ulong ip = stack[i];
+                if (ip == 0)
+                {
+                    continue;
+                }
+
+                string symbol = ReadTrimmedField(fields, $"stack{i}Symbol");
+                string path = ReadTrimmedField(fields, $"stack{i}Path");
+                string module = ModuleNameFromPath(path);
+                if (module.Equals("unknown", StringComparison.OrdinalIgnoreCase))
+                {
+                    module = ExtractModuleFromSymbol(symbol);
+                }
+
+                frames.Add(new StackFrameRow { Index = frames.Count, Address = $"0x{ip:X}", Module = module,
+                                               Symbol = string.IsNullOrWhiteSpace(symbol) ? $"0x{ip:X}" : symbol,
+                                               InstructionPointerRaw = ip, IsCurrent = frames.Count == 0 });
+            }
+
+            if (frames.Count == 0)
+            {
+                return null;
+            }
+
+            ulong stackPointer = FirstU64(fields, "rsp", "sp", "stackPointer", "StackPointer");
+            return new ThreadStackSessionSnapshot { CapturedAtUtc = capturedUtc, StackPointer = stackPointer,
+                                                    Frames = frames };
+        }
+
+        private static string ReadTrimmedField(IReadOnlyDictionary<string, string> fields, string key)
+        {
+            return fields.TryGetValue(key, out string? value) && !string.IsNullOrWhiteSpace(value)
+                       ? value.Trim()
+                       : string.Empty;
+        }
+
+        private static string ExtractModuleFromSymbol(string symbol)
+        {
+            string value = (symbol ?? string.Empty).Trim();
+            int bang = value.IndexOf('!');
+            return bang > 0 ? value[..bang].Trim() : string.Empty;
+        }
+
+        private static uint DirectSyscallSeverityFloor(BrokerEtwEventView view)
+        {
+            bool highRisk = IsHighRiskIoctlAccess(view.DesiredAccess, (view.Flags & HandleFlagThreadObject) != 0);
+            if ((view.Flags & HandleFlagSyscallExportMismatch) != 0)
+            {
+                return 6;
+            }
+            if (highRisk || (view.Flags & HandleFlagStackSpoofSuspect) != 0)
+            {
+                return 5;
+            }
+            if ((view.Flags & HandleFlagExecProtect) != 0 && (view.Flags & HandleFlagFromNtdll) == 0)
+            {
+                return 4;
+            }
+
+            return 3;
+        }
+
+        private static string BuildDirectSyscallDetectionName(BrokerEtwEventView view)
+        {
+            string syscallName = EventDetailFormatting.ResolveDirectSyscallApi(view.DesiredAccess, view.Flags);
+            return string.IsNullOrWhiteSpace(syscallName) ? "DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION"
+                                                          : $"DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION [{syscallName}]";
+        }
+
+        private static string BuildEtwDirectSyscallEvidenceText(BrokerEtwEventView view)
+        {
+            string syscallName = EventDetailFormatting.ResolveDirectSyscallApi(view.DesiredAccess, view.Flags);
+            string syscallLabel = EventDetailFormatting.BuildDirectSyscallLabel(
+                view.DesiredAccess, view.Flags, view.DeepSample, (int)view.DeepSampleSize);
+            string accessDecoded = EventDetailFormatting.DescribeHandleAccess(view.DesiredAccess);
+            string flagsDecoded = EventDetailFormatting.DescribeHandleFlags(view.Flags);
+            string originModule = EventDetailFormatting.ModuleNameFromPath(view.OriginPath);
+            string sampleHex = EventDetailFormatting.FormatSampleHex(view.DeepSample, (int)view.DeepSampleSize);
+            string sampleDisasm =
+                EventDetailFormatting.InferSampleDisassembly(view.DeepSample, (int)view.DeepSampleSize);
+
+            string stack0 = view.StackCount > 0 && view.Stack.Length > 0 ? $"0x{view.Stack[0]:X}" : "n/a";
+            string stack1 = view.StackCount > 1 && view.Stack.Length > 1 ? $"0x{view.Stack[1]:X}" : "n/a";
+
+            return $"etwEvidence class={view.ClassName} syscallName={syscallName} syscallLabel={syscallLabel.Replace(' ', '_')} " +
+                   $"access=0x{view.DesiredAccess:X8} ({accessDecoded}) flags=0x{view.Flags:X8} ({flagsDecoded}) handleFlags=0x{view.Flags:X8} " +
+                   $"origin=0x{view.OriginAddress:X} protect=0x{view.OriginProtect:X8} module={originModule} " +
+                   $"path={view.OriginPath} allocationBase=0x{view.DeepAllocationBase:X} regionSize=0x{view.DeepRegionSize:X} " +
+                   $"regionProtect=0x{view.DeepRegionProtect:X8} ({EventDetailFormatting.DescribeMemoryProtection(view.DeepRegionProtect)}) " +
+                   $"stack0={stack0} stack1={stack1} deepSampleSize={view.DeepSampleSize} deepSample={sampleHex} sampleDisasmHint={sampleDisasm}";
+        }
+
         private HeuristicEventView? CreatePromotedHeuristic(BrokerEtwEventView view)
         {
+            /* Never promote BK's own instrumentation pages as heuristics */
+            if (IsBlackbirdOwnEvent(view))
+                return null;
+
             string detection = view.DetectionName;
+            if (string.IsNullOrWhiteSpace(detection) && IsDirectSyscallDetection(view))
+            {
+                detection = BuildDirectSyscallDetectionName(view);
+            }
             if (string.IsNullOrWhiteSpace(detection) || !ShouldPromoteHeuristic(view))
             {
                 return null;
@@ -2197,20 +3814,28 @@ namespace BlackbirdInterface
             {
                 heuristicEvidence = BuildHandleEvidenceText(evidence);
             }
-            if (IsDirectSyscallDetection(detection) && hasEvidence &&
-                !ShouldKeepDirectSyscallHeuristicFromEvidence(evidence))
+            if (IsDirectSyscallDetection(view))
             {
-                return null;
+                if (hasEvidence && !ShouldKeepDirectSyscallHeuristicFromEvidence(evidence))
+                {
+                    return null;
+                }
+                if (!hasEvidence && view.Family == BlackbirdNative.IpcEtwFamilyHandle)
+                {
+                    heuristicEvidence = BuildEtwDirectSyscallEvidenceText(view);
+                }
             }
 
             string rawCorrFlagsSuffix = view.CorrelationFlags == sanitizedCorrFlags
                                             ? string.Empty
                                             : $"; rawCorrFlags=0x{view.CorrelationFlags:X8}";
+            uint severity = IsDirectSyscallDetection(view) ? Math.Max(view.Severity, DirectSyscallSeverityFloor(view))
+                                                           : view.Severity;
 
             return new HeuristicEventView {
                 TimestampUtc = view.TimestampUtc,
                 LastSeenUtc = view.TimestampUtc,
-                Severity = view.Severity,
+                Severity = severity,
                 DetectionName = detection,
                 ActorPid = actor,
                 TargetPid = target,
@@ -2290,6 +3915,11 @@ namespace BlackbirdInterface
 
         private TelemetryEvent? HandleApiHookEvent(BrokerEtwEventView view)
         {
+            if (!ShouldIncludeApiGraphView(view))
+            {
+                return null;
+            }
+
             string apiName = !string.IsNullOrWhiteSpace(view.EventName)
                                  ? view.EventName
                                  : (!string.IsNullOrWhiteSpace(view.Operation) ? view.Operation : "unknown");
@@ -2307,7 +3937,10 @@ namespace BlackbirdInterface
             }
 
             string callerOrigin = NormalizeApiCallerOrigin(view.CallerOriginLabel);
-            string key = BuildApiGraphKey(sourcePid, targetPid, threadId, apiName, sensorOrigin, callerOrigin);
+            Dictionary<string, string> hookFields = BuildHookFieldMap(view);
+            string originModule = NormalizeApiOriginModule(ResolveHookOriginModule(view, hookFields));
+            string key =
+                BuildApiGraphKey(sourcePid, targetPid, threadId, apiName, sensorOrigin, callerOrigin, originModule);
             int currentHits;
             if (_apiGraphRowsByKey.TryGetValue(key, out ApiCallGraphRowSnapshot? existing))
             {
@@ -2315,6 +3948,7 @@ namespace BlackbirdInterface
                 existing.LastSeenUtc = view.TimestampUtc;
                 existing.SensorOrigin = sensorOrigin;
                 existing.CallerOrigin = callerOrigin;
+                existing.OriginModule = originModule;
                 currentHits = existing.Hits;
             }
             else
@@ -2322,10 +3956,12 @@ namespace BlackbirdInterface
                 _apiGraphRowsByKey[key] = new ApiCallGraphRowSnapshot { ApiName = apiName,
                                                                         SensorOrigin = sensorOrigin,
                                                                         CallerOrigin = callerOrigin,
+                                                                        OriginModule = originModule,
                                                                         SourcePid = sourcePid,
                                                                         TargetPid = targetPid,
                                                                         ThreadId = threadId,
                                                                         Hits = 1,
+                                                                        FirstSeenUtc = view.TimestampUtc,
                                                                         LastSeenUtc = view.TimestampUtc };
                 currentHits = 1;
             }
@@ -2335,12 +3971,19 @@ namespace BlackbirdInterface
             (string decodedAction, string decodedDetail) = BuildApiDecodedAction(view, rawReason);
             _apiGraphActionByKey[key] = decodedAction;
             _apiGraphDecodedByKey[key] = decodedDetail;
-            _apiGraphFramesByKey[key] = BuildHookFrameSummary(view, BuildHookFieldMap(view));
+            string frameSummary = BuildHookFrameSummary(view, hookFields);
+            _apiGraphFramesByKey[key] = frameSummary;
             _apiGraphSensorByKey[key] = sensorOrigin;
-            _apiGraphViewByKey[key] = view.Clone();
+            ApiCallStructuredFields structured = BuildApiCallStructuredFields(apiName, rawReason, decodedAction, view);
+            ApiCallGraphRowSnapshot snapshot = _apiGraphRowsByKey[key];
+            snapshot.ActionLabel = decodedAction;
+            snapshot.DetailFull = decodedDetail;
+            snapshot.CallChainLabel = frameSummary;
+            snapshot.ContextLabel = structured.Field2Value;
+            snapshot.FlagsLabel = structured.Field4Value;
 
             ScheduleApiGraphSnapshot();
-            if (string.IsNullOrWhiteSpace(view.Details))
+            if (string.IsNullOrWhiteSpace(decodedDetail))
             {
                 return null;
             }
@@ -2358,6 +4001,11 @@ namespace BlackbirdInterface
                                         Summary =
                                             $"{apiName} [caller {sourcePid} target {targetPid} hits {currentHits}]",
                                         Details = decodedDetail };
+        }
+
+        private bool ShouldIncludeApiGraphView(BrokerEtwEventView view)
+        {
+            return EventDetailFormatting.IsApiGraphCandidate(view);
         }
 
         private bool ShouldEmitApiTimelineEvent(string key, int hits, DateTime timestampUtc)
@@ -2387,88 +4035,353 @@ namespace BlackbirdInterface
 
         private void PublishApiGraphSnapshot()
         {
-            var snapshot =
-                _apiGraphRowsByKey.Values
-                    .Select(x => new ApiCallGraphRowSnapshot { ApiName = x.ApiName, SensorOrigin = x.SensorOrigin,
-                                                               CallerOrigin = x.CallerOrigin, SourcePid = x.SourcePid,
-                                                               TargetPid = x.TargetPid, ThreadId = x.ThreadId,
-                                                               Hits = x.Hits, LastSeenUtc = x.LastSeenUtc })
-                    .OrderByDescending(x => x.Hits)
-                    .ThenByDescending(x => x.LastSeenUtc)
-                    .Take(400)
-                    .ToList();
+            BackfillApiGraphFromEtwHistoryIfNeeded();
 
-            int maxHits = Math.Max(1, snapshot.Count == 0 ? 1 : snapshot.Max(x => Math.Max(1, x.Hits)));
-            var rows = new List<ApiCallGraphMainRowView>(snapshot.Count);
-            foreach (ApiCallGraphRowSnapshot row in snapshot)
-            {
-                uint target = row.TargetPid != 0 ? row.TargetPid : row.SourcePid;
-                string sensor = string.IsNullOrWhiteSpace(row.SensorOrigin) ? "Unclassified" : row.SensorOrigin;
-                string callerOrigin = NormalizeApiCallerOrigin(row.CallerOrigin);
-                string key =
-                    BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName, sensor, callerOrigin);
-                double heatPercent = Math.Clamp((row.Hits / (double)maxHits) * 100.0, 0.0, 100.0);
-                string rawReason = _apiGraphReasonByKey.TryGetValue(key, out string? reason) ? reason : string.Empty;
-                string decodedAction = _apiGraphActionByKey.TryGetValue(key, out string? action)
-                    ? action
-                    : BuildGenericApiActionLabel(row.ApiName, ParseReasonFields(rawReason));
-                string decodedDetail = _apiGraphDecodedByKey.TryGetValue(key, out string? detail)
-                    ? detail
-                    : BuildFallbackApiDetail(row.ApiName, rawReason, decodedAction);
-                sensor = _apiGraphSensorByKey.TryGetValue(key, out string? sensorLabel) ? sensorLabel : sensor;
-                BrokerEtwEventView? rowView = FindApiGraphViewForKey(key);
-                ApiCallStructuredFields structured =
-                    BuildApiCallStructuredFields(row.ApiName, rawReason, decodedAction, rowView);
-                Dictionary<string, string> reasonFields = ParseReasonFields(rawReason);
-                string frameSummary = _apiGraphFramesByKey.TryGetValue(key, out string? storedFrameSummary)
-                    ? storedFrameSummary
-                    : BuildHookFrameSummary(reasonFields);
-                string sourceLabel = FormatApiProcessLabel(row.SourcePid);
-                string targetLabel = FormatApiProcessLabel(target);
-                rows.Add(new ApiCallGraphMainRowView {
-                    GraphKey = key,
-                    ApiName = string.IsNullOrWhiteSpace(row.ApiName) ? "unknown" : row.ApiName,
-                    ActionLabel = structured.Action,
-                    SensorLabel = sensor,
-                    CallerOriginKey = callerOrigin,
-                    CallerOriginLabel = GetApiCallerOriginDisplayLabel(callerOrigin, sensor),
-                    CallChainLabel = frameSummary,
-                    CallerOriginBackground = BuildApiCallerOriginBackground(callerOrigin),
-                    CallerOriginForeground = BuildApiCallerOriginForeground(callerOrigin),
-                    SensorBackground = BuildApiSensorBackground(sensor),
-                    SensorForeground = BuildApiSensorForeground(sensor),
-                    HeatTrackBackground = BuildApiHeatTrackBackground(sensor, callerOrigin),
-                    HeatFillBackground = BuildApiHeatFillBackground(sensor, callerOrigin),
-                    RowBackground = BuildApiRowBackground(sensor, callerOrigin),
-                    RowBorderBrush = BuildApiRowBorder(sensor, callerOrigin),
-                    SourceLabel = sourceLabel,
-                    TargetLabel = targetLabel,
-                    ThreadLabel =
-                        row.ThreadId == 0 ? string.Empty : row.ThreadId.ToString(CultureInfo.InvariantCulture),
-                    BaseLabel = structured.Field1Value,
-                    SizeLabel = structured.Field2Value,
-                    AllocTypeLabel = structured.Field3Value,
-                    ProtectLabel = structured.Field4Value,
-                    Field2Label = structured.Field2Label,
-                    Field4Label = structured.Field4Label,
-                    Hits = Math.Max(1, row.Hits),
-                    HeatPercent = heatPercent,
-                    ActivityFillWidth = Math.Round((heatPercent / 100.0) * 110.0),
-                    LastSeen = FormatApiRelativeAge(row.LastSeenUtc),
-                    AbsoluteLastSeen = row.LastSeenUtc == default
-                                           ? string.Empty
-                                           : row.LastSeenUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff",
-                                                                                    CultureInfo.InvariantCulture),
-                    LastSeenUtc = row.LastSeenUtc,
-                    DetailFull = decodedDetail
-                });
-            }
+            var snapshot = _apiGraphRowsByKey.Values.Select(static x => x.Clone())
+                               .OrderByDescending(x => x.Hits)
+                               .ThenByDescending(x => x.LastSeenUtc)
+                               .Take(800)
+                               .ToList();
 
             _apiGraphSnapshotRows.Clear();
             _apiGraphSnapshotRows.AddRange(snapshot);
-            _apiViewSnapshotRows.Clear();
-            _apiViewSnapshotRows.AddRange(rows);
             RefreshApiViewPresentation();
+        }
+
+        private void BackfillApiGraphFromEtwHistoryIfNeeded()
+        {
+            if (_apiGraphRowsByKey.Count != 0)
+            {
+                return;
+            }
+
+            IEnumerable<GroupedEventRow> sourceGroups =
+                EtwPaneHost.ItemCount > 0
+                    ? EtwPaneHost.SnapshotItems()
+                    : (_currentSession != null && _etwHistoryByPid.TryGetValue(_currentSession.Pid, out var history)
+                           ? history
+                           : Array.Empty<GroupedEventRow>());
+            foreach (GroupedEventDetailRow detail in sourceGroups.SelectMany(x => x.Details))
+            {
+                ObserveApiGraphDetailFallback(detail);
+            }
+        }
+
+        private void ObserveApiGraphDetailFallback(GroupedEventDetailRow detail)
+        {
+            if (detail == null || string.IsNullOrWhiteSpace(detail.Event) || !IsLikelyApiHookDetail(detail))
+            {
+                return;
+            }
+
+            string apiName = detail.Event;
+            string sensorOrigin = detail.Source.IndexOf("kernel", StringComparison.OrdinalIgnoreCase) >= 0
+                                      ? "Kernel Hook"
+                                  : detail.Source.IndexOf("hook", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                          detail.Detection.StartsWith("USERMODE_", StringComparison.OrdinalIgnoreCase)
+                                      ? "Usermode Hook"
+                                      : "Unclassified";
+            string callerOrigin = "unknown";
+            string originModule = "unknown";
+            uint sourcePid = detail.ActorPid;
+            uint targetPid = detail.TargetPid != 0 ? detail.TargetPid : detail.ActorPid;
+            uint threadId = 0;
+            _ = uint.TryParse(detail.EventTid, NumberStyles.Integer, CultureInfo.InvariantCulture, out threadId);
+            string key =
+                BuildApiGraphKey(sourcePid, targetPid, threadId, apiName, sensorOrigin, callerOrigin, originModule);
+            if (_apiGraphRowsByKey.TryGetValue(key, out ApiCallGraphRowSnapshot? existing))
+            {
+                existing.Hits = Math.Max(1, existing.Hits + Math.Max(1, detail.HitCount));
+                existing.LastSeenUtc = detail.TimestampUtc;
+                return;
+            }
+
+            _apiGraphRowsByKey[key] = new ApiCallGraphRowSnapshot {
+                ApiName = apiName,
+                SensorOrigin = sensorOrigin,
+                CallerOrigin = callerOrigin,
+                OriginModule = originModule,
+                ActionLabel = string.IsNullOrWhiteSpace(detail.Detection) ? apiName : detail.Detection,
+                DetailFull = string.IsNullOrWhiteSpace(detail.Details) ? detail.ArgumentSummary : detail.Details,
+                CallChainLabel = string.Empty,
+                ContextLabel = detail.ArgumentSummary,
+                FlagsLabel = string.IsNullOrWhiteSpace(detail.Flags) ? detail.Access : detail.Flags,
+                SourcePid = sourcePid,
+                TargetPid = targetPid,
+                ThreadId = threadId,
+                Hits = Math.Max(1, detail.HitCount),
+                FirstSeenUtc = detail.TimestampUtc,
+                LastSeenUtc = detail.TimestampUtc
+            };
+            _apiGraphSensorByKey[key] = sensorOrigin;
+        }
+
+        private static bool IsLikelyApiHookDetail(GroupedEventDetailRow detail)
+        {
+            if (detail.Source.IndexOf("hook", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return true;
+            }
+
+            if (detail.Detection.StartsWith("USERMODE_", StringComparison.OrdinalIgnoreCase))
+            {
+                return !detail.Detection.Contains("INTEGRITY", StringComparison.OrdinalIgnoreCase);
+            }
+
+            return detail.Event.StartsWith("Nt", StringComparison.OrdinalIgnoreCase) ||
+                   detail.Event.StartsWith("Zw", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool ObserveExtendedActivity(BrokerEtwEventView view)
+        {
+            if (!TryBuildExtendedActivityRow(view, out ExtendedActivityRowSnapshot? row) || row == null)
+            {
+                return false;
+            }
+
+            string key = BuildExtendedActivityKey(row.TypeLabel, row.ActorLabel, row.TargetLabel, row.SubjectLabel,
+                                                  row.OperationLabel);
+            if (_extendedRowsByKey.TryGetValue(key, out ExtendedActivityRowSnapshot? existing))
+            {
+                existing.Hits = Math.Max(1, existing.Hits + 1);
+                existing.LastSeenUtc = row.LastSeenUtc;
+                existing.LastSeenLabel = row.LastSeenLabel;
+                existing.DetailLabel = row.DetailLabel;
+                return true;
+            }
+
+            _extendedRowsByKey[key] = row;
+            return true;
+        }
+
+        private void ScheduleExtendedActivitySnapshot()
+        {
+            _extendedViewSnapshotDirty = true;
+            _extendedViewRefreshTimer.Start();
+        }
+
+        private void FlushExtendedActivitySnapshot()
+        {
+            if (!_extendedViewSnapshotDirty)
+            {
+                _extendedViewRefreshTimer.Stop();
+                return;
+            }
+
+            _extendedViewSnapshotDirty = false;
+            PublishExtendedActivitySnapshot();
+        }
+
+        private void PublishExtendedActivitySnapshot()
+        {
+            List<ExtendedActivityRowSnapshot> snapshot = _extendedRowsByKey.Values.Select(static x => x.Clone())
+                                                             .OrderByDescending(x => x.LastSeenUtc)
+                                                             .ThenByDescending(x => x.Hits)
+                                                             .Take(800)
+                                                             .ToList();
+
+            _extendedViewRows.ReplaceAll(snapshot);
+            _extendedComRows.ReplaceAll(snapshot.Where(IsExtendedComRow).ToList());
+            _extendedEtwRows.ReplaceAll(snapshot.Where(IsExtendedEtwRow).ToList());
+            _extendedJobRows.ReplaceAll(snapshot.Where(IsExtendedJobRow).ToList());
+            _extendedYaraRows.ReplaceAll(snapshot.Where(IsExtendedYaraRow).ToList());
+            if (ExtendedViewSummaryBlock != null)
+            {
+                ExtendedViewSummaryBlock.Text =
+                    snapshot.Count == 0 ? "No extended activity yet"
+                                        : $"Activities: {snapshot.Count} / Hits: {snapshot.Sum(x => x.Hits)}";
+            }
+        }
+
+        private static bool IsExtendedComRow(ExtendedActivityRowSnapshot row)
+        {
+            return row.TypeLabel.Contains("COM", StringComparison.OrdinalIgnoreCase) ||
+                   row.TypeLabel.Contains("WMI", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsExtendedEtwRow(ExtendedActivityRowSnapshot row)
+        {
+            return row.TypeLabel.Contains("ETW", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsExtendedJobRow(ExtendedActivityRowSnapshot row)
+        {
+            return row.TypeLabel.Contains("Job", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsExtendedYaraRow(ExtendedActivityRowSnapshot row)
+        {
+            return row.TypeLabel.Contains("YARA", StringComparison.OrdinalIgnoreCase) ||
+                   row.TypeLabel.Contains("SIGMA", StringComparison.OrdinalIgnoreCase) ||
+                   row.TypeLabel.Contains("Rules", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool TryBuildExtendedActivityRow(BrokerEtwEventView view, out ExtendedActivityRowSnapshot? row)
+        {
+            row = null;
+            string detection = view.DetectionName ?? string.Empty;
+            string type;
+            string operation;
+
+            switch (detection)
+            {
+            case "USERMODE_COM_INIT":
+                type = "COM Init";
+                operation = "Initialize";
+                break;
+            case "USERMODE_COM_SECURITY_INIT":
+                type = "COM Security";
+                operation = "InitializeSecurity";
+                break;
+            case "USERMODE_COM_INSTANCE_CREATE":
+                type = "COM Activation";
+                operation = "CreateInstance";
+                break;
+            case "USERMODE_WMI_ACTIVITY":
+                type = "WMI";
+                operation = "Locator Activation";
+                break;
+            case "USERMODE_ETW_PROVIDER_REGISTER":
+                type = "ETW Provider";
+                operation = "Register";
+                break;
+            case "USERMODE_ETW_PROVIDER_UNREGISTER":
+                type = "ETW Provider";
+                operation = "Unregister";
+                break;
+            case "USERMODE_ETW_SESSION_CONTROL":
+                type = "ETW Session";
+                operation = "StartTrace";
+                break;
+            case "USERMODE_ETW_SUBSCRIPTION":
+                type = "ETW Subscription";
+                operation = "EnableTrace";
+                break;
+            case "USERMODE_JOB_OBJECT_ACTIVITY":
+                type = "Job Object";
+                operation = !string.IsNullOrWhiteSpace(view.EventName) ? view.EventName : "Activity";
+                break;
+            default:
+                if (!TryBuildGenericExtendedActivityLabels(view, out type, out operation))
+                {
+                    return false;
+                }
+                break;
+            }
+
+            uint actorPid = ResolveExtendedActorPid(view);
+            uint targetPid = ResolveExtendedTargetPid(view, actorPid);
+            string subject = ExtractExtendedSubject(view);
+            row = new ExtendedActivityRowSnapshot { TypeLabel = type,
+                                                    ActorLabel = FormatApiProcessLabel(actorPid),
+                                                    TargetLabel = FormatApiProcessLabel(targetPid),
+                                                    SubjectLabel = subject,
+                                                    OperationLabel = operation,
+                                                    DetailLabel =
+                                                        FirstNonBlank(view.Reason, view.ArgumentSummary, view.Details),
+                                                    LastSeenUtc = view.TimestampUtc,
+                                                    LastSeenLabel = FormatApiRelativeAge(view.TimestampUtc),
+                                                    Hits = 1 };
+            return true;
+        }
+
+        private static bool TryBuildGenericExtendedActivityLabels(BrokerEtwEventView view, out string type,
+                                                                  out string operation)
+        {
+            type = view.Family switch { BlackbirdNative.IpcEtwFamilyHandle => "Handle",
+                                        BlackbirdNative.IpcEtwFamilyThread => "Thread",
+                                        BlackbirdNative.IpcEtwFamilyProcess => "Process",
+                                        BlackbirdNative.IpcEtwFamilyImage => "Image",
+                                        BlackbirdNative.IpcEtwFamilyRegistry => "Registry",
+                                        BlackbirdNative.IpcEtwFamilyApc => "APC",
+                                        BlackbirdNative.IpcEtwFamilyDetection => "Detection",
+                                        BlackbirdNative.IpcEtwFamilyThreatIntel => "Threat Intel",
+                                        BlackbirdNative.IpcEtwFamilySocket => "Socket",
+                                        BlackbirdNative.IpcEtwFamilyUserHook => "API",
+                                        _ => string.IsNullOrWhiteSpace(view.Source) ? string.Empty : view.Source };
+            operation = FirstNonBlank(view.Operation, view.EventName, view.DetectionName, "Activity");
+
+            if (string.IsNullOrWhiteSpace(type))
+            {
+                return false;
+            }
+
+            return view.Family == BlackbirdNative.IpcEtwFamilyUserHook ||
+                   view.Family == BlackbirdNative.IpcEtwFamilySocket ||
+                   view.Family == BlackbirdNative.IpcEtwFamilyRegistry ||
+                   view.Family == BlackbirdNative.IpcEtwFamilyImage ||
+                   view.Family == BlackbirdNative.IpcEtwFamilyProcess ||
+                   view.Family == BlackbirdNative.IpcEtwFamilyThread ||
+                   view.Family == BlackbirdNative.IpcEtwFamilyHandle ||
+                   !string.IsNullOrWhiteSpace(view.DetectionName) || view.Severity >= 2;
+        }
+
+        private static uint ResolveExtendedActorPid(BrokerEtwEventView view) =>
+            FirstNonZero(view.ActorPid, view.CallerPid, view.CreatorPid, view.ProcessPid, view.EventProcessId);
+
+        private static uint ResolveExtendedTargetPid(BrokerEtwEventView view, uint actorPid) =>
+            FirstNonZero(view.TargetPid, view.ExplicitTargetPid, view.ProcessPid, view.EventProcessId, actorPid);
+
+        private static string ExtractExtendedSubject(BrokerEtwEventView view)
+        {
+            string reason = view.Reason ?? string.Empty;
+            string[] tokens = new[] { "class=", "provider=", "name=", "mode=", "class=" };
+            foreach (string token in tokens)
+            {
+                int start = reason.IndexOf(token, StringComparison.OrdinalIgnoreCase);
+                if (start < 0)
+                {
+                    continue;
+                }
+
+                start += token.Length;
+                int end = reason.IndexOf(' ', start);
+                if (end < 0)
+                {
+                    end = reason.Length;
+                }
+
+                string value = reason.Substring(start, end - start).Trim();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value;
+                }
+            }
+
+            return FirstNonBlank(view.KeyPath, view.ValueName, view.ImagePath, view.OriginPath, view.CommandLine,
+                                 view.ClassName, view.ArgumentSummary, view.EventName, view.DetectionName);
+        }
+
+        private static uint FirstNonZero(params uint[] values)
+        {
+            foreach (uint value in values)
+            {
+                if (value != 0)
+                {
+                    return value;
+                }
+            }
+
+            return 0;
+        }
+
+        private static string FirstNonBlank(params string?[] values)
+        {
+            foreach (string? value in values)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value.Trim();
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static string BuildExtendedActivityKey(string type, string actor, string target, string subject,
+                                                       string operation)
+        {
+            return string.Join("|", type, actor, target, subject, operation);
         }
 
         private void RefreshApiViewPresentation()
@@ -2476,39 +4389,33 @@ namespace BlackbirdInterface
             string? selectedKey = (ApiViewDataGrid?.SelectedItem as ApiCallGraphMainRowView)?.GraphKey;
             bool apiViewVisible = _mainViewMode == MainInterfaceViewMode.Api && ApiViewBorder != null &&
                                   ApiViewBorder.Visibility == Visibility.Visible;
-            List<ApiCallGraphMainRowView> filteredRows = ApplyApiViewFilters(_apiViewSnapshotRows);
-            _apiViewRows.ReplaceAll(filteredRows);
+            List<ApiCallGraphMainRowView> sourceRows =
+                _apiViewPresentationMode == ApiViewPresentationMode.ThreadTimeline
+                    ? BuildApiThreadTimelineRows(_apiGraphSnapshotRows)
+                    : BuildApiCallGraphRows(_apiGraphSnapshotRows);
+            _apiViewSnapshotRows.Clear();
+            _apiViewSnapshotRows.AddRange(sourceRows);
 
-            var filteredKeys = new HashSet<string>(filteredRows.Select(x => x.GraphKey), StringComparer.Ordinal);
-            List<ApiCallGraphRowSnapshot> filteredSnapshot =
-                _apiGraphSnapshotRows
-                    .Where(row =>
-                           {
-                               string sensor =
-                                   string.IsNullOrWhiteSpace(row.SensorOrigin) ? "Unclassified" : row.SensorOrigin;
-                               string callerOrigin = NormalizeApiCallerOrigin(row.CallerOrigin);
-                               string key = BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName,
-                                                             sensor, callerOrigin);
-                               return filteredKeys.Contains(key);
-                           })
-                    .OrderByDescending(x => x.Hits)
-                    .ThenByDescending(x => x.LastSeenUtc)
-                    .ToList();
+            List<ApiCallGraphMainRowView> filteredRows = ApplyApiViewFilters(sourceRows);
+            _apiViewRows.ReplaceAll(filteredRows);
 
             if (ApiViewSummaryBlock != null)
             {
+                string noun =
+                    _apiViewPresentationMode == ApiViewPresentationMode.ThreadTimeline ? "Thread/API Rows" : "Patterns";
                 ApiViewSummaryBlock.Text =
-                    _apiGraphSnapshotRows.Count == 0 ? "No API hook data yet"
-                    : filteredRows.Count == _apiViewSnapshotRows.Count
-                        ? $"Patterns: {filteredRows.Count} / Calls: {filteredRows.Sum(x => x.Hits)}"
-                        : $"Patterns: {filteredRows.Count}/{_apiViewSnapshotRows.Count} / Calls: {filteredRows.Sum(x => x.Hits)}";
+                    sourceRows.Count == 0 ? "No API hook data yet"
+                    : filteredRows.Count == sourceRows.Count
+                        ? $"{noun}: {filteredRows.Count} / Calls: {filteredRows.Sum(x => x.Hits)}"
+                        : $"{noun}: {filteredRows.Count}/{sourceRows.Count} / Calls: {filteredRows.Sum(x => x.Hits)}";
             }
             if (apiViewVisible && ApiViewGraphCanvas != null)
             {
-                RenderApiGraphCanvas(filteredSnapshot, selectedKey);
+                RenderApiPresentationCanvas(filteredRows, selectedKey);
             }
             DiagnosticsState.SetValue(
-                "API Graph", $"patterns={filteredRows.Count}/{_apiViewSnapshotRows.Count} visible={apiViewVisible}");
+                "API Graph",
+                $"{(_apiViewPresentationMode == ApiViewPresentationMode.ThreadTimeline ? "threads" : "patterns")}={filteredRows.Count}/{sourceRows.Count} visible={apiViewVisible}");
 
             if (ApiViewDataGrid != null)
             {
@@ -2539,23 +4446,472 @@ namespace BlackbirdInterface
 
             string? selectedKey = (ApiViewDataGrid?.SelectedItem as ApiCallGraphMainRowView)?.GraphKey;
             List<ApiCallGraphMainRowView> filteredRows = ApplyApiViewFilters(_apiViewSnapshotRows);
-            var filteredKeys = new HashSet<string>(filteredRows.Select(x => x.GraphKey), StringComparer.Ordinal);
-            List<ApiCallGraphRowSnapshot> filteredSnapshot =
+            RenderApiPresentationCanvas(filteredRows, selectedKey);
+        }
+
+        private List<ApiCallGraphMainRowView> BuildApiCallGraphRows(IReadOnlyList<ApiCallGraphRowSnapshot> snapshot)
+        {
+            int maxHits = Math.Max(1, snapshot.Count == 0 ? 1 : snapshot.Max(x => Math.Max(1, x.Hits)));
+            var rows = new List<ApiCallGraphMainRowView>(snapshot.Count);
+            foreach (ApiCallGraphRowSnapshot row in snapshot)
+            {
+                uint target = row.TargetPid != 0 ? row.TargetPid : row.SourcePid;
+                string sensor = string.IsNullOrWhiteSpace(row.SensorOrigin) ? "Unclassified" : row.SensorOrigin;
+                string callerOrigin = NormalizeApiCallerOrigin(row.CallerOrigin);
+                string originModule = NormalizeApiOriginModule(row.OriginModule);
+                string key = BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName, sensor,
+                                              callerOrigin, originModule);
+                double heatPercent = Math.Clamp((row.Hits / (double)maxHits) * 100.0, 0.0, 100.0);
+                rows.Add(new ApiCallGraphMainRowView {
+                    GraphKey = key,
+                    ThreadGroupKey = $"{row.SourcePid}|{row.ThreadId}",
+                    ViewModeKey = "call",
+                    ApiName = string.IsNullOrWhiteSpace(row.ApiName) ? "unknown" : row.ApiName,
+                    OriginModule = originModule,
+                    ActionLabel = row.ActionLabel,
+                    SensorLabel = sensor,
+                    CallerOriginKey = callerOrigin,
+                    CallerOriginLabel = GetApiCallerOriginDisplayLabel(callerOrigin, sensor),
+                    CallChainLabel = row.CallChainLabel,
+                    CallerOriginBackground = BuildApiCallerOriginBackground(callerOrigin),
+                    CallerOriginForeground = BuildApiCallerOriginForeground(callerOrigin),
+                    SensorBackground = BuildApiSensorBackground(sensor),
+                    SensorForeground = BuildApiSensorForeground(sensor),
+                    HeatTrackBackground = BuildApiHeatTrackBackground(sensor, callerOrigin),
+                    HeatFillBackground = BuildApiHeatFillBackground(sensor, callerOrigin),
+                    RowBackground = BuildApiRowBackground(sensor, callerOrigin),
+                    RowBorderBrush = BuildApiRowBorder(sensor, callerOrigin),
+                    SourceLabel = FormatApiProcessLabel(row.SourcePid),
+                    TargetLabel = FormatApiProcessLabel(target),
+                    ThreadLabel =
+                        row.ThreadId == 0 ? string.Empty : row.ThreadId.ToString(CultureInfo.InvariantCulture),
+                    SizeLabel = row.ContextLabel,
+                    ProtectLabel = row.FlagsLabel,
+                    Field2Label = "Context",
+                    Field4Label = "Flags",
+                    Hits = Math.Max(1, row.Hits),
+                    HeatPercent = heatPercent,
+                    ActivityFillWidth = Math.Round((heatPercent / 100.0) * 110.0),
+                    FirstSeen = FormatApiRelativeAge(row.FirstSeenUtc),
+                    AbsoluteFirstSeen = row.FirstSeenUtc == default
+                                            ? string.Empty
+                                            : row.FirstSeenUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff",
+                                                                                      CultureInfo.InvariantCulture),
+                    FirstSeenUtc = row.FirstSeenUtc,
+                    LastSeen = FormatApiRelativeAge(row.LastSeenUtc),
+                    AbsoluteLastSeen = row.LastSeenUtc == default
+                                           ? string.Empty
+                                           : row.LastSeenUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff",
+                                                                                    CultureInfo.InvariantCulture),
+                    LastSeenUtc = row.LastSeenUtc,
+                    DetailFull = row.DetailFull
+                });
+            }
+
+            return rows;
+        }
+
+        private List<ApiCallGraphMainRowView>
+        BuildApiThreadTimelineRows(IReadOnlyList<ApiCallGraphRowSnapshot> snapshot)
+        {
+            var groups =
+                snapshot
+                    .GroupBy(
+                        row =>
+                            $"{row.SourcePid}|{row.TargetPid}|{row.ThreadId}|{NormalizeApiOriginModule(row.OriginModule)}|{row.ApiName}",
+                        StringComparer.Ordinal)
+                    .Select(
+                        group =>
+                        {
+                            ApiCallGraphRowSnapshot latest = group.OrderByDescending(x => x.LastSeenUtc).First();
+                            int hits = group.Sum(x => Math.Max(1, x.Hits));
+                            DateTime firstSeenUtc = group.Where(x => x.FirstSeenUtc != default)
+                                                        .Select(x => x.FirstSeenUtc)
+                                                        .DefaultIfEmpty(latest.LastSeenUtc)
+                                                        .Min();
+                            DateTime lastSeenUtc = group.Max(x => x.LastSeenUtc);
+                            string sensor =
+                                group.Select(x => x.SensorOrigin).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) ??
+                                "Unclassified";
+                            string callerOrigin = NormalizeApiCallerOrigin(latest.CallerOrigin);
+                            string originModule = NormalizeApiOriginModule(latest.OriginModule);
+                            return new {
+                                Key =
+                                    $"thread|{latest.SourcePid}|{latest.TargetPid}|{latest.ThreadId}|{originModule}|{latest.ApiName}",
+                                ThreadGroupKey = $"{latest.SourcePid}|{latest.ThreadId}",
+                                Latest = latest,
+                                Hits = hits,
+                                FirstSeenUtc = firstSeenUtc,
+                                LastSeenUtc = lastSeenUtc,
+                                Sensor = sensor,
+                                CallerOrigin = callerOrigin,
+                                OriginModule = originModule,
+                                OperationSummary = BuildApiOperationSummary(group)
+                            };
+                        })
+                    .OrderBy(x => x.ThreadGroupKey, StringComparer.Ordinal)
+                    .ThenBy(x => x.FirstSeenUtc)
+                    .ThenBy(x => x.LastSeenUtc)
+                    .Take(600)
+                    .ToList();
+
+            int maxHits = Math.Max(1, groups.Count == 0 ? 1 : groups.Max(x => Math.Max(1, x.Hits)));
+            var rows = new List<ApiCallGraphMainRowView>(groups.Count);
+            foreach (var group in groups)
+            {
+                ApiCallGraphRowSnapshot row = group.Latest;
+                uint target = row.TargetPid != 0 ? row.TargetPid : row.SourcePid;
+                double heatPercent = Math.Clamp((group.Hits / (double)maxHits) * 100.0, 0.0, 100.0);
+                string threadLabel =
+                    BuildThreadTimelineLabel(row.SourcePid, row.ThreadId, group.FirstSeenUtc, group.LastSeenUtc);
+                rows.Add(new ApiCallGraphMainRowView {
+                    GraphKey = group.Key,
+                    ThreadGroupKey = group.ThreadGroupKey,
+                    ViewModeKey = "thread",
+                    ApiName = string.IsNullOrWhiteSpace(row.ApiName) ? "unknown" : row.ApiName,
+                    OriginModule = group.OriginModule,
+                    ActionLabel = string.IsNullOrWhiteSpace(row.ActionLabel) ? "Call activity" : row.ActionLabel,
+                    SensorLabel = group.Sensor,
+                    CallerOriginKey = group.CallerOrigin,
+                    CallerOriginLabel = GetApiCallerOriginDisplayLabel(group.CallerOrigin, group.Sensor),
+                    CallChainLabel = BuildThreadTimelineCallChain(row, group.FirstSeenUtc, group.LastSeenUtc),
+                    CallerOriginBackground = BuildApiCallerOriginBackground(group.CallerOrigin),
+                    CallerOriginForeground = BuildApiCallerOriginForeground(group.CallerOrigin),
+                    SensorBackground = BuildApiSensorBackground(group.Sensor),
+                    SensorForeground = BuildApiSensorForeground(group.Sensor),
+                    HeatTrackBackground = BuildApiHeatTrackBackground(group.Sensor, group.CallerOrigin),
+                    HeatFillBackground = BuildApiHeatFillBackground(group.Sensor, group.CallerOrigin),
+                    RowBackground = BuildApiRowBackground(group.Sensor, group.CallerOrigin),
+                    RowBorderBrush = BuildApiRowBorder(group.Sensor, group.CallerOrigin),
+                    SourceLabel = FormatApiProcessLabel(row.SourcePid),
+                    TargetLabel = FormatApiProcessLabel(target),
+                    ThreadLabel = threadLabel,
+                    SizeLabel = group.OriginModule,
+                    ProtectLabel = group.OperationSummary,
+                    Field2Label = "Module",
+                    Field4Label = "Ops",
+                    Hits = group.Hits,
+                    HeatPercent = heatPercent,
+                    ActivityFillWidth = Math.Round((heatPercent / 100.0) * 110.0),
+                    FirstSeen = FormatApiRelativeAge(group.FirstSeenUtc),
+                    AbsoluteFirstSeen = group.FirstSeenUtc == default
+                                            ? string.Empty
+                                            : group.FirstSeenUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff",
+                                                                                        CultureInfo.InvariantCulture),
+                    FirstSeenUtc = group.FirstSeenUtc,
+                    LastSeen = FormatApiRelativeAge(group.LastSeenUtc),
+                    AbsoluteLastSeen = group.LastSeenUtc == default
+                                           ? string.Empty
+                                           : group.LastSeenUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff",
+                                                                                      CultureInfo.InvariantCulture),
+                    LastSeenUtc = group.LastSeenUtc,
+                    DetailFull = BuildThreadTimelineDetail(row, group.FirstSeenUtc, group.LastSeenUtc, group.Hits,
+                                                           group.OriginModule, group.OperationSummary)
+                });
+            }
+
+            return rows;
+        }
+
+        private void RenderApiPresentationCanvas(IReadOnlyList<ApiCallGraphMainRowView> rows, string? selectedKey)
+        {
+            if (_apiViewPresentationMode == ApiViewPresentationMode.ThreadTimeline)
+            {
+                RenderApiThreadTimelineCanvas(rows, selectedKey);
+                return;
+            }
+
+            var byKey = rows.ToDictionary(x => x.GraphKey, StringComparer.Ordinal);
+            List<ApiCallGraphRowSnapshot> snapshot =
                 _apiGraphSnapshotRows
-                    .Where(row =>
-                           {
-                               string sensor =
-                                   string.IsNullOrWhiteSpace(row.SensorOrigin) ? "Unclassified" : row.SensorOrigin;
-                               string callerOrigin = NormalizeApiCallerOrigin(row.CallerOrigin);
-                               string key = BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName,
-                                                             sensor, callerOrigin);
-                               return filteredKeys.Contains(key);
-                           })
+                    .Where(x => byKey.ContainsKey(BuildApiGraphKey(
+                               x.SourcePid, x.TargetPid, x.ThreadId, x.ApiName,
+                               string.IsNullOrWhiteSpace(x.SensorOrigin) ? "Unclassified" : x.SensorOrigin,
+                               NormalizeApiCallerOrigin(x.CallerOrigin), NormalizeApiOriginModule(x.OriginModule))))
                     .OrderByDescending(x => x.Hits)
                     .ThenByDescending(x => x.LastSeenUtc)
                     .ToList();
+            RenderApiGraphCanvas(snapshot, selectedKey);
+        }
 
-            RenderApiGraphCanvas(filteredSnapshot, selectedKey);
+        private string BuildThreadTimelineLabel(uint pid, uint threadId, DateTime firstSeenUtc, DateTime lastSeenUtc)
+        {
+            string tid = threadId == 0 ? "T?" : $"T{threadId}";
+            string lifetime = BuildThreadLifetimeSummary(pid, threadId, firstSeenUtc, lastSeenUtc);
+            return string.IsNullOrWhiteSpace(lifetime) ? tid : $"{tid} · {lifetime}";
+        }
+
+        private string BuildThreadLifetimeSummary(uint pid, uint threadId, DateTime firstSeenUtc, DateTime lastSeenUtc)
+        {
+            if (_currentSession == null || threadId == 0)
+            {
+                return firstSeenUtc != default && lastSeenUtc > firstSeenUtc
+                           ? $"{(lastSeenUtc - firstSeenUtc).TotalSeconds:0.0}s"
+                           : string.Empty;
+            }
+
+            IEnumerable<ThreadLifecycleEventSample> history =
+                _currentSession.ThreadLifecycleHistory.Where(x => x.ProcessPid == pid && x.ThreadId == threadId)
+                    .OrderBy(x => x.TimestampUtc);
+            ThreadLifecycleEventSample? start =
+                history.FirstOrDefault(x => x.EventKind.Equals("Start", StringComparison.OrdinalIgnoreCase));
+            ThreadLifecycleEventSample? exit =
+                history.LastOrDefault(x => x.EventKind.Equals("Exit", StringComparison.OrdinalIgnoreCase));
+            DateTime startUtc = start?.TimestampUtc ?? firstSeenUtc;
+            DateTime endUtc = exit?.TimestampUtc ?? lastSeenUtc;
+            if (startUtc == default || endUtc == default || endUtc < startUtc)
+            {
+                return string.Empty;
+            }
+
+            string state = exit == null ? "live" : "exited";
+            return $"{(endUtc - startUtc).TotalSeconds:0.0}s {state}";
+        }
+
+        private static string BuildApiOperationSummary(IEnumerable<ApiCallGraphRowSnapshot> rows)
+        {
+            int query = 0, write = 0, exec = 0, map = 0, open = 0;
+            foreach (ApiCallGraphRowSnapshot row in rows)
+            {
+                string text = $"{row.ApiName} {row.ActionLabel} {row.DetailFull}".ToLowerInvariant();
+                int weight = Math.Max(1, row.Hits);
+                if (text.Contains("query") || text.Contains("read"))
+                    query += weight;
+                if (text.Contains("write") || text.Contains("patch") || text.Contains("protect"))
+                    write += weight;
+                if (text.Contains("thread") || text.Contains("apc") || text.Contains("execute"))
+                    exec += weight;
+                if (text.Contains("map") || text.Contains("section") || text.Contains("image"))
+                    map += weight;
+                if (text.Contains("open") || text.Contains("handle") || text.Contains("token"))
+                    open += weight;
+            }
+
+            var parts = new List<string>(5);
+            if (query != 0)
+                parts.Add($"query:{query}");
+            if (write != 0)
+                parts.Add($"write:{write}");
+            if (exec != 0)
+                parts.Add($"exec:{exec}");
+            if (map != 0)
+                parts.Add($"map:{map}");
+            if (open != 0)
+                parts.Add($"open:{open}");
+            return parts.Count == 0 ? "mixed" : string.Join(" ", parts);
+        }
+
+        private string BuildThreadTimelineCallChain(ApiCallGraphRowSnapshot row, DateTime firstSeenUtc,
+                                                    DateTime lastSeenUtc)
+        {
+            string module = NormalizeApiOriginModule(row.OriginModule);
+            string first = firstSeenUtc == default
+                               ? string.Empty
+                               : firstSeenUtc.ToLocalTime().ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
+            string last = lastSeenUtc == default
+                              ? string.Empty
+                              : lastSeenUtc.ToLocalTime().ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
+            string summary = $"Module {module}";
+            if (first.Length != 0 || last.Length != 0)
+            {
+                summary += $"{Environment.NewLine}Window {first} -> {last}";
+            }
+            if (!string.IsNullOrWhiteSpace(row.CallChainLabel))
+            {
+                summary += $"{Environment.NewLine}{Environment.NewLine}{row.CallChainLabel}";
+            }
+            return summary.Trim();
+        }
+
+        private string BuildThreadTimelineDetail(ApiCallGraphRowSnapshot row, DateTime firstSeenUtc,
+                                                 DateTime lastSeenUtc, int hits, string originModule,
+                                                 string operationSummary)
+        {
+            var sb = new StringBuilder(512);
+            sb.AppendLine($"API: {row.ApiName}");
+            sb.AppendLine($"Module: {originModule}");
+            sb.AppendLine($"Hits: {hits.ToString(CultureInfo.InvariantCulture)}");
+            if (firstSeenUtc != default)
+                sb.AppendLine($"First Seen: {firstSeenUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss.fff}");
+            if (lastSeenUtc != default)
+                sb.AppendLine($"Last Seen: {lastSeenUtc.ToLocalTime():yyyy-MM-dd HH:mm:ss.fff}");
+            sb.AppendLine($"Ops: {operationSummary}");
+            if (!string.IsNullOrWhiteSpace(row.ActionLabel))
+                sb.AppendLine().AppendLine(row.ActionLabel);
+            if (!string.IsNullOrWhiteSpace(row.DetailFull))
+                sb.AppendLine().Append(row.DetailFull.Trim());
+            return sb.ToString().TrimEnd();
+        }
+
+        private void RenderApiThreadTimelineCanvas(IReadOnlyList<ApiCallGraphMainRowView> rows, string? selectedKey)
+        {
+            if (ApiViewGraphCanvas == null)
+            {
+                return;
+            }
+
+            ApiViewGraphCanvas.Children.Clear();
+            if (rows.Count == 0)
+            {
+                ApiViewGraphCanvas.Width = 540;
+                ApiViewGraphCanvas.Height = 240;
+                var empty =
+                    new TextBlock { Text = "No thread timeline yet",
+                                    Foreground = (System.Windows.Media.Brush)FindResource("WinMutedTextBrush") };
+                Canvas.SetLeft(empty, 16);
+                Canvas.SetTop(empty, 16);
+                ApiViewGraphCanvas.Children.Add(empty);
+                return;
+            }
+
+            DateTime minUtc = rows.Where(x => x.FirstSeenUtc != default)
+                                  .Select(x => x.FirstSeenUtc)
+                                  .DefaultIfEmpty(rows.Min(x => x.LastSeenUtc))
+                                  .Min();
+            DateTime maxUtc = rows.Select(x => x.LastSeenUtc).DefaultIfEmpty(minUtc).Max();
+            if (maxUtc <= minUtc)
+            {
+                maxUtc = minUtc.AddSeconds(1);
+            }
+
+            var lanes =
+                rows.GroupBy(x => x.ThreadGroupKey, StringComparer.Ordinal)
+                    .Select(g => new { ThreadGroupKey = g.Key,
+                                       Rows = g.OrderBy(x => x.FirstSeenUtc == default ? x.LastSeenUtc : x.FirstSeenUtc)
+                                                  .ThenBy(x => x.LastSeenUtc)
+                                                  .ThenByDescending(x => x.Hits)
+                                                  .Take(14)
+                                                  .ToList(),
+                                       Hits = g.Sum(x => x.Hits), Label = g.First().ThreadLabel,
+                                       First = g.Where(x => x.FirstSeenUtc != default)
+                                                   .Select(x => x.FirstSeenUtc)
+                                                   .DefaultIfEmpty(g.Min(x => x.LastSeenUtc))
+                                                   .Min(),
+                                       Last = g.Select(x => x.LastSeenUtc).DefaultIfEmpty(minUtc).Max() })
+                    .OrderBy(x => x.First)
+                    .ThenBy(x => x.ThreadGroupKey, StringComparer.Ordinal)
+                    .Take(24)
+                    .ToList();
+
+            double left = 132;
+            double right = 22;
+            double top = 34;
+            double rowHeight = 22;
+            double laneHeaderHeight = 24;
+            double laneGap = 10;
+            double durationSeconds = Math.Max(1, (maxUtc - minUtc).TotalSeconds);
+            double canvasWidth = Math.Max(920, Math.Min(2400, left + right + (durationSeconds * 90)));
+            double width = canvasWidth - left - right;
+            double canvasHeight = Math.Max(
+                260, top + lanes.Sum(x => laneHeaderHeight + Math.Max(1, x.Rows.Count) * rowHeight + laneGap) + 24);
+            ApiViewGraphCanvas.Width = canvasWidth;
+            ApiViewGraphCanvas.Height = canvasHeight;
+
+            double ToX(DateTime utc) =>
+                left + ((utc - minUtc).TotalMilliseconds / (maxUtc - minUtc).TotalMilliseconds) * width;
+
+            var axis = new System.Windows.Shapes.Line { X1 = left,
+                                                        X2 = left + width,
+                                                        Y1 = top - 10,
+                                                        Y2 = top - 10,
+                                                        Stroke = (System.Windows.Media.Brush)FindResource(
+                                                            "WinSubtleBorderBrush"),
+                                                        StrokeThickness = 1 };
+            ApiViewGraphCanvas.Children.Add(axis);
+
+            int tickCount = Math.Min(6, Math.Max(2, (int)Math.Ceiling(width / 220.0)));
+            for (int tick = 0; tick <= tickCount; tick += 1)
+            {
+                double ratio = tick / (double)tickCount;
+                DateTime tickUtc = minUtc.AddMilliseconds((maxUtc - minUtc).TotalMilliseconds * ratio);
+                double x = left + width * ratio;
+                var tickLine = new System.Windows.Shapes.Line {
+                    X1 = x,
+                    X2 = x,
+                    Y1 = top - 14,
+                    Y2 = canvasHeight - 18,
+                    Stroke = (System.Windows.Media.Brush)FindResource("WinSubtleBorderBrush"),
+                    StrokeThickness = 1,
+                    Opacity = tick == 0 || tick == tickCount ? 0.55 : 0.22
+                };
+                ApiViewGraphCanvas.Children.Add(tickLine);
+                var tickLabel =
+                    new TextBlock { Text = tickUtc.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture),
+                                    Foreground = (System.Windows.Media.Brush)FindResource("WinMutedTextBrush"),
+                                    FontSize = 10 };
+                Canvas.SetLeft(tickLabel, Math.Max(left, Math.Min(left + width - 54, x - 22)));
+                Canvas.SetTop(tickLabel, 4);
+                ApiViewGraphCanvas.Children.Add(tickLabel);
+            }
+
+            double yCursor = top;
+            for (int i = 0; i < lanes.Count; i += 1)
+            {
+                double y = yCursor;
+                double laneBlockHeight = laneHeaderHeight + Math.Max(1, lanes[i].Rows.Count) * rowHeight;
+                var label = new TextBlock { Text = lanes[i].Label, Width = left - 18,
+                                            TextTrimming = TextTrimming.CharacterEllipsis,
+                                            Foreground = (System.Windows.Media.Brush)FindResource("WinTextBrush"),
+                                            FontWeight = FontWeights.SemiBold };
+                Canvas.SetLeft(label, 8);
+                Canvas.SetTop(label, y + 2);
+                ApiViewGraphCanvas.Children.Add(label);
+
+                var laneBackground = new System.Windows.Shapes.Rectangle {
+                    Width = width,
+                    Height = laneBlockHeight,
+                    Fill = System.Windows.Media.Brushes.Transparent,
+                    Stroke = (System.Windows.Media.Brush)FindResource("WinSubtleBorderBrush"),
+                    StrokeThickness = 1,
+                    Opacity = 0.7
+                };
+                Canvas.SetLeft(laneBackground, left);
+                Canvas.SetTop(laneBackground, y);
+                ApiViewGraphCanvas.Children.Add(laneBackground);
+
+                for (int rowIndex = 0; rowIndex < lanes[i].Rows.Count; rowIndex += 1)
+                {
+                    ApiCallGraphMainRowView row = lanes[i].Rows[rowIndex];
+                    double rowY = y + laneHeaderHeight + rowIndex * rowHeight;
+                    double x1 = ToX(row.FirstSeenUtc == default ? row.LastSeenUtc : row.FirstSeenUtc);
+                    double x2 = ToX(row.LastSeenUtc);
+                    if (x2 < x1)
+                    {
+                        (x1, x2) = (x2, x1);
+                    }
+
+                    double markerWidth = Math.Max(8, Math.Min(168, x2 - x1 + Math.Min(24, row.Hits * 1.6)));
+                    bool selected = string.Equals(row.GraphKey, selectedKey, StringComparison.Ordinal);
+                    var border = new Border {
+                        Width = markerWidth,
+                        Height = 18,
+                        CornerRadius = new CornerRadius(4),
+                        Background = row.HeatFillBackground,
+                        BorderBrush = row.RowBorderBrush,
+                        BorderThickness = new Thickness(selected ? 2 : 1),
+                        Opacity = selected ? 1.0 : 0.88,
+                        Child = new TextBlock { Text = $"{row.ApiName}  [{row.OriginModule}]",
+                                                Margin = new Thickness(6, 1, 6, 0),
+                                                Foreground = (System.Windows.Media.Brush)FindResource("WinTextBrush"),
+                                                FontSize = 11, TextTrimming = TextTrimming.CharacterEllipsis }
+                    };
+                    Canvas.SetLeft(border, x1);
+                    Canvas.SetTop(border, rowY + 1);
+                    ApiViewGraphCanvas.Children.Add(border);
+                }
+
+                yCursor += laneBlockHeight + laneGap;
+            }
+        }
+
+        private void EnsureEtwDisplayDetails(BrokerEtwEventView view)
+        {
+            if (!string.IsNullOrWhiteSpace(view.DisplayDetails))
+            {
+                return;
+            }
+
+            view.DisplayDetails = BuildEtwDisplayDetail(view);
         }
 
         private List<ApiCallGraphMainRowView> ApplyApiViewFilters(IEnumerable<ApiCallGraphMainRowView> rows)
@@ -2604,13 +4960,8 @@ namespace BlackbirdInterface
                 .ToList();
         }
 
-        private BrokerEtwEventView? FindApiGraphViewForKey(string key)
-        {
-            return _apiGraphViewByKey.TryGetValue(key, out BrokerEtwEventView? view) ? view : null;
-        }
-
-        private static ApiCallStructuredFields
-        BuildApiCallStructuredFields(string apiName, string rawReason, string decodedAction, BrokerEtwEventView? view)
+        private ApiCallStructuredFields BuildApiCallStructuredFields(string apiName, string rawReason,
+                                                                     string decodedAction, BrokerEtwEventView? view)
         {
             Dictionary<string, string> fields = ParseReasonFields(rawReason);
             string action = SummarizeApiReason(decodedAction);
@@ -2629,10 +4980,11 @@ namespace BlackbirdInterface
                 ulong regionSize = FirstU64(fields, "size", "c1", "a3");
                 uint allocationType = (uint)FirstU64(fields, "allocType", "c2", "a4");
                 uint protect = (uint)FirstU64(fields, "protect", "c3", "a5");
-                field1Value = baseAddress == 0 ? string.Empty : $"0x{baseAddress:X}";
-                field2Value = regionSize == 0
-                                  ? string.Empty
-                                  : $"base={(baseAddress == 0 ? "?" : $"0x{baseAddress:X}")}  size=0x{regionSize:X}";
+                field1Value = FormatObservedPointer(view, baseAddress);
+                field2Value =
+                    regionSize == 0
+                        ? string.Empty
+                        : $"base={(baseAddress == 0 ? "?" : FormatObservedPointer(view, baseAddress))}  size=0x{regionSize:X}";
                 field3Value = allocationType == 0
                                   ? string.Empty
                                   : $"0x{allocationType:X} {DescribeMemoryAllocationType(allocationType)}";
@@ -2643,10 +4995,11 @@ namespace BlackbirdInterface
                 ulong baseAddress = FirstU64(fields, "base", "c0", "a1");
                 ulong regionSize = FirstU64(fields, "size", "c1", "a2");
                 uint protect = (uint)FirstU64(fields, "newProtect", "c2", "a3");
-                field1Value = baseAddress == 0 ? string.Empty : $"0x{baseAddress:X}";
-                field2Value = regionSize == 0
-                                  ? string.Empty
-                                  : $"base={(baseAddress == 0 ? "?" : $"0x{baseAddress:X}")}  size=0x{regionSize:X}";
+                field1Value = FormatObservedPointer(view, baseAddress);
+                field2Value =
+                    regionSize == 0
+                        ? string.Empty
+                        : $"base={(baseAddress == 0 ? "?" : FormatObservedPointer(view, baseAddress))}  size=0x{regionSize:X}";
                 field4Value = protect == 0 ? string.Empty : $"0x{protect:X} {DescribeMemoryProtect(protect)}";
             }
             else if (apiName.Equals("NtWriteVirtualMemory", StringComparison.OrdinalIgnoreCase) ||
@@ -2654,10 +5007,11 @@ namespace BlackbirdInterface
             {
                 ulong baseAddress = FirstU64(fields, "base", "c0", "a1");
                 ulong regionSize = FirstU64(fields, "size", "c1", "a3");
-                field1Value = baseAddress == 0 ? string.Empty : $"0x{baseAddress:X}";
-                field2Value = regionSize == 0
-                                  ? string.Empty
-                                  : $"base={(baseAddress == 0 ? "?" : $"0x{baseAddress:X}")}  size=0x{regionSize:X}";
+                field1Value = FormatObservedPointer(view, baseAddress);
+                field2Value =
+                    regionSize == 0
+                        ? string.Empty
+                        : $"base={(baseAddress == 0 ? "?" : FormatObservedPointer(view, baseAddress))}  size=0x{regionSize:X}";
             }
             else if (apiName.Equals("LdrLoadDll", StringComparison.OrdinalIgnoreCase) ||
                      apiName.StartsWith("LoadLibrary", StringComparison.OrdinalIgnoreCase))
@@ -2689,12 +5043,12 @@ namespace BlackbirdInterface
                 ulong baseAddress = FirstU64(fields, "baseAddress", "a2", "a1");
                 ulong length = FirstU64(fields, "length", "a2");
                 ulong callback = FirstU64(fields, "callback", "a3");
-                field1Value = baseAddress == 0 ? string.Empty : $"0x{baseAddress:X}";
+                field1Value = FormatObservedPointer(view, baseAddress);
                 field2Value = apiName.Equals("RtlDeleteFunctionTable", StringComparison.OrdinalIgnoreCase)
-                                  ? $"table=0x{FirstU64(fields, "table", "a0"):X}"
-                                  : $"table=0x{FirstU64(fields, "tableId", "table", "a0"):X}";
+                                  ? $"table={FormatObservedPointer(view, FirstU64(fields, "table", "a0"))}"
+                                  : $"table={FormatObservedPointer(view, FirstU64(fields, "tableId", "table", "a0"))}";
                 field3Value = length == 0 ? string.Empty : $"0x{length:X}";
-                field4Value = callback == 0 ? string.Empty : $"0x{callback:X}";
+                field4Value = FormatObservedPointer(view, callback);
             }
 
             return new ApiCallStructuredFields { Action = string.IsNullOrWhiteSpace(action) ? apiName : action,
@@ -2773,8 +5127,9 @@ namespace BlackbirdInterface
                 {
                     string sensor = string.IsNullOrWhiteSpace(row.SensorOrigin) ? "Unclassified" : row.SensorOrigin;
                     string callerOrigin = NormalizeApiCallerOrigin(row.CallerOrigin);
-                    string key =
-                        BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName, sensor, callerOrigin);
+                    string originModule = NormalizeApiOriginModule(row.OriginModule);
+                    string key = BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName, sensor,
+                                                  callerOrigin, originModule);
                     return string.Equals(key, selectedKey, StringComparison.Ordinal);
                 });
 
@@ -2870,8 +5225,9 @@ namespace BlackbirdInterface
                 string apiName = string.IsNullOrWhiteSpace(row.ApiName) ? "unknown" : row.ApiName;
                 string sensor = string.IsNullOrWhiteSpace(row.SensorOrigin) ? "Unclassified" : row.SensorOrigin;
                 string callerOrigin = NormalizeApiCallerOrigin(row.CallerOrigin);
-                string rowKey =
-                    BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName, sensor, callerOrigin);
+                string originModule = NormalizeApiOriginModule(row.OriginModule);
+                string rowKey = BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName, sensor,
+                                                 callerOrigin, originModule);
                 bool isSelected = !string.IsNullOrWhiteSpace(selectedKey) &&
                                   string.Equals(rowKey, selectedKey, StringComparison.Ordinal);
                 if (!sourcePositions.TryGetValue(sourcePid, out System.Windows.Point sourcePoint) ||
@@ -3070,12 +5426,18 @@ namespace BlackbirdInterface
         }
 
         private static string BuildApiGraphKey(uint sourcePid, uint targetPid, uint threadId, string apiName,
-                                               string sensorOrigin, string callerOrigin) =>
-            $"{sourcePid}|{targetPid}|{threadId}|{apiName}|{sensorOrigin}|{callerOrigin}";
+                                               string sensorOrigin, string callerOrigin, string originModule) =>
+            $"{sourcePid}|{targetPid}|{threadId}|{apiName}|{sensorOrigin}|{callerOrigin}|{originModule}";
 
         private static string NormalizeApiCallerOrigin(string? callerOrigin)
         {
             string normalized = (callerOrigin ?? string.Empty).Trim().ToLowerInvariant();
+            return normalized.Length == 0 ? "unknown" : normalized;
+        }
+
+        private static string NormalizeApiOriginModule(string? originModule)
+        {
+            string normalized = (originModule ?? string.Empty).Trim();
             return normalized.Length == 0 ? "unknown" : normalized;
         }
 
@@ -3088,6 +5450,21 @@ namespace BlackbirdInterface
                                                     sensor.StartsWith("Kernel", StringComparison.OrdinalIgnoreCase)
                                                 ? "Kernel / Driver"
                                                 : "Unknown" };
+        }
+
+        private static bool IsInternalHookFrame(string? modulePath, string? frameText = null)
+        {
+            if (EventDetailFormatting.IsBlackbirdInternalPath(modulePath) ||
+                EventDetailFormatting.IsBlackbirdInternalModule(modulePath))
+            {
+                return true;
+            }
+
+            string candidate = (frameText ?? string.Empty).Trim();
+            return candidate.StartsWith("SR71", StringComparison.OrdinalIgnoreCase) ||
+                   candidate.StartsWith("J58", StringComparison.OrdinalIgnoreCase) ||
+                   candidate.StartsWith("BlackbirdController", StringComparison.OrdinalIgnoreCase) ||
+                   candidate.StartsWith("BlackbirdInterface", StringComparison.OrdinalIgnoreCase);
         }
 
         private static List<string> BuildHookFrameList(BrokerEtwEventView view,
@@ -3113,9 +5490,30 @@ namespace BlackbirdInterface
             for (int i = 0; i < Math.Min((int)view.StackCount, BlackbirdNative.MaxIpcStackFrames); i += 1)
             {
                 string symbolKey = $"stack{i}Symbol";
+                string pathKey = $"stack{i}Path";
                 if (fields.TryGetValue(symbolKey, out string? symbolValue) && !string.IsNullOrWhiteSpace(symbolValue))
                 {
-                    AddFrameText(symbolValue);
+                    string frameText = symbolValue.Trim();
+                    string? pathValue = null;
+                    if (fields.TryGetValue(pathKey, out string? resolvedPath) && !string.IsNullOrWhiteSpace(resolvedPath))
+                    {
+                        pathValue = resolvedPath.Trim();
+                    }
+                    if (IsInternalHookFrame(pathValue, frameText))
+                    {
+                        continue;
+                    }
+                    if (!string.IsNullOrWhiteSpace(pathValue))
+                    {
+                        string moduleName = EventDetailFormatting.ModuleNameFromPath(pathValue);
+                        if (!string.IsNullOrWhiteSpace(moduleName) &&
+                            !moduleName.Equals("unknown", StringComparison.OrdinalIgnoreCase) &&
+                            frameText.IndexOf(moduleName, StringComparison.OrdinalIgnoreCase) < 0)
+                        {
+                            frameText = $"{moduleName}!{frameText}";
+                        }
+                    }
+                    AddFrameText(frameText);
                     continue;
                 }
 
@@ -3128,7 +5526,8 @@ namespace BlackbirdInterface
 
             if (frames.Count == 0 &&
                 fields.TryGetValue("originSymbol", out string? originSymbol) &&
-                !string.IsNullOrWhiteSpace(originSymbol))
+                !string.IsNullOrWhiteSpace(originSymbol) &&
+                !IsInternalHookFrame(null, originSymbol))
             {
                 AddFrameText(originSymbol);
             }
@@ -3143,15 +5542,81 @@ namespace BlackbirdInterface
             return frames.Count == 0 ? string.Empty : "CallChain: " + string.Join(" -> ", frames);
         }
 
-        private static string BuildHookFrameSummary(BrokerEtwEventView view, IReadOnlyDictionary<string, string> fields)
+        private string FormatObservedPointer(BrokerEtwEventView? view, ulong address, string? modulePath = null,
+                                             ulong moduleBase = 0, ulong moduleSize = 0)
+        {
+            if (address == 0)
+            {
+                return string.Empty;
+            }
+
+            string directModuleText =
+                EventDetailFormatting.FormatModuleRelativeAddress(modulePath, moduleBase, moduleSize, address);
+            if (!string.IsNullOrWhiteSpace(directModuleText) &&
+                !string.Equals(directModuleText, $"0x{address:X}", StringComparison.OrdinalIgnoreCase))
+            {
+                return directModuleText;
+            }
+
+            if (view != null)
+            {
+                uint targetPid =
+                    view.TargetPid != 0 ? view.TargetPid : (view.ProcessPid != 0 ? view.ProcessPid : view.ActorPid);
+                ulong processStartKey = ResolveObservedProcessStartKey(targetPid, view.ProcessStartKey);
+                if (TryResolveKnownRegionForAddress(targetPid, processStartKey, address, out _, out ulong regionBase,
+                                                    out ulong regionSize, out string regionKind,
+                                                    out uint currentProtection))
+                {
+                    ulong pageBase = address & ~0xFFFUL;
+                    string regionText =
+                        $"{regionKind.ToLowerInvariant()}+0x{address - regionBase:X} [0x{address:X}; page 0x{pageBase:X}; region 0x{regionBase:X}+0x{regionSize:X}; {EventDetailFormatting.DescribeMemoryProtection(currentProtection)}]";
+
+                    if (string.Equals(regionKind, "Image", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string imageText = EventDetailFormatting.FormatModuleRelativeAddress(
+                            view.ImagePath, view.ImageBase != 0 ? view.ImageBase : regionBase,
+                            view.ImageSize != 0 ? view.ImageSize : regionSize, address);
+                        if (!string.IsNullOrWhiteSpace(imageText) &&
+                            !string.Equals(imageText, $"0x{address:X}", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return $"{imageText}; page 0x{pageBase:X}";
+                        }
+                    }
+
+                    return regionText;
+                }
+
+                string viewImageText = EventDetailFormatting.FormatModuleRelativeAddress(view.ImagePath, view.ImageBase,
+                                                                                         view.ImageSize, address);
+                if (!string.IsNullOrWhiteSpace(viewImageText) &&
+                    !string.Equals(viewImageText, $"0x{address:X}", StringComparison.OrdinalIgnoreCase))
+                {
+                    return viewImageText;
+                }
+            }
+
+            return $"0x{address:X}";
+        }
+
+        private string BuildHookFrameSummary(BrokerEtwEventView view, IReadOnlyDictionary<string, string> fields) =>
+            AppendThreadStackFallbackSummary(view, BuildHookFrameSummaryCore(view, fields));
+
+        private static string BuildHookFrameSummaryCore(BrokerEtwEventView view,
+                                                        IReadOnlyDictionary<string, string> fields)
         {
             var sb = new StringBuilder(512);
             string sensor = EventDetailFormatting.ClassifyHookSensorOrigin(view);
             string origin = GetApiCallerOriginDisplayLabel(NormalizeApiCallerOrigin(view.CallerOriginLabel), sensor);
             string immediate = EventDetailFormatting.HookImmediateCallerLabel(view.Flags);
             string deepOrigin = EventDetailFormatting.HookDeepOriginLabel(view.Flags);
+            string sr71Component = EventDetailFormatting.HookComponentLabel(view.Flags);
             string originModule = ResolveHookOriginModule(view, fields);
             string resolvedReturnAddress = ResolveHookReturnAddressLabel(view, fields, originModule);
+            bool kernelCaller = (view.Flags & BlackbirdNative.IpcEtwFlagHookKernelCaller) != 0;
+            bool userCaller = (view.Flags & BlackbirdNative.IpcEtwFlagHookUserCaller) != 0;
+            bool currentTarget = IsHookCurrentProcessTarget(view);
+            bool imageSection = IsHookImageSection(view);
+            bool containsOwnModule = EventDetailFormatting.HookTraceContainsOwnModule(view.Flags);
             bool returnAddressResolved = !string.IsNullOrWhiteSpace(resolvedReturnAddress);
             bool returnAddressPresentInStack = false;
             ulong[] stack = view.Stack ?? Array.Empty<ulong>();
@@ -3166,6 +5631,17 @@ namespace BlackbirdInterface
             }
 
             sb.Append("Origin: ").AppendLine(origin);
+            if (kernelCaller || userCaller)
+            {
+                sb.Append("Caller Mode: ").AppendLine(kernelCaller ? "Kernel" : "User");
+            }
+            sb.Append("Target Scope: ").AppendLine(currentTarget ? "Current Process" : "External / Cross-Process");
+            sb.Append("Memory Backing: ").AppendLine(imageSection ? "Image-backed" : "Private / Non-image");
+            if (!string.IsNullOrWhiteSpace(sr71Component))
+            {
+                sb.Append("SR71 Component: ").AppendLine(sr71Component);
+            }
+            sb.Append("SR71 Frames Present: ").AppendLine(containsOwnModule ? "yes" : "no");
             if (!string.IsNullOrWhiteSpace(immediate) &&
                 !immediate.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
             {
@@ -3204,6 +5680,11 @@ namespace BlackbirdInterface
                 for (int i = 0; i < frames.Count; i += 1)
                 {
                     sb.Append("  ").Append(i + 1).Append(". ").AppendLine(frames[i]);
+                    string pathKey = $"stack{i}Path";
+                    if (fields.TryGetValue(pathKey, out string? framePath) && !string.IsNullOrWhiteSpace(framePath))
+                    {
+                        sb.Append("     ").AppendLine(framePath.Trim());
+                    }
                 }
             }
 
@@ -3215,11 +5696,87 @@ namespace BlackbirdInterface
             return sb.ToString().TrimEnd();
         }
 
+        private string AppendThreadStackFallbackSummary(BrokerEtwEventView view, string summary)
+        {
+            if (view.StackCount != 0)
+            {
+                return summary;
+            }
+
+            string fallback = BuildThreadStackFallbackSummary(view);
+            if (string.IsNullOrWhiteSpace(fallback))
+            {
+                string source = EventDetailFormatting.IsKernelHookTelemetry(view) ||
+                                        view.SourceId == BlackbirdNative.IpcEtwSourceBlackbird
+                                    ? "kernel/driver telemetry did not include user frames"
+                                    : "hook telemetry did not include frames";
+                string note = $"Thread Stack Fallback: pending or unavailable ({source})";
+                return string.IsNullOrWhiteSpace(summary) ? note : $"{summary}{Environment.NewLine}{note}";
+            }
+
+            return string.IsNullOrWhiteSpace(summary) ? fallback : $"{summary}{Environment.NewLine}{fallback}";
+        }
+
+        private string BuildThreadStackFallbackSummary(BrokerEtwEventView view)
+        {
+            uint pid = view.ProcessPid != 0 ? view.ProcessPid
+                       : view.ActorPid != 0 ? view.ActorPid
+                                            : view.EventProcessId;
+            uint tid = view.EventThreadId != 0 ? view.EventThreadId : view.ThreadId;
+            if (pid == 0 || tid == 0 || pid > int.MaxValue || tid > int.MaxValue)
+            {
+                return string.Empty;
+            }
+
+            DateTime observedUtc = view.TimestampUtc == default ? DateTime.UtcNow : view.TimestampUtc;
+            IReadOnlyList<ThreadStackSessionSnapshot> history =
+                GetThreadStackHistory(unchecked((int)pid), unchecked((int)tid), string.Empty);
+            ThreadStackSessionSnapshot? snapshot =
+                history.Where(x => x.Frames.Count > 0)
+                    .OrderBy(x => Math.Abs((x.CapturedAtUtc - observedUtc).TotalMilliseconds))
+                    .FirstOrDefault();
+            if (snapshot == null)
+            {
+                return string.Empty;
+            }
+
+            double deltaMs = Math.Abs((snapshot.CapturedAtUtc - observedUtc).TotalMilliseconds);
+            if (deltaMs > 5000)
+            {
+                return string.Empty;
+            }
+
+            var sb = new StringBuilder(512);
+            sb.Append("Thread Stack Fallback: ")
+                .Append(snapshot.Frames.Count.ToString(CultureInfo.InvariantCulture))
+                .Append(" frames from Thread Stack window history, deltaMs=")
+                .Append(deltaMs.ToString("0", CultureInfo.InvariantCulture))
+                .AppendLine();
+            int frameCount = Math.Min(12, snapshot.Frames.Count);
+            for (int i = 0; i < frameCount; i += 1)
+            {
+                StackFrameRow frame = snapshot.Frames[i];
+                string label = !string.IsNullOrWhiteSpace(frame.Symbol)    ? frame.Symbol
+                               : !string.IsNullOrWhiteSpace(frame.Address) ? frame.Address
+                                                                           : $"0x{frame.InstructionPointerRaw:X}";
+                if (!string.IsNullOrWhiteSpace(frame.Module) &&
+                    label.IndexOf(frame.Module, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    label = $"{frame.Module}!{label}";
+                }
+                sb.Append("  ").Append(i + 1).Append(". ").AppendLine(label);
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+
         private static string ResolveHookOriginModule(BrokerEtwEventView view,
                                                       IReadOnlyDictionary<string, string> fields)
         {
             string originModule = EventDetailFormatting.ModuleNameFromPath(view.OriginPath);
-            if (!string.Equals(originModule, "unknown", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(originModule, "unknown", StringComparison.OrdinalIgnoreCase) &&
+                !EventDetailFormatting.IsBlackbirdInternalModule(originModule) &&
+                !EventDetailFormatting.IsBlackbirdInternalPath(view.OriginPath))
             {
                 return originModule;
             }
@@ -3233,7 +5790,47 @@ namespace BlackbirdInterface
                     trimmed = trimmed[..plus].Trim();
                 }
 
-                return trimmed;
+                if (!IsInternalHookFrame(null, trimmed))
+                {
+                    return trimmed;
+                }
+            }
+
+            for (int i = 0; i < Math.Min((int)view.StackCount, BlackbirdNative.MaxIpcStackFrames); i += 1)
+            {
+                string pathKey = $"stack{i}Path";
+                string symbolKey = $"stack{i}Symbol";
+                string? pathValue = null;
+
+                if (fields.TryGetValue(pathKey, out string? resolvedPath) && !string.IsNullOrWhiteSpace(resolvedPath))
+                {
+                    pathValue = resolvedPath.Trim();
+                    if (!IsInternalHookFrame(pathValue))
+                    {
+                        string moduleFromPath = EventDetailFormatting.ModuleNameFromPath(pathValue);
+                        if (!string.Equals(moduleFromPath, "unknown", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return moduleFromPath;
+                        }
+                    }
+                }
+
+                if (fields.TryGetValue(symbolKey, out string? symbolValue) &&
+                    !string.IsNullOrWhiteSpace(symbolValue) &&
+                    !IsInternalHookFrame(pathValue, symbolValue))
+                {
+                    string trimmed = symbolValue.Trim();
+                    int plus = trimmed.IndexOf('+');
+                    if (plus > 0)
+                    {
+                        trimmed = trimmed[..plus].Trim();
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(trimmed))
+                    {
+                        return trimmed;
+                    }
+                }
             }
 
             return originModule;
@@ -3247,7 +5844,11 @@ namespace BlackbirdInterface
 
             if (fields.TryGetValue("originSymbol", out string? originSymbol) && !string.IsNullOrWhiteSpace(originSymbol))
             {
-                return originSymbol.Trim();
+                string trimmed = originSymbol.Trim();
+                if (!IsInternalHookFrame(null, trimmed))
+                {
+                    return trimmed;
+                }
             }
 
             for (int i = 0; i < Math.Min((int)view.StackCount, BlackbirdNative.MaxIpcStackFrames); i += 1)
@@ -3283,12 +5884,12 @@ namespace BlackbirdInterface
             if (fields.TryGetValue("kind", out string? kind) &&
                 string.Equals(kind, "kernel_ntapi", StringComparison.OrdinalIgnoreCase))
             {
-                view.Source = "Blackbird";
+                view.Source = "BK";
                 view.SourceId = BlackbirdNative.IpcEtwSourceBlackbird;
                 view.Family = BlackbirdNative.IpcEtwFamilyUserHook;
             }
 
-            return BuildHookFrameSummary(view, fields);
+            return BuildHookFrameSummaryCore(view, fields);
         }
 
         private string FormatApiProcessLabel(uint pid)
@@ -3336,9 +5937,9 @@ namespace BlackbirdInterface
             Dictionary<string, string> fields = BuildHookFieldMap(view);
             string action = BuildGenericApiActionLabel(apiName, fields);
             string detail;
-            string argumentText = BuildResolvedHookArgumentsText(apiName, fields);
-            bool hasStartupContext =
-                TryDescribeHookStartupContext(view, out string startupHeadline, out string startupDetail);
+            string argumentText = BuildResolvedHookArgumentsText(apiName, view, fields);
+            bool hasExecutionContext =
+                TryDescribeHookExecutionContext(view, fields, out string contextHeadline, out string contextDetail);
 
             if (TryBuildMemoryAction(apiName, view, fields, out string memoryAction, out string memoryDetail))
             {
@@ -3354,22 +5955,42 @@ namespace BlackbirdInterface
                     detailBuilder.AppendLine().AppendLine().Append(argumentText);
                 }
                 detail = detailBuilder.ToString();
-                if (hasStartupContext)
+                if (hasExecutionContext)
                 {
-                    action += " [startup]";
+                    if (contextHeadline.Equals("Loader / Image Mapping", StringComparison.OrdinalIgnoreCase))
+                    {
+                        action += " [loader]";
+                    }
+                    else if (contextHeadline.Equals("Kernel Caller", StringComparison.OrdinalIgnoreCase))
+                    {
+                        action += " [kernel]";
+                    }
+
                     detail =
-                        $"{startupHeadline}{Environment.NewLine}{startupDetail}{Environment.NewLine}{Environment.NewLine}{detail}";
+                        $"{contextHeadline}{Environment.NewLine}{contextDetail}{Environment.NewLine}{Environment.NewLine}{detail}";
                 }
             }
             else
             {
                 var sb = new StringBuilder(512);
                 sb.AppendLine(action);
-                if (hasStartupContext)
+                if (hasExecutionContext)
                 {
-                    action += " [startup]";
-                    sb.AppendLine().AppendLine(startupHeadline);
-                    sb.AppendLine(startupDetail);
+                    if (contextHeadline.Equals("Loader / Image Mapping", StringComparison.OrdinalIgnoreCase))
+                    {
+                        action += " [loader]";
+                    }
+                    else if (contextHeadline.Equals("Kernel Caller", StringComparison.OrdinalIgnoreCase))
+                    {
+                        action += " [kernel]";
+                    }
+                    else if (contextHeadline.Contains("Startup", StringComparison.OrdinalIgnoreCase))
+                    {
+                        action += " [startup]";
+                    }
+
+                    sb.AppendLine().AppendLine(contextHeadline);
+                    sb.AppendLine(contextDetail);
                 }
                 string frameSummary = BuildHookFrameSummary(view, fields);
                 if (!string.IsNullOrWhiteSpace(frameSummary))
@@ -3475,7 +6096,7 @@ namespace BlackbirdInterface
                 }
 
                 bool entropyChanged = !double.IsNaN(state.LastEntropyBits) && entropy >= 0 &&
-                                      Math.Abs(state.LastEntropyBits - entropy) >= 0.55;
+                                      Math.Abs(state.LastEntropyBits - entropy) >= MemoryEntropyFlipDeltaBits;
                 bool rapidEntropyFlip = false;
                 if (entropyChanged)
                 {
@@ -3519,9 +6140,12 @@ namespace BlackbirdInterface
             uint initialProtection = 0;
             uint currentProtection = 0;
             uint previousProtection = 0;
+            uint protectFlipCount = 0;
+            uint sampleBytes = 0;
             bool threadStartObserved = false;
             bool functionTableRegistered = false;
             ulong functionTablePointer = 0;
+            double entropyBits = -1;
 
             switch (view.Family)
             {
@@ -3570,12 +6194,27 @@ namespace BlackbirdInterface
                     regionSize = FirstU64(fields, "size", "c2", "a2");
                     currentProtection = (uint)FirstU64(fields, "newProtect", "c2", "a3", "c3");
                     previousProtection = (uint)FirstU64(fields, "oldProtect", "a4", "c4");
+                    protectFlipCount = (uint)FirstU64(fields, "protectFlips");
+                    sampleBytes = (uint)FirstU64(fields, "sampleBytes");
+                }
+                else if (apiName.Equals("NtWriteVirtualMemory", StringComparison.OrdinalIgnoreCase))
+                {
+                    eventKind = "MemoryWrite";
+                    allocationBase = FirstU64(fields, "base", "c1", "a1");
+                    baseAddress = allocationBase;
+                    regionSize = Math.Max(1UL, FirstU64(fields, "size", "c3", "a3"));
+                    protectFlipCount = (uint)FirstU64(fields, "protectFlips");
+                    sampleBytes = (uint)FirstU64(fields, "sampleBytes");
+                    if (TryReadDouble(fields, out double parsedEntropy, "entropy"))
+                    {
+                        entropyBits = parsedEntropy;
+                    }
                 }
                 else if (apiName.Equals("NtMapViewOfSection", StringComparison.OrdinalIgnoreCase) ||
                          apiName.Equals("NtMapViewOfSectionEx", StringComparison.OrdinalIgnoreCase))
                 {
                     eventKind = "SectionMap";
-                    regionKind = "Mapped";
+                    regionKind = IsHookImageSection(view) ? "Image" : "Mapped";
                     allocationBase = FirstU64(fields, "baseAddress", "base", "c2", "a2");
                     baseAddress = allocationBase;
                     regionSize = FirstU64(fields, "viewSize", "size", "c3", "a4", "a6");
@@ -3616,6 +6255,17 @@ namespace BlackbirdInterface
                 break;
             default:
                 return null;
+            }
+
+            if (sampleBytes == 0 && view.DeepSampleSize != 0)
+            {
+                sampleBytes = view.DeepSampleSize;
+            }
+            if (entropyBits < 0 && view.DeepSample.Length > 1)
+            {
+                int sampleLength = sampleBytes == 0 ? view.DeepSample.Length
+                                                    : (int)Math.Min(sampleBytes, (uint)view.DeepSample.Length);
+                entropyBits = ComputeSampleEntropyBits(view.DeepSample, sampleLength);
             }
 
             uint targetPid = ResolveMemoryRegionTargetPid(view);
@@ -3678,6 +6328,12 @@ namespace BlackbirdInterface
             ProcessIdentityResolver.Prime(view.ActorPid);
             ProcessIdentityResolver.Prime(targetPid);
 
+            string executionContext = string.Empty;
+            if (TryDescribeHookExecutionContext(view, fields, out string contextHeadline, out _))
+            {
+                executionContext = contextHeadline;
+            }
+
             var sample = new MemoryRegionAttributionSample {
                 TimestampUtc = view.TimestampUtc == default ? DateTime.UtcNow : view.TimestampUtc,
                 ProcessStartKey = processStartKey,
@@ -3689,18 +6345,33 @@ namespace BlackbirdInterface
                 RegionSize = regionSize,
                 ApiName = apiName,
                 EventKind = eventKind,
-                RegionKind = string.IsNullOrWhiteSpace(regionKind) ? InferRegionKind(view, currentProtection) : regionKind,
+                RegionKind =
+                    string.IsNullOrWhiteSpace(regionKind) ? InferRegionKind(view, currentProtection) : regionKind,
                 RegionIdentity = regionIdentity,
                 OriginPath = view.OriginPath ?? view.ImagePath ?? string.Empty,
+                SourceFamily = view.Family == BlackbirdNative.IpcEtwFamilyUserHook ? "Hook"
+                               : view.Family == BlackbirdNative.IpcEtwFamilyImage  ? "ImageLoad"
+                               : view.Family == BlackbirdNative.IpcEtwFamilyThread ? "Thread"
+                                                                                   : "ETW",
+                ExecutionContext = executionContext,
                 CallerOrigin = view.CallerOriginLabel,
                 FirstUserFrame = view.OriginAddress,
                 FirstUserFrameModule = firstUserFrameModule,
                 FrameSummary = frameSummary,
                 UnwindClean = hookFamily && IsHookUnwindClean(view.Flags),
                 FrameChainHadGaps = hookFamily && HookFrameChainHasGaps(view.Flags),
+                ObservedByKernel = hookFamily && view.SourceId == BlackbirdNative.IpcEtwSourceBlackbird,
+                ObservedByUserHook = hookFamily && view.SourceId == BlackbirdNative.IpcEtwSourceUserHook,
+                BlackbirdOwned = IsBlackbirdOwnEvent(view),
+                CrossProcess = targetPid != 0 && view.ActorPid != 0 && targetPid != view.ActorPid,
+                ImageBacked = string.Equals(regionKind, "Image", StringComparison.OrdinalIgnoreCase) ||
+                              IsHookImageSection(view) || view.Family == BlackbirdNative.IpcEtwFamilyImage,
                 InitialProtection = initialProtection,
                 CurrentProtection = currentProtection,
                 PreviousProtection = previousProtection,
+                ProtectFlipCount = protectFlipCount,
+                EntropyBits = entropyBits,
+                SampleBytes = sampleBytes,
                 ThreadStartObserved = threadStartObserved,
                 ThreadId = threadStartObserved ? (view.ThreadId != 0 ? view.ThreadId : view.EventThreadId) : 0,
                 ThreadStartAddress = threadStartAddress,
@@ -3738,6 +6409,11 @@ namespace BlackbirdInterface
             {
                 state.BaseAddress = sample.AllocationBase != 0 ? sample.AllocationBase : sample.BaseAddress;
             }
+            if (string.IsNullOrWhiteSpace(state.ExecutionContext) &&
+                !string.IsNullOrWhiteSpace(sample.ExecutionContext))
+            {
+                state.ExecutionContext = sample.ExecutionContext;
+            }
             if (state.RegionSize == 0 && sample.RegionSize != 0)
             {
                 state.RegionSize = sample.RegionSize;
@@ -3749,6 +6425,26 @@ namespace BlackbirdInterface
             if (string.IsNullOrWhiteSpace(state.RegionKind) && !string.IsNullOrWhiteSpace(sample.RegionKind))
             {
                 state.RegionKind = sample.RegionKind;
+            }
+            if (!state.ObservedByKernel && sample.ObservedByKernel)
+            {
+                state.ObservedByKernel = true;
+            }
+            if (!state.ObservedByUserHook && sample.ObservedByUserHook)
+            {
+                state.ObservedByUserHook = true;
+            }
+            if (!state.BlackbirdOwned && sample.BlackbirdOwned)
+            {
+                state.BlackbirdOwned = true;
+            }
+            if (!state.CrossProcess && sample.CrossProcess)
+            {
+                state.CrossProcess = true;
+            }
+            if (!state.ImageBacked && sample.ImageBacked)
+            {
+                state.ImageBacked = true;
             }
 
             if (sample.InitialProtection != 0 && state.InitialProtection == 0)
@@ -3766,34 +6462,100 @@ namespace BlackbirdInterface
                 sample.InitialProtection = state.InitialProtection;
             }
 
-            if (sample.PreviousProtection == 0 && state.CurrentProtection != 0 &&
-                (sample.EventKind.Equals("ProtectChange", StringComparison.OrdinalIgnoreCase) ||
-                 sample.EventKind.Equals("SectionMap", StringComparison.OrdinalIgnoreCase) ||
-                 sample.EventKind.Equals("ImageMap", StringComparison.OrdinalIgnoreCase)))
-            {
-                sample.PreviousProtection = state.CurrentProtection;
-            }
-
+            uint reportedProtectFlipCount = sample.ProtectFlipCount;
+            DateTime observedUtc = sample.TimestampUtc == default ? DateTime.UtcNow : sample.TimestampUtc;
             if (sample.CurrentProtection != 0)
             {
+                uint previousProtection =
+                    sample.PreviousProtection != 0 ? sample.PreviousProtection : state.CurrentProtection;
+                if (sample.PreviousProtection == 0 && previousProtection != 0 &&
+                    (sample.EventKind.Equals("ProtectChange", StringComparison.OrdinalIgnoreCase) ||
+                     sample.EventKind.Equals("SectionMap", StringComparison.OrdinalIgnoreCase) ||
+                     sample.EventKind.Equals("ImageMap", StringComparison.OrdinalIgnoreCase)))
+                {
+                    sample.PreviousProtection = previousProtection;
+                }
+
                 bool executableNow = IsExecutableProtection(sample.CurrentProtection);
-                bool executableBefore = IsExecutableProtection(
-                    sample.PreviousProtection != 0 ? sample.PreviousProtection : state.CurrentProtection);
+                bool executableBefore = IsExecutableProtection(previousProtection);
                 if (!state.FirstExecutableTransitionSeen && executableNow && !executableBefore)
                 {
                     sample.FirstExecutableTransition = true;
                     state.FirstExecutableTransitionSeen = true;
                 }
 
+                bool protectionChanged = previousProtection != 0 &&
+                                         !ProtectionValuesEquivalent(previousProtection, sample.CurrentProtection);
+                bool protectSignalEvent =
+                    sample.EventKind.Equals("ProtectChange", StringComparison.OrdinalIgnoreCase) ||
+                    reportedProtectFlipCount > state.ProtectFlipCount;
+                if (protectionChanged && protectSignalEvent)
+                {
+                    string transition = BuildProtectionTransitionLabel(previousProtection, sample.CurrentProtection);
+                    sample.ProtectionTransition = transition;
+                    state.LastProtectionTransition = transition;
+
+                    if (reportedProtectFlipCount > state.ProtectFlipCount)
+                    {
+                        state.ProtectFlipCount = reportedProtectFlipCount;
+                    }
+                    else
+                    {
+                        state.ProtectFlipCount += 1;
+                    }
+
+                    double protectDeltaMs = state.LastProtectChangeUtc == default
+                                                ? double.MaxValue
+                                                : (observedUtc - state.LastProtectChangeUtc).TotalMilliseconds;
+                    if (protectDeltaMs >= 0 && protectDeltaMs <= 1000)
+                    {
+                        state.RapidProtectFlipCount += 1;
+                    }
+                    state.LastProtectChangeUtc = observedUtc;
+
+                    if (executableNow != executableBefore)
+                    {
+                        state.ExecutableFlipCount += 1;
+                    }
+                    if (IsGuardNoAccessProtectionTransition(previousProtection, sample.CurrentProtection))
+                    {
+                        state.GuardNoAccessFlipCount += 1;
+                    }
+                    if (IsWritableExecutableProtectionTransition(previousProtection, sample.CurrentProtection))
+                    {
+                        state.WritableExecutableFlipCount += 1;
+                    }
+                }
+                else if (string.IsNullOrWhiteSpace(sample.ProtectionTransition))
+                {
+                    sample.ProtectionTransition = state.LastProtectionTransition;
+                }
+
                 if (state.InitialProtection == 0)
                 {
                     state.InitialProtection = sample.CurrentProtection;
                 }
+                state.PreviousProtection = previousProtection;
                 state.CurrentProtection = sample.CurrentProtection;
+            }
+
+            if (sample.EventKind.Equals("SectionMap", StringComparison.OrdinalIgnoreCase) ||
+                sample.EventKind.Equals("ImageMap", StringComparison.OrdinalIgnoreCase))
+            {
+                state.MapCount += 1;
+            }
+            else if (sample.EventKind.Equals("MemoryWrite", StringComparison.OrdinalIgnoreCase))
+            {
+                state.WriteCount += 1;
+            }
+            else if (sample.EventKind.Equals("ProtectChange", StringComparison.OrdinalIgnoreCase))
+            {
+                state.ProtectCount += 1;
             }
 
             if (sample.ThreadStartObserved)
             {
+                state.ThreadStartCount += 1;
                 if (!state.FirstThreadStartSeen)
                 {
                     state.FirstThreadStartSeen = true;
@@ -3815,6 +6577,46 @@ namespace BlackbirdInterface
                 state.FunctionTableRegistered = false;
             }
 
+            if (reportedProtectFlipCount > state.ProtectFlipCount)
+            {
+                state.ProtectFlipCount = reportedProtectFlipCount;
+            }
+            if (sample.EntropyBits >= 0)
+            {
+                bool entropyChanged =
+                    state.LastEntropyBits >= 0 &&
+                    Math.Abs(state.LastEntropyBits - sample.EntropyBits) >= MemoryEntropyFlipDeltaBits;
+                if (entropyChanged)
+                {
+                    state.EntropyFlipCount += 1;
+                    double entropyDeltaMs = state.LastEntropyChangeUtc == default
+                                                ? double.MaxValue
+                                                : (observedUtc - state.LastEntropyChangeUtc).TotalMilliseconds;
+                    if (entropyDeltaMs >= 0 && entropyDeltaMs <= 1000)
+                    {
+                        state.RapidEntropyFlipCount += 1;
+                    }
+                    state.LastEntropyChangeUtc = observedUtc;
+                }
+
+                if (sample.EventKind.Equals("MemoryWrite", StringComparison.OrdinalIgnoreCase) &&
+                    sample.EntropyBits >= MemoryHighEntropyBits &&
+                    (sample.SampleBytes == 0 || sample.SampleBytes >= MemoryEntropyMinSampleBytes))
+                {
+                    state.HighEntropyWriteCount += 1;
+                }
+
+                state.LastEntropyBits = sample.EntropyBits;
+                if (state.MaxEntropyBits < 0 || sample.EntropyBits > state.MaxEntropyBits)
+                {
+                    state.MaxEntropyBits = sample.EntropyBits;
+                }
+            }
+            if (sample.SampleBytes > state.LastSampleBytes)
+            {
+                state.LastSampleBytes = sample.SampleBytes;
+            }
+
             if (sample.TargetPid != 0 && sample.BaseAddress != 0)
             {
                 if (sample.ApiName.Equals("RtlAddFunctionTable", StringComparison.OrdinalIgnoreCase) &&
@@ -3832,7 +6634,127 @@ namespace BlackbirdInterface
             }
 
             sample.FunctionTableRegistered = state.FunctionTableRegistered || sample.FunctionTableRegistered;
+            sample.MapCount = state.MapCount;
+            sample.WriteCount = state.WriteCount;
+            sample.ProtectCount = state.ProtectCount;
+            sample.ThreadStartCount = state.ThreadStartCount;
+            sample.ProtectFlipCount = Math.Max(sample.ProtectFlipCount, state.ProtectFlipCount);
+            sample.RapidProtectFlipCount = state.RapidProtectFlipCount;
+            sample.ExecutableFlipCount = state.ExecutableFlipCount;
+            sample.GuardNoAccessFlipCount = state.GuardNoAccessFlipCount;
+            sample.WritableExecutableFlipCount = state.WritableExecutableFlipCount;
+            if (string.IsNullOrWhiteSpace(sample.ProtectionTransition))
+            {
+                sample.ProtectionTransition = state.LastProtectionTransition;
+            }
+            if (sample.EntropyBits < 0)
+            {
+                sample.EntropyBits = state.LastEntropyBits;
+            }
+            sample.MaxEntropyBits = state.MaxEntropyBits;
+            sample.EntropyFlipCount = state.EntropyFlipCount;
+            sample.RapidEntropyFlipCount = state.RapidEntropyFlipCount;
+            sample.HighEntropyWriteCount = state.HighEntropyWriteCount;
+            if (sample.SampleBytes == 0)
+            {
+                sample.SampleBytes = state.LastSampleBytes;
+            }
+            sample.ObservedByKernel = sample.ObservedByKernel || state.ObservedByKernel;
+            sample.ObservedByUserHook = sample.ObservedByUserHook || state.ObservedByUserHook;
+            sample.BlackbirdOwned = sample.BlackbirdOwned || state.BlackbirdOwned;
+            sample.CrossProcess = sample.CrossProcess || state.CrossProcess;
+            sample.ImageBacked = sample.ImageBacked || state.ImageBacked;
+            if (string.IsNullOrWhiteSpace(sample.ExecutionContext))
+            {
+                sample.ExecutionContext = state.ExecutionContext;
+            }
+            sample.LifecycleSummary = BuildMemoryLifecycleSummary(sample);
             return sample;
+        }
+
+        private static string BuildMemoryLifecycleSummary(MemoryRegionAttributionSample sample)
+        {
+            var parts = new List<string>(6);
+            if (sample.MapCount != 0)
+            {
+                parts.Add($"map:{sample.MapCount}");
+            }
+            if (sample.WriteCount != 0)
+            {
+                parts.Add($"write:{sample.WriteCount}");
+            }
+            if (sample.ProtectCount != 0)
+            {
+                parts.Add($"protect:{sample.ProtectCount}");
+            }
+            if (sample.ThreadStartCount != 0)
+            {
+                parts.Add($"thread:{sample.ThreadStartCount}");
+            }
+            if (sample.FirstExecutableTransition)
+            {
+                parts.Add("first-exec");
+            }
+            if (sample.FunctionTableRegistered)
+            {
+                parts.Add("unwind");
+            }
+
+            string summary = parts.Count == 0 ? sample.EventKind : string.Join(" ", parts);
+            if (sample.CrossProcess)
+            {
+                summary += " xproc";
+            }
+            if (sample.ImageBacked)
+            {
+                summary += " image";
+            }
+            if (sample.ProtectFlipCount != 0)
+            {
+                summary += $" pflip:{sample.ProtectFlipCount}";
+            }
+            if (sample.RapidProtectFlipCount != 0)
+            {
+                summary += $" rapid-pflip:{sample.RapidProtectFlipCount}";
+            }
+            if (!string.IsNullOrWhiteSpace(sample.ProtectionTransition))
+            {
+                summary += $" transition:{sample.ProtectionTransition}";
+            }
+            if (sample.ExecutableFlipCount != 0)
+            {
+                summary += $" xflip:{sample.ExecutableFlipCount}";
+            }
+            if (sample.GuardNoAccessFlipCount != 0)
+            {
+                summary += $" guard/noaccess:{sample.GuardNoAccessFlipCount}";
+            }
+            if (sample.WritableExecutableFlipCount != 0)
+            {
+                summary += $" wxflip:{sample.WritableExecutableFlipCount}";
+            }
+            if (sample.EntropyBits >= 0)
+            {
+                summary += $" H:{sample.EntropyBits:F1}";
+            }
+            if (sample.MaxEntropyBits >= 0 && sample.MaxEntropyBits > sample.EntropyBits + 0.05)
+            {
+                summary += $" Hmax:{sample.MaxEntropyBits:F1}";
+            }
+            if (sample.EntropyFlipCount != 0)
+            {
+                summary += $" eflip:{sample.EntropyFlipCount}";
+            }
+            if (sample.RapidEntropyFlipCount != 0)
+            {
+                summary += $" rapid-eflip:{sample.RapidEntropyFlipCount}";
+            }
+            if (sample.HighEntropyWriteCount != 0)
+            {
+                summary += $" high-H:{sample.HighEntropyWriteCount}";
+            }
+
+            return summary.Trim();
         }
 
         private uint ResolveMemoryRegionTargetPid(BrokerEtwEventView view)
@@ -3840,7 +6762,8 @@ namespace BlackbirdInterface
             return view.Family switch {
                 BlackbirdNative.IpcEtwFamilyImage => view.ProcessPid != 0 ? view.ProcessPid : view.EventProcessId,
                 BlackbirdNative.IpcEtwFamilyThread =>
-                    view.ProcessPid != 0 ? view.ProcessPid : (view.TargetPid != 0 ? view.TargetPid : view.EventProcessId),
+                    view.ProcessPid != 0 ? view.ProcessPid
+                                         : (view.TargetPid != 0 ? view.TargetPid : view.EventProcessId),
                 BlackbirdNative.IpcEtwFamilyUserHook =>
                     view.TargetPid != 0 ? view.TargetPid : (view.ProcessPid != 0 ? view.ProcessPid : view.ActorPid),
                 _ => 0
@@ -3858,11 +6781,11 @@ namespace BlackbirdInterface
             return _observedProcessStartKeyByPid.TryGetValue(pid, out ulong cached) ? cached : 0;
         }
 
-        private static string BuildRegionIdentity(ulong processStartKey, uint targetPid, ulong allocationBase)
-            => $"{targetPid:X8}:{processStartKey:X16}:{allocationBase:X16}";
+        private static string BuildRegionIdentity(ulong processStartKey, uint targetPid, ulong allocationBase) =>
+            $"{targetPid:X8}:{processStartKey:X16}:{allocationBase:X16}";
 
-        private static string BuildFunctionTablePointerKey(uint pid, ulong functionTable)
-            => $"{pid:X8}:{functionTable:X16}";
+        private static string BuildFunctionTablePointerKey(uint pid,
+                                                           ulong functionTable) => $"{pid:X8}:{functionTable:X16}";
 
         private ulong ResolveFunctionTableBase(BrokerEtwEventView view, ulong functionTable)
         {
@@ -3936,13 +6859,148 @@ namespace BlackbirdInterface
             return true;
         }
 
-        private static ulong NormalizeRegionAddress(ulong address)
-            => address == 0 ? 0 : (address & ~0xFFFUL);
+        private static ulong NormalizeRegionAddress(ulong address) => address == 0 ? 0 : (address & ~0xFFFUL);
 
         private static bool IsExecutableProtection(uint protection)
         {
             uint normalized = protection & 0xFFu;
             return normalized == 0x10u || normalized == 0x20u || normalized == 0x40u || normalized == 0x80u;
+        }
+
+        private static bool IsWritableProtection(uint protection)
+        {
+            uint normalized = protection & 0xFFu;
+            return normalized == 0x04u || normalized == 0x08u || normalized == 0x40u || normalized == 0x80u;
+        }
+
+        private static bool IsNoAccessProtection(uint protection)
+        {
+            return (protection & 0xFFu) == 0x01u;
+        }
+
+        private static bool HasGuardProtection(uint protection)
+        {
+            return (protection & 0x100u) != 0;
+        }
+
+        private static bool IsWritableExecutableProtection(uint protection)
+        {
+            uint normalized = protection & 0xFFu;
+            return normalized == 0x40u || normalized == 0x80u;
+        }
+
+        private static uint NormalizeProtectionForFlip(uint protection)
+        {
+            return protection & 0x1FFu;
+        }
+
+        private static bool ProtectionValuesEquivalent(uint left, uint right)
+        {
+            return NormalizeProtectionForFlip(left) == NormalizeProtectionForFlip(right);
+        }
+
+        private static bool IsGuardNoAccessProtectionTransition(uint previousProtection, uint currentProtection)
+        {
+            return IsNoAccessProtection(previousProtection) || IsNoAccessProtection(currentProtection) ||
+                   HasGuardProtection(previousProtection) || HasGuardProtection(currentProtection);
+        }
+
+        private static bool IsWritableExecutableProtectionTransition(uint previousProtection, uint currentProtection)
+        {
+            return IsWritableExecutableProtection(previousProtection) ||
+                   IsWritableExecutableProtection(currentProtection) ||
+                   (IsWritableProtection(previousProtection) && IsExecutableProtection(currentProtection)) ||
+                   (IsExecutableProtection(previousProtection) && IsWritableProtection(currentProtection));
+        }
+
+        private static string BuildProtectionTransitionLabel(uint previousProtection, uint currentProtection)
+        {
+            return $"{CompactMemoryProtectionLabel(previousProtection)}->{CompactMemoryProtectionLabel(currentProtection)}";
+        }
+
+        private static string CompactMemoryProtectionLabel(uint protection)
+        {
+            string baseLabel = (protection & 0xFFu) switch {
+                0x01u => "NO_ACCESS",
+                0x02u => "R",
+                0x04u => "RW",
+                0x08u => "WC",
+                0x10u => "X",
+                0x20u => "RX",
+                0x40u => "RWX",
+                0x80u => "XWC",
+                _ => protection == 0 ? "UNKNOWN" : $"0x{protection & 0xFFu:X}"
+            };
+
+            return HasGuardProtection(protection) ? $"GUARD|{baseLabel}" : baseLabel;
+        }
+
+        private static bool IsMemoryPatternMilestone(uint count)
+        {
+            return count == 2 || count == 3 || count == 5 || count == 10 || count == 25 || count == 50 ||
+                   (count >= 100 && count % 100 == 0);
+        }
+
+        private static bool IsHighEntropyWriteMilestone(uint count)
+        {
+            return count == 1 || count == 3 || count == 10 || count == 25 || count == 50 ||
+                   (count >= 100 && count % 100 == 0);
+        }
+
+        private static bool HasUsableEntropySample(MemoryRegionAttributionSample sample)
+        {
+            return sample.EntropyBits >= 0 &&
+                   (sample.SampleBytes == 0 || sample.SampleBytes >= MemoryEntropyMinSampleBytes);
+        }
+
+        private static uint ComputeMemoryLifecycleSeverity(MemoryRegionAttributionSample sample, bool protectSignal,
+                                                           bool entropySignal)
+        {
+            uint severity = protectSignal ? 5u : 4u;
+            if (protectSignal)
+            {
+                if (sample.ProtectFlipCount >= 50 || sample.RapidProtectFlipCount >= 10)
+                {
+                    severity = Math.Max(severity, 9u);
+                }
+                else if (sample.ProtectFlipCount >= 10 || sample.RapidProtectFlipCount >= 4)
+                {
+                    severity = Math.Max(severity, 8u);
+                }
+                else if (sample.ProtectFlipCount >= 5 || sample.GuardNoAccessFlipCount != 0 ||
+                         sample.WritableExecutableFlipCount != 0)
+                {
+                    severity = Math.Max(severity, 7u);
+                }
+                else if (sample.ProtectFlipCount >= 2 || sample.RapidProtectFlipCount != 0 ||
+                         sample.ExecutableFlipCount != 0)
+                {
+                    severity = Math.Max(severity, 6u);
+                }
+            }
+
+            if (entropySignal)
+            {
+                if (sample.MaxEntropyBits >= 7.7 || sample.HighEntropyWriteCount >= 10)
+                {
+                    severity = Math.Max(severity, 7u);
+                }
+                else if (sample.EntropyBits >= MemoryHighEntropyBits || sample.EntropyFlipCount >= 3)
+                {
+                    severity = Math.Max(severity, 5u);
+                }
+            }
+
+            if (sample.CrossProcess)
+            {
+                severity = Math.Max(severity, 7u);
+            }
+            if (sample.FunctionTableRegistered && sample.ProtectFlipCount != 0)
+            {
+                severity = Math.Max(severity, 7u);
+            }
+
+            return Math.Min(severity, 9u);
         }
 
         private static bool IsHookUnwindClean(uint flags)
@@ -3987,6 +7045,11 @@ namespace BlackbirdInterface
                                         BlackbirdNative.EventTypeThread => ShouldTrackRawThreadIoctl(record),
                                         BlackbirdNative.EventTypeFileSystem =>
                                             record.FileProcessPid == 0 || IsTrackedPid(record.FileProcessPid),
+                                        BlackbirdNative.EventTypeRegistry =>
+                                            record.RegistryProcessPid == 0 || IsTrackedPid(record.RegistryProcessPid),
+                                        BlackbirdNative.EventTypeEnterprise =>
+                                            record.EnterpriseProcessPid == 0 ||
+                                            IsTrackedPid(record.EnterpriseProcessPid),
                                         _ => false };
         }
 
@@ -4042,6 +7105,7 @@ namespace BlackbirdInterface
             return record.Type switch { BlackbirdNative.EventTypeHandle => IsImportantHandleIoctl(record),
                                         BlackbirdNative.EventTypeThread => IsImportantThreadIoctl(record),
                                         BlackbirdNative.EventTypeFileSystem => IsImportantFilesystemIoctl(record),
+                                        BlackbirdNative.EventTypeEnterprise => true,
                                         _ => false };
         }
 
@@ -4050,6 +7114,8 @@ namespace BlackbirdInterface
             return record.Type switch { BlackbirdNative.EventTypeHandle => IsCriticalHandleIoctl(record),
                                         BlackbirdNative.EventTypeThread => IsCriticalThreadIoctl(record),
                                         BlackbirdNative.EventTypeFileSystem => IsCriticalFilesystemIoctl(record),
+                                        BlackbirdNative.EventTypeEnterprise =>
+                                            (record.EnterpriseFlags & BlackbirdNative.EnterpriseFlagCritical) != 0,
                                         _ => false };
         }
 
@@ -4116,6 +7182,7 @@ namespace BlackbirdInterface
 
             return record.Type switch { BlackbirdNative.EventTypeHandle => IsImportantHandleIoctl(record),
                                         BlackbirdNative.EventTypeThread => IsImportantThreadIoctl(record),
+                                        BlackbirdNative.EventTypeEnterprise => true,
                                         _ => false };
         }
 
@@ -4128,6 +7195,11 @@ namespace BlackbirdInterface
         {
             byte[] detectionName = etw.DetectionName ?? Array.Empty<byte>();
             if (detectionName.Length > 0 && detectionName[0] != 0)
+            {
+                return true;
+            }
+
+            if (IsRawDirectSyscallEtwEvent(etw))
             {
                 return true;
             }
@@ -4151,6 +7223,30 @@ namespace BlackbirdInterface
             };
         }
 
+        private static bool IsRawDirectSyscallEtwEvent(BlackbirdNative.BkIpcEtwEvent etw)
+        {
+            if ((etw.DetectionTraits & BlackbirdNative.IpcEtwTraitDirectSyscall) != 0)
+            {
+                return true;
+            }
+
+            if (etw.Family != BlackbirdNative.IpcEtwFamilyHandle)
+            {
+                return false;
+            }
+
+            string className = BlackbirdNative.AnsiBufferToString(etw.ClassName);
+            if (className.Equals("DIRECT-SYSCALL-SUSPECT", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            bool exportMismatch = (etw.Flags & HandleFlagSyscallExportMismatch) != 0;
+            bool stackSpoof = (etw.Flags & HandleFlagStackSpoofSuspect) != 0;
+            bool execOutsideNtdll = (etw.Flags & HandleFlagExecProtect) != 0 && (etw.Flags & HandleFlagFromNtdll) == 0;
+            return exportMismatch || stackSpoof || execOutsideNtdll;
+        }
+
         private static bool ShouldAdmitEtwEvent(BlackbirdNative.BkIpcEtwEvent etw, long pendingCount)
         {
             byte[] detectionName = etw.DetectionName ?? Array.Empty<byte>();
@@ -4166,6 +7262,7 @@ namespace BlackbirdInterface
             }
 
             bool critical = (detectionName.Length > 0 && detectionName[0] != 0) || etw.Severity >= 6 ||
+                            IsRawDirectSyscallEtwEvent(etw) ||
                             (etw.Family == BlackbirdNative.IpcEtwFamilyProcess &&
                              (etw.Flags & BlackbirdNative.IpcEtwFlagProcessIsCreate) != 0) ||
                             etw.Family == BlackbirdNative.IpcEtwFamilyUserHook;
@@ -4191,10 +7288,10 @@ namespace BlackbirdInterface
             return BuildGenericEtwDisplayDetail(view, BuildHookFieldMap(view), includeHeadline: true);
         }
 
-        private string BuildFallbackApiDetail(string apiName, string rawReason, string action)
+        private string BuildFallbackApiDetail(string apiName, BrokerEtwEventView view, string rawReason, string action)
         {
             Dictionary<string, string> fields = BuildHookFieldMap(rawReason, Array.Empty<ulong>(), 0);
-            string argumentText = BuildResolvedHookArgumentsText(apiName, fields);
+            string argumentText = BuildResolvedHookArgumentsText(apiName, view, fields);
             if (string.IsNullOrWhiteSpace(argumentText))
             {
                 return action;
@@ -4257,9 +7354,9 @@ namespace BlackbirdInterface
             }
 
             if (includeHeadline &&
-                TryDescribeHookStartupContext(view, out string startupHeadline, out string startupDetail))
+                TryDescribeHookExecutionContext(view, fields, out string executionHeadline, out string executionDetail))
             {
-                sb.Append(startupHeadline).Append(": ").AppendLine(startupDetail);
+                sb.Append(executionHeadline).Append(": ").AppendLine(executionDetail);
             }
 
             if (!string.IsNullOrWhiteSpace(view.ClassName))
@@ -4475,31 +7572,7 @@ namespace BlackbirdInterface
 
         private static Dictionary<string, string> ParseReasonFields(string rawReason)
         {
-            var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            if (string.IsNullOrWhiteSpace(rawReason))
-            {
-                return fields;
-            }
-
-            foreach (string token in rawReason.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
-            {
-                int sep = token.IndexOf('=');
-                if (sep <= 0 || sep >= token.Length - 1)
-                {
-                    continue;
-                }
-
-                string key = token[..sep].Trim();
-                string value = token[(sep + 1)..].Trim().TrimEnd(',', ';');
-                if (key.Length == 0)
-                {
-                    continue;
-                }
-
-                fields[key] = value;
-            }
-
-            return fields;
+            return EventDetailsParsing.ParseRawFields(rawReason);
         }
 
         private static Dictionary<string, string> BuildHookFieldMap(string rawReason, IReadOnlyList<ulong>? hookArgs,
@@ -4519,12 +7592,85 @@ namespace BlackbirdInterface
             return fields;
         }
 
-        private static Dictionary<string, string> BuildHookFieldMap(BrokerEtwEventView view) =>
-            BuildHookFieldMap(view.Reason ?? string.Empty, view.HookArgs, view.HookArgCount);
+        private static Dictionary<string, string>
+        BuildHookFieldMap(BrokerEtwEventView view) => view.GetOrCreateHookFieldMap();
 
-        private static string BuildResolvedHookArgumentsText(string apiName, IReadOnlyDictionary<string, string> fields)
+        private static bool
+        IsHookKernelCaller(BrokerEtwEventView view) => (view.Flags & BlackbirdNative.IpcEtwFlagHookKernelCaller) != 0;
+
+        private static bool IsHookCurrentProcessTarget(BrokerEtwEventView view)
         {
-            List<(string Name, string Value)> args = ResolveHookArguments(apiName, fields);
+            if ((view.Flags & BlackbirdNative.IpcEtwFlagHookTargetCurrentProcess) != 0)
+            {
+                return true;
+            }
+
+            uint processPid = view.ProcessPid != 0 ? view.ProcessPid : view.ActorPid;
+            return processPid != 0 && (view.TargetPid == 0 || view.TargetPid == processPid);
+        }
+
+        private static bool
+        IsHookImageSection(BrokerEtwEventView view) => (view.Flags & BlackbirdNative.IpcEtwFlagHookSectionImage) != 0;
+
+        private bool TryDescribeHookExecutionContext(BrokerEtwEventView view,
+                                                     IReadOnlyDictionary<string, string> fields, out string headline,
+                                                     out string detail)
+        {
+            headline = string.Empty;
+            detail = string.Empty;
+
+            if (!EventDetailFormatting.IsApiGraphCandidate(view))
+            {
+                return false;
+            }
+
+            string apiName = string.IsNullOrWhiteSpace(view.Operation) ? view.EventName : view.Operation;
+            bool kernelCaller = IsHookKernelCaller(view);
+            bool currentTarget = IsHookCurrentProcessTarget(view);
+            bool imageSection = IsHookImageSection(view);
+
+            if (kernelCaller)
+            {
+                headline = "Kernel Caller";
+                detail =
+                    "ExecutionContext: this hook fired on a KernelMode caller path. Treat the call as kernel-originated activity or loader/manager plumbing, not a normal user thread directly invoking the API.";
+                return true;
+            }
+
+            if ((apiName.Equals("NtCreateSection", StringComparison.OrdinalIgnoreCase) ||
+                 apiName.Equals("NtMapViewOfSection", StringComparison.OrdinalIgnoreCase)) &&
+                currentTarget && imageSection)
+            {
+                headline = "Loader / Image Mapping";
+                detail =
+                    "ExecutionContext: image-backed section creation or mapping into the current process. This is commonly loader-style PE/DLL mapping and should be separated from private-memory execution or post-start runtime tampering.";
+                return true;
+            }
+
+            if (TryDescribeHookStartupContext(view, out string startupHeadline, out string startupDetail))
+            {
+                headline = startupHeadline;
+                detail = startupDetail;
+                return true;
+            }
+
+            if (!currentTarget && view.TargetPid != 0)
+            {
+                headline = "Cross-Process Runtime";
+                detail =
+                    $"ExecutionContext: the API targets another process ({ProcessIdentityResolver.Describe(view.TargetPid)}). This is actual runtime cross-process activity, not local loader setup.";
+                return true;
+            }
+
+            headline = "User Runtime";
+            detail = "ExecutionContext: user-mode call path against the current process outside the startup window.";
+            return true;
+        }
+
+        private string BuildResolvedHookArgumentsText(string apiName, BrokerEtwEventView view,
+                                                      IReadOnlyDictionary<string, string> fields)
+        {
+            List<(string Name, string Value)> args = ResolveHookArguments(apiName, view, fields);
             if (args.Count == 0)
             {
                 return string.Empty;
@@ -4540,8 +7686,8 @@ namespace BlackbirdInterface
             return sb.ToString().TrimEnd();
         }
 
-        private static List<(string Name, string Value)>
-        ResolveHookArguments(string apiName, IReadOnlyDictionary<string, string> fields)
+        private List<(string Name, string Value)> ResolveHookArguments(string apiName, BrokerEtwEventView view,
+                                                                       IReadOnlyDictionary<string, string> fields)
         {
             string name = apiName?.Trim() ?? string.Empty;
             var args = new List<(string Name, string Value)>(8);
@@ -4549,115 +7695,131 @@ namespace BlackbirdInterface
             switch (name)
             {
             case "NtWriteVirtualMemory":
-                AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a0", "c0"));
-                AddResolvedArg(args, "BaseAddress", ResolvePointer(fields, "a1", "c1", "base"));
-                AddResolvedArg(args, "Buffer", ResolvePointer(fields, "a2", "c2"));
+                AddResolvedArg(args, "ProcessHandle", ResolvePointer(view, fields, "a0", "c0"));
+                AddResolvedArg(args, "BaseAddress", ResolvePointer(view, fields, "a1", "c1", "base"));
+                AddResolvedArg(args, "Buffer", ResolvePointer(view, fields, "a2", "c2"));
                 AddResolvedArg(args, "BufferSize", ResolveSize(fields, "a3", "c3", "size"));
-                AddResolvedArg(args, "BytesWritten", ResolveSize(fields, "a4", "c4"));
+                AddResolvedArg(args, "BytesWritten", ResolvePointer(view, fields, "a4", "c4"));
                 break;
             case "NtReadVirtualMemory":
-                AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a0", "c0"));
-                AddResolvedArg(args, "BaseAddress", ResolvePointer(fields, "a1", "c1", "base"));
-                AddResolvedArg(args, "Buffer", ResolvePointer(fields, "a2", "c2"));
+                AddResolvedArg(args, "ProcessHandle", ResolvePointer(view, fields, "a0", "c0"));
+                AddResolvedArg(args, "BaseAddress", ResolvePointer(view, fields, "a1", "c1", "base"));
+                AddResolvedArg(args, "Buffer", ResolvePointer(view, fields, "a2", "c2"));
                 AddResolvedArg(args, "BufferSize", ResolveSize(fields, "a3", "c3", "size"));
-                AddResolvedArg(args, "BytesRead", ResolveSize(fields, "a4", "c4"));
+                AddResolvedArg(args, "BytesRead", ResolvePointer(view, fields, "a4", "c4"));
                 break;
             case "NtAllocateVirtualMemory":
-                AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a0", "c0"));
-                AddResolvedArg(args, "BaseAddress*", ResolvePointer(fields, "a1", "c1", "base"));
+                AddResolvedArg(args, "ProcessHandle", ResolvePointer(view, fields, "a0", "c0"));
+                AddResolvedArg(args, "BaseAddress*", ResolvePointer(view, fields, "a1", "c1", "base"));
                 AddResolvedArg(args, "ZeroBits", ResolveHex(fields, "a2", "c2"));
                 AddResolvedArg(args, "RegionSize*", ResolveSize(fields, "a3", "c3", "size"));
                 AddResolvedArg(args, "AllocationType", ResolveAllocationType(fields, "a4", "c4", "allocType"));
                 AddResolvedArg(args, "Protect", ResolveProtect(fields, "a5", "c5", "protect"));
                 break;
             case "NtAllocateVirtualMemoryEx":
-                AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a0", "c0"));
-                AddResolvedArg(args, "BaseAddress*", ResolvePointer(fields, "a1", "c1", "base"));
+                AddResolvedArg(args, "ProcessHandle", ResolvePointer(view, fields, "a0", "c0"));
+                AddResolvedArg(args, "BaseAddress*", ResolvePointer(view, fields, "a1", "c1", "base"));
                 AddResolvedArg(args, "ZeroBits", ResolveHex(fields, "a2", "c2"));
                 AddResolvedArg(args, "RegionSize*", ResolveSize(fields, "a3", "c3", "size"));
                 AddResolvedArg(args, "AllocationType", ResolveAllocationType(fields, "a4", "c4", "allocType"));
-                AddResolvedArg(args, "ExtendedParameters", ResolvePointer(fields, "a5", "c5"));
+                AddResolvedArg(args, "ExtendedParameters", ResolvePointer(view, fields, "a5", "c5"));
                 AddResolvedArg(args, "ExtendedParameterCount", ResolveHex(fields, "a6", "c6"));
                 break;
             case "NtProtectVirtualMemory":
-                AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a0", "c0"));
-                AddResolvedArg(args, "BaseAddress*", ResolvePointer(fields, "a1", "c1", "base"));
+                AddResolvedArg(args, "ProcessHandle", ResolvePointer(view, fields, "a0", "c0"));
+                AddResolvedArg(args, "BaseAddress*", ResolvePointer(view, fields, "a1", "c1", "base"));
                 AddResolvedArg(args, "RegionSize*", ResolveSize(fields, "a2", "c2", "size"));
                 AddResolvedArg(args, "NewProtect", ResolveProtect(fields, "a3", "c3", "newProtect"));
-                AddResolvedArg(args, "OldProtect*", ResolvePointer(fields, "a4", "c4"));
+                AddResolvedArg(args, "OldProtect*", ResolvePointer(view, fields, "a4", "c4"));
                 break;
             case "NtCreateSection":
-                AddResolvedArg(args, "SectionHandle*", ResolvePointer(fields, "a0", "c0"));
+                AddResolvedArg(args, "SectionHandle*", ResolvePointer(view, fields, "a0", "c0"));
                 AddResolvedArg(args, "DesiredAccess", ResolveHex(fields, "a1", "c1"));
-                AddResolvedArg(args, "ObjectAttributes", ResolvePointer(fields, "a2", "c2"));
+                AddResolvedArg(args, "ObjectAttributes", ResolvePointer(view, fields, "a2", "c2"));
                 AddResolvedArg(args, "MaximumSize", ResolveSize(fields, "a3", "c3"));
                 AddResolvedArg(args, "SectionPageProtection", ResolveProtect(fields, "a4", "c4"));
                 AddResolvedArg(args, "AllocationAttributes", ResolveHex(fields, "a5", "c5"));
-                AddResolvedArg(args, "FileHandle", ResolvePointer(fields, "a6", "c6"));
+                AddResolvedArg(args, "FileHandle", ResolvePointer(view, fields, "a6", "c6"));
                 break;
             case "NtMapViewOfSection":
-                AddResolvedArg(args, "SectionHandle", ResolvePointer(fields, "a0", "c0"));
-                AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a1", "c1"));
-                AddResolvedArg(args, "BaseAddress*", ResolvePointer(fields, "a2", "c2", "base"));
+                AddResolvedArg(args, "SectionHandle", ResolvePointer(view, fields, "a0", "c0"));
+                AddResolvedArg(args, "ProcessHandle", ResolvePointer(view, fields, "a1", "c1"));
+                AddResolvedArg(args, "BaseAddress*", ResolvePointer(view, fields, "a2", "c2", "base"));
                 AddResolvedArg(args, "ViewSize*", ResolveSize(fields, "a6", "c3", "size"));
                 AddResolvedArg(args, "InheritDisposition", ResolveHex(fields, "a7", "c4"));
                 AddResolvedArg(args, "AllocationType", ResolveAllocationType(fields, "c5"));
                 AddResolvedArg(args, "Win32Protect", ResolveProtect(fields, "c6"));
                 break;
             case "NtMapViewOfSectionEx":
-                AddResolvedArg(args, "SectionHandle", ResolvePointer(fields, "a0", "c0"));
-                AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a1", "c1"));
-                AddResolvedArg(args, "BaseAddress*", ResolvePointer(fields, "a2", "c2", "base"));
-                AddResolvedArg(args, "SectionOffset*", ResolvePointer(fields, "a3", "c7"));
+                AddResolvedArg(args, "SectionHandle", ResolvePointer(view, fields, "a0", "c0"));
+                AddResolvedArg(args, "ProcessHandle", ResolvePointer(view, fields, "a1", "c1"));
+                AddResolvedArg(args, "BaseAddress*", ResolvePointer(view, fields, "a2", "c2", "base"));
+                AddResolvedArg(args, "SectionOffset*", ResolvePointer(view, fields, "a3", "c7"));
                 AddResolvedArg(args, "ViewSize*", ResolveSize(fields, "a4", "c3", "size"));
                 AddResolvedArg(args, "AllocationType", ResolveAllocationType(fields, "a5", "c4"));
                 AddResolvedArg(args, "Win32Protect", ResolveProtect(fields, "a6", "c5"));
-                AddResolvedArg(args, "ExtendedParameters", ResolvePointer(fields, "a7", "c6"));
+                AddResolvedArg(args, "ExtendedParameters", ResolvePointer(view, fields, "a7", "c6"));
                 break;
             case "NtQueryInformationProcess":
-                AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a0", "c0"));
+                AddResolvedArg(args, "ProcessHandle", ResolvePointer(view, fields, "a0", "c0"));
                 AddResolvedArg(args, "ProcessInformationClass", ResolveProcessInformationClass(fields, "a1", "c1"));
-                AddResolvedArg(args, "ProcessInformation", ResolvePointer(fields, "a2", "c2"));
+                AddResolvedArg(args, "ProcessInformation", ResolvePointer(view, fields, "a2", "c2"));
                 AddResolvedArg(args, "ProcessInformationLength", ResolveSize(fields, "a3", "c3"));
-                AddResolvedArg(args, "ReturnLength", ResolvePointer(fields, "a4", "c4"));
+                AddResolvedArg(args, "ReturnLength", ResolvePointer(view, fields, "a4", "c4"));
+                break;
+            case "NtQueryInformationThread":
+                AddResolvedArg(args, "ThreadHandle", ResolvePointer(view, fields, "a0", "c0"));
+                AddResolvedArg(args, "ThreadInformationClass", ResolveHex(fields, "a1", "c1"));
+                AddResolvedArg(args, "ThreadInformation", ResolvePointer(view, fields, "a2", "c2"));
+                AddResolvedArg(args, "ThreadInformationLength", ResolveSize(fields, "a3", "c3"));
+                AddResolvedArg(args, "ReturnLength", ResolvePointer(view, fields, "a4", "c4"));
                 break;
             case "NtQuerySystemInformation":
             case "NtQuerySystemInformationEx":
                 AddResolvedArg(args, "SystemInformationClass", ResolveSystemInformationClass(fields, "a0", "c0"));
-                AddResolvedArg(args, "InputBuffer", ResolvePointer(fields, "a1", "c1"));
+                AddResolvedArg(args, "InputBuffer", ResolvePointer(view, fields, "a1", "c1"));
                 AddResolvedArg(args, "InputBufferLength", ResolveSize(fields, "a2", "c2"));
-                AddResolvedArg(args, "SystemInformation", ResolvePointer(fields, "a3", "c3"));
+                AddResolvedArg(args, "SystemInformation", ResolvePointer(view, fields, "a3", "c3"));
                 AddResolvedArg(args, "SystemInformationLength", ResolveSize(fields, "a4", "c4"));
-                AddResolvedArg(args, "ReturnLength", ResolvePointer(fields, "a5", "c5"));
+                AddResolvedArg(args, "ReturnLength", ResolvePointer(view, fields, "a5", "c5"));
+                break;
+            case "NtQueryPerformanceCounter":
+                AddResolvedArg(args, "RawCounter", ResolveHex(fields, "rawCounter", "a0", "c0"));
+                AddResolvedArg(args, "VirtualCounter", ResolveHex(fields, "virtualCounter", "a1", "c1"));
+                AddResolvedArg(args, "RawDelta", ResolveHex(fields, "rawDelta", "a2", "c2"));
+                AddResolvedArg(args, "VirtualDelta", ResolveHex(fields, "virtualDelta", "a3", "c3"));
+                AddResolvedArg(args, "CorrectionTicks", ResolveHex(fields, "correctionTicks", "a4", "c4"));
+                AddResolvedArg(args, "SourceFlags", ResolveHex(fields, "sourceFlags", "a5", "c5"));
+                AddResolvedArg(args, "AutoBiasTicks", ResolveHex(fields, "autoBiasTicks", "a6", "c6"));
                 break;
             case "NtCreateThreadEx":
-                AddResolvedArg(args, "ThreadHandle*", ResolvePointer(fields, "a0", "c0"));
+                AddResolvedArg(args, "ThreadHandle*", ResolvePointer(view, fields, "a0", "c0"));
                 AddResolvedArg(args, "DesiredAccess", ResolveHex(fields, "a1", "c1"));
-                AddResolvedArg(args, "ProcessHandle", ResolvePointer(fields, "a2", "c2"));
-                AddResolvedArg(args, "StartRoutine", ResolvePointer(fields, "a3", "c3"));
-                AddResolvedArg(args, "Argument", ResolvePointer(fields, "a4", "c4"));
+                AddResolvedArg(args, "ProcessHandle", ResolvePointer(view, fields, "a2", "c2"));
+                AddResolvedArg(args, "StartRoutine", ResolvePointer(view, fields, "a3", "c3"));
+                AddResolvedArg(args, "Argument", ResolvePointer(view, fields, "a4", "c4"));
                 AddResolvedArg(args, "CreateFlags", ResolveHex(fields, "a5", "c5"));
                 AddResolvedArg(args, "StackSize", ResolveSize(fields, "a6", "c6"));
                 AddResolvedArg(args, "MaximumStackSize", ResolveSize(fields, "a7", "c7"));
                 break;
             case "RtlAddFunctionTable":
-                AddResolvedArg(args, "FunctionTable", ResolvePointer(fields, "a0"));
+                AddResolvedArg(args, "FunctionTable", ResolvePointer(view, fields, "a0"));
                 AddResolvedArg(args, "EntryCount", ResolveHex(fields, "a1"));
-                AddResolvedArg(args, "BaseAddress", ResolvePointer(fields, "a2", "baseAddress"));
+                AddResolvedArg(args, "BaseAddress", ResolvePointer(view, fields, "a2", "baseAddress"));
                 break;
             case "RtlInstallFunctionTableCallback":
-                AddResolvedArg(args, "TableIdentifier", ResolvePointer(fields, "a0"));
-                AddResolvedArg(args, "BaseAddress", ResolvePointer(fields, "a1", "baseAddress"));
+                AddResolvedArg(args, "TableIdentifier", ResolvePointer(view, fields, "a0"));
+                AddResolvedArg(args, "BaseAddress", ResolvePointer(view, fields, "a1", "baseAddress"));
                 AddResolvedArg(args, "Length", ResolveSize(fields, "a2", "length"));
-                AddResolvedArg(args, "Callback", ResolvePointer(fields, "a3", "callback"));
+                AddResolvedArg(args, "Callback", ResolvePointer(view, fields, "a3", "callback"));
                 break;
             case "RtlDeleteFunctionTable":
-                AddResolvedArg(args, "FunctionTable", ResolvePointer(fields, "a0", "table"));
+                AddResolvedArg(args, "FunctionTable", ResolvePointer(view, fields, "a0", "table"));
                 break;
             default:
                 for (int i = 0; i < 8; i += 1)
                 {
-                    string value = ResolveHex(fields, $"a{i}", $"c{i}");
+                    string value = ResolvePointer(view, fields, $"a{i}", $"c{i}");
                     AddResolvedArg(args, $"Arg{i}", value);
                 }
                 break;
@@ -4674,8 +7836,12 @@ namespace BlackbirdInterface
             }
         }
 
-        private static string ResolvePointer(IReadOnlyDictionary<string, string> fields,
-                                             params string[] keys) => ResolveHex(fields, keys);
+        private string ResolvePointer(BrokerEtwEventView view, IReadOnlyDictionary<string, string> fields,
+                                      params string[] keys)
+        {
+            ulong value = FirstU64(fields, keys);
+            return value == 0 ? string.Empty : FormatObservedPointer(view, value);
+        }
 
         private static string ResolveSize(IReadOnlyDictionary<string, string> fields, params string[] keys)
         {
@@ -4716,6 +7882,8 @@ namespace BlackbirdInterface
                 26 => "ProcessWow64Information",
                 27 => "ProcessImageFileName",
                 29 => "ProcessBreakOnTermination",
+                30 => "ProcessDebugObjectHandle",
+                31 => "ProcessDebugFlags",
                 43 => "ProcessImageFileNameWin32",
                 _ => "Unknown"
             };
@@ -4737,6 +7905,7 @@ namespace BlackbirdInterface
                 11 => "SystemModuleInformation",
                 35 => "SystemKernelDebuggerInformation",
                 76 => "SystemFirmwareTableInformation",
+                103 => "SystemCodeIntegrityInformation",
                 _ => "Unknown"
             };
 
@@ -4913,6 +8082,33 @@ namespace BlackbirdInterface
             public DateTime LastEntropyChangeUtc { get; set; }
         }
 
+        private sealed class RecentImageFileAccess
+        {
+            public DateTime TimestampUtc { get; init; }
+            public uint Pid { get; init; }
+            public uint Tid { get; init; }
+            public uint Operation { get; init; }
+            public string Path { get; init; } = string.Empty;
+            public string FileName { get; init; } = string.Empty;
+        }
+
+        private sealed class RecentImageMapState
+        {
+            public DateTime FirstSeenUtc { get; set; }
+            public DateTime LastSeenUtc { get; set; }
+            public string Path { get; set; } = string.Empty;
+            public string LastApi { get; set; } = string.Empty;
+            public int Count { get; set; }
+            public RecentImageFileAccess? LastLinkedFileAccess { get; set; }
+
+            public RecentImageMapState Clone() => new() { FirstSeenUtc = FirstSeenUtc,
+                                                          LastSeenUtc = LastSeenUtc,
+                                                          Path = Path,
+                                                          LastApi = LastApi,
+                                                          Count = Count,
+                                                          LastLinkedFileAccess = LastLinkedFileAccess };
+        }
+
         private readonly struct ApiCallStructuredFields
         {
             internal string Action { get; init; }
@@ -4941,12 +8137,14 @@ namespace BlackbirdInterface
             internal HeuristicEventView? Heuristic { get; }
             internal ThreadLifecycleEventSample? ThreadLifecycle { get; }
             internal IoctlParsedEvent? Filesystem { get; }
+            internal IoctlParsedEvent? Registry { get; }
             internal BrokerEtwEventView? EtwView { get; }
             internal string? StatusLine { get; }
 
             private BackendUiWorkItem(BackendUiWorkKind kind, TelemetryEvent? telemetry, ProcessRelationView? relation,
                                       HeuristicEventView? heuristic, ThreadLifecycleEventSample? threadLifecycle,
-                                      IoctlParsedEvent? filesystem, BrokerEtwEventView? etwView, string? statusLine)
+                                      IoctlParsedEvent? filesystem, IoctlParsedEvent? registry,
+                                      BrokerEtwEventView? etwView, string? statusLine)
             {
                 Kind = kind;
                 Telemetry = telemetry;
@@ -4954,22 +8152,25 @@ namespace BlackbirdInterface
                 Heuristic = heuristic;
                 ThreadLifecycle = threadLifecycle;
                 Filesystem = filesystem;
+                Registry = registry;
                 EtwView = etwView;
                 StatusLine = statusLine;
             }
 
             internal static BackendUiWorkItem
                 FromIoctl(TelemetryEvent? telemetry, ProcessRelationView? relation, HeuristicEventView? heuristic,
-                          ThreadLifecycleEventSample? threadLifecycle,
-                          IoctlParsedEvent? filesystem) => new(BackendUiWorkKind.Ioctl, telemetry, relation, heuristic,
-                                                               threadLifecycle, filesystem, null, null);
+                          ThreadLifecycleEventSample? threadLifecycle, IoctlParsedEvent? filesystem,
+                          IoctlParsedEvent? registry = null) => new(BackendUiWorkKind.Ioctl, telemetry, relation,
+                                                                    heuristic, threadLifecycle, filesystem, registry,
+                                                                    null, null);
 
             internal static BackendUiWorkItem FromEtw(BrokerEtwEventView etwView) => new(BackendUiWorkKind.Etw, null,
-                                                                                         null, null, null, null,
+                                                                                         null, null, null, null, null,
                                                                                          etwView, null);
 
             internal static BackendUiWorkItem FromStatus(string statusLine) => new(BackendUiWorkKind.Status, null, null,
-                                                                                   null, null, null, null, statusLine);
+                                                                                   null, null, null, null, null,
+                                                                                   statusLine);
         }
 
         private void SaveIntelSessionState(int pid)
@@ -4982,14 +8183,10 @@ namespace BlackbirdInterface
             _etwHistoryByPid[pid] = EtwPaneHost.SnapshotItems().Select(x => x.Clone()).ToList();
             _heuristicsHistoryByPid[pid] = HeuristicsPaneHost.SnapshotItems().Select(x => x.Clone()).ToList();
             _filesystemHistoryByPid[pid] = FilesystemPaneHost.SnapshotItems().Select(x => x.Clone()).ToList();
+            _registryHistoryByPid[pid] = RegistryPaneHost.SnapshotItems().Select(x => x.Clone()).ToList();
             _relationsHistoryByPid[pid] = ProcessRelationsPaneHost.SnapshotItems().Select(x => x.Clone()).ToList();
-            _apiGraphHistoryByPid[pid] =
-                _apiGraphRowsByKey.Values
-                    .Select(x => new ApiCallGraphRowSnapshot { ApiName = x.ApiName, SensorOrigin = x.SensorOrigin,
-                                                               SourcePid = x.SourcePid, TargetPid = x.TargetPid,
-                                                               ThreadId = x.ThreadId, Hits = x.Hits,
-                                                               LastSeenUtc = x.LastSeenUtc })
-                    .ToList();
+            _apiGraphHistoryByPid[pid] = _apiGraphRowsByKey.Values.Select(static x => x.Clone()).ToList();
+            _extendedHistoryByPid[pid] = _extendedRowsByKey.Values.Select(static x => x.Clone()).ToList();
         }
 
         private void RestoreIntelSessionState(int pid)
@@ -5000,40 +8197,56 @@ namespace BlackbirdInterface
                 _heuristicsHistoryByPid.TryGetValue(pid, out var c) ? c : Array.Empty<GroupedEventRow>();
             IEnumerable<GroupedEventRow> fs =
                 _filesystemHistoryByPid.TryGetValue(pid, out var d) ? d : Array.Empty<GroupedEventRow>();
+            IEnumerable<GroupedEventRow> reg =
+                _registryHistoryByPid.TryGetValue(pid, out var dr) ? dr : Array.Empty<GroupedEventRow>();
             IEnumerable<GroupedEventRow> rel =
                 _relationsHistoryByPid.TryGetValue(pid, out var e) ? e : Array.Empty<GroupedEventRow>();
             IEnumerable<ApiCallGraphRowSnapshot> apiGraph =
                 _apiGraphHistoryByPid.TryGetValue(pid, out var f) ? f : Array.Empty<ApiCallGraphRowSnapshot>();
+            IEnumerable<ExtendedActivityRowSnapshot> extended =
+                _extendedHistoryByPid.TryGetValue(pid, out var g) ? g : Array.Empty<ExtendedActivityRowSnapshot>();
 
             EtwPaneHost.LoadHistory(etw.Select(x => x.Clone()).ToList());
             HeuristicsPaneHost.LoadHistory(heur.Select(x => x.Clone()).ToList());
             FilesystemPaneHost.LoadHistory(fs.Select(x => x.Clone()).ToList());
+            RegistryPaneHost.LoadHistory(reg.Select(x => x.Clone()).ToList());
             ProcessRelationsPaneHost.SetRootPid(pid);
             ProcessRelationsPaneHost.LoadHistory(rel.Select(x => x.Clone()).ToList());
             _apiGraphRowsByKey.Clear();
+            _extendedRowsByKey.Clear();
             _apiGraphReasonByKey.Clear();
             _apiGraphActionByKey.Clear();
             _apiGraphDecodedByKey.Clear();
             _apiGraphFramesByKey.Clear();
             _apiGraphSensorByKey.Clear();
             _apiGraphTimelineLastEmitByKey.Clear();
+            _observedHookStackLastPersistByThread.Clear();
+            _threadStackFallbackLastCaptureByThread.Clear();
+            _pendingThreadStackFallbackCaptures.Clear();
             _apiMemorySignalsByPage.Clear();
             _crossProcWriteCountByPair.Clear();
             _crossProcRwxAllocCountByPair.Clear();
+            _antiAnalysisCountByEvidence.Clear();
+            ResetImageMapCorrelationCaches();
+            _extendedViewRows.Clear();
             foreach (ApiCallGraphRowSnapshot row in apiGraph)
             {
                 string sensorOrigin = string.IsNullOrWhiteSpace(row.SensorOrigin) ? "Unclassified" : row.SensorOrigin;
                 string callerOrigin = NormalizeApiCallerOrigin(row.CallerOrigin);
+                string originModule = NormalizeApiOriginModule(row.OriginModule);
                 string key = BuildApiGraphKey(row.SourcePid, row.TargetPid, row.ThreadId, row.ApiName, sensorOrigin,
-                                              callerOrigin);
-                _apiGraphRowsByKey[key] = new ApiCallGraphRowSnapshot {
-                    ApiName = row.ApiName,     SensorOrigin = row.SensorOrigin, CallerOrigin = row.CallerOrigin,
-                    SourcePid = row.SourcePid, TargetPid = row.TargetPid,       ThreadId = row.ThreadId,
-                    Hits = row.Hits,           LastSeenUtc = row.LastSeenUtc
-                };
+                                              callerOrigin, originModule);
+                _apiGraphRowsByKey[key] = row.Clone();
                 _apiGraphSensorByKey[key] = sensorOrigin;
             }
+            foreach (ExtendedActivityRowSnapshot row in extended)
+            {
+                string key = BuildExtendedActivityKey(row.TypeLabel, row.ActorLabel, row.TargetLabel, row.SubjectLabel,
+                                                      row.OperationLabel);
+                _extendedRowsByKey[key] = row.Clone();
+            }
             PublishApiGraphSnapshot();
+            PublishExtendedActivitySnapshot();
             if (EtwPaneHost.ItemCount > 0)
             {
                 FindExplorerItem("ETW")?.PushPreviewValue(EtwPaneHost.TotalRawCount);
@@ -5045,6 +8258,10 @@ namespace BlackbirdInterface
             if (FilesystemPaneHost.ItemCount > 0)
             {
                 FindExplorerItem("Filesystem")?.PushPreviewValue(FilesystemPaneHost.TotalRawCount);
+            }
+            if (RegistryPaneHost.ItemCount > 0)
+            {
+                FindExplorerItem("Registry")?.PushPreviewValue(RegistryPaneHost.TotalRawCount);
             }
             if (ProcessRelationsPaneHost.ItemCount > 0)
             {
@@ -5240,10 +8457,22 @@ namespace BlackbirdInterface
 
         private async Task RunPreflightAsync(int pid, bool userInitiated = false)
         {
-            BlackbirdPreflightReport report = await Task.Run(() => BlackbirdPreflight.Run(pid));
+            BlackbirdPreflightReport report;
+            try
+            {
+                report = await Task.Run(() => BlackbirdPreflight.Run(pid));
+            }
+            catch (Exception ex)
+            {
+                report = new BlackbirdPreflightReport { CheckedUtc = DateTime.UtcNow, DriverState = "Unknown",
+                                                        ControllerState = "Unknown", Error = ex.Message };
+                DiagnosticsState.SetValue("Preflight", $"failed: {ex.Message}");
+                OutputCapture.AppendLine($"Preflight failed: {ex}");
+            }
+
             _lastPreflight = report;
             OutputCapture.AppendLine($"Preflight: {report.Summary}");
-            DiagnosticsState.SetValue("Driver Service", report.DriverState);
+            DiagnosticsState.SetValue("Driver Service", report.DriverDisplayState);
             DiagnosticsState.SetValue("Controller Service", report.ControllerState);
             DiagnosticsState.SetValue("Broker Caps", $"0x{report.BrokerCapabilities:X8}");
             DiagnosticsState.SetValue("Broker TI", report.ThreatIntelEnabled ? "Enabled" : "Disabled");
@@ -5261,7 +8490,7 @@ namespace BlackbirdInterface
                 issues.Add(report.Error);
             }
 
-            if (!string.Equals(report.DriverState, "Running", StringComparison.OrdinalIgnoreCase))
+            if (!report.DriverRuntimeReady)
             {
                 issues.Add($"driver service={report.DriverState}");
             }
@@ -5325,6 +8554,12 @@ namespace BlackbirdInterface
             {
                 StatusBlock.Text = "Status: Preflight unavailable";
             }
+        }
+
+        private void RegisterVm_Click(object sender, RoutedEventArgs e)
+        {
+            var window = new VmRegistrationWindow { Owner = this };
+            window.ShowDialog();
         }
 
         private async void DriverStart_Click(object sender, RoutedEventArgs e)
@@ -5402,12 +8637,37 @@ namespace BlackbirdInterface
             public ulong BaseAddress { get; set; }
             public ulong RegionSize { get; set; }
             public string RegionKind { get; set; } = string.Empty;
+            public string ExecutionContext { get; set; } = string.Empty;
+            public bool ObservedByKernel { get; set; }
+            public bool ObservedByUserHook { get; set; }
+            public bool BlackbirdOwned { get; set; }
+            public bool CrossProcess { get; set; }
+            public bool ImageBacked { get; set; }
             public uint InitialProtection { get; set; }
+            public uint PreviousProtection { get; set; }
             public uint CurrentProtection { get; set; }
             public bool FirstExecutableTransitionSeen { get; set; }
             public bool FirstThreadStartSeen { get; set; }
             public ulong FirstThreadStartAddress { get; set; }
             public bool FunctionTableRegistered { get; set; }
+            public uint MapCount { get; set; }
+            public uint WriteCount { get; set; }
+            public uint ProtectCount { get; set; }
+            public uint ThreadStartCount { get; set; }
+            public uint ProtectFlipCount { get; set; }
+            public uint RapidProtectFlipCount { get; set; }
+            public uint ExecutableFlipCount { get; set; }
+            public uint GuardNoAccessFlipCount { get; set; }
+            public uint WritableExecutableFlipCount { get; set; }
+            public string LastProtectionTransition { get; set; } = string.Empty;
+            public DateTime LastProtectChangeUtc { get; set; }
+            public double LastEntropyBits { get; set; } = -1;
+            public double MaxEntropyBits { get; set; } = -1;
+            public uint EntropyFlipCount { get; set; }
+            public uint RapidEntropyFlipCount { get; set; }
+            public uint HighEntropyWriteCount { get; set; }
+            public DateTime LastEntropyChangeUtc { get; set; }
+            public uint LastSampleBytes { get; set; }
         }
     }
 }

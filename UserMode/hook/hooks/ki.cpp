@@ -1,6 +1,8 @@
 #include "ki.h"
+#include "../../../ABI/blackbird_ipc.h"
 
 #include <intrin.h>
+#include <cstring>
 
 #pragma intrinsic(_ReturnAddress)
 
@@ -197,4 +199,27 @@ bool KeCheckKiHookIntegrity(std::uint32_t *mismatchCount) noexcept
     }
 
     return mismatches == 0;
+}
+
+std::size_t KeCollectKiHookPatchInfos(KiHookPatchInfo *out, std::size_t capacity) noexcept
+{
+#ifndef _WIN64
+    (void)out;
+    (void)capacity;
+    return 0;
+#else
+    if (out == nullptr || capacity == 0 || g_KiUserApcCallbackSlot == nullptr || g_OriginalApcCallback == nullptr)
+    {
+        return 0;
+    }
+
+    out[0].PatchAddress = g_KiUserApcCallbackSlot;
+    out[0].PatchSize = sizeof(void *);
+    std::memset(out[0].OriginalBytes, 0, sizeof(out[0].OriginalBytes));
+    void *original = reinterpret_cast<void *>(g_OriginalApcCallback);
+    std::memcpy(out[0].OriginalBytes, &original, sizeof(original));
+    out[0].HookName = "KiUserApcDispatcher";
+    out[0].Flags = BK_HOOK_PATCH_FLAG_KI_SLOT;
+    return 1;
+#endif
 }

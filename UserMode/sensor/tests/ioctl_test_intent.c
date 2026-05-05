@@ -1,4 +1,4 @@
-#include "blackbird_ioctl_test_internal.h"
+#include "ioctl_test_internal.h"
 BOOL StartIdleChild(CHILD_CTX *child)
 {
     WCHAR imagePath[MAX_PATH];
@@ -16,7 +16,7 @@ BOOL StartIdleChild(CHILD_CTX *child)
         return FALSE;
     }
 
-    if (swprintf_s(cmdLine, RTL_NUMBER_OF(cmdLine), L"\"%ls\" %ls", imagePath, BLACKBIRD_CHILD_ARGW) < 0)
+    if (swprintf_s(cmdLine, RTL_NUMBER_OF(cmdLine), L"\"%ls\" %ls", imagePath, BK_CHILD_ARGW) < 0)
     {
         return FALSE;
     }
@@ -46,8 +46,7 @@ BOOL StartSpawnAndTouchChild(CHILD_CTX *child)
         return FALSE;
     }
 
-    if (swprintf_s(cmdLine, RTL_NUMBER_OF(cmdLine), L"\"%ls\" %ls", imagePath, BLACKBIRD_CHILD_SPAWN_AND_TOUCH_ARGW) <
-        0)
+    if (swprintf_s(cmdLine, RTL_NUMBER_OF(cmdLine), L"\"%ls\" %ls", imagePath, BK_CHILD_SPAWN_AND_TOUCH_ARGW) < 0)
     {
         return FALSE;
     }
@@ -337,7 +336,7 @@ BOOL GenerateSuspendedHollowingLikeChain(VOID)
     {
         return FALSE;
     }
-    if (swprintf_s(cmdLine, RTL_NUMBER_OF(cmdLine), L"\"%ls\" %ls", imagePath, BLACKBIRD_CHILD_ARGW) < 0)
+    if (swprintf_s(cmdLine, RTL_NUMBER_OF(cmdLine), L"\"%ls\" %ls", imagePath, BK_CHILD_ARGW) < 0)
     {
         return FALSE;
     }

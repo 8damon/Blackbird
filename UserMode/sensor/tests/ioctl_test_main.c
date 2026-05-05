@@ -1,4 +1,4 @@
-#include "blackbird_ioctl_test_internal.h"
+#include "ioctl_test_internal.h"
 
 static BOOL BuildDetectionExamplesPath(_Out_writes_z_(OutputChars) char *Output, _In_ size_t OutputChars)
 {
@@ -116,13 +116,13 @@ static VOID RunDetectionExamplesSmoke(_Inout_ SUITE_RESULTS *Results)
 int __cdecl main(int argc, char **argv)
 {
     HANDLE h = INVALID_HANDLE_VALUE;
-    BLACKBIRD_STATS_RESPONSE stats;
+    BK_STATS_RESPONSE stats;
     DWORD bytes = 0;
     BOOL ok;
     DWORD selfPid = GetCurrentProcessId();
     TEST_STATE state;
     TEST_EXPECTED expected;
-    BLACKBIRD_SUBSCRIBE_REQUEST badReq;
+    BK_SUBSCRIBE_REQUEST badReq;
     BOOL subscribedSelf = FALSE;
     CHILD_CTX child;
     BOOL generatedMemoryIntent = FALSE;
@@ -155,12 +155,12 @@ int __cdecl main(int argc, char **argv)
     BOOL haveKernelDebuggerState = FALSE;
     BOOL haveSharedKdByte = FALSE;
 
-    if (argc > 1 && strcmp(argv[1], BLACKBIRD_CHILD_ARG) == 0)
+    if (argc > 1 && strcmp(argv[1], BK_CHILD_ARG) == 0)
     {
         Sleep(15000);
         return 0;
     }
-    if (argc > 1 && strcmp(argv[1], BLACKBIRD_CHILD_SPAWN_AND_TOUCH_ARG) == 0)
+    if (argc > 1 && strcmp(argv[1], BK_CHILD_SPAWN_AND_TOUCH_ARG) == 0)
     {
         CHILD_CTX nested;
         BOOL started = StartIdleChild(&nested);
@@ -179,7 +179,7 @@ int __cdecl main(int argc, char **argv)
         return 1;
     }
 
-    BLACKBIRDSymbolResolverInitialize();
+    BksymResolverInitialize();
     ZeroMemory(&state, sizeof(state));
     ZeroMemory(&expected, sizeof(expected));
     ZeroMemory(&child, sizeof(child));
@@ -191,8 +191,8 @@ int __cdecl main(int argc, char **argv)
     {
         printf("reportStatus=unavailable\n");
     }
-    requireKernelCorrelationSignals = EnvFlagEnabled("BLACKBIRD_TEST_REQUIRE_KERNEL_CORRELATION", FALSE);
-    requireApcTelemetry = EnvFlagEnabled("BLACKBIRD_TEST_REQUIRE_APC", FALSE);
+    requireKernelCorrelationSignals = EnvFlagEnabled("BK_TEST_REQUIRE_KERNEL_CORRELATION", FALSE);
+    requireApcTelemetry = EnvFlagEnabled("BK_TEST_REQUIRE_APC", FALSE);
     printf("[INFO] suite knobs requireKernelCorrelation=%u requireApcTelemetry=%u\n",
            requireKernelCorrelationSignals ? 1u : 0u, requireApcTelemetry ? 1u : 0u);
     LogEnvironmentBaseline(&results);
@@ -227,7 +227,7 @@ int __cdecl main(int argc, char **argv)
         printf("[INFO] control open failed err=%lu (broker IPC to BlackbirdController is required)\n", openErr);
         goto Cleanup;
     }
-    brokerMode = (BLACKBIRDSCGetProtocolMode() == BLACKBIRDSC_PROTOCOL_CLIENT);
+    brokerMode = (BkscGetProtocolMode() == BKSC_PROTOCOL_CLIENT);
     printf("[INFO] transport mode=%s\n", brokerMode ? "service-broker" : "direct");
     RecordResult(&results, brokerMode, "transport mode is service-broker", "transport mode is not service-broker");
     if (!brokerMode)
@@ -238,8 +238,8 @@ int __cdecl main(int argc, char **argv)
     if (brokerMode)
     {
         DWORD brokerSeedPid = selfPid;
-        brokerEtwStarted = StartBrokerEtwCapture(
-            &brokerEtw, &brokerSeedPid, 1, BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD);
+        brokerEtwStarted = StartBrokerEtwCapture(&brokerEtw, &brokerSeedPid, 1,
+                                                 BK_STREAM_HANDLE | BK_STREAM_MEMORY | BK_STREAM_THREAD);
         RecordResult(&results, brokerEtwStarted, "started broker ETW/TI uplink capture",
                      "failed to start broker ETW/TI uplink capture");
         if (brokerEtwStarted && !brokerEtw.TiProviderEnabled)
@@ -251,11 +251,11 @@ int __cdecl main(int argc, char **argv)
     ZeroMemory(&badReq, sizeof(badReq));
     badReq.ProcessId = selfPid;
     badReq.StreamMask = 0;
-    ok = BLACKBIRDSCSubscribe(h, badReq.ProcessId, badReq.StreamMask);
+    ok = BkscSubscribe(h, badReq.ProcessId, badReq.StreamMask);
     RecordResult(&results, (!ok && GetLastError() == ERROR_INVALID_PARAMETER), "invalid subscribe stream mask rejected",
                  "invalid subscribe stream mask was not rejected");
 
-    ok = Subscribe(h, selfPid, BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD);
+    ok = Subscribe(h, selfPid, BK_STREAM_HANDLE | BK_STREAM_MEMORY | BK_STREAM_THREAD);
     subscribedSelf = ok;
     RecordResult(&results, ok, "subscribed self", "subscribe self failed");
     if (!ok)
@@ -265,7 +265,7 @@ int __cdecl main(int argc, char **argv)
     printf("[INFO] subscribed self pid=%lu\n", selfPid);
 
     ZeroMemory(&stats, sizeof(stats));
-    ok = BLACKBIRDSCGetStats(h, &stats, &bytes);
+    ok = BkscGetStats(h, &stats, &bytes);
     RecordResult(&results, ok, "queried IOCTL stats", "get stats failed");
     if (ok)
     {
@@ -288,14 +288,13 @@ int __cdecl main(int argc, char **argv)
         DWORD pidCount = 1u;
         pidList[0] = selfPid;
 
-        setPidsApplied =
-            SetPids(h, pidList, pidCount, BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD);
-        RecordResult(&results, setPidsApplied, "applied PID list subscription via IOCTL_BLACKBIRD_SET_PIDS",
-                     "failed to apply PID list subscription via IOCTL_BLACKBIRD_SET_PIDS");
+        setPidsApplied = SetPids(h, pidList, pidCount, BK_STREAM_HANDLE | BK_STREAM_MEMORY | BK_STREAM_THREAD);
+        RecordResult(&results, setPidsApplied, "applied PID list subscription via IOCTL_BK_SET_PIDS",
+                     "failed to apply PID list subscription via IOCTL_BK_SET_PIDS");
         if (setPidsApplied)
         {
             ZeroMemory(&stats, sizeof(stats));
-            ok = BLACKBIRDSCGetStats(h, &stats, &bytes);
+            ok = BkscGetStats(h, &stats, &bytes);
             RecordResult(&results, (ok && stats.SubscriptionCount == pidCount),
                          "SET_PIDS applied expected subscription cardinality",
                          "SET_PIDS did not apply expected subscription cardinality");
@@ -355,7 +354,7 @@ int __cdecl main(int argc, char **argv)
         while ((GetTickCount64() - startTick) < 4000ull)
         {
             ZeroMemory(&stats, sizeof(stats));
-            if (BLACKBIRDSCGetStats(h, &stats, &bytes) && stats.SubscriptionCount >= 2)
+            if (BkscGetStats(h, &stats, &bytes) && stats.SubscriptionCount >= 2)
             {
                 brokerDynamicGraphExpanded = TRUE;
                 break;
@@ -373,7 +372,7 @@ int __cdecl main(int argc, char **argv)
             while ((GetTickCount64() - startTick) < 5000ull)
             {
                 ZeroMemory(&stats, sizeof(stats));
-                if (BLACKBIRDSCGetStats(h, &stats, &bytes) && stats.SubscriptionCount >= 4)
+                if (BkscGetStats(h, &stats, &bytes) && stats.SubscriptionCount >= 4)
                 {
                     brokerDynamicDepth2Expanded = TRUE;
                     break;
@@ -401,7 +400,7 @@ int __cdecl main(int argc, char **argv)
             while ((GetTickCount64() - startTick) < 3000ull)
             {
                 ZeroMemory(&stats, sizeof(stats));
-                if (BLACKBIRDSCGetStats(h, &stats, &bytes) && stats.SubscriptionCount == 0)
+                if (BkscGetStats(h, &stats, &bytes) && stats.SubscriptionCount == 0)
                 {
                     brokerDynamicCleanupWorked = TRUE;
                     break;
@@ -415,7 +414,7 @@ int __cdecl main(int argc, char **argv)
 
         if (!subscribedSelf)
         {
-            ok = Subscribe(h, selfPid, BLACKBIRD_STREAM_HANDLE | BLACKBIRD_STREAM_MEMORY | BLACKBIRD_STREAM_THREAD);
+            ok = Subscribe(h, selfPid, BK_STREAM_HANDLE | BK_STREAM_MEMORY | BK_STREAM_THREAD);
             subscribedSelf = ok;
             RecordResult(&results, ok, "broker re-subscribed self after dynamic cleanup test",
                          "broker failed to re-subscribe self after dynamic cleanup test");
@@ -431,27 +430,27 @@ int __cdecl main(int argc, char **argv)
     expected.RequireHandleEvent = generatedMemoryIntent || generatedThreadIntent || generatedDuplicateIntent;
     if (generatedMemoryIntent)
     {
-        expected.RequiredHandleFlags |= BLACKBIRD_HANDLE_FLAG_MEMORY_RELATED;
+        expected.RequiredHandleFlags |= BK_HANDLE_FLAG_MEMORY_RELATED;
     }
     if (generatedThreadIntent)
     {
-        expected.RequiredHandleFlags |= BLACKBIRD_HANDLE_FLAG_THREAD_OBJECT;
+        expected.RequiredHandleFlags |= BK_HANDLE_FLAG_THREAD_OBJECT;
     }
     if (generatedDuplicateIntent)
     {
-        expected.RequiredHandleFlags |= BLACKBIRD_HANDLE_FLAG_DUPLICATE_OPERATION;
+        expected.RequiredHandleFlags |= BK_HANDLE_FLAG_DUPLICATE_OPERATION;
     }
     if (requireKernelCorrelationSignals && generatedRemoteAfterMemory)
     {
-        expected.RequiredThreadFlags |= BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT | BLACKBIRD_THREAD_FLAG_CORR_MEMORY;
+        expected.RequiredThreadFlags |= BK_THREAD_FLAG_CORRELATED_INTENT | BK_THREAD_FLAG_CORR_MEMORY;
     }
     if (requireKernelCorrelationSignals && generatedRemoteAfterThread)
     {
-        expected.RequiredThreadFlags |= BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT | BLACKBIRD_THREAD_FLAG_CORR_THREAD_CTX;
+        expected.RequiredThreadFlags |= BK_THREAD_FLAG_CORRELATED_INTENT | BK_THREAD_FLAG_CORR_THREAD_CTX;
     }
     if (requireKernelCorrelationSignals && generatedRemoteAfterDup)
     {
-        expected.RequiredThreadFlags |= BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT | BLACKBIRD_THREAD_FLAG_CORR_DUP_HANDLE;
+        expected.RequiredThreadFlags |= BK_THREAD_FLAG_CORRELATED_INTENT | BK_THREAD_FLAG_CORR_DUP_HANDLE;
     }
 
     PumpIoctlEvents(h, &state, &expected, 14000);
@@ -467,19 +466,19 @@ int __cdecl main(int argc, char **argv)
 
     if (generatedMemoryIntent)
     {
-        RecordResult(&results, ((state.HandleFlagUnion & BLACKBIRD_HANDLE_FLAG_MEMORY_RELATED) != 0),
+        RecordResult(&results, ((state.HandleFlagUnion & BK_HANDLE_FLAG_MEMORY_RELATED) != 0),
                      "observed IOCTL handle flag MemoryRelated", "missing IOCTL handle flag MemoryRelated");
     }
 
     if (generatedThreadIntent)
     {
-        RecordResult(&results, ((state.HandleFlagUnion & BLACKBIRD_HANDLE_FLAG_THREAD_OBJECT) != 0),
+        RecordResult(&results, ((state.HandleFlagUnion & BK_HANDLE_FLAG_THREAD_OBJECT) != 0),
                      "observed IOCTL handle flag ThreadObject", "missing IOCTL handle flag ThreadObject");
     }
 
     if (generatedDuplicateIntent)
     {
-        RecordResult(&results, ((state.HandleFlagUnion & BLACKBIRD_HANDLE_FLAG_DUPLICATE_OPERATION) != 0),
+        RecordResult(&results, ((state.HandleFlagUnion & BK_HANDLE_FLAG_DUPLICATE_OPERATION) != 0),
                      "observed IOCTL handle flag DuplicateOperation", "missing IOCTL handle flag DuplicateOperation");
     }
 
@@ -487,7 +486,7 @@ int __cdecl main(int argc, char **argv)
     {
         if (requireKernelCorrelationSignals)
         {
-            RecordResult(&results, ((state.ThreadFlagUnion & BLACKBIRD_THREAD_FLAG_CORR_MEMORY) != 0),
+            RecordResult(&results, ((state.ThreadFlagUnion & BK_THREAD_FLAG_CORR_MEMORY) != 0),
                          "observed IOCTL thread flag CorrelatedMemory", "missing IOCTL thread flag CorrelatedMemory");
         }
         else
@@ -502,7 +501,7 @@ int __cdecl main(int argc, char **argv)
     {
         if (requireKernelCorrelationSignals)
         {
-            RecordResult(&results, ((state.ThreadFlagUnion & BLACKBIRD_THREAD_FLAG_CORR_THREAD_CTX) != 0),
+            RecordResult(&results, ((state.ThreadFlagUnion & BK_THREAD_FLAG_CORR_THREAD_CTX) != 0),
                          "observed IOCTL thread flag CorrelatedThreadContext",
                          "missing IOCTL thread flag CorrelatedThreadContext");
         }
@@ -517,7 +516,7 @@ int __cdecl main(int argc, char **argv)
     {
         if (requireKernelCorrelationSignals)
         {
-            RecordResult(&results, ((state.ThreadFlagUnion & BLACKBIRD_THREAD_FLAG_CORR_DUP_HANDLE) != 0),
+            RecordResult(&results, ((state.ThreadFlagUnion & BK_THREAD_FLAG_CORR_DUP_HANDLE) != 0),
                          "observed IOCTL thread flag CorrelatedDuplicateHandle",
                          "missing IOCTL thread flag CorrelatedDuplicateHandle");
         }
@@ -530,7 +529,7 @@ int __cdecl main(int argc, char **argv)
 
     if (expected.RequiredThreadFlags != 0)
     {
-        RecordResult(&results, ((state.ThreadFlagUnion & BLACKBIRD_THREAD_FLAG_CORRELATED_INTENT) != 0),
+        RecordResult(&results, ((state.ThreadFlagUnion & BK_THREAD_FLAG_CORRELATED_INTENT) != 0),
                      "observed IOCTL thread flag CorrelatedIntent", "missing IOCTL thread flag CorrelatedIntent");
     }
     else if (generatedRemoteAfterMemory || generatedRemoteAfterThread || generatedRemoteAfterDup)
@@ -542,7 +541,7 @@ int __cdecl main(int argc, char **argv)
     multiClientParallelOk = RunMultiClientParallelIoctlTest(selfPid, child.Pi.dwProcessId, &multiClientPolls);
     RecordResult(&results, multiClientParallelOk, "multi-client parallel IOCTL fanout verified",
                  "multi-client parallel IOCTL fanout failed");
-    printf("[INFO] multi-client parallel polls=%lu clients=%u\n", multiClientPolls, BLACKBIRD_MULTI_CLIENT_COUNT);
+    printf("[INFO] multi-client parallel polls=%lu clients=%u\n", multiClientPolls, BK_MULTI_CLIENT_COUNT);
 
     if (brokerEtwStarted)
     {
@@ -630,10 +629,10 @@ Cleanup:
 
     if (h != INVALID_HANDLE_VALUE)
     {
-        (void)BLACKBIRDSCCloseControlDevice(h);
+        (void)BkscCloseControlDevice(h);
     }
 
-    BLACKBIRDSymbolResolverCleanup();
+    BksymResolverCleanup();
     if (results.Passed == results.Total)
     {
         SuiteCloseReport(&results, state.Polls);

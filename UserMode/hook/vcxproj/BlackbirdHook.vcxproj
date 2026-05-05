@@ -24,6 +24,9 @@
     <ProjectGuid>{c26b1585-94d5-427a-b964-32d45bfdbbd8}</ProjectGuid>
     <RootNamespace>BlackbirdHook</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <BlackbirdFileDescription>Blackbird user-mode hook and instrumentation runtime</BlackbirdFileDescription>
+    <BlackbirdInternalName>SR71</BlackbirdInternalName>
+    <BlackbirdOriginalFilename>SR71.dll</BlackbirdOriginalFilename>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">

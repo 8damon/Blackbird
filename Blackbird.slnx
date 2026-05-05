@@ -6,7 +6,7 @@
   <Folder Name="/Scripts/">
     <File Path="Scripts/ci-surface.ps1" />
     <File Path="Scripts/installer.ps1" />
-    <File Path="Scripts/publish-interfaces.ps1" />
+    <File Path="Scripts/publish.NET.ps1" />
     <File Path="Scripts/remover.ps1" />
     <File Path="Scripts/tempest-invoke.ps1" />
   </Folder>
@@ -18,10 +18,12 @@
   <Project Path="VCXProj/BlackbirdController.vcxproj" Id="69d04453-3fd0-4f4e-a5d2-5dfed2f10e25">
     <BuildType Solution="Debug|x64" Project="TEMPUS_DEBUG" />
   </Project>
-  <Project Path="VCXProj/BlackbirdExamples.vcxproj" Id="c82b4a36-67a8-4a80-b53e-131db0fae96b" />
+  <Project Path="VCXProj/BlackbirdDllHost.vcxproj" Id="2b3f1f1d-4d5a-4a5d-9a6d-7d2966c0f2f7">
+    <BuildType Solution="Debug|x64" Project="TEMPUS_DEBUG" />
+  </Project>
   <Project Path="VCXProj/BlackbirdInterface.csproj" Id="c33cb9fd-c7c0-4f07-a9dd-2a56f10f7d9e" />
+  <Project Path="VCXProj/BlackbirdRunner.csproj" Id="0d4860e6-91f3-44cb-a0c0-bdc87a7989d7" />
   <Project Path="VCXProj/BlackbirdIoctlTest.vcxproj" Id="6c70d45a-9d7a-4fa9-9736-6ed89c7671d0" />
-  <Project Path="VCXProj/BlackbirdOperator.csproj" Id="5c7dc963-b91e-4d2c-b353-16b07e650bc4" />
   <Project Path="VCXProj/BlackbirdSensorCore.vcxproj" Id="09d208cd-eeec-4b23-915d-d9f380f5cc9b">
     <BuildType Solution="Debug|x64" Project="TEMPUS_DEBUG" />
   </Project>

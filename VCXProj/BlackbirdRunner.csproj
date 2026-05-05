@@ -1,0 +1,186 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <AssemblyName>BlackbirdRunner</AssemblyName>
+    <AssemblyTitle>Blackbird capture runner</AssemblyTitle>
+    <Product>Blackbird Platform</Product>
+    <Description>Blackbird capture runner</Description>
+    <Company>TITAN Softwork Solutions</Company>
+    <Version>2.0.0</Version>
+    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <FileVersion>2.0.0.0</FileVersion>
+    <InformationalVersion>2.0.0</InformationalVersion>
+    <Copyright>Copyright (c) TITAN Softwork Solutions</Copyright>
+    <NeutralLanguage>en-US</NeutralLanguage>
+
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <UseSharedCompilation>false</UseSharedCompilation>
+    <GenerateRuntimeConfigurationFiles>true</GenerateRuntimeConfigurationFiles>
+    <UseAppHost>true</UseAppHost>
+    <RestoreIgnoreFailedSources>true</RestoreIgnoreFailedSources>
+    <NuGetAudit>false</NuGetAudit>
+    <BaseOutputPath>..\x64\</BaseOutputPath>
+    <BlackbirdWin32ResourceSource>Blackbird.Runner.rc</BlackbirdWin32ResourceSource>
+    <BlackbirdWin32ResourceOutput>..\x64\obj\BlackbirdRunner\$(Configuration)\BlackbirdRunner.res</BlackbirdWin32ResourceOutput>
+    <Win32Resource>$(BlackbirdWin32ResourceOutput)</Win32Resource>
+    <BlackbirdSignEnabled Condition="'$(BlackbirdSignEnabled)'==''">false</BlackbirdSignEnabled>
+    <BlackbirdSignSubjectName>TITAN Softwork Solutions</BlackbirdSignSubjectName>
+    <BlackbirdSignStoreName>My</BlackbirdSignStoreName>
+    <BlackbirdSignThumbprint Condition="'$(BlackbirdSignThumbprint)'==''">$(BLACKBIRD_SIGN_THUMBPRINT)</BlackbirdSignThumbprint>
+    <BlackbirdSignToolPath>signtool.exe</BlackbirdSignToolPath>
+    <BlackbirdSignPfxPath Condition="'$(BlackbirdSignPfxPath)'==''">..\TITAN Softwork Solutions.pfx</BlackbirdSignPfxPath>
+    <BlackbirdSignPfxPassword Condition="'$(BlackbirdSignPfxPassword)'==''">$(BLACKBIRD_SIGN_PFX_PASSWORD)</BlackbirdSignPfxPassword>
+    <BlackbirdSignBuildCommand>&quot;$(BlackbirdSignToolPath)&quot; sign /fd SHA256 /s &quot;$(BlackbirdSignStoreName)&quot; /n &quot;$(BlackbirdSignSubjectName)&quot; &quot;$(TargetPath)&quot;</BlackbirdSignBuildCommand>
+    <BlackbirdSignBuildCommand Condition="'$(BlackbirdSignThumbprint)' != ''">&quot;$(BlackbirdSignToolPath)&quot; sign /fd SHA256 /s &quot;$(BlackbirdSignStoreName)&quot; /sha1 &quot;$(BlackbirdSignThumbprint)&quot; &quot;$(TargetPath)&quot;</BlackbirdSignBuildCommand>
+    <BlackbirdSignBuildCommand Condition="'$(BlackbirdSignPfxPassword)' != '' and Exists('$(BlackbirdSignPfxPath)')">&quot;$(BlackbirdSignToolPath)&quot; sign /fd SHA256 /f &quot;$(BlackbirdSignPfxPath)&quot; /p &quot;$(BlackbirdSignPfxPassword)&quot; &quot;$(TargetPath)&quot;</BlackbirdSignBuildCommand>
+    <BlackbirdSignPublishCommand>&quot;$(BlackbirdSignToolPath)&quot; sign /fd SHA256 /s &quot;$(BlackbirdSignStoreName)&quot; /n &quot;$(BlackbirdSignSubjectName)&quot; &quot;$(PublishDir)$(AssemblyName).exe&quot;</BlackbirdSignPublishCommand>
+    <BlackbirdSignPublishCommand Condition="'$(BlackbirdSignThumbprint)' != ''">&quot;$(BlackbirdSignToolPath)&quot; sign /fd SHA256 /s &quot;$(BlackbirdSignStoreName)&quot; /sha1 &quot;$(BlackbirdSignThumbprint)&quot; &quot;$(PublishDir)$(AssemblyName).exe&quot;</BlackbirdSignPublishCommand>
+    <BlackbirdSignPublishCommand Condition="'$(BlackbirdSignPfxPassword)' != '' and Exists('$(BlackbirdSignPfxPath)')">&quot;$(BlackbirdSignToolPath)&quot; sign /fd SHA256 /f &quot;$(BlackbirdSignPfxPath)&quot; /p &quot;$(BlackbirdSignPfxPassword)&quot; &quot;$(PublishDir)$(AssemblyName).exe&quot;</BlackbirdSignPublishCommand>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <Optimize>true</Optimize>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PublishSelfContained>true</PublishSelfContained>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishReadyToRunUseCrossgen2>true</PublishReadyToRunUseCrossgen2>
+    <PublishReadyToRunComposite>true</PublishReadyToRunComposite>
+    <PublishReadyToRunCrossgen2ExtraArgs>--instruction-set=sse4.2,avx,avx2,fma</PublishReadyToRunCrossgen2ExtraArgs>
+    <TieredCompilation>true</TieredCompilation>
+    <TieredPGO>true</TieredPGO>
+    <UseAppHost>true</UseAppHost>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <TrimMode Condition="'$(PublishTrimmed)' == 'true'">partial</TrimMode>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'TEMPUS_DEBUG'">
+    <Optimize>true</Optimize>
+    <DefineConstants>$(DefineConstants);TEMPUS_DEBUG</DefineConstants>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App" />
+    <Compile Include="..\Client\runner\**\*.cs">
+      <Link>Runner\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Interop\BlackbirdNative.cs">
+      <Link>Shared\Interop\BlackbirdNative.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Interop\BlackbirdNative.Launch.cs">
+      <Link>Shared\Interop\BlackbirdNative.Launch.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Interop\Kernel32Native.cs">
+      <Link>Shared\Interop\Kernel32Native.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Models\BlackbirdBackendModels.cs">
+      <Link>Shared\Models\BlackbirdBackendModels.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Models\DiagnosticsState.cs">
+      <Link>Shared\Models\DiagnosticsState.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Models\LaunchProfile.cs">
+      <Link>Shared\Models\LaunchProfile.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Models\PerformanceSample.cs">
+      <Link>Shared\Models\PerformanceSample.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Models\StackFrameRow.cs">
+      <Link>Shared\Models\StackFrameRow.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Models\SignatureTrustState.cs">
+      <Link>Shared\Models\SignatureTrustState.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Models\TelemetryEvent.cs">
+      <Link>Shared\Models\TelemetryEvent.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Models\ThreadStackSessionModels.cs">
+      <Link>Shared\Models\ThreadStackSessionModels.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\AnalysisLaunchService.cs">
+      <Link>Shared\Services\AnalysisLaunchService.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\BlackbirdBackendSession.cs">
+      <Link>Shared\Services\BlackbirdBackendSession.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\BlackbirdControlDeviceSession.cs">
+      <Link>Shared\Services\BlackbirdControlDeviceSession.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\BrokerEtwEventMapper.cs">
+      <Link>Shared\Services\BrokerEtwEventMapper.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\DebugConsoleService.cs">
+      <Link>Shared\Services\DebugConsoleService.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\EventDetailFormatting.cs">
+      <Link>Shared\Services\EventDetailFormatting.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\EventDetailsParsing.cs">
+      <Link>Shared\Services\EventDetailsParsing.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\ProcessIdentityResolver.cs">
+      <Link>Shared\Services\ProcessIdentityResolver.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\RuntimeConfigService.cs">
+      <Link>Shared\Services\RuntimeConfigService.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\OutputCapture.cs">
+      <Link>Shared\Services\OutputCapture.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\PerformanceSampler.cs">
+      <Link>Shared\Services\PerformanceSampler.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\SessionFileStorage.cs">
+      <Link>Shared\Services\SessionFileStorage.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\SignatureIntelService.cs">
+      <Link>Shared\Services\SignatureIntelService.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\PackerDetectionService.cs">
+      <Link>Shared\Services\PackerDetectionService.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\TelemetryEventStore.cs">
+      <Link>Shared\Services\TelemetryEventStore.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\ThreadStackResolver.cs">
+      <Link>Shared\Services\ThreadStackResolver.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\Capture\*.cs">
+      <Link>Shared\Services\Capture\%(Filename)%(Extension)</Link>
+    </Compile>
+    <Resource Include="..\Client\analysis\Resources\BK.ico">
+      <Link>Resources\BK.ico</Link>
+    </Resource>
+    <None Include="..\Client\analysis\runtimeconfig.template.json">
+      <Link>runtimeconfig.template.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\Client\analysis\Rules\SignatureIntel\**\*">
+      <Link>Rules\SignatureIntel\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+  <Target Name="BlackbirdSignRunnerBuildOutput"
+          AfterTargets="Build"
+          Condition="'$(BlackbirdSignEnabled)' == 'true' and '$(DesignTimeBuild)' != 'true' and Exists('$(TargetPath)')">
+    <Exec Command="$(BlackbirdSignBuildCommand)" />
+  </Target>
+
+  <Target Name="BlackbirdSignRunnerPublishedOutput"
+          AfterTargets="Publish"
+          Condition="'$(BlackbirdSignEnabled)' == 'true' and '$(DesignTimeBuild)' != 'true' and Exists('$(PublishDir)$(AssemblyName).exe')">
+    <Exec Command="$(BlackbirdSignPublishCommand)" />
+  </Target>
+
+</Project>

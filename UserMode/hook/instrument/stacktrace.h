@@ -84,6 +84,7 @@ namespace IC_STACKTRACE
     constexpr std::uint32_t kCallerFlagHasUnmapped = 0x00000002u;     // at least one Unmapped frame
     constexpr std::uint32_t kCallerFlagHasProcessImage = 0x00000004u; // at least one ProcessImage frame
     constexpr std::uint32_t kCallerFlagHasNonSystem = 0x00000008u;    // at least one NonSystemDll frame
+    constexpr std::uint32_t kCallerFlagHasOwnModule = 0x00001000u;    // trace contains SR71 / BK internal frames
 
     struct CallerClassification
     {
@@ -95,6 +96,11 @@ namespace IC_STACKTRACE
     // Register the hook DLL's identity so ClassifyTrace can skip its own frames.
     // Pass any function pointer that resides in the hook DLL (e.g. &BkRuntimePrimeHooks).
     void InitCallerClassifier(void *anyFnInOwnModule) noexcept;
+
+    // Configure DLL-analysis attribution.  In DLL mode the staged host image is
+    // infrastructure, while frames from subjectPath are treated as target code.
+    void SetAnalysisSubjectMetadata(std::uint32_t subjectKind, const wchar_t *subjectPath,
+                                    const wchar_t *hostPath) noexcept;
 
     // Classify the origin of a captured call stack.  Safe to call from any thread.
     // Does NOT require InitSymbols() — uses only GetModuleHandleExA / GetModuleFileNameW.

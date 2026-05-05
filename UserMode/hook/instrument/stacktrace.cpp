@@ -47,7 +47,14 @@ namespace IC_STACKTRACE
         // Caller-origin classifier state
         // ------------------------------------------------------------------
 
+        constexpr std::uint32_t kAnalysisSubjectProcess = 0;
+        constexpr std::uint32_t kAnalysisSubjectDll = 1;
+        constexpr std::size_t kAnalysisPathChars = 1024;
+
         static HMODULE g_OwnModule = nullptr;
+        static std::uint32_t g_AnalysisSubjectKind = kAnalysisSubjectProcess;
+        static wchar_t g_AnalysisSubjectPath[kAnalysisPathChars]{};
+        static wchar_t g_AnalysisHostPath[kAnalysisPathChars]{};
 
         static bool g_SystemRootCached = false;
         static wchar_t g_SystemRoot[MAX_PATH]{};
@@ -74,6 +81,151 @@ namespace IC_STACKTRACE
             g_SystemRootCached = true;
         }
 
+        static bool EqualsInsensitive(const wchar_t *a, const wchar_t *b) noexcept
+        {
+            if (!a || !b)
+                return false;
+            return ::_wcsicmp(a, b) == 0;
+        }
+
+        static bool ContainsInsensitive(const wchar_t *haystack, const wchar_t *needle) noexcept
+        {
+            std::size_t hayLen;
+            std::size_t needleLen;
+
+            if (!haystack || !needle || !needle[0])
+                return false;
+
+            hayLen = ::wcslen(haystack);
+            needleLen = ::wcslen(needle);
+            if (needleLen == 0 || hayLen < needleLen)
+                return false;
+
+            for (std::size_t i = 0; i <= hayLen - needleLen; ++i)
+            {
+                if (_wcsnicmp(haystack + i, needle, needleLen) == 0)
+                    return true;
+            }
+
+            return false;
+        }
+
+        static const wchar_t *SkipPathPrefix(const wchar_t *path) noexcept
+        {
+            if (!path)
+                return nullptr;
+
+            if ((path[0] == L'\\' && path[1] == L'\\' && path[2] == L'?' && path[3] == L'\\') ||
+                (path[0] == L'\\' && path[1] == L'?' && path[2] == L'?' && path[3] == L'\\'))
+            {
+                return path + 4;
+            }
+
+            return path;
+        }
+
+        static void NormalizePath(const wchar_t *input, wchar_t output[kAnalysisPathChars]) noexcept
+        {
+            std::size_t j = 0;
+
+            if (!output)
+                return;
+            output[0] = L'\0';
+
+            input = SkipPathPrefix(input);
+            if (!input)
+                return;
+
+            for (std::size_t i = 0; input[i] != L'\0' && (j + 1) < kAnalysisPathChars; ++i)
+            {
+                wchar_t ch = input[i] == L'/' ? L'\\' : input[i];
+                output[j++] = static_cast<wchar_t>(std::towlower(ch));
+            }
+            output[j] = L'\0';
+        }
+
+        static bool PathHasTrailingSegment(const wchar_t *path, const wchar_t *tail) noexcept
+        {
+            if (!path || !tail || !path[0] || !tail[0])
+                return false;
+
+            const std::size_t pathLen = ::wcslen(path);
+            const std::size_t tailLen = ::wcslen(tail);
+            if (tailLen == 0 || pathLen < tailLen)
+                return false;
+
+            const wchar_t *start = path + (pathLen - tailLen);
+            if (::_wcsicmp(start, tail) != 0)
+                return false;
+
+            if (tail[0] == L'\\' || tail[0] == L'/')
+                return true;
+
+            return start == path || start[-1] == L'\\' || start[-1] == L'/';
+        }
+
+        static bool PathMatchesConfiguredPath(const wchar_t *candidate, const wchar_t *configured) noexcept
+        {
+            wchar_t candidateNorm[kAnalysisPathChars]{};
+            wchar_t configuredNorm[kAnalysisPathChars]{};
+
+            if (!candidate || !configured || !configured[0])
+                return false;
+
+            NormalizePath(candidate, candidateNorm);
+            NormalizePath(configured, configuredNorm);
+            if (!candidateNorm[0] || !configuredNorm[0])
+                return false;
+
+            if (::_wcsicmp(candidateNorm, configuredNorm) == 0)
+                return true;
+
+            if (configuredNorm[0] != L'\0' && configuredNorm[1] == L':' && configuredNorm[2] != L'\0')
+                return PathHasTrailingSegment(candidateNorm, configuredNorm + 2);
+
+            return PathHasTrailingSegment(candidateNorm, configuredNorm);
+        }
+
+        static bool IsInternalInstrumentationModule(HMODULE mod) noexcept
+        {
+            wchar_t path[MAX_PATH]{};
+            const wchar_t *leaf = path;
+
+            if (!mod || ::GetModuleFileNameW(mod, path, MAX_PATH) == 0)
+                return false;
+
+            for (const wchar_t *p = path; *p; ++p)
+            {
+                if (*p == L'\\' || *p == L'/')
+                    leaf = p + 1;
+            }
+
+            if (EqualsInsensitive(leaf, L"SR71.dll") || EqualsInsensitive(leaf, L"J58.dll") ||
+                EqualsInsensitive(leaf, L"BlackbirdController.exe") ||
+                EqualsInsensitive(leaf, L"BlackbirdInterface.exe"))
+            {
+                return true;
+            }
+
+            return ContainsInsensitive(path, L"\\BK\\");
+        }
+
+        static CallerKind ClassifyUnresolvedIp(void *ip) noexcept
+        {
+            MEMORY_BASIC_INFORMATION mbi{};
+
+            if (!ip || ::VirtualQuery(ip, &mbi, sizeof(mbi)) != sizeof(mbi))
+                return CallerKind::Unknown;
+
+            if (mbi.State != MEM_COMMIT)
+                return CallerKind::Unknown;
+
+            if (mbi.Type == MEM_PRIVATE)
+                return CallerKind::Unmapped;
+
+            return CallerKind::Unknown;
+        }
+
         static CallerKind ClassifyIp(void *ip) noexcept
         {
             if (!ip)
@@ -85,12 +237,28 @@ namespace IC_STACKTRACE
                                       reinterpret_cast<LPCSTR>(ip), &mod) ||
                 !mod)
             {
-                return CallerKind::Unmapped;
+                return ClassifyUnresolvedIp(ip);
             }
 
             // Hook-DLL infrastructure frames: exclude from origin analysis.
-            if (mod == g_OwnModule)
+            if (mod == g_OwnModule || IsInternalInstrumentationModule(mod))
                 return CallerKind::OwnModule;
+
+            wchar_t path[kAnalysisPathChars]{};
+            bool hasPath = ::GetModuleFileNameW(mod, path, static_cast<DWORD>(kAnalysisPathChars)) > 0;
+            path[kAnalysisPathChars - 1] = L'\0';
+
+            if (g_AnalysisSubjectKind == kAnalysisSubjectDll)
+            {
+                if (hasPath && PathMatchesConfiguredPath(path, g_AnalysisSubjectPath))
+                    return CallerKind::ProcessImage;
+
+                if (mod == ::GetModuleHandleW(nullptr) ||
+                    (hasPath && PathMatchesConfiguredPath(path, g_AnalysisHostPath)))
+                {
+                    return CallerKind::OwnModule;
+                }
+            }
 
             // Process image (.exe).
             if (mod == ::GetModuleHandleW(nullptr))
@@ -100,8 +268,7 @@ namespace IC_STACKTRACE
             EnsureSystemRoot();
             if (g_SystemRootLen > 0)
             {
-                wchar_t path[MAX_PATH]{};
-                if (::GetModuleFileNameW(mod, path, MAX_PATH) > 0)
+                if (hasPath)
                 {
                     for (std::size_t i = 0; path[i]; ++i)
                         path[i] = static_cast<wchar_t>(std::towlower(path[i]));
@@ -292,6 +459,19 @@ namespace IC_STACKTRACE
         g_OwnModule = mod; // nullptr on failure: own frames won't be excluded, but not a hard error
     }
 
+    void SetAnalysisSubjectMetadata(std::uint32_t subjectKind, const wchar_t *subjectPath,
+                                    const wchar_t *hostPath) noexcept
+    {
+        g_AnalysisSubjectKind = (subjectKind == kAnalysisSubjectDll) ? kAnalysisSubjectDll : kAnalysisSubjectProcess;
+        g_AnalysisSubjectPath[0] = L'\0';
+        g_AnalysisHostPath[0] = L'\0';
+
+        if (subjectPath != nullptr)
+            ::wcsncpy_s(g_AnalysisSubjectPath, kAnalysisPathChars, subjectPath, _TRUNCATE);
+        if (hostPath != nullptr)
+            ::wcsncpy_s(g_AnalysisHostPath, kAnalysisPathChars, hostPath, _TRUNCATE);
+    }
+
     CallerClassification ClassifyTrace(const Trace &trace) noexcept
     {
         CallerClassification result{};
@@ -343,6 +523,9 @@ namespace IC_STACKTRACE
                 break;
 
             case CallerKind::OwnModule:
+                result.Flags |= kCallerFlagHasOwnModule;
+                break;
+
             case CallerKind::Unknown:
                 break; // infrastructure / unresolvable — don't affect origin flags
             }

@@ -22,7 +22,7 @@
 #endif
 #endif
 
-namespace bk::blackbird
+namespace bk::BK
 {
     inline constexpr std::size_t kMaxStackFrames = 64;
     inline constexpr std::size_t kMaxModuleName = 64;
@@ -73,11 +73,11 @@ namespace bk::blackbird
 
         bool swallow_non_target_exceptions = false;
     };
-} // namespace bk::blackbird
-using BkBlackbirdEvent = bk::blackbird::Event;
-using BkBlackbirdTelemetryArguments = bk::blackbird::TelemetryArguments;
-using BkBlackbirdTelemetryFn = bk::blackbird::TelemetryFn;
-using BkBlackbirdMemoryFaultHandlerFn = bk::blackbird::MemoryFaultHandlerFn;
+} // namespace bk::BK
+using BkBlackbirdEvent = bk::BK::Event;
+using BkBlackbirdTelemetryArguments = bk::BK::TelemetryArguments;
+using BkBlackbirdTelemetryFn = bk::BK::TelemetryFn;
+using BkBlackbirdMemoryFaultHandlerFn = bk::BK::MemoryFaultHandlerFn;
 BK_BLACKBIRD_API PVOID BkRegisterVectoredExceptionHandler(BkBlackbirdTelemetryArguments *args) noexcept;
 BK_BLACKBIRD_API BOOL BkPromoteVectoredExceptionHandlerToFront() noexcept;
 BK_BLACKBIRD_API void BkUnregisterVectoredExceptionHandler() noexcept;

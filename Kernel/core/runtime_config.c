@@ -5,9 +5,34 @@
 
 static volatile LONG g_RuntimeConfigInitialized = 0;
 static volatile ULONG g_RuntimePersistentFlags = 0;
-static volatile ULONG g_RuntimeRequestedFlags = 0;
+static volatile LONG64 g_RuntimeOverride = 0;
 
-static ULONG BLACKBIRDRuntimeConfigReadDwordValue(_In_ HANDLE KeyHandle, _In_z_ PCWSTR ValueName)
+#define BK_RUNTIME_MUTABLE_MASK                                                                                    \
+    (BK_RUNTIME_FLAG_ANTI_VIRTUALIZATION | BK_RUNTIME_FLAG_SELF_HIDE |                                           \
+     BK_RUNTIME_FLAG_INTERFACE_PROTECTED_ACCESS | BK_RUNTIME_FLAG_CONTROLLER_PROTECTED_ACCESS |                  \
+     BK_RUNTIME_FLAG_NTAPI_HOOKS_DISARMED | BK_RUNTIME_FLAG_QPC_TIMING_DISABLED)
+
+static ULONGLONG BkrtPackRuntimeOverride(_In_ UINT32 Flags, _In_ UINT32 Mask)
+{
+    return (((ULONGLONG)Mask) << 32) | (ULONGLONG)Flags;
+}
+
+static UINT32 BkrtRuntimeOverrideFlags(_In_ ULONGLONG Override)
+{
+    return (UINT32)(Override & 0xFFFFFFFFull);
+}
+
+static UINT32 BkrtRuntimeOverrideMask(_In_ ULONGLONG Override)
+{
+    return (UINT32)((Override >> 32) & 0xFFFFFFFFull);
+}
+
+static ULONGLONG BkrtReadRuntimeOverride(VOID)
+{
+    return (ULONGLONG)InterlockedCompareExchange64(&g_RuntimeOverride, 0, 0);
+}
+
+static ULONG BkrtReadDwordValue(_In_ HANDLE KeyHandle, _In_z_ PCWSTR ValueName)
 {
     UNICODE_STRING valueName;
     UCHAR buffer[sizeof(KEY_VALUE_PARTIAL_INFORMATION) + sizeof(ULONG)] = {0};
@@ -36,7 +61,7 @@ static ULONG BLACKBIRDRuntimeConfigReadDwordValue(_In_ HANDLE KeyHandle, _In_z_ 
     return *(ULONG UNALIGNED *)info->Data;
 }
 
-static ULONG BLACKBIRDRuntimeConfigLoadPersistentFlags(_In_ PUNICODE_STRING RegistryPath)
+static ULONG BkrtLoadPersistentFlags(_In_ PUNICODE_STRING RegistryPath)
 {
     OBJECT_ATTRIBUTES oa;
     UNICODE_STRING parametersPath;
@@ -61,124 +86,147 @@ static ULONG BLACKBIRDRuntimeConfigLoadPersistentFlags(_In_ PUNICODE_STRING Regi
         return 0;
     }
 
-    if (BLACKBIRDRuntimeConfigReadDwordValue(keyHandle, L"EnableAntiVirtualization") != 0)
+    if (BkrtReadDwordValue(keyHandle, L"EnableAntiVirtualization") != 0)
     {
-        flags |= BLACKBIRD_RUNTIME_FLAG_ANTI_VIRTUALIZATION;
+        flags |= BK_RUNTIME_FLAG_ANTI_VIRTUALIZATION;
     }
-    if (BLACKBIRDRuntimeConfigReadDwordValue(keyHandle, L"EnableSelfHide") != 0)
+    if (BkrtReadDwordValue(keyHandle, L"EnableSelfHide") != 0)
     {
-        flags |= BLACKBIRD_RUNTIME_FLAG_SELF_HIDE;
+        flags |= BK_RUNTIME_FLAG_SELF_HIDE;
     }
-    if (BLACKBIRDRuntimeConfigReadDwordValue(keyHandle, L"EnableInterfaceProtectedAccess") != 0)
+    if (BkrtReadDwordValue(keyHandle, L"EnableInterfaceProtectedAccess") != 0)
     {
-        flags |= BLACKBIRD_RUNTIME_FLAG_INTERFACE_PROTECTED_ACCESS;
+        flags |= BK_RUNTIME_FLAG_INTERFACE_PROTECTED_ACCESS;
     }
-    if (BLACKBIRDRuntimeConfigReadDwordValue(keyHandle, L"EnableControllerProtectedAccess") != 0)
+    if (BkrtReadDwordValue(keyHandle, L"EnableControllerProtectedAccess") != 0)
     {
-        flags |= BLACKBIRD_RUNTIME_FLAG_CONTROLLER_PROTECTED_ACCESS;
+        flags |= BK_RUNTIME_FLAG_CONTROLLER_PROTECTED_ACCESS;
     }
-    if (BLACKBIRDRuntimeConfigReadDwordValue(keyHandle, L"DisableNtApiHooks") != 0)
+    if (BkrtReadDwordValue(keyHandle, L"DisableNtApiHooks") != 0)
     {
-        flags |= BLACKBIRD_RUNTIME_FLAG_NTAPI_HOOKS_DISARMED;
+        flags |= BK_RUNTIME_FLAG_NTAPI_HOOKS_DISARMED;
+    }
+    if (BkrtReadDwordValue(keyHandle, L"DisableQpcTimingCompensation") != 0)
+    {
+        flags |= BK_RUNTIME_FLAG_QPC_TIMING_DISABLED;
     }
 
     ZwClose(keyHandle);
     return flags;
 }
 
-NTSTATUS BLACKBIRDRuntimeConfigInitialize(_In_ PUNICODE_STRING RegistryPath)
+NTSTATUS BkrtInitialize(_In_ PUNICODE_STRING RegistryPath)
 {
     ULONG persistentFlags;
 
-    persistentFlags = BLACKBIRDRuntimeConfigLoadPersistentFlags(RegistryPath);
+    persistentFlags = BkrtLoadPersistentFlags(RegistryPath);
     InterlockedExchange((volatile LONG *)&g_RuntimePersistentFlags, (LONG)persistentFlags);
-    InterlockedExchange((volatile LONG *)&g_RuntimeRequestedFlags, 0);
+    InterlockedExchange64(&g_RuntimeOverride, 0);
     InterlockedExchange(&g_RuntimeConfigInitialized, 1);
     return STATUS_SUCCESS;
 }
 
-VOID BLACKBIRDRuntimeConfigUninitialize(VOID)
+VOID BkrtUninitialize(VOID)
 {
     InterlockedExchange(&g_RuntimeConfigInitialized, 0);
     InterlockedExchange((volatile LONG *)&g_RuntimePersistentFlags, 0);
-    InterlockedExchange((volatile LONG *)&g_RuntimeRequestedFlags, 0);
+    InterlockedExchange64(&g_RuntimeOverride, 0);
 }
 
-UINT32 BLACKBIRDRuntimeConfigGetPersistentFlags(VOID)
+UINT32 BkrtGetPersistentFlags(VOID)
 {
     return (UINT32)InterlockedCompareExchange((volatile LONG *)&g_RuntimePersistentFlags, 0, 0);
 }
 
-UINT32 BLACKBIRDRuntimeConfigGetRuntimeFlags(VOID)
+UINT32 BkrtGetRuntimeFlags(VOID)
 {
-    return (UINT32)InterlockedCompareExchange((volatile LONG *)&g_RuntimeRequestedFlags, 0, 0);
+    return BkrtRuntimeOverrideFlags(BkrtReadRuntimeOverride());
 }
 
-UINT32 BLACKBIRDRuntimeConfigGetEffectiveFlags(VOID)
+UINT32 BkrtGetEffectiveFlags(VOID)
 {
-    return BLACKBIRDRuntimeConfigGetPersistentFlags() | BLACKBIRDRuntimeConfigGetRuntimeFlags();
+    ULONGLONG runtimeOverride = BkrtReadRuntimeOverride();
+    UINT32 runtimeMask = BkrtRuntimeOverrideMask(runtimeOverride);
+    UINT32 runtimeFlags = BkrtRuntimeOverrideFlags(runtimeOverride);
+    UINT32 persistentFlags = BkrtGetPersistentFlags();
+
+    return (persistentFlags & ~runtimeMask) | (runtimeFlags & runtimeMask);
 }
 
-BOOLEAN BLACKBIRDRuntimeConfigIsAntiVirtualizationEnabled(VOID)
+BOOLEAN BkrtIsAntiVirtualizationEnabled(VOID)
 {
-    return ((BLACKBIRDRuntimeConfigGetEffectiveFlags() & BLACKBIRD_RUNTIME_FLAG_ANTI_VIRTUALIZATION) != 0);
+    return ((BkrtGetEffectiveFlags() & BK_RUNTIME_FLAG_ANTI_VIRTUALIZATION) != 0);
 }
 
-BOOLEAN BLACKBIRDRuntimeConfigIsSelfHideEnabled(VOID)
+BOOLEAN BkrtIsSelfHideEnabled(VOID)
 {
-    return ((BLACKBIRDRuntimeConfigGetEffectiveFlags() & BLACKBIRD_RUNTIME_FLAG_SELF_HIDE) != 0);
+    return ((BkrtGetEffectiveFlags() & BK_RUNTIME_FLAG_SELF_HIDE) != 0);
 }
 
-BOOLEAN BLACKBIRDRuntimeConfigIsInterfaceProtectedAccessEnabled(VOID)
+BOOLEAN BkrtIsInterfaceProtectedAccessEnabled(VOID)
 {
-    return ((BLACKBIRDRuntimeConfigGetEffectiveFlags() & BLACKBIRD_RUNTIME_FLAG_INTERFACE_PROTECTED_ACCESS) != 0);
+    return ((BkrtGetEffectiveFlags() & BK_RUNTIME_FLAG_INTERFACE_PROTECTED_ACCESS) != 0);
 }
 
-BOOLEAN BLACKBIRDRuntimeConfigIsControllerProtectedAccessEnabled(VOID)
+BOOLEAN BkrtIsControllerProtectedAccessEnabled(VOID)
 {
-    return ((BLACKBIRDRuntimeConfigGetEffectiveFlags() & BLACKBIRD_RUNTIME_FLAG_CONTROLLER_PROTECTED_ACCESS) != 0);
+    return ((BkrtGetEffectiveFlags() & BK_RUNTIME_FLAG_CONTROLLER_PROTECTED_ACCESS) != 0);
 }
 
-BOOLEAN BLACKBIRDRuntimeConfigIsNtApiHooksDisarmed(VOID)
+BOOLEAN BkrtIsNtApiHooksDisarmed(VOID)
 {
-    return ((BLACKBIRDRuntimeConfigGetEffectiveFlags() & BLACKBIRD_RUNTIME_FLAG_NTAPI_HOOKS_DISARMED) != 0);
+    return ((BkrtGetEffectiveFlags() & BK_RUNTIME_FLAG_NTAPI_HOOKS_DISARMED) != 0);
 }
 
-UINT32 BLACKBIRDRuntimeConfigGetCurrentMode(VOID)
+BOOLEAN BkrtIsQpcTimingCompensationEnabled(VOID)
 {
-    return BLACKBIRDControlIsArmedFast() ? BLACKBIRD_RUNTIME_MODE_GUIDED : BLACKBIRD_RUNTIME_MODE_LOITER;
+    UINT32 flags = BkrtGetEffectiveFlags();
+
+    return (((flags & BK_RUNTIME_FLAG_ANTI_VIRTUALIZATION) != 0) &&
+            ((flags & BK_RUNTIME_FLAG_NTAPI_HOOKS_DISARMED) == 0) &&
+            ((flags & BK_RUNTIME_FLAG_QPC_TIMING_DISABLED) == 0));
 }
 
-NTSTATUS BLACKBIRDRuntimeConfigSetRuntimeFlags(_In_ UINT32 Flags, _In_ UINT32 Mask)
+UINT32 BkrtGetCurrentMode(VOID)
 {
-    LONG currentFlags;
-    LONG nextFlags;
+    return BkctlIsArmedFast() ? BK_RUNTIME_MODE_GUIDED : BK_RUNTIME_MODE_LOITER;
+}
+
+NTSTATUS BkrtSetRuntimeFlags(_In_ UINT32 Flags, _In_ UINT32 Mask)
+{
+    ULONGLONG currentOverride;
+    ULONGLONG nextOverride;
+    UINT32 currentFlags;
+    UINT32 currentMask;
+    UINT32 nextFlags;
+    UINT32 nextMask;
 
     if (InterlockedCompareExchange(&g_RuntimeConfigInitialized, 0, 0) == 0)
     {
         return STATUS_DEVICE_NOT_READY;
     }
 
-    Mask &= (BLACKBIRD_RUNTIME_FLAG_ANTI_VIRTUALIZATION | BLACKBIRD_RUNTIME_FLAG_SELF_HIDE |
-             BLACKBIRD_RUNTIME_FLAG_INTERFACE_PROTECTED_ACCESS | BLACKBIRD_RUNTIME_FLAG_CONTROLLER_PROTECTED_ACCESS |
-             BLACKBIRD_RUNTIME_FLAG_NTAPI_HOOKS_DISARMED);
-    Flags &= (BLACKBIRD_RUNTIME_FLAG_ANTI_VIRTUALIZATION | BLACKBIRD_RUNTIME_FLAG_SELF_HIDE |
-              BLACKBIRD_RUNTIME_FLAG_INTERFACE_PROTECTED_ACCESS | BLACKBIRD_RUNTIME_FLAG_CONTROLLER_PROTECTED_ACCESS |
-              BLACKBIRD_RUNTIME_FLAG_NTAPI_HOOKS_DISARMED);
+    Mask &= BK_RUNTIME_MUTABLE_MASK;
+    Flags &= BK_RUNTIME_MUTABLE_MASK;
 
     for (;;)
     {
-        currentFlags = InterlockedCompareExchange((volatile LONG *)&g_RuntimeRequestedFlags, 0, 0);
-        nextFlags = (currentFlags & ~(LONG)Mask) | (LONG)(Flags & Mask);
-        if (InterlockedCompareExchange((volatile LONG *)&g_RuntimeRequestedFlags, nextFlags, currentFlags) ==
-            currentFlags)
+        currentOverride = BkrtReadRuntimeOverride();
+        currentFlags = BkrtRuntimeOverrideFlags(currentOverride);
+        currentMask = BkrtRuntimeOverrideMask(currentOverride);
+        nextMask = currentMask | Mask;
+        nextFlags = ((currentFlags & ~Mask) | (Flags & Mask)) & nextMask;
+        nextOverride = BkrtPackRuntimeOverride(nextFlags, nextMask);
+
+        if ((ULONGLONG)InterlockedCompareExchange64(&g_RuntimeOverride, (LONG64)nextOverride,
+                                                    (LONG64)currentOverride) == currentOverride)
         {
             return STATUS_SUCCESS;
         }
     }
 }
 
-VOID BLACKBIRDRuntimeConfigFillResponse(_Out_ PBLACKBIRD_RUNTIME_CONFIG_RESPONSE Response)
+VOID BkrtFillResponse(_Out_ PBK_RUNTIME_CONFIG_RESPONSE Response)
 {
     if (Response == NULL)
     {
@@ -186,8 +234,8 @@ VOID BLACKBIRDRuntimeConfigFillResponse(_Out_ PBLACKBIRD_RUNTIME_CONFIG_RESPONSE
     }
 
     RtlZeroMemory(Response, sizeof(*Response));
-    Response->PersistentFlags = BLACKBIRDRuntimeConfigGetPersistentFlags();
-    Response->RuntimeFlags = BLACKBIRDRuntimeConfigGetRuntimeFlags();
-    Response->EffectiveFlags = BLACKBIRDRuntimeConfigGetEffectiveFlags();
-    Response->Mode = BLACKBIRDRuntimeConfigGetCurrentMode();
+    Response->PersistentFlags = BkrtGetPersistentFlags();
+    Response->RuntimeFlags = BkrtGetRuntimeFlags();
+    Response->EffectiveFlags = BkrtGetEffectiveFlags();
+    Response->Mode = BkrtGetCurrentMode();
 }

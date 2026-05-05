@@ -49,16 +49,40 @@ namespace BK_RUNTIME_INTERNAL
             return "RtlInstallFunctionTableCallback";
         case ModuleHookOperation::RtlDeleteFunctionTable:
             return "RtlDeleteFunctionTable";
+        case ModuleHookOperation::CoInitializeEx:
+            return "CoInitializeEx";
+        case ModuleHookOperation::CoInitializeSecurity:
+            return "CoInitializeSecurity";
+        case ModuleHookOperation::CoCreateInstance:
+            return "CoCreateInstance";
+        case ModuleHookOperation::EventRegister:
+            return "EventRegister";
+        case ModuleHookOperation::EventUnregister:
+            return "EventUnregister";
+        case ModuleHookOperation::StartTraceW:
+            return "StartTraceW";
+        case ModuleHookOperation::EnableTraceEx2:
+            return "EnableTraceEx2";
+        case ModuleHookOperation::CreateJobObjectW:
+            return "CreateJobObjectW";
+        case ModuleHookOperation::OpenJobObjectW:
+            return "OpenJobObjectW";
+        case ModuleHookOperation::AssignProcessToJobObject:
+            return "AssignProcessToJobObject";
+        case ModuleHookOperation::SetInformationJobObject:
+            return "SetInformationJobObject";
         default:
             return "LoadLibrary";
         }
     }
 
-    static inline std::uint32_t BuildCallerFlags(const IC_STACKTRACE::CallerClassification &cls) noexcept
+    static inline std::uint32_t BuildCallerFlags(const IC_STACKTRACE::CallerClassification &cls,
+                                                 std::uint32_t component) noexcept
     {
         std::uint32_t flags = cls.Flags;
-        flags |= (static_cast<std::uint32_t>(cls.ImmediateCaller) << BLACKBIRD_HOOK_CALLER_IMMED_SHIFT);
-        flags |= (static_cast<std::uint32_t>(cls.DeepestOrigin) << BLACKBIRD_HOOK_CALLER_DEEP_SHIFT);
+        flags |= (static_cast<std::uint32_t>(cls.ImmediateCaller) << BK_HOOK_CALLER_IMMED_SHIFT);
+        flags |= (static_cast<std::uint32_t>(cls.DeepestOrigin) << BK_HOOK_CALLER_DEEP_SHIFT);
+        flags |= ((component << BK_HOOK_CALLER_COMPONENT_SHIFT) & BK_HOOK_CALLER_COMPONENT_MASK);
         return flags;
     }
 
@@ -70,7 +94,7 @@ namespace BK_RUNTIME_INTERNAL
         if (cls.Flags & IC_STACKTRACE::kCallerFlagAllSystem)
             return true;
 
-        BLACKBIRD_IPC_HOOK_EVENT record{};
+        BKIPC_HOOK_EVENT record{};
         const char *opName = WinsockOperationName(evt.Operation);
         std::size_t sampleSize = std::min<std::size_t>(evt.Data.size(), RTL_NUMBER_OF(record.DataSample));
 
@@ -89,7 +113,7 @@ namespace BK_RUNTIME_INTERNAL
             record.Args[i] = evt.Args[i];
         }
         record.DataSize = static_cast<std::uint32_t>(sampleSize);
-        record.CallerFlags = BuildCallerFlags(cls);
+        record.CallerFlags = BuildCallerFlags(cls, BK_HOOK_COMPONENT_WINSOCK);
         (void)strncpy_s(record.ApiName, opName, _TRUNCATE);
         (void)strncpy_s(record.ModuleName, "WS2_32", _TRUNCATE);
         if (sampleSize != 0)
@@ -105,10 +129,14 @@ namespace BK_RUNTIME_INTERNAL
         using namespace BKIPC;
 
         auto cls = IC_STACKTRACE::ClassifyTrace(evt.Stack);
-        if (cls.Flags & IC_STACKTRACE::kCallerFlagAllSystem)
+        const bool sr71WriteBlocked =
+            (evt.Operation == NtOperation::NtWriteVirtualMemory && evt.Args[6] == kNtHookSr71WriteBlockedMarker) ||
+            (evt.Operation == NtOperation::NtProtectVirtualMemory && evt.Args[6] == kNtHookSr71ProtectBlockedMarker);
+        const bool processTerminate = (evt.Operation == NtOperation::NtTerminateProcess);
+        if (!sr71WriteBlocked && !processTerminate && (cls.Flags & IC_STACKTRACE::kCallerFlagAllSystem))
             return true;
 
-        BLACKBIRD_IPC_HOOK_EVENT record{};
+        BKIPC_HOOK_EVENT record{};
         const char *functionName =
             (evt.FunctionName != nullptr && evt.FunctionName[0] != '\0') ? evt.FunctionName : "NtCall";
 
@@ -121,6 +149,111 @@ namespace BK_RUNTIME_INTERNAL
         record.Context1 = evt.Args[1];
         record.Context2 = evt.Args[2];
         record.Context3 = evt.Args[3];
+
+        switch (evt.Operation)
+        {
+        case NtOperation::NtAllocateVirtualMemory:
+            record.Context0 = evt.Args[1];
+            record.Context1 = evt.Args[3];
+            record.Context2 = evt.Args[4];
+            record.Context3 = evt.Args[5];
+            break;
+        case NtOperation::NtAllocateVirtualMemoryEx:
+            record.Context0 = evt.Args[1];
+            record.Context1 = evt.Args[2];
+            record.Context2 = evt.Args[3];
+            record.Context3 = evt.Args[4];
+            break;
+        case NtOperation::NtWriteVirtualMemory:
+            record.Context0 = evt.Args[1];
+            record.Context1 = evt.Args[3];
+            record.Context2 = evt.Args[5];
+            record.Context3 = 0;
+            break;
+        case NtOperation::NtProtectVirtualMemory:
+            record.Context0 = evt.Args[1];
+            record.Context1 = evt.Args[2];
+            record.Context2 = evt.Args[3];
+            record.Context3 = evt.Args[4];
+            break;
+        case NtOperation::NtCreateThreadEx:
+            record.Context0 = evt.Args[2];
+            record.Context1 = evt.Args[3];
+            record.Context2 = evt.Args[5];
+            record.Context3 = evt.Args[4];
+            break;
+        case NtOperation::NtCreateThread:
+            record.Context0 = evt.Args[3];
+            record.Context1 = 0;
+            record.Context2 = evt.Args[7];
+            record.Context3 = evt.Args[6];
+            break;
+        case NtOperation::NtSetContextThread:
+        case NtOperation::NtGetContextThread:
+            record.Context0 = evt.Args[0];
+            record.Context1 = evt.Args[2];
+            record.Context2 = evt.Args[3];
+            record.Context3 = evt.Args[4];
+            break;
+        case NtOperation::NtSuspendThread:
+        case NtOperation::NtResumeThread:
+            record.Context0 = evt.Args[0];
+            record.Context1 = evt.Args[2];
+            record.Context2 = evt.Args[3];
+            record.Context3 = evt.Args[4];
+            break;
+        case NtOperation::NtQueueApcThread:
+            record.Context0 = evt.Args[0];
+            record.Context1 = evt.Args[1];
+            record.Context2 = evt.Args[2];
+            record.Context3 = evt.Args[3];
+            break;
+        case NtOperation::NtQueueApcThreadEx:
+            record.Context0 = evt.Args[0];
+            record.Context1 = evt.Args[2];
+            record.Context2 = evt.Args[3];
+            record.Context3 = evt.Args[4];
+            break;
+        case NtOperation::NtQueueApcThreadEx2:
+            record.Context0 = evt.Args[0];
+            record.Context1 = evt.Args[3];
+            record.Context2 = evt.Args[4];
+            record.Context3 = evt.Args[5];
+            break;
+        case NtOperation::NtCreateSection:
+            record.Context0 = evt.Args[0];
+            record.Context1 = evt.Args[4];
+            record.Context2 = evt.Args[5];
+            record.Context3 = evt.Args[6];
+            break;
+        case NtOperation::NtTerminateProcess:
+            record.Context0 = evt.Args[0];
+            record.Context1 = evt.Args[1];
+            record.Context2 = evt.Args[6];
+            record.Context3 = evt.Args[7];
+            break;
+        case NtOperation::NtMapViewOfSection:
+            record.Context0 = evt.Args[0];
+            record.Context1 = evt.Args[1];
+            record.Context2 = evt.Args[2];
+            record.Context3 = evt.Args[3];
+            break;
+        case NtOperation::NtMapViewOfSectionEx:
+            record.Context0 = evt.Args[0];
+            record.Context1 = evt.Args[1];
+            record.Context2 = evt.Args[2];
+            record.Context3 = evt.Args[4];
+            break;
+        case NtOperation::NtUnmapViewOfSection:
+        case NtOperation::NtUnmapViewOfSectionEx:
+            record.Context0 = evt.Args[0];
+            record.Context1 = evt.Args[1];
+            record.Context2 = evt.Args[2];
+            record.Context3 = evt.Args[3];
+            break;
+        default:
+            break;
+        }
         record.ArgCount = 8;
         for (std::size_t i = 0; i < RTL_NUMBER_OF(record.Args); ++i)
         {
@@ -128,7 +261,7 @@ namespace BK_RUNTIME_INTERNAL
         }
         record.DataSize =
             (evt.DataSize > RTL_NUMBER_OF(record.DataSample)) ? RTL_NUMBER_OF(record.DataSample) : evt.DataSize;
-        record.CallerFlags = BuildCallerFlags(cls);
+        record.CallerFlags = BuildCallerFlags(cls, BK_HOOK_COMPONENT_NT);
         CopyHookStack(evt.Stack, record);
         if (record.DataSize != 0)
         {
@@ -150,7 +283,7 @@ namespace BK_RUNTIME_INTERNAL
 
         const char *stubName = evt.StubName ? evt.StubName : "";
 
-        BLACKBIRD_IPC_HOOK_EVENT record{};
+        BKIPC_HOOK_EVENT record{};
         record.Kind = BlackbirdIpcHookEventKi;
         record.ProcessId = GetCurrentProcessId();
         record.ThreadId = evt.ThreadId;
@@ -159,7 +292,7 @@ namespace BK_RUNTIME_INTERNAL
         record.Context0 = reinterpret_cast<std::uint64_t>(evt.StackPointer);
         record.ArgCount = 0;
         record.DataSize = 0;
-        record.CallerFlags = BuildCallerFlags(cls);
+        record.CallerFlags = BuildCallerFlags(cls, BK_HOOK_COMPONENT_KI);
         CopyHookStack(evt.Stack, record);
         (void)strncpy_s(record.ApiName, (stubName[0] != '\0') ? stubName : "KiUserApcDispatcher", _TRUNCATE);
         (void)strncpy_s(record.ModuleName, "ntdll", _TRUNCATE);
@@ -174,7 +307,7 @@ namespace BK_RUNTIME_INTERNAL
         if (cls.Flags & IC_STACKTRACE::kCallerFlagAllSystem)
             return true;
 
-        BLACKBIRD_IPC_HOOK_EVENT record{};
+        BKIPC_HOOK_EVENT record{};
         const char *functionName = ModuleOperationName(evt.Operation);
         std::size_t sampleSize = std::min<std::size_t>(evt.NameSample.size(), RTL_NUMBER_OF(record.DataSample));
 
@@ -188,7 +321,7 @@ namespace BK_RUNTIME_INTERNAL
         record.Context2 = evt.Args[1];
         record.Context3 = evt.Args[2];
         record.ArgCount = 4;
-        record.CallerFlags = BuildCallerFlags(cls);
+        record.CallerFlags = BuildCallerFlags(cls, BK_HOOK_COMPONENT_MODULE);
         for (std::size_t i = 0; i < RTL_NUMBER_OF(evt.Args); ++i)
         {
             record.Args[i] = evt.Args[i];
@@ -243,7 +376,7 @@ namespace BK_RUNTIME_INTERNAL
     {
         using namespace BKIPC;
 
-        BLACKBIRD_IPC_HOOK_EVENT record{};
+        BKIPC_HOOK_EVENT record{};
         record.Kind = BlackbirdIpcHookEventIntegrity;
         record.ProcessId = GetCurrentProcessId();
         record.ThreadId = GetCurrentThreadId();
@@ -257,6 +390,8 @@ namespace BK_RUNTIME_INTERNAL
         record.Args[0] = g_IntegrityCheckCount;
         record.Args[1] = static_cast<std::uint64_t>(GetTickCount64());
         record.Args[2] = moduleMismatches;
+        record.CallerFlags =
+            ((BK_HOOK_COMPONENT_INTEGRITY << BK_HOOK_CALLER_COMPONENT_SHIFT) & BK_HOOK_CALLER_COMPONENT_MASK);
         (void)strncpy_s(record.ApiName, "HookIntegrity", _TRUNCATE);
         (void)strncpy_s(record.ModuleName, "SR71", _TRUNCATE);
         return PublishHookEvent(record);
@@ -429,10 +564,12 @@ namespace BK_RUNTIME_INTERNAL
                         {
                             const auto *nameRvAs = reinterpret_cast<const DWORD *>(RvaToFilePointer(
                                 view, imageSize, exportDir->AddressOfNames, exportDir->NumberOfNames * sizeof(DWORD)));
-                            const auto *nameOrdinals = reinterpret_cast<const WORD *>(RvaToFilePointer(
-                                view, imageSize, exportDir->AddressOfNameOrdinals, exportDir->NumberOfNames * sizeof(WORD)));
-                            const auto *functionRvAs = reinterpret_cast<const DWORD *>(RvaToFilePointer(
-                                view, imageSize, exportDir->AddressOfFunctions, exportDir->NumberOfFunctions * sizeof(DWORD)));
+                            const auto *nameOrdinals = reinterpret_cast<const WORD *>(
+                                RvaToFilePointer(view, imageSize, exportDir->AddressOfNameOrdinals,
+                                                 exportDir->NumberOfNames * sizeof(WORD)));
+                            const auto *functionRvAs = reinterpret_cast<const DWORD *>(
+                                RvaToFilePointer(view, imageSize, exportDir->AddressOfFunctions,
+                                                 exportDir->NumberOfFunctions * sizeof(DWORD)));
 
                             if (nameRvAs != nullptr && nameOrdinals != nullptr && functionRvAs != nullptr)
                             {
@@ -532,7 +669,7 @@ namespace BK_RUNTIME_INTERNAL
     {
         using namespace BKIPC;
 
-        BLACKBIRD_IPC_HOOK_EVENT record{};
+        BKIPC_HOOK_EVENT record{};
         record.Kind = BlackbirdIpcHookEventIntegrity;
         record.ProcessId = GetCurrentProcessId();
         record.ThreadId = GetCurrentThreadId();
@@ -545,6 +682,8 @@ namespace BK_RUNTIME_INTERNAL
         record.ArgCount = 1;
         record.Args[0] = static_cast<std::uint64_t>(GetTickCount64());
         record.DataSize = 16;
+        record.CallerFlags =
+            ((BK_HOOK_COMPONENT_INTEGRITY << BK_HOOK_CALLER_COMPONENT_SHIFT) & BK_HOOK_CALLER_COMPONENT_MASK);
         std::memcpy(record.DataSample, sample, 16);
         (void)strncpy_s(record.ApiName, apiName != nullptr ? apiName : "UnknownPatchProbe", _TRUNCATE);
         (void)strncpy_s(record.ModuleName, moduleName != nullptr ? moduleName : "unknown", _TRUNCATE);

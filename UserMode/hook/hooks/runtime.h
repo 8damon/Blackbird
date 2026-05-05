@@ -19,6 +19,8 @@ enum class BkRuntimeFaultCode : std::uint32_t
     FailClosedTriggered = 12,
     NtHookInitFault = 13,
     ModuleHookInitFault = 14,
+    InstrumentationRangeRegisterFailed = 15,
+    HookPatchRegisterFailed = 16,
 };
 
 DWORD WINAPI BkRuntimeThreadProc(LPVOID);

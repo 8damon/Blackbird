@@ -35,6 +35,14 @@ namespace BlackbirdInterface
             }
         }
 
+        public static void Clear()
+        {
+            lock (s_lock)
+            {
+                s_lines.Clear();
+            }
+        }
+
         public static void AppendLine(string? text)
         {
             AppendLineCore(text, raiseEvent: true);
@@ -110,4 +118,3 @@ namespace BlackbirdInterface
         }
     }
 }
-

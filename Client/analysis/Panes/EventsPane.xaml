@@ -172,7 +172,16 @@
                           ColumnHeaderHeight="24"
                           RowHeight="22"
                           CanUserResizeRows="False"
+                          PreviewMouseRightButtonDown="EventGrid_PreviewMouseRightButtonDown"
                           MouseDoubleClick="EventGrid_MouseDoubleClick">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Open Event Details" Click="EventContextOpenDetails_Click"/>
+                            <Separator/>
+                            <MenuItem Header="Copy Summary" Click="EventContextCopySummary_Click"/>
+                            <MenuItem Header="Copy Details" Click="EventContextCopyDetails_Click"/>
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
                     <DataGrid.RowStyle>
                         <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
                             <Setter Property="Background" Value="Transparent"/>

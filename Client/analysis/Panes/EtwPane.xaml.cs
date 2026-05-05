@@ -18,27 +18,30 @@ namespace BlackbirdInterface
         public event RoutedEventHandler? CloseRequested;
         public event RoutedEventHandler? InspectRequested;
 
-        private readonly BulkObservableCollection<GroupedEventRow> _items = new();
-        private readonly List<GroupedEventRow> _allItems = new();
-        private readonly Dictionary<string, GroupedEventRow> _byKey = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, GroupedEventRow> _visibleByKey = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, Dictionary<string, GroupedEventDetailRow>> _detailArgSigByGroupKey = new(StringComparer.Ordinal);
-        private int _totalRawCount;
-        private int _totalDetailRows;
+        private readonly GroupedEventPaneState _state = new();
         private bool _hasThreatIntelEvents;
         private string _feedFilter = "ALL FEEDS";
+        private int _focusedPid;
+
+        public int FocusedPid
+        {
+            set {
+                _focusedPid = value;
+                ApplyFilter();
+            }
+        }
 
         public EtwPane()
         {
             InitializeComponent();
-            EventsGrid.ItemsSource = _items;
+            EventsGrid.ItemsSource = _state.VisibleItems;
             UpdateSummary();
             UpdateNoDataOverlay();
         }
 
-        internal int ItemCount => _items.Count;
-        internal int TotalRawCount => _totalRawCount;
-        internal int DetailRowCount => _totalDetailRows;
+        internal int ItemCount => _state.ItemCount;
+        internal int TotalRawCount => _state.TotalRawCount;
+        internal int DetailRowCount => _state.TotalDetailRows;
         internal bool HasThreatIntelEvents => _hasThreatIntelEvents;
 
         internal void PushEvent(BrokerEtwEventView entry)
@@ -60,27 +63,26 @@ namespace BlackbirdInterface
         private void PushEventCore(BrokerEtwEventView entry)
         {
             DateTime now = entry.LastSeenUtc == default ? entry.TimestampUtc : entry.LastSeenUtc;
-            string eventName = EventDetailFormatting.IsThreatIntelEtwSource(entry)
-                ? $"TI/{entry.EventName}"
-                : entry.EventName;
+            string eventName =
+                EventDetailFormatting.IsThreatIntelEtwSource(entry) ? $"TI/{entry.EventName}" : entry.EventName;
             string severity = EventDetailFormatting.SeverityLabel(entry.Severity);
             string detection = BuildDetectionLabel(entry);
-            string source = string.IsNullOrWhiteSpace(entry.Source) ? "Blackbird" : entry.Source;
+            string source = string.IsNullOrWhiteSpace(entry.Source) ? "BK" : entry.Source;
             string actor = ProcessIdentityResolver.Describe(entry.ActorPid);
             string target = ProcessIdentityResolver.Describe(entry.TargetPid);
             string actorToolTip = ProcessIdentityResolver.HoverText(entry.ActorPid);
             string targetToolTip = ProcessIdentityResolver.HoverText(entry.TargetPid);
-            string detailText = entry.Details;
-            string argSig = entry.ArgumentSummary;
-            string key = BuildAggregationKey(entry, eventName, severity, detection, source, argSig);
+            bool splitByArgumentSignature = ShouldSplitByArgumentSignature(entry, eventName);
+            string argSig = splitByArgumentSignature ? entry.ArgumentSummary : string.Empty;
+            string key = BuildAggregationKey(eventName, severity, detection, source, argSig, splitByArgumentSignature);
 
-            _totalRawCount += 1;
+            _state.IncrementRawCount(1);
             if (EventDetailFormatting.IsThreatIntelEtwSource(entry))
             {
                 _hasThreatIntelEvents = true;
             }
 
-            if (_byKey.TryGetValue(key, out GroupedEventRow? existing))
+            if (_state.TryGetRow(key, out GroupedEventRow? existing))
             {
                 existing.LastSeenUtc = now;
                 existing.Hits = Math.Max(1, existing.Hits + 1);
@@ -92,9 +94,15 @@ namespace BlackbirdInterface
                 // Aggregate by argument signature: identical arg patterns increment the existing
                 // detail row's HitCount rather than adding a duplicate row.
                 bool aggregated = false;
-                if (!string.IsNullOrEmpty(argSig) &&
-                    _detailArgSigByGroupKey.TryGetValue(key, out Dictionary<string, GroupedEventDetailRow>? argMap) &&
-                    argMap.TryGetValue(argSig, out GroupedEventDetailRow? matchingDetail))
+                if (string.IsNullOrEmpty(argSig) && existing.Details.Count > 0)
+                {
+                    GroupedEventDetailRow latestDetail = existing.Details[^1];
+                    latestDetail.HitCount += 1;
+                    latestDetail.TimestampUtc = now;
+                    aggregated = true;
+                }
+                else if (!string.IsNullOrEmpty(argSig) &&
+                    _state.TryGetDetail(key, argSig, out GroupedEventDetailRow? matchingDetail))
                 {
                     matchingDetail.HitCount += 1;
                     matchingDetail.TimestampUtc = now;
@@ -103,48 +111,30 @@ namespace BlackbirdInterface
 
                 if (!aggregated)
                 {
-                    var newDetail = new GroupedEventDetailRow
-                    {
-                        TimestampUtc = now,
-                        Event = eventName,
-                        Severity = severity,
-                        Detection = detection,
-                        Source = source,
-                        Actor = actor,
-                        Target = target,
-                        ActorPid = entry.ActorPid,
-                        TargetPid = entry.TargetPid,
-                        ActorToolTip = actorToolTip,
-                        TargetToolTip = targetToolTip,
-                        ArgumentSummary = argSig,
-                        HitCount = 1,
-                        Details = detailText
-                    };
+                    string detailText = entry.Details;
+                    var newDetail = new GroupedEventDetailRow { TimestampUtc = now,
+                                                                Event = eventName,
+                                                                Severity = severity,
+                                                                Detection = detection,
+                                                                Source = source,
+                                                                Actor = actor,
+                                                                Target = target,
+                                                                ActorPid = entry.ActorPid,
+                                                                TargetPid = entry.TargetPid,
+                                                                ActorToolTip = actorToolTip,
+                                                                TargetToolTip = targetToolTip,
+                                                                ArgumentSummary = argSig,
+                                                                HitCount = 1,
+                                                                Details = detailText };
                     existing.Details.Add(newDetail);
-                    _totalDetailRows += 1;
-
-                    if (!string.IsNullOrEmpty(argSig))
-                    {
-                        if (!_detailArgSigByGroupKey.TryGetValue(key, out Dictionary<string, GroupedEventDetailRow>? map))
-                        {
-                            map = new Dictionary<string, GroupedEventDetailRow>(StringComparer.Ordinal);
-                            _detailArgSigByGroupKey[key] = map;
-                        }
-                        map[argSig] = newDetail;
-                    }
+                    _state.RegisterDetail(existing, newDetail);
 
                     if (existing.Details.Count > MaxDetailRowsPerGroup)
                     {
                         GroupedEventDetailRow evictedDetail = existing.Details[0];
                         existing.Details.RemoveAt(0);
-                        _totalDetailRows = Math.Max(0, _totalDetailRows - 1);
-                        if (!string.IsNullOrEmpty(evictedDetail.ArgumentSummary) &&
-                            _detailArgSigByGroupKey.TryGetValue(key, out Dictionary<string, GroupedEventDetailRow>? evictMap) &&
-                            evictMap.TryGetValue(evictedDetail.ArgumentSummary, out GroupedEventDetailRow? mapped) &&
-                            ReferenceEquals(mapped, evictedDetail))
-                        {
-                            evictMap.Remove(evictedDetail.ArgumentSummary);
-                        }
+                        _state.ReplaceDetailCount(_state.TotalDetailRows - 1);
+                        _state.RemoveDetailReference(key, evictedDetail);
                     }
                 }
 
@@ -152,125 +142,75 @@ namespace BlackbirdInterface
             }
             else
             {
-                var firstDetail = new GroupedEventDetailRow
-                {
-                    TimestampUtc = now,
-                    Event = eventName,
-                    Severity = severity,
-                    Detection = detection,
-                    Source = source,
-                    Actor = actor,
-                    Target = target,
-                    ActorPid = entry.ActorPid,
-                    TargetPid = entry.TargetPid,
-                    ActorToolTip = actorToolTip,
-                    TargetToolTip = targetToolTip,
-                    ArgumentSummary = argSig,
-                    HitCount = 1,
-                    Details = detailText
-                };
-                var row = new GroupedEventRow
-                {
-                    GroupKey = key,
-                    LastSeenUtc = now,
-                    Event = eventName,
-                    Severity = severity,
-                    Detection = detection,
-                    Hits = 1,
-                    ArgumentPreview = argSig,
-                    Details = { firstDetail }
-                };
-                _allItems.Add(row);
-                _byKey[key] = row;
-                _totalDetailRows += row.Details.Count;
-
-                if (!string.IsNullOrEmpty(argSig))
-                {
-                    _detailArgSigByGroupKey[key] = new Dictionary<string, GroupedEventDetailRow>(StringComparer.Ordinal)
-                    {
-                        [argSig] = firstDetail
-                    };
-                }
+                string detailText = entry.Details;
+                var firstDetail = new GroupedEventDetailRow { TimestampUtc = now,
+                                                              Event = eventName,
+                                                              Severity = severity,
+                                                              Detection = detection,
+                                                              Source = source,
+                                                              Actor = actor,
+                                                              Target = target,
+                                                              ActorPid = entry.ActorPid,
+                                                              TargetPid = entry.TargetPid,
+                                                              ActorToolTip = actorToolTip,
+                                                              TargetToolTip = targetToolTip,
+                                                              ArgumentSummary = argSig,
+                                                              HitCount = 1,
+                                                              Details = detailText };
+                var row = new GroupedEventRow { GroupKey = key,           LastSeenUtc = now,        Event = eventName,
+                                                Severity = severity,      Detection = detection,    Hits = 1,
+                                                ArgumentPreview = argSig, Details = { firstDetail } };
+                _state.TrackRow(row);
 
                 SyncVisibleRow(row);
             }
 
-            while (_allItems.Count > MaxGroupCount)
-            {
-                GroupedEventRow evicted = _allItems[0];
-                string evictKey = evicted.GroupKey;
-                _allItems.RemoveAt(0);
-                _byKey.Remove(evictKey);
-                _detailArgSigByGroupKey.Remove(evictKey);
-                _totalDetailRows = Math.Max(0, _totalDetailRows - evicted.Details.Count);
-                if (_visibleByKey.Remove(evictKey))
-                {
-                    _items.Remove(evicted);
-                }
-            }
-
+            _state.EvictOverflow(MaxGroupCount);
         }
 
-        internal IReadOnlyList<GroupedEventRow> SnapshotItems()
-            => _allItems.Select(x => x.Clone()).ToList();
+        internal IReadOnlyList<GroupedEventRow> SnapshotItems() => _state.SnapshotItems();
 
-        private static string BuildAggregationKey(
-            BrokerEtwEventView entry,
-            string eventName,
-            string severity,
-            string detection,
-            string source,
-            string argumentSignature)
+        private static string BuildAggregationKey(string eventName, string severity, string detection, string source,
+                                                  string argumentSignature, bool splitByArgumentSignature)
         {
             string baseKey = $"{eventName}|{severity}|{detection}|{source}";
-            if (string.IsNullOrWhiteSpace(argumentSignature))
+            if (!splitByArgumentSignature || string.IsNullOrWhiteSpace(argumentSignature))
             {
                 return baseKey;
             }
 
-            string apiName = string.IsNullOrWhiteSpace(entry.Operation) ? eventName : entry.Operation.Trim();
-            bool splitByArgumentSignature =
-                apiName.Equals("NtQueryInformationProcess", StringComparison.OrdinalIgnoreCase) ||
-                apiName.Equals("NtQueryVirtualMemory", StringComparison.OrdinalIgnoreCase) ||
-                apiName.Equals("NtQuerySystemInformation", StringComparison.OrdinalIgnoreCase) ||
-                apiName.Equals("NtQuerySystemInformationEx", StringComparison.OrdinalIgnoreCase) ||
-                apiName.Equals("NtOpenProcess", StringComparison.OrdinalIgnoreCase) ||
-                apiName.Equals("NtOpenThread", StringComparison.OrdinalIgnoreCase);
-
-            return splitByArgumentSignature
-                ? $"{baseKey}|{argumentSignature}"
-                : baseKey;
+            return $"{baseKey}|{argumentSignature}";
         }
 
-        internal GroupedEventRow? GetSelectedGroupClone()
-            => (EventsGrid.SelectedItem as GroupedEventRow)?.Clone();
+        private static bool ShouldSplitByArgumentSignature(BrokerEtwEventView entry, string eventName)
+        {
+            string apiName = string.IsNullOrWhiteSpace(entry.Operation) ? eventName : entry.Operation.Trim();
+            return apiName.Equals("NtQueryInformationProcess", StringComparison.OrdinalIgnoreCase) ||
+                   apiName.Equals("NtQueryVirtualMemory", StringComparison.OrdinalIgnoreCase) ||
+                   apiName.Equals("NtQuerySystemInformation", StringComparison.OrdinalIgnoreCase) ||
+                   apiName.Equals("NtQuerySystemInformationEx", StringComparison.OrdinalIgnoreCase) ||
+                   apiName.Equals("NtOpenProcess", StringComparison.OrdinalIgnoreCase) ||
+                   apiName.Equals("NtOpenThread", StringComparison.OrdinalIgnoreCase);
+        }
+
+        internal GroupedEventRow? GetSelectedGroupClone() => _state.GetSelectedGroupClone(EventsGrid.SelectedItem);
 
         internal void LoadHistory(IEnumerable<GroupedEventRow> groups)
         {
-            _items.Clear();
-            _allItems.Clear();
-            _byKey.Clear();
-            _visibleByKey.Clear();
-            _detailArgSigByGroupKey.Clear();
-            _totalRawCount = 0;
-            _totalDetailRows = 0;
             _hasThreatIntelEvents = false;
-
-            foreach (GroupedEventRow source in groups)
-            {
-                GroupedEventRow clone = source.Clone();
-                clone.Hits = Math.Max(1, clone.Hits);
-                clone.Details = clone.Details.OrderBy(x => x.TimestampUtc).ToList();
-                _allItems.Add(clone);
-                _byKey[clone.GroupKey] = clone;
-                _totalRawCount += clone.Hits;
-                _totalDetailRows += clone.Details.Count;
-                if (clone.Details.Any(x => x.Source.Equals("ThreatIntel", StringComparison.OrdinalIgnoreCase)))
+            _state.LoadHistory(
+                groups,
+                clone =>
                 {
-                    _hasThreatIntelEvents = true;
-                }
-                RebuildArgSigMap(clone);
-            }
+                    clone.Hits = Math.Max(1, clone.Hits);
+                    clone.Details = clone.Details.OrderBy(x => x.TimestampUtc).ToList();
+                    if (clone.Details.Any(x => x.Source.Equals("ThreatIntel", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        _hasThreatIntelEvents = true;
+                    }
+
+                    return clone;
+                });
 
             ApplyFilter();
             UpdateSummary();
@@ -279,13 +219,7 @@ namespace BlackbirdInterface
 
         public void ClearAll()
         {
-            _items.Clear();
-            _allItems.Clear();
-            _byKey.Clear();
-            _visibleByKey.Clear();
-            _detailArgSigByGroupKey.Clear();
-            _totalRawCount = 0;
-            _totalDetailRows = 0;
+            _state.Clear();
             _hasThreatIntelEvents = false;
             UpdateSummary();
             UpdateNoDataOverlay();
@@ -294,39 +228,8 @@ namespace BlackbirdInterface
         internal void TrimDetailPayload(int keepPerGroup)
         {
             int keep = Math.Max(1, keepPerGroup);
-            for (int i = 0; i < _allItems.Count; i += 1)
-            {
-                GroupedEventRow row = _allItems[i];
-                if (row.Details.Count <= keep)
-                {
-                    continue;
-                }
-
-                int originalCount = row.Details.Count;
-                row.Details = GroupedEventCompaction.SelectImportantDetails(row.Details, keep);
-                _totalDetailRows -= Math.Max(0, originalCount - row.Details.Count);
-                _byKey[row.GroupKey] = row;
-                RebuildArgSigMap(row);
-            }
-
+            _state.TrimDetailPayload(keep);
             ApplyFilter();
-        }
-
-        private void RebuildArgSigMap(GroupedEventRow row)
-        {
-            _detailArgSigByGroupKey.Remove(row.GroupKey);
-            var map = new Dictionary<string, GroupedEventDetailRow>(StringComparer.Ordinal);
-            foreach (GroupedEventDetailRow detail in row.Details)
-            {
-                if (!string.IsNullOrEmpty(detail.ArgumentSummary))
-                {
-                    map[detail.ArgumentSummary] = detail;
-                }
-            }
-            if (map.Count > 0)
-            {
-                _detailArgSigByGroupKey[row.GroupKey] = map;
-            }
         }
 
         private void UpdateSummary()
@@ -337,7 +240,7 @@ namespace BlackbirdInterface
             }
 
             string tiState = _hasThreatIntelEvents ? "TI: integrated" : "TI: unavailable";
-            SummaryBlock.Text = $"Groups: {_items.Count} / Events: {_totalRawCount} / {tiState}";
+            SummaryBlock.Text = $"Groups: {_state.ItemCount} / Events: {_state.TotalRawCount} / {tiState}";
         }
 
         private void UpdateNoDataOverlay()
@@ -347,63 +250,30 @@ namespace BlackbirdInterface
                 return;
             }
 
-            NoDataOverlay.Visibility = _items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            NoDataOverlay.Visibility = _state.ItemCount == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
 
         private void ApplyFilter()
         {
-            var visible = new List<GroupedEventRow>();
-            _visibleByKey.Clear();
-            foreach (GroupedEventRow row in _allItems)
-            {
-                if (!MatchesFilter(row))
-                {
-                    continue;
-                }
-
-                visible.Add(row);
-                _visibleByKey[row.GroupKey] = row;
-            }
-
-            _items.ReplaceAll(visible);
+            _state.ApplyFilter(MatchesFilter);
         }
 
-        private void SyncVisibleRow(GroupedEventRow row)
-        {
-            bool matches = MatchesFilter(row);
-            bool visible = _visibleByKey.ContainsKey(row.GroupKey);
-            if (matches)
-            {
-                if (!visible)
-                {
-                    _items.Add(row);
-                    _visibleByKey[row.GroupKey] = row;
-                }
-
-                return;
-            }
-
-            if (!visible)
-            {
-                return;
-            }
-
-            _visibleByKey.Remove(row.GroupKey);
-            _items.Remove(row);
-        }
+        private void SyncVisibleRow(GroupedEventRow row) => _state.SyncVisibleRow(row, MatchesFilter);
 
         private bool MatchesFilter(GroupedEventRow row)
         {
+            if (_focusedPid != 0 &&
+                !row.Details.Any(d => d.ActorPid == (uint)_focusedPid || d.TargetPid == (uint)_focusedPid))
+                return false;
+
             string filter = _feedFilter;
             if (string.IsNullOrWhiteSpace(filter) || filter.Equals("ALL FEEDS", StringComparison.OrdinalIgnoreCase))
-            {
                 return true;
-            }
 
-            return filter.ToUpperInvariant() switch
-            {
-                "THREATINTEL" => row.Event.StartsWith("TI/", StringComparison.OrdinalIgnoreCase) ||
-                                 row.Details.Any(x => x.Source.Equals("ThreatIntel", StringComparison.OrdinalIgnoreCase)),
+            return filter.ToUpperInvariant() switch {
+                "THREATINTEL" =>
+                    row.Event.StartsWith("TI/", StringComparison.OrdinalIgnoreCase) ||
+                    row.Details.Any(x => x.Source.Equals("ThreatIntel", StringComparison.OrdinalIgnoreCase)),
                 "DETECTION" => row.Detection.Contains("DETECTION", StringComparison.OrdinalIgnoreCase) ||
                                row.Event.Contains("Detection", StringComparison.OrdinalIgnoreCase),
                 "PROCESS/THREAD" => row.Event.Contains("Process", StringComparison.OrdinalIgnoreCase) ||
@@ -420,6 +290,53 @@ namespace BlackbirdInterface
             {
                 InspectRequested?.Invoke(this, new RoutedEventArgs());
             }
+        }
+
+        private void EventsContextInspect_Click(object sender, RoutedEventArgs e) => InspectRequested?.Invoke(this, e);
+
+        private void EventsContextCopySummary_Click(object sender, RoutedEventArgs e)
+        {
+            if (EventsGrid.SelectedItem is GroupedEventRow row)
+            {
+                Clipboard.SetText(
+                    $"{row.LastSeenUtc:O} {row.Event} {row.Severity} hits={row.Hits} {row.Detection} {row.ArgumentPreview}");
+            }
+        }
+
+        private void EventsContextCopyDetails_Click(object sender, RoutedEventArgs e)
+        {
+            if (EventsGrid.SelectedItem is GroupedEventRow row)
+            {
+                Clipboard.SetText(string.Join(Environment.NewLine, row.Details.Select(d => d.Details)));
+            }
+        }
+
+        private void EventsGrid_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            DataGridRow? row = FindAncestor<DataGridRow>(e.OriginalSource as DependencyObject);
+            if (row == null)
+            {
+                return;
+            }
+
+            row.IsSelected = true;
+            row.Focus();
+        }
+
+        private static T? FindAncestor<T>(DependencyObject? source)
+            where T : DependencyObject
+        {
+            while (source != null)
+            {
+                if (source is T match)
+                {
+                    return match;
+                }
+
+                source = VisualTreeHelper.GetParent(source);
+            }
+
+            return null;
         }
 
         private void EtwBtnInspect_Click(object sender, RoutedEventArgs e) => InspectRequested?.Invoke(this, e);
@@ -441,9 +358,8 @@ namespace BlackbirdInterface
             string sensorOrigin = EventDetailFormatting.ClassifyHookSensorOrigin(entry);
             if (!string.IsNullOrWhiteSpace(entry.DetectionName))
             {
-                return sensorOrigin == "Unclassified"
-                    ? entry.DetectionName
-                    : $"{sensorOrigin.ToUpperInvariant()} | {entry.DetectionName}";
+                return sensorOrigin == "Unclassified" ? entry.DetectionName
+                                                      : $"{sensorOrigin.ToUpperInvariant()} | {entry.DetectionName}";
             }
 
             string eventName = (entry.EventName ?? string.Empty).Trim();
@@ -475,7 +391,7 @@ namespace BlackbirdInterface
             if (!string.IsNullOrWhiteSpace(eventName) &&
                 eventName.EndsWith("Telemetry", StringComparison.OrdinalIgnoreCase))
             {
-                string baseName = eventName[..^"Telemetry".Length].Trim();
+                string baseName = eventName[..^ "Telemetry".Length].Trim();
                 if (!string.IsNullOrWhiteSpace(baseName))
                 {
                     return $"{baseName.ToUpperInvariant()}_ACTIVITY";
@@ -489,9 +405,7 @@ namespace BlackbirdInterface
 
             if (!string.IsNullOrWhiteSpace(eventName))
             {
-                return sensorOrigin == "Unclassified"
-                    ? eventName
-                    : $"{sensorOrigin.ToUpperInvariant()} | {eventName}";
+                return sensorOrigin == "Unclassified" ? eventName : $"{sensorOrigin.ToUpperInvariant()} | {eventName}";
             }
 
             return "UNCLASSIFIED_EVENT";

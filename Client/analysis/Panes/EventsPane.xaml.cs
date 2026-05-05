@@ -45,6 +45,14 @@ namespace BlackbirdInterface
         private bool _eventLogDetached;
 
         private bool _laneFilterSuppressChange;
+        private int _focusedPid;
+
+        public int FocusedPid
+        {
+            set {
+                _focusedPid = value;
+            }
+        }
 
         public EventsPane()
         {
@@ -171,6 +179,46 @@ namespace BlackbirdInterface
                                                               ev.Summary ?? string.Empty, ev));
         }
 
+        private void EventContextOpenDetails_Click(object sender, RoutedEventArgs e)
+        {
+            if (EventGrid.SelectedItem is not TelemetryEvent ev)
+            {
+                return;
+            }
+
+            EventLogEntryOpenRequested?.Invoke(
+                this, new EventLogEntryOpenRequestedEventArgs(ev.Group ?? string.Empty, ev.SubType ?? string.Empty,
+                                                              ev.Summary ?? string.Empty, ev));
+        }
+
+        private void EventContextCopySummary_Click(object sender, RoutedEventArgs e)
+        {
+            if (EventGrid.SelectedItem is TelemetryEvent ev)
+            {
+                Clipboard.SetText($"{ev.TimestampUtc:O} {ev.Type} pid={ev.PID} tid={ev.TID} {ev.Summary}");
+            }
+        }
+
+        private void EventContextCopyDetails_Click(object sender, RoutedEventArgs e)
+        {
+            if (EventGrid.SelectedItem is TelemetryEvent ev)
+            {
+                Clipboard.SetText(string.IsNullOrWhiteSpace(ev.Details) ? ev.Summary : ev.Details);
+            }
+        }
+
+        private void EventGrid_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            DataGridRow? row = FindAncestor<DataGridRow>(e.OriginalSource as DependencyObject);
+            if (row == null)
+            {
+                return;
+            }
+
+            row.IsSelected = true;
+            row.Focus();
+        }
+
         private static TelemetryEvent? GetEventFromSource(DependencyObject? source)
         {
             while (source != null)
@@ -183,6 +231,22 @@ namespace BlackbirdInterface
                 if (source is DataGridCell cell && cell.DataContext is TelemetryEvent cellEvent)
                 {
                     return cellEvent;
+                }
+
+                source = VisualTreeHelper.GetParent(source);
+            }
+
+            return null;
+        }
+
+        private static T? FindAncestor<T>(DependencyObject? source)
+            where T : DependencyObject
+        {
+            while (source != null)
+            {
+                if (source is T match)
+                {
+                    return match;
                 }
 
                 source = VisualTreeHelper.GetParent(source);

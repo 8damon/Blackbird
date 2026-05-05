@@ -40,7 +40,7 @@
                       Height="24"
                       Margin="2,4,6,4"
                       VerticalAlignment="Center"
-                      Background="{DynamicResource EtwHeaderBrush}"
+                      Background="{DynamicResource WinHeaderBrush}"
                       BorderBrush="{DynamicResource WinBorderBrush}"
                       Style="{StaticResource PaneFilterComboStyle}"
                       ItemContainerStyle="{StaticResource PaneFilterComboItemStyle}"
@@ -103,7 +103,16 @@
                           RowHeight="22"
                           ScrollViewer.VerticalScrollBarVisibility="Hidden"
                           ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                          PreviewMouseRightButtonDown="EventsGrid_PreviewMouseRightButtonDown"
                           MouseDoubleClick="EventsGrid_MouseDoubleClick">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Inspect Group" Click="EventsContextInspect_Click"/>
+                            <Separator/>
+                            <MenuItem Header="Copy Summary" Click="EventsContextCopySummary_Click"/>
+                            <MenuItem Header="Copy Details" Click="EventsContextCopyDetails_Click"/>
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Event" Width="260" Binding="{Binding Event}"/>
                         <DataGridTextColumn Header="Severity" Width="92" Binding="{Binding Severity}"/>

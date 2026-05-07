@@ -73,7 +73,7 @@ namespace bk::BK
 
         bool swallow_non_target_exceptions = false;
     };
-} // namespace bk::BK
+}
 using BkBlackbirdEvent = bk::BK::Event;
 using BkBlackbirdTelemetryArguments = bk::BK::TelemetryArguments;
 using BkBlackbirdTelemetryFn = bk::BK::TelemetryFn;

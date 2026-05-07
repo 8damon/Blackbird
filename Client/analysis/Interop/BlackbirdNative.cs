@@ -294,7 +294,7 @@ namespace BlackbirdInterface
         internal const uint IpcEtwTraitProcessLaunch = 0x00001000;
         internal const uint IpcEtwTraitScanImagePath = 0x00002000;
         internal const uint IpcEtwTraitScanTargetProcess = 0x00004000;
-        internal const uint IpcEtwTraitBlackbirdOwn = 0x00008000; /* BK instrumentation - suppress heuristics */
+        internal const uint IpcEtwTraitBlackbirdOwn = 0x00008000;
         internal const uint HookCallerImmediateShift = 4;
         internal const uint HookCallerImmediateMask = 0x000000F0;
         internal const uint HookCallerDeepOriginShift = 8;

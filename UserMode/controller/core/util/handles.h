@@ -1,20 +1,9 @@
 #pragma once
 
-// RAII primitives for the BlackbirdController.
-// Rules for this header:
-//   - No exceptions, no RTTI, no virtual dispatch.
-//   - All types are movable, non-copyable.
-//   - All destructors are noexcept.
-
 #include <windows.h>
 #include <memory>
 #include <utility>
 
-// ---------------------------------------------------------------------------
-// UniqueHandle
-// Owns a HANDLE.  Closes via CloseHandle on destruction.
-// NULL and INVALID_HANDLE_VALUE are both treated as "no handle".
-// ---------------------------------------------------------------------------
 struct HandleDeleter
 {
     using pointer = HANDLE;
@@ -33,11 +22,6 @@ inline UniqueHandle MakeUniqueHandle(HANDLE h) noexcept
     return UniqueHandle(h);
 }
 
-// ---------------------------------------------------------------------------
-// UniqueLocalPtr
-// Owns a pointer allocated by LocalAlloc / ConvertStringSecurityDescriptor etc.
-// Frees via LocalFree on destruction.
-// ---------------------------------------------------------------------------
 template <typename T> struct LocalDeleter
 {
     void operator()(T *p) const noexcept
@@ -50,11 +34,6 @@ template <typename T> struct LocalDeleter
 };
 template <typename T> using UniqueLocalPtr = std::unique_ptr<T, LocalDeleter<T>>;
 
-// ---------------------------------------------------------------------------
-// OwnedCriticalSection
-// Owns a CRITICAL_SECTION: initialises in the constructor, deletes in the
-// destructor.  Not movable after construction (the CS address is stable).
-// ---------------------------------------------------------------------------
 struct OwnedCriticalSection
 {
     OwnedCriticalSection() noexcept
@@ -84,11 +63,6 @@ struct OwnedCriticalSection
     CRITICAL_SECTION m_cs;
 };
 
-// ---------------------------------------------------------------------------
-// ScopedCriticalSection
-// RAII lock/unlock guard over a raw CRITICAL_SECTION*.
-// Equivalent to std::lock_guard but for CRITICAL_SECTION.
-// ---------------------------------------------------------------------------
 struct ScopedCriticalSection
 {
     explicit ScopedCriticalSection(CRITICAL_SECTION *cs) noexcept : m_cs(cs)
@@ -111,10 +85,6 @@ struct ScopedCriticalSection
     CRITICAL_SECTION *m_cs;
 };
 
-// ---------------------------------------------------------------------------
-// ScopedSRWExclusive / ScopedSRWShared
-// RAII exclusive/shared lock guards over a raw SRWLOCK*.
-// ---------------------------------------------------------------------------
 struct ScopedSRWExclusive
 {
     explicit ScopedSRWExclusive(SRWLOCK *lock) noexcept : m_lock(lock)

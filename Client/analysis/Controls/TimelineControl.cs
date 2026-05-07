@@ -24,9 +24,9 @@ namespace BlackbirdInterface
 
     public sealed class LaneInteractionEventArgs : EventArgs
     {
-        public string LaneKey { get; }     // "Execution" or "Execution/CreateProcess"
-        public bool IsArrow { get; }       // clicked the dropdown arrow region
-        public MouseButton Button { get; } // left/right click
+        public string LaneKey { get; }
+        public bool IsArrow { get; }
+        public MouseButton Button { get; }
 
         public LaneInteractionEventArgs(string laneKey, bool isArrow, MouseButton button)
         {
@@ -128,7 +128,6 @@ namespace BlackbirdInterface
         public event EventHandler<TelemetryEventSelectedEventArgs>? EventDoubleClicked;
         public event EventHandler? VerticalMetricsChanged;
 
-        // Layout knobs
         public double LeftGutterWidth { get; set; } = 170;
         public double LaneHeight { get; set; } = 22;
         public double GroupHeaderHeight { get; set; } = 22;
@@ -138,7 +137,6 @@ namespace BlackbirdInterface
         public bool IsAxisOnly { get; set; } = false;
 
         private readonly HashSet<string> _hiddenLaneKeys = new(StringComparer.OrdinalIgnoreCase);
-        // Collapsed groups. Groups are expanded by default.
         private readonly HashSet<string> _collapsedGroups = new(StringComparer.OrdinalIgnoreCase);
 
         private readonly Dictionary<string, Brush> _brushByKey = new(StringComparer.OrdinalIgnoreCase);
@@ -163,7 +161,6 @@ namespace BlackbirdInterface
             SnapsToDevicePixels = true;
             Focusable = true;
 
-            // Disable hover tooltip popup. Hover still tracks for subtle marker emphasis.
             ToolTip = null;
 
             Items.CollectionChanged += Items_CollectionChanged;
@@ -328,13 +325,11 @@ namespace BlackbirdInterface
             Focus();
             _mouse = e.GetPosition(this);
 
-            // Lane gutter hit-test first (left side)
             if (_mouse.X <= LeftGutterWidth)
             {
                 var lane = _laneRows.FirstOrDefault(r => r.Rect.Contains(_mouse));
                 if (lane != null && !string.IsNullOrWhiteSpace(lane.Key))
                 {
-                    // Group headers toggle expansion on click; no separate arrow affordance.
                     if (lane.IsGroupHeader && e.ChangedButton == MouseButton.Left && lane.HasChildren)
                     {
                         bool newExpanded = _collapsedGroups.Contains(lane.Key);
@@ -349,7 +344,6 @@ namespace BlackbirdInterface
                 }
             }
 
-            // Event hit-test: click selects
             if (e.ChangedButton == MouseButton.Left)
             {
                 foreach (var (rect, evt) in _hitRects)
@@ -396,7 +390,6 @@ namespace BlackbirdInterface
 
             if (ctrl)
             {
-                // Horizontal zoom: scale ViewDurationSeconds around the cursor position
                 double factor = e.Delta > 0 ? 0.8 : 1.25;
                 double newDuration = Math.Max(2, Math.Min(86400, ViewDurationSeconds * factor));
                 if (Math.Abs(newDuration - ViewDurationSeconds) > 0.01)
@@ -428,7 +421,6 @@ namespace BlackbirdInterface
                 return;
             }
 
-            // No vertical overflow — zoom horizontally
             {
                 double factor = e.Delta > 0 ? 0.8 : 1.25;
                 double newDuration = Math.Max(2, Math.Min(86400, ViewDurationSeconds * factor));
@@ -507,18 +499,14 @@ namespace BlackbirdInterface
             }
             UpdateVerticalMetrics(contentHeight, viewportHeight, effectiveVerticalOffset);
 
-            // Draw lane separators + labels
             DrawLaneGutter(dc, axisTop, effectiveVerticalOffset, dpi, typeface);
 
-            // Draw grid + bottom x-axis
             DrawTimeGridAndAxis(dc, viewStartUtc, viewEndUtc, pps, chartLeft, chartRight, axisTop, dpi, typeface);
 
             DrawPauseRanges(dc, viewStartUtc, viewEndUtc, pps, chartLeft, axisTop);
 
-            // Collapse dense event bursts into lane/pixel clusters before drawing.
             var eventsByLane = BuildVisibleLaneClusters(viewStartUtc, viewEndUtc, pps, chartLeft, chartRight);
 
-            // Plot events into visible lanes
             foreach (var lane in _laneRows.Where(r => !r.IsGroupHeader))
             {
                 if (_hiddenLaneKeys.Contains(lane.Key))
@@ -554,7 +542,6 @@ namespace BlackbirdInterface
                         dc.DrawGeometry(null, clusterPen, CreateDiamondGeometry(x, centerY, radius + 1));
                     }
 
-                    // Selection / hover outline
                     if (cluster.ContainsSelected)
                     {
                         var selectionFill = new SolidColorBrush(Color.FromArgb(90, 0x72, 0xD2, 0xFF));
@@ -579,10 +566,8 @@ namespace BlackbirdInterface
                 }
             }
 
-            // Repaint axis/time labels over points so timestamps always stay readable.
             DrawTimeAxisOverlay(dc, viewStartUtc, viewEndUtc, pps, chartLeft, chartRight, axisTop, dpi, typeface);
 
-            // Crosshair line + time label
             if (_hasMouse && _mouse.X >= chartLeft && _mouse.X <= chartRight && _mouse.Y <= axisTop)
             {
                 var crossPen = new Pen(UiPalette.GridStrongBrush, 1);
@@ -755,7 +740,6 @@ namespace BlackbirdInterface
         {
             _laneRows.Clear();
 
-            // Groups and subtypes currently observed
             var groups = Items.GroupBy(e => e.Group ?? "Other", StringComparer.OrdinalIgnoreCase)
                              .OrderBy(g => GroupSortRank(g.Key))
                              .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
@@ -773,7 +757,6 @@ namespace BlackbirdInterface
                 bool hasChildren = subTypes.Count > 0;
                 bool expanded = hasChildren && !_collapsedGroups.Contains(g.Key);
 
-                // Group header row
                 var header =
                     new LaneRow { Key = g.Key, Label = g.Key, IsGroupHeader = true,      HasChildren = hasChildren,
                                   Indent = 0,  Y = y,         Height = GroupHeaderHeight };
@@ -783,7 +766,6 @@ namespace BlackbirdInterface
 
                 if (!expanded)
                 {
-                    // Collapsed: show aggregate lane (same key as group)
                     var lane = new LaneRow { Key = g.Key, Label = "All", IsGroupHeader = false, HasChildren = false,
                                              Indent = 14, Y = y,         Height = LaneHeight };
                     lane.Rect = new Rect(0, y, LeftGutterWidth, lane.Height);
@@ -792,7 +774,6 @@ namespace BlackbirdInterface
                 }
                 else
                 {
-                    // Expanded: show one lane per subtype
                     foreach (var st in subTypes)
                     {
                         var laneKey = $"{g.Key}/{st}";
@@ -900,7 +881,6 @@ namespace BlackbirdInterface
             var sepPen = new Pen(UiPalette.GridBrush, 1);
             sepPen.Freeze();
 
-            // Gutter divider
             var gutterPen = new Pen(UiPalette.BorderBrush, 1);
             gutterPen.Freeze();
             dc.DrawLine(gutterPen, new Point(LeftGutterWidth, 0), new Point(LeftGutterWidth, ActualHeight));
@@ -916,7 +896,6 @@ namespace BlackbirdInterface
 
                 dc.DrawLine(sepPen, new Point(0, drawY), new Point(ActualWidth, drawY));
 
-                // Label text
                 var color = row.IsGroupHeader ? UiPalette.Text : UiPalette.MutedText;
                 var ft = new FormattedText(row.Label, CultureInfo.InvariantCulture, FlowDirection.LeftToRight, typeface,
                                            row.IsGroupHeader ? 12 : 11, new SolidColorBrush(color), dpi);
@@ -924,7 +903,6 @@ namespace BlackbirdInterface
                 double x = 10 + row.Indent;
                 dc.DrawText(ft, new Point(x, drawY + 3));
 
-                // Disabled indicator
                 if (_hiddenLaneKeys.Contains(row.Key))
                 {
                     var dim = new SolidColorBrush(Color.FromArgb(70, 0xA0, 0xA0, 0xA0));
@@ -956,7 +934,6 @@ namespace BlackbirdInterface
 
             double baseStep = seconds <= 30 ? 1 : seconds <= 120 ? 5 : seconds <= 300 ? 10 : 30;
 
-            // Keep labels readable; don't crowd timestamps.
             double minLabelSpacingPx = 70;
             double minStepFromPixels = minLabelSpacingPx / Math.Max(1, pps);
             double step = NiceTimeStep(Math.Max(baseStep, minStepFromPixels));
@@ -964,11 +941,9 @@ namespace BlackbirdInterface
             var gridPen = new Pen(UiPalette.GridBrush, 1);
             gridPen.Freeze();
 
-            // Axis bar background
             dc.DrawRectangle(UiPalette.SurfaceAltBrush, null,
                              new Rect(chartLeft, axisTop, chartRight - chartLeft, AxisHeight));
 
-            // Axis top line
             var axisPen = new Pen(UiPalette.BorderBrush, 1);
             axisPen.Freeze();
             dc.DrawLine(axisPen, new Point(chartLeft, axisTop), new Point(chartRight, axisTop));
@@ -982,7 +957,6 @@ namespace BlackbirdInterface
                 if (x < chartLeft || x > chartRight)
                     continue;
 
-                // Vertical grid
                 dc.DrawLine(gridPen, new Point(x, 0), new Point(x, axisTop));
 
                 var tickUtc = CaptureStartUtc + TimeSpan.FromSeconds(t);
@@ -1018,7 +992,6 @@ namespace BlackbirdInterface
             double minStepFromPixels = minLabelSpacingPx / Math.Max(1, pps);
             double step = NiceTimeStep(Math.Max(baseStep, minStepFromPixels));
 
-            // Axis bar background and top border.
             dc.DrawRectangle(UiPalette.SurfaceAltBrush, null,
                              new Rect(chartLeft, axisTop, chartRight - chartLeft, AxisHeight));
             var axisPen = new Pen(UiPalette.BorderBrush, 1);
@@ -1058,7 +1031,6 @@ namespace BlackbirdInterface
             if (laneKey.Contains('/'))
                 return string.Equals(ToLaneKey(e), laneKey, StringComparison.OrdinalIgnoreCase);
 
-            // Collapsed group lane should aggregate all subtypes in that group.
             return string.Equals(e.Group, laneKey, StringComparison.OrdinalIgnoreCase);
         }
     }

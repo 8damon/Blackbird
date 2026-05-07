@@ -280,7 +280,7 @@ namespace BK_NT
         LARGE_INTEGER UserTime;
         LARGE_INTEGER CreateTime;
         ULONG WaitTime;
-        ULONG Pad0; // alignment padding before pointer field
+        ULONG Pad0;
         PVOID StartAddress;
         HANDLE UniqueProcess;
         HANDLE UniqueThread;
@@ -466,7 +466,6 @@ namespace BK_NT
     static std::atomic<int32_t> g_ConcealedTidCount{0};
     static DWORD g_ConcealedTids[kMaxConcealedThreads]{};
 
-    // Cached at first call — PID never changes for the lifetime of the process.
     static HANDLE g_CurrentPid = nullptr;
 
     static HANDLE GetCurrentPidCached() noexcept
@@ -496,7 +495,6 @@ namespace BK_NT
         if (entry == nullptr || entry->NumberOfThreads == 0)
             return;
 
-        // Bounds-check: reject if the claimed thread array exceeds the buffer.
         ULONG threadArrayBytes = entry->NumberOfThreads * static_cast<ULONG>(sizeof(BkSystemThreadInformation));
         if (sizeof(SYSTEM_PROCESS_INFORMATION) + threadArrayBytes > availableBytes)
             return;
@@ -541,7 +539,7 @@ namespace BK_NT
             if (entry->UniqueProcessId == currentPid)
             {
                 FilterConcealedThreadsFromEntry(entry, len - offset);
-                break; // PID is unique — no need to keep scanning
+                break;
             }
 
             if (entry->NextEntryOffset == 0)
@@ -681,7 +679,7 @@ namespace BK_NT
     struct BkThreadBasicInformation
     {
         NTSTATUS ExitStatus;
-        ULONG Pad; // x64 alignment before pointer
+        ULONG Pad;
         PVOID TebBaseAddress;
         HANDLE UniqueProcess;
         HANDLE UniqueThread;
@@ -2015,7 +2013,7 @@ namespace BK_NT
         // it is not the caller-supplied ThreadHandle) is closed once we have
         // advanced past it.
         HANDLE cursor = ThreadHandle;
-        bool cursorOwned = false; // true when cursor is a handle we opened
+        bool cursorOwned = false;
 
         for (;;)
         {
@@ -2026,7 +2024,7 @@ namespace BK_NT
                 CloseHandle(cursor);
 
             if (!NT_SUCCESS(status))
-                return status; // STATUS_NO_MORE_ENTRIES or real error
+                return status;
 
             DWORD tid = GetThreadTid(candidate);
             if (!IsThreadConcealed(tid))
@@ -2047,7 +2045,6 @@ namespace BK_NT
                 return STATUS_SUCCESS;
             }
 
-            // Concealed — advance cursor without exposing this handle.
             cursor = candidate;
             cursorOwned = true;
         }
@@ -2804,7 +2801,7 @@ namespace BK_NT
             return reinterpret_cast<void *>(&NtGetNextThread_Hook);
         return nullptr;
     }
-} // namespace BK_NT
+}
 
 #endif
 
@@ -3036,7 +3033,7 @@ void KeRegisterConcealedThread(DWORD tid) noexcept
     for (int32_t i = 0; i < count; ++i)
     {
         if (g_ConcealedTids[i] == tid)
-            return; // already registered
+            return;
     }
     if (count < kMaxConcealedThreads)
     {
@@ -3186,7 +3183,7 @@ std::size_t KeCollectNtHookStubInfos(NtHookStubInfo *out, std::size_t capacity) 
         if (stubCode == nullptr)
             continue;
         out[count].StubBase = stubCode;
-        out[count].StubSize = 16u; /* BuildSyscallStub always allocates exactly 16 bytes */
+        out[count].StubSize = 16u;
         out[count].HookName = hook.Name;
         ++count;
     }

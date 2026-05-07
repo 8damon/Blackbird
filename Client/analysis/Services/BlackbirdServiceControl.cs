@@ -240,8 +240,6 @@ namespace BlackbirdInterface
                                        CreateNoWindow = true, RedirectStandardOutput = true,
                                        RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8,
                                        StandardErrorEncoding = Encoding.UTF8,
-                                       /* Always spawn from the system directory so a monitored process's
-                                          working directory is never inherited, and sc.exe is always found. */
                                        WorkingDirectory = Environment.SystemDirectory };
 
             /* Revert any thread-level impersonation before calling CreateProcess.

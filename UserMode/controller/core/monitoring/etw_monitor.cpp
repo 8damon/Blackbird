@@ -818,12 +818,7 @@ VOID ControllerDispatchEtwEvent(_In_ const BKIPC_ETW_EVENT *Event)
         EnterCriticalSection(&client->Lock);
         if (!useSlowPath || ControllerClientHasEtwMatchLocked(client, &enriched))
         {
-            /* Tag events whose primary address falls within an SR71-registered
-               owned range.  This lets the UI annotate them as "BK
-               Instrumentation" and suppresses downstream heuristic scoring. */
             BKIPC_ETW_EVENT toQueue = enriched;
-            /* Use the event's OriginAddress as the primary address to check against
-               owned ranges.  Hook events set OriginAddress to the caller's virtual address. */
             UINT64 primaryAddr = enriched.OriginAddress;
 
             if (ControllerIsBlackbirdOwnedAddress(client, primaryAddr) ||

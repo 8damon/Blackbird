@@ -19,7 +19,6 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
         <Border Grid.Row="0"
                 Background="{DynamicResource WinPanelBrush}"
                 BorderBrush="{DynamicResource WinBorderBrush}"
@@ -51,7 +50,6 @@
             </Grid>
         </Border>
 
-        <!-- Secondary metadata -->
         <Border Grid.Row="1"
                 Background="{DynamicResource WinPanelBrush}"
                 BorderBrush="{DynamicResource WinBorderBrush}"
@@ -172,7 +170,6 @@
             </Grid>
         </Border>
 
-        <!-- Main content -->
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="3*" MinWidth="680"/>
@@ -180,7 +177,6 @@
                 <ColumnDefinition Width="2*" MinWidth="420"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Left: User stack -->
             <Border Grid.Column="0"
                     BorderBrush="{DynamicResource WinBorderBrush}"
                     BorderThickness="1"
@@ -265,7 +261,6 @@
                           ResizeBehavior="PreviousAndNext"
                           ShowsPreview="True"/>
 
-            <!-- Right: Registers -->
             <Border Grid.Column="2"
                     BorderBrush="{DynamicResource WinBorderBrush}"
                     BorderThickness="1"
@@ -380,7 +375,6 @@
             </Border>
         </Grid>
 
-        <!-- Footer -->
         <DockPanel Grid.Row="3" Margin="0,6,0,0" LastChildFill="False">
             <TextBlock x:Name="NoteBlock"
                        DockPanel.Dock="Left"

@@ -359,7 +359,6 @@ BOOL ControllerHookDecodeSockaddr(_In_reads_bytes_(SampleSize) const UINT8 *Samp
     *FamilyOut = family;
     *PortOut = 0;
 
-    /* AF_INET: [family:2][port:2][addr:4][...] */
     if (family == 2u && SampleSize >= 8u)
     {
         UINT16 netPort;
@@ -382,7 +381,6 @@ BOOL ControllerHookDecodeSockaddr(_In_reads_bytes_(SampleSize) const UINT8 *Samp
         return TRUE;
     }
 
-    /* AF_INET6: [family:2][port:2][flowinfo:4][addr:16][...] */
     if (family == 23u && SampleSize >= 28u)
     {
         UINT16 netPort;

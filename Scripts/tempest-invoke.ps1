@@ -15,7 +15,7 @@ param(
     [switch]$EnableAntiVirtualization,
     [Alias("hide")]
     [switch]$EnableControllerHiding,
-    [string]$ControllerArgs = ""   # passed as binPath suffix if set (e.g. "--debug --verbose")
+    [string]$ControllerArgs = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -599,8 +599,6 @@ function Ensure-FirewallRulePresent {
     New-NetFirewallRule @params | Out-Null
 }
 
-# ─── Entry ────────────────────────────────────────────────────────────────────
-
 $totalStages = 7
 $activity = "Blackbird debug invoke (Tempest)"
 
@@ -610,14 +608,12 @@ Write-Host "---------------------------------" -ForegroundColor DarkMagenta
 Write-Host "  DebugFlags=1  DebugMode=1  Controller in console" -ForegroundColor DarkMagenta
 Write-Host ""
 
-# Stage 1 — tear down any prior installation
 Write-Stage -Index 1 -Total $totalStages -Activity $activity -Status "Removing previous installation"
 $removerScript = Join-Path $scriptRoot "remover.ps1"
 if (Test-Path -LiteralPath $removerScript) {
     & $removerScript -DriverName $DriverName -ControllerName $ControllerName
 }
 
-# Stage 2 — resolve Debug build artifacts (Debug first, then TEMPUS_DEBUG, then Release as last resort)
 Write-Stage -Index 2 -Total $totalStages -Activity $activity -Status "Resolving debug build artifacts"
 
 $driverSrc = Resolve-ArtifactPath `
@@ -772,7 +768,6 @@ if ($runnerSrc) {
 Write-DebugLog "SensorCore source: $sensorCoreSrc"
 Write-DebugLog "SR71 source:       $hookDllSrc"
 
-# Stage 3 — copy binaries
 Write-Stage -Index 3 -Total $totalStages -Activity $activity -Status "Stopping services and copying binaries"
 
 Invoke-Sc -Arguments @("stop", $ControllerName) -AllowedExitCodes @(0, 1060, 1062)
@@ -850,7 +845,6 @@ if ($runnerSrc) {
 Assert-PathExists -Path $sensorCoreDst -Label "Installed SensorCore"
 Assert-PathExists -Path $hookDllDst -Label "Installed SR71"
 
-# Stage 4 — altitude conflict check
 Write-Stage -Index 4 -Total $totalStages -Activity $activity -Status "Checking minifilter altitude conflicts"
 
 $unknownPreCreateConflicts = Remove-ProjectAltitudeConflicts `
@@ -862,7 +856,6 @@ if ($unknownPreCreateConflicts.Count -gt 0) {
     throw "Altitude $InstanceAltitude is already used by non-project minifilter service(s): $list. Change -InstanceAltitude or remove the conflicting filter(s)."
 }
 
-# Stage 5 — register driver service (demand, not auto — debug sessions are explicit)
 Write-Stage -Index 5 -Total $totalStages -Activity $activity -Status "Registering driver service (demand start, debug registry)"
 
 Invoke-Sc -Arguments @("stop", $DriverName) -AllowedExitCodes @(0, 1060, 1062)
@@ -879,7 +872,6 @@ New-ServiceWithRetry -ServiceName $DriverName -CreateArguments @(
 )
 Invoke-Sc -Arguments @("qc", $DriverName)
 
-# DebugFlags=1 enables kernel-side debug output paths
 Ensure-MinifilterRegistry -ServiceName $DriverName -InstanceName $InstanceName -Altitude $InstanceAltitude -InstanceFlags $InstanceFlags
 Set-DriverRuntimeDefaults -ServiceName $DriverName -EnableAntiVirtualization $EnableAntiVirtualization.IsPresent -EnableSelfHide $EnableControllerHiding.IsPresent -EnableControllerProtectedAccess $true
 
@@ -887,7 +879,6 @@ if (-not (Test-ServiceExists -ServiceName $DriverName)) {
     throw "Driver service '$DriverName' was not created."
 }
 
-# Stage 6 — start driver
 Write-Stage -Index 6 -Total $totalStages -Activity $activity -Status "Starting driver"
 
 $driverRecovered = $false
@@ -961,7 +952,6 @@ catch {
 
 Assert-ServiceRunning -ServiceName $DriverName -ExpectedStatePattern "STATE\s*:\s*\d+\s+RUNNING" -FailureLabel "Driver service failed to reach RUNNING state."
 
-# Stage 7 — firewall rules + register and start controller service
 Write-Stage -Index 7 -Total $totalStages -Activity $activity -Status "Configuring firewall and starting controller service"
 
 Ensure-FirewallRulePresent -DisplayName "Blackbird Operator UDP Discovery" -Protocol UDP -LocalPort "49371"
@@ -1008,9 +998,6 @@ Write-Host ""
 Write-Host "    Streaming OutputDebugString from controller - Ctrl+C to detach" -ForegroundColor DarkGray
 Write-Host "    To tear down: sc stop $ControllerName ; sc stop $DriverName" -ForegroundColor DarkGray
 Write-Host ""
-
-# ─── OutputDebugString listener (DBWIN shared memory protocol) ────────────────
-# Same mechanism as DebugView. Layout: [DWORD pid][char[4092] msg, null-term, ANSI]
 
 Add-Type -TypeDefinition @'
 using System;

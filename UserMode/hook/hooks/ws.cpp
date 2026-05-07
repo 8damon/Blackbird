@@ -56,15 +56,12 @@ namespace
     static bool g_HooksInstalled = false;
     static __declspec(thread) bool g_InHook = false;
 
-    /* Rotating ring that maps socket handles to their last connected remote endpoint.
-       Populated at connect time; looked up by send/recv hooks to embed endpoint context
-       without calling getpeername (extra syscall) on every I/O operation. */
     struct SocketEndpointEntry
     {
         SOCKET socket;
-        UINT16 family;  /* AF_INET=2, AF_INET6=23 */
-        UINT16 port;    /* host byte order */
-        UINT32 addrNbo; /* IPv4 only: network byte order */
+        UINT16 family;
+        UINT16 port;
+        UINT32 addrNbo;
     };
 
     static constexpr std::size_t kEndpointCacheSlots = 64;
@@ -692,7 +689,7 @@ namespace
         CloseHandle(snapshot);
         return anyPatched;
     }
-} // namespace
+}
 
 bool KeSetWinsockHook(WinsockHookCallback callback) noexcept
 {
@@ -801,7 +798,7 @@ bool KeInstallWinsockInlineHooks() noexcept
     static volatile LONG s_inlineInstalled = 0;
     if (InterlockedCompareExchange(&s_inlineInstalled, 1, 0) != 0)
     {
-        return true; /* already done */
+        return true;
     }
 
     if (!g_HooksInstalled || g_ActiveCallback == nullptr)
@@ -839,7 +836,6 @@ bool KeInstallWinsockInlineHooks() noexcept
 
         auto *target = static_cast<std::uint8_t *>(*e.OrigFn);
 
-        /* Skip if JMP is already present at the target */
         if (target[0] == 0xE9u)
         {
             continue;

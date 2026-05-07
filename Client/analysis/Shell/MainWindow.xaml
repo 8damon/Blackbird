@@ -369,7 +369,6 @@
                             <MenuItem Header="Connect" Click="Connect_Click"/>
                             <MenuItem Header="Launch" Click="Launch_Click"/>
                             <Separator/>
-                            <MenuItem Header="Prepare VM Enrollment..." Click="RegisterVm_Click"/>
                             <MenuItem Header="Preflight" Click="Preflight_Click"/>
                             <MenuItem Header="Driver Start" Click="DriverStart_Click"/>
                             <MenuItem Header="Driver Stop" Click="DriverStop_Click"/>
@@ -687,13 +686,6 @@
                                     </StackPanel>
                                 </ScrollViewer>
                             </TabItem>
-                            <TabItem Header="Server">
-                                <WrapPanel Margin="8,6,8,6" VerticalAlignment="Center">
-                                    <Button Style="{DynamicResource CommandBarButtonStyle}"
-                                            Content="Prepare VM Enrollment"
-                                            Click="RegisterVm_Click"/>
-                                </WrapPanel>
-                            </TabItem>
                         </TabControl>
                         </Grid>
                     </Border>
@@ -789,7 +781,6 @@
             </Grid>
         </Border>
 
-        <!-- Process selector bar: shows all monitored PIDs in the active session; click to filter panes -->
         <Border Grid.Row="2"
                 x:Name="ProcessSelectorBarBorder"
                 Background="{DynamicResource CommandBarBackgroundBrush}"
@@ -803,7 +794,6 @@
                             Orientation="Horizontal"
                             VerticalAlignment="Center"
                             Margin="4,0">
-                    <!-- chips injected from code-behind -->
                 </StackPanel>
             </ScrollViewer>
         </Border>
@@ -1093,7 +1083,6 @@
                                             <RowDefinition Height="*"/>
                                         </Grid.RowDefinitions>
 
-                                        <!-- Compact section header with filter toggle -->
                                         <Border Grid.Row="0"
                                                 BorderBrush="{DynamicResource WinSubtleBorderBrush}"
                                                 BorderThickness="0,0,0,1"
@@ -1114,7 +1103,6 @@
                                             </DockPanel>
                                         </Border>
 
-                                        <!-- Collapsible filter panel -->
                                         <Border Grid.Row="1"
                                                 BorderBrush="{DynamicResource WinSubtleBorderBrush}"
                                                 BorderThickness="0,0,0,1"
@@ -1956,7 +1944,6 @@
             </Grid>
         </Grid>
 
-        <!-- Target switch toast: flashes briefly when switching between sessions -->
         <Border x:Name="SwitchToastBorder"
                 Grid.Row="0"
                 Grid.RowSpan="4"

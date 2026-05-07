@@ -26,6 +26,12 @@ $privateOrExternalPaths = @(
     'Kernel/core/crashdump.c',
     'Kernel/monitors/bugcheck_monitor.c',
     'Kernel/monitors/bugcheck_monitor.h',
+    'Client/analysis/Services/OperatorIdentityService.cs',
+    'Client/analysis/Services/VmRegistrationPackageService.cs',
+    'Client/analysis/Windows/VmRegistrationWindow.xaml',
+    'Client/analysis/Windows/VmRegistrationWindow.xaml.cs',
+    'Scripts/Register-BlackbirdVm.ps1',
+    'UserMode/controller/core/runtime/ns/ns_launcher.cpp',
     'UserMode/netsvc/',
     'Usermode/netsvc/',
     'VCXProj/BlackbirdNetSvc.vcxproj',
@@ -354,11 +360,12 @@ $groups = @(
         )
     },
     @{
-        Message = 'controller/netsvc: make network service launcher optional'
+        Message = 'controller/runtime: add optional node launcher stub'
         Paths = @(
             'UserMode/controller/core/runtime/blackbird_controller_node_runtime.cpp',
             'UserMode/controller/core/runtime/node_runtime.cpp',
-            'UserMode/controller/core/runtime/ns'
+            'UserMode/controller/core/runtime/ns/ns_launcher.h',
+            'UserMode/controller/core/runtime/ns/ns_launcher_public.cpp'
         )
     },
     @{
@@ -566,11 +573,9 @@ $groups = @(
         )
     },
     @{
-        Message = 'ui/services: add component and operator identity helpers'
+        Message = 'ui/services: add component identity helper'
         Paths = @(
-            'Client/analysis/Services/ComponentIdentityService.cs',
-            'Client/analysis/Services/OperatorIdentityService.cs',
-            'Client/analysis/Services/VmRegistrationPackageService.cs'
+            'Client/analysis/Services/ComponentIdentityService.cs'
         )
     },
     @{
@@ -738,7 +743,7 @@ $groups = @(
         )
     },
     @{
-        Message = 'ui/windows: update launch and enrollment flows'
+        Message = 'ui/windows: update launch flow'
         Paths = @(
             'Client/analysis/Windows/FaultNotificationWindow.cs',
             'Client/analysis/Windows/LaunchParametersWindow.xaml',
@@ -748,9 +753,7 @@ $groups = @(
             'Client/analysis/Windows/ProcessPickerWindow.xaml',
             'Client/analysis/Windows/ProcessPickerWindow.xaml.cs',
             'Client/analysis/Windows/StartupWelcomeWindow.xaml',
-            'Client/analysis/Windows/StartupWelcomeWindow.xaml.cs',
-            'Client/analysis/Windows/VmRegistrationWindow.xaml',
-            'Client/analysis/Windows/VmRegistrationWindow.xaml.cs'
+            'Client/analysis/Windows/StartupWelcomeWindow.xaml.cs'
         )
     },
     @{
@@ -783,10 +786,6 @@ $groups = @(
     @{
         Message = 'build/scripts: add external rule bundle normalizer'
         Paths = @('Scripts/Build-YaraBundle.ps1')
-    },
-    @{
-        Message = 'build/scripts: add VM registration workflow'
-        Paths = @('Scripts/Register-BlackbirdVm.ps1')
     },
     @{
         Message = 'build/scripts: update installer optional components'

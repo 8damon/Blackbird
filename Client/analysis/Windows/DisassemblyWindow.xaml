@@ -63,7 +63,6 @@
             <RowDefinition Height="28"/>
         </Grid.RowDefinitions>
 
-        <!-- Title bar -->
         <Border Grid.Row="0"
                 Background="{DynamicResource WinHeaderBrush}"
                 BorderBrush="{DynamicResource WinSubtleBorderBrush}"
@@ -97,7 +96,6 @@
             </DockPanel>
         </Border>
 
-        <!-- Instruction grid -->
         <DataGrid x:Name="InsnGrid"
                   Grid.Row="1"
                   AutoGenerateColumns="False"
@@ -120,7 +118,6 @@
                   BorderBrush="{DynamicResource WinBorderBrush}"
                   FontFamily="{DynamicResource AppMonoFontFamily}"
                   FontSize="12"
-                  KeyDown="InsnGrid_KeyDown"
                   PreviewKeyDown="InsnGrid_PreviewKeyDown">
             <DataGrid.ContextMenu>
                 <ContextMenu>
@@ -138,12 +135,10 @@
                 </ContextMenu>
             </DataGrid.ContextMenu>
             <DataGrid.Columns>
-                <!-- Address: label+RVA -->
                 <DataGridTextColumn Header="Address"
                                     Binding="{Binding AddressText}"
                                     Width="200"/>
 
-                <!-- Bytes: raw hex -->
                 <DataGridTextColumn Header="Bytes"
                                     Binding="{Binding BytesText}"
                                     Width="140">
@@ -154,7 +149,6 @@
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
 
-                <!-- Mnemonic: colored by instruction class -->
                 <DataGridTemplateColumn Header="Mnemonic" Width="84">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -166,7 +160,6 @@
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
 
-                <!-- Operands: token-level syntax coloring via attached Inlines -->
                 <DataGridTemplateColumn Header="Operands" Width="280">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -177,7 +170,6 @@
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
 
-                <!-- Resolved: call/jump target with coloring -->
                 <DataGridTemplateColumn Header="Resolved" Width="*">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -190,7 +182,6 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <!-- Status bar -->
         <Border Grid.Row="2"
                 Background="{DynamicResource WinHeaderBrush}"
                 BorderBrush="{DynamicResource WinSubtleBorderBrush}"

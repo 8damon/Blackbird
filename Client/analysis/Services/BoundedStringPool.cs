@@ -34,8 +34,6 @@ namespace BlackbirdInterface
 
             if (_values.Count >= _maxEntries)
             {
-                // Roll over: discard all interned strings and start fresh rather than
-                // silently bypassing the pool for the rest of the session.
                 _values.Clear();
             }
 

@@ -419,7 +419,7 @@ namespace
         LeaveHandler();
         return EXCEPTION_CONTINUE_SEARCH;
     }
-} // namespace
+}
 
 PVOID BkRegisterVectoredExceptionHandler(BkBlackbirdTelemetryArguments *args) noexcept
 {

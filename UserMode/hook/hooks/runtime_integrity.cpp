@@ -806,4 +806,4 @@ namespace BK_RUNTIME_INTERNAL
 
         PollAmsiEtwPatchWatchdog(now);
     }
-} // namespace BK_RUNTIME_INTERNAL
+}

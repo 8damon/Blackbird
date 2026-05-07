@@ -246,9 +246,6 @@ namespace BK_RUNTIME_INTERNAL
         (void)MaybeInitializeWinsockHookController();
         PublishCurrentHookReadyMaskBestEffort();
 
-        /* Register all SR71-owned pages with the controller so they are
-           excluded from heuristics and surfaced as "BK Instrumentation"
-           in the UI instead of being flagged as suspicious RWX/syscall stubs. */
         RegisterSr71OwnedRanges();
 
         g_RuntimeInitialized.store(true, std::memory_order_release);
@@ -412,12 +409,6 @@ namespace BK_RUNTIME_INTERNAL
             }
         }
     }
-    /* ── SR71 ownership registration ──────────────────────────────────────
-     * Sends every BK-allocated page to the controller exactly once so
-     * the controller can suppress heuristics and mark them in the UI as
-     * "BK Instrumentation" instead of flagging them as suspicious
-     * RWX/direct-syscall regions.
-     * ─────────────────────────────────────────────────────────────────── */
     static volatile LONG g_InstrumentationRangesRegistered = 0;
 
     static bool TryGetImageSize(void *moduleBase, std::uint64_t &imageSize) noexcept
@@ -580,7 +571,7 @@ namespace BK_RUNTIME_INTERNAL
     void RegisterSr71OwnedRanges() noexcept
     {
         if (InterlockedCompareExchange(&g_InstrumentationRangesRegistered, 1, 0) != 0)
-            return; /* idempotent — only register once even if called multiple times */
+            return;
 
         MEMORY_BASIC_INFORMATION selfMbi{};
         void *sr71Base = nullptr;
@@ -599,8 +590,6 @@ namespace BK_RUNTIME_INTERNAL
             (void)PublishSr71InstrumentationRange(sr71Base, sr71ImageSize, 0u, "SR71 Instrumentation");
         }
 
-        /* 1. NT-hook syscall stubs — one 16-byte PAGE_EXECUTE_READWRITE allocation
-              per hooked NT API, created by BuildSyscallStub() inside nt.cpp. */
         constexpr std::size_t kMaxStubs = 64;
         NtHookStubInfo stubs[kMaxStubs]{};
         std::size_t stubCount = KeCollectNtHookStubInfos(stubs, kMaxStubs);
@@ -610,7 +599,6 @@ namespace BK_RUNTIME_INTERNAL
             if (stubs[i].StubBase == nullptr || stubs[i].StubSize == 0)
                 continue;
 
-            /* Build a tag like "BK Instrument.NtHook.NtCreateThreadEx" */
             char tag[BK_MAX_INSTRUMENTATION_TAG]{};
             const char *prefix = "BK Instrument.NtHook.";
             std::size_t p = 0;
@@ -637,9 +625,6 @@ namespace BK_RUNTIME_INTERNAL
 
         RegisterSr71HookPatchOverlays();
 
-        /* 2. Launch-gate pages — RWX guard pages used to trap and redirect the
-              target thread's initial IP before user code runs.
-              g_LaunchGatePages is defined in runtime_launch_gate.cpp. */
         for (std::size_t i = 0; i < g_LaunchGatePageCount; ++i)
         {
             const LaunchGatePage &page = g_LaunchGatePages[i];
@@ -657,4 +642,4 @@ namespace BK_RUNTIME_INTERNAL
             }
         }
     }
-} // namespace BK_RUNTIME_INTERNAL
+}

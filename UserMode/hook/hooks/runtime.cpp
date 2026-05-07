@@ -25,8 +25,6 @@
 
 using namespace BK_RUNTIME_INTERNAL;
 
-/* SR71 re-entrancy depth — thread-local definition (declared extern in runtime_private.h).
-   Hook callbacks check BkSr71IsInternalCall() and bail immediately when > 0. */
 __declspec(thread) int g_Sr71CallDepth = 0;
 
 void BkDbgLog(_In_z_ _Printf_format_string_ PCSTR format, ...) noexcept
@@ -192,7 +190,7 @@ namespace BK_RUNTIME_INTERNAL
             value ^= IndirectHandleCookie();
             return reinterpret_cast<void *>(value);
         }
-    } // namespace
+    }
 
     WinsockHookController g_WinsockController;
     NtHookController g_NtHookController;
@@ -710,7 +708,7 @@ namespace BK_RUNTIME_INTERNAL
         g_AmsiFirstPoll = true;
         g_EtwFirstPoll = true;
     }
-} // namespace BK_RUNTIME_INTERNAL
+}
 
 namespace
 {
@@ -830,7 +828,7 @@ namespace
         BkDbgLog("BkRuntimePrimeVectoredExceptionHandler: result=%u", ok ? 1u : 0u);
         return ok;
     }
-} // namespace
+}
 
 void BkRuntimePrimeHooks() noexcept
 {

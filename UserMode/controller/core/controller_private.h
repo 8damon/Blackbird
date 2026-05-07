@@ -19,11 +19,6 @@
 #include "..\\..\\..\\abi\\blackbird_ipc.h"
 #include "heuristics\\heuristics.h"
 
-// ---------------------------------------------------------------------------
-// Compile-time constants
-// Using inline constexpr instead of #define gives type safety and scoping.
-// String literals and computed masks that must stay as macros are kept below.
-// ---------------------------------------------------------------------------
 inline constexpr DWORD BK_CONTROLLER_MAX_CLIENTS = 256u;
 inline constexpr DWORD BK_CONTROLLER_INVALID_SLOT = 0xFFFFFFFFu;
 inline constexpr DWORD BK_CONTROLLER_CLIENT_MASK_DWORDS = (BK_CONTROLLER_MAX_CLIENTS + 31u) / 32u;
@@ -237,10 +232,7 @@ inline UINT32 ControllerHeurFlagsFromDetectionTraits(_In_ UINT32 traits)
     return heurFlags;
 }
 
-// String literals and computed masks remain as macros (constexpr won't help here).
 #define BK_CONTROLLER_SERVICE_NAMEW L"BlackbirdController"
-#define BK_NET_SERVICE_NAMEW L"BlackbirdNetSvc"
-#define BK_NET_SERVICE_IMAGE_NAMEW L"BlackbirdNetSvc.exe"
 #define BK_SENSOR_CORE_IMAGE_NAMEW L"J58.dll"
 #define BK_HOOK_IMAGE_NAMEW L"SR71.dll"
 #define BK_DRIVER_IMAGE_NAMEW L"Blackbird.sys"
@@ -255,18 +247,12 @@ inline UINT32 ControllerHeurFlagsFromDetectionTraits(_In_ UINT32 traits)
     (BK_STREAM_HANDLE | BK_STREAM_MEMORY | BK_STREAM_THREAD | BK_STREAM_FILESYSTEM | BK_STREAM_REGISTRY | \
      BK_STREAM_TIMING | BK_STREAM_ENTERPRISE)
 
-// ---------------------------------------------------------------------------
-// Client role — scoped enum replaces the C typedef enum.
-// The underlying type matches DWORD so it is safe to store in DWORD fields
-// without a cast, while still preventing implicit integer/enum conflation.
-// ---------------------------------------------------------------------------
 enum class BkctlrClientRole : DWORD
 {
     Unknown = 0,
     Control = 1,
     Hook = 2
 };
-// Compatibility aliases so the old enumerator names keep working at call sites.
 inline constexpr DWORD BkctlrClientRoleUnknown = static_cast<DWORD>(BkctlrClientRole::Unknown);
 inline constexpr DWORD BkctlrClientRoleControl = static_cast<DWORD>(BkctlrClientRole::Control);
 inline constexpr DWORD BkctlrClientRoleHook = static_cast<DWORD>(BkctlrClientRole::Hook);
@@ -281,15 +267,13 @@ typedef struct _BK_CONTROLLER_SUBSCRIPTION
     ULONGLONG LastSeenTick;
 } BK_CONTROLLER_SUBSCRIPTION, *PBK_CONTROLLER_SUBSCRIPTION;
 
-/* A memory range owned by the injected SR71.dll — excluded from heuristics
-   and annotated in the UI as BK instrumentation. */
 #define BK_CONTROLLER_MAX_OWNED_RANGES 128u
 
 typedef struct _BK_CONTROLLER_OWNED_RANGE
 {
     UINT64 BaseAddress;
     UINT64 RegionSize;
-    UINT32 Flags; /* BK_INSTRUMENTATION_FLAG_* */
+    UINT32 Flags;
     CHAR Tag[BK_MAX_INSTRUMENTATION_TAG];
 } BK_CONTROLLER_OWNED_RANGE, *PBK_CONTROLLER_OWNED_RANGE;
 
@@ -321,11 +305,8 @@ typedef struct _BK_CONTROLLER_CLIENT
     DWORD QueueDepth;
     DWORD DroppedEvents;
     HANDLE IoctlQueueDataEvent;
-    /* Pre-allocated IOCTL node slab: eliminates calloc/free in the hot enqueue path.
-     * IoctlNodeSlab owns the allocation; IoctlNodeFreeHead is the free-list head. */
     PBK_CONTROLLER_EVENT_NODE IoctlNodeSlab;
     PBK_CONTROLLER_EVENT_NODE IoctlNodeFreeHead;
-    /* Pre-allocated ETW node slab: same pattern as the IOCTL slab. */
     PBK_CONTROLLER_ETW_EVENT_NODE EtwNodeSlab;
     PBK_CONTROLLER_ETW_EVENT_NODE EtwNodeFreeHead;
     PBK_CONTROLLER_ETW_EVENT_NODE EtwQueueHead;
@@ -359,10 +340,9 @@ typedef struct _BK_CONTROLLER_CLIENT
     volatile LONG Detached;
     HANDLE DispatchIdleEvent;
     volatile LONG WinsockInlineUpgradePending;
-    /* SR71-registered owned ranges — excluded from heuristics, annotated in UI */
     DWORD OwnedRangeCount;
     BK_CONTROLLER_OWNED_RANGE
-    OwnedRanges[BK_CONTROLLER_MAX_OWNED_RANGES]; /* set to 1 when IMAGE_TAMPER triggers inline hook upgrade */
+    OwnedRanges[BK_CONTROLLER_MAX_OWNED_RANGES];
 } BK_CONTROLLER_CLIENT, *PBK_CONTROLLER_CLIENT;
 
 inline BOOL ControllerIsBlackbirdOwnedAddress(_In_ const BK_CONTROLLER_CLIENT *Client, _In_ UINT64 Address)
@@ -476,8 +456,6 @@ extern DWORD g_PidIndexCount;
 extern SRWLOCK g_HollowLock;
 extern BK_CONTROLLER_HOLLOW_ENTRY g_HollowEntries[BK_CONTROLLER_HOLLOW_MAX_ENTRIES];
 
-// Log path written to: %ProgramData%\Blackbird\Node\logs\controller.log
-// Rotated to controller.log.1 when file exceeds 4 MB.
 VOID ControllerLogInit(VOID);
 VOID ControllerLogClose(VOID);
 VOID ControllerLog(_In_z_ _Printf_format_string_ PCSTR Format, ...);
@@ -547,12 +525,10 @@ VOID ControllerDetachClient(_Inout_ BK_CONTROLLER_CLIENT *Client);
 VOID ControllerTryMarkProtectedReady(_In_ HANDLE DriverHandle, _In_ BOOL LogFailure);
 DWORD WINAPI ControllerClientThreadProc(_In_ LPVOID Context);
 
-// ---------------------------------------------------------------------------
 // ABI safety assertions
 // Structs that cross the C/C++ or kernel/usermode boundary must remain
 // trivially copyable POD so that the compiler cannot silently insert padding
 // or vtable pointers.
-// ---------------------------------------------------------------------------
 static_assert(std::is_trivially_copyable_v<BK_CONTROLLER_SUBSCRIPTION>,
               "BK_CONTROLLER_SUBSCRIPTION must remain trivially copyable");
 static_assert(std::is_trivially_copyable_v<BK_CONTROLLER_CLIENT>,
@@ -562,9 +538,7 @@ static_assert(std::is_trivially_copyable_v<BK_CONTROLLER_HOLLOW_ENTRY>,
 static_assert(std::is_trivially_copyable_v<BK_CONTROLLER_PID_INDEX_ENTRY>,
               "BK_CONTROLLER_PID_INDEX_ENTRY must remain trivially copyable");
 
-// ---------------------------------------------------------------------------
 // Service entry points — must keep C linkage to match SCM expectations.
-// ---------------------------------------------------------------------------
 extern "C"
 {
     VOID WINAPI ServiceMain(_In_ DWORD argc, _In_ LPWSTR *argv);

@@ -89,9 +89,9 @@
     <ClCompile Include="..\UserMode\controller\core\runtime\runtime.cpp">
       <Filter>Controller Core\Runtime</Filter>
     </ClCompile>
-    <ClCompile Include="..\UserMode\controller\core\runtime\ns\ns_launcher.cpp">
-      <Filter>Controller Core\Runtime</Filter>
-    </ClCompile>
+      <ClCompile Include="..\UserMode\controller\core\runtime\ns\ns_launcher_public.cpp">
+        <Filter>Controller Core\Runtime</Filter>
+      </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\ABI\blackbird_ipc.h">

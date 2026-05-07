@@ -17,7 +17,6 @@ namespace BlackbirdInterface
         public string Name { get; }
         public Brush AccentBrush { get; }
 
-        // Tiny preview values (normalized for sparkline)
         public ObservableCollection<double> PreviewValues { get; } = new();
 
         public bool IsEnabled
@@ -83,7 +82,6 @@ namespace BlackbirdInterface
 
         public void PushPreviewValue(double v)
         {
-            // Keep a small rolling window
             const int max = 60;
             PreviewValues.Add(v);
             while (PreviewValues.Count > max)

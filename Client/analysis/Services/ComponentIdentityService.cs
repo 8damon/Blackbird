@@ -50,19 +50,12 @@ namespace BlackbirdInterface
                     "DllHost",
                     "DLL invocation and instrumentation host used when analyzing DLLs instead of launching EXEs directly.",
                     ResolveDllHostPath(baseDir, pf)),
-                BuildEntry(
-                    "NetSvc",
-                    "Network communications layer for discovery, status, preview, and secure remote command transport.",
-                    ResolveServiceBinaryPath("BlackbirdNetSvc",
-                                             System.IO.Path.Combine(pf, "Blackbird", "BlackbirdNetSvc.exe"))),
-                BuildEntry("PreviewHost", "As-invoker active-session screenshot helper used by NetSvc preview capture.",
-                           System.IO.Path.Combine(pf, "Blackbird", "BlackbirdPreviewHost.exe")),
                 BuildEntry("BKDC", "Disassembly helper used by the analyst interface.", ResolveBkdcPath(baseDir, pf)),
                 BuildEntry("Driver", "Kernel driver and policy enforcement layer.",
                            ResolveServiceBinaryPath("BK", System.IO.Path.Combine(sys32Drivers, "Blackbird.sys"))),
                 BuildEntry(
                     "Controller",
-                    "Service broker and communication relay between interface, SR71, NetSvc, ETW, and the driver.",
+                    "Service broker and communication relay between interface, SR71, ETW, and the driver.",
                     ResolveServiceBinaryPath("BlackbirdController",
                                              System.IO.Path.Combine(pf, "Blackbird", "BlackbirdController.exe")))
             };
@@ -139,7 +132,6 @@ namespace BlackbirdInterface
                 {
                     imagePath = imagePath.Trim();
 
-                    // Strip args from quoted paths:  "C:\foo\bar.exe" -flags
                     if (imagePath.StartsWith('"'))
                     {
                         int end = imagePath.IndexOf('"', 1);
@@ -147,7 +139,6 @@ namespace BlackbirdInterface
                             imagePath = imagePath[1..end];
                     }
 
-                    // Expand kernel path prefixes
                     string winDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
                     imagePath = imagePath.Replace(@"\SystemRoot", winDir, StringComparison.OrdinalIgnoreCase)
                                     .Replace("%SystemRoot%", winDir, StringComparison.OrdinalIgnoreCase);

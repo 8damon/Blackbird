@@ -72,7 +72,7 @@ namespace BK::DllHost
             }
             return false;
         }
-    } // namespace
+    }
 
     void PrintUsage() noexcept
     {
@@ -176,4 +176,4 @@ namespace BK::DllHost
 
         return !options.DllPath.empty();
     }
-} // namespace BK::DllHost
+}

@@ -945,7 +945,7 @@ namespace
                            static_cast<std::uint64_t>(ok));
         return ok;
     }
-} // namespace
+}
 
 bool KeSetModuleHook(ModuleHookCallback callback) noexcept
 {

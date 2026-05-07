@@ -26,7 +26,6 @@ namespace BlackbirdInterface
             uint flags = newArmed ? 0u : BlackbirdNative.RuntimeFlagNtApiHooksDisarmed;
             uint mask = BlackbirdNative.RuntimeFlagNtApiHooksDisarmed;
 
-            // Disarming hooks forces anti-virtualization off
             if (!newArmed)
             {
                 flags |= BlackbirdNative.RuntimeFlagQpcTimingDisabled;

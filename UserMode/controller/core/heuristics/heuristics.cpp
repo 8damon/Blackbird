@@ -52,33 +52,25 @@ typedef struct _BK_CONTROLLER_PID_LEDGER
     ULONGLONG LastShellcodeTick;
     ULONGLONG LastBeaconTick;
 
-    /* LOTL low-and-slow pressure scoring */
     INT32 LotlScore;
     ULONGLONG LastLotlDecayTick;
     ULONGLONG LastLotlLowEmitTick;
     ULONGLONG LastLotlHighEmitTick;
 
-    /* DNS forward cache: maps recent GetAddrInfoW hostnames for connect-event correlation */
     BK_DNS_CACHE_ENTRY DnsCache[HEUR_DNS_CACHE_SLOTS];
     UINT32 DnsCacheHead;
 
-    /* DNS tunneling counters (rolling 60s window) */
     UINT32 DnsCallCount60s;
     ULONGLONG DnsWindowStartTick;
     UINT32 DnsMaxHostnameLen;
     ULONGLONG LastDnsTunnelEmitTick;
 
-    /* Suspicious port detection cooldown */
     ULONGLONG LastSuspPortEmitTick;
 } BK_CONTROLLER_PID_LEDGER;
 
 static SRWLOCK g_HeurLock;
 static BK_CONTROLLER_PID_LEDGER g_Ledger[HEUR_LEDGER_SLOTS];
 static volatile LONG g_HeurInitialized = 0;
-
-/* ============================================================
- * Injection chain ring
- * ============================================================ */
 
 #define CHAIN_RING_SLOTS 32u
 #define CHAIN_WINDOW_MS 10000u
@@ -363,7 +355,6 @@ VOID ControllerHeuristicsObserveEvent(_In_ DWORD Pid, _In_ UINT32 Severity, _In_
     memoryStageCount =
         HeurCountEventsByFlag(ledger, now, BK_HEUR_FLAG_ALLOC_RW | BK_HEUR_FLAG_WRITE_VM | BK_HEUR_FLAG_PROTECT_RX);
 
-    /* LOTL pressure: apply time decay then accumulate score contribution */
     {
         ULONGLONG elapsed = (ledger->LastLotlDecayTick != 0) ? (now - ledger->LastLotlDecayTick) : 0u;
         INT32 decay = (INT32)(elapsed / 30000u);
@@ -419,7 +410,6 @@ VOID ControllerHeuristicsObserveEvent(_In_ DWORD Pid, _In_ UINT32 Severity, _In_
         ledger->LastBeaconTick = now;
     }
 
-    /* LOTL cooldown — emit at most once per 30s per threshold */
     if (lotlScore >= (INT32)BK_HEUR_LOTL_HIGH_SCORE && lolbinCount >= 3 && (detectionCount >= 2 || networkCount >= 3) &&
         (now - lastLotlHigh) >= 30000u)
     {
@@ -499,10 +489,6 @@ VOID ControllerHeuristicsObserveEvent(_In_ DWORD Pid, _In_ UINT32 Severity, _In_
         HeurEmitDetection(Pid, 5u, "LOTL_LOW_AND_SLOW_SUSPECT", reason);
     }
 }
-
-/* ============================================================
- * Injection chain correlation
- * ============================================================ */
 
 static UINT32 ChainCountBits(_In_ UINT32 Mask)
 {
@@ -644,10 +630,6 @@ VOID ControllerInjectionChainObserve(_In_ DWORD CallerPid, _In_ DWORD TargetPid,
     }
 }
 
-/* ============================================================
- * DNS correlation helpers
- * ============================================================ */
-
 static BOOL HeurIsSuspiciousPort(_In_ UINT16 Port)
 {
     static const UINT16 kSuspPorts[] = {31337u, 4444u, 1234u, 8888u, 1337u, 9999u, 6666u,
@@ -670,7 +652,6 @@ VOID ControllerHeuristicsObserveDns(_In_ DWORD Pid, _In_z_ PCSTR Hostname)
     UINT32 slot;
     UINT32 nameLen;
     BOOL emitTunnel = FALSE;
-    ULONGLONG lastTunnel;
 
     if (InterlockedCompareExchange(&g_HeurInitialized, 0, 0) == 0 || Pid == 0 || Hostname == NULL ||
         Hostname[0] == '\0')
@@ -695,13 +676,11 @@ VOID ControllerHeuristicsObserveDns(_In_ DWORD Pid, _In_z_ PCSTR Hostname)
         return;
     }
 
-    /* Store hostname in the circular DNS forward cache */
     slot = ledger->DnsCacheHead % HEUR_DNS_CACHE_SLOTS;
     (void)StringCchCopyA(ledger->DnsCache[slot].Hostname, RTL_NUMBER_OF(ledger->DnsCache[slot].Hostname), Hostname);
     ledger->DnsCache[slot].Tick = now;
     ledger->DnsCacheHead = (ledger->DnsCacheHead + 1) % HEUR_DNS_CACHE_SLOTS;
 
-    /* Rolling 60-second DNS call counter */
     if ((now - ledger->DnsWindowStartTick) >= HEUR_WINDOW_MS)
     {
         ledger->DnsCallCount60s = 0;
@@ -714,25 +693,17 @@ VOID ControllerHeuristicsObserveDns(_In_ DWORD Pid, _In_z_ PCSTR Hostname)
         ledger->DnsMaxHostnameLen = nameLen;
     }
 
-    /* Check DNS tunneling thresholds */
     if ((ledger->DnsCallCount60s >= BK_HEUR_DNS_CALL_TUNNEL_THRESHOLD ||
          ledger->DnsMaxHostnameLen >= BK_HEUR_DNS_NAME_TUNNEL_LENGTH) &&
         (now - ledger->LastDnsTunnelEmitTick) >= HEUR_COOLDOWN_DNS_TUNNEL_MS)
     {
         ledger->LastDnsTunnelEmitTick = now;
-        lastTunnel = ledger->LastDnsTunnelEmitTick;
         emitTunnel = TRUE;
-    }
-    else
-    {
-        lastTunnel = ledger->LastDnsTunnelEmitTick;
     }
 
     HeurRecordEvent(ledger, now, 1u, BK_HEUR_FLAG_DNS_QUERY);
 
     ReleaseSRWLockExclusive(&g_HeurLock);
-
-    (void)lastTunnel;
 
     if (emitTunnel)
     {
@@ -774,10 +745,7 @@ VOID ControllerHeuristicsLookupDns(_In_ DWORD Pid, _In_z_ PCSTR IpStr, _Out_writ
         return;
     }
 
-    /* Scan DNS cache for any hostname resolved within the correlation window.
-       We cannot know which hostname resolved to this IP without post-call hooking,
-       so we correlate by time: if a DNS resolution happened just before this connect,
-       that hostname is almost certainly the one that resolved to this IP. */
+    /* Post-call DNS results are unavailable here; use the recent resolution window as the correlation source. */
     for (i = 0; i < HEUR_DNS_CACHE_SLOTS; ++i)
     {
         if (ledger->DnsCache[i].Hostname[0] != '\0' && ledger->DnsCache[i].Tick != 0 &&
@@ -796,7 +764,6 @@ VOID ControllerHeuristicsObserveDirectIpConnect(_In_ DWORD Pid, _In_z_ PCSTR IpS
     BK_CONTROLLER_PID_LEDGER *ledger;
     ULONGLONG now;
     BOOL emitSuspPort = FALSE;
-    ULONGLONG lastSuspPort = 0;
 
     if (InterlockedCompareExchange(&g_HeurInitialized, 0, 0) == 0 || Pid == 0)
     {
@@ -817,19 +784,12 @@ VOID ControllerHeuristicsObserveDirectIpConnect(_In_ DWORD Pid, _In_z_ PCSTR IpS
         if (HeurIsSuspiciousPort(Port) && (now - ledger->LastSuspPortEmitTick) >= HEUR_COOLDOWN_SUSP_PORT_MS)
         {
             ledger->LastSuspPortEmitTick = now;
-            lastSuspPort = now;
             emitSuspPort = TRUE;
             HeurRecordEvent(ledger, now, 4u, BK_HEUR_FLAG_SUSP_PORT | BK_HEUR_FLAG_NETWORK);
-        }
-        else
-        {
-            lastSuspPort = ledger->LastSuspPortEmitTick;
         }
     }
 
     ReleaseSRWLockExclusive(&g_HeurLock);
-
-    (void)lastSuspPort;
 
     if (emitSuspPort)
     {

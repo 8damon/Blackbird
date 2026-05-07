@@ -542,7 +542,7 @@ function Initialize-NodeOperatorEnrollment {
         Write-Host "-----------------"
         Write-Host "No valid enrollment fingerprint was found."
         Write-Host "OperatorFingerprint is not yes/no; it is the 64-character hex fingerprint of the analyst/operator public identity."
-        Write-Host "Preferred path: download the .blackbird VM enrollment package from the server UI, then run Scripts\Register-BlackbirdVm.ps1 on the VM."
+        Write-Host "Enterprise enrollment packages can provision remote command trust for closed node-control builds."
         Write-Host "Paste the approved operator fingerprint, or press Enter to install without enabling remote command trust."
         $OperatorFingerprint = Read-Host "Operator fingerprint (64 hex)"
         $operatorFingerprints = @(Add-OperatorFingerprint -Fingerprints $operatorFingerprints -Candidate $OperatorFingerprint)
@@ -1038,7 +1038,6 @@ function Remove-MinifilterServiceArtifacts {
     }
     Write-VerboseLog "fltmc unload exit=$LASTEXITCODE"
     if ($LASTEXITCODE -ne 0) {
-        # ignore unload failures; service delete + registry cleanup is enough for stale entries
         $null = $fltOut
     }
     Invoke-Sc -Arguments @("delete", $ServiceName) -AllowedExitCodes @(0, 1060, 1072)
@@ -1574,10 +1573,7 @@ Set-DriverRuntimeDefaults -ServiceName $DriverName -EnableAntiVirtualization $En
         }
     }
 
-    if ($driverRecovered) {
-        # continue installation flow
-    }
-    else {
+    if (-not $driverRecovered) {
         Write-Host "[!] Failed to start driver service '$DriverName'." -ForegroundColor Red
         Write-Host "    sc query output:" -ForegroundColor Yellow
         & sc.exe query $DriverName 2>&1 | ForEach-Object { Write-Host "    $_" }

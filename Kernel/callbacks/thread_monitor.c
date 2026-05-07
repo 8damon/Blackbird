@@ -116,8 +116,8 @@ typedef struct _BK_THREAD_WORK
     WORK_QUEUE_ITEM WorkItem;
     HANDLE ProcessId;
     HANDLE ThreadId;
-    HANDLE CreatorProcessId; // heuristic only
-    PEPROCESS Process;       // referenced
+    HANDLE CreatorProcessId;
+    PEPROCESS Process;
 } BK_THREAD_WORK, *PBK_THREAD_WORK;
 
 static BOOLEAN BkcthrThreadTryAcquireWorkSlot(VOID)
@@ -656,8 +656,8 @@ VOID BkcthrThreadNotifyRoutine(HANDLE ProcessId, HANDLE ThreadId, BOOLEAN Create
     RtlZeroMemory(w, sizeof(*w));
     w->ProcessId = ProcessId;
     w->ThreadId = ThreadId;
-    w->CreatorProcessId = creatorProcessId; // heuristic only
-    w->Process = process;                   // already referenced by lookup
+    w->CreatorProcessId = creatorProcessId;
+    w->Process = process;
 
     ExInitializeWorkItem(&w->WorkItem, BkcthrThreadWorkRoutine, w);
 

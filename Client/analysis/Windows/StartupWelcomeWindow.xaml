@@ -96,7 +96,7 @@
                 <CheckBox x:Name="EnableControllerConcealmentCheckBox"
                           Grid.Row="2"
                           Grid.Column="2"
-                          Content="Conceal controller and NetSvc presence"
+                          Content="Conceal Blackbird runtime presence"
                           Checked="SubsystemOptions_Changed"
                           Unchecked="SubsystemOptions_Changed"/>
                 <CheckBox x:Name="EnableQpcTimingCompensationCheckBox"

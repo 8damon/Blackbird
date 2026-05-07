@@ -104,7 +104,7 @@ class ControllerLogger
         }
         if (TagEquals(tag, tagLen, "NETSVC") || TagEquals(tag, tagLen, "NODE"))
         {
-            return "BlackbirdNetSvc.exe";
+            return "BlackbirdController.exe";
         }
         if (TagEquals(tag, tagLen, "INJ") || TagEquals(tag, tagLen, "HOOK"))
         {

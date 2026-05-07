@@ -75,10 +75,12 @@
     <ApplicationDefinition Include="..\Client\analysis\App.xaml">
       <Link>App.xaml</Link>
     </ApplicationDefinition>
-    <Page Include="..\Client\analysis\**\*.xaml" Exclude="..\Client\analysis\App.xaml;..\Client\analysis\bin\**;..\Client\analysis\obj\**">
+    <Page Include="..\Client\analysis\**\*.xaml"
+          Exclude="..\Client\analysis\App.xaml;..\Client\analysis\bin\**;..\Client\analysis\obj\**;..\Client\analysis\Windows\VmRegistrationWindow.xaml">
       <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
     </Page>
-    <Compile Include="..\Client\analysis\**\*.cs" Exclude="..\Client\analysis\bin\**;..\Client\analysis\obj\**">
+    <Compile Include="..\Client\analysis\**\*.cs"
+             Exclude="..\Client\analysis\bin\**;..\Client\analysis\obj\**;..\Client\analysis\Services\OperatorIdentityService.cs;..\Client\analysis\Services\VmRegistrationPackageService.cs;..\Client\analysis\Windows\VmRegistrationWindow.xaml.cs">
       <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
     </Compile>
     <Resource Include="..\Client\analysis\Resources\BK.ico">

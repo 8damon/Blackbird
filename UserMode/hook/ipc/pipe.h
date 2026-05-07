@@ -73,4 +73,4 @@ namespace BKIPC
 
         return bytesRead == sizeof(T);
     }
-} // namespace BKIPC
+}

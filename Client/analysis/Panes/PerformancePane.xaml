@@ -10,7 +10,6 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Header -->
         <Grid Grid.Row="0"
               Background="{DynamicResource PerformanceHeaderBrush}"
               MouseLeftButtonDown="Header_MouseLeftButtonDown"
@@ -67,7 +66,6 @@
                     Click="PerfBtnClose_Click"/>
         </Grid>
 
-        <!-- Body -->
         <Grid Grid.Row="1" Margin="4">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -277,7 +275,6 @@
                     <ColumnDefinition Width="2*"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Top threads -->
                 <Border Grid.Column="0"
                         Background="{DynamicResource WinPanelBrush}"
                         BorderBrush="{DynamicResource WinBorderBrush}"

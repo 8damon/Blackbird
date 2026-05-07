@@ -218,7 +218,7 @@
     <ClCompile Include="..\UserMode\controller\core\ipc\ipc_shared_ring.cpp" />
     <ClCompile Include="..\UserMode\controller\core\runtime\symbol_service.cpp" />
     <ClCompile Include="..\UserMode\controller\core\runtime\runtime.cpp" />
-    <ClCompile Include="..\UserMode\controller\core\runtime\ns\ns_launcher.cpp" />
+    <ClCompile Include="..\UserMode\controller\core\runtime\ns\ns_launcher_public.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\ABI\blackbird_ipc.h" />

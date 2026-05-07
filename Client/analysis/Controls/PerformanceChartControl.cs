@@ -95,7 +95,6 @@ namespace BlackbirdInterface
         public void PushSample(PerformanceSample s)
         {
             _samples.Add(s);
-            // Keep a rolling window
             if (_samples.Count > 4000)
                 _samples.RemoveRange(0, _samples.Count - 4000);
 
@@ -142,10 +141,8 @@ namespace BlackbirdInterface
             if (w < 50 || h < 50)
                 return;
 
-            // Frame
             dc.DrawRectangle(UiPalette.SurfaceBrush, new Pen(UiPalette.BorderBrush, 1), new Rect(0, 0, w, h));
 
-            // Layout
             double padL = 92;
             double padR = 14;
             double padT = 48;
@@ -153,7 +150,6 @@ namespace BlackbirdInterface
 
             var plot = new Rect(padL, padT, Math.Max(1, w - padL - padR), Math.Max(1, h - padT - padB));
 
-            // Title
             DrawText(dc, Title, 12, FontWeights.SemiBold, UiPalette.TextBrush, new Point(8, 5));
             DrawLegend(dc, new Rect(padL, 3, Math.Max(1, w - padL - padR), 18));
 
@@ -165,7 +161,6 @@ namespace BlackbirdInterface
             }
             AdjustRightAnchoredLiveWindow(ref renderStartUtc, ref renderEndUtc);
 
-            // Filter samples within effective view
             var viewSamples =
                 _samples.Where(s => s.TimestampUtc >= renderStartUtc && s.TimestampUtc <= renderEndUtc).ToList();
             if (viewSamples.Count < 2 || _series.Length == 0)
@@ -217,12 +212,10 @@ namespace BlackbirdInterface
                 double target = Math.Max(1.0, autoScaleMax);
                 if (target >= _smoothedAutoScaleMax)
                 {
-                    // rise quickly to new peaks
                     _smoothedAutoScaleMax = (_smoothedAutoScaleMax * 0.35) + (target * 0.65);
                 }
                 else
                 {
-                    // decay slowly to avoid axis jitter
                     _smoothedAutoScaleMax = (_smoothedAutoScaleMax * 0.90) + (target * 0.10);
                 }
                 yAxisMax = Math.Max(1.0, _smoothedAutoScaleMax);
@@ -238,7 +231,6 @@ namespace BlackbirdInterface
             (ChartSeries ser, PerformanceSample sample, Point point, double raw)? hover = null;
             double hoverDist = double.MaxValue;
 
-            // Draw series (clipped to plot bounds)
             double viewSeconds = (renderEndUtc - renderStartUtc).TotalSeconds;
             if (viewSeconds <= 0)
                 viewSeconds = 1;
@@ -270,7 +262,7 @@ namespace BlackbirdInterface
                         double scaledPercent = ser.Scale == SeriesScale.Percent ? Clamp(raw, 0, 100)
                                                                                 : Clamp(raw / yAxisMax * 100.0, 0, 100);
 
-                        double xNorm = (point.sample.TimestampUtc - renderStartUtc).TotalSeconds / viewSeconds; // 0..1
+                        double xNorm = (point.sample.TimestampUtc - renderStartUtc).TotalSeconds / viewSeconds;
                         double x = plot.Left + xNorm * plot.Width;
                         double y = plot.Bottom - (scaledPercent / 100.0) * plot.Height;
 
@@ -331,10 +323,8 @@ namespace BlackbirdInterface
             var axisPen = new Pen(UiPalette.GridStrongBrush, 1);
             axisPen.Freeze();
 
-            // Outer plot border
             dc.DrawRectangle(null, axisPen, plot);
 
-            // Y ticks
             int yTicks = plot.Height < 95 ? 3 : 5;
             for (int i = 0; i <= yTicks; i++)
             {
@@ -347,7 +337,6 @@ namespace BlackbirdInterface
                          new Point(6, y - 7));
             }
 
-            // X ticks
             var total = (viewEndUtc - viewStartUtc).TotalSeconds;
             if (total <= 0)
                 total = 1;
@@ -439,7 +428,6 @@ namespace BlackbirdInterface
                 return;
             }
 
-            // Only right-anchor in live/near-live windows. Historical windows keep absolute timestamps unchanged.
             if (viewEndUtc < DateTime.UtcNow - TimeSpan.FromSeconds(3))
             {
                 return;

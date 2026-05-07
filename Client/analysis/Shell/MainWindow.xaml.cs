@@ -715,7 +715,7 @@ namespace BlackbirdInterface
                 process.Exited += TargetExitWatchProcess_Exited;
                 _targetExitWatchProcess = process;
                 _targetExitWatchPid = pid;
-                process = null; // ownership transferred to _targetExitWatchProcess
+                process = null;
                 if (_targetExitWatchProcess.HasExited)
                 {
                     HandleTargetProcessExit(pid, BuildProcessExitReason(_targetExitWatchProcess));

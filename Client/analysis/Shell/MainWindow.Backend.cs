@@ -202,7 +202,6 @@ namespace BlackbirdInterface
         {
             ProcessSelectorBarPanel.Children.Clear();
 
-            /* "All" chip */
             var allBtn =
                 new System.Windows.Controls.Button { Content = "All", Margin = new System.Windows.Thickness(2, 2, 2, 2),
                                                      Padding = new System.Windows.Thickness(8, 2, 8, 2), FontSize = 11,
@@ -1222,8 +1221,6 @@ namespace BlackbirdInterface
 
         private static bool ShouldKeepEtwEvent(BrokerEtwEventView view)
         {
-            /* Always surface BK-instrumentation events — but they are
-               annotated and displayed distinctly so analysts aren't confused. */
             if (IsBlackbirdOwnEvent(view))
                 return true;
 
@@ -3788,7 +3785,6 @@ namespace BlackbirdInterface
 
         private HeuristicEventView? CreatePromotedHeuristic(BrokerEtwEventView view)
         {
-            /* Never promote BK's own instrumentation pages as heuristics */
             if (IsBlackbirdOwnEvent(view))
                 return null;
 
@@ -8554,12 +8550,6 @@ namespace BlackbirdInterface
             {
                 StatusBlock.Text = "Status: Preflight unavailable";
             }
-        }
-
-        private void RegisterVm_Click(object sender, RoutedEventArgs e)
-        {
-            var window = new VmRegistrationWindow { Owner = this };
-            window.ShowDialog();
         }
 
         private async void DriverStart_Click(object sender, RoutedEventArgs e)

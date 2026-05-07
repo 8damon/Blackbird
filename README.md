@@ -53,8 +53,7 @@ A virtual machine on Windows 10 22H2 or higher, 64-bit.
 - Performance analytics
 - Configurable/importable local rules with SIEM detection exports
 - Diagnostics suite
-- Optional private remote control via the self-hosted server
-- Optional private self-hosted server for VM enrollment, node inventory, artifact jobs, captures, RBAC, SSO, and audit
+- Enterprise server and node-control extensions are licensed and documented separately
 
 ## BUGS & ENHANCEMENTS
 
@@ -62,11 +61,10 @@ Please use [this](https://github.com/users/8damon/projects/3) project board to o
 
 ## DOCUMENTATION
 
-The introduction, installation, architecture, security, optional server operations, and UI manual are provided here:
+The public local-stack introduction, installation, architecture, security notes,
+and UI manual are provided here:
 
 - [Blackbird Docs](https://docs.titansoftwork.com/blackbird/)
-- Local engineering docs under `Docs/` when included in an internal working tree
-- Private self-hosted server docs when the optional server tree is included
 
 Session archives are stored as `.bkcap` (SQLite + LZ4). Detections can be exported as SIEM JSON Lines, Splunk HEC JSON, Elastic ECS NDJSON, CEF, or CSV. Detection reference scenarios are in `DetectionExamples.exe`.
 
@@ -81,8 +79,6 @@ Clone Blackbird:
 Open the ``Blackbird.slnx`` file & select ``Release`` & build.
 
 ## KNOWN ISSUES
-
-- The optional private self-hosted server and operator transport use the secure node command channel. Discovery/status metadata is not identity proof; secure control requires pinned node identity and VM enrollment/trusted operator fingerprints.
 
 - Rules Intel supports local rule evaluation, MITRE attribution where available, and memory/page sample scanning in the analysis interface. External third-party rule packs are not part of the public tree until reviewed.
 

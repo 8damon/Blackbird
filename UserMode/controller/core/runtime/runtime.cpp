@@ -163,7 +163,7 @@ static BOOL ControllerDropDriverHandleIfCurrent(_In_ HANDLE LocalHandle, _In_z_ 
     if (dropped)
     {
         ControllerMarkDriverSubscriptionsDirty();
-        ControllerLog("[DRIVER][WARN] dropped driver handle reason=%s err=%lu; controller and NetSvc remain online\n",
+        ControllerLog("[DRIVER][WARN] dropped driver handle reason=%s err=%lu; controller remains online\n",
                       Reason, ErrorCode);
     }
 
@@ -422,7 +422,7 @@ static DWORD WINAPI ControllerDriverPumpThreadProc(_In_ LPVOID Context)
                 if (recoverableReadFailures == 1 || (recoverableReadFailures % 20u) == 0)
                 {
                     ControllerLog(
-                        "[DRIVER][WARN] event read failed (%lu), recoverableFailures=%lu; reopening driver path without stopping NetSvc\n",
+                        "[DRIVER][WARN] event read failed (%lu), recoverableFailures=%lu; reopening driver path\n",
                         err, recoverableReadFailures);
                 }
                 (void)ControllerDropDriverHandleIfCurrent(localHandle, "event-read-recoverable", err);
@@ -431,7 +431,7 @@ static DWORD WINAPI ControllerDriverPumpThreadProc(_In_ LPVOID Context)
             }
 
             ControllerLog(
-                "[DRIVER][WARN] event read failed (%lu); unrecoverable driver path failure, stopping controller and NetSvc\n",
+                "[DRIVER][WARN] event read failed (%lu); unrecoverable driver path failure, stopping controller runtime\n",
                 err);
             (void)ControllerDropDriverHandleIfCurrent(localHandle, "event-read-unrecoverable", err);
             if (g_StopEvent != NULL)
@@ -1847,7 +1847,7 @@ static BOOL ControllerStartCore(VOID)
     (void)ControllerStartEtwSession();
     if (!ControllerStartNetService(g_DriverHandle))
     {
-        ControllerLog("[NETSVC][INFO] network service offline; controller core continuing without node networking\n");
+        ControllerLog("[NODE][INFO] optional node networking unavailable; controller core continuing\n");
     }
     ControllerTryMarkProtectedReady(g_DriverHandle, TRUE);
 

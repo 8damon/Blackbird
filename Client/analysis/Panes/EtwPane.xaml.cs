@@ -91,8 +91,6 @@ namespace BlackbirdInterface
                     existing.ArgumentPreview = argSig;
                 }
 
-                // Aggregate by argument signature: identical arg patterns increment the existing
-                // detail row's HitCount rather than adding a duplicate row.
                 bool aggregated = false;
                 if (string.IsNullOrEmpty(argSig) && existing.Details.Count > 0)
                 {

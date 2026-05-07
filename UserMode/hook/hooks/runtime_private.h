@@ -30,12 +30,7 @@
 #include <cstdint>
 #include <vector>
 
-/* ── SR71 re-entrancy guard ────────────────────────────────────────────────
- * Thread-local depth counter incremented around every SR71 internal NT-API
- * call (IPC pipe I/O, internal allocations, etc.).  Hook callbacks check
- * BkSr71IsInternalCall() and bail immediately when non-zero so SR71 never
- * triggers its own hooks during housekeeping work.
- * ───────────────────────────────────────────────────────────────────────── */
+/* Prevent SR71 housekeeping calls from recursively re-entering SR71 hooks. */
 extern __declspec(thread) int g_Sr71CallDepth;
 
 inline bool BkSr71IsInternalCall() noexcept
@@ -57,7 +52,6 @@ struct BkSr71InternalScope
     BkSr71InternalScope &operator=(const BkSr71InternalScope &) = delete;
 };
 
-/* Use this macro around any internal NT call SR71 makes that could re-enter hooks */
 #define BK_SR71_INTERNAL_SCOPE() BkSr71InternalScope _bk_internal_scope_
 
 namespace BK_RUNTIME_INTERNAL
@@ -280,4 +274,4 @@ namespace BK_RUNTIME_INTERNAL
     bool LaunchGatePrepare() noexcept;
     void LaunchGateRelease() noexcept;
     void LaunchGateShutdown() noexcept;
-} // namespace BK_RUNTIME_INTERNAL
+}

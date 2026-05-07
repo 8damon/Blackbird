@@ -4,7 +4,6 @@
     <Platform Name="x64" />
   </Configurations>
   <Folder Name="/Scripts/">
-    <File Path="Scripts/ci-surface.ps1" />
     <File Path="Scripts/installer.ps1" />
     <File Path="Scripts/publish.NET.ps1" />
     <File Path="Scripts/remover.ps1" />

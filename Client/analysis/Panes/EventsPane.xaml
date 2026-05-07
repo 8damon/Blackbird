@@ -12,7 +12,6 @@
             <RowDefinition x:Name="EventLogRow" Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Pane header -->
         <Grid Grid.Row="0"
               Panel.ZIndex="10"
               Background="{DynamicResource EventsHeaderBrush}"

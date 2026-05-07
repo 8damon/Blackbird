@@ -277,10 +277,7 @@ static VOID BkcprocTrackProtectedPid(_In_ UINT32 ProcessId, _In_reads_z_(ImageCh
         LONG trackedPid = InterlockedCompareExchange((volatile LONG *)&g_BlackbirdNetSvcPid, 0, 0);
         LONG ready = InterlockedCompareExchange(&g_BlackbirdNetSvcReady, 0, 0);
 
-        /* The NetSvc preview path launches the same executable as a short-lived
-         * active-session helper. Once
-         * the real NetSvc is marked ready, do not let
-         * same-image helpers steal the protected PID slot. */
+        /* Keep the ready NetSvc PID when same-image preview helpers appear. */
         if (ready == 0 || trackedPid == 0 || (UINT32)trackedPid == ProcessId)
         {
             InterlockedExchange((volatile LONG *)&g_BlackbirdNetSvcPid, (LONG)ProcessId);
@@ -312,13 +309,7 @@ static VOID BkcprocClearProtectedPid(_In_ UINT32 ProcessId)
     }
     if ((UINT32)InterlockedCompareExchange((volatile LONG *)&g_BlackbirdNetSvcPid, 0, 0) == ProcessId)
     {
-        /* Do not call into WFP/Fwpm teardown from the process notify callback.
-           This callback runs on the
-         * terminating process path; blocking filter cleanup here can
-           make TerminateProcess succeed while the
-         * process never finishes exiting, which also
-           prevents driver unload. Controller explicit disarm and
-         * driver unload own WFP teardown. */
+        /* Process callbacks must not block on WFP teardown during termination. */
         InterlockedCompareExchange((volatile LONG *)&g_BlackbirdNetSvcPid, 0, (LONG)ProcessId);
         InterlockedExchange(&g_BlackbirdNetSvcReady, 0);
     }
@@ -667,11 +658,7 @@ static VOID BkcprocProcessNotifyRoutineEx(_Inout_ PEPROCESS Process, _In_ HANDLE
     BketwLogProcessEvent(ProcessId, parentPid, creatorPid, creatorTid, startKey, sessionId, isCreate, createStatus,
                          (imagePath[0] != L'\0') ? imagePath : NULL, (commandLine[0] != L'\0') ? commandLine : NULL);
 
-    /* PPID spoofing: when a caller uses PROC_THREAD_ATTRIBUTE_PARENT_PROCESS to override
-     * the inherited parent, the kernel-reported ParentProcessId diverges from the
-     * CreatingThreadId.UniqueProcess field.  Normal CreateProcess always has them equal.
-     * Only flag in user sessions (sessionId > 0) to suppress noise from SCM/WMI patterns
-     * and skip the System process (PID 4). */
+    /* Parent-process override makes ParentProcessId differ from CreatingThreadId.UniqueProcess. */
     if (isCreate && NT_SUCCESS(createStatus) && ProcessId != NULL && sessionId > 0 && parentPid != NULL &&
         creatorPid != NULL && parentPid != creatorPid && (ULONG_PTR)parentPid > 4 && (ULONG_PTR)creatorPid > 4)
     {
@@ -933,14 +920,7 @@ BOOLEAN BkcprocIsTrustedProtectedCaller(_In_ UINT32 CallerPid, _In_ UINT32 Targe
     }
     if (BkcprocIsKnownSystemBrokerPid(CallerPid))
     {
-        /*
-         * CreateProcess/CreateProcessAsUser can transiently open the caller as
-         * parent through OS
-         * broker processes. Stripping those handles breaks
-         * protected Blackbird processes spawning service
-         * children and active
-         * session helpers.
-         */
+        /* OS brokers may transiently open protected parents during service launch. */
         return TRUE;
     }
 
@@ -948,18 +928,7 @@ BOOLEAN BkcprocIsTrustedProtectedCaller(_In_ UINT32 CallerPid, _In_ UINT32 Targe
         (CallerPid == interfaceCreatorPid || CallerPid == interfaceParentPid) &&
         (LONG64)KeQueryInterruptTime() <= interfaceBootstrapExpires)
     {
-        /*
-         * Interface handle protection can be armed from a prior UI session.  On the
-         * next launch,
-         * the process-create caller must still receive usable initial
-         * process/thread handles so user-mode
-         * CreateProcess can finish bootstrap and
-         * resume the primary thread.  Controller/NetSvc avoid this by
-         * becoming
-         * protected only after readiness; the interface is image-tracked, so give
-         * only
-         * its actual creator/parent a short startup allowance.
-         */
+        /* Allow the creator/parent to receive initial handles during UI bootstrap. */
         return TRUE;
     }
 
@@ -1005,9 +974,7 @@ BOOLEAN BkcprocShouldSuppressLaunchBootstrapNtApi(_In_ UINT32 AttachedPid, _In_ 
             continue;
         }
 
-        /* During pending-launch bootstrap, kernel code can temporarily run attached to the
-         * new process while still executing on the creator's thread. Those syscalls are not
-         * target-owned user activity and should stay out of the target's NT API stream. */
+        /* Attached creator-thread syscalls during launch are not target-owned activity. */
         if (ThreadOwnerPid == 0 || ThreadOwnerPid != AttachedPid)
         {
             return TRUE;

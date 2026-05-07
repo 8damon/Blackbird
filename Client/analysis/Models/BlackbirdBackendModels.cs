@@ -328,8 +328,6 @@ namespace BlackbirdInterface
         [JsonIgnore]
         private string? _cachedDetails;
 
-        // Human-readable caller-origin label for UserHook family events.
-        // Empty for non-hook events or when origin flags are absent.
         public string CallerOriginLabel => EventDetailFormatting.HookCallerOriginLabel(Flags);
 
         public string Summary

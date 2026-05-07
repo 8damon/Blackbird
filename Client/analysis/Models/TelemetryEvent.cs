@@ -9,11 +9,9 @@ namespace BlackbirdInterface
         public int PID { get; init; }
         public int TID { get; init; }
 
-        // Example: Group="Execution", SubType="CreateProcess"
         public string Group { get; init; } = "Other";
         public string SubType { get; init; } = "";
 
-        // Backward compat if you still set Type only.
         public string Type
         {
             get {

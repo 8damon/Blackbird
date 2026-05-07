@@ -122,7 +122,7 @@ namespace
         entry->ObsoleteLoadCount = 0;
     }
 
-} // namespace
+}
 
 void UnlinkModulePEB()
 {

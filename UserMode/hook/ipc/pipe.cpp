@@ -329,7 +329,6 @@ namespace BKIPC
 
     bool Initialize(DWORD timeoutMs)
     {
-        // Start async dispatch infrastructure on first call.
         if (InterlockedCompareExchange(&g_asyncRunning, 0, 0) == 0)
         {
             InitializeSListHead(&g_asyncFreeList);
@@ -397,7 +396,6 @@ namespace BKIPC
         BkSr71InternalScope _ipc_scope;
         bool asyncStopped = true;
 
-        // Stop the async dispatcher before closing the pipe.
         if (InterlockedExchange(&g_asyncRunning, 0) != 0)
         {
             if (g_asyncSignal)
@@ -700,4 +698,4 @@ namespace BKIPC
         }
         return true;
     }
-} // namespace BKIPC
+}

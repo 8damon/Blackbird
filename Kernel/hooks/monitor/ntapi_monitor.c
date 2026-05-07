@@ -1203,7 +1203,7 @@ static VOID BkntkiWaitForInFlightCalls(VOID)
     LARGE_INTEGER delay;
     LONG inFlight;
 
-    delay.QuadPart = -10 * 1000; // 1ms
+    delay.QuadPart = -10 * 1000;
     for (;;)
     {
         inFlight = InterlockedCompareExchange(&g_NtApiHookInFlight, 0, 0);

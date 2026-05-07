@@ -14,7 +14,7 @@
 TRACELOGGING_DEFINE_PROVIDER(g_BlackbirdEtwProvider, "BK.Kernel",
                              (0xd6c73f8a, 0x6ad8, 0x4f4b, 0xa3, 0x63, 0x3d, 0x2f, 0xa3, 0x1c, 0xd0, 0xe2));
 
-static volatile LONG g_EtwState = 0; // 0=stopped, 1=starting, 2=started
+static volatile LONG g_EtwState = 0;
 
 static BOOLEAN BketwIsStarted(VOID)
 {

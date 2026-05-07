@@ -3,8 +3,8 @@
 #include "ipc_internal.h"
 #include <tlhelp32.h>
 
-static constexpr UINT64 ControllerSr71WriteBlockedMarker = 0x5352373157424C4Bull;   // SR71WBLK
-static constexpr UINT64 ControllerSr71ProtectBlockedMarker = 0x5352373150424C4Bull; // SR71PBLK
+static constexpr UINT64 ControllerSr71WriteBlockedMarker = 0x5352373157424C4Bull;
+static constexpr UINT64 ControllerSr71ProtectBlockedMarker = 0x5352373150424C4Bull;
 
 enum
 {
@@ -1453,28 +1453,18 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
                                                            lstrcmpiA(apiName, "NtAllocateVirtualMemoryEx") == 0))
         {
             BOOL isAllocateEx = lstrcmpiA(apiName, "NtAllocateVirtualMemoryEx") == 0;
-            /* NtAllocateVirtualMemory:
-             *   Args[0]=ProcessHandle, Args[1]=*BaseAddress, Args[2]=ZeroBits,
-             * Args[3]=*RegionSize,
-             *   Args[4]=AllocationType, Args[5]=Protect, Args[6]=TargetPid.
-
-             * * NtAllocateVirtualMemoryEx:
-             *   Args[0]=ProcessHandle, Args[1]=*BaseAddress,
-             * Args[2]=*RegionSize,
-             *   Args[3]=AllocationType, Args[4]=Protect,
-             * Args[5]=ExtendedParameters,
-             *   Args[6]=ExtendedParameterCount, Args[7]=TargetPid.
- */
-            UINT32 allocType = (argCount > (isAllocateEx ? 3u : 4u))
-                                   ? (UINT32)(HookEvent->Args[isAllocateEx ? 3u : 4u] & 0xFFFFFFFFull)
+            UINT32 sizeArg = isAllocateEx ? 2u : 3u;
+            UINT32 allocTypeArg = isAllocateEx ? 3u : 4u;
+            UINT32 protectArg = isAllocateEx ? 4u : 5u;
+            UINT32 targetPidArg = isAllocateEx ? 7u : 6u;
+            UINT64 baseAddressArg = (argCount > 1u) ? HookEvent->Args[1] : 0ull;
+            UINT64 regionSizeArg = (argCount > sizeArg) ? HookEvent->Args[sizeArg] : 0ull;
+            UINT32 allocType =
+                (argCount > allocTypeArg) ? (UINT32)(HookEvent->Args[allocTypeArg] & 0xFFFFFFFFull) : 0u;
+            UINT32 protect = (argCount > protectArg) ? (UINT32)(HookEvent->Args[protectArg] & 0xFFFFFFFFull) : 0u;
+            UINT32 targetPid = (argCount > targetPidArg && HookEvent->Args[targetPidArg] <= 0xFFFFFFFFull)
+                                   ? (UINT32)HookEvent->Args[targetPidArg]
                                    : 0u;
-            UINT32 protect = (argCount > (isAllocateEx ? 4u : 5u))
-                                 ? (UINT32)(HookEvent->Args[isAllocateEx ? 4u : 5u] & 0xFFFFFFFFull)
-                                 : 0u;
-            UINT32 targetPid =
-                (argCount > (isAllocateEx ? 7u : 6u) && HookEvent->Args[isAllocateEx ? 7u : 6u] <= 0xFFFFFFFFull)
-                    ? (UINT32)HookEvent->Args[isAllocateEx ? 7u : 6u]
-                    : 0u;
             BOOL remoteAlloc = (targetPid != 0 && targetPid != eventPid);
             if (targetPid == 0)
             {
@@ -1507,10 +1497,9 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
             (void)StringCchPrintfW(
                 mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
                 L"memory.alloc base=0x%llX size=0x%llX allocType=0x%X allocTypeName=%S protect=0x%X protectName=%S remote=%u targetPid=%lu",
-                (unsigned long long)HookEvent->Args[1], (unsigned long long)HookEvent->Args[isAllocateEx ? 2u : 3u],
-                allocType, ControllerMemoryAllocTypeName(allocType), protect, ControllerMemoryProtectName(protect),
+                (unsigned long long)baseAddressArg, (unsigned long long)regionSizeArg, allocType,
+                ControllerMemoryAllocTypeName(allocType), protect, ControllerMemoryProtectName(protect),
                 (unsigned int)remoteAlloc, (unsigned long)targetPid);
-            /* Injection chain stage 2 */
             if (remoteAlloc)
             {
                 ControllerInjectionChainObserve((DWORD)eventPid, targetPid, BK_CHAIN_STAGE_ALLOC);
@@ -2473,8 +2462,6 @@ static DWORD ControllerClientNotifyHookReady(_Inout_ BK_CONTROLLER_CLIENT *Clien
     Response->ObservedMask = observedMask;
     Response->RequiredMask = BK_CONTROLLER_HOOK_READY_REQUIRED_MASK;
 
-    /* If the controller has flagged this client for inline Winsock hook upgrade, deliver
-       the command in the PendingCommand back-channel and clear the flag atomically. */
     if (InterlockedCompareExchange(&Client->WinsockInlineUpgradePending, 0, 1) == 1)
     {
         Response->PendingCommand = BlackbirdIpcCommandUpgradeWinsockHooks;

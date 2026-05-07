@@ -13,10 +13,6 @@ using System.Collections.Concurrent;
 
 namespace BlackbirdInterface
 {
-    /* ─────────────────────────────────────────────────────────────────
-     * Attached property: lets XAML bind an IReadOnlyList<Inline> to a
-     * TextBlock's Inlines collection (not directly bindable in WPF).
-     * ───────────────────────────────────────────────────────────────── */
     public static class InlinesHelper
     {
         public static readonly DependencyProperty InlinesSourceProperty =
@@ -40,12 +36,8 @@ namespace BlackbirdInterface
         }
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     * Syntax colorizer for x86-64 disassembly tokens.
-     * ───────────────────────────────────────────────────────────────── */
     internal static class DisasmColorizer
     {
-        /* Mnemonic color table */
         private static readonly Dictionary<string, Brush> MnemonicBrushes = new(StringComparer.OrdinalIgnoreCase) {
             { "call", Mk("#88C8FF") },  { "syscall", Mk("#88C8FF") }, { "ret", Mk("#888888") },
             { "retn", Mk("#888888") },  { "retf", Mk("#888888") },    { "nop", Mk("#505050") },
@@ -139,7 +131,6 @@ namespace BlackbirdInterface
                     continue;
                 }
 
-                // Negative immediate: keep '-' with the number
                 if (c == '-')
                 {
                     int j = i + 1;
@@ -151,7 +142,6 @@ namespace BlackbirdInterface
                     continue;
                 }
 
-                // Word token
                 if (IsWordChar(c))
                 {
                     int start = i;
@@ -218,9 +208,6 @@ namespace BlackbirdInterface
         private static Run Colored(string text, Brush brush) => new(text) { Foreground = brush };
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     * Row model
-     * ───────────────────────────────────────────────────────────────── */
     public sealed class DisassemblyRow
     {
         public string AddressText { get; init; } = string.Empty;
@@ -234,9 +221,6 @@ namespace BlackbirdInterface
         public IReadOnlyList<Inline> ResolvedInlines { get; set; } = Array.Empty<Inline>();
     }
 
-    /* ─────────────────────────────────────────────────────────────────
-     * Disassembly window
-     * ───────────────────────────────────────────────────────────────── */
     public partial class DisassemblyWindow : Window
     {
         private readonly BlackbirdBackendSession _session;
@@ -247,7 +231,6 @@ namespace BlackbirdInterface
         private readonly byte[]? _snapshotBytes;
         private readonly uint _snapshotOffset;
 
-        // Working copy of rows and raw bytes kept for scan/highlight operations
         private List<DisassemblyRow> _rows = new();
         private byte[] _code = Array.Empty<byte>();
 
@@ -271,7 +254,6 @@ namespace BlackbirdInterface
             Loaded += async (_, _) => await LoadAsync();
         }
 
-        /* ── SSN table (process-wide cache, built once from ntdll on disk) ── */
         private static readonly ConcurrentDictionary<int, string> s_SsnTable = new();
         private static volatile bool s_SsnTableBuilt;
 
@@ -296,24 +278,20 @@ namespace BlackbirdInterface
 
                 byte[] pe = File.ReadAllBytes(ntdllPath);
 
-                /* e_lfanew → PE header offset */
                 if (pe.Length < 0x40)
                     return;
                 int peOffset = BitConverter.ToInt32(pe, 0x3C);
                 if (peOffset < 0 || peOffset + 24 + 240 > pe.Length)
                     return;
 
-                /* Validate PE signature */
                 if (BitConverter.ToUInt32(pe, peOffset) != 0x00004550u)
                     return;
 
-                /* FILE_HEADER: SizeOfOptionalHeader at peOffset+20 */
                 int optOffset = peOffset + 24;
                 int sizeOfOpt = BitConverter.ToUInt16(pe, peOffset + 20);
                 int numSections = BitConverter.ToUInt16(pe, peOffset + 6);
                 int sectionOffset = optOffset + sizeOfOpt;
 
-                /* DataDirectory[0] = exports; at optOffset+112 for PE64 */
                 if (optOffset + 112 + 8 > pe.Length)
                     return;
                 int exportRva = BitConverter.ToInt32(pe, optOffset + 112);
@@ -321,7 +299,6 @@ namespace BlackbirdInterface
                 if (exportRva == 0 || exportSize == 0)
                     return;
 
-                /* Collect sections for RVA→file-offset conversion */
                 var sections = new List<(int va, int raw, int rawSize)>(numSections);
                 for (int s = 0; s < numSections; s++)
                 {
@@ -393,7 +370,6 @@ namespace BlackbirdInterface
                     int funcRva = BitConverter.ToInt32(pe, funcRvaOff);
 
                     int funcOff = RvaToOffset(funcRva);
-                    /* Stub: 4C 8B D1 (mov r10, rcx)  B8 xx xx 00 00 (mov eax, SSN) */
                     if (funcOff < 0 || funcOff + 8 > pe.Length)
                         continue;
                     if (pe[funcOff] != 0x4C || pe[funcOff + 1] != 0x8B || pe[funcOff + 2] != 0xD1 ||
@@ -402,19 +378,17 @@ namespace BlackbirdInterface
 
                     int ssn = BitConverter.ToInt32(pe, funcOff + 4);
                     if (ssn < 0 || ssn > 0xFFF)
-                        continue; /* sanity: SSNs are small */
+                        continue;
 
-                    /* Prefer Nt* over Zw* if both map to the same SSN */
                     if (!s_SsnTable.ContainsKey(ssn) || name.StartsWith("Nt", StringComparison.Ordinal))
                         s_SsnTable[ssn] = name;
                 }
             }
             catch
-            { /* silently tolerate parse failures */
+            {
             }
         }
 
-        /* ── Direct syscall stub detection ────────────────────────── */
         private static readonly Brush SyscallAnnotBrush = MakeAnnotBrush();
         private static Brush MakeAnnotBrush()
         {
@@ -437,9 +411,6 @@ namespace BlackbirdInterface
                 if (!row.Mnemonic.Equals("syscall", StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                /* Scan backwards up to 6 rows for the classic stub pattern:
-                     mov r10, rcx       ← identifies it as a syscall stub (not a raw syscall)
-                     mov eax, <SSN>     ← SSN we want to resolve */
                 int ssn = -1;
                 bool hasStubPrologue = false;
 
@@ -451,7 +422,6 @@ namespace BlackbirdInterface
 
                     string ops = prev.Operands;
 
-                    /* mov r10, rcx */
                     if (ops.StartsWith("r10,", StringComparison.OrdinalIgnoreCase) &&
                         ops.EndsWith("rcx", StringComparison.OrdinalIgnoreCase))
                     {
@@ -459,7 +429,6 @@ namespace BlackbirdInterface
                         continue;
                     }
 
-                    /* mov eax, <imm32>  — extract SSN */
                     if (ops.StartsWith("eax,", StringComparison.OrdinalIgnoreCase) ||
                         ops.StartsWith("eax, ", StringComparison.OrdinalIgnoreCase))
                     {
@@ -474,19 +443,16 @@ namespace BlackbirdInterface
                     }
                 }
 
-                /* Build annotation text */
                 string resolvedName = ssn >= 0 && ssnTable.TryGetValue(ssn, out var n) ? n : null!;
                 string label = hasStubPrologue ? "direct-syscall stub" : "raw syscall";
                 string annot = ssn >= 0 ? $"{label}  SSN=0x{ssn:X}" +
                                               (resolvedName != null ? $"  ({resolvedName})" : "  (unresolved)")
                                         : label;
 
-                /* Flag the syscall instruction row */
                 row.RowKind = "DirectSyscall";
                 row.ResolvedInlines = new[] { new Run(annot) { Foreground = SyscallAnnotBrush } };
                 anyFound = true;
 
-                /* Also flag the mov eax,<SSN> row if we found one — it's part of the stub */
                 if (ssn >= 0)
                 {
                     for (int back = i - 1; back >= Math.Max(0, i - 4); back--)
@@ -506,7 +472,6 @@ namespace BlackbirdInterface
                 RefreshGrid();
         }
 
-        /* ── Address formatter ─────────────────────────────────────── */
         private string FormatAddress(ulong address)
         {
             if (address >= _baseAddress && address < _baseAddress + _regionSize)
@@ -519,7 +484,6 @@ namespace BlackbirdInterface
             return $"0x{address:X}";
         }
 
-        /* ── Dead-code detection ───────────────────────────────────── */
         private static bool IsNullFillInstruction(string mnemonic, string operands) =>
             string.Equals(mnemonic, "add", StringComparison.OrdinalIgnoreCase) &&
             operands.Contains("rax", StringComparison.OrdinalIgnoreCase) &&
@@ -528,7 +492,6 @@ namespace BlackbirdInterface
         private static bool IsUnreachable(string mnemonic) => mnemonic is "ret" or "retn" or "retf" or "jmp" or "ud2" or
                                                                           "hlt";
 
-        /* ── Load ──────────────────────────────────────────────────── */
         private async System.Threading.Tasks.Task LoadAsync()
         {
             try
@@ -576,9 +539,8 @@ namespace BlackbirdInterface
             BkdcNative.BkdcInstruction[] insns =
                 await System.Threading.Tasks.Task.Run(() => BkdcNative.Disassemble(code, decodeBase));
 
-            _code = code; // cache for scan operations
+            _code = code;
 
-            /* Build rows with syntax coloring, strip trailing dead fill */
             var rows = new List<DisassemblyRow>(insns.Length);
             bool pastLastReturn = false;
             int lastNonDeadIdx = -1;
@@ -629,15 +591,12 @@ namespace BlackbirdInterface
                     lastNonDeadIdx = rows.Count - 1;
             }
 
-            /* Trim trailing dead instructions entirely */
             if (lastNonDeadIdx >= 0 && lastNonDeadIdx < rows.Count - 1)
                 rows.RemoveRange(lastNonDeadIdx + 1, rows.Count - lastNonDeadIdx - 1);
 
             _rows = rows;
             InsnGrid.ItemsSource = _rows;
 
-            /* Run direct-syscall stub detection on the freshly built rows.
-               SSN table is loaded lazily from ntdll.dll the first time. */
             DetectDirectSyscallStubs();
 
             int deadCount = insns.Length - _rows.Count;
@@ -645,7 +604,6 @@ namespace BlackbirdInterface
                                (deadCount > 0 ? $"  |  {deadCount} dead bytes stripped" : string.Empty);
         }
 
-        /* ── Keyboard ──────────────────────────────────────────────── */
         private void InsnGrid_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.C && (Keyboard.Modifiers & ModifierKeys.Control) != 0)
@@ -665,11 +623,6 @@ namespace BlackbirdInterface
             }
         }
 
-        private void InsnGrid_KeyDown(object sender, KeyEventArgs e)
-        {
-        }
-
-        /* ── Copy ──────────────────────────────────────────────────── */
         private void CopySelected_Click(object sender, RoutedEventArgs e)
         {
             var selected = InsnGrid.SelectedItems.OfType<DisassemblyRow>().ToList();
@@ -693,11 +646,10 @@ namespace BlackbirdInterface
                 Clipboard.SetText(sb.ToString());
             }
             catch
-            { /* clipboard busy */
+            {
             }
         }
 
-        /* ── Clear highlights ──────────────────────────────────────── */
         private void ClearHighlights_Click(object sender, RoutedEventArgs e)
         {
             foreach (var r in _rows)
@@ -709,7 +661,6 @@ namespace BlackbirdInterface
             StatusBlock.Text = $"{_rows.Count} instructions  |  base 0x{_baseAddress:X}  |  highlights cleared";
         }
 
-        /* ── Scan: Byte Pattern ────────────────────────────────────── */
         private void ScanBytePattern_Click(object sender, RoutedEventArgs e)
         {
             string? input = ShowInputDialog(
@@ -736,7 +687,6 @@ namespace BlackbirdInterface
                 $"{_rows.Count(r => r.RowKind == "ByteMatch")} byte-pattern match(es) highlighted (yellow)";
         }
 
-        /* ── Scan: Calls/Jumps To ──────────────────────────────────── */
         private void ScanCallsTo_Click(object sender, RoutedEventArgs e)
         {
             string? input = ShowInputDialog(
@@ -759,7 +709,6 @@ namespace BlackbirdInterface
                     !r.Mnemonic.Equals("call", StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                /* Match by resolved inline text */
                 string resolved = string.Concat(r.ResolvedInlines.OfType<Run>().Select(x => x.Text));
                 bool hit = isAddress
                                ? resolved.Contains(targetAddr.ToString("X"), StringComparison.OrdinalIgnoreCase) ||
@@ -780,7 +729,6 @@ namespace BlackbirdInterface
             StatusBlock.Text = $"{count} cross-reference(s) highlighted (orange)";
         }
 
-        /* ── Scan: YARA hex string ─────────────────────────────────── */
         private void ScanYaraHex_Click(object sender, RoutedEventArgs e)
         {
             string? input = ShowInputDialog("Scan YARA Hex String",
@@ -790,7 +738,6 @@ namespace BlackbirdInterface
             if (input == null)
                 return;
 
-            /* Strip braces and YARA jump wildcards [n-m] → single ?? */
             string normalized = Regex.Replace(input, @"\[\d+(?:-\d+)?\]", "??");
             normalized = normalized.Replace("{", "").Replace("}", "");
 
@@ -834,7 +781,6 @@ namespace BlackbirdInterface
                 InsnGrid.ScrollIntoView(first);
         }
 
-        /* ── Helpers ───────────────────────────────────────────────── */
         private static byte?[] ParseHexPattern(string input)
         {
             var result = new List < byte ?>();
@@ -861,12 +807,10 @@ namespace BlackbirdInterface
 
         private void RefreshGrid()
         {
-            /* Force DataGrid to re-evaluate row styles after RowKind changes */
             InsnGrid.ItemsSource = null;
             InsnGrid.ItemsSource = _rows;
         }
 
-        /* Inline input dialog — no external dialog dependency */
         private static string? ShowInputDialog(string title, string prompt, Window owner)
         {
             var dialog = new Window { Title = title,
@@ -902,7 +846,6 @@ namespace BlackbirdInterface
             return dialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(result) ? result : null;
         }
 
-        /* ── Title bar / window chrome ─────────────────────────────── */
         private void TitleBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             if (e.ClickCount == 2)

@@ -61,9 +61,9 @@ struct NtHookContext
 };
 using NtHookCallback = void (*)(const NtHookContext &context) noexcept;
 
-inline constexpr std::uint64_t kNtHookSr71WriteBlockedMarker = 0x5352373157424C4Bull;    // SR71WBLK
-inline constexpr std::uint64_t kNtHookSr71ProtectBlockedMarker = 0x5352373150424C4Bull;  // SR71PBLK
-inline constexpr std::uint64_t kNtHookTerminateBreakpointMarker = 0x535237315445524Dull; // SR71TERM
+inline constexpr std::uint64_t kNtHookSr71WriteBlockedMarker = 0x5352373157424C4Bull;
+inline constexpr std::uint64_t kNtHookSr71ProtectBlockedMarker = 0x5352373150424C4Bull;
+inline constexpr std::uint64_t kNtHookTerminateBreakpointMarker = 0x535237315445524Dull;
 
 enum class NtHookInitFaultCode : std::uint32_t
 {

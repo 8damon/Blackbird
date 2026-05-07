@@ -76,7 +76,6 @@ namespace BlackbirdInterface
 
             _state.IncrementRawCount(hits);
 
-            // Within a group, aggregate by (actor, target, reason) signature.
             string detailSig = $"{item.ActorPid}|{item.TargetPid}|{item.Reason}";
 
             if (_state.TryGetRow(key, out GroupedEventRow? existing))

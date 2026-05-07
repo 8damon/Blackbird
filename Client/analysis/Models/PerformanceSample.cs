@@ -9,15 +9,12 @@ namespace BlackbirdInterface
 
         public int CoreCount { get; set; }
 
-        // CPU
-        public double CpuPercent { get; set; }       // 0..100
-        public double CoresUsedPercent { get; set; } // 0..100 (kept for chart consistency)
+        public double CpuPercent { get; set; }
+        public double CoresUsedPercent { get; set; }
 
-        // Disk (bytes/sec)
         public double DiskReadBytesPerSec { get; set; }
         public double DiskWriteBytesPerSec { get; set; }
 
-        // RAM (bytes)
         public double PrivateBytes { get; set; }
         public double ReservedBytes { get; set; }
         public double CommitBytes { get; set; }
@@ -25,7 +22,6 @@ namespace BlackbirdInterface
         public double MappedBytes { get; set; }
         public double PrivateVadBytes { get; set; }
 
-        // Network
         public double NetInBytesPerSec { get; set; }
         public double NetOutBytesPerSec { get; set; }
         public double NetPacketsPerSec { get; set; }

@@ -266,11 +266,9 @@ namespace BlackbirdInterface
             {
                 while (!ct.IsCancellationRequested)
                 {
-                    // Block up to 100ms for data on the shared ring event handle.
                     bool ok = BlackbirdNative.GetEventWait(_controlHandle, buffer, out uint bytes, 100);
                     if (ok)
                     {
-                        // Process this record, then drain any additional records without waiting.
                         do
                         {
                             int len = (int)Math.Min(bytes, (uint)managed.Length);
@@ -307,7 +305,6 @@ namespace BlackbirdInterface
                     int err = Marshal.GetLastWin32Error();
                     if (err == BlackbirdNative.ErrorNoMoreEntries || err == BlackbirdNative.ErrorNoMoreItems)
                     {
-                        // Timeout — no data in 100ms window; loop back to wait again.
                         Interlocked.Increment(ref _ioctlEmptyPolls);
                         continue;
                     }

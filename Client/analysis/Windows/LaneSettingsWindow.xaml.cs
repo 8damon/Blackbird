@@ -210,7 +210,6 @@ namespace BlackbirdInterface
                 _host.EventsPaneHost.Timeline.SetLaneVisible(lane.Key, state);
             }
 
-            // keep active focus if still visible
             _host.SetLaneFocus(_host.GetLaneFocus());
             LaneGrid.Items.Refresh();
         }

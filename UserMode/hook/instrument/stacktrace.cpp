@@ -17,8 +17,6 @@ namespace IC_STACKTRACE
 
         RtlCaptureStackBackTraceFn g_RtlCapture = nullptr;
         bool g_SymInit = false;
-        // TLS index used to prevent DbgHelp calls from hook-instrumented threads.
-        // A hook thread sets this to non-zero before calling into hooked code.
         DWORD g_symGuardTls = TLS_OUT_OF_INDEXES;
 
         bool EnsureRtlCapture() noexcept
@@ -42,10 +40,6 @@ namespace IC_STACKTRACE
             rf.Symbol[0] = '\0';
             rf.File[0] = '\0';
         }
-
-        // ------------------------------------------------------------------
-        // Caller-origin classifier state
-        // ------------------------------------------------------------------
 
         constexpr std::uint32_t kAnalysisSubjectProcess = 0;
         constexpr std::uint32_t kAnalysisSubjectDll = 1;
@@ -73,7 +67,6 @@ namespace IC_STACKTRACE
             }
             else
             {
-                // Normalise to lower-case so prefix comparisons are case-insensitive.
                 for (UINT i = 0; i < len; ++i)
                     g_SystemRoot[i] = static_cast<wchar_t>(std::towlower(g_SystemRoot[i]));
                 g_SystemRootLen = len;
@@ -240,7 +233,6 @@ namespace IC_STACKTRACE
                 return ClassifyUnresolvedIp(ip);
             }
 
-            // Hook-DLL infrastructure frames: exclude from origin analysis.
             if (mod == g_OwnModule || IsInternalInstrumentationModule(mod))
                 return CallerKind::OwnModule;
 
@@ -260,11 +252,9 @@ namespace IC_STACKTRACE
                 }
             }
 
-            // Process image (.exe).
             if (mod == ::GetModuleHandleW(nullptr))
                 return CallerKind::ProcessImage;
 
-            // Resolve path and check for Windows system-directory prefix.
             EnsureSystemRoot();
             if (g_SystemRootLen > 0)
             {
@@ -273,8 +263,6 @@ namespace IC_STACKTRACE
                     for (std::size_t i = 0; path[i]; ++i)
                         path[i] = static_cast<wchar_t>(std::towlower(path[i]));
 
-                    // Require a path-separator after the prefix to avoid matching
-                    // e.g. "C:\WindowsApps\..." against "C:\Windows".
                     if (::wcsncmp(path, g_SystemRoot, g_SystemRootLen) == 0 &&
                         (path[g_SystemRootLen] == L'\\' || path[g_SystemRootLen] == L'/'))
                     {
@@ -315,7 +303,7 @@ namespace IC_STACKTRACE
                 std::memmove(moduleNameOut, slash + 1, std::strlen(slash + 1) + 1);
             }
         }
-    } // namespace
+    }
 
     bool Capture(Trace &out, std::uint32_t skip, std::uint32_t maxFrames) noexcept
     {
@@ -341,8 +329,6 @@ namespace IC_STACKTRACE
         return true;
     }
 
-    // Mark the calling thread as a hook thread.  While marked, InitSymbols and
-    // Resolve will refuse to run (DbgHelp must never serialize a hook thread).
     void MarkHookThread() noexcept
     {
         if (g_symGuardTls == TLS_OUT_OF_INDEXES)
@@ -364,15 +350,11 @@ namespace IC_STACKTRACE
         return TlsGetValue(g_symGuardTls) != nullptr;
     }
 
-    // InitSymbols must only be called from a background/analysis thread, never
-    // from a hook callback.  SymInitialize can take hundreds of milliseconds on
-    // first call and would serialize every hooked thread.
     bool InitSymbols() noexcept
     {
         if (g_SymInit)
             return true;
 
-        // Refuse if called from a hook-instrumented thread.
         if (IsHookThread())
             return false;
 
@@ -399,9 +381,6 @@ namespace IC_STACKTRACE
 
     bool Resolve(const Trace &trace, ResolvedFrame *resolved, std::size_t resolvedCap) noexcept
     {
-        // Resolve must never be called from a hook thread.  DbgHelp uses a
-        // process-wide lock (SymFromAddr, SymGetLineFromAddr64) and will serialize
-        // all callers.  Ship raw IPs via Capture and resolve on a background thread.
         if (IsHookThread())
             return false;
 
@@ -456,7 +435,7 @@ namespace IC_STACKTRACE
         HMODULE mod = nullptr;
         ::GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                              reinterpret_cast<LPCSTR>(anyFnInOwnModule), &mod);
-        g_OwnModule = mod; // nullptr on failure: own frames won't be excluded, but not a hard error
+        g_OwnModule = mod;
     }
 
     void SetAnalysisSubjectMetadata(std::uint32_t subjectKind, const wchar_t *subjectPath,
@@ -480,7 +459,7 @@ namespace IC_STACKTRACE
         result.Flags = 0;
 
         bool foundImmediateCaller = false;
-        bool anyNonOwn = false; // tracks whether allSystem is meaningful
+        bool anyNonOwn = false;
 
         for (std::uint16_t i = 0; i < trace.Count; ++i)
         {
@@ -490,8 +469,6 @@ namespace IC_STACKTRACE
 
             CallerKind kind = ClassifyIp(ip);
 
-            // First non-own-module frame is the "immediate caller" — the actual
-            // code that invoked the hooked API, not SR71 infrastructure.
             if (!foundImmediateCaller && kind != CallerKind::OwnModule)
             {
                 result.ImmediateCaller = kind;
@@ -503,7 +480,7 @@ namespace IC_STACKTRACE
             case CallerKind::Unmapped:
                 result.Flags |= kCallerFlagHasUnmapped;
                 anyNonOwn = true;
-                result.DeepestOrigin = kind; // keep updating → ends up as deepest
+                result.DeepestOrigin = kind;
                 break;
 
             case CallerKind::ProcessImage:
@@ -519,7 +496,7 @@ namespace IC_STACKTRACE
                 break;
 
             case CallerKind::SystemDll:
-                anyNonOwn = true; // system frames count as "seen" for allSystem determination
+                anyNonOwn = true;
                 break;
 
             case CallerKind::OwnModule:
@@ -527,12 +504,10 @@ namespace IC_STACKTRACE
                 break;
 
             case CallerKind::Unknown:
-                break; // infrastructure / unresolvable — don't affect origin flags
+                break;
             }
         }
 
-        // Set AllSystem only when the trace had at least one non-own resolvable
-        // frame AND every such frame was a system DLL (no non-system / unmapped).
         bool hasNonSystemOrigin =
             (result.Flags & (kCallerFlagHasUnmapped | kCallerFlagHasProcessImage | kCallerFlagHasNonSystem)) != 0;
         if (anyNonOwn && !hasNonSystemOrigin)
@@ -540,4 +515,4 @@ namespace IC_STACKTRACE
 
         return result;
     }
-} // namespace IC_STACKTRACE
+}

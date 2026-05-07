@@ -63,11 +63,9 @@ namespace BlackbirdInterface
             if (w <= 4 || h <= 4)
                 return;
 
-            // Background is set by parent card; keep this transparent.
             if (DataContext is GraphExplorerItem explorer && !explorer.HasData)
                 return;
 
-            // Try to read values (we expect ObservableCollection<double>)
             if (Values is IEnumerable<double> series)
             {
                 var list = series as IList<double> ?? series.ToList();

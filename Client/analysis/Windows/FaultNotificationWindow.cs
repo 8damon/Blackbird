@@ -6,10 +6,6 @@ using System.Windows.Threading;
 
 namespace BlackbirdInterface
 {
-    /// <summary>
-    /// Non-blocking fault notification window built entirely in code — safe to create
-    /// during exception handling (no XAML InitializeComponent, no resource lookups).
-    /// </summary>
     internal sealed class FaultNotificationWindow : Window
     {
         private readonly DispatcherTimer _autoCloseTimer;
@@ -42,7 +38,6 @@ namespace BlackbirdInterface
 
             var panel = new StackPanel { Orientation = Orientation.Vertical };
 
-            // Header row
             var headerPanel = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 8) };
             var headerLabel = new TextBlock { Text = $"⚠  Unhandled fault — interface session continues",
                                               FontWeight = FontWeights.SemiBold, FontSize = 13,
@@ -51,17 +46,14 @@ namespace BlackbirdInterface
             headerPanel.Children.Add(headerLabel);
             panel.Children.Add(headerPanel);
 
-            // Source + type
             panel.Children.Add(new TextBlock { Text = $"{source}  ·  {typeName}", FontSize = 11,
                                                Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0xA5, 0xB4)),
                                                Margin = new Thickness(0, 0, 0, 6) });
 
-            // Short message
             panel.Children.Add(new TextBlock { Text = shortMsg, FontSize = 12,
                                                Foreground = new SolidColorBrush(Color.FromRgb(0xEA, 0xEA, 0xEA)),
                                                TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) });
 
-            // Button row
             var buttonRow = new StackPanel { Orientation = Orientation.Horizontal,
                                              HorizontalAlignment = HorizontalAlignment.Right };
             var autoCloseLabel = new TextBlock { Text = $"Dismissing in {_secondsRemaining}s", FontSize = 10,

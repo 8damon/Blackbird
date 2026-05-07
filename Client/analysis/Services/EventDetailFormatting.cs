@@ -887,14 +887,6 @@ namespace BlackbirdInterface
             return true;
         }
 
-        // Returns a short human-readable label describing where a hooked syscall / API
-        // call originated in the process address space, based on the caller-origin flags
-        // set by SR71 and forwarded through the controller.
-        //   "process-image"   — the .exe itself made the call
-        //   "non-system-dll"  — an injected or third-party DLL is in the call chain
-        //   "unbacked"        — at least one frame has no backing module (shellcode / RWX stub)
-        //   "system"          — every frame resolves to a Windows system DLL (noise)
-        //   ""                — flag not set / not a hook event
         internal static string HookCallerOriginLabel(uint flags)
         {
             if ((flags & BlackbirdNative.IpcEtwFlagHookCallerHasUnmapped) != 0)
@@ -1004,7 +996,6 @@ namespace BlackbirdInterface
                 return view.NotifyClass != BlackbirdNative.IpcHookEventIntegrity;
             }
 
-            // Legacy fallback for older snapshots that may not carry structured source metadata yet.
             if (!HasStructuredHookRoute(view) && ReasonContainsToken(view.Reason, "kind", "kernel_ntapi"))
             {
                 return true;

@@ -188,7 +188,7 @@ namespace BK_RUNTIME_INTERNAL
             }
 
             (void)FlushInstructionCache(GetCurrentProcess(), stub, sizeof(templateBytes));
-            if (!RegisterControlFlowGuardCallTarget(stub, Sr71CfgCallTargetMode::CfgOnly, "BK Instrument.PIC"))
+            if (!RegisterControlFlowGuardCallTarget(stub, Sr71CfgCallTargetMode::CfgOnly, "rt.pic"))
             {
                 (void)VirtualFree(stub, 0, MEM_RELEASE);
                 BkRuntimeReportFault(BkRuntimeFaultCode::ProcessInstrumentationCallbackInstallFailed,
@@ -212,7 +212,7 @@ namespace BK_RUNTIME_INTERNAL
             const UINT64 callbackAddress = reinterpret_cast<UINT64>(g_PicStub);
             if (!BKIPC::RegisterInstrumentationRange(callbackAddress, kPicStubAllocationSize,
                                                      BK_INSTRUMENTATION_FLAG_PROCESS_CALLBACK,
-                                                     "BK Instrument.PIC"))
+                                                     "rt.pic"))
             {
                 BkRuntimeReportFault(BkRuntimeFaultCode::ProcessInstrumentationCallbackProtectFailed, callbackAddress,
                                      kPicStubAllocationSize);
@@ -255,7 +255,7 @@ namespace BK_RUNTIME_INTERNAL
                 ((mbi.Type == MEM_IMAGE ? BK_HOOK_CALLER_KIND_NONSYSTEM_DLL : BK_HOOK_CALLER_KIND_UNMAPPED)
                  << BK_HOOK_CALLER_IMMED_SHIFT);
             (void)StringCchCopyA(record.ApiName, RTL_NUMBER_OF(record.ApiName), "ProcessInstrumentationCallback");
-            (void)StringCchCopyA(record.ModuleName, RTL_NUMBER_OF(record.ModuleName), "BK Instrument");
+            (void)StringCchCopyA(record.ModuleName, RTL_NUMBER_OF(record.ModuleName), "Runtime");
             return BKIPC::PublishHookEvent(record);
         }
 

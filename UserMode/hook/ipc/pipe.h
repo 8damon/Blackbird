@@ -18,7 +18,6 @@
 
 namespace BKIPC
 {
-    inline constexpr const wchar_t *PIPE_NAME = BKIPC_HOOK_PIPE_NAME;
     inline constexpr DWORD PIPE_DEFAULT_TIMEOUT_MS = 5000;
 
     struct WinsockEventHeader
@@ -53,7 +52,7 @@ namespace BKIPC
     bool PublishHookEvent(const BKIPC_HOOK_EVENT &eventRecord);
     UINT32 DrainPendingHookEventsSynchronously(UINT32 maxEvents = 64) noexcept;
     bool NotifyHookReady(UINT32 readyMask, UINT32 *observedMaskOut = nullptr, UINT32 *pendingCommandOut = nullptr);
-    /* Registers a memory range as BK/SR71-owned instrumentation so the
+    /* Registers a memory range as runtime-owned instrumentation so the
        controller excludes it from heuristics and annotates it in the UI. */
     bool RegisterInstrumentationRange(UINT64 baseAddress, UINT64 regionSize, UINT32 flags, const char *tag) noexcept;
     bool RegisterHookPatch(UINT64 patchAddress, UINT32 patchSize, const UINT8 *originalBytes, UINT32 originalSize,

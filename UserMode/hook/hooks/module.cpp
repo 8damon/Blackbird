@@ -526,7 +526,7 @@ namespace
         }
         FlushInstructionCache(GetCurrentProcess(), trampoline, kTrampolineSize);
         if (!BK_RUNTIME_INTERNAL::RegisterControlFlowGuardCallTarget(
-                trampoline, BK_RUNTIME_INTERNAL::Sr71CfgCallTargetMode::CfgOnly, "BK Instrument.ModuleTrampoline"))
+                trampoline, BK_RUNTIME_INTERNAL::Sr71CfgCallTargetMode::CfgOnly, "rt.mod.trampoline"))
         {
             VirtualFree(trampoline, 0, MEM_RELEASE);
             return false;

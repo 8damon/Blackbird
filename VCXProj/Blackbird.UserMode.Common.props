@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Label="BlackbirdUserModeIdentity">
-    <BlackbirdCompanyName>TITAN Softwork Solutions</BlackbirdCompanyName>
-    <BlackbirdProductName>Blackbird Platform</BlackbirdProductName>
+    <BlackbirdCompanyName Condition="'$(BlackbirdCompanyName)'==''">TITAN Softwork Solutions</BlackbirdCompanyName>
+    <BlackbirdProductName Condition="'$(BlackbirdProductName)'==''">Blackbird Platform</BlackbirdProductName>
     <BlackbirdFileDescription Condition="'$(BlackbirdFileDescription)'==''">Blackbird Platform User-Mode Component</BlackbirdFileDescription>
     <BlackbirdInternalName Condition="'$(BlackbirdInternalName)'==''">Blackbird</BlackbirdInternalName>
     <BlackbirdOriginalFilename Condition="'$(BlackbirdOriginalFilename)'==''">Blackbird.bin</BlackbirdOriginalFilename>
@@ -42,7 +42,7 @@
       <AdditionalManifestFiles>$(BlackbirdManifestPath);%(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
     <ResourceCompile>
-      <PreprocessorDefinitions>BK_FILE_DESCRIPTION=\"$(BlackbirdFileDescription)\";BK_INTERNAL_NAME=\"$(BlackbirdInternalName)\";BK_ORIGINAL_FILENAME=\"$(BlackbirdOriginalFilename)\";%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>BK_FILE_DESCRIPTION=\"$(BlackbirdFileDescription)\";BK_COMPANY_NAME=\"$(BlackbirdCompanyName)\";BK_INTERNAL_NAME=\"$(BlackbirdInternalName)\";BK_ORIGINAL_FILENAME=\"$(BlackbirdOriginalFilename)\";BK_PRODUCT_NAME=\"$(BlackbirdProductName)\";%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
   </ItemDefinitionGroup>
 

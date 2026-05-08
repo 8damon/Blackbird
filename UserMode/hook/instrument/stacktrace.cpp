@@ -1,4 +1,5 @@
 #include "stacktrace.h"
+#include "../hooks/encoded_literal.h"
 
 #include <Psapi.h>
 #include <DbgHelp.h>
@@ -251,14 +252,25 @@ namespace IC_STACKTRACE
                     leaf = p + 1;
             }
 
-            if (EqualsInsensitive(leaf, L"SR71.dll") || EqualsInsensitive(leaf, L"J58.dll") ||
-                EqualsInsensitive(leaf, L"BlackbirdController.exe") ||
-                EqualsInsensitive(leaf, L"BlackbirdInterface.exe"))
+            static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedWideLiteral kJ58Name{L"J58.dll", 0x1F5u};
+            static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedWideLiteral kControllerName{
+                L"BlackbirdController.exe", 0x20Bu};
+            static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedWideLiteral kInterfaceName{
+                L"BlackbirdInterface.exe", 0x22Du};
+            auto sr71Name = BK_RUNTIME_INTERNAL::DecodeSr71DllName();
+            BK_RUNTIME_INTERNAL::Sr71ScopedWideLiteral j58Name(kJ58Name);
+            BK_RUNTIME_INTERNAL::Sr71ScopedWideLiteral controllerName(kControllerName);
+            BK_RUNTIME_INTERNAL::Sr71ScopedWideLiteral interfaceName(kInterfaceName);
+
+            if (EqualsInsensitive(leaf, sr71Name.c_str()) || EqualsInsensitive(leaf, j58Name.c_str()) ||
+                EqualsInsensitive(leaf, controllerName.c_str()) || EqualsInsensitive(leaf, interfaceName.c_str()))
             {
                 return true;
             }
 
-            return ContainsInsensitive(path, L"\\BK\\");
+            static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedWideLiteral kBkPathFragment{L"\\BK\\", 0x24Fu};
+            BK_RUNTIME_INTERNAL::Sr71ScopedWideLiteral bkPathFragment(kBkPathFragment);
+            return ContainsInsensitive(path, bkPathFragment.c_str());
         }
 
         static CallerKind ClassifyUnresolvedIp(void *ip) noexcept

@@ -13,7 +13,7 @@ namespace BK_RUNTIME_INTERNAL
 
     const char *LaunchGateTrapTag(std::uint32_t kind) noexcept
     {
-        return (kind == LaunchGateTrapTlsCallback) ? "BK Instrument.TLS Callback" : "BK Instrument.Entry";
+        return (kind == LaunchGateTrapTlsCallback) ? "rt.tls" : "rt.entry";
     }
 
     const char *LaunchGateTrapApiName(std::uint32_t kind) noexcept
@@ -51,7 +51,7 @@ namespace BK_RUNTIME_INTERNAL
         record.CallerFlags =
             ((BK_HOOK_COMPONENT_INTEGRITY << BK_HOOK_CALLER_COMPONENT_SHIFT) & BK_HOOK_CALLER_COMPONENT_MASK);
         (void)strncpy_s(record.ApiName, LaunchGateTrapApiName(park.TrapKind), _TRUNCATE);
-        (void)strncpy_s(record.ModuleName, "BK Instrument", _TRUNCATE);
+        (void)strncpy_s(record.ModuleName, "Runtime", _TRUNCATE);
 
         BkSr71InternalScope scope;
         (void)BKIPC::PublishHookEvent(record);
@@ -60,7 +60,9 @@ namespace BK_RUNTIME_INTERNAL
     bool ShouldDeferLaunchGateOpen() noexcept
     {
         char value[8]{};
-        DWORD read = GetEnvironmentVariableA("BK_HOOK_LAUNCH_GATE_DEFER_OPEN", value, (DWORD)RTL_NUMBER_OF(value));
+        static constexpr Sr71EncodedAnsiLiteral kEnvName{"BK_HOOK_LAUNCH_GATE_DEFER_OPEN", 0x99u};
+        Sr71ScopedAnsiLiteral envName(kEnvName);
+        DWORD read = GetEnvironmentVariableA(envName.c_str(), value, (DWORD)RTL_NUMBER_OF(value));
         if (read == 0 || read >= RTL_NUMBER_OF(value))
         {
             return false;
@@ -76,7 +78,9 @@ namespace BK_RUNTIME_INTERNAL
             return false;
         }
 
-        DWORD envRead = GetEnvironmentVariableW(L"BK_HOOK_LAUNCH_GATE_EVENT", buffer, (DWORD)cchBuffer);
+        static constexpr Sr71EncodedWideLiteral kEnvName{L"BK_HOOK_LAUNCH_GATE_EVENT", 0x1A9u};
+        Sr71ScopedWideLiteral envName(kEnvName);
+        DWORD envRead = GetEnvironmentVariableW(envName.c_str(), buffer, (DWORD)cchBuffer);
         if (envRead > 0 && envRead < cchBuffer)
         {
             BkDbgLog("BuildLaunchGateDeferredEventName: using controller-provided name=%ls", buffer);

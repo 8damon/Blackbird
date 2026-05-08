@@ -69,7 +69,9 @@ namespace BK_NT
     static bool ShouldEnableNtMemoryHooks() noexcept
     {
         char value[8]{};
-        DWORD read = GetEnvironmentVariableA("BK_NT_HOOK_MEMORY", value, static_cast<DWORD>(RTL_NUMBER_OF(value)));
+        static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedAnsiLiteral kEnvName{"BK_NT_HOOK_MEMORY", 0x83u};
+        BK_RUNTIME_INTERNAL::Sr71ScopedAnsiLiteral envName(kEnvName);
+        DWORD read = GetEnvironmentVariableA(envName.c_str(), value, static_cast<DWORD>(RTL_NUMBER_OF(value)));
         if (read == 0 || read >= RTL_NUMBER_OF(value))
         {
             return false;
@@ -1016,7 +1018,8 @@ namespace BK_NT
         }
         if (sr71 == nullptr)
         {
-            sr71 = GetModuleHandleW(L"SR71.dll");
+            auto sr71Name = BK_RUNTIME_INTERNAL::DecodeSr71DllName();
+            sr71 = GetModuleHandleW(sr71Name.c_str());
         }
         ModuleRange image{};
         if (sr71 != nullptr && TryResolveModuleImageRange(sr71, image))
@@ -1139,7 +1142,8 @@ namespace BK_NT
         }
         if (sr71 == nullptr)
         {
-            sr71 = GetModuleHandleW(L"SR71.dll");
+            auto sr71Name = BK_RUNTIME_INTERNAL::DecodeSr71DllName();
+            sr71 = GetModuleHandleW(sr71Name.c_str());
         }
         ModuleRange image{};
         return sr71 != nullptr && TryResolveModuleImageRange(sr71, image) &&
@@ -1530,7 +1534,7 @@ namespace BK_NT
 
         FlushInstructionCache(GetCurrentProcess(), memory, StubSize);
         if (!BK_RUNTIME_INTERNAL::RegisterControlFlowGuardCallTarget(
-                memory, BK_RUNTIME_INTERNAL::Sr71CfgCallTargetMode::CfgOnly, "BK Instrument.NtSyscallStub"))
+                memory, BK_RUNTIME_INTERNAL::Sr71CfgCallTargetMode::CfgOnly, "rt.nt.stub"))
         {
             VirtualFree(memory, 0, MEM_RELEASE);
             return nullptr;

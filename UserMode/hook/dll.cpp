@@ -14,12 +14,15 @@
 
 #include "ipc/pipe.h"
 #include "hooks/runtime.h"
+#include "hooks/encoded_literal.h"
 #include "instrument/unlink.h"
 
-static bool ShouldUnlinkModule() noexcept
+template <std::size_t N>
+static bool IsTruthyEnvironmentFlag(const BK_RUNTIME_INTERNAL::Sr71EncodedAnsiLiteral<N> &envName) noexcept
 {
     char value[8]{};
-    DWORD read = GetEnvironmentVariableA("BK_HOOK_UNLINK", value, (DWORD)RTL_NUMBER_OF(value));
+    BK_RUNTIME_INTERNAL::Sr71ScopedAnsiLiteral decoded(envName);
+    DWORD read = GetEnvironmentVariableA(decoded.c_str(), value, (DWORD)RTL_NUMBER_OF(value));
     if (read == 0 || read >= RTL_NUMBER_OF(value))
     {
         return false;
@@ -28,16 +31,16 @@ static bool ShouldUnlinkModule() noexcept
     return (value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T');
 }
 
+static bool ShouldUnlinkModule() noexcept
+{
+    static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedAnsiLiteral kEnvName{"BK_HOOK_UNLINK", 0x51u};
+    return IsTruthyEnvironmentFlag(kEnvName);
+}
+
 static bool ShouldPrepareLaunchGate() noexcept
 {
-    char value[8]{};
-    DWORD read = GetEnvironmentVariableA("BK_HOOK_LAUNCH_GATE", value, (DWORD)RTL_NUMBER_OF(value));
-    if (read == 0 || read >= RTL_NUMBER_OF(value))
-    {
-        return false;
-    }
-
-    return (value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T');
+    static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedAnsiLiteral kEnvName{"BK_HOOK_LAUNCH_GATE", 0x6Du};
+    return IsTruthyEnvironmentFlag(kEnvName);
 }
 
 static DWORD WINAPI BkDispatchFlightThread(LPVOID)

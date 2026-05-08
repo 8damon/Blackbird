@@ -1,5 +1,6 @@
 #include "unlink.h"
 #include "../../include/native_peb.h"
+#include "../hooks/encoded_literal.h"
 
 #include <windows.h>
 #include <cstdint>
@@ -152,6 +153,7 @@ void UnlinkModulePEB()
 
     LIST_ENTRY *head = &ldr->InLoadOrderModuleList;
     LIST_ENTRY *curr = head->Flink;
+    auto sr71Name = BK_RUNTIME_INTERNAL::DecodeSr71DllName();
 
     while (curr != nullptr && curr != head)
     {
@@ -159,7 +161,7 @@ void UnlinkModulePEB()
 
         curr = curr->Flink;
 
-        if (!UnicodeEqualsInsensitive(entry->BaseDllName, L"SR71.dll"))
+        if (!UnicodeEqualsInsensitive(entry->BaseDllName, sr71Name.c_str()))
             continue;
 
         SnapshotAndConcealEntry(entry);

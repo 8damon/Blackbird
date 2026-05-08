@@ -1323,7 +1323,7 @@ namespace BK_NT
     {
         constexpr std::size_t StubSize = 16;
 
-        void *memory = VirtualAlloc(nullptr, StubSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        void *memory = VirtualAlloc(nullptr, StubSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 
         if (!memory)
             return nullptr;
@@ -1339,6 +1339,21 @@ namespace BK_NT
         code[10] = 0xC3;
         for (std::size_t i = 11; i < StubSize; ++i)
             code[i] = 0xCC;
+
+        DWORD oldProtect = 0;
+        if (!VirtualProtect(memory, StubSize, PAGE_EXECUTE_READ, &oldProtect))
+        {
+            VirtualFree(memory, 0, MEM_RELEASE);
+            return nullptr;
+        }
+
+        FlushInstructionCache(GetCurrentProcess(), memory, StubSize);
+        if (!BK_RUNTIME_INTERNAL::RegisterControlFlowGuardCallTarget(
+                memory, BK_RUNTIME_INTERNAL::Sr71CfgCallTargetMode::CfgOnly, "BK Instrument.NtSyscallStub"))
+        {
+            VirtualFree(memory, 0, MEM_RELEASE);
+            return nullptr;
+        }
 
         return memory;
     }

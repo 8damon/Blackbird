@@ -1,4 +1,5 @@
 #include "ws.h"
+#include "runtime_private.h"
 #include "../../../ABI/blackbird_ipc.h"
 
 #ifndef _WINSOCKAPI_
@@ -620,6 +621,15 @@ namespace
                     }
 
                     if (std::strcmp(functionName, hookEntry.FunctionName) != 0)
+                    {
+                        continue;
+                    }
+
+                    if (install &&
+                        !BK_RUNTIME_INTERNAL::RegisterControlFlowGuardCallTarget(
+                            hookEntry.HookFunction,
+                            BK_RUNTIME_INTERNAL::Sr71CfgCallTargetMode::CfgAndXfgWhenEnabled,
+                            hookEntry.FunctionName))
                     {
                         continue;
                     }

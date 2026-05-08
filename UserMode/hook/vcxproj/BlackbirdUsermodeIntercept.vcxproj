@@ -124,6 +124,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <BufferSecurityCheck>true</BufferSecurityCheck>
       <ControlFlowGuard>Guard</ControlFlowGuard>
+      <GuardEHContMetadata>true</GuardEHContMetadata>
       <ExceptionHandling>Sync</ExceptionHandling>
       <ShowIncludes>true</ShowIncludes>
     </ClCompile>
@@ -131,6 +132,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ControlFlowGuard>Guard</ControlFlowGuard>
+      <CETCompat>true</CETCompat>
       <RandomizedBaseAddress>true</RandomizedBaseAddress>
     </Link>
   </ItemDefinitionGroup>
@@ -146,6 +148,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <BufferSecurityCheck>true</BufferSecurityCheck>
       <ControlFlowGuard>Guard</ControlFlowGuard>
+      <GuardEHContMetadata>true</GuardEHContMetadata>
       <ExceptionHandling>Sync</ExceptionHandling>
       <Optimization>MaxSpeed</Optimization>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
@@ -159,6 +162,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ControlFlowGuard>Guard</ControlFlowGuard>
+      <CETCompat>true</CETCompat>
       <RandomizedBaseAddress>true</RandomizedBaseAddress>
     </Link>
   </ItemDefinitionGroup>
@@ -169,6 +173,7 @@
     <ClCompile Include="..\hooks\nt.cpp" />
     <ClCompile Include="..\hooks\runtime_bootstrap.cpp" />
     <ClCompile Include="..\hooks\runtime.cpp" />
+    <ClCompile Include="..\hooks\runtime_cfg.cpp" />
     <ClCompile Include="..\hooks\runtime_integrity.cpp" />
     <ClCompile Include="..\hooks\runtime_launch_gate.cpp" />
     <ClCompile Include="..\hooks\runtime_pic.cpp" />

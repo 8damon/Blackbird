@@ -161,6 +161,10 @@ inline UINT32 ControllerComputeEtwDetectionTraits(_In_ const BKIPC_ETW_EVENT &Ev
     {
         traits |= BKIPC_ETW_TRAIT_DIRECT_SYSCALL;
     }
+    if ((Event.Flags & BKIPC_ETW_FLAG_HOOK_CALLER_UNWIND_SUSPECT) != 0)
+    {
+        traits |= BKIPC_ETW_TRAIT_UNWIND_SUSPECT;
+    }
     if (ControllerAsciiContainsInsensitive(Event.DetectionName, "HOOK_TAMPER") ||
         ControllerAsciiContainsInsensitive(Event.DetectionName, "AMSI_PATCH_TAMPERED") ||
         ControllerAsciiContainsInsensitive(Event.DetectionName, "ETW_PATCH_TAMPERED") ||

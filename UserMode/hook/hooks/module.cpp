@@ -1,4 +1,5 @@
 #include "module.h"
+#include "runtime_private.h"
 #include "../../../ABI/blackbird_ipc.h"
 
 #include "ws.h"
@@ -489,7 +490,7 @@ namespace
             return false;
         }
 
-        void *trampoline = VirtualAlloc(nullptr, kTrampolineSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        void *trampoline = VirtualAlloc(nullptr, kTrampolineSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
         if (trampoline == nullptr)
         {
             return false;
@@ -517,6 +518,20 @@ namespace
             gate[i] = 0xCC;
         }
 
+        DWORD trampolineProtect = 0;
+        if (!VirtualProtect(trampoline, kTrampolineSize, PAGE_EXECUTE_READ, &trampolineProtect))
+        {
+            VirtualFree(trampoline, 0, MEM_RELEASE);
+            return false;
+        }
+        FlushInstructionCache(GetCurrentProcess(), trampoline, kTrampolineSize);
+        if (!BK_RUNTIME_INTERNAL::RegisterControlFlowGuardCallTarget(
+                trampoline, BK_RUNTIME_INTERNAL::Sr71CfgCallTargetMode::CfgOnly, "BK Instrument.ModuleTrampoline"))
+        {
+            VirtualFree(trampoline, 0, MEM_RELEASE);
+            return false;
+        }
+
         dst[0] = 0x48;
         dst[1] = 0xB8;
         *reinterpret_cast<void **>(&dst[2]) = hook;
@@ -530,7 +545,6 @@ namespace
         DWORD temp = 0;
         VirtualProtect(dst, kPatchSize, oldProtect, &temp);
         FlushInstructionCache(GetCurrentProcess(), dst, kPatchSize);
-        FlushInstructionCache(GetCurrentProcess(), trampoline, kTrampolineSize);
 
         *trampolineOut = trampoline;
         return true;

@@ -64,6 +64,9 @@ namespace IC_STACKTRACE
     constexpr std::uint32_t kCallerFlagHasProcessImage = 0x00000004u;
     constexpr std::uint32_t kCallerFlagHasNonSystem = 0x00000008u;
     constexpr std::uint32_t kCallerFlagHasOwnModule = 0x00001000u;
+    constexpr std::uint32_t kCallerFlagPrivateExecNoUnwind = 0x00002000u;
+    constexpr std::uint32_t kCallerFlagPrivateExecDynamicUnwind = 0x00004000u;
+    constexpr std::uint32_t kCallerFlagImageMissingUnwindMetadata = 0x00008000u;
 
     struct CallerClassification
     {
@@ -73,6 +76,7 @@ namespace IC_STACKTRACE
     };
 
     void InitCallerClassifier(void *anyFnInOwnModule) noexcept;
+    void RegisterOwnExecutableRange(void *base, std::size_t size) noexcept;
 
     void SetAnalysisSubjectMetadata(std::uint32_t subjectKind, const wchar_t *subjectPath,
                                     const wchar_t *hostPath) noexcept;

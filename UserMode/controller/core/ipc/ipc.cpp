@@ -2368,6 +2368,7 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
     }
 
     ControllerHookAppendArgsToReason(mapped.Reason, RTL_NUMBER_OF(mapped.Reason), HookEvent->Args, argCount);
+    ControllerHookAppendUnwindTraitsToReason(mapped.Reason, RTL_NUMBER_OF(mapped.Reason), HookEvent->CallerFlags);
 
     mapped.OriginAddress = HookEvent->Caller;
     mapped.StackCount = HookEvent->StackCount;
@@ -2400,6 +2401,10 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
             mapped.Flags |= BKIPC_ETW_FLAG_HOOK_CALLER_HAS_NONSYSTEM_DLL;
         if (cf & BK_HOOK_CALLER_FLAG_HAS_OWN_MODULE)
             mapped.Flags |= BKIPC_ETW_FLAG_HOOK_CALLER_HAS_OWN_MODULE;
+        if ((cf & (BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_NO_UNWIND |
+                   BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_DYNAMIC_UNWIND |
+                   BK_HOOK_CALLER_FLAG_IMAGE_MISSING_UNWIND_METADATA)) != 0)
+            mapped.Flags |= BKIPC_ETW_FLAG_HOOK_CALLER_UNWIND_SUSPECT;
         mapped.Flags |= (cf & (BK_HOOK_CALLER_IMMED_MASK | BK_HOOK_CALLER_DEEP_MASK));
         mapped.Flags |= ((cf & BK_HOOK_CALLER_COMPONENT_MASK) << 12u);
     }

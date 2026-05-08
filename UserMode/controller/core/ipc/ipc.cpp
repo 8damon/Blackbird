@@ -649,12 +649,13 @@ static BOOL ControllerCommandAllowedForRole(_In_ DWORD ClientRole, _In_ UINT32 C
     {
     case BkctlrClientRoleHook:
         return (Command == BlackbirdIpcCommandHandshake || Command == BlackbirdIpcCommandPublishHookEvent ||
-                Command == BlackbirdIpcCommandNotifyHookReady ||
+                Command == BlackbirdIpcCommandPublishHookEventBatch || Command == BlackbirdIpcCommandNotifyHookReady ||
                 Command == BlackbirdIpcCommandRegisterInstrumentationRange ||
                 Command == BlackbirdIpcCommandRegisterHookPatch ||
                 Command == BlackbirdIpcCommandRegisterProcessInstrumentationCallback);
     case BkctlrClientRoleControl:
-        return (Command != BlackbirdIpcCommandPublishHookEvent && Command != BlackbirdIpcCommandNotifyHookReady &&
+        return (Command != BlackbirdIpcCommandPublishHookEvent &&
+                Command != BlackbirdIpcCommandPublishHookEventBatch && Command != BlackbirdIpcCommandNotifyHookReady &&
                 Command != BlackbirdIpcCommandRegisterInstrumentationRange &&
                 Command != BlackbirdIpcCommandRegisterHookPatch &&
                 Command != BlackbirdIpcCommandRegisterProcessInstrumentationCallback);
@@ -1255,6 +1256,36 @@ static DWORD ControllerClientGetEtwEvent(_Inout_ BK_CONTROLLER_CLIENT *Client, _
         }
     }
 }
+
+static VOID ControllerHookAppendRepeatToReason(_Inout_updates_(ReasonChars) PWSTR Reason, _In_ size_t ReasonChars,
+                                               _In_ UINT32 CallerFlags)
+{
+    UINT32 repeatCount = (CallerFlags & BK_HOOK_CALLER_REPEAT_MASK) >> BK_HOOK_CALLER_REPEAT_SHIFT;
+    size_t reasonLen = 0;
+    WCHAR suffix[32];
+
+    if (Reason == NULL || ReasonChars == 0 || repeatCount <= 1u)
+    {
+        return;
+    }
+
+    if (wcsstr(Reason, L" repeat=") != NULL ||
+        FAILED(StringCchLengthW(Reason, ReasonChars, &reasonLen)) || reasonLen >= ReasonChars - 1)
+    {
+        return;
+    }
+
+    if (repeatCount == (BK_HOOK_CALLER_REPEAT_MASK >> BK_HOOK_CALLER_REPEAT_SHIFT))
+    {
+        (void)StringCchPrintfW(suffix, RTL_NUMBER_OF(suffix), L" repeat=%lu+", (unsigned long)repeatCount);
+    }
+    else
+    {
+        (void)StringCchPrintfW(suffix, RTL_NUMBER_OF(suffix), L" repeat=%lu", (unsigned long)repeatCount);
+    }
+    (void)StringCchCatW(Reason, ReasonChars, suffix);
+}
+
 
 static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Client,
                                               _In_ const BKIPC_HOOK_EVENT *HookEvent)
@@ -2369,6 +2400,7 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
 
     ControllerHookAppendArgsToReason(mapped.Reason, RTL_NUMBER_OF(mapped.Reason), HookEvent->Args, argCount);
     ControllerHookAppendUnwindTraitsToReason(mapped.Reason, RTL_NUMBER_OF(mapped.Reason), HookEvent->CallerFlags);
+    ControllerHookAppendRepeatToReason(mapped.Reason, RTL_NUMBER_OF(mapped.Reason), HookEvent->CallerFlags);
 
     mapped.OriginAddress = HookEvent->Caller;
     mapped.StackCount = HookEvent->StackCount;
@@ -2464,6 +2496,36 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
     ControllerObserveUserHookHollowEvent(&mapped);
     ControllerDispatchEtwEvent(&mapped);
     return ERROR_SUCCESS;
+}
+
+static DWORD ControllerClientPublishHookEventBatch(_Inout_ BK_CONTROLLER_CLIENT *Client,
+                                                   _In_ const BKIPC_HOOK_EVENT_BATCH *Batch)
+{
+    DWORD firstError = ERROR_SUCCESS;
+    UINT32 count;
+    UINT32 i;
+
+    if (Client == NULL || Batch == NULL)
+    {
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    count = Batch->Count;
+    if (count == 0 || count > BKIPC_MAX_HOOK_EVENT_BATCH)
+    {
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    for (i = 0; i < count; ++i)
+    {
+        DWORD err = ControllerClientPublishHookEvent(Client, &Batch->Events[i]);
+        if (err != ERROR_SUCCESS && firstError == ERROR_SUCCESS)
+        {
+            firstError = err;
+        }
+    }
+
+    return firstError;
 }
 
 static DWORD ControllerClientNotifyHookReady(_Inout_ BK_CONTROLLER_CLIENT *Client,
@@ -2859,6 +2921,8 @@ static PCSTR ControllerCommandName(_In_ UINT32 Command)
         return "open-shared-ring";
     case BlackbirdIpcCommandPublishHookEvent:
         return "publish-hook-event";
+    case BlackbirdIpcCommandPublishHookEventBatch:
+        return "publish-hook-event-batch";
     case BlackbirdIpcCommandSetUserHookTarget:
         return "set-user-hook-target";
     case BlackbirdIpcCommandNotifyHookReady:
@@ -3045,6 +3109,9 @@ static DWORD ControllerHandleClientCommand(_Inout_ BK_CONTROLLER_CLIENT *Client,
     case BlackbirdIpcCommandPublishHookEvent:
         err = ControllerClientPublishHookEvent(Client, &Request->Payload.HookEvent);
         break;
+    case BlackbirdIpcCommandPublishHookEventBatch:
+        err = ControllerClientPublishHookEventBatch(Client, &Request->Payload.HookEventBatch);
+        break;
     case BlackbirdIpcCommandSetUserHookTarget:
         err = ControllerClientSetUserHookTarget(Client, &Request->Payload.SetUserHookTargetRequest,
                                                 &Response->Payload.SetUserHookTargetResponse);
@@ -3216,7 +3283,9 @@ static DWORD ControllerHandleClientCommand(_Inout_ BK_CONTROLLER_CLIENT *Client,
 Complete:
     Response->Status = err;
     if (Request->Command != BlackbirdIpcCommandGetEvent && Request->Command != BlackbirdIpcCommandGetEtwEvent &&
-        Request->Command != BlackbirdIpcCommandPublishHookEvent && Request->Command != BlackbirdIpcCommandGetStats &&
+        Request->Command != BlackbirdIpcCommandPublishHookEvent &&
+        Request->Command != BlackbirdIpcCommandPublishHookEventBatch &&
+        Request->Command != BlackbirdIpcCommandGetStats &&
         Request->Command != BlackbirdIpcCommandGetHealth && Request->Command != BlackbirdIpcCommandGetDiagnostics &&
         Request->Command != BlackbirdIpcCommandGetQpcTimingState)
     {

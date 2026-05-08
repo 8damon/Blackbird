@@ -15,6 +15,7 @@
 #define BK_MAX_CLIENT_QUEUE_DEPTH 8192
 #define BK_MAX_TOTAL_CLIENTS 256
 #define BK_MAX_TOTAL_QUEUED_EVENTS 131072
+#define BK_PID_INTEREST_INDEX_BUCKETS 16384
 #define BK_QUERY_IMAGE_WINDOW_100NS 10000000ULL
 #define BK_QUERY_IMAGE_MAX_PER_WINDOW 64
 #define BK_QUERY_IMAGE_MAX_INFLIGHT 8
@@ -30,6 +31,12 @@ typedef struct _BK_EVENT_NODE
     LIST_ENTRY Link;
     BK_EVENT_RECORD Record;
 } BK_EVENT_NODE, *PBK_EVENT_NODE;
+
+typedef struct _BK_PID_INTEREST_ENTRY
+{
+    UINT32 ProcessId;
+    UINT32 StreamMask;
+} BK_PID_INTEREST_ENTRY, *PBK_PID_INTEREST_ENTRY;
 
 typedef struct _BK_CLIENT
 {
@@ -87,6 +94,7 @@ extern volatile LONG g_QueryImageThrottleCounter;
 extern volatile LONG g_IoctlGetEventDeliverCounter;
 extern volatile LONG g_IoctlGetEventEmptyCounter;
 extern volatile LONG g_IoctlGetStatsCounter;
+extern NPAGED_LOOKASIDE_LIST g_BkctlEventNodeLookaside;
 
 NTSYSAPI
 NTSTATUS
@@ -147,7 +155,16 @@ BOOLEAN BkctlClientRemoveSubscriptionLocked(_Inout_ PBK_CLIENT Client, _In_ UINT
 UINT32 BkctlClientReplaceSubscriptionsLocked(_Inout_ PBK_CLIENT Client,
                                              _In_reads_(ProcessCount) const UINT32 *ProcessIds,
                                              _In_ UINT32 ProcessCount, _In_ UINT32 StreamMask);
+VOID BkctlInitializeEventNodeLookaside(VOID);
+VOID BkctlUninitializeEventNodeLookaside(VOID);
+PBK_EVENT_NODE BkctlAllocateEventNode(VOID);
+VOID BkctlFreeEventNode(_Inout_ PBK_EVENT_NODE Node);
+VOID BkctlInitializePidInterestIndex(VOID);
+VOID BkctlClearPidInterestIndex(VOID);
+VOID BkctlRebuildPidInterestIndex(VOID);
 VOID BkctlRefreshArmedState(VOID);
+UINT32 BkctlClientQuerySubscriptionMaskEither(_In_ PBK_CLIENT Client, _In_ UINT32 PrimaryProcessId,
+                                              _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask);
 BOOLEAN BkctlClientMatchSubscriptionEither(_In_ PBK_CLIENT Client, _In_ UINT32 PrimaryProcessId,
                                            _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask);
 VOID BkctlPublishRecordToSubscribers(_In_ UINT32 PrimaryPid, _In_ UINT32 SecondaryPid, _In_ UINT32 StreamMask,

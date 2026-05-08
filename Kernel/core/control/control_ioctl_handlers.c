@@ -301,6 +301,7 @@ NTSTATUS BkctlHandleSubscribeIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Reque
         DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
         "BK: subscribe %s requesterPid=%lu targetPid=%lu streamMask=0x%08X mergedMask=0x%08X subscriptions=%lu.\n",
         updated ? "update" : "add", requesterPid, in->ProcessId, in->StreamMask, mergedMask, subscriptionCountSnapshot);
+    BkctlRebuildPidInterestIndex();
     BkctlSetTelemetryArmed(TRUE);
 
     return STATUS_SUCCESS;
@@ -336,6 +337,7 @@ NTSTATUS BkctlHandleUnsubscribeIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Req
         DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
                    "BK: unsubscribe requesterPid=%lu targetPid=%lu subscriptions=%lu.\n", requesterPid, in->ProcessId,
                    subscriptionCountSnapshot);
+        BkctlRebuildPidInterestIndex();
         BkctlRefreshArmedState();
         return STATUS_SUCCESS;
     }
@@ -617,6 +619,7 @@ NTSTATUS BkctlHandleSetPidsIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
                "BK: set-pids requesterPid=%lu requestedCount=%lu appliedCount=%lu streamMask=0x%08X.\n", requesterPid,
                in->ProcessCount, appliedCount, streamMask);
+    BkctlRebuildPidInterestIndex();
     if (appliedCount != 0)
     {
         BkctlSetTelemetryArmed(TRUE);
@@ -880,7 +883,7 @@ NTSTATUS BkctlHandleGetEventIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Reques
             Client->QueueDepth -= 1;
         }
         queueDepthSnapshot = Client->QueueDepth;
-        ExFreePoolWithTag(node, BK_POOL_TAG);
+        BkctlFreeEventNode(node);
         BkctlReleaseGlobalQueueSlot();
     }
     ExReleaseFastMutex(&Client->Lock);

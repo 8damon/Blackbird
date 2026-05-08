@@ -201,6 +201,7 @@ BkctlInitialize(_In_ WDFDRIVER Driver)
     InterlockedExchange(&g_IoctlGetEventDeliverCounter, 0);
     InterlockedExchange(&g_IoctlGetEventEmptyCounter, 0);
     InterlockedExchange(&g_IoctlGetStatsCounter, 0);
+    BkctlInitializePidInterestIndex();
 
     RtlInitUnicodeString(&sddl, L"D:P(A;;GA;;;SY)(A;;GA;;;BA)");
     devInit = WdfControlDeviceInitAllocate(Driver, &sddl);
@@ -256,6 +257,7 @@ BkctlInitialize(_In_ WDFDRIVER Driver)
     }
 
     g_ControlDevice = device;
+    BkctlInitializeEventNodeLookaside();
     WdfControlFinishInitializing(device);
     return STATUS_SUCCESS;
 }

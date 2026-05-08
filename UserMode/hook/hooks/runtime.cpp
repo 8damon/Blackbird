@@ -103,6 +103,7 @@ namespace BK_RUNTIME_INTERNAL
         SRWLOCK g_IndirectHandleLock = SRWLOCK_INIT;
         IndirectHandleEntry g_IndirectHandles[kMaxIndirectHandles]{};
         std::uint64_t g_IndirectHandleCookie = 0;
+        INIT_ONCE g_IndirectHandleCookieInit = INIT_ONCE_STATIC_INIT;
         std::uint32_t g_IndirectHandleGeneration = 0x70000000u;
 
         std::uint64_t RotateLeft64(std::uint64_t value, unsigned int bits) noexcept
@@ -141,12 +142,15 @@ namespace BK_RUNTIME_INTERNAL
             return cookie != 0 ? cookie : 0x5D1B11D700000071ull;
         }
 
+        BOOL CALLBACK InitializeIndirectHandleCookie(PINIT_ONCE, PVOID, PVOID *)
+        {
+            g_IndirectHandleCookie = BuildIndirectHandleCookie();
+            return TRUE;
+        }
+
         std::uint64_t IndirectHandleCookie() noexcept
         {
-            if (g_IndirectHandleCookie == 0)
-            {
-                g_IndirectHandleCookie = BuildIndirectHandleCookie();
-            }
+            (void)InitOnceExecuteOnce(&g_IndirectHandleCookieInit, InitializeIndirectHandleCookie, nullptr, nullptr);
             return g_IndirectHandleCookie;
         }
 

@@ -16,11 +16,6 @@ static volatile LONG g_FileSystemMonitorFailureCounter = 0;
      BK_STREAM_TIMING | BK_STREAM_ENTERPRISE)
 #define BK_FS_LIT_CHARS(_Literal) ((USHORT)(RTL_NUMBER_OF(_Literal) - 1))
 
-static BOOLEAN BkcfsIsTargetProcess(_In_ UINT32 ProcessId)
-{
-    return (BkctlIsArmedFast() && BkctlHasPidInterest(ProcessId, 0, BK_FS_TARGET_STREAM_MASK));
-}
-
 static BOOLEAN BkcfsPathContainsBlackbirdArtifact(_In_opt_z_ PCWSTR Path)
 {
     UNICODE_STRING pathUs;
@@ -415,6 +410,7 @@ _Function_class_(FLT_PRE_OPERATION_CALLBACK) static FLT_PREOP_CALLBACK_STATUS
     ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemFileSystemMonitor);
     BK_FILE_EVENT event;
     UINT32 processPid32;
+    UINT32 matchedStreamMask;
     BOOLEAN hasFilesystemInterest;
     BOOLEAN hasEnterpriseInterest;
     BOOLEAN isTargetProcess;
@@ -434,9 +430,10 @@ _Function_class_(FLT_PRE_OPERATION_CALLBACK) static FLT_PREOP_CALLBACK_STATUS
     }
 
     processPid32 = (UINT32)(ULONG_PTR)PsGetCurrentProcessId();
-    hasFilesystemInterest = BkctlHasPidInterest(processPid32, 0, BK_STREAM_FILESYSTEM);
-    hasEnterpriseInterest = BkctlHasPidInterest(processPid32, 0, BK_STREAM_ENTERPRISE);
-    isTargetProcess = BkcfsIsTargetProcess(processPid32);
+    matchedStreamMask = BkctlQueryPidInterest(processPid32, 0, BK_FS_TARGET_STREAM_MASK);
+    hasFilesystemInterest = ((matchedStreamMask & BK_STREAM_FILESYSTEM) != 0);
+    hasEnterpriseInterest = ((matchedStreamMask & BK_STREAM_ENTERPRISE) != 0);
+    isTargetProcess = (matchedStreamMask != 0);
     if (!hasFilesystemInterest && !hasEnterpriseInterest && !isTargetProcess)
     {
         BktmpLeave(BktmpSubsystemFileSystemMonitor, tempusStartQpc);

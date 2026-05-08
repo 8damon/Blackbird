@@ -6,7 +6,7 @@
 #define BKIPC_PIPE_NAME L"\\\\.\\pipe\\BlackbirdController"
 #define BKIPC_HOOK_PIPE_NAME L"\\\\.\\pipe\\BlackbirdHookIngest"
 #define BKIPC_MAGIC 0x53574B52u
-#define BKIPC_VERSION 6u
+#define BKIPC_VERSION 7u
 
 typedef enum _BK_IPC_PACKET_TYPE
 {
@@ -41,7 +41,8 @@ typedef enum _BK_IPC_COMMAND
     BlackbirdIpcCommandGetHealth = 21,
     BlackbirdIpcCommandGetDiagnostics = 22,
     BlackbirdIpcCommandSetQpcTimingConfig = 23,
-    BlackbirdIpcCommandGetQpcTimingState = 24
+    BlackbirdIpcCommandGetQpcTimingState = 24,
+    BlackbirdIpcCommandRegisterProcessInstrumentationCallback = 25
 } BKIPC_COMMAND;
 
 typedef struct _BK_IPC_HANDSHAKE_REQUEST
@@ -100,6 +101,7 @@ typedef enum _BK_IPC_HOOK_EVENT_KIND
 #define BK_MAX_INSTRUMENTATION_TAG BK_INSTRUMENTATION_RANGE_TAG_CHARS
 #define BK_INSTRUMENTATION_FLAG_SYSCALL_STUB 0x00000001u
 #define BK_INSTRUMENTATION_FLAG_LAUNCH_GATE 0x00000002u
+#define BK_INSTRUMENTATION_FLAG_PROCESS_CALLBACK 0x00000004u
 #define BK_HOOK_PATCH_FLAG_NT_INLINE 0x00000001u
 #define BK_HOOK_PATCH_FLAG_WINSOCK_IAT 0x00000002u
 #define BK_HOOK_PATCH_FLAG_WINSOCK_INLINE 0x00000004u
@@ -332,6 +334,7 @@ typedef enum _BK_IPC_ETW_FAMILY
 #define BK_HOOK_EVENT_OP_ETW_PATCH 3u
 #define BK_HOOK_EVENT_OP_LAUNCH_GATE_ENTRY 4u
 #define BK_HOOK_EVENT_OP_LAUNCH_GATE_TLS_CALLBACK 5u
+#define BK_HOOK_EVENT_OP_PIC_DIRECT_SYSCALL 6u
 #define BK_HOOK_CALLER_FLAG_ALL_SYSTEM 0x00000001u
 #define BK_HOOK_CALLER_FLAG_HAS_UNMAPPED 0x00000002u
 #define BK_HOOK_CALLER_FLAG_HAS_PROCESS_IMAGE 0x00000004u
@@ -444,6 +447,7 @@ typedef union _BK_IPC_PAYLOAD
     BKIPC_QUERY_PROCESS_MEMORY_RESPONSE QueryMemoryResponse;
     BKIPC_REGISTER_INSTRUMENTATION_RANGE_REQUEST RegisterInstrumentationRangeRequest;
     BKIPC_REGISTER_HOOK_PATCH_REQUEST RegisterHookPatchRequest;
+    BK_REGISTER_PROCESS_INSTRUMENTATION_CALLBACK_REQUEST RegisterProcessInstrumentationCallbackRequest;
     BK_EVENT_RECORD EventRecord;
     BKIPC_ETW_EVENT EtwEvent;
     BK_STATS_RESPONSE StatsResponse;

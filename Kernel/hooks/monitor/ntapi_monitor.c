@@ -27,6 +27,7 @@
 #define BK_MAX_HOOK_PATCH_RECORDS 512u
 #define BK_MAX_HOOK_PATCH_OVERLAYS 32u
 #define BK_MAX_NTDLL_SECTION_HANDLES 256u
+#define BK_MAX_PROCESS_INSTRUMENTATION_CALLBACKS 512u
 #ifndef PROCESS_VM_READ
 #define PROCESS_VM_READ 0x0010
 #endif
@@ -127,6 +128,16 @@ typedef struct _BK_NTAPI_NTDLL_SECTION_HANDLE
     UINT32 AllocationAttributes;
     BOOLEAN Active;
 } BK_NTAPI_NTDLL_SECTION_HANDLE, *PBK_NTAPI_NTDLL_SECTION_HANDLE;
+
+typedef struct _BK_NTAPI_PROCESS_INSTRUMENTATION_CALLBACK
+{
+    UINT32 ProcessId;
+    UINT32 Flags;
+    UINT64 CallbackAddress;
+    UINT64 CallbackEnd;
+    UINT64 BlockedSetCount;
+    BOOLEAN Active;
+} BK_NTAPI_PROCESS_INSTRUMENTATION_CALLBACK, *PBK_NTAPI_PROCESS_INSTRUMENTATION_CALLBACK;
 
 typedef struct _BK_NTAPI_HOOK_PATCH_OVERLAY
 {
@@ -391,6 +402,9 @@ static FAST_MUTEX g_NtApiHookLifecycleLock;
 static BK_NTAPI_HOOK_PATCH g_NtApiHookPatches[BK_MAX_HOOK_PATCH_RECORDS];
 static FAST_MUTEX g_NtApiNtdllSectionLock;
 static BK_NTAPI_NTDLL_SECTION_HANDLE g_NtApiNtdllSections[BK_MAX_NTDLL_SECTION_HANDLES];
+static FAST_MUTEX g_NtApiPicLock;
+static BK_NTAPI_PROCESS_INSTRUMENTATION_CALLBACK
+    g_NtApiProcessInstrumentationCallbacks[BK_MAX_PROCESS_INSTRUMENTATION_CALLBACKS];
 static volatile LONG g_NtApiHooksArmed = 0;
 static volatile LONG64 g_NtApiHookPatchOverlayCount = 0;
 static volatile LONG64 g_NtApiInstrumentationReadDenyCount = 0;
@@ -2113,6 +2127,13 @@ static VOID BkntkiClearNtdllSections(VOID)
     ExReleaseFastMutex(&g_NtApiNtdllSectionLock);
 }
 
+static VOID BkntkiClearProcessInstrumentationCallbacks(VOID)
+{
+    ExAcquireFastMutex(&g_NtApiPicLock);
+    RtlZeroMemory(g_NtApiProcessInstrumentationCallbacks, sizeof(g_NtApiProcessInstrumentationCallbacks));
+    ExReleaseFastMutex(&g_NtApiPicLock);
+}
+
 static BOOLEAN BkntkiRangesOverlap(_In_ UINT64 Base1, _In_ UINT64 End1, _In_ UINT64 Base2, _In_ UINT64 End2)
 {
     return (Base1 < End2 && Base2 < End1);
@@ -2260,6 +2281,91 @@ BOOLEAN BkntkiAddressTouchesInstrumentationRangeForPid(_In_ UINT32 ProcessId, _I
     return matched;
 }
 
+typedef struct _BK_PROCESS_INSTRUMENTATION_CALLBACK_INFORMATION
+{
+    ULONG Version;
+    ULONG Reserved;
+    PVOID Callback;
+} BK_PROCESS_INSTRUMENTATION_CALLBACK_INFORMATION, *PBK_PROCESS_INSTRUMENTATION_CALLBACK_INFORMATION;
+
+BOOLEAN BkntkiShouldBlockProcessInstrumentationCallbackSet(_In_ HANDLE ProcessHandle,
+                                                           _In_ PROCESSINFOCLASS ProcessInformationClass,
+                                                           _In_reads_bytes_opt_(ProcessInformationLength)
+                                                               PVOID ProcessInformation,
+                                                           _In_ ULONG ProcessInformationLength,
+                                                           _Out_opt_ UINT32 *TargetProcessId,
+                                                           _Out_opt_ UINT64 *RequestedCallback)
+{
+    BK_PROCESS_INSTRUMENTATION_CALLBACK_INFORMATION info;
+    UINT32 targetPid = 0;
+    UINT64 requested = 0;
+    UINT32 i;
+    BOOLEAN block = FALSE;
+
+    if (TargetProcessId != NULL)
+    {
+        *TargetProcessId = 0;
+    }
+    if (RequestedCallback != NULL)
+    {
+        *RequestedCallback = 0;
+    }
+    if (KeGetCurrentIrql() != PASSIVE_LEVEL || ProcessInformationClass != ProcessInstrumentationCallback)
+    {
+        return FALSE;
+    }
+    if (!BkntkiResolveProcessHandleToPid(ProcessHandle, &targetPid) || targetPid == 0)
+    {
+        return FALSE;
+    }
+    if (TargetProcessId != NULL)
+    {
+        *TargetProcessId = targetPid;
+    }
+
+    RtlZeroMemory(&info, sizeof(info));
+    if (ProcessInformation != NULL && ProcessInformationLength >= sizeof(info))
+    {
+        __try
+        {
+            if (ExGetPreviousMode() != KernelMode)
+            {
+                ProbeForRead(ProcessInformation, sizeof(info), __alignof(BK_PROCESS_INSTRUMENTATION_CALLBACK_INFORMATION));
+            }
+            RtlCopyMemory(&info, ProcessInformation, sizeof(info));
+            requested = (UINT64)(ULONG_PTR)info.Callback;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            requested = 0;
+        }
+    }
+    if (RequestedCallback != NULL)
+    {
+        *RequestedCallback = requested;
+    }
+
+    ExAcquireFastMutex(&g_NtApiPicLock);
+    for (i = 0; i < BK_MAX_PROCESS_INSTRUMENTATION_CALLBACKS; ++i)
+    {
+        PBK_NTAPI_PROCESS_INSTRUMENTATION_CALLBACK slot = &g_NtApiProcessInstrumentationCallbacks[i];
+        if (!slot->Active || slot->ProcessId != targetPid)
+        {
+            continue;
+        }
+
+        if (requested != slot->CallbackAddress)
+        {
+            slot->BlockedSetCount += 1;
+            block = TRUE;
+        }
+        break;
+    }
+    ExReleaseFastMutex(&g_NtApiPicLock);
+
+    return block;
+}
+
 NTSTATUS
 BkntkiRegisterInstrumentationRange(_In_ UINT32 ProcessId, _In_ UINT64 BaseAddress, _In_ UINT64 RegionSize,
                                    _In_ UINT32 Flags, _In_opt_z_ PCSTR Tag)
@@ -2324,6 +2430,85 @@ BkntkiRegisterInstrumentationRange(_In_ UINT32 ProcessId, _In_ UINT64 BaseAddres
     g_NtApiInstrumentationRanges[freeIndex].Active = TRUE;
     ExReleaseFastMutex(&g_NtApiInstrumentationRangeLock);
     return STATUS_SUCCESS;
+}
+
+NTSTATUS
+BkntkiRegisterProcessInstrumentationCallback(_In_ UINT32 ProcessId, _In_ UINT64 CallbackAddress,
+                                             _In_ UINT64 CallbackSize, _In_ UINT32 Flags)
+{
+    UINT64 callbackEnd;
+    UINT32 i;
+    UINT32 freeIndex = BK_MAX_PROCESS_INSTRUMENTATION_CALLBACKS;
+
+    if (ProcessId == 0 || CallbackAddress == 0 || CallbackSize == 0)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+    callbackEnd = CallbackAddress + CallbackSize;
+    if (callbackEnd <= CallbackAddress)
+    {
+        return STATUS_INTEGER_OVERFLOW;
+    }
+
+    ExAcquireFastMutex(&g_NtApiPicLock);
+    for (i = 0; i < BK_MAX_PROCESS_INSTRUMENTATION_CALLBACKS; ++i)
+    {
+        PBK_NTAPI_PROCESS_INSTRUMENTATION_CALLBACK slot = &g_NtApiProcessInstrumentationCallbacks[i];
+        if (!slot->Active)
+        {
+            if (freeIndex == BK_MAX_PROCESS_INSTRUMENTATION_CALLBACKS)
+            {
+                freeIndex = i;
+            }
+            continue;
+        }
+        if (slot->ProcessId == ProcessId)
+        {
+            slot->Flags = Flags;
+            slot->CallbackAddress = CallbackAddress;
+            slot->CallbackEnd = callbackEnd;
+            ExReleaseFastMutex(&g_NtApiPicLock);
+            return STATUS_SUCCESS;
+        }
+    }
+
+    if (freeIndex == BK_MAX_PROCESS_INSTRUMENTATION_CALLBACKS)
+    {
+        ExReleaseFastMutex(&g_NtApiPicLock);
+        return STATUS_QUOTA_EXCEEDED;
+    }
+
+    RtlZeroMemory(&g_NtApiProcessInstrumentationCallbacks[freeIndex],
+                  sizeof(g_NtApiProcessInstrumentationCallbacks[freeIndex]));
+    g_NtApiProcessInstrumentationCallbacks[freeIndex].ProcessId = ProcessId;
+    g_NtApiProcessInstrumentationCallbacks[freeIndex].Flags = Flags;
+    g_NtApiProcessInstrumentationCallbacks[freeIndex].CallbackAddress = CallbackAddress;
+    g_NtApiProcessInstrumentationCallbacks[freeIndex].CallbackEnd = callbackEnd;
+    g_NtApiProcessInstrumentationCallbacks[freeIndex].Active = TRUE;
+    ExReleaseFastMutex(&g_NtApiPicLock);
+    return STATUS_SUCCESS;
+}
+
+VOID BkntkiClearProcessInstrumentationCallback(_In_ UINT32 ProcessId)
+{
+    UINT32 i;
+
+    if (ProcessId == 0)
+    {
+        return;
+    }
+
+    ExAcquireFastMutex(&g_NtApiPicLock);
+    for (i = 0; i < BK_MAX_PROCESS_INSTRUMENTATION_CALLBACKS; ++i)
+    {
+        PBK_NTAPI_PROCESS_INSTRUMENTATION_CALLBACK slot = &g_NtApiProcessInstrumentationCallbacks[i];
+        if (slot->Active && slot->ProcessId == ProcessId)
+        {
+            RtlZeroMemory(slot, sizeof(*slot));
+            break;
+        }
+    }
+    ExReleaseFastMutex(&g_NtApiPicLock);
 }
 
 NTSTATUS
@@ -3746,9 +3931,11 @@ BkntkiMonitorInitialize(VOID)
     ExInitializeFastMutex(&g_NtApiHookPatchLock);
     ExInitializeFastMutex(&g_NtApiHookLifecycleLock);
     ExInitializeFastMutex(&g_NtApiNtdllSectionLock);
+    ExInitializeFastMutex(&g_NtApiPicLock);
     BkntkiClearInstrumentationRanges();
     BkntkiClearHookPatches();
     BkntkiClearNtdllSections();
+    BkntkiClearProcessInstrumentationCallbacks();
     BkntkiClearOriginalSlots();
     (void)BkqpcInitialize();
     InterlockedExchange(&g_NtApiHooksArmed, 0);
@@ -3877,6 +4064,7 @@ VOID BkntkiMonitorUninitialize(VOID)
     BkntkiClearInstrumentationRanges();
     BkntkiClearHookPatches();
     BkntkiClearNtdllSections();
+    BkntkiClearProcessInstrumentationCallbacks();
     BkqpcUninitialize();
     InterlockedExchange(&g_NtApiMonitorUnloading, 0);
 }
@@ -3923,6 +4111,22 @@ BOOLEAN
 BkntkiMonitorSelfCheck(VOID)
 {
     return TRUE;
+}
+
+NTSTATUS
+BkntkiRegisterProcessInstrumentationCallback(_In_ UINT32 ProcessId, _In_ UINT64 CallbackAddress,
+                                             _In_ UINT64 CallbackSize, _In_ UINT32 Flags)
+{
+    UNREFERENCED_PARAMETER(ProcessId);
+    UNREFERENCED_PARAMETER(CallbackAddress);
+    UNREFERENCED_PARAMETER(CallbackSize);
+    UNREFERENCED_PARAMETER(Flags);
+    return STATUS_NOT_SUPPORTED;
+}
+
+VOID BkntkiClearProcessInstrumentationCallback(_In_ UINT32 ProcessId)
+{
+    UNREFERENCED_PARAMETER(ProcessId);
 }
 
 #endif

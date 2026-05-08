@@ -65,6 +65,9 @@
     <ClCompile Include="..\UserMode\controller\core\correlation\hollowing.cpp">
       <Filter>Controller Core\Correlation</Filter>
     </ClCompile>
+    <ClCompile Include="..\UserMode\controller\core\correlation\pic_correlation.cpp">
+      <Filter>Controller Core\Correlation</Filter>
+    </ClCompile>
     <ClCompile Include="..\UserMode\controller\core\heuristics\heuristics.cpp">
       <Filter>Controller Core\Heuristics</Filter>
     </ClCompile>

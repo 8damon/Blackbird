@@ -55,6 +55,8 @@ PCSTR BkctlIoctlName(_In_ ULONG Ioctl)
         return "SET_QPC_TIMING_CONFIG";
     case IOCTL_BK_GET_QPC_TIMING_STATE:
         return "GET_QPC_TIMING_STATE";
+    case IOCTL_BK_REGISTER_PROCESS_INSTRUMENTATION_CALLBACK:
+        return "REGISTER_PROCESS_INSTRUMENTATION_CALLBACK";
     default:
         return "UNKNOWN_IOCTL";
     }

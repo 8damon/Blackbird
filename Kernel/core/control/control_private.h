@@ -177,5 +177,6 @@ NTSTATUS BkctlHandleGetQpcTimingStateIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUE
 NTSTATUS BkctlHandleMarkControllerReadyIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
 NTSTATUS BkctlHandleRegisterInstrumentationRangeIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
 NTSTATUS BkctlHandleRegisterHookPatchIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
+NTSTATUS BkctlHandleRegisterProcessInstrumentationCallbackIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
 
 #endif

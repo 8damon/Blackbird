@@ -161,6 +161,8 @@ namespace BK_RUNTIME_INTERNAL
             {
                 (void)EnsureCoreHookControllersReady();
                 (void)MaybeInitializeWinsockHookController();
+                (void)EnsureProcessInstrumentationCallbackInstalled(true);
+                FlushProcessInstrumentationCallbackSamples();
                 PublishCurrentHookReadyMaskBestEffort();
                 FlushHookEvents();
                 PollHookIntegrityWatchdog();

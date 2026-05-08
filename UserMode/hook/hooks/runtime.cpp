@@ -958,6 +958,7 @@ void BkRuntimeShutdown()
 
     BKIPC::Shutdown();
     BkUnregisterVectoredExceptionHandler();
+    ResetProcessInstrumentationCallbackState();
     LaunchGateShutdown();
     g_RuntimeInitialized.store(false, std::memory_order_release);
     g_RuntimeWorkerStarted.store(false, std::memory_order_release);

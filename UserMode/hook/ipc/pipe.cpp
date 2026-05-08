@@ -60,6 +60,7 @@ namespace BKIPC
         case BlackbirdIpcCommandNotifyHookReady:
         case BlackbirdIpcCommandRegisterInstrumentationRange:
         case BlackbirdIpcCommandRegisterHookPatch:
+        case BlackbirdIpcCommandRegisterProcessInstrumentationCallback:
             return PIPE_DEFAULT_TIMEOUT_MS;
         default:
             return PIPE_DEFAULT_TIMEOUT_MS;
@@ -646,6 +647,31 @@ namespace BKIPC
         {
             PipeDebugLog("RegisterHookPatch: failed address=0x%llX size=%lu tag=%s", (unsigned long long)patchAddress,
                          (unsigned long)patchSize, tag ? tag : "(null)");
+        }
+        return ok;
+    }
+
+    bool RegisterProcessInstrumentationCallback(UINT64 callbackAddress, UINT64 callbackSize, UINT32 flags) noexcept
+    {
+        if (callbackAddress == 0 || callbackSize == 0)
+            return false;
+
+        BK_REGISTER_PROCESS_INSTRUMENTATION_CALLBACK_REQUEST request{};
+        request.ProcessId = GetCurrentProcessId();
+        request.CallbackAddress = callbackAddress;
+        request.CallbackSize = callbackSize;
+        request.Flags = flags;
+
+        bool ok;
+        AcquireSRWLockExclusive(&g_pipeLock);
+        ok = TransactCommandLocked(BlackbirdIpcCommandRegisterProcessInstrumentationCallback, &request,
+                                   sizeof(request), nullptr);
+        ReleaseSRWLockExclusive(&g_pipeLock);
+
+        if (!ok)
+        {
+            PipeDebugLog("RegisterProcessInstrumentationCallback: failed callback=0x%llX size=0x%llX flags=0x%08X",
+                         (unsigned long long)callbackAddress, (unsigned long long)callbackSize, (unsigned int)flags);
         }
         return ok;
     }

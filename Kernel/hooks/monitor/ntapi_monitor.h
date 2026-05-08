@@ -28,6 +28,12 @@ BkntkiRegisterHookPatch(_In_ UINT32 ProcessId, _In_ UINT64 PatchAddress, _In_ UI
                         _In_reads_bytes_(OriginalSize) const UINT8 *OriginalBytes, _In_ UINT32 OriginalSize,
                         _In_ UINT32 Flags, _In_opt_z_ PCSTR Tag);
 
+NTSTATUS
+BkntkiRegisterProcessInstrumentationCallback(_In_ UINT32 ProcessId, _In_ UINT64 CallbackAddress,
+                                             _In_ UINT64 CallbackSize, _In_ UINT32 Flags);
+
+VOID BkntkiClearProcessInstrumentationCallback(_In_ UINT32 ProcessId);
+
 BOOLEAN
 BkntkiReadTouchesInstrumentationRange(_In_ HANDLE ProcessHandle, _In_ PVOID BaseAddress, _In_ SIZE_T Size,
                                       _Out_opt_ UINT32 *TargetProcessId);

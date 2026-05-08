@@ -386,6 +386,37 @@ BOOL ControllerProxyRegisterHookPatch(_In_ DWORD ProcessId, _In_ UINT64 PatchAdd
     return ok;
 }
 
+BOOL ControllerProxyRegisterProcessInstrumentationCallback(_In_ DWORD ProcessId, _In_ UINT64 CallbackAddress,
+                                                          _In_ UINT64 CallbackSize, _In_ UINT32 Flags)
+{
+    BK_REGISTER_PROCESS_INSTRUMENTATION_CALLBACK_REQUEST req;
+    HANDLE handle = INVALID_HANDLE_VALUE;
+    BOOL ok;
+    DWORD err;
+
+    if (ProcessId == 0 || CallbackAddress == 0 || CallbackSize == 0)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    ZeroMemory(&req, sizeof(req));
+    req.ProcessId = ProcessId;
+    req.CallbackAddress = CallbackAddress;
+    req.CallbackSize = CallbackSize;
+    req.Flags = Flags;
+
+    ok = ControllerOpenDriverProxyHandle(&handle, "register-process-instrumentation-callback") &&
+         BkscRegisterProcessInstrumentationCallback(handle, &req);
+    err = ok ? ERROR_SUCCESS : GetLastError();
+    ControllerCloseDriverProxyHandle(handle);
+    if (!ok)
+    {
+        SetLastError(err);
+    }
+    return ok;
+}
+
 BOOL ControllerProxyReadProcessMemory(_In_ DWORD ProcessId, _In_ UINT64 BaseAddress, _In_ DWORD RequestedSize,
                                       _In_ HANDLE ClientProcessHandle, _Out_ HANDLE *OutDupSectionHandle,
                                       _Out_ DWORD *OutBytesRead)

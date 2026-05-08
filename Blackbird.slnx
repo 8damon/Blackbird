@@ -9,7 +9,7 @@
     <File Path="Scripts/remover.ps1" />
     <File Path="Scripts/tempest-invoke.ps1" />
   </Folder>
-  <Project Path="UserMode/hook/vcxproj/BlackbirdHook.vcxproj" Id="c26b1585-94d5-427a-b964-32d45bfdbbd8" />
+  <Project Path="UserMode/hook/vcxproj/BlackbirdUsermodeIntercept.vcxproj" Id="c26b1585-94d5-427a-b964-32d45bfdbbd8" />
   <Project Path="VCXProj/Blackbird.vcxproj" Id="ad0afc30-b1b3-1a4a-8717-dd97f06db715">
     <BuildType Solution="Debug|x64" Project="TEMPUS_DEBUG" />
     <Deploy />

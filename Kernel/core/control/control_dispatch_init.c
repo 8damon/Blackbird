@@ -136,6 +136,9 @@ _Use_decl_annotations_ VOID BkctlEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST R
     case IOCTL_BK_REGISTER_HOOK_PATCH:
         status = BkctlHandleRegisterHookPatchIoctl(ctx->Client, Request);
         break;
+    case IOCTL_BK_REGISTER_PROCESS_INSTRUMENTATION_CALLBACK:
+        status = BkctlHandleRegisterProcessInstrumentationCallbackIoctl(ctx->Client, Request);
+        break;
     case IOCTL_BK_SET_ENDPOINT_GUARD:
         status = BkctlHandleSetEndpointGuardIoctl(ctx->Client, Request);
         break;

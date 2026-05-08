@@ -101,6 +101,8 @@ extern "C"
     BKSC_API BOOL BkscRegisterInstrumentationRange(_In_ HANDLE Device,
                                                    _In_ const BK_REGISTER_INSTRUMENTATION_RANGE_REQUEST *Request);
     BKSC_API BOOL BkscRegisterHookPatch(_In_ HANDLE Device, _In_ const BK_REGISTER_HOOK_PATCH_REQUEST *Request);
+    BKSC_API BOOL BkscRegisterProcessInstrumentationCallback(
+        _In_ HANDLE Device, _In_ const BK_REGISTER_PROCESS_INSTRUMENTATION_CALLBACK_REQUEST *Request);
     BKSC_API BOOL BkscSetEndpointGuard(_In_ HANDLE Device, _In_ const BK_ENDPOINT_GUARD_REQUEST *Request);
     BKSC_API BOOL BkscSetUserHookTarget(_In_ HANDLE Device, _In_ DWORD Mode, _In_ DWORD ProcessId, _In_ DWORD Flags,
                                         _In_opt_z_ PCWSTR ImagePath, _In_ DWORD AnalysisSubjectKind,

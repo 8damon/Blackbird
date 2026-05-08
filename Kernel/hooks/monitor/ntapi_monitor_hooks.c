@@ -1973,8 +1973,10 @@ NTSTATUS NTAPI BkntkiNtSetInformationProcessHook(_In_ HANDLE ProcessHandle,
     NTSTATUS status = STATUS_SUCCESS;
     HANDLE callerPid = NULL;
     UINT32 targetPid = 0;
+    UINT64 requestedPicCallback = 0;
     UINT32 execFlags = BkntkiBuildExecFlags(ProcessHandle, 0u);
     BOOLEAN logAcquired = FALSE;
+    BOOLEAN blockedPicSet = FALSE;
 
     BkntkiHookEnter();
     if (g_OriginalNtSetInformationProcess == NULL)
@@ -1984,8 +1986,37 @@ NTSTATUS NTAPI BkntkiNtSetInformationProcessHook(_In_ HANDLE ProcessHandle,
         goto Exit;
     }
     (void)BkntkiResolveProcessHandleToPid(ProcessHandle, &targetPid);
-    status = g_OriginalNtSetInformationProcess(ProcessHandle, ProcessInformationClass, ProcessInformation,
-                                               ProcessInformationLength);
+    blockedPicSet = BkntkiShouldBlockProcessInstrumentationCallbackSet(
+        ProcessHandle, ProcessInformationClass, ProcessInformation, ProcessInformationLength, &targetPid,
+        &requestedPicCallback);
+    if (blockedPicSet)
+    {
+        WCHAR reason[192];
+        PCSTR detectionName =
+            (requestedPicCallback == 0) ? "SR71_PIC_DEREGISTRATION_ATTEMPT" : "SR71_PIC_OVERWRITE_ATTEMPT";
+
+        status = STATUS_SUCCESS;
+        RtlStringCbPrintfW(reason, sizeof(reason),
+                           L"blocked process instrumentation callback change target=%lu requested=0x%llX",
+                           (ULONG)targetPid, requestedPicCallback);
+        BketwLogDetectionEvent(detectionName, 8u, PsGetCurrentProcessId(), (HANDLE)(ULONG_PTR)targetPid, 0, 0, 0,
+                               reason);
+    }
+    else
+    {
+        status = g_OriginalNtSetInformationProcess(ProcessHandle, ProcessInformationClass, ProcessInformation,
+                                                   ProcessInformationLength);
+        if (NT_SUCCESS(status) && ProcessInformationClass == ProcessInstrumentationCallback &&
+            requestedPicCallback != 0 && targetPid != 0 && targetPid != (UINT32)(ULONG_PTR)PsGetCurrentProcessId())
+        {
+            WCHAR reason[192];
+            RtlStringCbPrintfW(reason, sizeof(reason),
+                               L"process instrumentation callback set cross-process target=%lu callback=0x%llX",
+                               (ULONG)targetPid, requestedPicCallback);
+            BketwLogDetectionEvent("PROCESS_IC_CALLBACK_CLAIM_ATTEMPT", 5u, PsGetCurrentProcessId(),
+                                   (HANDLE)(ULONG_PTR)targetPid, 0, 0, 0, reason);
+        }
+    }
 
     if (!BkntkiShouldLog(&callerPid))
     {
@@ -1993,8 +2024,8 @@ NTSTATUS NTAPI BkntkiNtSetInformationProcessHook(_In_ HANDLE ProcessHandle,
     }
     logAcquired = TRUE;
     BkntkiLog("NtSetInformationProcess", callerPid, (UINT64)(ULONG_PTR)ProcessHandle, (UINT64)ProcessInformationClass,
-              (UINT64)(ULONG_PTR)ProcessInformation, (UINT64)ProcessInformationLength, (UINT64)targetPid, 0, 0, 0,
-              execFlags, status);
+              (UINT64)(ULONG_PTR)ProcessInformation, (UINT64)ProcessInformationLength, (UINT64)targetPid,
+              requestedPicCallback, (UINT64)blockedPicSet, 0, execFlags, status);
     if (NT_SUCCESS(status) && targetPid != 0 && targetPid != (UINT32)(ULONG_PTR)callerPid)
     {
         BkntkiEmitRemoteNtApiDetection("REMOTE_PROCESS_SET_INFORMATION", 5u, callerPid, targetPid,

@@ -1,4 +1,5 @@
 #include "runtime_private.h"
+#include "../instrument/stacktrace.h"
 
 namespace BK_RUNTIME_INTERNAL
 {
@@ -94,6 +95,8 @@ namespace BK_RUNTIME_INTERNAL
 
     bool EnsureCoreHookControllersReady() noexcept
     {
+        (void)QueryCurrentProcessControlFlowPolicy();
+
         if (!g_NtInitialized)
         {
             __try
@@ -449,6 +452,8 @@ namespace BK_RUNTIME_INTERNAL
     static bool PublishSr71InstrumentationRange(void *base, std::uint64_t size, std::uint32_t instrumentationFlags,
                                                 const char *tag) noexcept
     {
+        IC_STACKTRACE::RegisterOwnExecutableRange(base, static_cast<std::size_t>(size));
+
         std::uint32_t ihrFlags = kSr71IhrFlagSr71Owned;
         if ((instrumentationFlags & BK_INSTRUMENTATION_FLAG_SYSCALL_STUB) != 0 ||
             (instrumentationFlags & BK_INSTRUMENTATION_FLAG_LAUNCH_GATE) != 0)

@@ -1,4 +1,5 @@
 #include "runtime_private.h"
+#include "../instrument/stacktrace.h"
 
 #include <intrin.h>
 #include <strsafe.h>
@@ -187,6 +188,14 @@ namespace BK_RUNTIME_INTERNAL
             }
 
             (void)FlushInstructionCache(GetCurrentProcess(), stub, sizeof(templateBytes));
+            if (!RegisterControlFlowGuardCallTarget(stub, Sr71CfgCallTargetMode::CfgOnly, "BK Instrument.PIC"))
+            {
+                (void)VirtualFree(stub, 0, MEM_RELEASE);
+                BkRuntimeReportFault(BkRuntimeFaultCode::ProcessInstrumentationCallbackInstallFailed,
+                                     reinterpret_cast<std::uint64_t>(stub));
+                return false;
+            }
+            IC_STACKTRACE::RegisterOwnExecutableRange(stub, kPicStubAllocationSize);
             g_PicStub = stub;
             g_PicStubRange.Base = reinterpret_cast<std::uint64_t>(stub);
             g_PicStubRange.End = g_PicStubRange.Base + kPicStubAllocationSize;

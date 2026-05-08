@@ -58,6 +58,8 @@ BOOL ControllerHookWidePathContainsI(_In_opt_z_ PCWSTR Haystack, _In_z_ PCWSTR N
 double ControllerComputeSampleEntropy(_In_reads_(SampleSize) const UINT8 *Sample, _In_ UINT32 SampleSize);
 VOID ControllerHookAppendArgsToReason(_Inout_updates_(ReasonChars) PWSTR Reason, _In_ size_t ReasonChars,
                                       _In_reads_(ArgCount) const UINT64 *Args, _In_ UINT32 ArgCount);
+VOID ControllerHookAppendUnwindTraitsToReason(_Inout_updates_(ReasonChars) PWSTR Reason, _In_ size_t ReasonChars,
+                                              _In_ UINT32 CallerFlags);
 VOID ControllerHookCopyArgs(_Out_writes_(BKIPC_MAX_HOOK_ARGS) UINT64 *Destination, _Out_opt_ UINT32 *DestinationCount,
                             _In_reads_(SourceCount) const UINT64 *Source, _In_ UINT32 SourceCount);
 VOID ControllerPrimeHookArgumentSymbols(_In_ DWORD ProcessId, _In_z_ PCSTR ApiName,

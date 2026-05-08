@@ -23,6 +23,7 @@ enum class BkRuntimeFaultCode : std::uint32_t
     HookPatchRegisterFailed = 16,
     ProcessInstrumentationCallbackInstallFailed = 17,
     ProcessInstrumentationCallbackProtectFailed = 18,
+    ControlFlowCallTargetRegisterFailed = 19,
 };
 
 DWORD WINAPI BkRuntimeThreadProc(LPVOID);

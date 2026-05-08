@@ -14,10 +14,28 @@ namespace IC_STACKTRACE
     {
         using RtlCaptureStackBackTraceFn = USHORT(WINAPI *)(ULONG FramesToSkip, ULONG FramesToCapture, PVOID *BackTrace,
                                                             PULONG BackTraceHash);
+#if defined(_M_X64) || defined(_M_ARM64)
+        using RtlLookupFunctionEntryFn = PRUNTIME_FUNCTION(WINAPI *)(DWORD64 ControlPc, PDWORD64 ImageBase,
+                                                                     PUNWIND_HISTORY_TABLE HistoryTable);
+#endif
 
         RtlCaptureStackBackTraceFn g_RtlCapture = nullptr;
+#if defined(_M_X64) || defined(_M_ARM64)
+        RtlLookupFunctionEntryFn g_RtlLookupFunctionEntry = nullptr;
+        volatile LONG g_RtlLookupFunctionEntryState = 0;
+#endif
         bool g_SymInit = false;
         DWORD g_symGuardTls = TLS_OUT_OF_INDEXES;
+
+        struct OwnExecutableRange
+        {
+            std::uintptr_t Base;
+            std::uintptr_t End;
+        };
+
+        constexpr LONG kMaxOwnExecutableRanges = 64;
+        OwnExecutableRange g_OwnExecutableRanges[kMaxOwnExecutableRanges]{};
+        volatile LONG g_OwnExecutableRangeCount = 0;
 
         bool EnsureRtlCapture() noexcept
         {
@@ -31,6 +49,46 @@ namespace IC_STACKTRACE
             g_RtlCapture =
                 reinterpret_cast<RtlCaptureStackBackTraceFn>(::GetProcAddress(ntdll, "RtlCaptureStackBackTrace"));
             return g_RtlCapture != nullptr;
+        }
+
+#if defined(_M_X64) || defined(_M_ARM64)
+        bool EnsureRtlLookupFunctionEntry() noexcept
+        {
+            LONG state = InterlockedCompareExchange(&g_RtlLookupFunctionEntryState, 0, 0);
+            if (state == 2)
+                return g_RtlLookupFunctionEntry != nullptr;
+            if (state == 1)
+                return false;
+
+            HMODULE ntdll = ::GetModuleHandleW(L"ntdll.dll");
+            auto fn = ntdll != nullptr
+                          ? reinterpret_cast<RtlLookupFunctionEntryFn>(
+                                ::GetProcAddress(ntdll, "RtlLookupFunctionEntry"))
+                          : nullptr;
+            g_RtlLookupFunctionEntry = fn;
+            InterlockedExchange(&g_RtlLookupFunctionEntryState, fn != nullptr ? 2 : 1);
+            return fn != nullptr;
+        }
+#endif
+
+        static bool IsOwnExecutableRange(void *ip) noexcept
+        {
+            if (!ip)
+                return false;
+
+            const auto value = reinterpret_cast<std::uintptr_t>(ip);
+            LONG count = InterlockedCompareExchange(&g_OwnExecutableRangeCount, 0, 0);
+            if (count > kMaxOwnExecutableRanges)
+                count = kMaxOwnExecutableRanges;
+
+            for (LONG i = 0; i < count; ++i)
+            {
+                OwnExecutableRange range = g_OwnExecutableRanges[i];
+                if (range.Base != 0 && value >= range.Base && value < range.End)
+                    return true;
+            }
+
+            return false;
         }
 
         static void ZeroResolved(ResolvedFrame &rf) noexcept
@@ -213,10 +271,102 @@ namespace IC_STACKTRACE
             if (mbi.State != MEM_COMMIT)
                 return CallerKind::Unknown;
 
+            if (IsOwnExecutableRange(ip))
+                return CallerKind::OwnModule;
+
             if (mbi.Type == MEM_PRIVATE)
                 return CallerKind::Unmapped;
 
             return CallerKind::Unknown;
+        }
+
+        static bool IsExecutableProtection(DWORD protect) noexcept
+        {
+            DWORD baseProtect = protect & 0xFFu;
+            return baseProtect == PAGE_EXECUTE || baseProtect == PAGE_EXECUTE_READ ||
+                   baseProtect == PAGE_EXECUTE_READWRITE || baseProtect == PAGE_EXECUTE_WRITECOPY;
+        }
+
+        static bool LookupFunctionEntryForIp(void *ip, DWORD64 *imageBaseOut) noexcept
+        {
+#if defined(_M_X64) || defined(_M_ARM64)
+            if (imageBaseOut != nullptr)
+                *imageBaseOut = 0;
+
+            if (!ip || !EnsureRtlLookupFunctionEntry())
+                return false;
+
+            DWORD64 imageBase = 0;
+            PRUNTIME_FUNCTION entry =
+                g_RtlLookupFunctionEntry(reinterpret_cast<DWORD64>(ip), &imageBase, nullptr);
+            if (entry == nullptr)
+                return false;
+
+            if (imageBaseOut != nullptr)
+                *imageBaseOut = imageBase;
+            return true;
+#else
+            UNREFERENCED_PARAMETER(ip);
+            if (imageBaseOut != nullptr)
+                *imageBaseOut = 0;
+            return false;
+#endif
+        }
+
+        static bool ImageHasExceptionDirectory(void *moduleBase) noexcept
+        {
+            if (!moduleBase)
+                return false;
+
+            bool hasExceptionDirectory = false;
+            __try
+            {
+                auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(moduleBase);
+                if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0)
+                    return false;
+
+                auto *nt = reinterpret_cast<const IMAGE_NT_HEADERS *>(
+                    reinterpret_cast<const std::uint8_t *>(moduleBase) + dos->e_lfanew);
+                if (nt->Signature != IMAGE_NT_SIGNATURE)
+                    return false;
+
+                if (nt->OptionalHeader.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_EXCEPTION)
+                    return false;
+
+                const IMAGE_DATA_DIRECTORY &dir =
+                    nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
+                hasExceptionDirectory = dir.VirtualAddress != 0 && dir.Size >= sizeof(IMAGE_RUNTIME_FUNCTION_ENTRY);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                hasExceptionDirectory = false;
+            }
+
+            return hasExceptionDirectory;
+        }
+
+        static std::uint32_t CollectUnwindTraits(void *ip, CallerKind kind) noexcept
+        {
+            if (!ip || kind == CallerKind::OwnModule || IsOwnExecutableRange(ip))
+                return 0;
+
+            MEMORY_BASIC_INFORMATION mbi{};
+            if (::VirtualQuery(ip, &mbi, sizeof(mbi)) != sizeof(mbi) || mbi.State != MEM_COMMIT ||
+                !IsExecutableProtection(mbi.Protect))
+            {
+                return 0;
+            }
+
+            if (mbi.Type == MEM_PRIVATE)
+            {
+                return LookupFunctionEntryForIp(ip, nullptr) ? kCallerFlagPrivateExecDynamicUnwind
+                                                             : kCallerFlagPrivateExecNoUnwind;
+            }
+
+            if (mbi.Type == MEM_IMAGE && !ImageHasExceptionDirectory(mbi.AllocationBase))
+                return kCallerFlagImageMissingUnwindMetadata;
+
+            return 0;
         }
 
         static CallerKind ClassifyIp(void *ip) noexcept
@@ -316,12 +466,13 @@ namespace IC_STACKTRACE
 
         if (maxFrames > (std::uint32_t)kMaxFrames)
             maxFrames = (std::uint32_t)kMaxFrames;
-        const ULONG frames =
-            g_RtlCapture(ULONG(skip + 1), ULONG(maxFrames), reinterpret_cast<PVOID *>(out.Frames), nullptr);
+        void *frames[kMaxFrames]{};
+        const ULONG captured = g_RtlCapture(ULONG(skip + 1), ULONG(maxFrames), frames, nullptr);
 
-        out.Count = static_cast<std::uint16_t>(frames);
+        out.Count = static_cast<std::uint16_t>(captured);
         for (std::uint16_t i = 0; i < out.Count; ++i)
         {
+            out.Frames[i].Ip = frames[i];
             out.Frames[i].ModuleBase = nullptr;
             out.Frames[i].Rva = 0;
         }
@@ -438,6 +589,40 @@ namespace IC_STACKTRACE
         g_OwnModule = mod;
     }
 
+    void RegisterOwnExecutableRange(void *base, std::size_t size) noexcept
+    {
+        if (!base || size == 0)
+            return;
+
+        const auto start = reinterpret_cast<std::uintptr_t>(base);
+        const auto end = start + static_cast<std::uintptr_t>(size);
+        if (end <= start)
+            return;
+
+        LONG count = InterlockedCompareExchange(&g_OwnExecutableRangeCount, 0, 0);
+        if (count > kMaxOwnExecutableRanges)
+            count = kMaxOwnExecutableRanges;
+
+        for (LONG i = 0; i < count; ++i)
+        {
+            OwnExecutableRange range = g_OwnExecutableRanges[i];
+            if (range.Base == start && range.End == end)
+                return;
+        }
+
+        LONG slot = InterlockedIncrement(&g_OwnExecutableRangeCount) - 1;
+        if (slot < 0)
+            return;
+        if (slot >= kMaxOwnExecutableRanges)
+        {
+            InterlockedExchange(&g_OwnExecutableRangeCount, kMaxOwnExecutableRanges);
+            return;
+        }
+
+        g_OwnExecutableRanges[slot].Base = start;
+        g_OwnExecutableRanges[slot].End = end;
+    }
+
     void SetAnalysisSubjectMetadata(std::uint32_t subjectKind, const wchar_t *subjectPath,
                                     const wchar_t *hostPath) noexcept
     {
@@ -468,6 +653,7 @@ namespace IC_STACKTRACE
                 continue;
 
             CallerKind kind = ClassifyIp(ip);
+            result.Flags |= CollectUnwindTraits(ip, kind);
 
             if (!foundImmediateCaller && kind != CallerKind::OwnModule)
             {

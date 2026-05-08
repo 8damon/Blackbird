@@ -76,6 +76,23 @@ namespace BK_RUNTIME_INTERNAL
         kSr71IhrFlagGuarded = 0x00000004u,
     };
 
+    enum class Sr71CfgCallTargetMode : std::uint32_t
+    {
+        CfgOnly = 0,
+        CfgAndXfgWhenEnabled = 1,
+    };
+
+    struct Sr71ControlFlowPolicy
+    {
+        bool QuerySucceeded = false;
+        bool CfgEnabled = false;
+        bool CfgStrictMode = false;
+        bool XfgEnabled = false;
+        bool XfgAuditMode = false;
+        std::uint32_t Flags = 0;
+        std::uint32_t LastError = 0;
+    };
+
     struct Sr71IhrResolved
     {
         void *Pointer = nullptr;
@@ -238,6 +255,11 @@ namespace BK_RUNTIME_INTERNAL
     HANDLE NativeCreateThread(void *startRoutine, void *parameter) noexcept;
     [[noreturn]] void NativeTerminateCurrentProcess(DWORD exitStatus) noexcept;
     [[noreturn]] void NativeExitCurrentThread() noexcept;
+
+    Sr71ControlFlowPolicy QueryCurrentProcessControlFlowPolicy() noexcept;
+    bool RegisterControlFlowGuardCallTarget(void *targetAddress, Sr71CfgCallTargetMode mode,
+                                            const char *tag = nullptr) noexcept;
+    void ResetControlFlowGuardPolicyCache() noexcept;
 
     template <typename TTrace> inline void CopyHookStack(const TTrace &trace, BKIPC_HOOK_EVENT &record) noexcept
     {

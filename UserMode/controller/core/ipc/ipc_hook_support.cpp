@@ -327,8 +327,23 @@ UINT32 ControllerHookSeverityForThreadAccess(_In_ ULONG DesiredAccess)
 
 UINT32 ControllerCallerOriginSeverityBoost(_In_ UINT32 CallerFlags)
 {
-    UNREFERENCED_PARAMETER(CallerFlags);
-    return 0u;
+    UINT32 boost = 0u;
+
+    if ((CallerFlags & BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_NO_UNWIND) != 0)
+    {
+        boost += 2u;
+    }
+    else if ((CallerFlags & BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_DYNAMIC_UNWIND) != 0)
+    {
+        boost += 1u;
+    }
+
+    if ((CallerFlags & BK_HOOK_CALLER_FLAG_IMAGE_MISSING_UNWIND_METADATA) != 0)
+    {
+        boost += 1u;
+    }
+
+    return boost > 3u ? 3u : boost;
 }
 
 BOOL ControllerHookDecodeSockaddr(_In_reads_bytes_(SampleSize) const UINT8 *Sample, _In_ UINT32 SampleSize,
@@ -528,6 +543,47 @@ VOID ControllerHookAppendArgsToReason(_Inout_updates_(ReasonChars) PWSTR Reason,
                                (unsigned long long)Args[i]);
         reasonOffset = wcslen(Reason);
     }
+}
+
+VOID ControllerHookAppendUnwindTraitsToReason(_Inout_updates_(ReasonChars) PWSTR Reason, _In_ size_t ReasonChars,
+                                              _In_ UINT32 CallerFlags)
+{
+    WCHAR suffix[160];
+    BOOL wroteTrait = FALSE;
+
+    if (Reason == NULL || ReasonChars == 0 || (CallerFlags & (BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_NO_UNWIND |
+                                                               BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_DYNAMIC_UNWIND |
+                                                               BK_HOOK_CALLER_FLAG_IMAGE_MISSING_UNWIND_METADATA)) == 0)
+    {
+        return;
+    }
+
+    if (wcsstr(Reason, L" unwind=") != NULL)
+    {
+        return;
+    }
+
+    suffix[0] = L'\0';
+    (void)StringCchCopyW(suffix, RTL_NUMBER_OF(suffix), L" unwind=");
+
+    if ((CallerFlags & BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_NO_UNWIND) != 0)
+    {
+        (void)StringCchCatW(suffix, RTL_NUMBER_OF(suffix), L"private-exec-no-unwind");
+        wroteTrait = TRUE;
+    }
+    if ((CallerFlags & BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_DYNAMIC_UNWIND) != 0)
+    {
+        (void)StringCchCatW(suffix, RTL_NUMBER_OF(suffix), wroteTrait ? L",private-exec-dynamic-unwind"
+                                                                      : L"private-exec-dynamic-unwind");
+        wroteTrait = TRUE;
+    }
+    if ((CallerFlags & BK_HOOK_CALLER_FLAG_IMAGE_MISSING_UNWIND_METADATA) != 0)
+    {
+        (void)StringCchCatW(suffix, RTL_NUMBER_OF(suffix), wroteTrait ? L",image-missing-unwind"
+                                                                      : L"image-missing-unwind");
+    }
+
+    (void)StringCchCatW(Reason, ReasonChars, suffix);
 }
 
 VOID ControllerHookCopyArgs(_Out_writes_(BKIPC_MAX_HOOK_ARGS) UINT64 *Destination, _Out_opt_ UINT32 *DestinationCount,

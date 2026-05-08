@@ -47,6 +47,9 @@
     <ClCompile Include="..\hooks\runtime.cpp">
       <Filter>Source Files\hooks</Filter>
     </ClCompile>
+    <ClCompile Include="..\hooks\runtime_cfg.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
     <ClCompile Include="..\hooks\runtime_bootstrap.cpp">
       <Filter>Source Files\hooks</Filter>
     </ClCompile>

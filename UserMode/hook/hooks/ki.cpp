@@ -1,4 +1,5 @@
 #include "ki.h"
+#include "runtime_private.h"
 #include "../../../ABI/blackbird_ipc.h"
 
 #include <intrin.h>
@@ -111,6 +112,15 @@ bool KeSetKiHook(KiHookCallback callback) noexcept
 
     g_OriginalApcCallback = reinterpret_cast<KiApcCallbackFn>(*slot);
     g_KiUserApcCallbackSlot = slot;
+
+    if (!BK_RUNTIME_INTERNAL::RegisterControlFlowGuardCallTarget(
+            reinterpret_cast<void *>(&KiUserApcHookStub),
+            BK_RUNTIME_INTERNAL::Sr71CfgCallTargetMode::CfgAndXfgWhenEnabled, "BK Instrument.KiUserApcHook"))
+    {
+        g_OriginalApcCallback = nullptr;
+        g_KiUserApcCallbackSlot = nullptr;
+        return false;
+    }
 
     DWORD oldProtect = 0;
     if (!VirtualProtect(slot, sizeof(void *), PAGE_EXECUTE_READWRITE, &oldProtect))

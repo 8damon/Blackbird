@@ -46,4 +46,7 @@ BkctlIsArmedFast(VOID);
 BOOLEAN
 BkctlHasPidInterest(_In_ UINT32 PrimaryProcessId, _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask);
 
+UINT32
+BkctlQueryPidInterest(_In_ UINT32 PrimaryProcessId, _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask);
+
 #endif

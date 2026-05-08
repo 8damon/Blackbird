@@ -2,6 +2,137 @@
 #include "..\..\hooks\monitor\ntapi_monitor.h"
 
 static volatile LONG g_BkctlClientLockBusyCounter = 0;
+static volatile LONG g_BkctlPidInterestRebuildCounter = 0;
+static volatile LONG g_BkctlPidInterestFallbackCounter = 0;
+static volatile LONG g_BkctlEventNodeLookasideReady = 0;
+static EX_PUSH_LOCK g_BkctlPidInterestLock;
+static BK_PID_INTEREST_ENTRY g_BkctlPidInterestIndex[BK_PID_INTEREST_INDEX_BUCKETS];
+static UINT32 g_BkctlPidInterestCount = 0;
+static BOOLEAN g_BkctlPidInterestOverflow = FALSE;
+
+NPAGED_LOOKASIDE_LIST g_BkctlEventNodeLookaside;
+
+static UINT32 BkctlPidInterestHash(_In_ UINT32 ProcessId)
+{
+    return (ProcessId * 2654435761u) & (BK_PID_INTEREST_INDEX_BUCKETS - 1u);
+}
+
+static BOOLEAN BkctlPidInterestInsert(_Inout_updates_(BK_PID_INTEREST_INDEX_BUCKETS) PBK_PID_INTEREST_ENTRY Table,
+                                      _Inout_ UINT32 *Count, _In_ UINT32 ProcessId, _In_ UINT32 StreamMask)
+{
+    UINT32 slot;
+    UINT32 probe;
+
+    if (Table == NULL || Count == NULL || ProcessId == 0 || StreamMask == 0)
+    {
+        return TRUE;
+    }
+
+    slot = BkctlPidInterestHash(ProcessId);
+    for (probe = 0; probe < BK_PID_INTEREST_INDEX_BUCKETS; ++probe)
+    {
+        PBK_PID_INTEREST_ENTRY entry = &Table[(slot + probe) & (BK_PID_INTEREST_INDEX_BUCKETS - 1u)];
+        if (entry->ProcessId == ProcessId)
+        {
+            entry->StreamMask |= StreamMask;
+            return TRUE;
+        }
+        if (entry->ProcessId == 0)
+        {
+            entry->ProcessId = ProcessId;
+            entry->StreamMask = StreamMask;
+            *Count += 1;
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static UINT32 BkctlPidInterestLookupLocked(_In_ UINT32 ProcessId)
+{
+    UINT32 slot;
+    UINT32 probe;
+
+    if (ProcessId == 0)
+    {
+        return 0;
+    }
+
+    slot = BkctlPidInterestHash(ProcessId);
+    for (probe = 0; probe < BK_PID_INTEREST_INDEX_BUCKETS; ++probe)
+    {
+        const BK_PID_INTEREST_ENTRY *entry = &g_BkctlPidInterestIndex[(slot + probe) &
+                                                                      (BK_PID_INTEREST_INDEX_BUCKETS - 1u)];
+        if (entry->ProcessId == ProcessId)
+        {
+            return entry->StreamMask;
+        }
+        if (entry->ProcessId == 0)
+        {
+            return 0;
+        }
+    }
+
+    return 0;
+}
+
+VOID BkctlInitializeEventNodeLookaside(VOID)
+{
+    if (InterlockedCompareExchange(&g_BkctlEventNodeLookasideReady, 1, 0) == 0)
+    {
+        ExInitializeNPagedLookasideList(&g_BkctlEventNodeLookaside, NULL, NULL, 0, sizeof(BK_EVENT_NODE),
+                                        BK_POOL_TAG, 0);
+    }
+}
+
+VOID BkctlUninitializeEventNodeLookaside(VOID)
+{
+    if (InterlockedExchange(&g_BkctlEventNodeLookasideReady, 0) != 0)
+    {
+        ExDeleteNPagedLookasideList(&g_BkctlEventNodeLookaside);
+    }
+}
+
+PBK_EVENT_NODE BkctlAllocateEventNode(VOID)
+{
+    if (InterlockedCompareExchange(&g_BkctlEventNodeLookasideReady, 0, 0) == 0)
+    {
+        return (PBK_EVENT_NODE)BkpoolAllocateCompat(POOL_FLAG_NON_PAGED, sizeof(BK_EVENT_NODE), BK_POOL_TAG);
+    }
+
+    return (PBK_EVENT_NODE)ExAllocateFromNPagedLookasideList(&g_BkctlEventNodeLookaside);
+}
+
+VOID BkctlFreeEventNode(_Inout_ PBK_EVENT_NODE Node)
+{
+    if (Node == NULL)
+    {
+        return;
+    }
+    if (InterlockedCompareExchange(&g_BkctlEventNodeLookasideReady, 0, 0) == 0)
+    {
+        ExFreePoolWithTag(Node, BK_POOL_TAG);
+        return;
+    }
+
+    ExFreeToNPagedLookasideList(&g_BkctlEventNodeLookaside, Node);
+}
+
+VOID BkctlInitializePidInterestIndex(VOID)
+{
+    ExInitializePushLock(&g_BkctlPidInterestLock);
+    BkctlClearPidInterestIndex();
+}
+
+VOID BkctlClearPidInterestIndex(VOID)
+{
+    ExAcquirePushLockExclusiveEx(&g_BkctlPidInterestLock, 0);
+    RtlZeroMemory(g_BkctlPidInterestIndex, sizeof(g_BkctlPidInterestIndex));
+    g_BkctlPidInterestCount = 0;
+    g_BkctlPidInterestOverflow = FALSE;
+    ExReleasePushLockExclusiveEx(&g_BkctlPidInterestLock, 0);
+}
 
 BOOLEAN BkctlModeAllowed(_In_ WDFREQUEST Request)
 {
@@ -187,7 +318,7 @@ VOID BkctlClientFreeQueuedEvents(_Inout_ PBK_CLIENT Client)
     {
         PLIST_ENTRY entry = RemoveHeadList(&Client->EventQueue);
         PBK_EVENT_NODE node = CONTAINING_RECORD(entry, BK_EVENT_NODE, Link);
-        ExFreePoolWithTag(node, BK_POOL_TAG);
+        BkctlFreeEventNode(node);
         BkctlReleaseGlobalQueueSlot();
     }
     Client->QueueDepth = 0;
@@ -647,6 +778,112 @@ UINT32 BkctlClientReplaceSubscriptionsLocked(_Inout_ PBK_CLIENT Client,
     return Client->SubscriptionCount;
 }
 
+VOID BkctlRebuildPidInterestIndex(VOID)
+{
+    PBK_PID_INTEREST_ENTRY table;
+    PBK_CLIENT snapshot[BK_MAX_TOTAL_CLIENTS];
+    UINT32 snapshotCount = 0;
+    UINT32 count = 0;
+    UINT32 i;
+    PLIST_ENTRY entry;
+    BOOLEAN overflow = FALSE;
+    LONG rebuildCount;
+
+    table = (PBK_PID_INTEREST_ENTRY)BkpoolAllocateCompat(POOL_FLAG_NON_PAGED,
+                                                        sizeof(BK_PID_INTEREST_ENTRY) *
+                                                            BK_PID_INTEREST_INDEX_BUCKETS,
+                                                        BK_POOL_TAG);
+    if (table == NULL)
+    {
+        ExAcquirePushLockExclusiveEx(&g_BkctlPidInterestLock, 0);
+        RtlZeroMemory(g_BkctlPidInterestIndex, sizeof(g_BkctlPidInterestIndex));
+        g_BkctlPidInterestCount = 0;
+        g_BkctlPidInterestOverflow = TRUE;
+        ExReleasePushLockExclusiveEx(&g_BkctlPidInterestLock, 0);
+        return;
+    }
+
+    RtlZeroMemory(table, sizeof(BK_PID_INTEREST_ENTRY) * BK_PID_INTEREST_INDEX_BUCKETS);
+
+    ExAcquireFastMutex(&g_ClientListLock);
+    for (entry = g_ClientList.Flink; entry != &g_ClientList; entry = entry->Flink)
+    {
+        PBK_CLIENT client = CONTAINING_RECORD(entry, BK_CLIENT, Link);
+        if (snapshotCount >= RTL_NUMBER_OF(snapshot))
+        {
+            overflow = TRUE;
+            break;
+        }
+        BkctlClientReference(client);
+        snapshot[snapshotCount++] = client;
+    }
+    ExReleaseFastMutex(&g_ClientListLock);
+
+    for (i = 0; i < snapshotCount; ++i)
+    {
+        PBK_CLIENT client = snapshot[i];
+        UINT32 subIndex;
+
+        ExAcquireFastMutex(&client->Lock);
+        for (subIndex = 0; subIndex < client->SubscriptionCount; ++subIndex)
+        {
+            if (!BkctlPidInterestInsert(table, &count, client->Subscriptions[subIndex].ProcessId,
+                                        client->Subscriptions[subIndex].StreamMask))
+            {
+                overflow = TRUE;
+            }
+        }
+        ExReleaseFastMutex(&client->Lock);
+        BkctlClientRelease(client);
+    }
+
+    ExAcquirePushLockExclusiveEx(&g_BkctlPidInterestLock, 0);
+    RtlCopyMemory(g_BkctlPidInterestIndex, table, sizeof(BK_PID_INTEREST_ENTRY) * BK_PID_INTEREST_INDEX_BUCKETS);
+    g_BkctlPidInterestCount = count;
+    g_BkctlPidInterestOverflow = overflow;
+    ExReleasePushLockExclusiveEx(&g_BkctlPidInterestLock, 0);
+
+    ExFreePoolWithTag(table, BK_POOL_TAG);
+
+    rebuildCount = InterlockedIncrement(&g_BkctlPidInterestRebuildCounter);
+    if (overflow && (rebuildCount == 1 || ((rebuildCount & 0x3F) == 0)))
+    {
+        DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+                   "BK: pid-interest index overflow rebuild=%ld indexed=%lu buckets=%lu; using slow fallback.\n",
+                   rebuildCount, count, BK_PID_INTEREST_INDEX_BUCKETS);
+    }
+}
+
+UINT32 BkctlClientQuerySubscriptionMaskEither(_In_ PBK_CLIENT Client, _In_ UINT32 PrimaryProcessId,
+                                              _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask)
+{
+    UINT32 i;
+    UINT32 matchedMask = 0;
+
+    if (Client == NULL || Client->Subscriptions == NULL || Client->SubscriptionCount == 0 || StreamMask == 0)
+    {
+        return 0;
+    }
+
+    for (i = 0; i < Client->SubscriptionCount; ++i)
+    {
+        UINT32 subscribedPid = Client->Subscriptions[i].ProcessId;
+        UINT32 subscribedMask = Client->Subscriptions[i].StreamMask & StreamMask;
+
+        if (subscribedMask == 0)
+        {
+            continue;
+        }
+
+        if (subscribedPid == PrimaryProcessId || (SecondaryProcessId != 0 && subscribedPid == SecondaryProcessId))
+        {
+            matchedMask |= subscribedMask;
+        }
+    }
+
+    return matchedMask;
+}
+
 static VOID BkctlFlushAllClientState(VOID)
 {
     PBK_CLIENT snapshot[BK_MAX_TOTAL_CLIENTS];
@@ -684,6 +921,8 @@ static VOID BkctlFlushAllClientState(VOID)
         }
         BkctlClientRelease(c);
     }
+
+    BkctlClearPidInterestIndex();
 }
 
 VOID BkctlRefreshArmedState(VOID)
@@ -772,32 +1011,86 @@ static PBK_CLIENT BkctlClientCreate(VOID)
 BOOLEAN BkctlClientMatchSubscriptionEither(_In_ PBK_CLIENT Client, _In_ UINT32 PrimaryProcessId,
                                            _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask)
 {
+    return (BkctlClientQuerySubscriptionMaskEither(Client, PrimaryProcessId, SecondaryProcessId, StreamMask) != 0);
+}
+
+static UINT32 BkctlScanPidInterestSlow(_In_ UINT32 PrimaryProcessId, _In_ UINT32 SecondaryProcessId,
+                                       _In_ UINT32 StreamMask)
+{
+    PBK_CLIENT snapshot[BK_MAX_TOTAL_CLIENTS];
+    UINT32 snapshotCount = 0;
+    UINT32 matchedMask = 0;
     UINT32 i;
+    PLIST_ENTRY entry;
 
-    if (Client == NULL || Client->Subscriptions == NULL || Client->SubscriptionCount == 0)
+    ExAcquireFastMutex(&g_ClientListLock);
+    for (entry = g_ClientList.Flink; entry != &g_ClientList; entry = entry->Flink)
     {
-        return FALSE;
+        PBK_CLIENT client = CONTAINING_RECORD(entry, BK_CLIENT, Link);
+        if (snapshotCount >= RTL_NUMBER_OF(snapshot))
+        {
+            break;
+        }
+        BkctlClientReference(client);
+        snapshot[snapshotCount++] = client;
+    }
+    ExReleaseFastMutex(&g_ClientListLock);
+
+    for (i = 0; i < snapshotCount; ++i)
+    {
+        PBK_CLIENT client = snapshot[i];
+        if (BkctlTryAcquireClientLock(client, "pid-interest-fallback"))
+        {
+            matchedMask |= BkctlClientQuerySubscriptionMaskEither(client, PrimaryProcessId, SecondaryProcessId,
+                                                                 StreamMask);
+            ExReleaseFastMutex(&client->Lock);
+        }
+        BkctlClientRelease(client);
     }
 
-    for (i = 0; i < Client->SubscriptionCount; ++i)
+    return matchedMask & StreamMask;
+}
+
+UINT32
+BkctlQueryPidInterest(_In_ UINT32 PrimaryProcessId, _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask)
+{
+    UINT32 matchedMask = 0;
+    BOOLEAN useSlowFallback = FALSE;
+
+    if (StreamMask == 0 || PrimaryProcessId == 0)
     {
-        UINT32 subscribedPid;
-        UINT32 subscribedMask;
-
-        subscribedPid = Client->Subscriptions[i].ProcessId;
-        subscribedMask = Client->Subscriptions[i].StreamMask;
-        if ((subscribedMask & StreamMask) == 0)
-        {
-            continue;
-        }
-
-        if (subscribedPid == PrimaryProcessId || (SecondaryProcessId != 0 && subscribedPid == SecondaryProcessId))
-        {
-            return TRUE;
-        }
+        return 0;
+    }
+    if (!BkctlIsArmedFast())
+    {
+        return 0;
     }
 
-    return FALSE;
+    ExAcquirePushLockSharedEx(&g_BkctlPidInterestLock, 0);
+    useSlowFallback = g_BkctlPidInterestOverflow;
+    if (!useSlowFallback && g_BkctlPidInterestCount != 0)
+    {
+        matchedMask = BkctlPidInterestLookupLocked(PrimaryProcessId);
+        if (SecondaryProcessId != 0 && SecondaryProcessId != PrimaryProcessId)
+        {
+            matchedMask |= BkctlPidInterestLookupLocked(SecondaryProcessId);
+        }
+    }
+    ExReleasePushLockSharedEx(&g_BkctlPidInterestLock, 0);
+
+    if (useSlowFallback)
+    {
+        LONG fallbackCount = InterlockedIncrement(&g_BkctlPidInterestFallbackCounter);
+        if (fallbackCount == 1 || ((fallbackCount & 0x3FF) == 0))
+        {
+            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
+                       "BK: pid-interest slow fallback count=%ld primaryPid=%lu secondaryPid=%lu streamMask=0x%08X.\n",
+                       fallbackCount, PrimaryProcessId, SecondaryProcessId, StreamMask);
+        }
+        matchedMask = BkctlScanPidInterestSlow(PrimaryProcessId, SecondaryProcessId, StreamMask);
+    }
+
+    return matchedMask & StreamMask;
 }
 
 BOOLEAN
@@ -852,7 +1145,6 @@ BkctlBindPendingLaunchProcess(_In_ UINT32 ProcessId, _In_opt_ PCUNICODE_STRING I
             if (subscribed)
             {
                 matchedAny = TRUE;
-                BkctlSetTelemetryArmed(TRUE);
                 DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
                            "BK: pending launch bound targetPid=%lu streamMask=0x%08X image=%ws.\n", ProcessId,
                            streamMask, candidateNorm);
@@ -867,6 +1159,12 @@ BkctlBindPendingLaunchProcess(_In_ UINT32 ProcessId, _In_opt_ PCUNICODE_STRING I
         }
         ExReleaseFastMutex(&client->Lock);
         BkctlClientRelease(client);
+    }
+
+    if (matchedAny)
+    {
+        BkctlRebuildPidInterestIndex();
+        BkctlSetTelemetryArmed(TRUE);
     }
 
     return matchedAny;
@@ -964,7 +1262,7 @@ static VOID BkctlClientEnqueueEvent(_Inout_ PBK_CLIENT Client, _In_ const BK_EVE
         return;
     }
 
-    node = (PBK_EVENT_NODE)BkpoolAllocateCompat(POOL_FLAG_NON_PAGED, sizeof(*node), BK_POOL_TAG);
+    node = BkctlAllocateEventNode();
     if (node == NULL)
     {
         BkctlReleaseGlobalQueueSlot();
@@ -1234,6 +1532,7 @@ _Use_decl_annotations_ VOID BkctlEvtFileCleanup(WDFFILEOBJECT FileObject)
     }
     ExReleaseFastMutex(&g_ClientListLock);
 
+    BkctlRebuildPidInterestIndex();
     if (clientCountSnapshot == 0)
     {
         BkctlSetTelemetryArmed(FALSE);

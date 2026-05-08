@@ -86,6 +86,21 @@ namespace BK_RUNTIME_INTERNAL
         return flags;
     }
 
+    static inline std::uint32_t EncodeRepeatCount(std::uint32_t repeatCount) noexcept
+    {
+        if (repeatCount <= 1u)
+        {
+            return 0u;
+        }
+
+        const std::uint32_t maxEncoded = BK_HOOK_CALLER_REPEAT_MASK >> BK_HOOK_CALLER_REPEAT_SHIFT;
+        if (repeatCount > maxEncoded)
+        {
+            repeatCount = maxEncoded;
+        }
+        return (repeatCount << BK_HOOK_CALLER_REPEAT_SHIFT) & BK_HOOK_CALLER_REPEAT_MASK;
+    }
+
     bool SendWinsockEvent(const WinsockCapturedEvent &evt) noexcept
     {
         using namespace BKIPC;
@@ -113,7 +128,7 @@ namespace BK_RUNTIME_INTERNAL
             record.Args[i] = evt.Args[i];
         }
         record.DataSize = static_cast<std::uint32_t>(sampleSize);
-        record.CallerFlags = BuildCallerFlags(cls, BK_HOOK_COMPONENT_WINSOCK);
+        record.CallerFlags = BuildCallerFlags(cls, BK_HOOK_COMPONENT_WINSOCK) | EncodeRepeatCount(evt.RepeatCount);
         (void)strncpy_s(record.ApiName, opName, _TRUNCATE);
         (void)strncpy_s(record.ModuleName, "WS2_32", _TRUNCATE);
         if (sampleSize != 0)
@@ -261,7 +276,7 @@ namespace BK_RUNTIME_INTERNAL
         }
         record.DataSize =
             (evt.DataSize > RTL_NUMBER_OF(record.DataSample)) ? RTL_NUMBER_OF(record.DataSample) : evt.DataSize;
-        record.CallerFlags = BuildCallerFlags(cls, BK_HOOK_COMPONENT_NT);
+        record.CallerFlags = BuildCallerFlags(cls, BK_HOOK_COMPONENT_NT) | EncodeRepeatCount(evt.RepeatCount);
         CopyHookStack(evt.Stack, record);
         if (record.DataSize != 0)
         {
@@ -292,7 +307,7 @@ namespace BK_RUNTIME_INTERNAL
         record.Context0 = reinterpret_cast<std::uint64_t>(evt.StackPointer);
         record.ArgCount = 0;
         record.DataSize = 0;
-        record.CallerFlags = BuildCallerFlags(cls, BK_HOOK_COMPONENT_KI);
+        record.CallerFlags = BuildCallerFlags(cls, BK_HOOK_COMPONENT_KI) | EncodeRepeatCount(evt.RepeatCount);
         CopyHookStack(evt.Stack, record);
         (void)strncpy_s(record.ApiName, (stubName[0] != '\0') ? stubName : "KiUserApcDispatcher", _TRUNCATE);
         (void)strncpy_s(record.ModuleName, "ntdll", _TRUNCATE);
@@ -321,7 +336,7 @@ namespace BK_RUNTIME_INTERNAL
         record.Context2 = evt.Args[1];
         record.Context3 = evt.Args[2];
         record.ArgCount = 4;
-        record.CallerFlags = BuildCallerFlags(cls, BK_HOOK_COMPONENT_MODULE);
+        record.CallerFlags = BuildCallerFlags(cls, BK_HOOK_COMPONENT_MODULE) | EncodeRepeatCount(evt.RepeatCount);
         for (std::size_t i = 0; i < RTL_NUMBER_OF(evt.Args); ++i)
         {
             record.Args[i] = evt.Args[i];

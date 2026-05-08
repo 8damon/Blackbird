@@ -20,6 +20,7 @@ struct WinsockCapturedEvent
     SOCKET Socket;
     WinsockOperation Operation;
     void *Caller;
+    std::uint32_t RepeatCount = 1;
     std::uint64_t Args[4];
     std::vector<std::uint8_t> Data;
 
@@ -33,6 +34,7 @@ struct NtCapturedEvent
     const char *FunctionName;
     void *Caller;
     NTSTATUS Status;
+    std::uint32_t RepeatCount = 1;
     std::uint64_t Args[8];
     std::uint32_t DataSize;
     std::uint8_t DataSample[64];
@@ -46,6 +48,7 @@ struct KiCapturedEvent
     const char *StubName;
     void *Caller;
     void *StackPointer;
+    std::uint32_t RepeatCount = 1;
 
     IC_STACKTRACE::Trace Stack;
 };
@@ -58,6 +61,7 @@ struct ModuleCapturedEvent
     const char *SourceModule;
     void *Caller;
     HMODULE ModuleHandle;
+    std::uint32_t RepeatCount = 1;
     std::vector<std::uint8_t> NameSample;
     std::uint64_t Args[4];
 

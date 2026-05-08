@@ -154,9 +154,46 @@ namespace BK_RUNTIME_INTERNAL
         return g_NtInitialized && g_KiInitialized && g_ModuleInitialized;
     }
 
+    static HANDLE g_RuntimeWorkEvent = nullptr;
+
+    static HANDLE EnsureRuntimeWorkEvent() noexcept
+    {
+        HANDLE existing = g_RuntimeWorkEvent;
+        if (existing != nullptr)
+        {
+            return existing;
+        }
+
+        HANDLE created = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+        if (created == nullptr)
+        {
+            return nullptr;
+        }
+
+        HANDLE prior = reinterpret_cast<HANDLE>(
+            InterlockedCompareExchangePointer(reinterpret_cast<PVOID volatile *>(&g_RuntimeWorkEvent), created, nullptr));
+        if (prior != nullptr)
+        {
+            CloseHandle(created);
+            return prior;
+        }
+
+        return created;
+    }
+
+    void SignalHookEventsPending() noexcept
+    {
+        HANDLE event = g_RuntimeWorkEvent;
+        if (event != nullptr)
+        {
+            SetEvent(event);
+        }
+    }
+
     DWORD WINAPI BkRuntimeEventLoopThreadProc(LPVOID) noexcept
     {
         BkDbgLog("BkRuntimeEventLoopThreadProc: start");
+        HANDLE workEvent = EnsureRuntimeWorkEvent();
 
         for (;;)
         {
@@ -173,7 +210,14 @@ namespace BK_RUNTIME_INTERNAL
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
             }
-            NativeDelayMs(60);
+            if (workEvent != nullptr)
+            {
+                WaitForSingleObject(workEvent, 60);
+            }
+            else
+            {
+                NativeDelayMs(60);
+            }
         }
 
         __assume(0);

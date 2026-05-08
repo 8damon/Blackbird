@@ -42,7 +42,8 @@ typedef enum _BK_IPC_COMMAND
     BlackbirdIpcCommandGetDiagnostics = 22,
     BlackbirdIpcCommandSetQpcTimingConfig = 23,
     BlackbirdIpcCommandGetQpcTimingState = 24,
-    BlackbirdIpcCommandRegisterProcessInstrumentationCallback = 25
+    BlackbirdIpcCommandRegisterProcessInstrumentationCallback = 25,
+    BlackbirdIpcCommandPublishHookEventBatch = 26
 } BKIPC_COMMAND;
 
 typedef struct _BK_IPC_HANDSHAKE_REQUEST
@@ -129,6 +130,15 @@ typedef struct _BK_IPC_HOOK_EVENT
     CHAR ModuleName[BKIPC_MAX_HOOK_MODULE_NAME];
     UINT8 DataSample[BKIPC_MAX_HOOK_DATA_SAMPLE];
 } BKIPC_HOOK_EVENT, *PBKIPC_HOOK_EVENT;
+
+#define BKIPC_MAX_HOOK_EVENT_BATCH 8u
+
+typedef struct _BK_IPC_HOOK_EVENT_BATCH
+{
+    UINT32 Count;
+    UINT32 Reserved;
+    BKIPC_HOOK_EVENT Events[BKIPC_MAX_HOOK_EVENT_BATCH];
+} BKIPC_HOOK_EVENT_BATCH, *PBKIPC_HOOK_EVENT_BATCH;
 
 typedef enum _BK_IPC_USER_HOOK_TARGET_MODE
 {
@@ -351,6 +361,8 @@ typedef enum _BK_IPC_ETW_FAMILY
 #define BK_HOOK_CALLER_DEEP_MASK 0x00000F00u
 #define BK_HOOK_CALLER_COMPONENT_SHIFT 16u
 #define BK_HOOK_CALLER_COMPONENT_MASK 0x000F0000u
+#define BK_HOOK_CALLER_REPEAT_SHIFT 20u
+#define BK_HOOK_CALLER_REPEAT_MASK 0xFFF00000u
 #define BK_HOOK_CALLER_KIND_UNKNOWN 0u
 #define BK_HOOK_CALLER_KIND_UNMAPPED 1u
 #define BK_HOOK_CALLER_KIND_SYSTEM_DLL 2u
@@ -444,6 +456,7 @@ typedef union _BK_IPC_PAYLOAD
     BKIPC_OPEN_SHARED_RING_REQUEST OpenSharedRingRequest;
     BKIPC_OPEN_SHARED_RING_RESPONSE OpenSharedRingResponse;
     BKIPC_HOOK_EVENT HookEvent;
+    BKIPC_HOOK_EVENT_BATCH HookEventBatch;
     BKIPC_SET_USER_HOOK_TARGET_REQUEST SetUserHookTargetRequest;
     BKIPC_SET_USER_HOOK_TARGET_RESPONSE SetUserHookTargetResponse;
     BKIPC_NOTIFY_HOOK_READY_REQUEST NotifyHookReadyRequest;

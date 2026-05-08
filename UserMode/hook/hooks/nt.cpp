@@ -970,6 +970,164 @@ namespace BK_NT
         return leftBase < rightEnd && rightBase < leftEnd;
     }
 
+    struct ProtectedRangeInterval
+    {
+        std::uintptr_t Base = 0;
+        std::uintptr_t End = 0;
+    };
+
+    static constexpr std::size_t kMaxProtectedRangeIntervals = 1024;
+    static constexpr ULONGLONG kProtectedRangeRefreshMs = 1000;
+    static SRWLOCK g_ProtectedRangeLock = SRWLOCK_INIT;
+    static ProtectedRangeInterval g_ProtectedRanges[kMaxProtectedRangeIntervals]{};
+    static std::size_t g_ProtectedRangeCount = 0;
+    static ULONGLONG g_ProtectedRangeRefreshTick = 0;
+    static bool g_ProtectedRangeOverflow = false;
+
+    static void AddProtectedRangeInterval(ProtectedRangeInterval *ranges, std::size_t &count, bool &overflow,
+                                          std::uintptr_t base, std::uintptr_t end) noexcept
+    {
+        if (ranges == nullptr || base == 0 || base >= end)
+        {
+            return;
+        }
+        if (count >= kMaxProtectedRangeIntervals)
+        {
+            overflow = true;
+            return;
+        }
+        ranges[count].Base = base;
+        ranges[count].End = end;
+        ++count;
+    }
+
+    static void RebuildProtectedRangeCache() noexcept
+    {
+        ProtectedRangeInterval ranges[kMaxProtectedRangeIntervals]{};
+        std::size_t count = 0;
+        bool overflow = false;
+
+        HMODULE sr71 = nullptr;
+        MEMORY_BASIC_INFORMATION selfMbi{};
+        if (VirtualQuery(reinterpret_cast<const void *>(&RebuildProtectedRangeCache), &selfMbi, sizeof(selfMbi)) ==
+            sizeof(selfMbi))
+        {
+            sr71 = static_cast<HMODULE>(selfMbi.AllocationBase);
+        }
+        if (sr71 == nullptr)
+        {
+            sr71 = GetModuleHandleW(L"SR71.dll");
+        }
+        ModuleRange image{};
+        if (sr71 != nullptr && TryResolveModuleImageRange(sr71, image))
+        {
+            AddProtectedRangeInterval(ranges, count, overflow, image.Base, image.End);
+        }
+
+        for (const auto &hook : g_NtHooks)
+        {
+            void *stubCode = ResolveNtHookStub(hook);
+            if (stubCode != nullptr)
+            {
+                std::uintptr_t stubBase = reinterpret_cast<std::uintptr_t>(stubCode);
+                AddProtectedRangeInterval(ranges, count, overflow, stubBase, stubBase + 16u);
+            }
+
+            void *target = ResolveNtHookTarget(hook);
+            if (hook.Installed && target != nullptr)
+            {
+                std::uintptr_t patchBase = reinterpret_cast<std::uintptr_t>(target);
+                AddProtectedRangeInterval(ranges, count, overflow, patchBase, patchBase + sizeof(hook.OriginalBytes));
+            }
+        }
+
+        constexpr std::size_t kMaxWinsockPatches = 640;
+        WinsockHookPatchInfo winsockPatches[kMaxWinsockPatches]{};
+        std::size_t winsockCount = KeCollectWinsockHookPatchInfos(winsockPatches, kMaxWinsockPatches);
+        for (std::size_t i = 0; i < winsockCount; ++i)
+        {
+            std::uintptr_t patchBase = reinterpret_cast<std::uintptr_t>(winsockPatches[i].PatchAddress);
+            AddProtectedRangeInterval(ranges, count, overflow, patchBase, patchBase + winsockPatches[i].PatchSize);
+        }
+
+        constexpr std::size_t kMaxKiPatches = 4;
+        KiHookPatchInfo kiPatches[kMaxKiPatches]{};
+        std::size_t kiCount = KeCollectKiHookPatchInfos(kiPatches, kMaxKiPatches);
+        for (std::size_t i = 0; i < kiCount; ++i)
+        {
+            std::uintptr_t patchBase = reinterpret_cast<std::uintptr_t>(kiPatches[i].PatchAddress);
+            AddProtectedRangeInterval(ranges, count, overflow, patchBase, patchBase + kiPatches[i].PatchSize);
+        }
+
+        constexpr std::size_t kMaxModulePatches = 64;
+        ModuleHookPatchInfo modulePatches[kMaxModulePatches]{};
+        std::size_t moduleCount = KeCollectModuleHookPatchInfos(modulePatches, kMaxModulePatches);
+        for (std::size_t i = 0; i < moduleCount; ++i)
+        {
+            std::uintptr_t patchBase = reinterpret_cast<std::uintptr_t>(modulePatches[i].PatchAddress);
+            AddProtectedRangeInterval(ranges, count, overflow, patchBase, patchBase + modulePatches[i].PatchSize);
+        }
+
+        std::sort(ranges, ranges + count, [](const ProtectedRangeInterval &left,
+                                             const ProtectedRangeInterval &right) noexcept {
+            return left.Base < right.Base;
+        });
+
+        std::size_t merged = 0;
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            if (ranges[i].Base == 0 || ranges[i].Base >= ranges[i].End)
+            {
+                continue;
+            }
+            if (merged != 0 && ranges[i].Base <= ranges[merged - 1].End)
+            {
+                if (ranges[i].End > ranges[merged - 1].End)
+                {
+                    ranges[merged - 1].End = ranges[i].End;
+                }
+                continue;
+            }
+            if (merged != i)
+            {
+                ranges[merged] = ranges[i];
+            }
+            ++merged;
+        }
+
+        AcquireSRWLockExclusive(&g_ProtectedRangeLock);
+        std::memset(g_ProtectedRanges, 0, sizeof(g_ProtectedRanges));
+        if (merged != 0)
+        {
+            std::memcpy(g_ProtectedRanges, ranges, merged * sizeof(g_ProtectedRanges[0]));
+        }
+        g_ProtectedRangeCount = merged;
+        g_ProtectedRangeOverflow = overflow;
+        g_ProtectedRangeRefreshTick = GetTickCount64();
+        ReleaseSRWLockExclusive(&g_ProtectedRangeLock);
+    }
+
+    static bool CachedProtectedRangeTouches(std::uintptr_t base, std::size_t size, bool &overflow) noexcept
+    {
+        bool touches = false;
+
+        overflow = false;
+        AcquireSRWLockShared(&g_ProtectedRangeLock);
+        overflow = g_ProtectedRangeOverflow;
+        for (std::size_t i = 0; i < g_ProtectedRangeCount; ++i)
+        {
+            const auto &range = g_ProtectedRanges[i];
+            if (RangeOverlaps(base, size, range.Base, range.End))
+            {
+                touches = true;
+                break;
+            }
+        }
+        ReleaseSRWLockShared(&g_ProtectedRangeLock);
+
+        return touches;
+    }
+
     static bool ReadRangeTouchesSr71Image(std::uintptr_t base, std::size_t size) noexcept
     {
         HMODULE sr71 = nullptr;
@@ -1071,8 +1229,31 @@ namespace BK_NT
 
     static bool RangeTouchesSr71ProtectedMemory(std::uintptr_t base, std::size_t size) noexcept
     {
-        return ReadRangeTouchesSr71Image(base, size) || ReadRangeTouchesNtHookStub(base, size) ||
-               RangeTouchesNtHookPatch(base, size) || RangeTouchesAuxiliaryHookPatch(base, size);
+        const ULONGLONG now = GetTickCount64();
+        bool overflow = false;
+        ULONGLONG lastRefresh = 0;
+
+        AcquireSRWLockShared(&g_ProtectedRangeLock);
+        lastRefresh = g_ProtectedRangeRefreshTick;
+        ReleaseSRWLockShared(&g_ProtectedRangeLock);
+
+        if (lastRefresh == 0 || now < lastRefresh || (now - lastRefresh) >= kProtectedRangeRefreshMs)
+        {
+            RebuildProtectedRangeCache();
+        }
+
+        if (CachedProtectedRangeTouches(base, size, overflow))
+        {
+            return true;
+        }
+
+        if (overflow)
+        {
+            return ReadRangeTouchesSr71Image(base, size) || ReadRangeTouchesNtHookStub(base, size) ||
+                   RangeTouchesNtHookPatch(base, size) || RangeTouchesAuxiliaryHookPatch(base, size);
+        }
+
+        return false;
     }
 
     static bool ShouldDenySr71Write(HANDLE processHandle, PVOID baseAddress, SIZE_T size) noexcept

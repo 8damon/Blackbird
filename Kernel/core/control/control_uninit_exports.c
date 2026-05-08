@@ -1,7 +1,5 @@
 #include "control_private.h"
 
-static volatile LONG g_BkctlInterestLockBusyCounter = 0;
-
 VOID BkctlUninitialize(VOID)
 {
     if (KeGetCurrentIrql() != PASSIVE_LEVEL)
@@ -22,6 +20,8 @@ VOID BkctlUninitialize(VOID)
     }
     InterlockedExchange(&g_ControlTotalQueuedEvents, 0);
     InterlockedExchange(&g_QueryImageInflight, 0);
+    BkctlClearPidInterestIndex();
+    BkctlUninitializeEventNodeLookaside();
     BkctlSetTelemetryArmed(FALSE);
     g_ClientCount = 0;
 }
@@ -246,68 +246,7 @@ BkctlHasClientsFast(VOID)
 BOOLEAN
 BkctlHasPidInterest(_In_ UINT32 PrimaryProcessId, _In_ UINT32 SecondaryProcessId, _In_ UINT32 StreamMask)
 {
-    PBK_CLIENT snapshot[BK_MAX_TOTAL_CLIENTS];
-    UINT32 snapshotCount = 0;
-    UINT32 i;
-    PLIST_ENTRY entry;
-    BOOLEAN hasInterest = FALSE;
-
-    if (StreamMask == 0)
-    {
-        return FALSE;
-    }
-    if (!BkctlIsArmedFast())
-    {
-        return FALSE;
-    }
-
-    ExAcquireFastMutex(&g_ClientListLock);
-    for (entry = g_ClientList.Flink; entry != &g_ClientList; entry = entry->Flink)
-    {
-        PBK_CLIENT client = CONTAINING_RECORD(entry, BK_CLIENT, Link);
-        if (snapshotCount >= RTL_NUMBER_OF(snapshot))
-        {
-            break;
-        }
-        BkctlClientReference(client);
-        snapshot[snapshotCount++] = client;
-    }
-    ExReleaseFastMutex(&g_ClientListLock);
-
-    for (i = 0; i < snapshotCount; ++i)
-    {
-        PBK_CLIENT client = snapshot[i];
-        if (!ExTryToAcquireFastMutex(&client->Lock))
-        {
-            LONG busyCount = InterlockedIncrement(&g_BkctlInterestLockBusyCounter);
-            if (busyCount == 1 || ((busyCount & 0xFF) == 0))
-            {
-                DbgPrintEx(
-                    DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                    "BK: pid-interest client lock busy busyCount=%ld primaryPid=%lu secondaryPid=%lu streamMask=0x%08X client=0x%p.\n",
-                    busyCount, PrimaryProcessId, SecondaryProcessId, StreamMask, client);
-            }
-            BkctlClientRelease(client);
-            continue;
-        }
-        if (BkctlClientMatchSubscriptionEither(client, PrimaryProcessId, SecondaryProcessId, StreamMask))
-        {
-            hasInterest = TRUE;
-        }
-        ExReleaseFastMutex(&client->Lock);
-        BkctlClientRelease(client);
-        if (hasInterest)
-        {
-            break;
-        }
-    }
-
-    for (++i; i < snapshotCount; ++i)
-    {
-        BkctlClientRelease(snapshot[i]);
-    }
-
-    return hasInterest;
+    return (BkctlQueryPidInterest(PrimaryProcessId, SecondaryProcessId, StreamMask) != 0);
 }
 
 BOOLEAN

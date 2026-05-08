@@ -285,6 +285,7 @@ namespace BK_RUNTIME_INTERNAL
     bool InitializeIpcWithRetry() noexcept;
     bool NotifyHookReadyWithRetry(std::uint32_t localMask) noexcept;
     void PublishCurrentHookReadyMaskBestEffort() noexcept;
+    void SignalHookEventsPending() noexcept;
     void FlushHookEvents() noexcept;
     void PollHookIntegrityWatchdog() noexcept;
     void RegisterSr71OwnedRanges() noexcept;

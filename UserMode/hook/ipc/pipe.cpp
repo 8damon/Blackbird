@@ -50,12 +50,14 @@ namespace BKIPC
 
     static bool TransactCommandLocked(UINT32 command, const void *payload, size_t payloadSize,
                                       BKIPC_PACKET *outResponse);
+    static bool PublishHookEventBatchLocked(const BKIPC_HOOK_EVENT *events, UINT32 count);
 
     static DWORD CommandTimeoutMs(UINT32 command) noexcept
     {
         switch (command)
         {
         case BlackbirdIpcCommandPublishHookEvent:
+        case BlackbirdIpcCommandPublishHookEventBatch:
             return kAsyncPublishTimeoutMs;
         case BlackbirdIpcCommandNotifyHookReady:
         case BlackbirdIpcCommandRegisterInstrumentationRange:
@@ -90,21 +92,26 @@ namespace BKIPC
             }
             head = prev;
 
-            // Dispatch each event synchronously (we're off the hook thread now).
+            // Dispatch events in bounded batches (we're off the hook thread now).
             while (head)
             {
-                PSLIST_ENTRY next = head->Next;
-                AsyncHookNode *node = CONTAINING_RECORD(head, AsyncHookNode, FreeLink);
+                BKIPC_HOOK_EVENT batch[BKIPC_MAX_HOOK_EVENT_BATCH]{};
+                UINT32 batchCount = 0;
+
+                while (head && batchCount < BKIPC_MAX_HOOK_EVENT_BATCH)
+                {
+                    PSLIST_ENTRY next = head->Next;
+                    AsyncHookNode *node = CONTAINING_RECORD(head, AsyncHookNode, FreeLink);
+                    batch[batchCount++] = node->Event;
+                    InterlockedPushEntrySList(&g_asyncFreeList, &node->FreeLink);
+                    head = next;
+                }
 
                 /* Guard: IPC sends must not re-enter SR71 hooks */
                 BkSr71InternalScope _ipc_scope;
                 AcquireSRWLockExclusive(&g_pipeLock);
-                (void)TransactCommandLocked(BlackbirdIpcCommandPublishHookEvent, &node->Event, sizeof(node->Event),
-                                            nullptr);
+                (void)PublishHookEventBatchLocked(batch, batchCount);
                 ReleaseSRWLockExclusive(&g_pipeLock);
-
-                InterlockedPushEntrySList(&g_asyncFreeList, &node->FreeLink);
-                head = next;
             }
         }
         return 0;
@@ -326,6 +333,47 @@ namespace BKIPC
         }
 
         return (response.Status == ERROR_SUCCESS);
+    }
+
+    static bool PublishHookEventBatchLocked(const BKIPC_HOOK_EVENT *events, UINT32 count)
+    {
+        if (events == nullptr || count == 0)
+        {
+            return false;
+        }
+
+        if (count == 1)
+        {
+            return TransactCommandLocked(BlackbirdIpcCommandPublishHookEvent, &events[0], sizeof(events[0]), nullptr);
+        }
+
+        if (count > BKIPC_MAX_HOOK_EVENT_BATCH)
+        {
+            count = BKIPC_MAX_HOOK_EVENT_BATCH;
+        }
+
+        BKIPC_HOOK_EVENT_BATCH batch{};
+        batch.Count = count;
+        for (UINT32 i = 0; i < count; ++i)
+        {
+            batch.Events[i] = events[i];
+        }
+
+        if (TransactCommandLocked(BlackbirdIpcCommandPublishHookEventBatch, &batch, sizeof(batch), nullptr))
+        {
+            return true;
+        }
+
+        bool allSent = true;
+        for (UINT32 i = 0; i < count; ++i)
+        {
+            if (!TransactCommandLocked(BlackbirdIpcCommandPublishHookEvent, &events[i], sizeof(events[i]), nullptr))
+            {
+                allSent = false;
+            }
+        }
+
+        return allSent;
     }
 
     bool Initialize(DWORD timeoutMs)
@@ -551,25 +599,34 @@ namespace BKIPC
 
         while (head)
         {
-            PSLIST_ENTRY next = head->Next;
-            AsyncHookNode *node = CONTAINING_RECORD(head, AsyncHookNode, FreeLink);
+            BKIPC_HOOK_EVENT batch[BKIPC_MAX_HOOK_EVENT_BATCH]{};
+            UINT32 batchCount = 0;
+            while (head && dispatched + batchCount < maxEvents && batchCount < BKIPC_MAX_HOOK_EVENT_BATCH)
+            {
+                PSLIST_ENTRY next = head->Next;
+                AsyncHookNode *node = CONTAINING_RECORD(head, AsyncHookNode, FreeLink);
+                batch[batchCount++] = node->Event;
+                InterlockedPushEntrySList(&g_asyncFreeList, &node->FreeLink);
+                head = next;
+            }
 
-            if (dispatched < maxEvents)
+            if (batchCount != 0)
             {
                 BkSr71InternalScope _ipc_scope;
                 AcquireSRWLockExclusive(&g_pipeLock);
-                (void)TransactCommandLocked(BlackbirdIpcCommandPublishHookEvent, &node->Event, sizeof(node->Event),
-                                            nullptr);
+                (void)PublishHookEventBatchLocked(batch, batchCount);
                 ReleaseSRWLockExclusive(&g_pipeLock);
-                dispatched += 1;
-            }
-            else
-            {
-                InterlockedIncrement(&g_asyncDropped);
+                dispatched += batchCount;
             }
 
-            InterlockedPushEntrySList(&g_asyncFreeList, &node->FreeLink);
-            head = next;
+            while (head && dispatched >= maxEvents)
+            {
+                PSLIST_ENTRY next = head->Next;
+                AsyncHookNode *node = CONTAINING_RECORD(head, AsyncHookNode, FreeLink);
+                InterlockedIncrement(&g_asyncDropped);
+                InterlockedPushEntrySList(&g_asyncFreeList, &node->FreeLink);
+                head = next;
+            }
         }
 
         return dispatched;

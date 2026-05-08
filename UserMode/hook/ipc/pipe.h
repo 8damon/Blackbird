@@ -58,6 +58,7 @@ namespace BKIPC
     bool RegisterInstrumentationRange(UINT64 baseAddress, UINT64 regionSize, UINT32 flags, const char *tag) noexcept;
     bool RegisterHookPatch(UINT64 patchAddress, UINT32 patchSize, const UINT8 *originalBytes, UINT32 originalSize,
                            UINT32 flags, const char *tag) noexcept;
+    bool RegisterProcessInstrumentationCallback(UINT64 callbackAddress, UINT64 callbackSize, UINT32 flags) noexcept;
     bool IsProtectedIpcHandleValue(UINT64 handleValue) noexcept;
 
     template <typename T> bool SendMessage(const T &msg)

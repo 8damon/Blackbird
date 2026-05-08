@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="Source Files\hooks">
+      <UniqueIdentifier>{ba54e841-b6c8-4860-a7c3-bf44363447cb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\ipc">
+      <UniqueIdentifier>{1b7085b8-3e4e-4b35-99e7-2b74ad2ffd99}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\instrument">
+      <UniqueIdentifier>{c6360273-8d89-4993-873c-2e75fa32af4c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{93995380-89BD-4B04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
+    </Filter>
+    <Filter Include="Header Files\hooks">
+      <UniqueIdentifier>{7F27B094-77F2-4F3D-8B9D-1D3A07A0F501}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\ipc">
+      <UniqueIdentifier>{AC31B949-6765-4B33-9C07-5734E9C56121}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files\instrument">
+      <UniqueIdentifier>{A5987B3D-A52C-4306-8D08-4120C5305563}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\dll.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hooks\controller.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hooks\ki.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hooks\module.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hooks\nt.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hooks\runtime.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hooks\runtime_bootstrap.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hooks\runtime_integrity.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hooks\runtime_launch_gate.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hooks\runtime_pic.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\hooks\ws.cpp">
+      <Filter>Source Files\hooks</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ipc\pipe.cpp">
+      <Filter>Source Files\ipc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ipc\recv.cpp">
+      <Filter>Source Files\ipc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\ipc\send.cpp">
+      <Filter>Source Files\ipc</Filter>
+    </ClCompile>
+    <ClCompile Include="..\instrument\bk.cpp">
+      <Filter>Source Files\instrument</Filter>
+    </ClCompile>
+    <ClCompile Include="..\instrument\stacktrace.cpp">
+      <Filter>Source Files\instrument</Filter>
+    </ClCompile>
+    <ClCompile Include="..\instrument\unlink.cpp">
+      <Filter>Source Files\instrument</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\hooks\controller.h">
+      <Filter>Header Files\hooks</Filter>
+    </ClInclude>
+    <ClInclude Include="..\hooks\ki.h">
+      <Filter>Header Files\hooks</Filter>
+    </ClInclude>
+    <ClInclude Include="..\hooks\module.h">
+      <Filter>Header Files\hooks</Filter>
+    </ClInclude>
+    <ClInclude Include="..\hooks\nt.h">
+      <Filter>Header Files\hooks</Filter>
+    </ClInclude>
+    <ClInclude Include="..\hooks\runtime.h">
+      <Filter>Header Files\hooks</Filter>
+    </ClInclude>
+    <ClInclude Include="..\hooks\runtime_private.h">
+      <Filter>Header Files\hooks</Filter>
+    </ClInclude>
+    <ClInclude Include="..\hooks\ws.h">
+      <Filter>Header Files\hooks</Filter>
+    </ClInclude>
+    <ClInclude Include="..\ipc\pipe.h">
+      <Filter>Header Files\ipc</Filter>
+    </ClInclude>
+    <ClInclude Include="..\instrument\bk.h">
+      <Filter>Header Files\instrument</Filter>
+    </ClInclude>
+    <ClInclude Include="..\instrument\stacktrace.h">
+      <Filter>Header Files\instrument</Filter>
+    </ClInclude>
+    <ClInclude Include="..\instrument\unlink.h">
+      <Filter>Header Files\instrument</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="$(BlackbirdVersionRcPath)" />
+  </ItemGroup>
+</Project>

@@ -292,9 +292,10 @@ namespace BK_RUNTIME_INTERNAL
     __declspec(noinline) void WINAPI LaunchGateInitializeThunk(void *parameter) noexcept
     {
         auto *park = static_cast<LaunchGateParkContext *>(parameter);
+        const bool deferredOpen = g_LaunchGateDeferredOpen.load(std::memory_order_acquire);
 
         if (g_LaunchGateCallbacks.InitializeRuntime == nullptr ||
-            !g_LaunchGateCallbacks.InitializeRuntime(!g_LaunchGateDeferredOpen.load(std::memory_order_acquire), true))
+            !g_LaunchGateCallbacks.InitializeRuntime(false, false))
         {
             BkRuntimeReportFault(BkRuntimeFaultCode::RuntimeInitializeFailed);
             if (g_LaunchGateCallbacks.FailClosed != nullptr)
@@ -303,9 +304,14 @@ namespace BK_RUNTIME_INTERNAL
             }
             BkRuntimeFailClosed(WAIT_TIMEOUT);
         }
+
+        if (park->TrapKind == LaunchGateTrapEntryPoint)
+        {
+            (void)EnsureProcessInstrumentationCallbackInstalled(true);
+        }
         PublishLaunchGateTrapEvent(*park);
 
-        if (g_LaunchGateDeferredOpen.load(std::memory_order_acquire))
+        if (deferredOpen)
         {
             if (g_LaunchGateReadyEvent != nullptr)
             {
@@ -317,6 +323,15 @@ namespace BK_RUNTIME_INTERNAL
             {
                 RestoreLaunchGatePages();
             }
+        }
+        else
+        {
+            LaunchGateRelease();
+        }
+
+        if (!EnsureRuntimeWorkerThreadStarted())
+        {
+            BkDbgLog("LaunchGateInitializeThunk: worker start deferred");
         }
 
         ResumeOriginalThread(park, "LaunchGateInitializeThunk");

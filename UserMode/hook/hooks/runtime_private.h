@@ -267,7 +267,11 @@ namespace BK_RUNTIME_INTERNAL
     void PollHookIntegrityWatchdog() noexcept;
     void RegisterSr71OwnedRanges() noexcept;
     DWORD WINAPI BkRuntimeEventLoopThreadProc(LPVOID) noexcept;
+    bool EnsureRuntimeWorkerThreadStarted() noexcept;
     bool EnsureRuntimeInitializedForLaunch(bool signalLaunchGateReady, bool startWorkerAfterInit) noexcept;
+    bool EnsureProcessInstrumentationCallbackInstalled(bool allowInstallNow) noexcept;
+    void FlushProcessInstrumentationCallbackSamples() noexcept;
+    void ResetProcessInstrumentationCallbackState() noexcept;
 
     bool LaunchGateHandleFault(EXCEPTION_POINTERS *ep) noexcept;
     bool LaunchGateIsPrepared() noexcept;

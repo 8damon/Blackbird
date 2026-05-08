@@ -6,6 +6,7 @@
 #include "..\core\tempus_debug.h"
 #include "..\telemetry\etw.h"
 #include "..\core\unicode_utils.h"
+#include "..\hooks\monitor\ntapi_monitor.h"
 #include "process_monitor.h"
 
 static volatile LONG g_ProcessMonitorRegistered = 0;
@@ -645,6 +646,7 @@ static VOID BkcprocProcessNotifyRoutineEx(_Inout_ PEPROCESS Process, _In_ HANDLE
     {
         BkcprocClearLaunchBootstrapPid((UINT32)(ULONG_PTR)ProcessId);
         BkcprocClearProtectedPid((UINT32)(ULONG_PTR)ProcessId);
+        BkntkiClearProcessInstrumentationCallback((UINT32)(ULONG_PTR)ProcessId);
     }
 
     if (isCreate && NT_SUCCESS(createStatus))

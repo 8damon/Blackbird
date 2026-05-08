@@ -153,6 +153,7 @@ inline UINT32 ControllerComputeEtwDetectionTraits(_In_ const BKIPC_ETW_EVENT &Ev
         traits |= BKIPC_ETW_TRAIT_MEMORY_PROTECT_RX;
     }
     if (ControllerAsciiContainsInsensitive(Event.DetectionName, "DIRECT_SYSCALL") ||
+        ControllerAsciiContainsInsensitive(Event.DetectionName, "PIC_DIRECT_SYSCALL") ||
         ControllerAsciiContainsInsensitive(Event.DetectionName, "ANOMALY_ON_HANDLE_OP") ||
         ControllerAsciiContainsInsensitive(Event.DetectionName, "SUSPECT_HANDLE_OPERATION") ||
         ControllerAsciiEqualsInsensitive(Event.ClassName, "DIRECT-SYSCALL-SUSPECT") ||
@@ -166,6 +167,7 @@ inline UINT32 ControllerComputeEtwDetectionTraits(_In_ const BKIPC_ETW_EVENT &Ev
         ControllerAsciiContainsInsensitive(Event.DetectionName, "IAT_TAMPER") ||
         ControllerAsciiContainsInsensitive(Event.DetectionName, "EAT_TAMPER") ||
         ControllerAsciiContainsInsensitive(Event.DetectionName, "NTDLL_IMAGE_TAMPER") ||
+        ControllerAsciiContainsInsensitive(Event.DetectionName, "SR71_PIC_") ||
         ControllerAsciiContainsInsensitive(Event.DetectionName, "SR71_HOOK_WRITE_BLOCKED") ||
         ControllerAsciiContainsInsensitive(Event.DetectionName, "SR71_HOOK_PROTECT_BLOCKED"))
     {
@@ -510,6 +512,9 @@ VOID ControllerObserveUserHookHollowEvent(_In_ const BKIPC_ETW_EVENT *Event);
 VOID ControllerResetHollowingState(VOID);
 BOOL ControllerStartHollowingWorkers(VOID);
 VOID ControllerStopHollowingWorkers(VOID);
+VOID ControllerPicCorrelationObserve(_In_ const BKIPC_ETW_EVENT *Event);
+VOID ControllerPicCorrelationApply(_Inout_ BKIPC_ETW_EVENT *Event);
+VOID ControllerPicCorrelationReset(VOID);
 
 BOOL ControllerSymbolServiceStart(VOID);
 VOID ControllerSymbolServiceStop(VOID);

@@ -1524,6 +1524,7 @@ static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ P
     }
 
     ControllerProcessHollowingEtwRecord(Record, EventName, &event);
+    ControllerPicCorrelationApply(&event);
 
     if (EventName != NULL && wcscmp(EventName, L"ProcessTelemetry") == 0)
     {
@@ -1804,6 +1805,7 @@ static BOOL ControllerStartCore(VOID)
 
     ControllerLog("[*] BlackbirdController: core start requested\n");
     ControllerResetHollowingState();
+    ControllerPicCorrelationReset();
     ControllerHeuristicsInitialize();
 
     g_StopEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
@@ -2044,6 +2046,7 @@ static VOID ControllerStopCore(VOID)
 
     ControllerSymbolServiceStop();
     ControllerResetHollowingState();
+    ControllerPicCorrelationReset();
     ControllerHeuristicsUninitialize();
 
     ControllerLog("[*] BlackbirdController: core stopped\n");

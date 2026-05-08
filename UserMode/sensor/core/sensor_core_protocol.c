@@ -1359,6 +1359,27 @@ BOOL BkscRegisterHookPatch(_In_ HANDLE Device, _In_ const BK_REGISTER_HOOK_PATCH
                            &bytes, NULL);
 }
 
+BOOL BkscRegisterProcessInstrumentationCallback(
+    _In_ HANDLE Device, _In_ const BK_REGISTER_PROCESS_INSTRUMENTATION_CALLBACK_REQUEST *Request)
+{
+    DWORD bytes = 0;
+
+    if (Device == NULL || Device == INVALID_HANDLE_VALUE || Request == NULL || Request->ProcessId == 0 ||
+        Request->CallbackAddress == 0 || Request->CallbackSize == 0)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    if (BkscIsClientProtocol())
+    {
+        SetLastError(ERROR_NOT_SUPPORTED);
+        return FALSE;
+    }
+
+    return DeviceIoControl(Device, (DWORD)IOCTL_BK_REGISTER_PROCESS_INSTRUMENTATION_CALLBACK, (LPVOID)Request,
+                           sizeof(*Request), NULL, 0, &bytes, NULL);
+}
+
 BOOL BkscSetEndpointGuard(_In_ HANDLE Device, _In_ const BK_ENDPOINT_GUARD_REQUEST *Request)
 {
     DWORD bytes = 0;

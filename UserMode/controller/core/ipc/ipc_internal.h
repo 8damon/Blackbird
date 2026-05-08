@@ -30,6 +30,8 @@ BOOL ControllerProxyRegisterInstrumentationRange(_In_ DWORD ProcessId, _In_ UINT
 BOOL ControllerProxyRegisterHookPatch(_In_ DWORD ProcessId, _In_ UINT64 PatchAddress, _In_ UINT32 PatchSize,
                                       _In_reads_bytes_(OriginalSize) const UINT8 *OriginalBytes,
                                       _In_ UINT32 OriginalSize, _In_ UINT32 Flags, _In_opt_z_ PCSTR Tag);
+BOOL ControllerProxyRegisterProcessInstrumentationCallback(_In_ DWORD ProcessId, _In_ UINT64 CallbackAddress,
+                                                          _In_ UINT64 CallbackSize, _In_ UINT32 Flags);
 BOOL ControllerProxyReadProcessMemory(_In_ DWORD ProcessId, _In_ UINT64 BaseAddress, _In_ DWORD RequestedSize,
                                       _In_ HANDLE ClientProcessHandle, _Out_ HANDLE *OutDupSectionHandle,
                                       _Out_ DWORD *OutBytesRead);

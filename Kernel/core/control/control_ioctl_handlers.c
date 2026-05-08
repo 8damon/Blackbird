@@ -1290,3 +1290,38 @@ NTSTATUS BkctlHandleRegisterHookPatchIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUE
         requesterPid, in->ProcessId, in->PatchAddress, in->PatchSize, in->Tag, status);
     return status;
 }
+
+NTSTATUS BkctlHandleRegisterProcessInstrumentationCallbackIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request)
+{
+    NTSTATUS status;
+    PBK_REGISTER_PROCESS_INSTRUMENTATION_CALLBACK_REQUEST in;
+    size_t inSize;
+    ULONG requesterPid;
+
+    UNREFERENCED_PARAMETER(Client);
+
+    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
+    if (!NT_SUCCESS(status))
+    {
+        return status;
+    }
+    UNREFERENCED_PARAMETER(inSize);
+
+    if (in->ProcessId == 0 || in->CallbackAddress == 0 || in->CallbackSize == 0)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    requesterPid = BkctlGetRequestorPid();
+    if (!BkctlRequestorIsControllerOnly(requesterPid))
+    {
+        return STATUS_ACCESS_DENIED;
+    }
+
+    status = BkntkiRegisterProcessInstrumentationCallback(in->ProcessId, in->CallbackAddress, in->CallbackSize,
+                                                          in->Flags);
+    DbgPrintEx(DPFLTR_IHVDRIVER_ID, NT_SUCCESS(status) ? DPFLTR_INFO_LEVEL : DPFLTR_WARNING_LEVEL,
+               "BK: process-instrumentation-callback register requesterPid=%lu targetPid=%lu callback=0x%016I64X size=0x%016I64X status=0x%08X.\n",
+               requesterPid, in->ProcessId, in->CallbackAddress, in->CallbackSize, status);
+    return status;
+}

@@ -651,11 +651,13 @@ static BOOL ControllerCommandAllowedForRole(_In_ DWORD ClientRole, _In_ UINT32 C
         return (Command == BlackbirdIpcCommandHandshake || Command == BlackbirdIpcCommandPublishHookEvent ||
                 Command == BlackbirdIpcCommandNotifyHookReady ||
                 Command == BlackbirdIpcCommandRegisterInstrumentationRange ||
-                Command == BlackbirdIpcCommandRegisterHookPatch);
+                Command == BlackbirdIpcCommandRegisterHookPatch ||
+                Command == BlackbirdIpcCommandRegisterProcessInstrumentationCallback);
     case BkctlrClientRoleControl:
         return (Command != BlackbirdIpcCommandPublishHookEvent && Command != BlackbirdIpcCommandNotifyHookReady &&
                 Command != BlackbirdIpcCommandRegisterInstrumentationRange &&
-                Command != BlackbirdIpcCommandRegisterHookPatch);
+                Command != BlackbirdIpcCommandRegisterHookPatch &&
+                Command != BlackbirdIpcCommandRegisterProcessInstrumentationCallback);
     default:
         return FALSE;
     }
@@ -1269,6 +1271,7 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
     BOOL integrityTampered = FALSE;
     BOOL integrityAmsiPatch = FALSE;
     BOOL integrityEtwPatch = FALSE;
+    BOOL launchGateTrap = FALSE;
     BOOL memoryEvent = FALSE;
     BOOL specializedEvent = FALSE;
 
@@ -1322,8 +1325,9 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
     {
         integrityAmsiPatch = (HookEvent->Operation == BK_HOOK_EVENT_OP_AMSI_PATCH);
         integrityEtwPatch = (HookEvent->Operation == BK_HOOK_EVENT_OP_ETW_PATCH);
-        if (HookEvent->Operation == BK_HOOK_EVENT_OP_LAUNCH_GATE_ENTRY ||
-            HookEvent->Operation == BK_HOOK_EVENT_OP_LAUNCH_GATE_TLS_CALLBACK)
+        launchGateTrap = (HookEvent->Operation == BK_HOOK_EVENT_OP_LAUNCH_GATE_ENTRY ||
+                          HookEvent->Operation == BK_HOOK_EVENT_OP_LAUNCH_GATE_TLS_CALLBACK);
+        if (launchGateTrap)
         {
             integrityTampered = FALSE;
             mapped.Severity = 1u;
@@ -1369,8 +1373,7 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
 
     if (HookEvent->Kind == BlackbirdIpcHookEventIntegrity)
     {
-        if (HookEvent->Operation == BK_HOOK_EVENT_OP_LAUNCH_GATE_ENTRY ||
-            HookEvent->Operation == BK_HOOK_EVENT_OP_LAUNCH_GATE_TLS_CALLBACK)
+        if (launchGateTrap)
         {
             BOOL tlsTrap = HookEvent->Operation == BK_HOOK_EVENT_OP_LAUNCH_GATE_TLS_CALLBACK;
             (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
@@ -1384,6 +1387,27 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
                 L"BK launch gate trapped %ws before target user code continued address=0x%llX page=0x%llX index=%llu",
                 tlsTrap ? L"TLS callback" : L"entry point", (unsigned long long)HookEvent->Context0,
                 (unsigned long long)HookEvent->Context1, (unsigned long long)HookEvent->Context3);
+        }
+        else if (HookEvent->Operation == BK_HOOK_EVENT_OP_PIC_DIRECT_SYSCALL)
+        {
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
+                                 "PIC_DIRECT_SYSCALL_SUSPECT");
+            (void)StringCchCopyA(mapped.Operation, RTL_NUMBER_OF(mapped.Operation),
+                                 "ProcessInstrumentationCallback");
+            (void)StringCchPrintfW(mapped.EventName, RTL_NUMBER_OF(mapped.EventName), L"%S", mapped.Operation);
+            (void)StringCchCopyA(mapped.ClassName, RTL_NUMBER_OF(mapped.ClassName), "BK Instrument");
+            mapped.Severity = 6u;
+            mapped.TargetPid = eventPid;
+            mapped.StartAddress = HookEvent->Context0;
+            mapped.StartRegionProtect = (UINT32)(HookEvent->Context2 & 0xFFFFFFFFull);
+            (void)StringCchPrintfW(
+                mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                L"process instrumentation callback observed kernel return outside known syscall images pc=0x%llX sp=0x%llX protect=0x%llX allocationBase=0x%llX regionSize=0x%llX dropped=%llu",
+                (unsigned long long)HookEvent->Context0, (unsigned long long)HookEvent->Context1,
+                (unsigned long long)HookEvent->Context2,
+                (unsigned long long)((argCount > 1u) ? HookEvent->Args[1] : 0ull),
+                (unsigned long long)((argCount > 2u) ? HookEvent->Args[2] : 0ull),
+                (unsigned long long)HookEvent->Context3);
         }
         else if (integrityAmsiPatch || integrityEtwPatch)
         {
@@ -2395,6 +2419,11 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
 
         if (blackbirdOwned)
         {
+            if (launchGateTrap)
+            {
+                return ERROR_SUCCESS;
+            }
+
             mapped.Reserved2 = ControllerComputeEtwDetectionTraits(mapped) | BKIPC_ETW_TRAIT_BLACKBIRD_OWN;
             mapped.Severity = 1u;
             (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "BK_INSTRUMENTATION");
@@ -2402,6 +2431,8 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
             return ERROR_SUCCESS;
         }
     }
+
+    ControllerPicCorrelationApply(&mapped);
 
     if (HookEvent->Kind != BlackbirdIpcHookEventIntegrity && mapped.Severity >= 2u && mapped.ProcessId != 0u)
     {
@@ -2847,6 +2878,8 @@ static PCSTR ControllerCommandName(_In_ UINT32 Command)
         return "register-instrumentation-range";
     case BlackbirdIpcCommandRegisterHookPatch:
         return "register-hook-patch";
+    case BlackbirdIpcCommandRegisterProcessInstrumentationCallback:
+        return "register-process-instrumentation-callback";
     default:
         return "unknown";
     }
@@ -3133,6 +3166,41 @@ static DWORD ControllerHandleClientCommand(_Inout_ BK_CONTROLLER_CLIENT *Client,
         ControllerLog("[IPC] hook-patch registered pid=%lu address=0x%llX size=%lu tag=%s\n", Client->ProcessId,
                       (unsigned long long)patch->PatchAddress, (unsigned long)patch->PatchSize,
                       patch->Tag[0] != '\0' ? patch->Tag : "<untagged>");
+        break;
+    }
+    case BlackbirdIpcCommandRegisterProcessInstrumentationCallback:
+    {
+        const BK_REGISTER_PROCESS_INSTRUMENTATION_CALLBACK_REQUEST *pic =
+            &Request->Payload.RegisterProcessInstrumentationCallbackRequest;
+        if (pic->CallbackAddress == 0 || pic->CallbackSize == 0)
+        {
+            err = ERROR_INVALID_PARAMETER;
+            break;
+        }
+        if (pic->ProcessId != 0 && pic->ProcessId != Client->ProcessId)
+        {
+            err = ERROR_ACCESS_DENIED;
+            break;
+        }
+
+        if (!ControllerProxyRegisterProcessInstrumentationCallback(Client->ProcessId, pic->CallbackAddress,
+                                                                   pic->CallbackSize, pic->Flags))
+        {
+            err = GetLastError();
+            if (err == ERROR_SUCCESS)
+            {
+                err = ERROR_GEN_FAILURE;
+            }
+            ControllerLog(
+                "[IPC] process-instrumentation-callback kernel registration failed pid=%lu callback=0x%llX size=0x%llX win32=%lu\n",
+                Client->ProcessId, (unsigned long long)pic->CallbackAddress, (unsigned long long)pic->CallbackSize,
+                err);
+            break;
+        }
+
+        ControllerLog("[IPC] process-instrumentation-callback registered pid=%lu callback=0x%llX size=0x%llX\n",
+                      Client->ProcessId, (unsigned long long)pic->CallbackAddress,
+                      (unsigned long long)pic->CallbackSize);
         break;
     }
     default:

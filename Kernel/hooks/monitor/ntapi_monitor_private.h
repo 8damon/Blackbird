@@ -311,6 +311,13 @@ VOID BkntkiSanitizeProcessQueryInformation(_In_ ULONG ProcessInformationClass,
                                            _In_ ULONG ProcessInformationLength, _Out_opt_ PULONG ReturnLength,
                                            _In_ NTSTATUS Status);
 BOOLEAN BkntkiAddressTouchesInstrumentationRangeForPid(_In_ UINT32 ProcessId, _In_ PVOID Address);
+BOOLEAN BkntkiShouldBlockProcessInstrumentationCallbackSet(_In_ HANDLE ProcessHandle,
+                                                           _In_ PROCESSINFOCLASS ProcessInformationClass,
+                                                           _In_reads_bytes_opt_(ProcessInformationLength)
+                                                               PVOID ProcessInformation,
+                                                           _In_ ULONG ProcessInformationLength,
+                                                           _Out_opt_ UINT32 *TargetProcessId,
+                                                           _Out_opt_ UINT64 *RequestedCallback);
 
 ULONG BkntkiReadUlongSafe(_In_opt_ PULONG Value);
 SIZE_T BkntkiReadSizeTSafe(_In_opt_ PSIZE_T Value);

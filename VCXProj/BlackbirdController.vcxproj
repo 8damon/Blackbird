@@ -210,6 +210,7 @@
     <ClCompile Include="..\UserMode\controller\core\monitoring\subscriptions.cpp" />
     <ClCompile Include="..\UserMode\controller\core\monitoring\etw_monitor.cpp" />
     <ClCompile Include="..\UserMode\controller\core\correlation\hollowing.cpp" />
+    <ClCompile Include="..\UserMode\controller\core\correlation\pic_correlation.cpp" />
     <ClCompile Include="..\UserMode\controller\core\heuristics\heuristics.cpp" />
     <ClCompile Include="..\UserMode\controller\core\ipc\ipc.cpp" />
     <ClCompile Include="..\UserMode\controller\core\ipc\ipc_hook_support.cpp" />

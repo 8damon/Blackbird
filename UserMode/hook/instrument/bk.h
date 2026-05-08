@@ -55,7 +55,7 @@ namespace bk::BK
 
     struct TelemetryArguments final
     {
-        const wchar_t *target_module_basename = L"SR71.dll";
+        const wchar_t *target_module_basename = nullptr;
 
         TelemetryFn low_noise_telemetry = nullptr;
         TelemetryFn high_noise_telemetry = nullptr;

@@ -15,6 +15,7 @@
 #include "runtime.h"
 
 #include "controller.h"
+#include "encoded_literal.h"
 #include "module.h"
 #include "nt.h"
 #include "ws.h"
@@ -27,6 +28,7 @@
 #include <Windows.h>
 #include <winternl.h>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -131,8 +133,6 @@ namespace BK_RUNTIME_INTERNAL
     inline constexpr DWORD kLaunchGatePageSize = 0x1000u;
     inline constexpr std::size_t kLaunchGateMaxPages = 16;
     inline constexpr std::size_t kLaunchGateMaxParkContexts = 16;
-    inline constexpr wchar_t kLaunchGateDeferredEventPrefix[] = L"Global\\BlackbirdLaunchGateRelease.";
-
     struct LaunchGatePage
     {
         Sr71IhrToken BaseToken = 0;
@@ -230,7 +230,8 @@ namespace BK_RUNTIME_INTERNAL
 
     template <typename T> inline T ResolveNtdllExport(const char *name) noexcept
     {
-        HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+        auto ntdllName = DecodeNtdllDllName();
+        HMODULE ntdll = GetModuleHandleW(ntdllName.c_str());
         if (ntdll != nullptr)
         {
             FARPROC proc = GetProcAddress(ntdll, name);
@@ -240,7 +241,7 @@ namespace BK_RUNTIME_INTERNAL
             }
         }
 
-        return reinterpret_cast<T>(ResolveExportByName(FindLoadedModuleBaseByName(L"ntdll.dll"), name));
+        return reinterpret_cast<T>(ResolveExportByName(FindLoadedModuleBaseByName(ntdllName.c_str()), name));
     }
 
     bool NativeQueryMemory(void *address, MEMORY_BASIC_INFORMATION *memoryInfo) noexcept;

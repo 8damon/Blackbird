@@ -48,24 +48,46 @@ void BkDbgLog(_In_z_ _Printf_format_string_ PCSTR format, ...) noexcept
     OutputDebugStringA(line);
 
     char programData[MAX_PATH]{};
-    DWORD programDataChars = GetEnvironmentVariableA("ProgramData", programData, RTL_NUMBER_OF(programData));
-    if (programDataChars == 0 || programDataChars >= RTL_NUMBER_OF(programData))
+    static constexpr Sr71EncodedAnsiLiteral kProgramDataEnv{"ProgramData", 0x2Fu};
     {
-        (void)StringCchCopyA(programData, RTL_NUMBER_OF(programData), "C:\\ProgramData");
+        Sr71ScopedAnsiLiteral programDataEnv(kProgramDataEnv);
+        DWORD programDataChars = GetEnvironmentVariableA(programDataEnv.c_str(), programData, RTL_NUMBER_OF(programData));
+        if (programDataChars == 0 || programDataChars >= RTL_NUMBER_OF(programData))
+        {
+            static constexpr Sr71EncodedAnsiLiteral kDefaultProgramData{"C:\\ProgramData", 0x39u};
+            Sr71ScopedAnsiLiteral defaultProgramData(kDefaultProgramData);
+            (void)StringCchCopyA(programData, RTL_NUMBER_OF(programData), defaultProgramData.c_str());
+        }
     }
 
     char logDir[MAX_PATH]{};
     char nodeDir[MAX_PATH]{};
     char rootDir[MAX_PATH]{};
-    (void)StringCchPrintfA(rootDir, RTL_NUMBER_OF(rootDir), "%s\\Blackbird", programData);
+    {
+        static constexpr Sr71EncodedAnsiLiteral kRootFormat{"%s\\Blackbird", 0x43u};
+        Sr71ScopedAnsiLiteral rootFormat(kRootFormat);
+        (void)StringCchPrintfA(rootDir, RTL_NUMBER_OF(rootDir), rootFormat.c_str(), programData);
+    }
     (void)CreateDirectoryA(rootDir, nullptr);
-    (void)StringCchPrintfA(nodeDir, RTL_NUMBER_OF(nodeDir), "%s\\Node", rootDir);
+    {
+        static constexpr Sr71EncodedAnsiLiteral kNodeFormat{"%s\\Node", 0x57u};
+        Sr71ScopedAnsiLiteral nodeFormat(kNodeFormat);
+        (void)StringCchPrintfA(nodeDir, RTL_NUMBER_OF(nodeDir), nodeFormat.c_str(), rootDir);
+    }
     (void)CreateDirectoryA(nodeDir, nullptr);
-    (void)StringCchPrintfA(logDir, RTL_NUMBER_OF(logDir), "%s\\logs", nodeDir);
+    {
+        static constexpr Sr71EncodedAnsiLiteral kLogDirFormat{"%s\\logs", 0x63u};
+        Sr71ScopedAnsiLiteral logDirFormat(kLogDirFormat);
+        (void)StringCchPrintfA(logDir, RTL_NUMBER_OF(logDir), logDirFormat.c_str(), nodeDir);
+    }
     (void)CreateDirectoryA(logDir, nullptr);
 
     char logPath[MAX_PATH]{};
-    (void)StringCchPrintfA(logPath, RTL_NUMBER_OF(logPath), "%s\\sr71-%lu.log", logDir, pid);
+    {
+        static constexpr Sr71EncodedAnsiLiteral kLogFileFormat{"%s\\sr71-%lu.log", 0x7Fu};
+        Sr71ScopedAnsiLiteral logFileFormat(kLogFileFormat);
+        (void)StringCchPrintfA(logPath, RTL_NUMBER_OF(logPath), logFileFormat.c_str(), logDir, pid);
+    }
     HANDLE logFile = CreateFileA(logPath, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                                  nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (logFile != INVALID_HANDLE_VALUE)
@@ -723,12 +745,18 @@ namespace
         wchar_t hostPath[1024]{};
         std::uint32_t subjectKind = 0;
 
-        DWORD kindChars = GetEnvironmentVariableW(L"BK_ANALYSIS_SUBJECT_KIND", kind, RTL_NUMBER_OF(kind));
+        static constexpr Sr71EncodedWideLiteral kSubjectKindEnv{L"BK_ANALYSIS_SUBJECT_KIND", 0x105u};
+        Sr71ScopedWideLiteral subjectKindEnv(kSubjectKindEnv);
+        DWORD kindChars = GetEnvironmentVariableW(subjectKindEnv.c_str(), kind, RTL_NUMBER_OF(kind));
         if (kindChars != 0 && kindChars < RTL_NUMBER_OF(kind) && _wcsicmp(kind, L"DLL") == 0)
         {
             subjectKind = 1;
-            (void)GetEnvironmentVariableW(L"BK_ANALYSIS_SUBJECT_PATH", subjectPath, RTL_NUMBER_OF(subjectPath));
-            (void)GetEnvironmentVariableW(L"BK_ANALYSIS_HOST_PATH", hostPath, RTL_NUMBER_OF(hostPath));
+            static constexpr Sr71EncodedWideLiteral kSubjectPathEnv{L"BK_ANALYSIS_SUBJECT_PATH", 0x12Fu};
+            static constexpr Sr71EncodedWideLiteral kHostPathEnv{L"BK_ANALYSIS_HOST_PATH", 0x155u};
+            Sr71ScopedWideLiteral subjectPathEnv(kSubjectPathEnv);
+            Sr71ScopedWideLiteral hostPathEnv(kHostPathEnv);
+            (void)GetEnvironmentVariableW(subjectPathEnv.c_str(), subjectPath, RTL_NUMBER_OF(subjectPath));
+            (void)GetEnvironmentVariableW(hostPathEnv.c_str(), hostPath, RTL_NUMBER_OF(hostPath));
             subjectPath[RTL_NUMBER_OF(subjectPath) - 1] = L'\0';
             hostPath[RTL_NUMBER_OF(hostPath) - 1] = L'\0';
         }
@@ -824,11 +852,13 @@ namespace
 
     static bool BkRuntimePrimeVectoredExceptionHandler() noexcept
     {
-        g_RuntimeVehArgs.target_module_basename = L"SR71.dll";
+        auto sr71Name = DecodeSr71DllName();
+        g_RuntimeVehArgs.target_module_basename = sr71Name.c_str();
         g_RuntimeVehArgs.low_noise_telemetry = LowNoise;
         g_RuntimeVehArgs.high_noise_telemetry = HighNoise;
         g_RuntimeVehArgs.memory_fault_handler = MemFault;
         bool ok = BkRegisterVectoredExceptionHandler(&g_RuntimeVehArgs) != nullptr;
+        g_RuntimeVehArgs.target_module_basename = nullptr;
         BkDbgLog("BkRuntimePrimeVectoredExceptionHandler: result=%u", ok ? 1u : 0u);
         return ok;
     }

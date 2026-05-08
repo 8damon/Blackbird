@@ -408,7 +408,7 @@ namespace BK_RUNTIME_INTERNAL
         record.CallerFlags =
             ((BK_HOOK_COMPONENT_INTEGRITY << BK_HOOK_CALLER_COMPONENT_SHIFT) & BK_HOOK_CALLER_COMPONENT_MASK);
         (void)strncpy_s(record.ApiName, "HookIntegrity", _TRUNCATE);
-        (void)strncpy_s(record.ModuleName, "SR71", _TRUNCATE);
+        (void)strncpy_s(record.ModuleName, "Runtime", _TRUNCATE);
         return PublishHookEvent(record);
     }
 

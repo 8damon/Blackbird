@@ -115,7 +115,7 @@ bool KeSetKiHook(KiHookCallback callback) noexcept
 
     if (!BK_RUNTIME_INTERNAL::RegisterControlFlowGuardCallTarget(
             reinterpret_cast<void *>(&KiUserApcHookStub),
-            BK_RUNTIME_INTERNAL::Sr71CfgCallTargetMode::CfgAndXfgWhenEnabled, "BK Instrument.KiUserApcHook"))
+            BK_RUNTIME_INTERNAL::Sr71CfgCallTargetMode::CfgAndXfgWhenEnabled, "rt.ki.apc"))
     {
         g_OriginalApcCallback = nullptr;
         g_KiUserApcCallbackSlot = nullptr;

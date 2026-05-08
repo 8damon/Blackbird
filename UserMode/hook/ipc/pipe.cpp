@@ -6,6 +6,26 @@
 
 namespace BKIPC
 {
+    static bool PipeDebugOutputEnabled() noexcept
+    {
+        static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedAnsiLiteral kOutputDebugEnv{"BK_SR71_OUTPUT_DEBUG", 0x4Bu};
+        static volatile LONG state = 0;
+        LONG cached = InterlockedCompareExchange(&state, 0, 0);
+        if (cached != 0)
+        {
+            return cached == 2;
+        }
+
+        char value[8]{};
+        BK_RUNTIME_INTERNAL::Sr71ScopedAnsiLiteral outputDebugEnv(kOutputDebugEnv);
+        DWORD read = GetEnvironmentVariableA(outputDebugEnv.c_str(), value, static_cast<DWORD>(RTL_NUMBER_OF(value)));
+        bool enabled = read > 0 && read < RTL_NUMBER_OF(value) &&
+                       (value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' ||
+                        value[0] == 'T');
+        InterlockedCompareExchange(&state, enabled ? 2 : 1, 0);
+        return enabled;
+    }
+
     static void PipeDebugLog(_In_z_ _Printf_format_string_ PCSTR format, ...) noexcept
     {
         if (format == nullptr)
@@ -22,7 +42,11 @@ namespace BKIPC
         char line[768]{};
         (void)StringCchPrintfA(line, RTL_NUMBER_OF(line), "[BKIPC pid=%lu tid=%lu] %s\n", GetCurrentProcessId(),
                                GetCurrentThreadId(), message);
-        OutputDebugStringA(line);
+        if (PipeDebugOutputEnabled())
+        {
+            BkSr71InternalScope scope;
+            OutputDebugStringA(line);
+        }
     }
 
     static HANDLE g_pipeHandle = INVALID_HANDLE_VALUE;
@@ -129,18 +153,22 @@ namespace BKIPC
 
     static bool EnsurePipeOpenLocked(DWORD timeoutMs)
     {
+        static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedWideLiteral kHookPipeName{
+            L"\\.\pipe\BlackbirdHookIngest", 0x173u};
+
         if (g_pipeHandle != nullptr && g_pipeHandle != INVALID_HANDLE_VALUE)
         {
             return true;
         }
 
-        if (!WaitNamedPipeW(PIPE_NAME, timeoutMs))
+        BK_RUNTIME_INTERNAL::Sr71ScopedWideLiteral hookPipeName(kHookPipeName);
+        if (!WaitNamedPipeW(hookPipeName.c_str(), timeoutMs))
         {
             PipeDebugLog("EnsurePipeOpenLocked: WaitNamedPipe failed timeoutMs=%lu gle=%lu", timeoutMs, GetLastError());
             return false;
         }
 
-        HANDLE hPipe = CreateFileW(PIPE_NAME, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+        HANDLE hPipe = CreateFileW(hookPipeName.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
                                    FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, nullptr);
 
         if (hPipe == INVALID_HANDLE_VALUE)

@@ -577,7 +577,7 @@ namespace BK_RUNTIME_INTERNAL
         for (std::size_t i = 0; i < ntPatchCount; ++i)
         {
             PublishSr71HookPatch(ntPatches[i].PatchAddress, ntPatches[i].PatchSize, ntPatches[i].OriginalBytes,
-                                 BK_HOOK_PATCH_FLAG_NT_INLINE, "BK Inst.NtPatch.", ntPatches[i].HookName);
+                                 BK_HOOK_PATCH_FLAG_NT_INLINE, "rt.nt.", ntPatches[i].HookName);
         }
         totalCount += ntPatchCount;
 
@@ -587,7 +587,7 @@ namespace BK_RUNTIME_INTERNAL
         for (std::size_t i = 0; i < winsockPatchCount; ++i)
         {
             const char *prefix =
-                (winsockPatches[i].Flags == BK_HOOK_PATCH_FLAG_WINSOCK_INLINE) ? "BK Inst.WsInline." : "BK Inst.WsIAT.";
+                (winsockPatches[i].Flags == BK_HOOK_PATCH_FLAG_WINSOCK_INLINE) ? "rt.ws.inline." : "rt.ws.iat.";
             PublishSr71HookPatch(winsockPatches[i].PatchAddress, winsockPatches[i].PatchSize,
                                  winsockPatches[i].OriginalBytes, winsockPatches[i].Flags, prefix,
                                  winsockPatches[i].HookName);
@@ -600,7 +600,7 @@ namespace BK_RUNTIME_INTERNAL
         for (std::size_t i = 0; i < kiPatchCount; ++i)
         {
             PublishSr71HookPatch(kiPatches[i].PatchAddress, kiPatches[i].PatchSize, kiPatches[i].OriginalBytes,
-                                 kiPatches[i].Flags, "BK Inst.KiSlot.", kiPatches[i].HookName);
+                                 kiPatches[i].Flags, "rt.ki.", kiPatches[i].HookName);
         }
         totalCount += kiPatchCount;
 
@@ -610,7 +610,7 @@ namespace BK_RUNTIME_INTERNAL
         for (std::size_t i = 0; i < modulePatchCount; ++i)
         {
             PublishSr71HookPatch(modulePatches[i].PatchAddress, modulePatches[i].PatchSize,
-                                 modulePatches[i].OriginalBytes, modulePatches[i].Flags, "BK Inst.Module.",
+                                 modulePatches[i].OriginalBytes, modulePatches[i].Flags, "rt.mod.",
                                  modulePatches[i].HookName);
         }
         totalCount += modulePatchCount;
@@ -633,12 +633,13 @@ namespace BK_RUNTIME_INTERNAL
         }
         if (sr71Base == nullptr)
         {
-            sr71Base = FindLoadedModuleBaseByName(L"SR71.dll");
+            auto sr71Name = DecodeSr71DllName();
+            sr71Base = FindLoadedModuleBaseByName(sr71Name.c_str());
         }
         std::uint64_t sr71ImageSize = 0;
         if (TryGetImageSize(sr71Base, sr71ImageSize))
         {
-            (void)PublishSr71InstrumentationRange(sr71Base, sr71ImageSize, 0u, "SR71 Instrumentation");
+            (void)PublishSr71InstrumentationRange(sr71Base, sr71ImageSize, 0u, "rt.image");
         }
 
         constexpr std::size_t kMaxStubs = 64;
@@ -651,7 +652,7 @@ namespace BK_RUNTIME_INTERNAL
                 continue;
 
             char tag[BK_MAX_INSTRUMENTATION_TAG]{};
-            const char *prefix = "BK Instrument.NtHook.";
+            const char *prefix = "rt.ntstub.";
             std::size_t p = 0;
             while (prefix[p] && p < BK_MAX_INSTRUMENTATION_TAG - 1)
             {
@@ -685,7 +686,7 @@ namespace BK_RUNTIME_INTERNAL
             if (!BKIPC::RegisterInstrumentationRange(
                     reinterpret_cast<UINT64>(resolved.Pointer), resolved.Size ? resolved.Size : 4096u,
                     BK_INSTRUMENTATION_FLAG_LAUNCH_GATE,
-                    page.TrapKind == 2u ? "BK Instrument.TLS Callback" : "BK Instrument.Entry"))
+                    page.TrapKind == 2u ? "rt.tls" : "rt.entry"))
             {
                 BkRuntimeReportFault(BkRuntimeFaultCode::InstrumentationRangeRegisterFailed,
                                      reinterpret_cast<std::uint64_t>(resolved.Pointer),

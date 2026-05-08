@@ -16,12 +16,20 @@
 #define BK_FILE_DESCRIPTION "Blackbird Platform User-Mode Component"
 #endif
 
+#ifndef BK_COMPANY_NAME
+#define BK_COMPANY_NAME "TITAN Softwork Solutions"
+#endif
+
 #ifndef BK_INTERNAL_NAME
 #define BK_INTERNAL_NAME "Blackbird"
 #endif
 
 #ifndef BK_ORIGINAL_FILENAME
 #define BK_ORIGINAL_FILENAME "Blackbird.bin"
+#endif
+
+#ifndef BK_PRODUCT_NAME
+#define BK_PRODUCT_NAME "Blackbird Platform"
 #endif
 
 #ifndef BK_FILE_TYPE
@@ -45,7 +53,7 @@ VS_VERSION_INFO VERSIONINFO FILEVERSION BK_FILE_VERSION PRODUCTVERSION BK_FILE_V
 #endif
             FILEOS VOS_NT_WINDOWS32 FILETYPE BK_FILE_TYPE FILESUBTYPE BK_FILE_SUBTYPE BEGIN BLOCK
     "StringFileInfo" BEGIN BLOCK "040904B0" BEGIN VALUE "CompanyName",
-    "TITAN Softwork Solutions" VALUE "FileDescription", BK_FILE_DESCRIPTION VALUE "FileVersion",
+    BK_COMPANY_NAME VALUE "FileDescription", BK_FILE_DESCRIPTION VALUE "FileVersion",
     BK_FILE_VERSION_STR VALUE "InternalName", BK_INTERNAL_NAME VALUE "OriginalFilename",
-    BK_ORIGINAL_FILENAME VALUE "ProductName", "Blackbird Platform" VALUE "ProductVersion",
+    BK_ORIGINAL_FILENAME VALUE "ProductName", BK_PRODUCT_NAME VALUE "ProductVersion",
     BK_PRODUCT_VERSION_STR END END BLOCK "VarFileInfo" BEGIN VALUE "Translation", 0x0409, 1200 END END

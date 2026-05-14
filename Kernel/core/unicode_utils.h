@@ -1,0 +1,124 @@
+#ifndef BK_UNICODE_UTILS_H
+#define BK_UNICODE_UTILS_H
+
+#include <ntddk.h>
+
+static __forceinline BOOLEAN BkstrUnicodeContainsInsensitive(_In_ PCUNICODE_STRING Haystack,
+                                                             _In_reads_(NeedleChars) PCWSTR Needle,
+                                                             _In_ USHORT NeedleChars)
+{
+    USHORT hayChars;
+    USHORT i;
+    USHORT j;
+
+    if (Haystack == NULL || Haystack->Buffer == NULL || Needle == NULL || NeedleChars == 0)
+    {
+        return FALSE;
+    }
+
+    hayChars = Haystack->Length / sizeof(WCHAR);
+    if (hayChars < NeedleChars)
+    {
+        return FALSE;
+    }
+
+    for (i = 0; i <= (USHORT)(hayChars - NeedleChars); ++i)
+    {
+        BOOLEAN match = TRUE;
+        for (j = 0; j < NeedleChars; ++j)
+        {
+            if (RtlDowncaseUnicodeChar(Haystack->Buffer[i + j]) != RtlDowncaseUnicodeChar(Needle[j]))
+            {
+                match = FALSE;
+                break;
+            }
+        }
+        if (match)
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static __forceinline BOOLEAN BkstrUnicodeEquals(_In_opt_ PCUNICODE_STRING Left, _In_opt_ PCUNICODE_STRING Right,
+                                                _In_ BOOLEAN CaseInsensitive)
+{
+    USHORT charCount;
+    USHORT i;
+
+    if (Left == NULL || Right == NULL)
+    {
+        return FALSE;
+    }
+    if (Left->Length != Right->Length)
+    {
+        return FALSE;
+    }
+    if (Left->Length == 0)
+    {
+        return TRUE;
+    }
+    if (Left->Buffer == NULL || Right->Buffer == NULL)
+    {
+        return FALSE;
+    }
+
+    charCount = Left->Length / sizeof(WCHAR);
+    for (i = 0; i < charCount; ++i)
+    {
+        WCHAR leftChar = Left->Buffer[i];
+        WCHAR rightChar = Right->Buffer[i];
+        if (CaseInsensitive)
+        {
+            leftChar = RtlDowncaseUnicodeChar(leftChar);
+            rightChar = RtlDowncaseUnicodeChar(rightChar);
+        }
+        if (leftChar != rightChar)
+        {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+static VOID BkstrSafeCopyUnicode(_In_opt_ PCUNICODE_STRING Source, _Out_writes_z_(DestChars) PWSTR Dest,
+                                 _In_ SIZE_T DestChars)
+{
+    SIZE_T copyChars;
+
+    if (Dest == NULL || DestChars == 0)
+    {
+        return;
+    }
+    Dest[0] = L'\0';
+
+    __try
+    {
+        if (Source == NULL || Source->Buffer == NULL || Source->Length == 0)
+        {
+            return;
+        }
+
+        copyChars = Source->Length / sizeof(WCHAR);
+        if (copyChars >= DestChars)
+        {
+            copyChars = DestChars - 1;
+        }
+        if (copyChars == 0)
+        {
+            return;
+        }
+
+        RtlCopyMemory(Dest, Source->Buffer, copyChars * sizeof(WCHAR));
+        Dest[copyChars] = L'\0';
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        Dest[0] = L'\0';
+    }
+}
+
+#endif

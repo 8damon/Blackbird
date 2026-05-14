@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <IsPublishable>false</IsPublishable>
+    <AssemblyName>BlackbirdOperator</AssemblyName>
+    <AssemblyTitle>Blackbird Community operator support library</AssemblyTitle>
+    <Product>Blackbird Community</Product>
+    <Description>Blackbird Community operator support library</Description>
+    <Company>TITAN Softwork Solutions</Company>
+    <Version>2.0.0</Version>
+    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <FileVersion>2.0.0.0</FileVersion>
+  </PropertyGroup>
+
+</Project>

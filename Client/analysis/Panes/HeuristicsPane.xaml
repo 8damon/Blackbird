@@ -1,0 +1,169 @@
+<UserControl x:Class="BlackbirdInterface.HeuristicsPane"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource WinPanelBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Background="{DynamicResource HeuristicsHeaderBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="146"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       Margin="10,0,8,0"
+                       VerticalAlignment="Center"
+                       FontWeight="SemiBold"
+                       FontSize="12"
+                       Text="Detections"/>
+
+            <TextBlock x:Name="SummaryBlock"
+                       Grid.Column="1"
+                       Margin="0,0,8,0"
+                       VerticalAlignment="Center"
+                       Visibility="Collapsed"
+                       Foreground="{DynamicResource WinMutedTextBrush}"
+                       Text="No detections yet"/>
+
+            <ComboBox x:Name="SeverityFilter"
+                      Grid.Column="2"
+                      Width="138"
+                      Height="24"
+                      Margin="2,4,6,4"
+                      VerticalAlignment="Center"
+                      Background="{DynamicResource WinHeaderBrush}"
+                      BorderBrush="{DynamicResource WinBorderBrush}"
+                      Style="{StaticResource PaneFilterComboStyle}"
+                      ItemContainerStyle="{StaticResource PaneFilterComboItemStyle}"
+                      SelectionChanged="SeverityFilter_SelectionChanged">
+                <ComboBoxItem Content="ALL" IsSelected="True"/>
+                <ComboBoxItem Content="CRITICAL"/>
+                <ComboBoxItem Content="HIGH"/>
+                <ComboBoxItem Content="MEDIUM"/>
+                <ComboBoxItem Content="LOW"/>
+            </ComboBox>
+
+            <Button Grid.Column="3"
+                    x:Name="HeurBtnInspect"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="↗"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Open detections inspector"
+                    Click="HeurBtnInspect_Click"/>
+            <Button Grid.Column="4"
+                    x:Name="HeurBtnReorder"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="⇅"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Reorder ETW/Detections panes"
+                    Click="HeurBtnReorder_Click"/>
+            <Button Grid.Column="5"
+                    x:Name="HeurBtnFloat"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="⧉"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Float / re-dock pane"
+                    Click="HeurBtnFloat_Click"/>
+            <Button Grid.Column="6"
+                    x:Name="HeurBtnClose"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="✕"
+                    Width="22"
+                    Height="22"
+                    Margin="4,4,6,4"
+                    ToolTip="Hide pane"
+                    Click="HeurBtnClose_Click"/>
+        </Grid>
+
+        <Border Grid.Row="1"
+                Margin="0"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="0">
+            <Grid>
+                <DataGrid x:Name="HeuristicsGrid"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          BorderThickness="0"
+                          GridLinesVisibility="None"
+                          HorizontalGridLinesBrush="Transparent"
+                          VerticalGridLinesBrush="Transparent"
+                          CanUserResizeRows="False"
+                          ColumnHeaderHeight="24"
+                          RowHeight="26"
+                          ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                          ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                          MouseDoubleClick="HeuristicsGrid_MouseDoubleClick"
+                          PreviewMouseRightButtonDown="HeuristicsGrid_PreviewMouseRightButtonDown">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Inspect Group" Click="HeuristicsContextInspect_Click"/>
+                            <MenuItem Header="Copy Summary" Click="HeuristicsContextCopySummary_Click"/>
+                            <MenuItem Header="Copy Details" Click="HeuristicsContextCopyDetails_Click"/>
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow">
+                            <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Severity}" Value="Critical">
+                                    <Setter Property="Background" Value="#2A5E1E1E"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Severity}" Value="High">
+                                    <Setter Property="Background" Value="#2A5E1E1E"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Severity}" Value="Medium">
+                                    <Setter Property="Background" Value="#2A5E3A1E"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Severity}" Value="Low">
+                                    <Setter Property="Background" Value="#2A5E521E"/>
+                                </DataTrigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="#3A4A4A4A"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.RowStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Severity" Width="78" Binding="{Binding Severity}"/>
+                        <DataGridTextColumn Header="Detection" Width="360" MinWidth="300" Binding="{Binding Detection}"/>
+                        <DataGridTextColumn Header="Actor" Width="132" Binding="{Binding Actor}"/>
+                        <DataGridTextColumn Header="Target" Width="132" Binding="{Binding Target}"/>
+                        <DataGridTextColumn Header="Context" Width="*" MinWidth="220" Binding="{Binding ArgumentPreview}"/>
+                        <DataGridTextColumn Header="Hits" Width="52" Binding="{Binding Hits}"/>
+                        <DataGridTextColumn Header="Last" Width="92" Binding="{Binding LastSeenLabel}"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <Border x:Name="HeuristicsNoDataOverlay"
+                        Background="{DynamicResource NoDataOverlayBrush}"
+                        IsHitTestVisible="False"
+                        Visibility="Collapsed">
+                    <TextBlock Text="NO DATA"
+                               FontSize="40"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource WinTextBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Opacity="0.72"/>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
+

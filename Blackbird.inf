@@ -1,0 +1,60 @@
+;
+; BLACKBIRD.inf - filesystem minifilter service install
+;
+
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = "ActivityMonitor"
+ClassGuid   = {b86dff51-a31e-4bac-b3cf-e8cfe75c9fc2}
+Provider    = %ManufacturerName%
+CatalogFile = BLACKBIRD.cat
+DriverVer   = ; stamped by StampInf
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir = 12
+DriverCopy = 12
+
+[SourceDisksNames]
+1 = %DiskName%,,,""
+
+[SourceDisksFiles]
+blackbird.sys = 1,,
+
+[DefaultInstall.NTamd64]
+CopyFiles = DriverCopy
+
+[DefaultInstall.NTamd64.Services]
+AddService = blackbird,0x00000002,blackbird_Service_Inst
+
+[DefaultUninstall.NTamd64.Services]
+DelService = blackbird,0x00000200
+
+[DriverCopy]
+blackbird.sys
+
+[blackbird_Service_Inst]
+DisplayName   = %BLACKBIRD.SVCDESC%
+ServiceType   = 2 ; SERVICE_FILE_SYSTEM_DRIVER
+StartType     = 3 ; SERVICE_DEMAND_START
+ErrorControl  = 1 ; SERVICE_ERROR_NORMAL
+ServiceBinary = %12%\blackbird.sys
+LoadOrderGroup = "FSFilter Activity Monitor"
+Dependencies  = FltMgr
+AddReg = blackbird.AddRegistry
+
+[blackbird.AddRegistry]
+HKR,,"DebugFlags",0x00010001,0
+HKR,"Instances","DefaultInstance",0x00000000,%BlackbirdInstanceName%
+HKR,"Instances\%BlackbirdInstanceName%","Altitude",0x00000000,%BlackbirdInstanceAltitude%
+HKR,"Instances\%BlackbirdInstanceName%","Flags",0x00010001,%BlackbirdInstanceFlags%
+
+[Strings]
+ManufacturerName = "TITAN Softwork Solutions"
+DiskName = "Blackbird Community Installation Disk"
+BLACKBIRD.SVCDESC = "Blackbird Community Driver"
+BlackbirdInstanceName = "Blackbird Default"
+BlackbirdInstanceAltitude = "385000.424244"
+BlackbirdInstanceFlags = 0
+
+

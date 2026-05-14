@@ -1,0 +1,15 @@
+bc *
+.symfix
+.sympath+ C:\$ARSENAL\Kernel\Tartan\x64\Release
+.kdfiles -m \??\R:\.NIGHTDAY\TTK\blackbird.sys C:\$ARSENAL\Kernel\Tartan\x64\Release\blackbird.sys
+.kdfiles -m \??\R:\.NIGHTDAY\TTK\drivers\blackbird.sys C:\$ARSENAL\Kernel\Tartan\x64\Release\blackbird.sys
+.kdfiles -m \??\C:\Windows\System32\drivers\blackbird.sys C:\$ARSENAL\Kernel\Tartan\x64\Release\blackbird.sys
+
+ed nt!Kd_IHVDRIVER_Mask 0xFFFFFFFF
+
+sxe ld:blackbird.sys
+bu blackbird!DriverEntry
+bu blackbird!BLACKBIRDEvtIoDeviceControl
+
+.echo "BLACKBIRD KD INIT READY"
+

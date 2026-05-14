@@ -1,0 +1,569 @@
+<Window x:Class="BlackbirdInterface.LaunchParametersWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Launch Parameters"
+        Width="720"
+        Height="840"
+        MinWidth="720"
+        MinHeight="760"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        Background="{DynamicResource WinBgBrush}">
+    <Window.Resources>
+        <Style x:Key="LaunchComboStyle" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="MinHeight" Value="26"/>
+            <Setter Property="IsEditable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <Border x:Name="SelectorBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"/>
+                            <ContentPresenter Margin="8,1,26,1"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Left"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                              IsHitTestVisible="False"/>
+                            <Path HorizontalAlignment="Right"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,8,0"
+                                  Data="M 0 0 L 8 0 L 4 4 Z"
+                                  Fill="{DynamicResource WinTextBrush}"
+                                  IsHitTestVisible="False"/>
+                            <ToggleButton Background="Transparent"
+                                          BorderThickness="0"
+                                          Focusable="False"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                          ClickMode="Press">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="Transparent"
+                                                BorderBrush="Transparent"
+                                                BorderThickness="0"/>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   Focusable="False"
+                                   AllowsTransparency="True"
+                                   PopupAnimation="Fade">
+                                <Border Margin="0,2,0,0"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        Background="{DynamicResource WinPanelBrush}"
+                                        BorderBrush="{DynamicResource WinBorderBrush}"
+                                        BorderThickness="1">
+                                    <ScrollViewer MaxHeight="240"
+                                                  CanContentScroll="True"
+                                                  Background="{DynamicResource WinPanelBrush}"
+                                                  Foreground="{DynamicResource WinTextBrush}"
+                                                  BorderThickness="0">
+                                        <StackPanel IsItemsHost="True"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="SelectorBorder" Property="BorderBrush" Value="{DynamicResource WinAccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsDropDownOpen" Value="True">
+                                <Setter TargetName="SelectorBorder" Property="BorderBrush" Value="{DynamicResource WinAccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="LaunchComboItemStyle" TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+            <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+            <Setter Property="Padding" Value="8,3"/>
+            <Style.Triggers>
+                <Trigger Property="IsHighlighted" Value="True">
+                    <Setter Property="Background" Value="#FF2A2A2A"/>
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#33323232"/>
+                    <Setter Property="Foreground" Value="#FFF1F1F1"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Border BorderBrush="{DynamicResource WinBorderBrush}"
+            BorderThickness="1"
+            Background="{DynamicResource WinBgBrush}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="36"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0"
+                  Background="{DynamicResource WinHeaderBrush}"
+                  MouseLeftButtonDown="Root_MouseLeftButtonDown">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Margin="10,0,0,0"
+                           VerticalAlignment="Center"
+                           FontWeight="SemiBold"
+                           FontSize="12"
+                           Text="Launch Parameters"/>
+
+                <Button Grid.Column="1"
+                        Margin="0,6,6,6"
+                        Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
+                        Content="&#xE8BB;"
+                        Tag="Close"
+                        ToolTip="Close"
+                        Click="Cancel_Click"/>
+            </Grid>
+
+            <Grid Grid.Row="1"
+                  Margin="14">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0"
+                        BorderBrush="{DynamicResource PaneBorderBrush}"
+                        BorderThickness="1"
+                        Background="{DynamicResource WinPanelBrush}"
+                        Padding="10,8">
+                    <StackPanel>
+                        <TextBlock x:Name="ModeTitleBlock"
+                                   FontWeight="SemiBold"
+                                   FontSize="12"
+                                   Text="Attach to Running Process"/>
+                        <TextBlock x:Name="ModeDescriptionBlock"
+                                   Margin="0,4,0,0"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Text="Choose how the target should be instrumented before capture begins."/>
+                    </StackPanel>
+                </Border>
+
+                <ScrollViewer Grid.Row="1"
+                              Margin="0,14,0,0"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <Border BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                BorderThickness="1"
+                                Background="{DynamicResource WinPanelBrush}"
+                                Padding="10,10">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="Instrumentation"/>
+                                <CheckBox x:Name="UseKernelDriverCheckBox"
+                                          Margin="0,10,0,0"
+                                          Content="Use KM driver telemetry"
+                                          IsChecked="True"
+                                          Checked="UseUsermodeHooksCheckBox_Changed"
+                                          Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                <CheckBox x:Name="EnableKernelHooksCheckBox"
+                                          Margin="0,8,0,0"
+                                          Content="Enable kernel NTAPI hooks"
+                                          IsChecked="True"
+                                          Checked="UseUsermodeHooksCheckBox_Changed"
+                                          Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                <CheckBox x:Name="UseUsermodeHooksCheckBox"
+                                          Margin="0,8,0,0"
+                                          Content="Enable SR71 usermode hooks"
+                                          IsChecked="True"
+                                          Checked="UseUsermodeHooksCheckBox_Changed"
+                                          Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="12"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="8"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <CheckBox x:Name="EnableAntiVirtualizationMaskingCheckBox"
+                                              Grid.Row="0"
+                                              Grid.Column="0"
+                                              Content="Enable anti-virtualization masking"
+                                              Checked="UseUsermodeHooksCheckBox_Changed"
+                                              Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                    <CheckBox x:Name="EnableControllerConcealmentCheckBox"
+                                              Grid.Row="0"
+                                              Grid.Column="2"
+                                              Content="Conceal Blackbird runtime presence"
+                                              Checked="UseUsermodeHooksCheckBox_Changed"
+                                              Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                    <CheckBox x:Name="EnableQpcTimingCompensationCheckBox"
+                                              Grid.Row="2"
+                                              Grid.Column="0"
+                                              Content="Compensate QPC timing checks"
+                                              IsChecked="True"
+                                              Checked="UseUsermodeHooksCheckBox_Changed"
+                                              Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                    <CheckBox x:Name="EnableInterfaceProtectedAccessCheckBox"
+                                              Grid.Row="2"
+                                              Grid.Column="2"
+                                              Content="Protect interface handles"
+                                              Checked="UseUsermodeHooksCheckBox_Changed"
+                                              Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                </Grid>
+                                <CheckBox x:Name="EarlyBirdApcCheckBox"
+                                          Margin="0,8,0,0"
+                                          Content="Launch via APC (required)"
+                                          Checked="UseUsermodeHooksCheckBox_Changed"
+                                          Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                <CheckBox x:Name="ConcealHookPresenceCheckBox"
+                                          Margin="0,8,0,0"
+                                          Content="Conceal Hook Presence"
+                                          ToolTip="Hides SR71 runtime threads from NtQuerySystemInformation(Ex) and NtGetNextThread. Launch mode only."/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border x:Name="LaunchPhaseOnePanel"
+                                Margin="0,12,0,0"
+                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                BorderThickness="1"
+                                Background="{DynamicResource WinPanelBrush}"
+                                Padding="10,10">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="Phase 1 Launch Context"/>
+                                <TextBlock Margin="0,4,0,0"
+                                           Foreground="{DynamicResource WinMutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Working directory, environment overrides, staged resume, PPID spoofing, inherited handles, and scheduler placement."/>
+
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Working directory"/>
+                                    <TextBox x:Name="WorkingDirectoryTextBox"
+                                             Grid.Column="1"
+                                             MinWidth="240"
+                                             HorizontalAlignment="Stretch"/>
+                                </Grid>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Arguments"/>
+                                    <TextBox x:Name="CommandLineArgumentsTextBox"
+                                             Grid.Column="1"
+                                             MinWidth="240"
+                                             HorizontalAlignment="Stretch"
+                                             FontFamily="{DynamicResource AppMonoFontFamily}"
+                                             ToolTip="Arguments passed after the executable path. Preserve your own quoting, for example: --profile &quot;lab one&quot;"/>
+                                </Grid>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Top"
+                                               Margin="0,4,0,0"
+                                               Text="Environment overrides"/>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBox x:Name="EnvironmentOverridesTextBox"
+                                                 AcceptsReturn="True"
+                                                 Height="110"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 TextWrapping="NoWrap"
+                                                 FontFamily="{DynamicResource AppMonoFontFamily}"/>
+                                        <TextBlock Margin="0,4,0,0"
+                                                   Foreground="{DynamicResource WinMutedTextBrush}"
+                                                   Text="One per line: NAME=VALUE"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <CheckBox x:Name="LeaveSuspendedCheckBox"
+                                          Margin="0,10,0,0"
+                                          Content="Keep target suspended after Blackbird is ready"/>
+
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="90"/>
+                                        <ColumnDefinition Width="150"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Spoof parent PID"/>
+                                    <TextBox x:Name="ParentPidTextBox"
+                                             Grid.Column="1"
+                                             Margin="0,0,10,0"/>
+                                    <Button x:Name="UseShellParentButton"
+                                            Grid.Column="2"
+                                            Margin="0,0,10,0"
+                                            Content="Use shell"
+                                            Height="26"
+                                            Click="UseShellParent_Click"/>
+                                    <CheckBox x:Name="InheritHandlesCheckBox"
+                                              Grid.Column="3"
+                                              VerticalAlignment="Center"
+                                              Content="Inherit handles"/>
+                                </Grid>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Priority"/>
+                                    <ComboBox x:Name="PriorityComboBox"
+                                              Grid.Column="1"
+                                              Style="{StaticResource LaunchComboStyle}"
+                                              ItemContainerStyle="{StaticResource LaunchComboItemStyle}"
+                                              SelectedIndex="0">
+                                        <ComboBoxItem Content="Inherit"/>
+                                        <ComboBoxItem Content="Idle"/>
+                                        <ComboBoxItem Content="Below normal"/>
+                                        <ComboBoxItem Content="Normal"/>
+                                        <ComboBoxItem Content="Above normal"/>
+                                        <ComboBoxItem Content="High"/>
+                                        <ComboBoxItem Content="Realtime"/>
+                                    </ComboBox>
+                                    <TextBlock Grid.Column="2"
+                                               Margin="14,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Text="Affinity mask"/>
+                                    <TextBox x:Name="AffinityMaskTextBox"
+                                             Grid.Column="3"
+                                             Margin="10,0,0,0"/>
+                                </Grid>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Integrity level"/>
+                                    <ComboBox x:Name="IntegrityLevelComboBox"
+                                              Grid.Column="1"
+                                              Style="{StaticResource LaunchComboStyle}"
+                                              ItemContainerStyle="{StaticResource LaunchComboItemStyle}"
+                                              SelectedIndex="0"
+                                              ToolTip="Token integrity level for the launched process. Default inherits the caller's level. SYSTEM requires the service to hold SE_TCB_PRIVILEGE.">
+                                        <ComboBoxItem Content="Default"/>
+                                        <ComboBoxItem Content="Untrusted"/>
+                                        <ComboBoxItem Content="Low"/>
+                                        <ComboBoxItem Content="Medium"/>
+                                        <ComboBoxItem Content="High (admin)"/>
+                                        <ComboBoxItem Content="SYSTEM"/>
+                                    </ComboBox>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Margin="0,12,0,0"
+                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                BorderThickness="1"
+                                Background="{DynamicResource WinPanelBrush}"
+                                Padding="10,10">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="Rules Intel"/>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="12"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="8"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <CheckBox x:Name="EnableSignatureIntelCheckBox"
+                                              Grid.Row="0"
+                                              Grid.Column="0"
+                                              Content="Enable offline rules intel"
+                                              IsChecked="True"
+                                              Checked="UseUsermodeHooksCheckBox_Changed"
+                                              Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                    <CheckBox x:Name="EnableSignatureIntelMemoryScanCheckBox"
+                                              Grid.Row="0"
+                                              Grid.Column="2"
+                                              Content="Scan process memory"/>
+                                    <CheckBox x:Name="EnableSignatureIntelPageScanCheckBox"
+                                              Grid.Row="2"
+                                              Grid.Column="0"
+                                              Content="Scan page samples"/>
+                                    <TextBlock Grid.Row="2"
+                                               Grid.Column="2"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource WinMutedTextBrush}"
+                                               Text="YARA, MITRE, SIGMA and hash rules load from local packs."/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border x:Name="DllAnalysisPanel"
+                                Margin="0,12,0,0"
+                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                BorderThickness="1"
+                                Background="{DynamicResource WinPanelBrush}"
+                                Padding="10,10"
+                                Visibility="Collapsed">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="DLL Analysis"/>
+                                <TextBlock Margin="0,4,0,0"
+                                           Foreground="{DynamicResource WinMutedTextBrush}"
+                                           TextWrapping="Wrap"
+                                           Text="Blackbird will launch a small host process, then treat the DLL path as the analysis subject for driver and hook attribution."/>
+
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Mode"/>
+                                    <ComboBox x:Name="DllModeComboBox"
+                                              Grid.Column="1"
+                                              Style="{StaticResource LaunchComboStyle}"
+                                              ItemContainerStyle="{StaticResource LaunchComboItemStyle}"
+                                              SelectedIndex="0"
+                                              SelectionChanged="DllModeComboBox_SelectionChanged">
+                                        <ComboBoxItem Content="Load only"/>
+                                        <ComboBoxItem Content="Call export"/>
+                                        <ComboBoxItem Content="Rundll export"/>
+                                        <ComboBoxItem Content="DllRegisterServer"/>
+                                        <ComboBoxItem Content="DllUnregisterServer"/>
+                                        <ComboBoxItem Content="DllInstall"/>
+                                    </ComboBox>
+                                    <TextBlock Grid.Column="2"
+                                               Margin="14,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Text="Hold time (ms)"/>
+                                    <TextBox x:Name="DllWaitMsTextBox"
+                                             Grid.Column="3"
+                                             Margin="10,0,0,0"
+                                             Text="60000"/>
+                                </Grid>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Export name"/>
+                                    <TextBox x:Name="DllExportTextBox"
+                                             Grid.Column="1"
+                                             FontFamily="{DynamicResource AppMonoFontFamily}"/>
+                                    <TextBlock Grid.Column="2"
+                                               Margin="14,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Text="Export ordinal"/>
+                                    <TextBox x:Name="DllOrdinalTextBox"
+                                             Grid.Column="3"
+                                             Margin="10,0,0,0"/>
+                                </Grid>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Argument"/>
+                                    <TextBox x:Name="DllArgumentTextBox"
+                                             Grid.Column="1"
+                                             FontFamily="{DynamicResource AppMonoFontFamily}"/>
+                                </Grid>
+
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Load flags"/>
+                                    <TextBox x:Name="DllLoadFlagsTextBox"
+                                             Grid.Column="1"
+                                             ToolTip="Optional LoadLibraryEx flags as decimal or hex."/>
+                                    <CheckBox x:Name="DllFreeOnExitCheckBox"
+                                              Grid.Column="2"
+                                              Margin="14,0,0,0"
+                                              VerticalAlignment="Center"
+                                              Content="Free on exit"/>
+                                    <CheckBox x:Name="DllInstallDisableCheckBox"
+                                              Grid.Column="3"
+                                              Margin="10,0,0,0"
+                                              VerticalAlignment="Center"
+                                              Content="DllInstall(FALSE)"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Margin="0,12,0,0"
+                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                BorderThickness="1"
+                                Background="{DynamicResource WinPanelBrush}"
+                                Padding="10,8">
+                            <TextBlock x:Name="CompatibilityNoteBlock"
+                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                       TextWrapping="Wrap"
+                                       Text="Attaching to a running process cannot use launch-only controls. Those options are disabled automatically outside of launch mode."/>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <DockPanel Grid.Row="2"
+                           Margin="0,14,0,0"
+                           LastChildFill="False">
+                    <Button DockPanel.Dock="Right"
+                            MinWidth="90"
+                            Content="Apply"
+                            Click="Apply_Click"/>
+                    <Button DockPanel.Dock="Right"
+                            MinWidth="90"
+                            Margin="0,0,8,0"
+                            Content="Cancel"
+                            Click="Cancel_Click"/>
+                </DockPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

@@ -1,0 +1,256 @@
+<Window x:Class="BlackbirdInterface.StartupWelcomeWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title=""
+        Height="520"
+        Width="620"
+        MinHeight="520"
+        MinWidth="620"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="True"
+        Background="{DynamicResource WinBgBrush}">
+    <Grid MouseLeftButtonDown="Root_MouseLeftButtonDown">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="{DynamicResource WinHeaderBrush}"
+                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="14,10">
+            <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0"
+                       Text="Blackbird"
+                       FontSize="20"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center"/>
+            <Button Grid.Column="1"
+                    Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
+                    Content="&#xE8BB;"
+                    Tag="Close"
+                    ToolTip="Close"
+                    Click="Close_Click"/>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="14,10,14,6">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0"
+                       Text="Start"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       TextWrapping="Wrap"/>
+
+            <TextBlock Grid.Row="1"
+                       Margin="0,4,0,0"
+                       Foreground="{DynamicResource WinMutedTextBrush}"
+                       Text="Open a session archive or launch process targeting."/>
+
+            <Grid Grid.Row="2" Margin="0,10,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="8"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="10"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="10"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <CheckBox x:Name="EnableKernelDriverCheckBox"
+                          Grid.Row="0"
+                          Grid.Column="0"
+                          Grid.ColumnSpan="3"
+                          Content="Use KM driver telemetry"
+                          IsChecked="True"
+                          Checked="KernelDriverCheckBox_Changed"
+                          Unchecked="KernelDriverCheckBox_Changed"/>
+
+                <CheckBox x:Name="EnableKernelHooksCheckBox"
+                          Grid.Row="2"
+                          Grid.Column="0"
+                          Content="Enable kernel NTAPI hooks"
+                          IsChecked="True"
+                          Checked="KernelHooksCheckBox_Changed"
+                          Unchecked="KernelHooksCheckBox_Changed"/>
+                <CheckBox x:Name="EnableUsermodeHooksCheckBox"
+                          Grid.Row="2"
+                          Grid.Column="2"
+                          Content="Enable SR71 usermode hooks"
+                          IsChecked="True"
+                          Checked="UsermodeHooksCheckBox_Changed"
+                          Unchecked="UsermodeHooksCheckBox_Changed"/>
+
+                <CheckBox x:Name="EnableAntiVirtualizationMaskingCheckBox"
+                          Grid.Row="4"
+                          Grid.Column="0"
+                          Content="Enable anti-virtualization masking"
+                          Checked="SubsystemOptions_Changed"
+                          Unchecked="SubsystemOptions_Changed"/>
+                <CheckBox x:Name="EnableControllerConcealmentCheckBox"
+                          Grid.Row="4"
+                          Grid.Column="2"
+                          Content="Conceal Blackbird runtime presence"
+                          Checked="SubsystemOptions_Changed"
+                          Unchecked="SubsystemOptions_Changed"/>
+                <CheckBox x:Name="EnableQpcTimingCompensationCheckBox"
+                          Grid.Row="6"
+                          Grid.Column="0"
+                          Content="Compensate QPC timing checks"
+                          IsChecked="True"
+                          Checked="SubsystemOptions_Changed"
+                          Unchecked="SubsystemOptions_Changed"/>
+                <CheckBox x:Name="EnableInterfaceProtectedAccessCheckBox"
+                          Grid.Row="6"
+                          Grid.Column="2"
+                          Content="Protect interface handles"
+                          Checked="SubsystemOptions_Changed"
+                          Unchecked="SubsystemOptions_Changed"/>
+
+            </Grid>
+
+            <Border Grid.Row="3"
+                    Margin="0,8,0,0"
+                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                    BorderThickness="0,1,0,0"
+                    Padding="0,8,0,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="10"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <CheckBox x:Name="EnableSignatureIntelCheckBox"
+                              Grid.Row="0"
+                              Grid.Column="0"
+                              Content="Enable offline rules intel"
+                              Checked="SubsystemOptions_Changed"
+                              Unchecked="SubsystemOptions_Changed"/>
+                    <CheckBox x:Name="EnableSignatureIntelMemoryScanCheckBox"
+                              Grid.Row="0"
+                              Grid.Column="2"
+                              Content="Scan process memory"
+                              Checked="SubsystemOptions_Changed"
+                              Unchecked="SubsystemOptions_Changed"/>
+                    <CheckBox x:Name="EnableSignatureIntelPageScanCheckBox"
+                              Grid.Row="2"
+                              Grid.Column="0"
+                              Content="Scan page samples"
+                              Checked="SubsystemOptions_Changed"
+                              Unchecked="SubsystemOptions_Changed"/>
+                    <TextBlock Grid.Row="2"
+                               Grid.Column="2"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource WinMutedTextBrush}"
+                               Text="YARA, MITRE, SIGMA and hash rules load from bundled local packs."/>
+                </Grid>
+            </Border>
+
+            <Border Grid.Row="4"
+                    Margin="0,8,0,0"
+                    Padding="10,8"
+                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                    BorderThickness="1"
+                    Background="{DynamicResource WinPanelBrush}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.2*"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="1*"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="1*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Rules Intel"
+                                   FontWeight="SemiBold"/>
+                        <TextBlock Margin="0,4,0,0"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"
+                                   TextWrapping="Wrap"
+                                   Text="Local packs are available at startup and can be enabled before launch."/>
+                    </StackPanel>
+                    <Border Grid.Column="2"
+                            Padding="8,6"
+                            BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                            BorderThickness="1"
+                            Background="{DynamicResource WinHeaderBrush}">
+                        <StackPanel>
+                            <TextBlock Text="YARA"
+                                       FontWeight="SemiBold"/>
+                            <TextBlock Margin="0,2,0,0"
+                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                       Text="File and memory rule hits"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="4"
+                            Padding="8,6"
+                            BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                            BorderThickness="1"
+                            Background="{DynamicResource WinHeaderBrush}">
+                        <StackPanel>
+                            <TextBlock Text="MITRE / SIGMA"
+                                       FontWeight="SemiBold"/>
+                            <TextBlock Margin="0,2,0,0"
+                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                       Text="Technique mapping and rule attribution"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <TextBlock x:Name="RuntimeConfigNoteBlock"
+                       Grid.Row="5"
+                       Margin="0,8,0,0"
+                       Foreground="{DynamicResource WinMutedTextBrush}"
+                       TextWrapping="Wrap"
+                       Visibility="Collapsed"/>
+        </Grid>
+
+        <UniformGrid Grid.Row="2"
+                     Margin="14,0,14,10"
+                     Columns="3">
+            <Button Margin="0,0,8,0"
+                    Content="Launch"
+                    Height="34"
+                    Background="{DynamicResource WinAccentBrush}"
+                    BorderBrush="{DynamicResource InputHoverBorderBrush}"
+                    Foreground="{DynamicResource WinTextBrush}"
+                    Click="Launch_Click"/>
+            <Button Margin="0,0,8,0"
+                    Content="Getting Started"
+                    Height="34"
+                    Click="GettingStarted_Click"/>
+            <Button Content="Open Session"
+                    Height="34"
+                    Click="OpenTraceFile_Click"/>
+        </UniformGrid>
+    </Grid>
+</Window>

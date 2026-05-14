@@ -1,0 +1,126 @@
+<Window x:Class="BlackbirdInterface.HandleEvidenceWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:BlackbirdInterface"
+        Title="Handle Evidence"
+        Height="860"
+        Width="1280"
+        MinHeight="680"
+        MinWidth="1040"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        Background="{DynamicResource WinBgBrush}"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
+    <Window.Resources>
+        <Style x:Key="HandleInspectorTreeItemStyle"
+               TargetType="TreeViewItem"
+               BasedOn="{StaticResource {x:Type TreeViewItem}}">
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+        </Style>
+
+        <HierarchicalDataTemplate DataType="{x:Type local:InspectorFieldNode}" ItemsSource="{Binding Children}">
+            <Border x:Name="NodeBorder" Padding="2,1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="220"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="NameBlock"
+                               Grid.Column="0"
+                               Text="{Binding Name}"
+                               Foreground="{DynamicResource WinMutedTextBrush}"
+                               Margin="2,0,8,0"
+                               TextTrimming="CharacterEllipsis"/>
+                    <TextBlock x:Name="ValueBlock"
+                               Grid.Column="1"
+                               Text="{Binding Value}"
+                               FontFamily="{DynamicResource AppMonoFontFamily}"
+                               Foreground="{DynamicResource WinTextBrush}"
+                               TextWrapping="NoWrap"/>
+                </Grid>
+            </Border>
+            <HierarchicalDataTemplate.Triggers>
+                <DataTrigger Binding="{Binding Kind}" Value="section">
+                    <Setter TargetName="NodeBorder" Property="Background" Value="#FF171717"/>
+                    <Setter TargetName="NameBlock" Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                    <Setter TargetName="NameBlock" Property="FontWeight" Value="SemiBold"/>
+                    <Setter TargetName="ValueBlock" Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="line">
+                    <Setter TargetName="NameBlock" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="ValueBlock" Property="Grid.Column" Value="0"/>
+                    <Setter TargetName="ValueBlock" Property="Grid.ColumnSpan" Value="2"/>
+                    <Setter TargetName="ValueBlock" Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding Kind}" Value="note">
+                    <Setter TargetName="NameBlock" Property="Visibility" Value="Collapsed"/>
+                    <Setter TargetName="ValueBlock" Property="Grid.Column" Value="0"/>
+                    <Setter TargetName="ValueBlock" Property="Grid.ColumnSpan" Value="2"/>
+                    <Setter TargetName="ValueBlock" Property="Foreground" Value="{DynamicResource WinMutedTextBrush}"/>
+                </DataTrigger>
+            </HierarchicalDataTemplate.Triggers>
+        </HierarchicalDataTemplate>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Style="{StaticResource SecondaryWindowTitleBarBorderStyle}"
+                MouseLeftButtonDown="Root_MouseLeftButtonDown">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock x:Name="HeaderBlock"
+                               Style="{StaticResource SecondaryWindowTitleTextStyle}"
+                               Text="Handle Evidence"/>
+                    <TextBlock x:Name="SummaryBlock"
+                               Style="{StaticResource SecondaryWindowSubtitleTextStyle}"
+                               Text="No evidence"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Top">
+                    <Button Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
+                            Content="&#xE921;"
+                            Click="WindowMinimize_Click"/>
+                    <Button Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
+                            Content="&#xE922;"
+                            Click="WindowMaximize_Click"/>
+                    <Button Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
+                            Tag="Close"
+                            Content="&#xE8BB;"
+                            Click="Close_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <TreeView Grid.Row="1"
+                  x:Name="FieldsTreeView"
+                  Margin="8,8,8,8"
+                  Background="{DynamicResource WinPanelBrush}"
+                  BorderThickness="0"
+                  ItemContainerStyle="{StaticResource HandleInspectorTreeItemStyle}">
+            <TreeView.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Expand All" Click="ExpandAll_Click"/>
+                    <MenuItem Header="Collapse All" Click="CollapseAll_Click"/>
+                    <Separator/>
+                    <MenuItem Header="Copy Visible" Click="CopyVisible_Click"/>
+                    <MenuItem Header="Copy Raw" Click="CopyRaw_Click"/>
+                </ContextMenu>
+            </TreeView.ContextMenu>
+        </TreeView>
+    </Grid>
+</Window>
+

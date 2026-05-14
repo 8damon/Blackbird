@@ -1,5 +1,5 @@
-#include "runtime_private.h"
 #include "../instrument/stacktrace.h"
+#include "runtime_private.h"
 
 namespace BK_RUNTIME_INTERNAL
 {
@@ -65,7 +65,8 @@ namespace BK_RUNTIME_INTERNAL
             return;
         }
 
-        BkDbgLog("EnsureCoreHookControllersReady: NtHook fault=%s function=%s address=%p redirect=%p syscall=%lu "
+        BkDbgLog("EnsureCoreHookControllersReady: NtHook fault=%s function=%s "
+                 "address=%p redirect=%p syscall=%lu "
                  "sample=%02X %02X %02X %02X %02X %02X %02X %02X",
                  DescribeNtHookInitFaultCode(fault.Code), fault.FunctionName != nullptr ? fault.FunctionName : "",
                  fault.Address, fault.RedirectTarget, static_cast<unsigned long>(fault.SyscallIndex), fault.Sample[0],
@@ -83,7 +84,8 @@ namespace BK_RUNTIME_INTERNAL
             return;
         }
 
-        BkDbgLog("EnsureCoreHookControllersReady: ModuleHook fault=%s module=%ws export=%s address=%p redirect=%p "
+        BkDbgLog("EnsureCoreHookControllersReady: ModuleHook fault=%s module=%ws "
+                 "export=%s address=%p redirect=%p "
                  "sample=%02X %02X %02X %02X %02X %02X %02X %02X",
                  DescribeModuleHookInitFaultCode(fault.Code), fault.ModuleName != nullptr ? fault.ModuleName : L"",
                  fault.ExportName != nullptr ? fault.ExportName : "", fault.Address, fault.RedirectTarget,
@@ -129,7 +131,8 @@ namespace BK_RUNTIME_INTERNAL
             if (!g_KiInitialized && !KeIsKiHookSupported())
             {
                 g_KiInitialized = true;
-                BkDbgLog("EnsureCoreHookControllersReady: KiHook unsupported, treating as ready");
+                BkDbgLog("EnsureCoreHookControllersReady: KiHook unsupported, treating "
+                         "as ready");
             }
         }
         if (!g_ModuleInitialized)
@@ -170,8 +173,8 @@ namespace BK_RUNTIME_INTERNAL
             return nullptr;
         }
 
-        HANDLE prior = reinterpret_cast<HANDLE>(
-            InterlockedCompareExchangePointer(reinterpret_cast<PVOID volatile *>(&g_RuntimeWorkEvent), created, nullptr));
+        HANDLE prior = reinterpret_cast<HANDLE>(InterlockedCompareExchangePointer(
+            reinterpret_cast<PVOID volatile *>(&g_RuntimeWorkEvent), created, nullptr));
         if (prior != nullptr)
         {
             CloseHandle(created);
@@ -280,11 +283,6 @@ namespace BK_RUNTIME_INTERNAL
         }
         g_LastPublishedHookReadyMask.store(kTransportReadyMask, std::memory_order_release);
 
-        if (signalLaunchGateReady)
-        {
-            BkRuntimeSignalLaunchGateReady();
-        }
-
         bool coreReady = EnsureCoreHookControllersReady();
         BkDbgLog("EnsureRuntimeInitializedForLaunch: coreReady=%u readyMask=0x%08lX", coreReady ? 1u : 0u,
                  (unsigned long)BuildHookReadyMask(true));
@@ -298,6 +296,14 @@ namespace BK_RUNTIME_INTERNAL
         RegisterSr71OwnedRanges();
 
         g_RuntimeInitialized.store(true, std::memory_order_release);
+
+        if (signalLaunchGateReady)
+        {
+            BkDbgLog("EnsureRuntimeInitializedForLaunch: releasing launch gate "
+                     "readyMask=0x%08lX",
+                     (unsigned long)BuildHookReadyMask(true));
+            BkRuntimeSignalLaunchGateReady();
+        }
 
         if (startWorkerAfterInit && !EnsureRuntimeWorkerThreadStarted())
         {
@@ -361,6 +367,7 @@ namespace BK_RUNTIME_INTERNAL
     bool InitializeIpcWithRetry() noexcept
     {
         ULONGLONG startTick = GetTickCount64();
+        ULONGLONG lastStatusTick = startTick;
         BkDbgLog("InitializeIpcWithRetry: begin");
 
         for (;;)
@@ -372,12 +379,25 @@ namespace BK_RUNTIME_INTERNAL
                 return true;
             }
 
-            if ((GetTickCount64() - startTick) >= kIpcInitMaxWaitMs)
+            ULONGLONG now = GetTickCount64();
+            if ((now - lastStatusTick) >= 1000ull)
             {
-                BkDbgLog("InitializeIpcWithRetry: timeout elapsedMs=%llu",
-                         (unsigned long long)(GetTickCount64() - startTick));
+                BkDbgLog("InitializeIpcWithRetry: waiting elapsedMs=%llu pipeStage=%lu "
+                         "pipeError=%lu",
+                         (unsigned long long)(now - startTick), (unsigned long)BKIPC::LastConnectStage(),
+                         (unsigned long)BKIPC::LastConnectError());
+                lastStatusTick = now;
+            }
+
+            if ((now - startTick) >= kIpcInitMaxWaitMs)
+            {
+                BkDbgLog("InitializeIpcWithRetry: timeout elapsedMs=%llu pipeStage=%lu "
+                         "pipeError=%lu",
+                         (unsigned long long)(now - startTick), (unsigned long)BKIPC::LastConnectStage(),
+                         (unsigned long)BKIPC::LastConnectError());
                 BkRuntimeReportFault(BkRuntimeFaultCode::IpcInitializeTimedOut,
-                                     static_cast<std::uint64_t>(GetTickCount64() - startTick));
+                                     static_cast<std::uint64_t>(now - startTick),
+                                     static_cast<std::uint64_t>(BKIPC::LastConnectError()));
                 return false;
             }
 
@@ -402,7 +422,8 @@ namespace BK_RUNTIME_INTERNAL
             std::uint32_t observedMask = 0;
             if (BKIPC::NotifyHookReady(localMask, &observedMask))
             {
-                BkDbgLog("NotifyHookReadyWithRetry: success localMask=0x%08lX observedMask=0x%08lX elapsedMs=%llu",
+                BkDbgLog("NotifyHookReadyWithRetry: success localMask=0x%08lX "
+                         "observedMask=0x%08lX elapsedMs=%llu",
                          (unsigned long)localMask, (unsigned long)observedMask,
                          (unsigned long long)(GetTickCount64() - startTick));
                 return true;
@@ -446,12 +467,14 @@ namespace BK_RUNTIME_INTERNAL
         }
 
         g_LastPublishedHookReadyMask.store(localMask, std::memory_order_release);
-        BkDbgLog("PublishCurrentHookReadyMaskBestEffort: localMask=0x%08lX observedMask=0x%08lX pendingCmd=%lu",
+        BkDbgLog("PublishCurrentHookReadyMaskBestEffort: localMask=0x%08lX "
+                 "observedMask=0x%08lX pendingCmd=%lu",
                  (unsigned long)localMask, (unsigned long)observedMask, (unsigned long)pendingCmd);
 
         if (pendingCmd == BlackbirdIpcCommandUpgradeWinsockHooks)
         {
-            BkDbgLog("PublishCurrentHookReadyMaskBestEffort: controller requested inline Winsock hook upgrade");
+            BkDbgLog("PublishCurrentHookReadyMaskBestEffort: controller requested "
+                     "inline Winsock hook upgrade");
             if (KeInstallWinsockInlineHooks())
             {
                 RegisterSr71HookPatchOverlays();
@@ -615,7 +638,8 @@ namespace BK_RUNTIME_INTERNAL
         }
         totalCount += modulePatchCount;
 
-        BkDbgLog("RegisterSr71HookPatchOverlays: registered nt=%zu winsock=%zu ki=%zu module=%zu total=%zu",
+        BkDbgLog("RegisterSr71HookPatchOverlays: registered nt=%zu winsock=%zu "
+                 "ki=%zu module=%zu total=%zu",
                  ntPatchCount, winsockPatchCount, kiPatchCount, modulePatchCount, totalCount);
     }
 
@@ -685,8 +709,7 @@ namespace BK_RUNTIME_INTERNAL
                 continue;
             if (!BKIPC::RegisterInstrumentationRange(
                     reinterpret_cast<UINT64>(resolved.Pointer), resolved.Size ? resolved.Size : 4096u,
-                    BK_INSTRUMENTATION_FLAG_LAUNCH_GATE,
-                    page.TrapKind == 2u ? "rt.tls" : "rt.entry"))
+                    BK_INSTRUMENTATION_FLAG_LAUNCH_GATE, page.TrapKind == 2u ? "rt.tls" : "rt.entry"))
             {
                 BkRuntimeReportFault(BkRuntimeFaultCode::InstrumentationRangeRegisterFailed,
                                      reinterpret_cast<std::uint64_t>(resolved.Pointer),
@@ -694,4 +717,4 @@ namespace BK_RUNTIME_INTERNAL
             }
         }
     }
-}
+} // namespace BK_RUNTIME_INTERNAL

@@ -718,6 +718,77 @@ static BOOL ControllerClientHasEtwMatchLocked(_Inout_ BK_CONTROLLER_CLIENT *Clie
 
     return FALSE;
 }
+
+static BOOL ControllerEtwPidEquals(_In_ UINT64 Value, _In_ DWORD ProcessId)
+{
+    return Value != 0 && Value <= 0xFFFFFFFFull && (DWORD)Value == ProcessId;
+}
+
+static BOOL ControllerEtwEventUsesClientActor(_In_ const BK_CONTROLLER_CLIENT *Client,
+                                              _In_ const BKIPC_ETW_EVENT *Event)
+{
+    if (Client == NULL || Event == NULL || Client->ProcessId == 0)
+        return FALSE;
+
+    return Event->EventProcessId == Client->ProcessId || ControllerEtwPidEquals(Event->ProcessId, Client->ProcessId) ||
+           ControllerEtwPidEquals(Event->CallerPid, Client->ProcessId) ||
+           ControllerEtwPidEquals(Event->CreatorProcessId, Client->ProcessId);
+}
+
+static BOOL ControllerEtwEventCanReferenceOwnedAddressSpace(_In_ const BKIPC_ETW_EVENT *Event, _In_ DWORD OwnerPid)
+{
+    if (Event == NULL || OwnerPid == 0)
+        return FALSE;
+
+    switch (Event->Family)
+    {
+    case BlackbirdIpcEtwFamilyHandle:
+        return Event->EventProcessId == OwnerPid || ControllerEtwPidEquals(Event->ProcessId, OwnerPid) ||
+               ControllerEtwPidEquals(Event->CallerPid, OwnerPid);
+    case BlackbirdIpcEtwFamilyThread:
+        return ControllerEtwPidEquals(Event->ProcessId, OwnerPid) || ControllerEtwPidEquals(Event->TargetPid, OwnerPid);
+    case BlackbirdIpcEtwFamilyApc:
+        return Event->EventProcessId == OwnerPid || ControllerEtwPidEquals(Event->ProcessId, OwnerPid) ||
+               ControllerEtwPidEquals(Event->CallerPid, OwnerPid) || ControllerEtwPidEquals(Event->TargetPid, OwnerPid);
+    case BlackbirdIpcEtwFamilyUserHook:
+    case BlackbirdIpcEtwFamilyDetection:
+    case BlackbirdIpcEtwFamilyThreatIntel:
+    case BlackbirdIpcEtwFamilySocket:
+        return Event->EventProcessId == OwnerPid || ControllerEtwPidEquals(Event->ProcessId, OwnerPid) ||
+               ControllerEtwPidEquals(Event->TargetPid, OwnerPid);
+    default:
+        return ControllerEtwEventMatchesPid(Event, OwnerPid);
+    }
+}
+
+static BOOL ControllerEtwEventTouchesAnyBlackbirdOwnedRangeLocked(_In_ const BKIPC_ETW_EVENT *Event)
+{
+    PBK_CONTROLLER_CLIENT owner;
+
+    if (Event == NULL)
+        return FALSE;
+
+    for (owner = g_ClientList; owner != NULL; owner = owner->Next)
+    {
+        BOOL touched = FALSE;
+
+        if (owner->Role != BkctlrClientRoleHook || owner->OwnedRangeCount == 0 ||
+            !ControllerEtwEventCanReferenceOwnedAddressSpace(Event, owner->ProcessId))
+        {
+            continue;
+        }
+
+        EnterCriticalSection(&owner->Lock);
+        touched = ControllerEtwEventTouchesBlackbirdOwnedRange(owner, Event);
+        LeaveCriticalSection(&owner->Lock);
+
+        if (touched)
+            return TRUE;
+    }
+
+    return FALSE;
+}
+
 VOID ControllerDispatchEtwEvent(_In_ const BKIPC_ETW_EVENT *Event)
 {
     BKIPC_ETW_EVENT enriched;
@@ -730,6 +801,7 @@ VOID ControllerDispatchEtwEvent(_In_ const BKIPC_ETW_EVENT *Event)
     DWORD candidatePids[6];
     DWORD candidatePidCount = 0;
     BOOL useSlowPath;
+    BOOL eventTouchesOwnedRange = FALSE;
     DWORD i;
 
     if (Event == NULL)
@@ -749,6 +821,7 @@ VOID ControllerDispatchEtwEvent(_In_ const BKIPC_ETW_EVENT *Event)
     useSlowPath = (InterlockedCompareExchange(&g_DriverSubscriptionsDirty, 0, 0) != 0);
 
     EnterCriticalSection(g_ClientListLock.get());
+    eventTouchesOwnedRange = ControllerEtwEventTouchesAnyBlackbirdOwnedRangeLocked(&enriched);
     if (!useSlowPath && ControllerEtwEventNeedsFullScan(Event) && ControllerAnyPendingLaunchArmedLocked())
     {
         useSlowPath = TRUE;
@@ -819,20 +892,29 @@ VOID ControllerDispatchEtwEvent(_In_ const BKIPC_ETW_EVENT *Event)
         if (!useSlowPath || ControllerClientHasEtwMatchLocked(client, &enriched))
         {
             BKIPC_ETW_EVENT toQueue = enriched;
-            UINT64 primaryAddr = enriched.OriginAddress;
+            BOOL enqueueEvent = TRUE;
 
-            if (ControllerIsBlackbirdOwnedAddress(client, primaryAddr) ||
+            if (eventTouchesOwnedRange || ControllerEtwEventUsesClientActor(client, &toQueue) ||
+                ControllerEtwEventTouchesBlackbirdOwnedRange(client, &toQueue) ||
                 (toQueue.Reserved2 & BKIPC_ETW_TRAIT_BLACKBIRD_OWN) != 0)
             {
                 toQueue.Reserved2 |= BKIPC_ETW_TRAIT_BLACKBIRD_OWN;
-                if (toQueue.Severity > 1u)
-                    toQueue.Severity = 1u;
-                if (toQueue.DetectionName[0] == '\0')
-                    (void)StringCchCopyA(toQueue.DetectionName, RTL_NUMBER_OF(toQueue.DetectionName),
-                                         "BK_INSTRUMENTATION");
+                if (ControllerEtwEventIsBlackbirdOwnedNoise(&toQueue))
+                {
+                    enqueueEvent = FALSE;
+                }
+                else
+                {
+                    if (toQueue.Severity > 1u)
+                        toQueue.Severity = 1u;
+                    if (toQueue.DetectionName[0] == '\0')
+                        (void)StringCchCopyA(toQueue.DetectionName, RTL_NUMBER_OF(toQueue.DetectionName),
+                                             "BK_INSTRUMENTATION");
+                }
             }
 
-            (void)ControllerClientEnqueueEtwEventLocked(client, &toQueue);
+            if (enqueueEvent)
+                (void)ControllerClientEnqueueEtwEventLocked(client, &toQueue);
         }
         LeaveCriticalSection(&client->Lock);
         ControllerClientReleaseFromDispatch(client);

@@ -72,7 +72,7 @@ namespace
     }
 
 #endif
-}
+} // namespace
 
 bool KeSetKiHook(KiHookCallback callback) noexcept
 {

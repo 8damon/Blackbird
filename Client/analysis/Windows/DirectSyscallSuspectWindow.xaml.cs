@@ -239,9 +239,9 @@ namespace BlackbirdInterface
             uint regionType = TryParseHexU32(regionTypeToken);
             uint handleFlags = TryParseHexU32(handleFlagsToken);
             string disasmHint = ReadRestAfter(evidence, "sampleDisasmHint=");
-            string disasm = EventDetailFormatting.FormatSampleDisassembly(
-                sampleBytes, sampleBytes.Length, originAddressRaw, path, regionBase, regionSize, regionProtect,
-                regionState, regionType);
+            string disasm =
+                EventDetailFormatting.FormatSampleBytes(sampleBytes, sampleBytes.Length, originAddressRaw, path,
+                                                        regionBase, regionSize, regionProtect, regionState, regionType);
             if (sampleBytes.Length == 0)
             {
                 disasm = string.IsNullOrWhiteSpace(disasmHint) ? "unavailable" : disasmHint;
@@ -307,7 +307,7 @@ namespace BlackbirdInterface
                 Context = context,
                 Addresses = addresses,
                 StubHex = sampleHex,
-                Disassembly = disasm,
+                SampleBytesText = disasm,
                 Raw = raw,
                 RowBackground = GetRowBackground(EventDetailFormatting.SeverityLabelFromText(row.Severity)),
                 RowBorder = GetRowBorder(EventDetailFormatting.SeverityLabelFromText(row.Severity))
@@ -481,7 +481,7 @@ namespace BlackbirdInterface
                 _argumentRows.Clear();
                 _contextRows.Clear();
                 RawBox.Text = string.Empty;
-                OpenDisassemblyButton.IsEnabled = false;
+                CopySampleBytesButton.IsEnabled = false;
                 return;
             }
 
@@ -491,49 +491,49 @@ namespace BlackbirdInterface
             SetKeyValueRows(_argumentRows, ParseKeyValueRows(entry.Arguments));
             SetKeyValueRows(_contextRows, ParseKeyValueRows(entry.Context));
             RawBox.Text = entry.Raw;
-            OpenDisassemblyButton.IsEnabled = true;
+            CopySampleBytesButton.IsEnabled = true;
         }
 
-        private void OpenDisassemblyButton_Click(object sender, RoutedEventArgs e)
+        private void CopySampleBytesButton_Click(object sender, RoutedEventArgs e)
         {
             if (_selectedEntry == null)
             {
                 return;
             }
 
-            string text =
-                string.IsNullOrWhiteSpace(_selectedEntry.Disassembly) ? "unavailable" : _selectedEntry.Disassembly;
+            string text = string.IsNullOrWhiteSpace(_selectedEntry.SampleBytesText) ? "unavailable"
+                                                                                    : _selectedEntry.SampleBytesText;
 
             try
             {
                 Clipboard.SetText(text);
-                ThemedMessageBox.Show(this, "Disassembly copied to clipboard.", "Disassembly", MessageBoxButton.OK,
+                ThemedMessageBox.Show(this, "Sample Bytes copied to clipboard.", "Sample Bytes", MessageBoxButton.OK,
                                       MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
-                ThemedMessageBox.Show(this, $"Failed to copy disassembly.\n\n{ex.Message}", "Disassembly",
+                ThemedMessageBox.Show(this, $"Failed to copy sample bytes.\n\n{ex.Message}", "Sample Bytes",
                                       MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
-        internal static FlowDocument BuildDisassemblyDocument(string disassemblyText)
+        internal static FlowDocument BuildSampleBytesDocument(string sampleBytesText)
         {
             var document = new FlowDocument { FontFamily = new FontFamily("Cascadia Mono, Cascadia Code, Consolas"),
                                               FontSize = 12, PagePadding = new Thickness(6, 4, 6, 4) };
 
-            string text = string.IsNullOrWhiteSpace(disassemblyText) ? "unavailable" : disassemblyText;
+            string text = string.IsNullOrWhiteSpace(sampleBytesText) ? "unavailable" : sampleBytesText;
             foreach (string line in text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
             {
                 var paragraph = new Paragraph { Margin = new Thickness(0) };
-                AppendDisassemblyLine(paragraph, line);
+                AppendSampleBytesLine(paragraph, line);
                 document.Blocks.Add(paragraph);
             }
 
             return document;
         }
 
-        private static void AppendDisassemblyLine(Paragraph paragraph, string line)
+        private static void AppendSampleBytesLine(Paragraph paragraph, string line)
         {
             if (string.IsNullOrWhiteSpace(line))
             {
@@ -749,7 +749,7 @@ namespace BlackbirdInterface
             public string Context { get; set; } = "";
             public string Addresses { get; set; } = "";
             public string StubHex { get; set; } = "";
-            public string Disassembly { get; set; } = "";
+            public string SampleBytesText { get; set; } = "";
             public string Raw { get; set; } = "";
 
             public DirectSyscallEntry Clone()
@@ -769,7 +769,7 @@ namespace BlackbirdInterface
                                                 Context = Context,
                                                 Addresses = Addresses,
                                                 StubHex = StubHex,
-                                                Disassembly = Disassembly,
+                                                SampleBytesText = this.SampleBytesText,
                                                 Raw = Raw };
             }
         }

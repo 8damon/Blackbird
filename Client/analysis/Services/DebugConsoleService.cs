@@ -30,6 +30,9 @@ namespace BlackbirdInterface
         private static bool s_outputCaptureSubscribed;
         private static CancellationTokenSource? s_listenerCts;
         private static Task? s_listenerTask;
+        private static int s_sr71PreResumePid;
+        private static bool s_sr71PreResumeArmed;
+        private static DateTime? s_sr71PreResumeReleaseLocal;
 
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool AllocConsole();
@@ -44,6 +47,51 @@ namespace BlackbirdInterface
         private static extern bool SetConsoleTitleW(string lpConsoleTitle);
 
         public static event Action<DebugConsoleEntry>? EntryReceived;
+
+        public static void ConfigureSr71PreResumeGate(int pid, bool armed)
+        {
+            lock (s_gate)
+            {
+                s_sr71PreResumePid = armed ? pid : 0;
+                s_sr71PreResumeArmed = armed;
+                s_sr71PreResumeReleaseLocal = null;
+            }
+        }
+
+        public static void ReleaseSr71PreResumeGate(DateTime resumeUtc)
+        {
+            lock (s_gate)
+            {
+                if (s_sr71PreResumeArmed)
+                {
+                    s_sr71PreResumeReleaseLocal = resumeUtc.ToLocalTime();
+                }
+            }
+        }
+
+        public static bool ShouldDropPreResumeSr71Entry(DebugConsoleEntry entry)
+        {
+            lock (s_gate)
+            {
+                if (!s_sr71PreResumeArmed || s_sr71PreResumePid <= 0 || !TouchesSr71PreResumePid(entry))
+                {
+                    return false;
+                }
+
+                if (!s_sr71PreResumeReleaseLocal.HasValue)
+                {
+                    return true;
+                }
+
+                return entry.TimestampLocal <= s_sr71PreResumeReleaseLocal.Value;
+            }
+        }
+
+        private static bool TouchesSr71PreResumePid(DebugConsoleEntry entry)
+        {
+            return entry.ProcessId == s_sr71PreResumePid ||
+                   entry.Source.EndsWith($":{s_sr71PreResumePid}", StringComparison.OrdinalIgnoreCase);
+        }
 
         public static void Start(bool attachConsole)
         {
@@ -157,16 +205,20 @@ namespace BlackbirdInterface
             s_consoleAttached = true;
         }
 
-        private static void WriteEntry(string source, int processId, string? message)
+        private static bool WriteEntry(string source, int processId, string? message)
         {
             if (!s_started || string.IsNullOrWhiteSpace(message))
             {
-                return;
+                return false;
             }
 
             string trimmed = message.TrimEnd('\r', '\n');
             var entry = new DebugConsoleEntry { TimestampLocal = DateTime.Now, ProcessId = processId,
                                                 Source = source ?? string.Empty, Message = trimmed };
+            if (ShouldDropPreResumeSr71Entry(entry))
+            {
+                return false;
+            }
 
             lock (s_gate)
             {
@@ -190,6 +242,7 @@ namespace BlackbirdInterface
             }
 
             EntryReceived?.Invoke(entry);
+            return true;
         }
 
         private static void RunOutputDebugStringListener(CancellationToken cancellationToken)
@@ -241,8 +294,10 @@ namespace BlackbirdInterface
                     }
 
                     string source = ResolveSourceLabel(pid);
-                    WriteEntry(source, pid, text);
-                    OutputCapture.AppendExternalLine($"[{source}:{pid}] {text}");
+                    if (WriteEntry(source, pid, text))
+                    {
+                        OutputCapture.AppendExternalLine($"[{source}:{pid}] {text}");
+                    }
                 }
             }
             catch (Exception ex)

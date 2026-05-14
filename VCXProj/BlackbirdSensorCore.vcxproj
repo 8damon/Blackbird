@@ -28,7 +28,7 @@
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <ProjectName>BlackbirdSensorCore</ProjectName>
     <TargetName>J58</TargetName>
-    <BlackbirdFileDescription>Blackbird user-mode ABI and control bridge</BlackbirdFileDescription>
+    <BlackbirdFileDescription>Blackbird Community user-mode ABI and control bridge</BlackbirdFileDescription>
     <BlackbirdInternalName>J58</BlackbirdInternalName>
     <BlackbirdOriginalFilename>J58.dll</BlackbirdOriginalFilename>
   </PropertyGroup>

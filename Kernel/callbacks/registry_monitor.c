@@ -17,8 +17,6 @@ typedef struct _BK_REG_WRITE_CLASS
     PCSTR DetectionName;
     ULONG Severity;
     PCWSTR Reason;
-    UINT32 EnterpriseOperation;
-    UINT32 EnterpriseFlags;
 } BK_REG_WRITE_CLASS;
 
 /* Classify a registry key path + optional value name for persistence / security-bypass
@@ -31,8 +29,6 @@ static VOID BkavRegClassifyWrite(_In_opt_z_ PCWSTR KeyPath, _In_opt_z_ PCWSTR Va
     Out->DetectionName = NULL;
     Out->Severity = 0;
     Out->Reason = NULL;
-    Out->EnterpriseOperation = BkEnterpriseOperationUnknown;
-    Out->EnterpriseFlags = 0;
 
     if (KeyPath == NULL || KeyPath[0] == L'\0')
     {
@@ -59,10 +55,6 @@ static VOID BkavRegClassifyWrite(_In_opt_z_ PCWSTR KeyPath, _In_opt_z_ PCWSTR Va
             Out->DetectionName = "REGISTRY_LSA_PACKAGE_WRITE";
             Out->Severity = 8;
             Out->Reason = L"write to LSA security-package value — DLL injected into lsass at next boot";
-            Out->EnterpriseOperation = BkEnterpriseOperationRegistryLsaPolicyAccess;
-            Out->EnterpriseFlags = BK_ENTERPRISE_FLAG_HIGH_SIGNAL | BK_ENTERPRISE_FLAG_CRITICAL |
-                                   BK_ENTERPRISE_FLAG_WRITE | BK_ENTERPRISE_FLAG_LSA_POLICY |
-                                   BK_ENTERPRISE_FLAG_KERBEROS_NTLM;
             return;
         }
     }
@@ -107,9 +99,6 @@ static VOID BkavRegClassifyWrite(_In_opt_z_ PCWSTR KeyPath, _In_opt_z_ PCWSTR Va
             Out->DetectionName = "REGISTRY_WINLOGON_MODIFY";
             Out->Severity = 6;
             Out->Reason = L"write to Winlogon control value — can redirect logon shell or hook logon events";
-            Out->EnterpriseOperation = BkEnterpriseOperationRegistryLpePersistenceAccess;
-            Out->EnterpriseFlags =
-                BK_ENTERPRISE_FLAG_HIGH_SIGNAL | BK_ENTERPRISE_FLAG_WRITE | BK_ENTERPRISE_FLAG_PRIVILEGED_TARGET;
             return;
         }
     }
@@ -124,8 +113,6 @@ static VOID BkavRegClassifyWrite(_In_opt_z_ PCWSTR KeyPath, _In_opt_z_ PCWSTR Va
             Out->DetectionName = "REGISTRY_IFEO_WRITE";
             Out->Severity = 6;
             Out->Reason = L"write to Image File Execution Options — Debugger or MonitorProcess can redirect execution";
-            Out->EnterpriseOperation = BkEnterpriseOperationRegistryLpePersistenceAccess;
-            Out->EnterpriseFlags = BK_ENTERPRISE_FLAG_HIGH_SIGNAL | BK_ENTERPRISE_FLAG_WRITE;
             return;
         }
     }
@@ -137,9 +124,6 @@ static VOID BkavRegClassifyWrite(_In_opt_z_ PCWSTR KeyPath, _In_opt_z_ PCWSTR Va
         Out->DetectionName = "REGISTRY_CREDENTIAL_HIVE_WRITE";
         Out->Severity = 7;
         Out->Reason = L"write into SAM or SECURITY hive — credential store modification";
-        Out->EnterpriseOperation = BkEnterpriseOperationRegistryCredentialHiveAccess;
-        Out->EnterpriseFlags = BK_ENTERPRISE_FLAG_HIGH_SIGNAL | BK_ENTERPRISE_FLAG_CRITICAL | BK_ENTERPRISE_FLAG_WRITE |
-                               BK_ENTERPRISE_FLAG_SECURITY_HIVE | BK_ENTERPRISE_FLAG_KERBEROS_NTLM;
         return;
     }
 
@@ -148,15 +132,6 @@ static VOID BkavRegClassifyWrite(_In_opt_z_ PCWSTR KeyPath, _In_opt_z_ PCWSTR Va
         Out->DetectionName = "REGISTRY_SERVICE_WRITE";
         Out->Severity = 6;
         Out->Reason = L"write to Services configuration — service or driver persistence / LPE surface";
-        Out->EnterpriseOperation = BkEnterpriseOperationRegistryServiceConfigAccess;
-        Out->EnterpriseFlags =
-            BK_ENTERPRISE_FLAG_HIGH_SIGNAL | BK_ENTERPRISE_FLAG_WRITE | BK_ENTERPRISE_FLAG_SERVICE_CONFIG;
-        if (BkstrUnicodeContainsInsensitive(&valUs, L"ImagePath", 9) ||
-            BkstrUnicodeContainsInsensitive(&valUs, L"Type", 4) ||
-            BkstrUnicodeContainsInsensitive(&valUs, L"ServiceDll", 10))
-        {
-            Out->EnterpriseFlags |= BK_ENTERPRISE_FLAG_DRIVER_ARTIFACT;
-        }
         return;
     }
 
@@ -209,8 +184,6 @@ static VOID BkavRegClassifyQuery(_In_opt_z_ PCWSTR KeyPath, _In_opt_z_ PCWSTR Va
     Out->DetectionName = NULL;
     Out->Severity = 0;
     Out->Reason = NULL;
-    Out->EnterpriseOperation = BkEnterpriseOperationUnknown;
-    Out->EnterpriseFlags = 0;
 
     if (KeyPath == NULL || KeyPath[0] == L'\0')
     {
@@ -237,9 +210,6 @@ static VOID BkavRegClassifyQuery(_In_opt_z_ PCWSTR KeyPath, _In_opt_z_ PCWSTR Va
         Out->DetectionName = "REGISTRY_CREDENTIAL_HIVE_QUERY";
         Out->Severity = 8;
         Out->Reason = L"read from SAM hive — NTLM hash extraction vector";
-        Out->EnterpriseOperation = BkEnterpriseOperationRegistryCredentialHiveAccess;
-        Out->EnterpriseFlags = BK_ENTERPRISE_FLAG_HIGH_SIGNAL | BK_ENTERPRISE_FLAG_CRITICAL | BK_ENTERPRISE_FLAG_QUERY |
-                               BK_ENTERPRISE_FLAG_SECURITY_HIVE | BK_ENTERPRISE_FLAG_KERBEROS_NTLM;
         return;
     }
 
@@ -250,10 +220,6 @@ static VOID BkavRegClassifyQuery(_In_opt_z_ PCWSTR KeyPath, _In_opt_z_ PCWSTR Va
             Out->DetectionName = "REGISTRY_LSA_SECRETS_QUERY";
             Out->Severity = 8;
             Out->Reason = L"read from LSA Secrets — stored credentials and service account passwords";
-            Out->EnterpriseOperation = BkEnterpriseOperationRegistryLsaPolicyAccess;
-            Out->EnterpriseFlags = BK_ENTERPRISE_FLAG_HIGH_SIGNAL | BK_ENTERPRISE_FLAG_CRITICAL |
-                                   BK_ENTERPRISE_FLAG_QUERY | BK_ENTERPRISE_FLAG_LSA_POLICY |
-                                   BK_ENTERPRISE_FLAG_KERBEROS_NTLM;
             return;
         }
         if (BkstrUnicodeContainsInsensitive(&keyUs, L"\\Lsa\\Credentials", 16))
@@ -261,17 +227,11 @@ static VOID BkavRegClassifyQuery(_In_opt_z_ PCWSTR KeyPath, _In_opt_z_ PCWSTR Va
             Out->DetectionName = "REGISTRY_LSA_CREDENTIALS_QUERY";
             Out->Severity = 7;
             Out->Reason = L"read from LSA Credentials cache — cached domain credential hashes";
-            Out->EnterpriseOperation = BkEnterpriseOperationRegistryLsaPolicyAccess;
-            Out->EnterpriseFlags = BK_ENTERPRISE_FLAG_HIGH_SIGNAL | BK_ENTERPRISE_FLAG_QUERY |
-                                   BK_ENTERPRISE_FLAG_LSA_POLICY | BK_ENTERPRISE_FLAG_KERBEROS_NTLM;
             return;
         }
         Out->DetectionName = "REGISTRY_CREDENTIAL_HIVE_QUERY";
         Out->Severity = 8;
         Out->Reason = L"read from SECURITY hive — LSA secrets and cached credentials";
-        Out->EnterpriseOperation = BkEnterpriseOperationRegistryCredentialHiveAccess;
-        Out->EnterpriseFlags = BK_ENTERPRISE_FLAG_HIGH_SIGNAL | BK_ENTERPRISE_FLAG_CRITICAL | BK_ENTERPRISE_FLAG_QUERY |
-                               BK_ENTERPRISE_FLAG_SECURITY_HIVE | BK_ENTERPRISE_FLAG_KERBEROS_NTLM;
         return;
     }
 
@@ -284,9 +244,6 @@ static VOID BkavRegClassifyQuery(_In_opt_z_ PCWSTR KeyPath, _In_opt_z_ PCWSTR Va
         Out->Severity = 7;
         Out->Reason =
             L"read from Kerberos/MSV1_0/KDC configuration — Kerberos credential or ticket cache reconnaissance";
-        Out->EnterpriseOperation = BkEnterpriseOperationRegistryKerberosNtlmAccess;
-        Out->EnterpriseFlags = BK_ENTERPRISE_FLAG_HIGH_SIGNAL | BK_ENTERPRISE_FLAG_QUERY |
-                               BK_ENTERPRISE_FLAG_LSA_POLICY | BK_ENTERPRISE_FLAG_KERBEROS_NTLM;
         return;
     }
 
@@ -297,9 +254,6 @@ static VOID BkavRegClassifyQuery(_In_opt_z_ PCWSTR KeyPath, _In_opt_z_ PCWSTR Va
         Out->DetectionName = "REGISTRY_LSA_QUERY";
         Out->Severity = 7;
         Out->Reason = L"read from LSA authentication-package configuration";
-        Out->EnterpriseOperation = BkEnterpriseOperationRegistryLsaPolicyAccess;
-        Out->EnterpriseFlags = BK_ENTERPRISE_FLAG_HIGH_SIGNAL | BK_ENTERPRISE_FLAG_QUERY |
-                               BK_ENTERPRISE_FLAG_LSA_POLICY | BK_ENTERPRISE_FLAG_KERBEROS_NTLM;
         return;
     }
 
@@ -368,9 +322,6 @@ static VOID BkavRegClassifyQuery(_In_opt_z_ PCWSTR KeyPath, _In_opt_z_ PCWSTR Va
         Out->DetectionName = "REGISTRY_SERVICE_QUERY";
         Out->Severity = 4;
         Out->Reason = L"read from Services key — service enumeration for lateral movement or LPE reconnaissance";
-        Out->EnterpriseOperation = BkEnterpriseOperationRegistryServiceConfigAccess;
-        Out->EnterpriseFlags =
-            BK_ENTERPRISE_FLAG_HIGH_SIGNAL | BK_ENTERPRISE_FLAG_QUERY | BK_ENTERPRISE_FLAG_SERVICE_CONFIG;
         return;
     }
 
@@ -408,7 +359,7 @@ NTKERNELAPI ULONG PsGetProcessSessionIdEx(_In_ PEPROCESS Process);
 
 #define BK_REG_TARGET_STREAM_MASK                                                                         \
     (BK_STREAM_HANDLE | BK_STREAM_MEMORY | BK_STREAM_THREAD | BK_STREAM_FILESYSTEM | BK_STREAM_REGISTRY | \
-     BK_STREAM_TIMING | BK_STREAM_ENTERPRISE)
+     BK_STREAM_TIMING)
 #define BK_REG_LIT_CHARS(_Literal) ((USHORT)(RTL_NUMBER_OF(_Literal) - 1))
 
 static BOOLEAN BkavRegIsTargetProcess(_In_ UINT32 ProcessId)
@@ -428,11 +379,9 @@ static BOOLEAN BkavRegUnicodeContainsAnyBlackbirdArtifact(_In_opt_ PCUNICODE_STR
             BkstrUnicodeContainsInsensitive(Text, L"BlackbirdHookIngest", BK_REG_LIT_CHARS(L"BlackbirdHookIngest")) ||
             BkstrUnicodeContainsInsensitive(Text, L"BlackbirdController", BK_REG_LIT_CHARS(L"BlackbirdController")) ||
             BkstrUnicodeContainsInsensitive(Text, L"BlackbirdInterface", BK_REG_LIT_CHARS(L"BlackbirdInterface")) ||
-            BkstrUnicodeContainsInsensitive(Text, L"BlackbirdNetSvc", BK_REG_LIT_CHARS(L"BlackbirdNetSvc")) ||
             BkstrUnicodeContainsInsensitive(Text, L"BK.Kernel", BK_REG_LIT_CHARS(L"BK.Kernel")) ||
             BkstrUnicodeContainsInsensitive(Text, L"sr71.dll", BK_REG_LIT_CHARS(L"sr71.dll")) ||
-            BkstrUnicodeContainsInsensitive(Text, L"j58.dll", BK_REG_LIT_CHARS(L"j58.dll")) ||
-            BkstrUnicodeContainsInsensitive(Text, L"bkdc.dll", BK_REG_LIT_CHARS(L"bkdc.dll")));
+            BkstrUnicodeContainsInsensitive(Text, L"j58.dll", BK_REG_LIT_CHARS(L"j58.dll")));
 }
 
 static BOOLEAN BkavRegUnicodeContainsAnyAnalysisArtifact(_In_opt_ PCUNICODE_STRING Text)
@@ -815,51 +764,6 @@ static VOID BkavRegPublishIoctl(_In_ HANDLE Pid, _In_ ULONG SessionId, _In_ UINT
     BkctlPublishRegistryEvent(&regEvent);
 }
 
-static VOID BkavRegPublishEnterprise(_In_ HANDLE Pid, _In_ UINT32 IoctlOperation, _In_ ULONG NotifyClass,
-                                     _In_ ULONG DataType, _In_ ULONG DataSize, _In_ const BK_REG_WRITE_CLASS *Class)
-{
-    BK_ENTERPRISE_EVENT event;
-    UINT32 pid32 = (UINT32)(ULONG_PTR)Pid;
-
-    if (Class == NULL || Class->EnterpriseOperation == BkEnterpriseOperationUnknown || pid32 == 0)
-    {
-        return;
-    }
-    if (!BkctlHasPidInterest(pid32, 0, BK_STREAM_ENTERPRISE))
-    {
-        return;
-    }
-
-    RtlZeroMemory(&event, sizeof(event));
-    event.ProcessId = (UINT64)(ULONG_PTR)Pid;
-    event.ThreadId = (UINT64)(ULONG_PTR)PsGetCurrentThreadId();
-    event.Operation = Class->EnterpriseOperation;
-    event.SubOperation = IoctlOperation;
-    event.Flags = Class->EnterpriseFlags;
-    if (IoctlOperation == BkavRegOperationCreateKey)
-    {
-        event.Flags |= BK_ENTERPRISE_FLAG_CREATE | BK_ENTERPRISE_FLAG_WRITE;
-    }
-    else if (IoctlOperation == BkavRegOperationDeleteKey || IoctlOperation == BkavRegOperationDeleteValue)
-    {
-        event.Flags |= BK_ENTERPRISE_FLAG_DELETE | BK_ENTERPRISE_FLAG_WRITE;
-    }
-    else if (IoctlOperation == BkavRegOperationSetValue)
-    {
-        event.Flags |= BK_ENTERPRISE_FLAG_WRITE;
-    }
-    else if (IoctlOperation == BkavRegOperationQueryKey || IoctlOperation == BkavRegOperationQueryValue ||
-             IoctlOperation == BkavRegOperationEnumerateKey || IoctlOperation == BkavRegOperationEnumerateValue ||
-             IoctlOperation == BkavRegOperationOpenKey)
-    {
-        event.Flags |= BK_ENTERPRISE_FLAG_QUERY;
-    }
-    event.Status = STATUS_SUCCESS;
-    event.Aux0 = ((UINT64)NotifyClass << 32) | (UINT32)DataType;
-    event.Aux1 = DataSize;
-    BkctlPublishEnterpriseEvent(&event);
-}
-
 static NTSTATUS BkavRegCallback(_In_opt_ PVOID CallbackContext, _In_opt_ PVOID Argument1, _In_opt_ PVOID Argument2)
 {
     ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemRegistryMonitor);
@@ -1180,7 +1084,6 @@ static NTSTATUS BkavRegCallback(_In_opt_ PVOID CallbackContext, _In_opt_ PVOID A
                                 sensitiveQuery, (keyPath[0] != L'\0') ? keyPath : NULL,
                                 (valueName[0] != L'\0') ? valueName : NULL);
         }
-        BkavRegPublishEnterprise(pid, ioctlOperation, (ULONG)notifyClass, dataType, dataSize, &cls);
     }
 
     if (nullPath)

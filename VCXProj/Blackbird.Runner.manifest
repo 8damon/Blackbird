@@ -2,10 +2,10 @@
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity
       type="win32"
-      name="Blackbird.Platform.BlackbirdRunner"
+      name="Blackbird.Community.BlackbirdRunner"
       version="2.0.0.0"
       processorArchitecture="*"/>
-  <description>Blackbird capture runner</description>
+  <description>Blackbird Community capture runner</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>

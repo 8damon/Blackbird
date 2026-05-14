@@ -62,10 +62,10 @@ namespace IC_STACKTRACE
                 return false;
 
             HMODULE ntdll = ::GetModuleHandleW(L"ntdll.dll");
-            auto fn = ntdll != nullptr
-                          ? reinterpret_cast<RtlLookupFunctionEntryFn>(
-                                ::GetProcAddress(ntdll, "RtlLookupFunctionEntry"))
-                          : nullptr;
+            auto fn =
+                ntdll != nullptr
+                    ? reinterpret_cast<RtlLookupFunctionEntryFn>(::GetProcAddress(ntdll, "RtlLookupFunctionEntry"))
+                    : nullptr;
             g_RtlLookupFunctionEntry = fn;
             InterlockedExchange(&g_RtlLookupFunctionEntryState, fn != nullptr ? 2 : 1);
             return fn != nullptr;
@@ -253,10 +253,10 @@ namespace IC_STACKTRACE
             }
 
             static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedWideLiteral kJ58Name{L"J58.dll", 0x1F5u};
-            static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedWideLiteral kControllerName{
-                L"BlackbirdController.exe", 0x20Bu};
-            static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedWideLiteral kInterfaceName{
-                L"BlackbirdInterface.exe", 0x22Du};
+            static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedWideLiteral kControllerName{L"BlackbirdController.exe",
+                                                                                         0x20Bu};
+            static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedWideLiteral kInterfaceName{L"BlackbirdInterface.exe",
+                                                                                        0x22Du};
             auto sr71Name = BK_RUNTIME_INTERNAL::DecodeSr71DllName();
             BK_RUNTIME_INTERNAL::Sr71ScopedWideLiteral j58Name(kJ58Name);
             BK_RUNTIME_INTERNAL::Sr71ScopedWideLiteral controllerName(kControllerName);
@@ -309,8 +309,7 @@ namespace IC_STACKTRACE
                 return false;
 
             DWORD64 imageBase = 0;
-            PRUNTIME_FUNCTION entry =
-                g_RtlLookupFunctionEntry(reinterpret_cast<DWORD64>(ip), &imageBase, nullptr);
+            PRUNTIME_FUNCTION entry = g_RtlLookupFunctionEntry(reinterpret_cast<DWORD64>(ip), &imageBase, nullptr);
             if (entry == nullptr)
                 return false;
 
@@ -345,8 +344,7 @@ namespace IC_STACKTRACE
                 if (nt->OptionalHeader.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_EXCEPTION)
                     return false;
 
-                const IMAGE_DATA_DIRECTORY &dir =
-                    nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
+                const IMAGE_DATA_DIRECTORY &dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
                 hasExceptionDirectory = dir.VirtualAddress != 0 && dir.Size >= sizeof(IMAGE_RUNTIME_FUNCTION_ENTRY);
             }
             __except (EXCEPTION_EXECUTE_HANDLER)
@@ -465,7 +463,7 @@ namespace IC_STACKTRACE
                 std::memmove(moduleNameOut, slash + 1, std::strlen(slash + 1) + 1);
             }
         }
-    }
+    } // namespace
 
     bool Capture(Trace &out, std::uint32_t skip, std::uint32_t maxFrames) noexcept
     {
@@ -713,4 +711,4 @@ namespace IC_STACKTRACE
 
         return result;
     }
-}
+} // namespace IC_STACKTRACE

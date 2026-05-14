@@ -15,6 +15,7 @@ namespace BlackbirdInterface
         private string _detailSecondary = "";
 
         public string Name { get; }
+        public string DisplayName { get; }
         public Brush AccentBrush { get; }
 
         public ObservableCollection<double> PreviewValues { get; } = new();
@@ -74,9 +75,10 @@ namespace BlackbirdInterface
             }
         }
 
-        public GraphExplorerItem(string name, Brush accent)
+        public GraphExplorerItem(string name, Brush accent, string? displayName = null)
         {
             Name = name;
+            DisplayName = string.IsNullOrWhiteSpace(displayName) ? name : displayName;
             AccentBrush = accent;
         }
 

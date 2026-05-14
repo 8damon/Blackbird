@@ -62,8 +62,8 @@ static UINT32 BkctlPidInterestLookupLocked(_In_ UINT32 ProcessId)
     slot = BkctlPidInterestHash(ProcessId);
     for (probe = 0; probe < BK_PID_INTEREST_INDEX_BUCKETS; ++probe)
     {
-        const BK_PID_INTEREST_ENTRY *entry = &g_BkctlPidInterestIndex[(slot + probe) &
-                                                                      (BK_PID_INTEREST_INDEX_BUCKETS - 1u)];
+        const BK_PID_INTEREST_ENTRY *entry =
+            &g_BkctlPidInterestIndex[(slot + probe) & (BK_PID_INTEREST_INDEX_BUCKETS - 1u)];
         if (entry->ProcessId == ProcessId)
         {
             return entry->StreamMask;
@@ -81,8 +81,8 @@ VOID BkctlInitializeEventNodeLookaside(VOID)
 {
     if (InterlockedCompareExchange(&g_BkctlEventNodeLookasideReady, 1, 0) == 0)
     {
-        ExInitializeNPagedLookasideList(&g_BkctlEventNodeLookaside, NULL, NULL, 0, sizeof(BK_EVENT_NODE),
-                                        BK_POOL_TAG, 0);
+        ExInitializeNPagedLookasideList(&g_BkctlEventNodeLookaside, NULL, NULL, 0, sizeof(BK_EVENT_NODE), BK_POOL_TAG,
+                                        0);
     }
 }
 
@@ -174,14 +174,10 @@ PCSTR BkctlIoctlName(_In_ ULONG Ioctl)
         return "SET_RUNTIME_CONFIG";
     case IOCTL_BK_GET_RUNTIME_CONFIG:
         return "GET_RUNTIME_CONFIG";
-    case IOCTL_BK_READ_MEMORY:
-        return "READ_MEMORY";
     case IOCTL_BK_REGISTER_INSTRUMENTATION_RANGE:
         return "REGISTER_INSTRUMENTATION_RANGE";
     case IOCTL_BK_REGISTER_HOOK_PATCH:
         return "REGISTER_HOOK_PATCH";
-    case IOCTL_BK_SET_ENDPOINT_GUARD:
-        return "SET_ENDPOINT_GUARD";
     case IOCTL_BK_SET_QPC_TIMING_CONFIG:
         return "SET_QPC_TIMING_CONFIG";
     case IOCTL_BK_GET_QPC_TIMING_STATE:
@@ -414,7 +410,7 @@ VOID BkctlClientReference(_Inout_ PBK_CLIENT Client)
 BOOLEAN BkctlIsValidStreamMask(_In_ UINT32 StreamMask)
 {
     return ((StreamMask & (BK_STREAM_HANDLE | BK_STREAM_MEMORY | BK_STREAM_THREAD | BK_STREAM_FILESYSTEM |
-                           BK_STREAM_REGISTRY | BK_STREAM_TIMING | BK_STREAM_ENTERPRISE)) != 0);
+                           BK_STREAM_REGISTRY | BK_STREAM_TIMING)) != 0);
 }
 
 VOID BkctlClientClearPendingLaunchLocked(_Inout_ PBK_CLIENT Client)
@@ -789,10 +785,8 @@ VOID BkctlRebuildPidInterestIndex(VOID)
     BOOLEAN overflow = FALSE;
     LONG rebuildCount;
 
-    table = (PBK_PID_INTEREST_ENTRY)BkpoolAllocateCompat(POOL_FLAG_NON_PAGED,
-                                                        sizeof(BK_PID_INTEREST_ENTRY) *
-                                                            BK_PID_INTEREST_INDEX_BUCKETS,
-                                                        BK_POOL_TAG);
+    table = (PBK_PID_INTEREST_ENTRY)BkpoolAllocateCompat(
+        POOL_FLAG_NON_PAGED, sizeof(BK_PID_INTEREST_ENTRY) * BK_PID_INTEREST_INDEX_BUCKETS, BK_POOL_TAG);
     if (table == NULL)
     {
         ExAcquirePushLockExclusiveEx(&g_BkctlPidInterestLock, 0);
@@ -1041,8 +1035,8 @@ static UINT32 BkctlScanPidInterestSlow(_In_ UINT32 PrimaryProcessId, _In_ UINT32
         PBK_CLIENT client = snapshot[i];
         if (BkctlTryAcquireClientLock(client, "pid-interest-fallback"))
         {
-            matchedMask |= BkctlClientQuerySubscriptionMaskEither(client, PrimaryProcessId, SecondaryProcessId,
-                                                                 StreamMask);
+            matchedMask |=
+                BkctlClientQuerySubscriptionMaskEither(client, PrimaryProcessId, SecondaryProcessId, StreamMask);
             ExReleaseFastMutex(&client->Lock);
         }
         BkctlClientRelease(client);

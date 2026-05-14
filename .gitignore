@@ -1,19 +1,29 @@
-# Visual Studio / IDE
 .vs/
+.vscode/
+.idea/
 *.suo
 *.user
 *.VC.db
 *.VC.opendb
+*.code-workspace
+*_wpftmp.csproj
 
-# Build outputs / intermediates
 x64/
 ARM64/
 Win32/
 Debug/
 Release/
-test-results/
 [Bb]in/
 [Oo]bj/
+test-results/
+.build/
+.publish/
+.dotnet/
+.dotnet_home/
+.dotnet-home/
+RuntimeTest/
+codex-build/
+
 *.obj
 *.o
 *.lo
@@ -24,19 +34,12 @@ test-results/
 *.iobj
 *.ilk
 *.tlog
-*.log
 *.lastbuildstate
 *.recipe
 *.tmp
 *.cache
+*.log
 
-./interface
-/interface
-
-./$документы
-$документы
-
-# Binary artifacts
 *.exe
 *.dll
 *.sys
@@ -45,12 +48,6 @@ $документы
 *.exp
 *.cer
 *.cat
-
-# Generated output folders from older project layout
-StingerIoctlTest/
-StingerEtwProc/
-
-# Security-sensitive materials
 *.pfx
 *.p12
 *.pem
@@ -59,64 +56,41 @@ StingerEtwProc/
 *.snk
 TITAN Softwork Solutions.pfx
 
-# Local-only tooling/scripts
+# Website documentation is published from the website pipeline, not the
+# Community source repo.
+Docs/
+
+interface/
+$документы/
+SVR/
+StingerIoctlTest/
+StingerEtwProc/
+fuzzer/
+.hypervisor/
+hypervisor/
+Yara/
+SimpleVisor-master.zip
+
 Cockpit.ps1
 StingerInitDbgX.txt
-
-# Private fuzzing harnesses and findings
-/fuzzer/
-
-# Local .NET SDK caches / test sandboxes
-.dotnet/
-.dotnet_home/
-.dotnet-home/
-RuntimeTest/
-
-# Local research notes
 BK_HOOKING.md
 FUTURE.md
-/docs/
-/Docs/
-/.hypervisor/
-/hypervisor/
-/.publish/
-/.vscode/
-*.code-workspace
-*_wpftmp.csproj
 
-/SVR
-./SVR
-
-Server/target/
-Server/data*/
-Server/*.log
-
-# Closed-source Blackbird components
-/Blackbird.private.slnx
-/Server/
-/Lib/NetworkServiceLayer/
-/UserMode/netsvc/
-/Usermode/netsvc/
-/Kernel/network/
-/Kernel/core/crashdump.c
-/Kernel/monitors/bugcheck_monitor.c
-/Kernel/monitors/bugcheck_monitor.h
-/Client/analysis/Services/OperatorIdentityService.cs
-/Client/analysis/Services/VmRegistrationPackageService.cs
-/Client/analysis/Windows/VmRegistrationWindow.xaml
-/Client/analysis/Windows/VmRegistrationWindow.xaml.cs
-/Scripts/Register-BlackbirdVm.ps1
-/UserMode/controller/core/runtime/ns/ns_launcher.cpp
-/VCXProj/BlackbirdNetSvc.vcxproj
-/VCXProj/BlackbirdNetSvc.vcxproj.filters
-
-# External/local detection rule packs
-/Yara/
-/Client/analysis/Rules/SignatureIntel/Bundled/
-/Client/analysis/Rules/SignatureIntel/default-sigma.yml
-
-# Local build scratch
-/.build/
-
-
-SimpleVisor-master.zip
+Server/
+Lib/NetworkServiceLayer/
+UserMode/netsvc/
+Usermode/netsvc/
+Kernel/network/
+Kernel/core/crashdump.c
+Kernel/monitors/bugcheck_monitor.c
+Kernel/monitors/bugcheck_monitor.h
+Client/analysis/Services/OperatorIdentityService.cs
+Client/analysis/Services/VmRegistrationPackageService.cs
+Client/analysis/Windows/VmRegistrationWindow.xaml
+Client/analysis/Windows/VmRegistrationWindow.xaml.cs
+Scripts/Register-BlackbirdVm.ps1
+UserMode/controller/core/runtime/ns/ns_launcher.cpp
+VCXProj/BlackbirdNetSvc.vcxproj
+VCXProj/BlackbirdNetSvc.vcxproj.filters
+Client/analysis/Rules/SignatureIntel/Bundled/
+Client/analysis/Rules/SignatureIntel/default-sigma.yml

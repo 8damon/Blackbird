@@ -89,6 +89,20 @@ static VOID BkntkiEmitRemoteNtApiDetection(_In_z_ PCSTR DetectionName, _In_ ULON
     BketwLogDetectionEvent(DetectionName, Severity, CallerPid, (HANDLE)(ULONG_PTR)TargetPid, 0, 0, 0, reason);
 }
 
+static BOOLEAN BkntkiProtectAllowsWrite(_In_ ULONG Protect)
+{
+    ULONG baseProtect = Protect & 0xFFu;
+    return baseProtect == PAGE_READWRITE || baseProtect == PAGE_WRITECOPY || baseProtect == PAGE_EXECUTE_READWRITE ||
+           baseProtect == PAGE_EXECUTE_WRITECOPY;
+}
+
+static BOOLEAN BkntkiProtectIsExecutable(_In_ ULONG Protect)
+{
+    ULONG baseProtect = Protect & 0xFFu;
+    return baseProtect == PAGE_EXECUTE || baseProtect == PAGE_EXECUTE_READ || baseProtect == PAGE_EXECUTE_READWRITE ||
+           baseProtect == PAGE_EXECUTE_WRITECOPY;
+}
+
 static BOOLEAN BkntkiReadLargeIntegerOutSafe(_In_opt_ PLARGE_INTEGER Value, _Out_ LARGE_INTEGER *Observed)
 {
     if (Observed == NULL)
@@ -197,10 +211,8 @@ static BOOLEAN BkntkiUnicodeContainsBlackbirdArtifact(_In_opt_ PCUNICODE_STRING 
              BkstrUnicodeContainsInsensitive(Text, L"BlackbirdController",
                                              BK_NTAPI_LIT_CHARS(L"BlackbirdController")) ||
              BkstrUnicodeContainsInsensitive(Text, L"BlackbirdInterface", BK_NTAPI_LIT_CHARS(L"BlackbirdInterface")) ||
-             BkstrUnicodeContainsInsensitive(Text, L"BlackbirdNetSvc", BK_NTAPI_LIT_CHARS(L"BlackbirdNetSvc")) ||
              BkstrUnicodeContainsInsensitive(Text, L"sr71.dll", BK_NTAPI_LIT_CHARS(L"sr71.dll")) ||
-             BkstrUnicodeContainsInsensitive(Text, L"j58.dll", BK_NTAPI_LIT_CHARS(L"j58.dll")) ||
-             BkstrUnicodeContainsInsensitive(Text, L"bkdc.dll", BK_NTAPI_LIT_CHARS(L"bkdc.dll")));
+             BkstrUnicodeContainsInsensitive(Text, L"j58.dll", BK_NTAPI_LIT_CHARS(L"j58.dll")));
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
@@ -253,7 +265,6 @@ static BOOLEAN BkntkiUnicodeContainsBlackbirdRuntimeAccessArtifact(_In_opt_ PCUN
                                                  BK_NTAPI_LIT_CHARS(L"BlackbirdHookIngest")) ||
                  BkstrUnicodeContainsInsensitive(Text, L"sr71.dll", BK_NTAPI_LIT_CHARS(L"sr71.dll")) ||
                  BkstrUnicodeContainsInsensitive(Text, L"j58.dll", BK_NTAPI_LIT_CHARS(L"j58.dll")) ||
-                 BkstrUnicodeContainsInsensitive(Text, L"bkdc.dll", BK_NTAPI_LIT_CHARS(L"bkdc.dll")) ||
                  BkstrUnicodeContainsInsensitive(Text, L"sr71-", BK_NTAPI_LIT_CHARS(L"sr71-")));
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
@@ -947,8 +958,7 @@ NTSTATUS NTAPI BkntkiNtProtectVirtualMemoryHook(_In_ HANDLE ProcessHandle, _Inou
     observedBase = BkntkiReadPointerSafe(BaseAddress);
     observedSize = BkntkiReadSizeTSafe(RegionSize);
     (void)BkntkiResolveProcessHandleToPid(ProcessHandle, &targetPid);
-    if ((NewProtect == PAGE_READWRITE || NewProtect == PAGE_WRITECOPY || NewProtect == PAGE_EXECUTE_READWRITE ||
-         NewProtect == PAGE_EXECUTE_WRITECOPY) &&
+    if (BkntkiProtectAllowsWrite(NewProtect) &&
         BkntkiWriteTouchesProtectedRange(ProcessHandle, observedBase, observedSize, &targetPid))
     {
         deniedInstrumentationProtect = TRUE;
@@ -971,8 +981,7 @@ NTSTATUS NTAPI BkntkiNtProtectVirtualMemoryHook(_In_ HANDLE ProcessHandle, _Inou
               (UINT64)observedSize, (UINT64)NewProtect, (UINT64)observedOldProtect,
               (UINT64)deniedInstrumentationProtect, (UINT64)targetPid, 0, execFlags, status);
     if (NT_SUCCESS(status) && targetPid != 0 && targetPid != (UINT32)(ULONG_PTR)callerPid &&
-        (NewProtect == PAGE_EXECUTE || NewProtect == PAGE_EXECUTE_READ || NewProtect == PAGE_EXECUTE_READWRITE ||
-         NewProtect == PAGE_EXECUTE_WRITECOPY))
+        BkntkiProtectIsExecutable(NewProtect))
     {
         BkntkiEmitRemoteNtApiDetection("REMOTE_MEMORY_PROTECT_EXECUTE", 5u, callerPid, targetPid,
                                        L"NtProtectVirtualMemory", (UINT64)(ULONG_PTR)observedBase);
@@ -1103,8 +1112,7 @@ NTSTATUS NTAPI BkntkiNtMapViewOfSectionHook(_In_ HANDLE SectionHandle, _In_ HAND
               (UINT64)(ULONG_PTR)observedBase, (UINT64)observedViewSize, (UINT64)Win32Protect, observedOffset,
               (UINT64)targetPid, (UINT64)mirroredNtdllDataView, execFlags, status);
     if (NT_SUCCESS(status) && targetPid != 0 && targetPid != (UINT32)(ULONG_PTR)callerPid &&
-        (Win32Protect == PAGE_EXECUTE || Win32Protect == PAGE_EXECUTE_READ || Win32Protect == PAGE_EXECUTE_READWRITE ||
-         Win32Protect == PAGE_EXECUTE_WRITECOPY))
+        BkntkiProtectIsExecutable(Win32Protect))
     {
         BkntkiEmitRemoteNtApiDetection("REMOTE_SECTION_MAP_EXECUTE", 5u, callerPid, targetPid, L"NtMapViewOfSection",
                                        (UINT64)(ULONG_PTR)observedBase);
@@ -1162,8 +1170,7 @@ NTSTATUS NTAPI BkntkiNtMapViewOfSectionExHook(_In_ HANDLE SectionHandle, _In_ HA
               (UINT64)(ULONG_PTR)observedBase, (UINT64)observedViewSize, (UINT64)Win32Protect, (UINT64)AllocationType,
               (UINT64)targetPid, 0, execFlags, status);
     if (NT_SUCCESS(status) && targetPid != 0 && targetPid != (UINT32)(ULONG_PTR)callerPid &&
-        (Win32Protect == PAGE_EXECUTE || Win32Protect == PAGE_EXECUTE_READ || Win32Protect == PAGE_EXECUTE_READWRITE ||
-         Win32Protect == PAGE_EXECUTE_WRITECOPY))
+        BkntkiProtectIsExecutable(Win32Protect))
     {
         BkntkiEmitRemoteNtApiDetection("REMOTE_SECTION_MAP_EXECUTE", 5u, callerPid, targetPid, L"NtMapViewOfSectionEx",
                                        (UINT64)(ULONG_PTR)observedBase);
@@ -1986,9 +1993,9 @@ NTSTATUS NTAPI BkntkiNtSetInformationProcessHook(_In_ HANDLE ProcessHandle,
         goto Exit;
     }
     (void)BkntkiResolveProcessHandleToPid(ProcessHandle, &targetPid);
-    blockedPicSet = BkntkiShouldBlockProcessInstrumentationCallbackSet(
-        ProcessHandle, ProcessInformationClass, ProcessInformation, ProcessInformationLength, &targetPid,
-        &requestedPicCallback);
+    blockedPicSet =
+        BkntkiShouldBlockProcessInstrumentationCallbackSet(ProcessHandle, ProcessInformationClass, ProcessInformation,
+                                                           ProcessInformationLength, &targetPid, &requestedPicCallback);
     if (blockedPicSet)
     {
         WCHAR reason[192];

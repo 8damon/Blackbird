@@ -592,10 +592,6 @@
                                       Checked="UseUsermodeHooksCheckBox_Changed"
                                       Unchecked="UseUsermodeHooksCheckBox_Changed"
                                       IsChecked="True"/>
-                            <CheckBox x:Name="AutoOpenApiGraphCheckBox"
-                                      Content="Auto-switch to API view"
-                                      Margin="0,4,0,0"
-                                      IsChecked="False"/>
                             <CheckBox x:Name="EarlyBirdApcCheckBox"
                                       Content="Launch via APC"
                                       Margin="0,4,0,0"

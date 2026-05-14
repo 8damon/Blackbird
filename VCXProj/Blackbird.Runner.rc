@@ -10,7 +10,7 @@
 #endif
     FILEOS 0x00040004L FILETYPE 0x1L FILESUBTYPE 0x0L BEGIN BLOCK "StringFileInfo" BEGIN BLOCK "040904B0" BEGIN VALUE
                                                                   "CompanyName",
-    "TITAN Softwork Solutions" VALUE "FileDescription", "Blackbird capture runner" VALUE "FileVersion",
+    "TITAN Softwork Solutions" VALUE "FileDescription", "Blackbird Community capture runner" VALUE "FileVersion",
     "2.0.0.0" VALUE "InternalName", "BlackbirdRunner" VALUE "OriginalFilename",
-    "BlackbirdRunner.exe" VALUE "ProductName", "Blackbird Platform" VALUE "ProductVersion",
+    "BlackbirdRunner.exe" VALUE "ProductName", "Blackbird Community" VALUE "ProductVersion",
     "2.0.0" END END BLOCK "VarFileInfo" BEGIN VALUE "Translation", 0x0409, 1200 END END

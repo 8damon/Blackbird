@@ -36,7 +36,9 @@ namespace BlackbirdInterface
         {
             public bool StartLaunchFlow { get; init; }
             public string? SessionPath { get; init; }
+            public bool EnableKernelDriver { get; set; } = true;
             public bool EnableKernelHooks { get; init; } = true;
+            public bool EnableUsermodeHooks { get; init; } = true;
             public bool EnableAntiVirtualizationMasking { get; init; }
             public bool EnableQpcTimingCompensation { get; init; } = true;
             public bool EnableControllerConcealment { get; init; }
@@ -159,6 +161,14 @@ namespace BlackbirdInterface
 
         private async Task ContinueStartupAsync()
         {
+            var bootLoading = new LoadingWindow();
+            bootLoading.SetProgress(4, "Launching Blackbird...", "Loading interface resources.");
+            bootLoading.Show();
+            await YieldForUiFrameAsync();
+            await Task.Delay(275);
+            bootLoading.SetProgress(100, "Startup ready", "Opening startup options.");
+            bootLoading.Close();
+
             StartupIntent? intent = ResolveStartupIntent();
             if (intent == null)
             {
@@ -174,7 +184,7 @@ namespace BlackbirdInterface
             loading.Show();
             var loadingShownAtUtc = DateTime.UtcNow;
 
-            if (!openingSession && !await EnsureStartupSystemsReadyAsync(loading))
+            if (!openingSession && !await EnsureStartupSystemsReadyAsync(loading, intent))
             {
                 loading.Close();
                 Shutdown();
@@ -242,21 +252,44 @@ namespace BlackbirdInterface
 
             if (!openingSession)
             {
-                if (!main.ApplyStartupRuntimeSelections(
+                main.ConfigureStartupDriverMode(intent.EnableKernelDriver, intent.EnableUsermodeHooks);
+
+                if (intent.EnableKernelDriver &&
+                    !main.ApplyStartupRuntimeSelections(
                         intent.EnableKernelHooks, intent.EnableAntiVirtualizationMasking,
                         intent.EnableQpcTimingCompensation, intent.EnableControllerConcealment,
                         intent.EnableInterfaceProtectedAccess, intent.EnableControllerProtectedAccess,
                         out string startupRuntimeError))
                 {
-                    ThemedMessageBox.Show(
-                        main, $"Failed to apply runtime configuration after shell startup.\n\n{startupRuntimeError}",
-                        "Runtime Configuration", MessageBoxButton.OK, MessageBoxImage.Error);
+                    MessageBoxResult runtimeChoice = ThemedMessageBox.Show(
+                        main,
+                        $"Failed to apply KM driver runtime configuration after shell startup.\n\n{startupRuntimeError}\n\nContinue in driverless mode?",
+                        "Runtime Configuration", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                    if (runtimeChoice == MessageBoxResult.Yes)
+                    {
+                        intent.EnableKernelDriver = false;
+                        main.ConfigureStartupDriverMode(false, intent.EnableUsermodeHooks);
+                        DiagnosticsState.SetValue("RuntimeConfig", "Skipped after driver fallback");
+                    }
+                    else
+                    {
+                        ThemedMessageBox.Show(main,
+                                              $"Runtime configuration remains unavailable.\n\n{startupRuntimeError}",
+                                              "Runtime Configuration", MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
+                }
+                else if (!intent.EnableKernelDriver)
+                {
+                    DiagnosticsState.SetValue("KM Driver", "Driverless mode");
+                    DiagnosticsState.SetValue("Controller<->Driver Comms", "Driverless mode");
+                    DiagnosticsState.SetValue("RuntimeConfig", "Skipped (driverless mode)");
                 }
 
                 main.ConfigureStartupSignatureIntel(intent.EnableSignatureIntel, intent.EnableSignatureIntelMemoryScan,
                                                     intent.EnableSignatureIntelPageScan);
 
-                await ShowVirtualizationPreflightAsync(intent.EnableAntiVirtualizationMasking);
+                await ShowVirtualizationPreflightAsync(intent.EnableKernelDriver &&
+                                                       intent.EnableAntiVirtualizationMasking);
             }
 
             if (intent.StartLaunchFlow)
@@ -292,18 +325,21 @@ namespace BlackbirdInterface
             ThemedMessageBox.Show(Current?.MainWindow, message, "Environment Preflight", MessageBoxButton.OK, icon);
         }
 
-        private static async Task<bool> EnsureStartupSystemsReadyAsync(LoadingWindow loading)
+        private static async Task<bool> EnsureStartupSystemsReadyAsync(LoadingWindow loading, StartupIntent intent)
         {
             int attempt = 0;
             for (;;)
             {
                 attempt++;
                 loading.SetProgress(10, "Running startup preflight...",
-                                    $"Attempt {attempt}: checking driver, controller, SR71, and broker link.");
+                                    intent.EnableKernelDriver
+                                        ? $"Attempt {attempt}: checking driver, controller, SR71, and broker link."
+                                        : $"Attempt {attempt}: checking controller, SR71, and broker link.");
                 await YieldForUiFrameAsync();
 
                 BlackbirdPreflightReport report = await Task.Run(
                     () => BlackbirdPreflight.Run(0, ensureServicesRunning: true, requireDriverProxy: false,
+                                                 enableKernelDriver: intent.EnableKernelDriver,
                                                  progress: (percent, status, detail) =>
                                                  {
                                                      double scaledPercent = 10 + (Math.Clamp(percent, 0, 100) * 0.18);
@@ -326,9 +362,25 @@ namespace BlackbirdInterface
 
                 loading.SetProgress(16, "Startup preflight blocked", report.Summary);
                 await YieldForUiFrameAsync();
-                MessageBoxResult choice = ThemedMessageBox.Show(
-                    Current?.MainWindow, report.BuildStartupFailureMessage() + "\nRetry startup preflight?",
-                    "Startup System Preflight", MessageBoxButton.YesNo, MessageBoxImage.Error);
+                string fallbackPrompt =
+                    intent.EnableKernelDriver && report.CanContinueDriverless
+                        ? "\nChoose Yes to retry, No to continue in driverless mode, or Cancel to exit."
+                        : "\nRetry startup preflight?";
+                MessageBoxButton buttons = intent.EnableKernelDriver && report.CanContinueDriverless
+                                               ? MessageBoxButton.YesNoCancel
+                                               : MessageBoxButton.YesNo;
+                MessageBoxResult choice =
+                    ThemedMessageBox.Show(Current?.MainWindow, report.BuildStartupFailureMessage() + fallbackPrompt,
+                                          "Startup System Preflight", buttons, MessageBoxImage.Error);
+                if (choice == MessageBoxResult.No && intent.EnableKernelDriver && report.CanContinueDriverless)
+                {
+                    intent.EnableKernelDriver = false;
+                    DiagnosticsState.SetValue("KM Driver", "Driverless mode selected after preflight failure");
+                    loading.SetProgress(16, "Driverless mode selected",
+                                        "Continuing with controller, SR71, and user-mode telemetry only.");
+                    await YieldForUiFrameAsync();
+                    return true;
+                }
                 if (choice != MessageBoxResult.Yes)
                 {
                     return false;
@@ -624,7 +676,9 @@ namespace BlackbirdInterface
                 {
                 case StartupWelcomeAction.Launch:
                     return new StartupIntent { StartLaunchFlow = true,
+                                               EnableKernelDriver = welcome.EnableKernelDriver,
                                                EnableKernelHooks = welcome.EnableKernelHooks,
+                                               EnableUsermodeHooks = welcome.EnableUsermodeHooks,
                                                EnableAntiVirtualizationMasking =
                                                    welcome.EnableAntiVirtualizationMasking,
                                                EnableQpcTimingCompensation = welcome.EnableQpcTimingCompensation,
@@ -642,7 +696,9 @@ namespace BlackbirdInterface
                     {
                         return new StartupIntent {
                             SessionPath = sessionPath,
+                            EnableKernelDriver = welcome.EnableKernelDriver,
                             EnableKernelHooks = welcome.EnableKernelHooks,
+                            EnableUsermodeHooks = welcome.EnableUsermodeHooks,
                             EnableAntiVirtualizationMasking = welcome.EnableAntiVirtualizationMasking,
                             EnableQpcTimingCompensation = welcome.EnableQpcTimingCompensation,
                             EnableControllerConcealment = welcome.EnableControllerConcealment,
@@ -752,7 +808,7 @@ namespace BlackbirdInterface
                     shortcutType.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, shortcut,
                                               new object[] { Path.GetDirectoryName(exePath) ?? string.Empty });
                     shortcutType.InvokeMember("Description", BindingFlags.SetProperty, null, shortcut,
-                                              new object[] { "Blackbird analyst shell" });
+                                              new object[] { ProductEdition.DisplayName });
                     shortcutType.InvokeMember("IconLocation", BindingFlags.SetProperty, null, shortcut,
                                               new object[] { $"{exePath},0" });
                     shortcutType.InvokeMember("Save", BindingFlags.InvokeMethod, null, shortcut, Array.Empty<object>());

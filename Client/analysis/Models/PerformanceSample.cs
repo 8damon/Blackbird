@@ -83,8 +83,6 @@ namespace BlackbirdInterface
         public uint WorkingSetShareCount { get; set; }
         public bool WorkingSetLocked { get; set; }
         public bool WorkingSetLargePage { get; set; }
-        public uint SnapshotOffset { get; set; }
-        public byte[]? SnapshotBytes { get; set; }
     }
 
     public sealed class MemoryRegionAttributionSample

@@ -71,6 +71,56 @@ namespace BK_RUNTIME_INTERNAL
             return "AssignProcessToJobObject";
         case ModuleHookOperation::SetInformationJobObject:
             return "SetInformationJobObject";
+        case ModuleHookOperation::LsaConnectUntrusted:
+            return "LsaConnectUntrusted";
+        case ModuleHookOperation::LsaLookupAuthenticationPackage:
+            return "LsaLookupAuthenticationPackage";
+        case ModuleHookOperation::LsaCallAuthenticationPackage:
+            return "LsaCallAuthenticationPackage";
+        case ModuleHookOperation::AcquireCredentialsHandleA:
+            return "AcquireCredentialsHandleA";
+        case ModuleHookOperation::AcquireCredentialsHandleW:
+            return "AcquireCredentialsHandleW";
+        case ModuleHookOperation::InitializeSecurityContextA:
+            return "InitializeSecurityContextA";
+        case ModuleHookOperation::InitializeSecurityContextW:
+            return "InitializeSecurityContextW";
+        case ModuleHookOperation::AcceptSecurityContext:
+            return "AcceptSecurityContext";
+        case ModuleHookOperation::CredReadA:
+            return "CredReadA";
+        case ModuleHookOperation::CredReadW:
+            return "CredReadW";
+        case ModuleHookOperation::CredEnumerateA:
+            return "CredEnumerateA";
+        case ModuleHookOperation::CredEnumerateW:
+            return "CredEnumerateW";
+        case ModuleHookOperation::CredReadDomainCredentialsA:
+            return "CredReadDomainCredentialsA";
+        case ModuleHookOperation::CredReadDomainCredentialsW:
+            return "CredReadDomainCredentialsW";
+        case ModuleHookOperation::LsaOpenPolicy:
+            return "LsaOpenPolicy";
+        case ModuleHookOperation::LsaQueryInformationPolicy:
+            return "LsaQueryInformationPolicy";
+        case ModuleHookOperation::VaultEnumerateVaults:
+            return "VaultEnumerateVaults";
+        case ModuleHookOperation::VaultOpenVault:
+            return "VaultOpenVault";
+        case ModuleHookOperation::VaultEnumerateItems:
+            return "VaultEnumerateItems";
+        case ModuleHookOperation::VaultGetItem:
+            return "VaultGetItem";
+        case ModuleHookOperation::CryptUnprotectData:
+            return "CryptUnprotectData";
+        case ModuleHookOperation::NCryptUnprotectSecret:
+            return "NCryptUnprotectSecret";
+        case ModuleHookOperation::NCryptOpenStorageProvider:
+            return "NCryptOpenStorageProvider";
+        case ModuleHookOperation::NCryptOpenKey:
+            return "NCryptOpenKey";
+        case ModuleHookOperation::NCryptDecrypt:
+            return "NCryptDecrypt";
         default:
             return "LoadLibrary";
         }
@@ -821,4 +871,4 @@ namespace BK_RUNTIME_INTERNAL
 
         PollAmsiEtwPatchWatchdog(now);
     }
-}
+} // namespace BK_RUNTIME_INTERNAL

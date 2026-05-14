@@ -6,7 +6,7 @@ namespace BlackbirdInterface
     {
         public HeuristicsFloatWindow(HeuristicsPane pane)
         {
-            Title = "Heuristics (Floating)";
+            Title = "Detections (Floating)";
             Width = 980;
             Height = 520;
             Background = pane.Background;

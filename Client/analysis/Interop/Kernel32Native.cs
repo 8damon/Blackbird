@@ -39,6 +39,19 @@ namespace BlackbirdInterface
             internal uint Attributes;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct MemoryBasicInformation64
+        {
+            internal ulong BaseAddress;
+            internal ulong AllocationBase;
+            internal uint AllocationProtect;
+            internal ushort PartitionId;
+            internal ulong RegionSize;
+            internal uint State;
+            internal uint Protect;
+            internal uint Type;
+        }
+
         internal static IntPtr OpenProcess(uint desiredAccess, bool inheritHandle, uint processId)
         {
             return OpenProcessNative(desiredAccess, inheritHandle, processId);
@@ -91,6 +104,13 @@ namespace BlackbirdInterface
 
         internal static int NtSuspendProcess(IntPtr processHandle) => NtSuspendProcessNative(processHandle);
         internal static int NtResumeProcess(IntPtr processHandle) => NtResumeProcessNative(processHandle);
+        internal static bool ReadProcessMemory(IntPtr processHandle, IntPtr baseAddress, byte[] buffer, int size,
+                                               out IntPtr bytesRead) => ReadProcessMemoryNative(processHandle,
+                                                                                                baseAddress, buffer,
+                                                                                                size, out bytesRead);
+        internal static UIntPtr VirtualQueryEx(IntPtr processHandle, IntPtr address,
+                                               out MemoryBasicInformation64 buffer, UIntPtr length) =>
+            VirtualQueryExNative(processHandle, address, out buffer, length);
         internal static bool TerminateProcess(IntPtr processHandle,
                                               uint exitCode) => TerminateProcessNative(processHandle, exitCode);
         internal static IntPtr OpenEvent(uint desiredAccess, bool inheritHandle,
@@ -112,8 +132,12 @@ namespace BlackbirdInterface
                 }
 
                 var securityAttributes =
-                    new SecurityAttributes { Length = Marshal.SizeOf<SecurityAttributes>(),
-                                             SecurityDescriptor = securityDescriptor, InheritHandle = false };
+                    new SecurityAttributes
+                    {
+                        Length = Marshal.SizeOf<SecurityAttributes>(),
+                        SecurityDescriptor = securityDescriptor,
+                        InheritHandle = false
+                    };
                 securityAttributesBuffer = Marshal.AllocHGlobal(securityAttributes.Length);
                 Marshal.StructureToPtr(securityAttributes, securityAttributesBuffer, false);
                 return CreateEventExNative(securityAttributesBuffer, name, flags, desiredAccess);
@@ -139,27 +163,36 @@ namespace BlackbirdInterface
         private static extern IntPtr GetCurrentProcess();
 
         [DllImport("advapi32.dll", EntryPoint = "OpenProcessToken", SetLastError = true)]
-        [return:MarshalAs(UnmanagedType.Bool)]
+        [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out IntPtr tokenHandle);
 
         [DllImport("advapi32.dll", EntryPoint = "LookupPrivilegeValueW", CharSet = CharSet.Unicode,
                    SetLastError = true)]
-        [return:MarshalAs(UnmanagedType.Bool)]
+        [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool LookupPrivilegeValue(string? systemName, string name, out Luid luid);
 
         [DllImport("advapi32.dll", EntryPoint = "AdjustTokenPrivileges", SetLastError = true)]
-        [return:MarshalAs(UnmanagedType.Bool)]
+        [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool AdjustTokenPrivileges(IntPtr tokenHandle, bool disableAllPrivileges,
                                                          ref TokenPrivileges newState, uint bufferLength,
                                                          IntPtr previousState, IntPtr returnLength);
 
         [DllImport("kernel32.dll", EntryPoint = "CloseHandle", SetLastError = true)]
-        [return:MarshalAs(UnmanagedType.Bool)]
+        [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool CloseHandleNative(IntPtr hObject);
 
         [DllImport("kernel32.dll", EntryPoint = "TerminateProcess", SetLastError = true)]
-        [return:MarshalAs(UnmanagedType.Bool)]
+        [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool TerminateProcessNative(IntPtr hProcess, uint uExitCode);
+
+        [DllImport("kernel32.dll", EntryPoint = "ReadProcessMemory", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ReadProcessMemoryNative(IntPtr hProcess, IntPtr lpBaseAddress, [Out] byte[] lpBuffer,
+                                                           int nSize, out IntPtr lpNumberOfBytesRead);
+
+        [DllImport("kernel32.dll", EntryPoint = "VirtualQueryEx", SetLastError = true)]
+        private static extern UIntPtr VirtualQueryExNative(IntPtr hProcess, IntPtr lpAddress,
+                                                           out MemoryBasicInformation64 lpBuffer, UIntPtr dwLength);
 
         [DllImport("kernel32.dll", EntryPoint = "OpenEventW", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern IntPtr OpenEventNative(uint dwDesiredAccess, bool bInheritHandle, string lpName);
@@ -170,7 +203,7 @@ namespace BlackbirdInterface
 
         [DllImport("advapi32.dll", EntryPoint = "ConvertStringSecurityDescriptorToSecurityDescriptorW",
                    CharSet = CharSet.Unicode, SetLastError = true)]
-        [return:MarshalAs(UnmanagedType.Bool)]
+        [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(string stringSecurityDescriptor,
                                                                                        int stringSdRevision,
                                                                                        out IntPtr securityDescriptor,
@@ -180,7 +213,7 @@ namespace BlackbirdInterface
         private static extern IntPtr LocalFree(IntPtr hMem);
 
         [DllImport("kernel32.dll", EntryPoint = "SetEvent", SetLastError = true)]
-        [return:MarshalAs(UnmanagedType.Bool)]
+        [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool SetEventNative(IntPtr hEvent);
 
         [DllImport("ntdll.dll", EntryPoint = "NtSuspendProcess")]

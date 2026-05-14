@@ -36,42 +36,6 @@ VOID BkcrashRecordCheckpoint(_In_ UINT32 SubsystemId, _In_ UINT32 EventType, _In
 
 #endif
 
-#if !BK_ENABLE_WFP_ENDPOINT_GUARD
-
-NTSTATUS BkwfpEndpointGuardInitialize(VOID)
-{
-    return STATUS_NOT_SUPPORTED;
-}
-
-VOID BkwfpEndpointGuardUninitialize(VOID)
-{
-}
-
-BOOLEAN BkwfpEndpointGuardSelfCheck(VOID)
-{
-    return FALSE;
-}
-
-BOOLEAN BkwfpEndpointGuardRuntimeActive(VOID)
-{
-    return FALSE;
-}
-
-NTSTATUS BkwfpEndpointGuardConfigure(_In_ const BK_ENDPOINT_GUARD_REQUEST *Request, _In_ UINT32 RequesterPid)
-{
-    UNREFERENCED_PARAMETER(Request);
-    UNREFERENCED_PARAMETER(RequesterPid);
-
-    return STATUS_NOT_SUPPORTED;
-}
-
-VOID BkwfpEndpointGuardDisarmProcess(_In_ UINT32 ProcessId)
-{
-    UNREFERENCED_PARAMETER(ProcessId);
-}
-
-#endif
-
 #if !BK_ENABLE_BUGCHECK_MONITOR
 
 NTSTATUS BkbugInitialize(VOID)

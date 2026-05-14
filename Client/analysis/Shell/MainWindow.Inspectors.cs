@@ -30,8 +30,8 @@ namespace BlackbirdInterface
             }
 
             TelemetryInspectorWindow.ShowForRows(
-                this, "Detection Chain", "Grouped detections with embedded evidence and correlation context", snapshot,
-                HeuristicsPaneHost.GetSelectedGroupClone(), ResolveHandleEvidenceClone);
+                this, "Detections", "Prioritized signals with actor, target, context, and evidence drill-down",
+                snapshot, HeuristicsPaneHost.GetSelectedGroupClone(), ResolveHandleEvidenceClone);
         }
 
         private void OpenProcessRelationsInspector()
@@ -71,6 +71,81 @@ namespace BlackbirdInterface
             TelemetryInspectorWindow.ShowForRows(
                 this, "Registry", "Grouped registry operations with key path and operation filters", snapshot,
                 RegistryPaneHost.GetSelectedGroupClone(), ResolveHandleEvidenceClone);
+        }
+
+        private void OpenOperatorCaseWindow()
+        {
+            int pid = _currentSession?.Pid ?? TryGetPid();
+            OperatorCaseReport report =
+                OperatorCaseBuilder.Build(pid, HeuristicsPaneHost.SnapshotItems(), EtwPaneHost.SnapshotItems(),
+                                          FilesystemPaneHost.SnapshotItems(), RegistryPaneHost.SnapshotItems(),
+                                          ProcessRelationsPaneHost.SnapshotItems(), DiagnosticsState.SnapshotEntries());
+
+            ProcessSessionTab? baselineTab = FindOperatorCaseBaselineTab();
+            if (baselineTab != null)
+            {
+                OperatorCaseReport baseline = OperatorCaseBuilder.Build(
+                    baselineTab.Pid, SnapshotOperatorCaseRows(baselineTab, "heuristics"),
+                    SnapshotOperatorCaseRows(baselineTab, "etw"), SnapshotOperatorCaseRows(baselineTab, "filesystem"),
+                    SnapshotOperatorCaseRows(baselineTab, "registry"),
+                    SnapshotOperatorCaseRows(baselineTab, "relations"), Array.Empty<DiagnosticsStateEntry>());
+
+                OperatorCaseBuilder.ApplyBaselineComparison(
+                    report, baseline, NormalizeSessionTitle(baselineTab.Title ?? $"PID {baselineTab.Pid}"));
+            }
+
+            OperatorCaseWindow.ShowForReport(this, report);
+        }
+
+        private ProcessSessionTab? FindOperatorCaseBaselineTab()
+        {
+            if (_currentSession == null || _processTabs.Count < 2)
+            {
+                return null;
+            }
+
+            string currentTitle = NormalizeSessionTitle(_currentSession.Title);
+            string currentSubject = _currentSession.AnalysisSubjectPath;
+            return _processTabs.Where(x => !ReferenceEquals(x, _currentSession))
+                .OrderByDescending(
+                    x => !string.IsNullOrWhiteSpace(currentSubject) &&
+                         string.Equals(x.AnalysisSubjectPath, currentSubject, StringComparison.OrdinalIgnoreCase))
+                .ThenByDescending(x => string.Equals(NormalizeSessionTitle(x.Title), currentTitle,
+                                                     StringComparison.OrdinalIgnoreCase))
+                .ThenByDescending(x => x.CaptureStartUtc)
+                .FirstOrDefault();
+        }
+
+        private IReadOnlyList<GroupedEventRow> SnapshotOperatorCaseRows(ProcessSessionTab tab, string kind)
+        {
+            if (ReferenceEquals(tab, _currentSession))
+            {
+                return kind switch { "heuristics" => HeuristicsPaneHost.SnapshotItems(),
+                                     "etw" => EtwPaneHost.SnapshotItems(),
+                                     "filesystem" => FilesystemPaneHost.SnapshotItems(),
+                                     "registry" => RegistryPaneHost.SnapshotItems(),
+                                     "relations" => ProcessRelationsPaneHost.SnapshotItems(),
+                                     _ => Array.Empty<GroupedEventRow>() };
+            }
+
+            Dictionary<int, List<GroupedEventRow>> source =
+                kind switch { "heuristics" => _heuristicsHistoryByPid,
+                              "etw" => _etwHistoryByPid,
+                              "filesystem" => _filesystemHistoryByPid,
+                              "registry" => _registryHistoryByPid,
+                              "relations" => _relationsHistoryByPid,
+                              _ => new Dictionary<int, List<GroupedEventRow>>() };
+
+            return source.TryGetValue(tab.Pid, out List<GroupedEventRow>? rows)
+                       ? rows.Select(static x => x.Clone()).ToList()
+                       : Array.Empty<GroupedEventRow>();
+        }
+
+        private void OperatorCase_Click(object sender, RoutedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            OpenOperatorCaseWindow();
         }
 
         private void SelectApiViewRowByApiName(string apiName)

@@ -38,9 +38,30 @@ namespace BlackbirdInterface
 
         internal static string Resolve(uint pid) => ResolveIdentity(pid).DisplayName;
 
+        internal static string ResolveImmediate(uint pid)
+        {
+            if (pid == 0 || pid > int.MaxValue)
+            {
+                return "-";
+            }
+
+            int key = (int)pid;
+            if (IdentityByPid.TryGetValue(key, out ProcessIdentity cached))
+            {
+                return cached.DisplayName;
+            }
+
+            PendingPids.TryRemove(key, out _);
+            ProcessIdentity resolved = ResolveCore(key);
+            IdentityByPid.TryAdd(key, resolved);
+            return resolved.DisplayName;
+        }
+
         internal static string HoverText(uint pid) => ResolveIdentity(pid).HoverText;
 
         internal static string Describe(uint pid) => Resolve(pid);
+
+        internal static string DescribeImmediate(uint pid) => ResolveImmediate(pid);
 
         private static ProcessIdentity ResolveIdentity(uint pid)
         {

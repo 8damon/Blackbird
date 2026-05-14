@@ -251,9 +251,9 @@
 
         <Grid Grid.Row="2">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="1.05*"/>
+                <ColumnDefinition Width="1.45*"/>
                 <ColumnDefinition Width="8"/>
-                <ColumnDefinition Width="2.25*"/>
+                <ColumnDefinition Width="1.85*"/>
             </Grid.ColumnDefinitions>
 
             <Border Grid.Column="0"
@@ -271,11 +271,63 @@
                                    Foreground="{DynamicResource WinMutedTextBrush}"
                                    Text="0 detail rows"/>
                     </Border>
-                    <TreeView x:Name="EventTreeView"
-                              Background="Transparent"
+                    <Grid>
+                        <TreeView x:Name="EventTreeView"
+                                  Background="Transparent"
+                                  BorderThickness="0"
+                                  ItemContainerStyle="{StaticResource InspectorTreeItemStyle}"
+                                  SelectedItemChanged="EventTreeView_SelectedItemChanged"/>
+                        <DataGrid x:Name="DetectionGrid"
+                              Visibility="Collapsed"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              CanUserAddRows="False"
+                              CanUserResizeRows="False"
+                              GridLinesVisibility="None"
                               BorderThickness="0"
-                              ItemContainerStyle="{StaticResource InspectorTreeItemStyle}"
-                              SelectedItemChanged="EventTreeView_SelectedItemChanged"/>
+                              ColumnHeaderHeight="28"
+                              RowHeight="30"
+                              SelectionMode="Single"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                              SelectionChanged="DetectionGrid_SelectionChanged">
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Setter Property="Background" Value="#FF111111"/>
+                                <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                                <Setter Property="BorderBrush" Value="#FF202020"/>
+                                <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Severity}" Value="Critical">
+                                        <Setter Property="Background" Value="#FF2A1216"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Severity}" Value="High">
+                                        <Setter Property="Background" Value="#FF2B1D10"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Severity}" Value="Medium">
+                                        <Setter Property="Background" Value="#FF111F2D"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Severity}" Value="Low">
+                                        <Setter Property="Background" Value="#FF10221A"/>
+                                    </DataTrigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#FF233A52"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Severity" Binding="{Binding Severity}" Width="86"/>
+                            <DataGridTextColumn Header="Detection" Binding="{Binding Detection}" Width="340" MinWidth="280"/>
+                            <DataGridTextColumn Header="Actor" Binding="{Binding Actor}" Width="150"/>
+                            <DataGridTextColumn Header="Target" Binding="{Binding Target}" Width="150"/>
+                            <DataGridTextColumn Header="Context" Binding="{Binding ArgumentPreview}" Width="320" MinWidth="220"/>
+                            <DataGridTextColumn Header="Hits" Binding="{Binding Hits}" Width="58"/>
+                            <DataGridTextColumn Header="Last" Binding="{Binding LastSeenLabel}" Width="96"/>
+                        </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
                 </DockPanel>
             </Border>
 

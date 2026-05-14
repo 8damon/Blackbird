@@ -383,13 +383,13 @@
                                 </DataGrid.Columns>
                             </DataGrid>
 
-                            <Button x:Name="OpenDisassemblyButton"
-                                    Content="Copy Disassembly"
+                            <Button x:Name="CopySampleBytesButton"
+                                    Content="Copy Sample Bytes"
                                     MinWidth="148"
                                     MinHeight="26"
                                     HorizontalAlignment="Left"
                                     Margin="0,0,0,8"
-                                    Click="OpenDisassemblyButton_Click"/>
+                                    Click="CopySampleBytesButton_Click"/>
 
                             <Expander Header="Raw Event" IsExpanded="False">
                                 <Border Margin="0,6,0,0"

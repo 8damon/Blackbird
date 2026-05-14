@@ -1,4 +1,5 @@
-1 ICON "..\\Client\\analysis\\Resources\\BK.ico" 1 24 "Blackbird.Interface.manifest"
+1 ICON "..\\Client\\analysis\\Resources\\BK.ico"
+1 24 "Blackbird.Interface.manifest"
 
     1 VERSIONINFO FILEVERSION 2,
     0, 0, 0 PRODUCTVERSION 2, 0, 0,
@@ -10,7 +11,7 @@
 #endif
     FILEOS 0x00040004L FILETYPE 0x1L FILESUBTYPE 0x0L BEGIN BLOCK "StringFileInfo" BEGIN BLOCK "040904B0" BEGIN VALUE
                                                                   "CompanyName",
-    "TITAN Softwork Solutions" VALUE "FileDescription", "Blackbird analyst interface" VALUE "FileVersion",
+    "TITAN Softwork Solutions" VALUE "FileDescription", "Blackbird Community analyst interface" VALUE "FileVersion",
     "2.0.0.0" VALUE "InternalName", "BlackbirdInterface" VALUE "OriginalFilename",
-    "BlackbirdInterface.exe" VALUE "ProductName", "Blackbird Platform" VALUE "ProductVersion",
+    "BlackbirdInterface.exe" VALUE "ProductName", "Blackbird Community" VALUE "ProductVersion",
     "2.0.0" END END BLOCK "VarFileInfo" BEGIN VALUE "Translation", 0x0409, 1200 END END

@@ -627,8 +627,7 @@ namespace
 
                     if (install &&
                         !BK_RUNTIME_INTERNAL::RegisterControlFlowGuardCallTarget(
-                            hookEntry.HookFunction,
-                            BK_RUNTIME_INTERNAL::Sr71CfgCallTargetMode::CfgAndXfgWhenEnabled,
+                            hookEntry.HookFunction, BK_RUNTIME_INTERNAL::Sr71CfgCallTargetMode::CfgAndXfgWhenEnabled,
                             hookEntry.FunctionName))
                     {
                         continue;
@@ -699,7 +698,7 @@ namespace
         CloseHandle(snapshot);
         return anyPatched;
     }
-}
+} // namespace
 
 bool KeSetWinsockHook(WinsockHookCallback callback) noexcept
 {

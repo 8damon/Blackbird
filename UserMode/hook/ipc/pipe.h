@@ -46,14 +46,18 @@ namespace BKIPC
 
     bool Initialize(DWORD timeoutMs = PIPE_DEFAULT_TIMEOUT_MS);
     void Shutdown();
+    DWORD LastConnectStage() noexcept;
+    DWORD LastConnectError() noexcept;
 
     bool WriteRaw(const void *data, DWORD size);
     bool ReadRaw(void *buffer, DWORD size, DWORD &bytesRead);
     bool PublishHookEvent(const BKIPC_HOOK_EVENT &eventRecord);
+    bool PublishHookEventSynchronously(const BKIPC_HOOK_EVENT &eventRecord) noexcept;
     UINT32 DrainPendingHookEventsSynchronously(UINT32 maxEvents = 64) noexcept;
     bool NotifyHookReady(UINT32 readyMask, UINT32 *observedMaskOut = nullptr, UINT32 *pendingCommandOut = nullptr);
     /* Registers a memory range as runtime-owned instrumentation so the
-       controller excludes it from heuristics and annotates it in the UI. */
+       controller excludes it from heuristics
+     * and annotates it in the UI. */
     bool RegisterInstrumentationRange(UINT64 baseAddress, UINT64 regionSize, UINT32 flags, const char *tag) noexcept;
     bool RegisterHookPatch(UINT64 patchAddress, UINT32 patchSize, const UINT8 *originalBytes, UINT32 originalSize,
                            UINT32 flags, const char *tag) noexcept;
@@ -73,4 +77,4 @@ namespace BKIPC
 
         return bytesRead == sizeof(T);
     }
-}
+} // namespace BKIPC

@@ -24,7 +24,7 @@
                        VerticalAlignment="Center"
                        FontWeight="SemiBold"
                        FontSize="12"
-                       Text="Heuristics"/>
+                       Text="Detections"/>
 
             <TextBlock x:Name="SummaryBlock"
                        Grid.Column="1"
@@ -58,7 +58,7 @@
                     Content="↗"
                     Width="22"
                     Height="22"
-                    ToolTip="Open heuristics inspector"
+                    ToolTip="Open detections inspector"
                     Click="HeurBtnInspect_Click"/>
             <Button Grid.Column="4"
                     x:Name="HeurBtnReorder"
@@ -66,7 +66,7 @@
                     Content="⇅"
                     Width="22"
                     Height="22"
-                    ToolTip="Reorder ETW/Heuristics panes"
+                    ToolTip="Reorder ETW/Detections panes"
                     Click="HeurBtnReorder_Click"/>
             <Button Grid.Column="5"
                     x:Name="HeurBtnFloat"
@@ -101,9 +101,9 @@
                           VerticalGridLinesBrush="Transparent"
                           CanUserResizeRows="False"
                           ColumnHeaderHeight="24"
-                          RowHeight="22"
+                          RowHeight="26"
                           ScrollViewer.VerticalScrollBarVisibility="Hidden"
-                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                          ScrollViewer.HorizontalScrollBarVisibility="Auto"
                           MouseDoubleClick="HeuristicsGrid_MouseDoubleClick"
                           PreviewMouseRightButtonDown="HeuristicsGrid_PreviewMouseRightButtonDown">
                     <DataGrid.ContextMenu>
@@ -140,9 +140,13 @@
                         </Style>
                     </DataGrid.RowStyle>
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Detection" Width="*" Binding="{Binding Detection}"/>
-                        <DataGridTextColumn Header="Event" Width="260" Binding="{Binding Event}"/>
-                        <DataGridTextColumn Header="Hits" Width="72" Binding="{Binding Hits}"/>
+                        <DataGridTextColumn Header="Severity" Width="78" Binding="{Binding Severity}"/>
+                        <DataGridTextColumn Header="Detection" Width="360" MinWidth="300" Binding="{Binding Detection}"/>
+                        <DataGridTextColumn Header="Actor" Width="132" Binding="{Binding Actor}"/>
+                        <DataGridTextColumn Header="Target" Width="132" Binding="{Binding Target}"/>
+                        <DataGridTextColumn Header="Context" Width="*" MinWidth="220" Binding="{Binding ArgumentPreview}"/>
+                        <DataGridTextColumn Header="Hits" Width="52" Binding="{Binding Hits}"/>
+                        <DataGridTextColumn Header="Last" Width="92" Binding="{Binding LastSeenLabel}"/>
                     </DataGrid.Columns>
                 </DataGrid>
 

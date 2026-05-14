@@ -26,7 +26,32 @@ enum class ModuleHookOperation : std::uint32_t
     CreateJobObjectW = 15,
     OpenJobObjectW = 16,
     AssignProcessToJobObject = 17,
-    SetInformationJobObject = 18
+    SetInformationJobObject = 18,
+    LsaConnectUntrusted = 19,
+    LsaLookupAuthenticationPackage = 20,
+    LsaCallAuthenticationPackage = 21,
+    AcquireCredentialsHandleA = 22,
+    AcquireCredentialsHandleW = 23,
+    InitializeSecurityContextA = 24,
+    InitializeSecurityContextW = 25,
+    AcceptSecurityContext = 26,
+    CredReadA = 27,
+    CredReadW = 28,
+    CredEnumerateA = 29,
+    CredEnumerateW = 30,
+    CredReadDomainCredentialsA = 31,
+    CredReadDomainCredentialsW = 32,
+    LsaOpenPolicy = 33,
+    LsaQueryInformationPolicy = 34,
+    VaultEnumerateVaults = 35,
+    VaultOpenVault = 36,
+    VaultEnumerateItems = 37,
+    VaultGetItem = 38,
+    CryptUnprotectData = 39,
+    NCryptUnprotectSecret = 40,
+    NCryptOpenStorageProvider = 41,
+    NCryptOpenKey = 42,
+    NCryptDecrypt = 43
 };
 
 struct ModuleHookContext
@@ -65,6 +90,7 @@ struct ModuleHookInitFault
 
 bool KeSetModuleHook(ModuleHookCallback callback) noexcept;
 void KeRemoveModuleHook() noexcept;
+void KeRefreshModuleHooks(HMODULE moduleHandle) noexcept;
 
 bool KeCheckModuleHookIntegrity(std::uint32_t *mismatchCount) noexcept;
 bool KeGetLastModuleHookInitFault(ModuleHookInitFault *faultOut) noexcept;

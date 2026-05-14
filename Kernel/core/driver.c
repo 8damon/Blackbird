@@ -52,8 +52,6 @@ typedef enum _BK_DRIVER_STATE
 #define BK_INIT_HOLLOWING_ENGINE 0x800
 #define BK_INIT_FILESYSTEM_MONITOR 0x1000
 #define BK_INIT_NTAPI_MONITOR 0x2000
-#define BK_INIT_ENDPOINT_GUARD 0x4000
-#define BK_INIT_BUGCHECK_MONITOR 0x8000
 #define BK_INIT_REQUIRED_FLAGS                                                                                   \
     (BK_INIT_THREAD_MONITOR | BK_INIT_HANDLE_MONITOR | BK_INIT_ETW | BK_INIT_CONTROL | BK_INIT_PROCESS_MONITOR | \
      BK_INIT_IMAGE_MONITOR | BK_INIT_REGISTRY_MONITOR | BK_INIT_APC_MONITOR | BK_INIT_ANTI_TAMPER |              \
@@ -127,11 +125,6 @@ static VOID BkdrvUninitializeByFlags(_In_ LONG InitFlags)
     {
         BkdrvUninitializeSubsystem(BktmpSubsystemAntiTamper, BkatUninitialize, BK_DIAG_COMPONENT_ANTI_TAMPER);
     }
-    if ((InitFlags & BK_INIT_ENDPOINT_GUARD) != 0)
-    {
-        BkdrvUninitializeSubsystem(BktmpSubsystemDriver, BkwfpEndpointGuardUninitialize,
-                                   BK_DIAG_COMPONENT_WFP_ENDPOINT_GUARD);
-    }
     if ((InitFlags & BK_INIT_HANDLE_MONITOR) != 0)
     {
         BkdrvUninitializeSubsystem(BktmpSubsystemHandleMonitor, BkchdlUninitialize, BK_DIAG_COMPONENT_HANDLE_MONITOR);
@@ -177,10 +170,6 @@ static VOID BkdrvUninitializeByFlags(_In_ LONG InitFlags)
         BkdrvUninitializeSubsystem(BktmpSubsystemHollowingEngine, BkhloEngineUninitialize,
                                    BK_DIAG_COMPONENT_HOLLOWING_ENGINE);
     }
-    if ((InitFlags & BK_INIT_BUGCHECK_MONITOR) != 0)
-    {
-        BkdrvUninitializeSubsystem(BktmpSubsystemDriver, BkbugUninitialize, BK_DIAG_COMPONENT_BUGCHECK_MONITOR);
-    }
     if ((InitFlags & BK_INIT_CONTROL) != 0)
     {
         BkdrvUninitializeSubsystem(BktmpSubsystemControl, BkctlUninitialize, BK_DIAG_COMPONENT_CONTROL);
@@ -221,14 +210,8 @@ static VOID BkdrvRecordSubsystemSelfChecks(VOID)
     BkdrvRecordSelfCheck(BktmpSubsystemCorrelation, BkcorSelfCheck(), BK_DIAG_COMPONENT_CORRELATION);
     BkdrvRecordSelfCheck(BktmpSubsystemHollowingEngine, BkhloEngineSelfCheck(), BK_DIAG_COMPONENT_HOLLOWING_ENGINE);
     BkdrvRecordSelfCheck(BktmpSubsystemNtApiMonitor, BkntkiMonitorSelfCheck(), BK_DIAG_COMPONENT_NTAPI_MONITOR);
-#if BK_ENABLE_BUGCHECK_MONITOR
-    BkdrvRecordSelfCheck(BktmpSubsystemDriver, BkbugSelfCheck(), BK_DIAG_COMPONENT_BUGCHECK_MONITOR);
-#endif
     BkdrvRecordSelfCheck(BktmpSubsystemAntiTamper, BkatSelfCheck(), BK_DIAG_COMPONENT_ANTI_TAMPER);
     BkdrvRecordSelfCheck(BktmpSubsystemDriver, BkdiagSelfCheck(), BK_DIAG_COMPONENT_DIAGNOSTICS);
-#if BK_ENABLE_WFP_ENDPOINT_GUARD
-    BkdrvRecordSelfCheck(BktmpSubsystemDriver, BkwfpEndpointGuardSelfCheck(), BK_DIAG_COMPONENT_WFP_ENDPOINT_GUARD);
-#endif
 }
 
 static ULONGLONG BkdrvBeginSubsystemInit(_In_ UINT32 SubsystemId, _In_ UINT32 ComponentId)
@@ -261,6 +244,19 @@ static VOID BkdrvCompleteSubsystemInit(_In_ UINT32 SubsystemId, _In_ NTSTATUS St
     {
         BkdiagRecord(SubsystemId, BkDiagEventOnline, STATUS_SUCCESS, 0, 0, 0, ComponentId);
     }
+}
+
+static VOID BkdrvCompleteOptionalSubsystemUnavailable(_In_ UINT32 SubsystemId, _In_ ULONGLONG StartQpc,
+                                                      _In_ UINT32 ComponentId)
+{
+    UINT64 elapsedUs = BkdrvElapsedMicroseconds(StartQpc);
+
+    BkdiagComplete(SubsystemId, BkDiagEventDisabledByPolicy, STATUS_NOT_SUPPORTED, StartQpc,
+                   BK_DIAG_FLAG_OPTIONAL | BK_DIAG_FLAG_POLICY, 0, ComponentId);
+    BkcrashRecordCheckpoint(SubsystemId, BkDiagEventDisabledByPolicy, STATUS_NOT_SUPPORTED, ComponentId);
+    BKDRV_LOG_COMPONENT(DPFLTR_INFO_LEVEL, ComponentId,
+                        "BK: optional init-disabled ss=%lu comp=%lu status=0x%08X us=%I64u.\n", SubsystemId,
+                        ComponentId, STATUS_NOT_SUPPORTED, elapsedUs);
 }
 
 static NTSTATUS BkdrvSelfTest(VOID)
@@ -537,35 +533,6 @@ _Use_decl_annotations_ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICOD
         goto ExitFailure;
     }
     BkdrvMarkInitializedFlag(BK_INIT_NTAPI_MONITOR);
-
-    diagSubsystemStartQpc = BkdrvBeginSubsystemInit(BktmpSubsystemDriver, BK_DIAG_COMPONENT_BUGCHECK_MONITOR);
-    status = BkbugInitialize();
-    BkdrvCompleteSubsystemInit(BktmpSubsystemDriver, status, diagSubsystemStartQpc, BK_DIAG_COMPONENT_BUGCHECK_MONITOR);
-    if (!NT_SUCCESS(status))
-    {
-        BKDRV_LOG(DPFLTR_WARNING_LEVEL, "BK: optional bugcheck monitor unavailable (0x%08X); continuing.\n", status);
-        BkdiagRecord(BktmpSubsystemDriver, BkDiagEventDegradedContinuing, status, 0,
-                     BK_DIAG_FLAG_OPTIONAL | BK_DIAG_FLAG_CONTINUING, 0, BK_DIAG_COMPONENT_BUGCHECK_MONITOR);
-    }
-    else
-    {
-        BkdrvMarkInitializedFlag(BK_INIT_BUGCHECK_MONITOR);
-    }
-
-    diagSubsystemStartQpc = BkdrvBeginSubsystemInit(BktmpSubsystemDriver, BK_DIAG_COMPONENT_WFP_ENDPOINT_GUARD);
-    status = BkwfpEndpointGuardInitialize();
-    BkdrvCompleteSubsystemInit(BktmpSubsystemDriver, status, diagSubsystemStartQpc,
-                               BK_DIAG_COMPONENT_WFP_ENDPOINT_GUARD);
-    if (!NT_SUCCESS(status))
-    {
-        BKDRV_LOG(DPFLTR_WARNING_LEVEL, "BK: optional WFP endpoint guard unavailable (0x%08X); continuing.\n", status);
-        BkdiagRecord(BktmpSubsystemDriver, BkDiagEventDegradedContinuing, status, 0,
-                     BK_DIAG_FLAG_OPTIONAL | BK_DIAG_FLAG_CONTINUING, 0, BK_DIAG_COMPONENT_WFP_ENDPOINT_GUARD);
-    }
-    else
-    {
-        BkdrvMarkInitializedFlag(BK_INIT_ENDPOINT_GUARD);
-    }
 
     diagSubsystemStartQpc = BkdrvBeginSubsystemInit(BktmpSubsystemAntiTamper, BK_DIAG_COMPONENT_ANTI_TAMPER);
     status = BkatInitialize(DriverObject);

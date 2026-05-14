@@ -161,34 +161,6 @@ VOID BkctlPublishRegistryEvent(_In_ const BK_REGISTRY_EVENT *RegistryEvent)
     BktmpLeave(BktmpSubsystemControl, tempusStartQpc);
 }
 
-VOID BkctlPublishEnterpriseEvent(_In_ const BK_ENTERPRISE_EVENT *EnterpriseEvent)
-{
-    ULONGLONG tempusStartQpc = BktmpEnter(BktmpSubsystemControl);
-    BK_EVENT_RECORD record;
-
-    if (KeGetCurrentIrql() > APC_LEVEL)
-    {
-        BktmpLeave(BktmpSubsystemControl, tempusStartQpc);
-        return;
-    }
-    if (EnterpriseEvent == NULL || EnterpriseEvent->ProcessId == 0)
-    {
-        BktmpLeave(BktmpSubsystemControl, tempusStartQpc);
-        return;
-    }
-
-    RtlZeroMemory(&record, sizeof(record));
-    record.Header.Size = sizeof(record);
-    record.Header.Type = BlackbirdEventTypeEnterprise;
-    record.Header.StreamMask = BK_STREAM_ENTERPRISE;
-    record.Header.TimestampQpc = KeQueryPerformanceCounter(NULL).QuadPart;
-    record.Data.Enterprise = *EnterpriseEvent;
-
-    BkctlPublishRecordToSubscribers((UINT32)EnterpriseEvent->ProcessId, (UINT32)EnterpriseEvent->TargetProcessId,
-                                    BK_STREAM_ENTERPRISE, &record);
-    BktmpLeave(BktmpSubsystemControl, tempusStartQpc);
-}
-
 BOOLEAN
 BkctlSelfCheck(VOID)
 {

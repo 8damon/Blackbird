@@ -10,9 +10,9 @@
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
 
     <AssemblyName>BlackbirdInterface</AssemblyName>
-    <AssemblyTitle>Blackbird analyst interface</AssemblyTitle>
-    <Product>Blackbird Platform</Product>
-    <Description>Blackbird analyst interface</Description>
+    <AssemblyTitle>Blackbird Community analyst interface</AssemblyTitle>
+    <Product>Blackbird Community</Product>
+    <Description>Blackbird Community analyst interface</Description>
     <Company>TITAN Softwork Solutions</Company>
     <Version>2.0.0</Version>
     <AssemblyVersion>2.0.0.0</AssemblyVersion>
@@ -76,11 +76,11 @@
       <Link>App.xaml</Link>
     </ApplicationDefinition>
     <Page Include="..\Client\analysis\**\*.xaml"
-          Exclude="..\Client\analysis\App.xaml;..\Client\analysis\bin\**;..\Client\analysis\obj\**;..\Client\analysis\Windows\VmRegistrationWindow.xaml">
+          Exclude="..\Client\analysis\App.xaml;..\Client\analysis\bin\**;..\Client\analysis\obj\**">
       <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
     </Page>
     <Compile Include="..\Client\analysis\**\*.cs"
-             Exclude="..\Client\analysis\bin\**;..\Client\analysis\obj\**;..\Client\analysis\Services\OperatorIdentityService.cs;..\Client\analysis\Services\VmRegistrationPackageService.cs;..\Client\analysis\Windows\VmRegistrationWindow.xaml.cs">
+             Exclude="..\Client\analysis\bin\**;..\Client\analysis\obj\**">
       <Link>%(RecursiveDir)%(Filename)%(Extension)</Link>
     </Compile>
     <Resource Include="..\Client\analysis\Resources\BK.ico">
@@ -100,6 +100,16 @@
     </None>
     <None Include="..\x64\$(Configuration)\J58.dll" Condition="Exists('..\x64\$(Configuration)\J58.dll')">
       <Link>J58.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Include="..\x64\$(Configuration)\SR71.dll" Condition="Exists('..\x64\$(Configuration)\SR71.dll')">
+      <Link>SR71.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Include="..\x64\$(Configuration)\BlackbirdDllHost.exe" Condition="Exists('..\x64\$(Configuration)\BlackbirdDllHost.exe')">
+      <Link>BlackbirdDllHost.exe</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>

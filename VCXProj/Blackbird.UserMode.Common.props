@@ -2,11 +2,12 @@
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Label="BlackbirdUserModeIdentity">
     <BlackbirdCompanyName Condition="'$(BlackbirdCompanyName)'==''">TITAN Softwork Solutions</BlackbirdCompanyName>
-    <BlackbirdProductName Condition="'$(BlackbirdProductName)'==''">Blackbird Platform</BlackbirdProductName>
-    <BlackbirdFileDescription Condition="'$(BlackbirdFileDescription)'==''">Blackbird Platform User-Mode Component</BlackbirdFileDescription>
+    <BlackbirdProductName Condition="'$(BlackbirdProductName)'==''">Blackbird Community</BlackbirdProductName>
+    <BlackbirdFileDescription Condition="'$(BlackbirdFileDescription)'==''">Blackbird Community user-mode component</BlackbirdFileDescription>
     <BlackbirdInternalName Condition="'$(BlackbirdInternalName)'==''">Blackbird</BlackbirdInternalName>
     <BlackbirdOriginalFilename Condition="'$(BlackbirdOriginalFilename)'==''">Blackbird.bin</BlackbirdOriginalFilename>
-    <BlackbirdManifestIdentity Condition="'$(BlackbirdManifestIdentity)'==''">Blackbird.Platform.$(BlackbirdInternalName)</BlackbirdManifestIdentity>
+    <BlackbirdManifestIdentityPrefix Condition="'$(BlackbirdManifestIdentityPrefix)'==''">Blackbird.Community</BlackbirdManifestIdentityPrefix>
+    <BlackbirdManifestIdentity Condition="'$(BlackbirdManifestIdentity)'==''">$(BlackbirdManifestIdentityPrefix).$(BlackbirdInternalName)</BlackbirdManifestIdentity>
     <BlackbirdManifestPath>$(IntDir)$(TargetName).Blackbird.UserMode.manifest</BlackbirdManifestPath>
     <BlackbirdVersionRcPath>$(MSBuildThisFileDirectory)Blackbird.Version.rc</BlackbirdVersionRcPath>
     <BlackbirdSignEnabled Condition="'$(BlackbirdSignEnabled)'==''">false</BlackbirdSignEnabled>

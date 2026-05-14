@@ -107,7 +107,7 @@ namespace BK::DllHost
                 options.InstallEnable, options.InstallArgument.empty() ? nullptr : options.InstallArgument.c_str());
             return SUCCEEDED(hr) ? ERROR_SUCCESS : HRESULT_CODE(hr);
         }
-    }
+    } // namespace
 
     DWORD InvokeConfiguredMode(HMODULE module, const Options &options) noexcept
     {
@@ -129,4 +129,4 @@ namespace BK::DllHost
 
         return ERROR_INVALID_PARAMETER;
     }
-}
+} // namespace BK::DllHost

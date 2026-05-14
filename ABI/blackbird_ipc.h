@@ -34,7 +34,6 @@ typedef enum _BK_IPC_COMMAND
     BlackbirdIpcCommandControlProcessExecution = 14,
     BlackbirdIpcCommandSetRuntimeConfig = 15,
     BlackbirdIpcCommandGetRuntimeConfig = 16,
-    BlackbirdIpcCommandQueryProcessMemory = 17,
     BlackbirdIpcCommandUpgradeWinsockHooks = 18,
     BlackbirdIpcCommandRegisterInstrumentationRange = 19,
     BlackbirdIpcCommandRegisterHookPatch = 20,
@@ -149,6 +148,7 @@ typedef enum _BK_IPC_USER_HOOK_TARGET_MODE
 
 #define BKIPC_USER_HOOK_FLAG_LAUNCH_EARLYBIRD_APC 0x00000001u
 #define BKIPC_USER_HOOK_FLAG_DEFER_LAUNCH_GATE_RELEASE 0x00000002u
+#define BKIPC_USER_HOOK_FLAG_USERMODE_ONLY 0x00000004u
 #define BKIPC_MAX_LAUNCH_ENVIRONMENT_CHARS 4096
 #define BKIPC_MAX_LAUNCH_ARGUMENT_CHARS 2048
 
@@ -212,20 +212,6 @@ typedef struct _BK_IPC_NOTIFY_HOOK_READY_RESPONSE
     UINT32 RequiredMask;
     UINT32 PendingCommand;
 } BKIPC_NOTIFY_HOOK_READY_RESPONSE, *PBKIPC_NOTIFY_HOOK_READY_RESPONSE;
-
-typedef struct _BK_IPC_QUERY_PROCESS_MEMORY_REQUEST
-{
-    UINT32 ProcessId;
-    UINT32 RequestedSize;
-    UINT64 BaseAddress;
-} BKIPC_QUERY_PROCESS_MEMORY_REQUEST, *PBKIPC_QUERY_PROCESS_MEMORY_REQUEST;
-
-typedef struct _BK_IPC_QUERY_PROCESS_MEMORY_RESPONSE
-{
-    INT32 Status;
-    UINT32 BytesRead;
-    UINT64 SectionHandle;
-} BKIPC_QUERY_PROCESS_MEMORY_RESPONSE, *PBKIPC_QUERY_PROCESS_MEMORY_RESPONSE;
 
 typedef struct _BK_IPC_REGISTER_INSTRUMENTATION_RANGE_REQUEST
 {
@@ -461,8 +447,6 @@ typedef union _BK_IPC_PAYLOAD
     BKIPC_SET_USER_HOOK_TARGET_RESPONSE SetUserHookTargetResponse;
     BKIPC_NOTIFY_HOOK_READY_REQUEST NotifyHookReadyRequest;
     BKIPC_NOTIFY_HOOK_READY_RESPONSE NotifyHookReadyResponse;
-    BKIPC_QUERY_PROCESS_MEMORY_REQUEST QueryMemoryRequest;
-    BKIPC_QUERY_PROCESS_MEMORY_RESPONSE QueryMemoryResponse;
     BKIPC_REGISTER_INSTRUMENTATION_RANGE_REQUEST RegisterInstrumentationRangeRequest;
     BKIPC_REGISTER_HOOK_PATCH_REQUEST RegisterHookPatchRequest;
     BK_REGISTER_PROCESS_INSTRUMENTATION_CALLBACK_REQUEST RegisterProcessInstrumentationCallbackRequest;

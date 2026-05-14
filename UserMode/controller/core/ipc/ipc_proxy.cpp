@@ -387,7 +387,7 @@ BOOL ControllerProxyRegisterHookPatch(_In_ DWORD ProcessId, _In_ UINT64 PatchAdd
 }
 
 BOOL ControllerProxyRegisterProcessInstrumentationCallback(_In_ DWORD ProcessId, _In_ UINT64 CallbackAddress,
-                                                          _In_ UINT64 CallbackSize, _In_ UINT32 Flags)
+                                                           _In_ UINT64 CallbackSize, _In_ UINT32 Flags)
 {
     BK_REGISTER_PROCESS_INSTRUMENTATION_CALLBACK_REQUEST req;
     HANDLE handle = INVALID_HANDLE_VALUE;
@@ -415,91 +415,4 @@ BOOL ControllerProxyRegisterProcessInstrumentationCallback(_In_ DWORD ProcessId,
         SetLastError(err);
     }
     return ok;
-}
-
-BOOL ControllerProxyReadProcessMemory(_In_ DWORD ProcessId, _In_ UINT64 BaseAddress, _In_ DWORD RequestedSize,
-                                      _In_ HANDLE ClientProcessHandle, _Out_ HANDLE *OutDupSectionHandle,
-                                      _Out_ DWORD *OutBytesRead)
-{
-    BK_READ_MEMORY_RESPONSE resp;
-    HANDLE hSection = NULL;
-    HANDLE hDup = NULL;
-    PVOID pView = NULL;
-    HANDLE handle = INVALID_HANDLE_VALUE;
-    BOOL ok = FALSE;
-    DWORD bytesReturned = 0;
-    BK_READ_MEMORY_REQUEST req;
-
-    if (OutDupSectionHandle == NULL || OutBytesRead == NULL || ClientProcessHandle == NULL ||
-        ClientProcessHandle == INVALID_HANDLE_VALUE || ProcessId == 0 || RequestedSize == 0)
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-
-    *OutDupSectionHandle = NULL;
-    *OutBytesRead = 0;
-
-    ZeroMemory(&req, sizeof(req));
-    ZeroMemory(&resp, sizeof(resp));
-    req.ProcessId = ProcessId;
-    req.BaseAddress = BaseAddress;
-    req.Size = (RequestedSize < BK_MAX_MEMORY_READ_BYTES) ? RequestedSize : BK_MAX_MEMORY_READ_BYTES;
-
-    ok = ControllerOpenDriverProxyHandle(&handle, "read-process-memory") &&
-         DeviceIoControl(handle, (DWORD)IOCTL_BK_READ_MEMORY, &req, (DWORD)sizeof(req), &resp, (DWORD)sizeof(resp),
-                         &bytesReturned, NULL);
-    {
-        DWORD ioctlErr = ok ? ERROR_SUCCESS : GetLastError();
-        ControllerCloseDriverProxyHandle(handle);
-        if (!ok)
-        {
-            SetLastError(ioctlErr);
-        }
-    }
-
-    if (!ok)
-    {
-        DWORD err = GetLastError();
-        ControllerLog("[DISASM] ControllerProxyReadProcessMemory: IOCTL failed pid=%lu base=0x%016I64X win32=%lu\n",
-                      ProcessId, BaseAddress, err);
-        SetLastError(err);
-        return FALSE;
-    }
-
-    if (bytesReturned < offsetof(BK_READ_MEMORY_RESPONSE, Data) || resp.BytesRead == 0)
-    {
-        ControllerLog(
-            "[DISASM] ControllerProxyReadProcessMemory: IOCTL ok but no data pid=%lu base=0x%016I64X returned=%lu bytesRead=%lu ntStatus=0x%08X\n",
-            ProcessId, BaseAddress, bytesReturned, resp.BytesRead, (DWORD)resp.Status);
-        SetLastError(ERROR_NO_DATA);
-        return FALSE;
-    }
-
-    hSection = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, resp.BytesRead, NULL);
-    if (hSection == NULL)
-    {
-        return FALSE;
-    }
-
-    pView = MapViewOfFile(hSection, FILE_MAP_WRITE, 0, 0, resp.BytesRead);
-    if (pView == NULL)
-    {
-        CloseHandle(hSection);
-        return FALSE;
-    }
-
-    CopyMemory(pView, resp.Data, resp.BytesRead);
-    UnmapViewOfFile(pView);
-
-    if (!DuplicateHandle(GetCurrentProcess(), hSection, ClientProcessHandle, &hDup, FILE_MAP_READ, FALSE, 0))
-    {
-        CloseHandle(hSection);
-        return FALSE;
-    }
-
-    CloseHandle(hSection);
-    *OutDupSectionHandle = hDup;
-    *OutBytesRead = resp.BytesRead;
-    return TRUE;
 }

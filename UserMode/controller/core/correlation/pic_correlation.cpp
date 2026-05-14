@@ -24,8 +24,7 @@ namespace
 
     bool PicEventIsDirectSyscall(_In_ const BKIPC_ETW_EVENT *Event)
     {
-        return Event != nullptr &&
-               ControllerAsciiEqualsInsensitive(Event->DetectionName, "PIC_DIRECT_SYSCALL_SUSPECT");
+        return Event != nullptr && ControllerAsciiEqualsInsensitive(Event->DetectionName, "PIC_DIRECT_SYSCALL_SUSPECT");
     }
 
     DWORD PicPrimaryPid(_In_ const BKIPC_ETW_EVENT *Event)
@@ -126,12 +125,12 @@ namespace
         const ULONGLONG now = GetTickCount64();
         const ULONGLONG ageMs = (now >= Fact.LastTick) ? (now - Fact.LastTick) : 0;
 
-        (void)StringCchPrintfW(suffix, RTL_NUMBER_OF(suffix),
-                               L"; pic.directSyscall pc=0x%llX ageMs=%llu protect=0x%X allocationBase=0x%llX regionSize=0x%llX count=%lu",
-                               static_cast<unsigned long long>(Fact.ReturnPc), static_cast<unsigned long long>(ageMs),
-                               static_cast<unsigned int>(Fact.Protect),
-                               static_cast<unsigned long long>(Fact.AllocationBase),
-                               static_cast<unsigned long long>(Fact.RegionSize), static_cast<unsigned long>(Fact.Count));
+        (void)StringCchPrintfW(
+            suffix, RTL_NUMBER_OF(suffix),
+            L"; pic.directSyscall pc=0x%llX ageMs=%llu protect=0x%X allocationBase=0x%llX regionSize=0x%llX count=%lu",
+            static_cast<unsigned long long>(Fact.ReturnPc), static_cast<unsigned long long>(ageMs),
+            static_cast<unsigned int>(Fact.Protect), static_cast<unsigned long long>(Fact.AllocationBase),
+            static_cast<unsigned long long>(Fact.RegionSize), static_cast<unsigned long>(Fact.Count));
 
         if (SUCCEEDED(StringCchLengthW(Event->Reason, RTL_NUMBER_OF(Event->Reason), &reasonLen)) && reasonLen != 0)
         {
@@ -161,7 +160,7 @@ namespace
                ControllerAsciiContainsInsensitive(Event->Operation, Text) ||
                ControllerAsciiContainsInsensitive(Event->ClassName, Text);
     }
-}
+} // namespace
 
 VOID ControllerPicCorrelationObserve(_In_ const BKIPC_ETW_EVENT *Event)
 {
@@ -202,7 +201,8 @@ VOID ControllerPicCorrelationApply(_Inout_ BKIPC_ETW_EVENT *Event)
     }
 
     ControllerPicCorrelationObserve(Event);
-    if (PicEventIsDirectSyscall(Event) || ControllerAsciiEqualsInsensitive(Event->DetectionName, "BK_INSTRUMENTATION") ||
+    if (PicEventIsDirectSyscall(Event) ||
+        ControllerAsciiEqualsInsensitive(Event->DetectionName, "BK_INSTRUMENTATION") ||
         (Event->Reserved2 & BKIPC_ETW_TRAIT_BLACKBIRD_OWN) != 0)
     {
         return;
@@ -224,8 +224,8 @@ VOID ControllerPicCorrelationApply(_Inout_ BKIPC_ETW_EVENT *Event)
                                           BKIPC_ETW_TRAIT_MEMORY_PROTECT_RX)) != 0;
     const bool remoteExecution = (traits & BKIPC_ETW_TRAIT_REMOTE_EXECUTION) != 0;
     const bool credentialAccess = (traits & BKIPC_ETW_TRAIT_CREDENTIAL_ACCESS) != 0;
-    const bool imageTamper = (traits & BKIPC_ETW_TRAIT_IMAGE_TAMPER) != 0 ||
-                             PicDetectionContains(Event, "HOLLOW") || PicDetectionContains(Event, "MANUAL_MAP") ||
+    const bool imageTamper = (traits & BKIPC_ETW_TRAIT_IMAGE_TAMPER) != 0 || PicDetectionContains(Event, "HOLLOW") ||
+                             PicDetectionContains(Event, "MANUAL_MAP") ||
                              PicDetectionContains(Event, "NON_IMAGE_EXECUTABLE_REGION");
     const bool antiAnalysis = PicDetectionContains(Event, "PROCESS_RECON") ||
                               ControllerAsciiEqualsInsensitive(Event->Operation, "NtQueryInformationProcess") ||
@@ -246,7 +246,8 @@ VOID ControllerPicCorrelationApply(_Inout_ BKIPC_ETW_EVENT *Event)
     }
     else if (memoryStaging)
     {
-        const bool remoteTarget = Event->TargetPid != 0 && Event->ProcessId != 0 && Event->TargetPid != Event->ProcessId;
+        const bool remoteTarget =
+            Event->TargetPid != 0 && Event->ProcessId != 0 && Event->TargetPid != Event->ProcessId;
         PicPromote(Event, "DIRECT_SYSCALL_SHELLCODE_STAGING", remoteTarget ? 8u : 7u, fact);
     }
     else if (antiAnalysis)

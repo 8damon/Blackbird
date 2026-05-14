@@ -356,8 +356,15 @@ namespace BlackbirdInterface
             string sensorOrigin = EventDetailFormatting.ClassifyHookSensorOrigin(entry);
             if (!string.IsNullOrWhiteSpace(entry.DetectionName))
             {
-                return sensorOrigin == "Unclassified" ? entry.DetectionName
-                                                      : $"{sensorOrigin.ToUpperInvariant()} | {entry.DetectionName}";
+                string detection = OperatorDetectionFormatter.Format(
+                    entry.DetectionName, entry.ActorPid, entry.TargetPid,
+                    string.IsNullOrWhiteSpace(entry.Operation) ? entry.EventName : entry.Operation);
+                if (string.IsNullOrWhiteSpace(detection))
+                {
+                    detection = entry.DetectionName;
+                }
+
+                return sensorOrigin == "Unclassified" ? detection : $"{sensorOrigin.ToUpperInvariant()} | {detection}";
             }
 
             string eventName = (entry.EventName ?? string.Empty).Trim();

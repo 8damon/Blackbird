@@ -15,11 +15,18 @@ namespace BlackbirdInterface
         private readonly bool _isDllTarget;
 
         public bool UseUsermodeHooks { get; private set; } = true;
-        public bool AutoOpenApiGraphWindow { get; private set; }
+        public bool UseKernelDriver { get; private set; } = true;
         public bool UseEarlyBirdApcLaunch { get; private set; }
+        public bool EnableSignatureIntel { get; private set; } = true;
+        public bool EnableSignatureIntelMemoryScan { get; private set; } = true;
+        public bool EnableSignatureIntelPageScan { get; private set; } = true;
         public LaunchProfile LaunchProfile { get; } = new();
 
-        public LaunchParametersWindow(bool isLaunchTarget, LaunchTargetKind targetKind = LaunchTargetKind.Executable)
+        public LaunchParametersWindow(bool isLaunchTarget, LaunchTargetKind targetKind = LaunchTargetKind.Executable,
+                                      bool defaultUseUsermodeHooks = true, bool defaultUseKernelDriver = true,
+                                      uint defaultRuntimeFlags = 0, bool defaultSignatureIntel = true,
+                                      bool defaultSignatureIntelMemoryScan = true,
+                                      bool defaultSignatureIntelPageScan = true)
         {
             _isLaunchTarget = isLaunchTarget;
             _targetKind = isLaunchTarget ? targetKind : LaunchTargetKind.Executable;
@@ -27,6 +34,55 @@ namespace BlackbirdInterface
 
             InitializeComponent();
             WindowThemeHelper.WireThemeAwareTitleBar(this);
+            if (UseKernelDriverCheckBox != null)
+            {
+                UseKernelDriverCheckBox.IsChecked = defaultUseKernelDriver;
+            }
+            if (EnableKernelHooksCheckBox != null)
+            {
+                EnableKernelHooksCheckBox.IsChecked =
+                    defaultUseKernelDriver &&
+                    (defaultRuntimeFlags & BlackbirdNative.RuntimeFlagNtApiHooksDisarmed) == 0;
+            }
+            if (UseUsermodeHooksCheckBox != null)
+            {
+                UseUsermodeHooksCheckBox.IsChecked = defaultUseUsermodeHooks;
+            }
+            if (EnableAntiVirtualizationMaskingCheckBox != null)
+            {
+                EnableAntiVirtualizationMaskingCheckBox.IsChecked =
+                    defaultUseKernelDriver &&
+                    (defaultRuntimeFlags & BlackbirdNative.RuntimeFlagAntiVirtualization) != 0;
+            }
+            if (EnableQpcTimingCompensationCheckBox != null)
+            {
+                EnableQpcTimingCompensationCheckBox.IsChecked =
+                    (defaultRuntimeFlags & BlackbirdNative.RuntimeFlagAntiVirtualization) != 0 &&
+                    (defaultRuntimeFlags & BlackbirdNative.RuntimeFlagQpcTimingDisabled) == 0;
+            }
+            if (EnableControllerConcealmentCheckBox != null)
+            {
+                EnableControllerConcealmentCheckBox.IsChecked =
+                    defaultUseKernelDriver && (defaultRuntimeFlags & BlackbirdNative.RuntimeFlagSelfHide) != 0;
+            }
+            if (EnableInterfaceProtectedAccessCheckBox != null)
+            {
+                EnableInterfaceProtectedAccessCheckBox.IsChecked =
+                    defaultUseKernelDriver &&
+                    (defaultRuntimeFlags & BlackbirdNative.RuntimeFlagInterfaceProtectedAccess) != 0;
+            }
+            if (EnableSignatureIntelCheckBox != null)
+            {
+                EnableSignatureIntelCheckBox.IsChecked = defaultSignatureIntel;
+            }
+            if (EnableSignatureIntelMemoryScanCheckBox != null)
+            {
+                EnableSignatureIntelMemoryScanCheckBox.IsChecked = defaultSignatureIntelMemoryScan;
+            }
+            if (EnableSignatureIntelPageScanCheckBox != null)
+            {
+                EnableSignatureIntelPageScanCheckBox.IsChecked = defaultSignatureIntelPageScan;
+            }
             InitializeDefaultParentPid();
             UpdateUi();
         }
@@ -49,8 +105,19 @@ namespace BlackbirdInterface
             }
 
             bool hooksEnabled = UseUsermodeHooksCheckBox?.IsChecked == true;
+            bool driverEnabled = UseKernelDriverCheckBox?.IsChecked == true;
+            bool kernelHooksEnabled = driverEnabled && EnableKernelHooksCheckBox?.IsChecked == true;
             bool canUseEarlyBird = hooksEnabled && _isLaunchTarget;
             bool launchControlsEnabled = _isLaunchTarget;
+
+            if (EnableKernelHooksCheckBox != null)
+            {
+                EnableKernelHooksCheckBox.IsEnabled = driverEnabled;
+                if (!driverEnabled)
+                {
+                    EnableKernelHooksCheckBox.IsChecked = false;
+                }
+            }
 
             if (ModeTitleBlock != null)
             {
@@ -69,15 +136,6 @@ namespace BlackbirdInterface
                         : "Attach mode keeps the instrumentation controls, but launch-only options stay disabled because the process already exists.";
             }
 
-            if (AutoOpenApiGraphCheckBox != null)
-            {
-                AutoOpenApiGraphCheckBox.IsEnabled = hooksEnabled;
-                if (!hooksEnabled)
-                {
-                    AutoOpenApiGraphCheckBox.IsChecked = false;
-                }
-            }
-
             if (EarlyBirdApcCheckBox != null)
             {
                 EarlyBirdApcCheckBox.IsEnabled = false;
@@ -93,10 +151,79 @@ namespace BlackbirdInterface
                 }
             }
 
+            if (EnableAntiVirtualizationMaskingCheckBox != null)
+            {
+                EnableAntiVirtualizationMaskingCheckBox.IsEnabled = kernelHooksEnabled;
+                if (!kernelHooksEnabled)
+                {
+                    EnableAntiVirtualizationMaskingCheckBox.IsChecked = false;
+                }
+            }
+
+            bool antiVirtualizationEnabled =
+                kernelHooksEnabled && EnableAntiVirtualizationMaskingCheckBox?.IsChecked == true;
+            if (EnableQpcTimingCompensationCheckBox != null)
+            {
+                EnableQpcTimingCompensationCheckBox.IsEnabled = antiVirtualizationEnabled;
+                if (!antiVirtualizationEnabled)
+                {
+                    EnableQpcTimingCompensationCheckBox.IsChecked = false;
+                }
+            }
+
+            if (EnableControllerConcealmentCheckBox != null)
+            {
+                EnableControllerConcealmentCheckBox.IsEnabled = driverEnabled;
+                if (!driverEnabled)
+                {
+                    EnableControllerConcealmentCheckBox.IsChecked = false;
+                }
+            }
+
+            if (EnableInterfaceProtectedAccessCheckBox != null)
+            {
+                EnableInterfaceProtectedAccessCheckBox.IsEnabled = driverEnabled;
+                if (!driverEnabled)
+                {
+                    EnableInterfaceProtectedAccessCheckBox.IsChecked = false;
+                }
+            }
+
+            bool signatureIntelEnabled = EnableSignatureIntelCheckBox?.IsChecked == true;
+            if (EnableSignatureIntelMemoryScanCheckBox != null)
+            {
+                EnableSignatureIntelMemoryScanCheckBox.IsEnabled = signatureIntelEnabled;
+                if (!signatureIntelEnabled)
+                {
+                    EnableSignatureIntelMemoryScanCheckBox.IsChecked = false;
+                }
+            }
+
+            if (EnableSignatureIntelPageScanCheckBox != null)
+            {
+                EnableSignatureIntelPageScanCheckBox.IsEnabled = signatureIntelEnabled;
+                if (!signatureIntelEnabled)
+                {
+                    EnableSignatureIntelPageScanCheckBox.IsChecked = false;
+                }
+            }
+
             if (LaunchPhaseOnePanel != null)
             {
                 LaunchPhaseOnePanel.IsEnabled = launchControlsEnabled;
                 LaunchPhaseOnePanel.Opacity = launchControlsEnabled ? 1.0 : 0.55;
+            }
+
+            if (LeaveSuspendedCheckBox != null)
+            {
+                LeaveSuspendedCheckBox.IsEnabled = launchControlsEnabled && hooksEnabled;
+                LeaveSuspendedCheckBox.ToolTip =
+                    hooksEnabled ? "Keep the target suspended after SR71 reaches the ready-to-resume gate."
+                                 : "Requires SR71 usermode hooks; disabled because SR71 is off for this launch.";
+                if (!hooksEnabled)
+                {
+                    LeaveSuspendedCheckBox.IsChecked = false;
+                }
             }
 
             if (CommandLineArgumentsTextBox != null)
@@ -130,7 +257,9 @@ namespace BlackbirdInterface
             if (CompatibilityNoteBlock != null)
             {
                 CompatibilityNoteBlock.Text =
-                    _isDllTarget
+                    !driverEnabled
+                        ? "Driverless mode keeps SR71/user-mode telemetry available but disables kernel-only filesystem, registry, handle, and driver health visibility for this session."
+                    : _isDllTarget
                         ? "DLL analysis requires the staged hook launch so Blackbird can bind kernel and hook attribution to the DLL rather than the host image."
                         : (_isLaunchTarget
                                ? "Spoof parent PID defaults to the interactive shell so the target does not obviously appear controller-launched. Override it for a specific launcher."
@@ -145,7 +274,8 @@ namespace BlackbirdInterface
                 return;
             }
 
-            DllLaunchMode mode = DllModeComboBox?.SelectedIndex switch {
+            DllLaunchMode mode = DllModeComboBox?.SelectedIndex switch
+            {
                 1 => DllLaunchMode.Export,
                 2 => DllLaunchMode.Rundll,
                 3 => DllLaunchMode.Register,
@@ -270,12 +400,28 @@ namespace BlackbirdInterface
                                                      : string.Empty;
             LaunchProfile.EnvironmentOverridesText =
                 _isLaunchTarget ? (EnvironmentOverridesTextBox?.Text ?? string.Empty) : string.Empty;
-            LaunchProfile.LeaveSuspendedAfterReady = _isLaunchTarget && (LeaveSuspendedCheckBox?.IsChecked == true);
+            bool driverEnabled = UseKernelDriverCheckBox?.IsChecked == true;
+            bool hooksEnabled = UseUsermodeHooksCheckBox?.IsChecked == true;
+            bool kernelHooksEnabled = driverEnabled && EnableKernelHooksCheckBox?.IsChecked == true;
+            bool antiVirtualizationEnabled =
+                kernelHooksEnabled && EnableAntiVirtualizationMaskingCheckBox?.IsChecked == true;
+            LaunchProfile.EnableKernelHooks = kernelHooksEnabled;
+            LaunchProfile.EnableAntiVirtualizationMasking = antiVirtualizationEnabled;
+            LaunchProfile.EnableQpcTimingCompensation =
+                antiVirtualizationEnabled && EnableQpcTimingCompensationCheckBox?.IsChecked == true;
+            LaunchProfile.EnableControllerConcealment =
+                driverEnabled && EnableControllerConcealmentCheckBox?.IsChecked == true;
+            LaunchProfile.EnableInterfaceProtectedAccess =
+                driverEnabled && EnableInterfaceProtectedAccessCheckBox?.IsChecked == true;
+            LaunchProfile.EnableControllerProtectedAccess = driverEnabled;
+            LaunchProfile.LeaveSuspendedAfterReady =
+                _isLaunchTarget && hooksEnabled && (LeaveSuspendedCheckBox?.IsChecked == true);
             LaunchProfile.ConcealHookPresence = _isLaunchTarget && (ConcealHookPresenceCheckBox?.IsChecked == true);
             LaunchProfile.InheritHandles = _isLaunchTarget && (InheritHandlesCheckBox?.IsChecked == true);
             LaunchProfile.ParentProcessId = 0;
             LaunchProfile.AffinityMask = 0;
-            LaunchProfile.Priority = PriorityComboBox?.SelectedIndex switch {
+            LaunchProfile.Priority = PriorityComboBox?.SelectedIndex switch
+            {
                 1 => LaunchPriorityPreset.Idle,
                 2 => LaunchPriorityPreset.BelowNormal,
                 3 => LaunchPriorityPreset.Normal,
@@ -339,7 +485,8 @@ namespace BlackbirdInterface
         private bool TryPopulateDllOptions(out string error)
         {
             error = string.Empty;
-            LaunchProfile.DllMode = DllModeComboBox?.SelectedIndex switch {
+            LaunchProfile.DllMode = DllModeComboBox?.SelectedIndex switch
+            {
                 1 => DllLaunchMode.Export,
                 2 => DllLaunchMode.Rundll,
                 3 => DllLaunchMode.Register,
@@ -447,13 +594,17 @@ namespace BlackbirdInterface
 
         private void ApplyLaunchHookOptions()
         {
-            LaunchHookOptions state =
-                LaunchHookOptions.Capture(UseUsermodeHooksCheckBox?.IsChecked, AutoOpenApiGraphCheckBox?.IsChecked,
-                                          EarlyBirdApcCheckBox?.IsChecked, _isLaunchTarget);
+            LaunchHookOptions state = LaunchHookOptions.Capture(UseUsermodeHooksCheckBox?.IsChecked,
+                                                                EarlyBirdApcCheckBox?.IsChecked, _isLaunchTarget);
 
             UseUsermodeHooks = state.UseUsermodeHooks;
-            AutoOpenApiGraphWindow = state.AutoOpenApiGraphWindow;
+            UseKernelDriver = UseKernelDriverCheckBox?.IsChecked == true;
             UseEarlyBirdApcLaunch = state.UseEarlyBirdApcLaunch;
+            EnableSignatureIntel = EnableSignatureIntelCheckBox?.IsChecked == true;
+            EnableSignatureIntelMemoryScan =
+                EnableSignatureIntel && EnableSignatureIntelMemoryScanCheckBox?.IsChecked == true;
+            EnableSignatureIntelPageScan =
+                EnableSignatureIntel && EnableSignatureIntelPageScanCheckBox?.IsChecked == true;
             if (_isDllTarget)
             {
                 UseUsermodeHooks = true;

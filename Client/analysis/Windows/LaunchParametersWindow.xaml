@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Launch Parameters"
         Width="720"
-        Height="760"
+        Height="840"
         MinWidth="720"
-        MinHeight="700"
+        MinHeight="760"
         WindowStartupLocation="CenterOwner"
         WindowStyle="None"
         ResizeMode="CanResize"
@@ -175,16 +175,61 @@
                             <StackPanel>
                                 <TextBlock FontWeight="SemiBold"
                                            Text="Instrumentation"/>
-                                <CheckBox x:Name="UseUsermodeHooksCheckBox"
+                                <CheckBox x:Name="UseKernelDriverCheckBox"
                                           Margin="0,10,0,0"
-                                          Content="Enable usermode hooks"
+                                          Content="Use KM driver telemetry"
                                           IsChecked="True"
                                           Checked="UseUsermodeHooksCheckBox_Changed"
                                           Unchecked="UseUsermodeHooksCheckBox_Changed"/>
-                                <CheckBox x:Name="AutoOpenApiGraphCheckBox"
+                                <CheckBox x:Name="EnableKernelHooksCheckBox"
                                           Margin="0,8,0,0"
-                                          Content="Auto-switch to API view"
-                                          IsChecked="False"/>
+                                          Content="Enable kernel NTAPI hooks"
+                                          IsChecked="True"
+                                          Checked="UseUsermodeHooksCheckBox_Changed"
+                                          Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                <CheckBox x:Name="UseUsermodeHooksCheckBox"
+                                          Margin="0,8,0,0"
+                                          Content="Enable SR71 usermode hooks"
+                                          IsChecked="True"
+                                          Checked="UseUsermodeHooksCheckBox_Changed"
+                                          Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="12"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="8"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <CheckBox x:Name="EnableAntiVirtualizationMaskingCheckBox"
+                                              Grid.Row="0"
+                                              Grid.Column="0"
+                                              Content="Enable anti-virtualization masking"
+                                              Checked="UseUsermodeHooksCheckBox_Changed"
+                                              Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                    <CheckBox x:Name="EnableControllerConcealmentCheckBox"
+                                              Grid.Row="0"
+                                              Grid.Column="2"
+                                              Content="Conceal Blackbird runtime presence"
+                                              Checked="UseUsermodeHooksCheckBox_Changed"
+                                              Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                    <CheckBox x:Name="EnableQpcTimingCompensationCheckBox"
+                                              Grid.Row="2"
+                                              Grid.Column="0"
+                                              Content="Compensate QPC timing checks"
+                                              IsChecked="True"
+                                              Checked="UseUsermodeHooksCheckBox_Changed"
+                                              Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                    <CheckBox x:Name="EnableInterfaceProtectedAccessCheckBox"
+                                              Grid.Row="2"
+                                              Grid.Column="2"
+                                              Content="Protect interface handles"
+                                              Checked="UseUsermodeHooksCheckBox_Changed"
+                                              Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                </Grid>
                                 <CheckBox x:Name="EarlyBirdApcCheckBox"
                                           Margin="0,8,0,0"
                                           Content="Launch via APC (required)"
@@ -339,6 +384,49 @@
                                         <ComboBoxItem Content="High (admin)"/>
                                         <ComboBoxItem Content="SYSTEM"/>
                                     </ComboBox>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Margin="0,12,0,0"
+                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                BorderThickness="1"
+                                Background="{DynamicResource WinPanelBrush}"
+                                Padding="10,10">
+                            <StackPanel>
+                                <TextBlock FontWeight="SemiBold"
+                                           Text="Rules Intel"/>
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="12"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="8"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    <CheckBox x:Name="EnableSignatureIntelCheckBox"
+                                              Grid.Row="0"
+                                              Grid.Column="0"
+                                              Content="Enable offline rules intel"
+                                              IsChecked="True"
+                                              Checked="UseUsermodeHooksCheckBox_Changed"
+                                              Unchecked="UseUsermodeHooksCheckBox_Changed"/>
+                                    <CheckBox x:Name="EnableSignatureIntelMemoryScanCheckBox"
+                                              Grid.Row="0"
+                                              Grid.Column="2"
+                                              Content="Scan process memory"/>
+                                    <CheckBox x:Name="EnableSignatureIntelPageScanCheckBox"
+                                              Grid.Row="2"
+                                              Grid.Column="0"
+                                              Content="Scan page samples"/>
+                                    <TextBlock Grid.Row="2"
+                                               Grid.Column="2"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource WinMutedTextBrush}"
+                                               Text="YARA, MITRE, SIGMA and hash rules load from local packs."/>
                                 </Grid>
                             </StackPanel>
                         </Border>

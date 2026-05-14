@@ -34,6 +34,9 @@ namespace BlackbirdInterface
         private static readonly GetModuleBaseRoutine64 s_getModuleBase = SymGetModuleBase64;
         private static readonly object s_dbgHelpLock = new();
 
+        public static bool AutomaticFallbackCaptureEnabled =>
+            IsTruthyEnvironmentValue(Environment.GetEnvironmentVariable("BK_UI_LIVE_THREAD_STACK_FALLBACK"));
+
         public static ThreadStackResolveResult Resolve(int pid, int tid, string state)
         {
             if (!Environment.Is64BitProcess)
@@ -202,6 +205,14 @@ namespace BlackbirdInterface
                 R14 = context.R14, R15 = context.R15, Dr0 = context.Dr0, Dr1 = context.Dr1,      Dr2 = context.Dr2,
                 Dr3 = context.Dr3, Dr6 = context.Dr6, Dr7 = context.Dr7, EFlags = context.EFlags
             };
+        }
+
+        private static bool IsTruthyEnvironmentValue(string? value)
+        {
+            return !string.IsNullOrWhiteSpace(value) && (value.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+                                                         value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+                                                         value.Equals("yes", StringComparison.OrdinalIgnoreCase) ||
+                                                         value.Equals("on", StringComparison.OrdinalIgnoreCase));
         }
 
         private static void TryReadThreadMetadata(IntPtr hProcess, IntPtr hThread, out ulong tebAddress,

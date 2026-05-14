@@ -461,20 +461,17 @@ namespace BlackbirdInterface.Capture
             CaptureEventKind kind =
                 record.Type switch { BlackbirdNative.EventTypeFileSystem => CaptureEventKind.FilesystemRaw,
                                      BlackbirdNative.EventTypeRegistry => CaptureEventKind.RegistryRaw,
-                                     BlackbirdNative.EventTypeEnterprise => CaptureEventKind.EnterpriseRaw,
                                      BlackbirdNative.EventTypeThread => CaptureEventKind.ThreadLifecycle,
                                      _ => CaptureEventKind.IoctlRaw };
             string group = record.Type switch { BlackbirdNative.EventTypeHandle => "ioctl-handle",
                                                 BlackbirdNative.EventTypeThread => "ioctl-thread",
                                                 BlackbirdNative.EventTypeFileSystem => "ioctl-filesystem",
                                                 BlackbirdNative.EventTypeRegistry => "ioctl-registry",
-                                                BlackbirdNative.EventTypeEnterprise => "ioctl-enterprise",
                                                 _ => "ioctl" };
             string subtype = record.Type switch { BlackbirdNative.EventTypeHandle => "Handle",
                                                   BlackbirdNative.EventTypeThread => "Thread",
                                                   BlackbirdNative.EventTypeFileSystem => "Filesystem",
                                                   BlackbirdNative.EventTypeRegistry => "Registry",
-                                                  BlackbirdNative.EventTypeEnterprise => "Enterprise",
                                                   _ => "Unknown" };
             string summary = record.Type switch {
                 BlackbirdNative.EventTypeThread => $"thread {record.ThreadId} start=0x{record.StartAddress:X}",
@@ -485,8 +482,6 @@ namespace BlackbirdInterface.Capture
                                                      : string.IsNullOrWhiteSpace(record.RegistryValueName)
                                                          ? record.RegistryKeyPath
                                                          : $"{record.RegistryKeyPath}\\{record.RegistryValueName}",
-                BlackbirdNative.EventTypeEnterprise =>
-                    $"enterprise op={record.EnterpriseOperation} actor={record.EnterpriseProcessPid} target={record.EnterpriseTargetProcessPid}",
                 _ => $"caller={record.CallerPid} target={record.TargetPid} access=0x{record.DesiredAccess:X8}"
             };
             byte[]? stackBytes = record.StackSnapshotSize > 0 && record.StackSnapshot.Length > 0
@@ -501,13 +496,9 @@ namespace BlackbirdInterface.Capture
                 PID = record.Type == BlackbirdNative.EventTypeThread ? unchecked((int)record.ProcessPid)
                       : record.Type == BlackbirdNative.EventTypeRegistry
                           ? unchecked((int)record.RegistryProcessPid)
-                      : record.Type == BlackbirdNative.EventTypeEnterprise
-                          ? unchecked((int)record.EnterpriseProcessPid)
                           : unchecked((int)(record.CallerPid != 0 ? record.CallerPid : record.FileProcessPid)),
                 TID = record.Type == BlackbirdNative.EventTypeRegistry
                           ? unchecked((int)record.RegistryThreadId)
-                      : record.Type == BlackbirdNative.EventTypeEnterprise
-                          ? unchecked((int)record.EnterpriseThreadId)
                           : unchecked((int)(record.ThreadId != 0 ? record.ThreadId : record.FileThreadId)),
                 Group = group,
                 SubType = subtype,
@@ -523,8 +514,6 @@ namespace BlackbirdInterface.Capture
                 Kind = kind,
                 Flags = (byte)(record.Type == BlackbirdNative.EventTypeThread     ? (record.ThreadFlags & 0xFF)
                                : record.Type == BlackbirdNative.EventTypeRegistry ? (record.RegistryFlags & 0xFF)
-                               : record.Type == BlackbirdNative.EventTypeEnterprise
-                                   ? (record.EnterpriseFlags & 0xFF)
                                                                                   : (record.HandleFlags & 0xFF)),
                 Group = group,
                 SubType = subtype,
@@ -656,27 +645,6 @@ namespace BlackbirdInterface.Capture
                                                       KeyPath = NormalizeText(record.RegistryKeyPath),
                                                       ValueName = NormalizeText(record.RegistryValueName) };
             }
-            else if (record.Type == BlackbirdNative.EventTypeEnterprise)
-            {
-                payload.Enterprise =
-                    new CaptureIoctlEnterprisePayload { ProcessPid = record.EnterpriseProcessPid,
-                                                        ThreadId = record.EnterpriseThreadId,
-                                                        TargetProcessPid = record.EnterpriseTargetProcessPid,
-                                                        TargetThreadId = record.EnterpriseTargetThreadId,
-                                                        ObjectAddress = record.EnterpriseObjectAddress,
-                                                        Aux0 = record.EnterpriseAux0,
-                                                        Aux1 = record.EnterpriseAux1,
-                                                        Operation = record.EnterpriseOperation,
-                                                        SubOperation = record.EnterpriseSubOperation,
-                                                        Flags = record.EnterpriseFlags,
-                                                        DesiredAccess = record.EnterpriseDesiredAccess,
-                                                        GrantedAccess = record.EnterpriseGrantedAccess,
-                                                        Status = record.EnterpriseStatus,
-                                                        Protocol = record.EnterpriseProtocol,
-                                                        LocalPort = record.EnterpriseLocalPort,
-                                                        RemotePort = record.EnterpriseRemotePort };
-            }
-
             return SerializePayload(payload);
         }
 
@@ -756,8 +724,6 @@ namespace BlackbirdInterface.Capture
                 ? $"thread:{record.ProcessPid}:{record.ThreadId}:{record.StartAddress:X}"
             : record.Type == BlackbirdNative.EventTypeRegistry
                 ? $"registry:{record.RegistryProcessPid}:{record.RegistryKeyPath}:{record.RegistryValueName}"
-            : record.Type == BlackbirdNative.EventTypeEnterprise
-                ? $"enterprise:{record.EnterpriseProcessPid}:{record.EnterpriseTargetProcessPid}:{record.EnterpriseOperation}:{record.EnterpriseFlags:X8}"
             : !string.IsNullOrWhiteSpace(record.FilePath) ? $"file:{record.FileProcessPid}:{record.FilePath}"
                                                           : $"ioctl:{record.Sequence}:{record.Type}";
 
@@ -859,7 +825,6 @@ namespace BlackbirdInterface.Capture
             public CaptureIoctlThreadPayload? Thread { get; set; }
             public CaptureIoctlFilePayload? File { get; set; }
             public CaptureIoctlRegistryPayload? Registry { get; set; }
-            public CaptureIoctlEnterprisePayload? Enterprise { get; set; }
         }
 
         private sealed class CaptureIoctlHandlePayload
@@ -958,26 +923,6 @@ namespace BlackbirdInterface.Capture
             public uint SessionId { get; set; }
             public string KeyPath { get; set; } = string.Empty;
             public string ValueName { get; set; } = string.Empty;
-        }
-
-        private sealed class CaptureIoctlEnterprisePayload
-        {
-            public uint ProcessPid { get; set; }
-            public uint ThreadId { get; set; }
-            public uint TargetProcessPid { get; set; }
-            public uint TargetThreadId { get; set; }
-            public ulong ObjectAddress { get; set; }
-            public ulong Aux0 { get; set; }
-            public ulong Aux1 { get; set; }
-            public uint Operation { get; set; }
-            public uint SubOperation { get; set; }
-            public uint Flags { get; set; }
-            public uint DesiredAccess { get; set; }
-            public uint GrantedAccess { get; set; }
-            public uint Status { get; set; }
-            public uint Protocol { get; set; }
-            public uint LocalPort { get; set; }
-            public uint RemotePort { get; set; }
         }
 
         private sealed class CaptureEtwPayload

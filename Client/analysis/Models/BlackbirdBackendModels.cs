@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -105,23 +106,6 @@ namespace BlackbirdInterface
         public string RegistryKeyPath { get; set; } = "";
         public string RegistryValueName { get; set; } = "";
 
-        public uint EnterpriseProcessPid { get; set; }
-        public uint EnterpriseThreadId { get; set; }
-        public uint EnterpriseTargetProcessPid { get; set; }
-        public uint EnterpriseTargetThreadId { get; set; }
-        public ulong EnterpriseObjectAddress { get; set; }
-        public ulong EnterpriseAux0 { get; set; }
-        public ulong EnterpriseAux1 { get; set; }
-        public uint EnterpriseOperation { get; set; }
-        public uint EnterpriseSubOperation { get; set; }
-        public uint EnterpriseFlags { get; set; }
-        public uint EnterpriseDesiredAccess { get; set; }
-        public uint EnterpriseGrantedAccess { get; set; }
-        public uint EnterpriseStatus { get; set; }
-        public uint EnterpriseProtocol { get; set; }
-        public uint EnterpriseLocalPort { get; set; }
-        public uint EnterpriseRemotePort { get; set; }
-
         public IoctlParsedEvent Clone()
         {
             return new IoctlParsedEvent { Type = Type,
@@ -213,23 +197,7 @@ namespace BlackbirdInterface
                                           RegistryFlags = RegistryFlags,
                                           RegistrySessionId = RegistrySessionId,
                                           RegistryKeyPath = RegistryKeyPath,
-                                          RegistryValueName = RegistryValueName,
-                                          EnterpriseProcessPid = EnterpriseProcessPid,
-                                          EnterpriseThreadId = EnterpriseThreadId,
-                                          EnterpriseTargetProcessPid = EnterpriseTargetProcessPid,
-                                          EnterpriseTargetThreadId = EnterpriseTargetThreadId,
-                                          EnterpriseObjectAddress = EnterpriseObjectAddress,
-                                          EnterpriseAux0 = EnterpriseAux0,
-                                          EnterpriseAux1 = EnterpriseAux1,
-                                          EnterpriseOperation = EnterpriseOperation,
-                                          EnterpriseSubOperation = EnterpriseSubOperation,
-                                          EnterpriseFlags = EnterpriseFlags,
-                                          EnterpriseDesiredAccess = EnterpriseDesiredAccess,
-                                          EnterpriseGrantedAccess = EnterpriseGrantedAccess,
-                                          EnterpriseStatus = EnterpriseStatus,
-                                          EnterpriseProtocol = EnterpriseProtocol,
-                                          EnterpriseLocalPort = EnterpriseLocalPort,
-                                          EnterpriseRemotePort = EnterpriseRemotePort };
+                                          RegistryValueName = RegistryValueName };
         }
     }
 
@@ -1158,6 +1126,8 @@ namespace BlackbirdInterface
         private string _event = "";
         private string _severity = "";
         private string _detection = "";
+        private string _actor = "";
+        private string _target = "";
         private int _hits;
         private string _groupKey = "";
         private string _argumentPreview = "";
@@ -1165,7 +1135,12 @@ namespace BlackbirdInterface
         public DateTime LastSeenUtc
         {
             get => _lastSeenUtc;
-            set => SetField(ref _lastSeenUtc, value);
+            set {
+                if (SetField(ref _lastSeenUtc, value))
+                {
+                    OnPropertyChanged(nameof(LastSeenLabel));
+                }
+            }
         }
 
         public string Event
@@ -1184,6 +1159,18 @@ namespace BlackbirdInterface
         {
             get => _detection;
             set => SetField(ref _detection, value ?? string.Empty);
+        }
+
+        public string Actor
+        {
+            get => _actor;
+            set => SetField(ref _actor, value ?? string.Empty);
+        }
+
+        public string Target
+        {
+            get => _target;
+            set => SetField(ref _target, value ?? string.Empty);
         }
 
         public int Hits
@@ -1206,12 +1193,18 @@ namespace BlackbirdInterface
 
         public List<GroupedEventDetailRow> Details { get; set; } = new();
 
+        [JsonIgnore]
+        public string LastSeenLabel =>
+            LastSeenUtc == default ? "-" : LastSeenUtc.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
+
         public GroupedEventRow Clone()
         {
             return new GroupedEventRow { LastSeenUtc = LastSeenUtc,
                                          Event = Event,
                                          Severity = Severity,
                                          Detection = Detection,
+                                         Actor = Actor,
+                                         Target = Target,
                                          Hits = Hits,
                                          GroupKey = GroupKey,
                                          ArgumentPreview = ArgumentPreview,
@@ -1228,9 +1221,12 @@ namespace BlackbirdInterface
             }
 
             field = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            OnPropertyChanged(propertyName);
             return true;
         }
+
+        private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 
     internal sealed class ApiCallGraphRowSnapshot

@@ -16,7 +16,8 @@ namespace BlackbirdInterface
         private readonly ObservableCollection<ShortcutBindingRow> _rows = new();
         private ShortcutBindingRow? _capturingRow;
 
-        public InterfaceSettingsWindow(MainWindow host, UiThemeMode themeMode, IEnumerable<ShortcutBindingRow> rows)
+        public InterfaceSettingsWindow(MainWindow host, UiThemeMode themeMode, IEnumerable<ShortcutBindingRow> rows,
+                                       InterfacePreferences preferences)
         {
             InitializeComponent();
             _host = host ?? throw new ArgumentNullException(nameof(host));
@@ -29,6 +30,7 @@ namespace BlackbirdInterface
             }
 
             SetThemeSelection(themeMode);
+            SetPreferenceSelection(preferences);
             UpdateCaptureStatus();
         }
 
@@ -96,6 +98,7 @@ namespace BlackbirdInterface
             }
 
             SetThemeSelection(UiThemeMode.Dark);
+            SetPreferenceSelection(InterfacePreferences.Defaults());
             _capturingRow = null;
             UpdateCaptureStatus();
         }
@@ -170,7 +173,8 @@ namespace BlackbirdInterface
         {
             _host.ApplyInterfaceSettings(GetSelectedThemeMode(),
                                          _rows.ToDictionary(static row => row.Id, static row => row.GestureText,
-                                                            StringComparer.OrdinalIgnoreCase));
+                                                            StringComparer.OrdinalIgnoreCase),
+                                         GetSelectedPreferences());
         }
 
         private UiThemeMode GetSelectedThemeMode()
@@ -192,6 +196,97 @@ namespace BlackbirdInterface
             }
 
             ThemeModeBox.SelectedIndex = 1;
+        }
+
+        private InterfacePreferences GetSelectedPreferences()
+        {
+            return new InterfacePreferences { AutoSwitchToApiViewOnHookLaunch =
+                                                  AutoSwitchApiViewCheckBox?.IsChecked == true,
+                                              ShowEventsPane = ShowEventsPaneCheckBox?.IsChecked == true,
+                                              ShowPerformancePane = ShowPerformancePaneCheckBox?.IsChecked == true,
+                                              ShowEtwPane = ShowEtwPaneCheckBox?.IsChecked == true,
+                                              ShowDetectionsPane = ShowDetectionsPaneCheckBox?.IsChecked == true,
+                                              ShowFilesystemPane = ShowFilesystemPaneCheckBox?.IsChecked == true,
+                                              ShowRegistryPane = ShowRegistryPaneCheckBox?.IsChecked == true,
+                                              ShowProcessRelationsPane =
+                                                  ShowProcessRelationsPaneCheckBox?.IsChecked == true,
+                                              PerformancePaneOnTop = PerformanceOnTopCheckBox?.IsChecked == true,
+                                              DetectionsPaneOnTop = DetectionsOnTopCheckBox?.IsChecked == true,
+                                              DefaultApiPresentationMode = GetSelectedApiPresentationMode() };
+        }
+
+        private void SetPreferenceSelection(InterfacePreferences? preferences)
+        {
+            InterfacePreferences selection = (preferences ?? InterfacePreferences.Defaults()).Clone();
+            if (AutoSwitchApiViewCheckBox != null)
+            {
+                AutoSwitchApiViewCheckBox.IsChecked = selection.AutoSwitchToApiViewOnHookLaunch;
+            }
+            if (ShowEventsPaneCheckBox != null)
+            {
+                ShowEventsPaneCheckBox.IsChecked = selection.ShowEventsPane;
+            }
+            if (ShowPerformancePaneCheckBox != null)
+            {
+                ShowPerformancePaneCheckBox.IsChecked = selection.ShowPerformancePane;
+            }
+            if (ShowEtwPaneCheckBox != null)
+            {
+                ShowEtwPaneCheckBox.IsChecked = selection.ShowEtwPane;
+            }
+            if (ShowDetectionsPaneCheckBox != null)
+            {
+                ShowDetectionsPaneCheckBox.IsChecked = selection.ShowDetectionsPane;
+            }
+            if (ShowFilesystemPaneCheckBox != null)
+            {
+                ShowFilesystemPaneCheckBox.IsChecked = selection.ShowFilesystemPane;
+            }
+            if (ShowRegistryPaneCheckBox != null)
+            {
+                ShowRegistryPaneCheckBox.IsChecked = selection.ShowRegistryPane;
+            }
+            if (ShowProcessRelationsPaneCheckBox != null)
+            {
+                ShowProcessRelationsPaneCheckBox.IsChecked = selection.ShowProcessRelationsPane;
+            }
+            if (PerformanceOnTopCheckBox != null)
+            {
+                PerformanceOnTopCheckBox.IsChecked = selection.PerformancePaneOnTop;
+            }
+            if (DetectionsOnTopCheckBox != null)
+            {
+                DetectionsOnTopCheckBox.IsChecked = selection.DetectionsPaneOnTop;
+            }
+
+            SetApiPresentationSelection(selection.DefaultApiPresentationMode);
+        }
+
+        private string GetSelectedApiPresentationMode()
+        {
+            string? tag = (DefaultApiPresentationBox?.SelectedItem as ComboBoxItem)?.Tag as string;
+            return AnalystSettingsStore.NormalizeApiPresentation(tag);
+        }
+
+        private void SetApiPresentationSelection(string mode)
+        {
+            string normalized = AnalystSettingsStore.NormalizeApiPresentation(mode);
+            if (DefaultApiPresentationBox == null)
+            {
+                return;
+            }
+
+            foreach (object item in DefaultApiPresentationBox.Items)
+            {
+                if (item is ComboBoxItem comboItem && comboItem.Tag is string tag &&
+                    string.Equals(tag, normalized, StringComparison.OrdinalIgnoreCase))
+                {
+                    DefaultApiPresentationBox.SelectedItem = comboItem;
+                    return;
+                }
+            }
+
+            DefaultApiPresentationBox.SelectedIndex = 0;
         }
 
         private void UpdateCaptureStatus()

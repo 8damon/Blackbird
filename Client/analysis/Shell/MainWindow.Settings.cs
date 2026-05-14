@@ -32,16 +32,20 @@ namespace BlackbirdInterface
         private readonly Dictionary<string, RoutedUICommand> _shortcutCommands = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, string> _shortcutBindings = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<InputBinding> _managedShortcutBindings = new();
+        private InterfacePreferences _interfacePreferences = InterfacePreferences.Defaults();
         private InterfaceSettingsWindow? _interfaceSettingsWindow;
 
         private void InitializeInterfaceSettings()
         {
+            _interfacePreferences = AnalystSettingsStore.LoadInterfacePreferences();
             EnsureShortcutCommands();
             LoadShortcutBindings();
             ApplyShortcutBindings();
+            ApplyInterfacePreferences(_interfacePreferences, persist: false);
         }
 
-        internal void ApplyInterfaceSettings(UiThemeMode mode, IReadOnlyDictionary<string, string> bindings)
+        internal void ApplyInterfaceSettings(UiThemeMode mode, IReadOnlyDictionary<string, string> bindings,
+                                             InterfacePreferences preferences)
         {
             App.SetThemeMode(mode);
 
@@ -60,6 +64,7 @@ namespace BlackbirdInterface
 
             AnalystSettingsStore.SaveShortcutBindings(_shortcutBindings);
             ApplyShortcutBindings();
+            ApplyInterfacePreferences(preferences, persist: true);
         }
 
         private void OpenInterfaceSettings()
@@ -87,7 +92,8 @@ namespace BlackbirdInterface
                     GestureText = _shortcutBindings.TryGetValue(definition.Id, out string? gesture)
                         ? gesture
                         : definition.DefaultGestureText
-                }))
+                }),
+                SnapshotCurrentInterfacePreferences())
             {
                 Owner = this
             };
@@ -186,8 +192,6 @@ namespace BlackbirdInterface
                 NudgeTopTimeTravel(10);
                 break;
             case "open_memory_inspector":
-                ShowPerformancePane();
-                PerformancePaneHost.ShowMemoryInspectorWindow();
                 break;
             case "open_parallel_stacks":
                 ShowPerformancePane();
@@ -203,6 +207,77 @@ namespace BlackbirdInterface
                 OpenInterfaceSettings();
                 break;
             }
+        }
+
+        private void ApplyInterfacePreferences(InterfacePreferences preferences, bool persist)
+        {
+            _interfacePreferences = (preferences ?? InterfacePreferences.Defaults()).Clone();
+            ApplyApiPresentationPreference();
+
+            if (_explorer.Count != 0)
+            {
+                _eventsPaneVisible = _interfacePreferences.ShowEventsPane;
+                _performancePaneVisible = _interfacePreferences.ShowPerformancePane;
+                SetExplorerPaneEnabled("Events", _interfacePreferences.ShowEventsPane);
+                SetExplorerPaneEnabled("Performance", _interfacePreferences.ShowPerformancePane);
+                SetExplorerPaneEnabled("ETW", _interfacePreferences.ShowEtwPane);
+                SetExplorerPaneEnabled("Heuristics", _interfacePreferences.ShowDetectionsPane);
+                SetExplorerPaneEnabled("Filesystem", _interfacePreferences.ShowFilesystemPane);
+                SetExplorerPaneEnabled("Registry", _interfacePreferences.ShowRegistryPane);
+                SetExplorerPaneEnabled("Process Relations", _interfacePreferences.ShowProcessRelationsPane);
+                _performanceOnTop = _interfacePreferences.PerformancePaneOnTop;
+                _heuristicsOnTop = _interfacePreferences.DetectionsPaneOnTop;
+                ApplyPaneOrder();
+                ApplyIntelPaneOrder();
+                ApplyDockVisibilityFromExplorer();
+                RebuildToolbarViewMenuOptions();
+            }
+
+            if (persist)
+            {
+                AnalystSettingsStore.SaveInterfacePreferences(_interfacePreferences);
+            }
+        }
+
+        private void ApplyApiPresentationPreference()
+        {
+            if (ApiViewModeBox == null)
+            {
+                return;
+            }
+
+            string mode =
+                AnalystSettingsStore.NormalizeApiPresentation(_interfacePreferences.DefaultApiPresentationMode);
+            ApiViewModeBox.SelectedIndex = string.Equals(mode, InterfacePreferences.ApiPresentationThreadTimeline,
+                                                         StringComparison.OrdinalIgnoreCase)
+                                               ? 1
+                                               : 0;
+        }
+
+        private bool ShouldAutoSwitchToApiViewForHookCapture() => _interfacePreferences.AutoSwitchToApiViewOnHookLaunch;
+
+        private InterfacePreferences SnapshotCurrentInterfacePreferences()
+        {
+            InterfacePreferences snapshot = _interfacePreferences.Clone();
+            snapshot.ShowEventsPane = IsEventsPaneOpen();
+            snapshot.ShowPerformancePane = IsPerformancePaneOpen();
+            snapshot.ShowEtwPane = IsEtwPaneOpen();
+            snapshot.ShowDetectionsPane = IsHeuristicsPaneOpen();
+            snapshot.ShowFilesystemPane = IsFilesystemPaneOpen();
+            snapshot.ShowRegistryPane = IsRegistryPaneOpen();
+            snapshot.ShowProcessRelationsPane = IsRelationsPaneOpen();
+            snapshot.PerformancePaneOnTop = _performanceOnTop;
+            snapshot.DetectionsPaneOnTop = _heuristicsOnTop;
+            snapshot.DefaultApiPresentationMode = _apiViewPresentationMode == ApiViewPresentationMode.ThreadTimeline
+                                                      ? InterfacePreferences.ApiPresentationThreadTimeline
+                                                      : InterfacePreferences.ApiPresentationCallGraph;
+            return snapshot;
+        }
+
+        private void PersistCurrentInterfacePreferences()
+        {
+            _interfacePreferences = SnapshotCurrentInterfacePreferences();
+            AnalystSettingsStore.SaveInterfacePreferences(_interfacePreferences);
         }
     }
 }

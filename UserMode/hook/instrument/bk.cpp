@@ -263,6 +263,96 @@ namespace
         return fn(static_cast<ULONG>(skip), static_cast<ULONG>(maxFrames), outFrames, nullptr);
     }
 
+#if defined(_M_X64)
+    static void CaptureContextRegisters(const CONTEXT *ctx, bk::BK::Event &evt) noexcept
+    {
+        if (!ctx)
+            return;
+
+        evt.rip = ctx->Rip;
+        evt.rsp = ctx->Rsp;
+        evt.rbp = ctx->Rbp;
+        evt.rax = ctx->Rax;
+        evt.rbx = ctx->Rbx;
+        evt.rcx = ctx->Rcx;
+        evt.rdx = ctx->Rdx;
+        evt.rsi = ctx->Rsi;
+        evt.rdi = ctx->Rdi;
+        evt.r8 = ctx->R8;
+        evt.r9 = ctx->R9;
+        evt.r10 = ctx->R10;
+        evt.r11 = ctx->R11;
+        evt.r12 = ctx->R12;
+        evt.r13 = ctx->R13;
+        evt.r14 = ctx->R14;
+        evt.r15 = ctx->R15;
+        evt.eflags = ctx->EFlags;
+    }
+
+    static USHORT CaptureFaultingContextStack(const CONTEXT *sourceContext, std::uint16_t maxFrames,
+                                              void **outFrames) noexcept
+    {
+        if (!sourceContext || !outFrames || maxFrames == 0)
+            return 0;
+
+        CONTEXT ctx = *sourceContext;
+        USHORT captured = 0;
+
+        for (USHORT i = 0; i < maxFrames; ++i)
+        {
+            if (ctx.Rip == 0)
+                break;
+
+            outFrames[captured++] = reinterpret_cast<void *>(ctx.Rip);
+
+            DWORD64 imageBase = 0;
+            PRUNTIME_FUNCTION functionEntry = nullptr;
+            __try
+            {
+                functionEntry = RtlLookupFunctionEntry(ctx.Rip, &imageBase, nullptr);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                functionEntry = nullptr;
+            }
+
+            if (functionEntry != nullptr)
+            {
+                PVOID handlerData = nullptr;
+                DWORD64 establisherFrame = 0;
+                __try
+                {
+                    RtlVirtualUnwind(UNW_FLAG_NHANDLER, imageBase, ctx.Rip, functionEntry, &ctx, &handlerData,
+                                     &establisherFrame, nullptr);
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    break;
+                }
+                continue;
+            }
+
+            DWORD64 nextRip = 0;
+            __try
+            {
+                nextRip = *reinterpret_cast<DWORD64 *>(ctx.Rsp);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                break;
+            }
+
+            if (nextRip == 0 || nextRip == ctx.Rip)
+                break;
+
+            ctx.Rip = nextRip;
+            ctx.Rsp += sizeof(DWORD64);
+        }
+
+        return captured;
+    }
+#endif
+
     static bool DefaultMemoryFaultHandling(const bk::BK::Event &evt) noexcept
     {
         if (evt.exception_code == STATUS_GUARD_PAGE_VIOLATION)
@@ -310,9 +400,17 @@ namespace
                (code == STATUS_GUARD_PAGE_VIOLATION);
     }
 
+    static inline bool IsDebugPrintException(DWORD code) noexcept
+    {
+        return code == 0x40010006u || code == 0x4001000Au;
+    }
+
     static LONG CALLBACK BlackbirdVeh(EXCEPTION_POINTERS *ep)
     {
         if (!ep || !ep->ExceptionRecord)
+            return EXCEPTION_CONTINUE_SEARCH;
+
+        if (IsDebugPrintException(ep->ExceptionRecord->ExceptionCode))
             return EXCEPTION_CONTINUE_SEARCH;
 
         if (!g_installed.load(std::memory_order_acquire))
@@ -332,6 +430,10 @@ namespace
 
         evt.pid = GetCurrentProcessId();
         evt.tid = GetCurrentThreadId();
+
+#if defined(_M_X64)
+        CaptureContextRegisters(ep->ContextRecord, evt);
+#endif
 
         evt.is_noncontinuable = (evt.exception_flags & EXCEPTION_NONCONTINUABLE) != 0;
         evt.is_memory_fault = IsMemoryFault(evt.exception_code);
@@ -355,7 +457,13 @@ namespace
             if (maxF > bk::BK::kMaxStackFrames)
                 maxF = static_cast<std::uint16_t>(bk::BK::kMaxStackFrames);
 
-            evt.stack_frame_count = CaptureStack(a->stack_frames_to_skip, maxF, evt.stack);
+#if defined(_M_X64)
+            evt.stack_frame_count = CaptureFaultingContextStack(ep->ContextRecord, maxF, evt.stack);
+            if (evt.stack_frame_count == 0)
+#endif
+            {
+                evt.stack_frame_count = CaptureStack(a->stack_frames_to_skip, maxF, evt.stack);
+            }
         }
 
         /* Memory-fault handling must be synchronous (return value determines
@@ -419,7 +527,7 @@ namespace
         LeaveHandler();
         return EXCEPTION_CONTINUE_SEARCH;
     }
-}
+} // namespace
 
 PVOID BkRegisterVectoredExceptionHandler(BkBlackbirdTelemetryArguments *args) noexcept
 {

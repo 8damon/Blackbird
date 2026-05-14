@@ -33,7 +33,7 @@
     <RootNamespace>Bk</RootNamespace>
     <WindowsTargetPlatformVersion>$(LatestTargetPlatformVersion)</WindowsTargetPlatformVersion>
     <TargetName>blackbird</TargetName>
-    <BlackbirdFileDescription>Blackbird kernel telemetry and protection driver</BlackbirdFileDescription>
+    <BlackbirdFileDescription>Blackbird Community kernel telemetry and protection driver</BlackbirdFileDescription>
     <BlackbirdInternalName>blackbird</BlackbirdInternalName>
     <BlackbirdOriginalFilename>blackbird.sys</BlackbirdOriginalFilename>
   </PropertyGroup>

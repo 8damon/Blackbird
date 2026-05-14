@@ -1,4 +1,15 @@
 <Project>
+  <PropertyGroup Label="BlackbirdEdition">
+    <BlackbirdEdition>Community</BlackbirdEdition>
+    <BlackbirdEditionDefine>BLACKBIRD_COMMUNITY</BlackbirdEditionDefine>
+    <BlackbirdProductName Condition="'$(BlackbirdProductName)'==''">Blackbird Community</BlackbirdProductName>
+    <BlackbirdManifestIdentityPrefix Condition="'$(BlackbirdManifestIdentityPrefix)'==''">Blackbird.Community</BlackbirdManifestIdentityPrefix>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
+    <DefineConstants>$(DefineConstants);$(BlackbirdEditionDefine)</DefineConstants>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'BlackbirdInterface'">
     <BaseIntermediateOutputPath>..\x64\obj\BlackbirdInterface\</BaseIntermediateOutputPath>
     <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>

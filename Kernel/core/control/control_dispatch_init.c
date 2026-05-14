@@ -127,9 +127,6 @@ _Use_decl_annotations_ VOID BkctlEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST R
     case IOCTL_BK_MARK_CONTROLLER_READY:
         status = BkctlHandleMarkControllerReadyIoctl(ctx->Client, Request);
         break;
-    case IOCTL_BK_READ_MEMORY:
-        status = BkctlHandleReadMemoryIoctl(ctx->Client, Request, &bytesOut);
-        break;
     case IOCTL_BK_REGISTER_INSTRUMENTATION_RANGE:
         status = BkctlHandleRegisterInstrumentationRangeIoctl(ctx->Client, Request);
         break;
@@ -138,9 +135,6 @@ _Use_decl_annotations_ VOID BkctlEvtIoDeviceControl(WDFQUEUE Queue, WDFREQUEST R
         break;
     case IOCTL_BK_REGISTER_PROCESS_INSTRUMENTATION_CALLBACK:
         status = BkctlHandleRegisterProcessInstrumentationCallbackIoctl(ctx->Client, Request);
-        break;
-    case IOCTL_BK_SET_ENDPOINT_GUARD:
-        status = BkctlHandleSetEndpointGuardIoctl(ctx->Client, Request);
         break;
     default:
         status = STATUS_INVALID_DEVICE_REQUEST;

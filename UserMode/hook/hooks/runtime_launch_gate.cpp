@@ -631,4 +631,4 @@ namespace BK_RUNTIME_INTERNAL
     {
         return g_LaunchGatePrepared.load(std::memory_order_acquire);
     }
-}
+} // namespace BK_RUNTIME_INTERNAL

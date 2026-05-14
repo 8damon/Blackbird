@@ -2,10 +2,10 @@
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity
       type="win32"
-      name="Blackbird.Platform.BlackbirdInterface"
+      name="Blackbird.Community.BlackbirdInterface"
       version="2.0.0.0"
       processorArchitecture="*"/>
-  <description>Blackbird analyst interface</description>
+  <description>Blackbird Community analyst interface</description>
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>
       <requestedPrivileges>

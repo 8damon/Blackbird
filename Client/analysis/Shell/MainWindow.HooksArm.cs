@@ -21,6 +21,14 @@ namespace BlackbirdInterface
 
         private void ToggleKernelHooksArmed()
         {
+            if (!_useKernelDriver)
+            {
+                OutputCapture.AppendLine("Kernel hooks are unavailable while driverless mode is active.");
+                DiagnosticsState.SetValue("Kernel Hooks", "Unavailable (driverless mode)");
+                SetKernelHooksArmed(false);
+                return;
+            }
+
             bool newArmed = !_kernelHooksArmed;
 
             uint flags = newArmed ? 0u : BlackbirdNative.RuntimeFlagNtApiHooksDisarmed;
@@ -76,9 +84,14 @@ namespace BlackbirdInterface
                 KernelHooksToggleButton.Foreground = HooksDisarmedForeground;
                 if (KernelHooksToggleLabel != null)
                 {
-                    KernelHooksToggleLabel.Text = "Hooks DISARMED";
+                    KernelHooksToggleLabel.Text = _useKernelDriver ? "Hooks DISARMED" : "Driverless";
                 }
             }
+            KernelHooksToggleButton.IsEnabled = _useKernelDriver;
+            KernelHooksToggleButton.ToolTip =
+                _useKernelDriver
+                    ? "Toggle kernel NTAPI hooks armed or disarmed. Anti-virtualization masking requires hooks to be armed."
+                    : "Kernel hooks are unavailable in driverless mode. SR71 user-mode hooks and ETW remain available.";
         }
     }
 }

@@ -13,7 +13,7 @@
 #endif
 
 #ifndef BK_FILE_DESCRIPTION
-#define BK_FILE_DESCRIPTION "Blackbird Platform User-Mode Component"
+#define BK_FILE_DESCRIPTION "Blackbird Community user-mode component"
 #endif
 
 #ifndef BK_COMPANY_NAME
@@ -29,7 +29,7 @@
 #endif
 
 #ifndef BK_PRODUCT_NAME
-#define BK_PRODUCT_NAME "Blackbird Platform"
+#define BK_PRODUCT_NAME "Blackbird Community"
 #endif
 
 #ifndef BK_FILE_TYPE

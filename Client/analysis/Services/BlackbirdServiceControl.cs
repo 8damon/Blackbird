@@ -235,12 +235,15 @@ namespace BlackbirdInterface
         private static ScResult RunSystemTool(string fileName, string args)
         {
             using var proc = new Process();
-            proc.StartInfo =
-                new ProcessStartInfo { FileName = fileName, Arguments = args, UseShellExecute = false,
-                                       CreateNoWindow = true, RedirectStandardOutput = true,
-                                       RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8,
-                                       StandardErrorEncoding = Encoding.UTF8,
-                                       WorkingDirectory = Environment.SystemDirectory };
+            proc.StartInfo = new ProcessStartInfo { FileName = fileName,
+                                                    Arguments = args,
+                                                    UseShellExecute = false,
+                                                    CreateNoWindow = true,
+                                                    RedirectStandardOutput = true,
+                                                    RedirectStandardError = true,
+                                                    StandardOutputEncoding = Encoding.UTF8,
+                                                    StandardErrorEncoding = Encoding.UTF8,
+                                                    WorkingDirectory = Environment.SystemDirectory };
 
             /* Revert any thread-level impersonation before calling CreateProcess.
                If the calling thread is impersonating the monitored process with

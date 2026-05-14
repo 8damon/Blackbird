@@ -83,4 +83,4 @@ namespace IC_STACKTRACE
 
     CallerClassification ClassifyTrace(const Trace &trace) noexcept;
 
-}
+} // namespace IC_STACKTRACE

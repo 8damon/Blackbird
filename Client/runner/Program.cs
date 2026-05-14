@@ -4,6 +4,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
@@ -121,6 +122,7 @@ namespace BlackbirdRunner
                         plan.ImagePath,
                         useEarlyBirdApc: true,
                         plan.Profile,
+                        useKernelDriver: true,
                         out AnalysisLaunchResult? launch,
                         out string launchError) || launch == null)
                 {
@@ -148,12 +150,15 @@ namespace BlackbirdRunner
 
                 using BlackbirdCaptureLiveStore store =
                     CaptureArchiveStorage.OpenLiveStore(_workspacePath, launch.ProcessId, displayName);
-                using PackerDetectionService packerDetector = new(launch.ProcessId, _workspacePath, store, WriteLog);
                 var projection = new CaptureProjectionEngine(launch.ProcessId, _options.JobId, "BlackbirdRunner");
+                projection.SetExecutionPhase(CaptureExecutionPhase.PreResume, DateTime.UtcNow,
+                                             "runner-protected-launch-suspended");
+                using PackerDetectionService packerDetector = new(launch.ProcessId, _workspacePath, store, WriteLog,
+                                                                  publishFindings: projection.ObserveHeuristics);
+                packerDetector.SetExecutionPhase(projection.ExecutionPhase);
                 var performanceSampler = new PerformanceSampler();
                 performanceSampler.SetTargetPid(launch.ProcessId);
                 performanceSampler.SampleArrived += (_, sample) => projection.ObservePerformance(sample);
-                performanceSampler.Start();
                 DateTime captureStartedUtc = DateTime.UtcNow;
                 projection.CaptureStaticProcessSnapshot(plan.ImagePath, displayName, peKind.ToString(), plan.Profile);
 
@@ -178,6 +183,10 @@ namespace BlackbirdRunner
                     WriteLog($"session: {line}");
                     projection.ObserveStatus(line);
                 };
+                ResumePreparedLaunchTarget(session, launch.ProcessId, projection);
+                packerDetector.SetExecutionPhase(projection.ExecutionPhase);
+                performanceSampler.Start();
+                packerDetector.QueueInitialImageScan(plan.ImagePath);
 
                 int exitCode;
                 try
@@ -318,6 +327,75 @@ namespace BlackbirdRunner
             }
 
             return Path.IsPathRooted(value) ? value : Path.GetFullPath(Path.Combine(_runDirectory, value));
+        }
+
+        private void ResumePreparedLaunchTarget(BlackbirdBackendSession session, int pid,
+                                                CaptureProjectionEngine projection)
+        {
+            if (pid <= 0)
+            {
+                return;
+            }
+
+            bool controllerResumeOk = session.ControlProcessExecution(unchecked((uint)pid), suspend: false);
+            bool userResumeOk = false;
+            if (!controllerResumeOk || HasSuspendedThread(pid))
+            {
+                userResumeOk =
+                    BlackbirdBackendSession.TryControlProcessExecutionUserMode(unchecked((uint)pid), suspend: false);
+            }
+
+            if (controllerResumeOk || userResumeOk)
+            {
+                string detail =
+                    $"protected launch auto-resume completed pid={pid} controller={controllerResumeOk} userApi={userResumeOk}";
+                WriteLog(detail);
+                projection.SetExecutionPhase(CaptureExecutionPhase.PostResumeStartup, DateTime.UtcNow,
+                                             "runner-auto-resume");
+                projection.ObserveStatus(detail);
+                WriteProgress("capturing", 36, detail, targetPid: pid);
+                return;
+            }
+
+            int win32 = Marshal.GetLastWin32Error();
+            string error = $"protected launch auto-resume failed pid={pid} win32={win32}";
+            WriteLog(error);
+            projection.ObserveStatus(error);
+            WriteProgress("warning", 36, error, lastError: win32, targetPid: pid);
+
+            using Process? process = TryGetProcess(pid);
+            if (process != null && !process.HasExited)
+            {
+                throw new InvalidOperationException(
+                    $"{error}; target is still live and may be suspended after hook readiness");
+            }
+        }
+
+        private static bool HasSuspendedThread(int pid)
+        {
+            try
+            {
+                using Process process = Process.GetProcessById(pid);
+                foreach (ProcessThread thread in process.Threads)
+                {
+                    try
+                    {
+                        if (thread.ThreadState == System.Diagnostics.ThreadState.Wait &&
+                            thread.WaitReason == ThreadWaitReason.Suspended)
+                        {
+                            return true;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return false;
         }
 
         private LaunchIntegrityLevel ResolveIntegrityLevel(LaunchOptions launchOptions)

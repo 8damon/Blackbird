@@ -518,19 +518,19 @@
                                         <TextBlock Text="Memory"
                                                    FontWeight="SemiBold"
                                                    VerticalAlignment="Center"/>
-                                        <ToggleButton x:Name="MemoryInspectorToggle"
+                                        <ToggleButton x:Name="MemoryAttributionToggle"
                                                       Margin="8,0,0,0"
                                                       Padding="8,2"
                                                       VerticalAlignment="Center"
-                                                      Checked="MemoryInspectorToggle_Checked"
-                                                      Unchecked="MemoryInspectorToggle_Unchecked"
+                                                      Checked="MemoryAttributionToggle_Checked"
+                                                      Unchecked="MemoryAttributionToggle_Unchecked"
                                                       Content="Inspector Window"/>
-                                        <ToggleButton x:Name="MemoryViewToggle"
+                                        <ToggleButton x:Name="MemorySummaryToggle"
                                                       Margin="8,0,0,0"
                                                       Padding="8,2"
                                                       VerticalAlignment="Center"
-                                                      Checked="MemoryViewToggle_Checked"
-                                                      Unchecked="MemoryViewToggle_Unchecked"
+                                                      Checked="MemorySummaryToggle_Checked"
+                                                      Unchecked="MemorySummaryToggle_Unchecked"
                                                       Content="Treemap"/>
                                     </DockPanel>
                                 </Border>
@@ -550,7 +550,7 @@
                                         </DataGrid.Columns>
                                     </DataGrid>
 
-                                    <DataGrid x:Name="MemoryInspectorGrid"
+                                    <DataGrid x:Name="MemoryAttributionGrid"
                                               AutoGenerateColumns="False"
                                               IsReadOnly="True"
                                               BorderThickness="0"
@@ -562,12 +562,10 @@
                                               RowHeight="22"
                                               Visibility="Collapsed"
                                               PreviewMouseRightButtonDown="DataGridRow_PreviewMouseRightButtonDown"
-                                              MouseDoubleClick="MemoryInspectorGrid_MouseDoubleClick">
+                                              MouseDoubleClick="MemoryAttributionGrid_MouseDoubleClick">
                                         <DataGrid.ContextMenu>
                                             <ContextMenu>
                                                 <MenuItem Header="Open Thread Stack" Click="MemoryContextOpenStack_Click"/>
-                                                <MenuItem Header="Open Disassembly" Click="MemoryContextOpenDisassembly_Click"/>
-                                                <Separator/>
                                                 <MenuItem Header="Copy Base Address" Click="MemoryContextCopyBase_Click"/>
                                             </ContextMenu>
                                         </DataGrid.ContextMenu>

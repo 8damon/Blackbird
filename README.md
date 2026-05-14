@@ -1,6 +1,6 @@
-<h1 align="center">BLACKBIRD COMMUNITY</h1>
+<h1 align="center">BLACKBIRD</h1>
 
-<p align="center"><b>A powerful, instrumentable, real-time malware analysis platform (RTMA), software reverse-engineering (SRE) suite and Intrusion Detection System (IDS).</b></p>
+<p align="center"><b>A powerful, instrumentable, real-time malware analysis platform, software reverse-engineering suite & IDS.</b></p>
 
 <p align="center">
   <a href="https://titansoftwork.com/capability/blackbird/download/">
@@ -20,6 +20,9 @@
 
 <p align="center">
   <img src="https://titansoftwork.com/content/capabilities/blackbird/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
+</p>
+<p align="center">
+  <img src="https://titansoftwork.com/content/capabilities/blackbird/MAIN_ALT.png" width="980" alt="Blackbird main interface" />
 </p>
 
 ## REQUIREMENTS

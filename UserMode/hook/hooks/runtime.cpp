@@ -27,6 +27,14 @@ using namespace BK_RUNTIME_INTERNAL;
 
 __declspec(thread) int g_Sr71CallDepth = 0;
 
+namespace
+{
+    bool IsDebugPrintExceptionCode(DWORD code) noexcept
+    {
+        return code == 0x40010006u || code == 0x4001000Au;
+    }
+} // namespace
+
 void BkDbgLog(_In_z_ _Printf_format_string_ PCSTR format, ...) noexcept
 {
     if (format == nullptr)
@@ -45,13 +53,15 @@ void BkDbgLog(_In_z_ _Printf_format_string_ PCSTR format, ...) noexcept
     const unsigned long tid = GetCurrentThreadId();
     const unsigned long long tick = static_cast<unsigned long long>(GetTickCount64());
     (void)StringCchPrintfA(line, RTL_NUMBER_OF(line), "[PID=%lu TID=%lu TICK=%llu] %s\n", pid, tid, tick, message);
+    BkSr71InternalScope scope;
     OutputDebugStringA(line);
 
     char programData[MAX_PATH]{};
     static constexpr Sr71EncodedAnsiLiteral kProgramDataEnv{"ProgramData", 0x2Fu};
     {
         Sr71ScopedAnsiLiteral programDataEnv(kProgramDataEnv);
-        DWORD programDataChars = GetEnvironmentVariableA(programDataEnv.c_str(), programData, RTL_NUMBER_OF(programData));
+        DWORD programDataChars =
+            GetEnvironmentVariableA(programDataEnv.c_str(), programData, RTL_NUMBER_OF(programData));
         if (programDataChars == 0 || programDataChars >= RTL_NUMBER_OF(programData))
         {
             static constexpr Sr71EncodedAnsiLiteral kDefaultProgramData{"C:\\ProgramData", 0x39u};
@@ -216,7 +226,7 @@ namespace BK_RUNTIME_INTERNAL
             value ^= IndirectHandleCookie();
             return reinterpret_cast<void *>(value);
         }
-    }
+    } // namespace
 
     WinsockHookController g_WinsockController;
     NtHookController g_NtHookController;
@@ -734,7 +744,7 @@ namespace BK_RUNTIME_INTERNAL
         g_AmsiFirstPoll = true;
         g_EtwFirstPoll = true;
     }
-}
+} // namespace BK_RUNTIME_INTERNAL
 
 namespace
 {
@@ -770,9 +780,119 @@ namespace
         }
     }
 
+    static void FormatVehStackSummary(const bk::BK::Event &e, char *stackSummary,
+                                      std::size_t stackSummaryChars) noexcept
+    {
+        if (stackSummary == nullptr || stackSummaryChars == 0)
+        {
+            return;
+        }
+
+        stackSummary[0] = '\0';
+        std::size_t offset = 0;
+        for (USHORT i = 0; i < e.stack_frame_count && i < 6; ++i)
+        {
+            int written = 0;
+            if (offset != 0 && offset < stackSummaryChars)
+            {
+                stackSummary[offset++] = ',';
+            }
+
+            if (offset >= stackSummaryChars)
+            {
+                break;
+            }
+
+            HRESULT hr = StringCchPrintfExA(stackSummary + offset, stackSummaryChars - offset, nullptr, nullptr,
+                                            STRSAFE_IGNORE_NULLS, "%p", e.stack[i]);
+            if (FAILED(hr))
+            {
+                break;
+            }
+
+            written = lstrlenA(stackSummary + offset);
+            offset += static_cast<std::size_t>(written);
+        }
+    }
+
+    static void EmitVehCrashDebugLine(const char *channel, const bk::BK::Event &e, const char *moduleName) noexcept
+    {
+        char stackSummary[256]{};
+        FormatVehStackSummary(e, stackSummary, RTL_NUMBER_OF(stackSummary));
+
+        char line[1024]{};
+        (void)StringCchPrintfA(
+            line, RTL_NUMBER_OF(line),
+            "[VEH] crash-exception channel=%s code=0x%08lX flags=0x%08lX fault=%p pid=%lu tid=%lu module=%s info0=0x%llX info1=0x%llX rip=0x%llX rsp=0x%llX rbp=0x%llX rax=0x%llX rcx=0x%llX rdx=0x%llX r10=0x%llX eflags=0x%llX frames=%hu stack=%s\n",
+            channel ? channel : "unknown", static_cast<unsigned long>(e.exception_code),
+            static_cast<unsigned long>(e.exception_flags), e.exception_address, static_cast<unsigned long>(e.pid),
+            static_cast<unsigned long>(e.tid), (moduleName && moduleName[0] != '\0') ? moduleName : "unknown",
+            static_cast<unsigned long long>(e.exception_info_count > 0 ? e.exception_info[0] : 0),
+            static_cast<unsigned long long>(e.exception_info_count > 1 ? e.exception_info[1] : 0),
+#if defined(_M_X64)
+            static_cast<unsigned long long>(e.rip), static_cast<unsigned long long>(e.rsp),
+            static_cast<unsigned long long>(e.rbp), static_cast<unsigned long long>(e.rax),
+            static_cast<unsigned long long>(e.rcx), static_cast<unsigned long long>(e.rdx),
+            static_cast<unsigned long long>(e.r10), static_cast<unsigned long long>(e.eflags),
+#else
+            0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull, 0ull,
+#endif
+            e.stack_frame_count, stackSummary[0] != '\0' ? stackSummary : "none");
+
+        BkSr71InternalScope scope;
+        OutputDebugStringA(line);
+    }
+
+    static void PublishVehExceptionEvent(const char *channel, const bk::BK::Event &e, const char *moduleName) noexcept
+    {
+        if (e.exception_code == STATUS_GUARD_PAGE_VIOLATION || IsDebugPrintExceptionCode(e.exception_code))
+        {
+            return;
+        }
+
+        BKIPC_HOOK_EVENT record{};
+        record.Kind =
+            e.is_target_module ? BlackbirdIpcHookEventExceptionLowNoise : BlackbirdIpcHookEventExceptionHighPriv;
+        record.ProcessId = e.pid;
+        record.ThreadId = e.tid;
+        record.Operation = e.exception_code;
+        record.Caller = reinterpret_cast<UINT64>(e.exception_address);
+        record.Context0 = e.exception_code;
+        record.Context1 = e.exception_flags;
+        record.Context2 = e.exception_info_count > 0 ? static_cast<UINT64>(e.exception_info[0]) : 0ull;
+        record.Context3 = e.exception_info_count > 1 ? static_cast<UINT64>(e.exception_info[1]) : 0ull;
+        record.ArgCount = 8;
+#if defined(_M_X64)
+        record.Args[0] = e.rip;
+        record.Args[1] = e.rsp;
+        record.Args[2] = e.rbp;
+        record.Args[3] = e.rax;
+        record.Args[4] = e.rcx;
+        record.Args[5] = e.rdx;
+        record.Args[6] = e.r10;
+        record.Args[7] = e.eflags;
+#endif
+        record.StackCount = static_cast<UINT32>(
+            (e.stack_frame_count > BKIPC_MAX_HOOK_STACK_FRAMES) ? BKIPC_MAX_HOOK_STACK_FRAMES : e.stack_frame_count);
+        for (UINT32 i = 0; i < record.StackCount; ++i)
+        {
+            record.Stack[i] = reinterpret_cast<UINT64>(e.stack[i]);
+        }
+        record.CallerFlags =
+            ((BK_HOOK_COMPONENT_UNKNOWN << BK_HOOK_CALLER_COMPONENT_SHIFT) & BK_HOOK_CALLER_COMPONENT_MASK) |
+            ((BK_HOOK_CALLER_KIND_UNKNOWN << BK_HOOK_CALLER_IMMED_SHIFT) & BK_HOOK_CALLER_IMMED_MASK);
+        (void)StringCchCopyA(record.ApiName, RTL_NUMBER_OF(record.ApiName),
+                             e.is_memory_fault ? "UsermodeMemoryFault" : "UsermodeException");
+        (void)StringCchCopyA(record.ModuleName, RTL_NUMBER_OF(record.ModuleName),
+                             (moduleName && moduleName[0] != '\0') ? moduleName : "unknown");
+
+        EmitVehCrashDebugLine(channel, e, moduleName);
+        (void)BKIPC::PublishHookEventSynchronously(record);
+    }
+
     static void LogVehExceptionEvent(const char *channel, const bk::BK::Event &e) noexcept
     {
-        if (e.exception_code == STATUS_GUARD_PAGE_VIOLATION)
+        if (e.exception_code == STATUS_GUARD_PAGE_VIOLATION || IsDebugPrintExceptionCode(e.exception_code))
         {
             return;
         }
@@ -789,30 +909,7 @@ namespace
         }
 
         char stackSummary[256]{};
-        std::size_t offset = 0;
-        for (USHORT i = 0; i < e.stack_frame_count && i < 6; ++i)
-        {
-            int written = 0;
-            if (offset != 0 && offset < RTL_NUMBER_OF(stackSummary))
-            {
-                stackSummary[offset++] = ',';
-            }
-
-            if (offset >= RTL_NUMBER_OF(stackSummary))
-            {
-                break;
-            }
-
-            HRESULT hr = StringCchPrintfExA(stackSummary + offset, RTL_NUMBER_OF(stackSummary) - offset, nullptr,
-                                            nullptr, STRSAFE_IGNORE_NULLS, "%p", e.stack[i]);
-            if (FAILED(hr))
-            {
-                break;
-            }
-
-            written = lstrlenA(stackSummary + offset);
-            offset += static_cast<std::size_t>(written);
-        }
+        FormatVehStackSummary(e, stackSummary, RTL_NUMBER_OF(stackSummary));
 
         BkDbgLog(
             "[VEH] veh-exception channel=%s code=0x%08lX flags=0x%08lX addr=%p pid=%lu tid=%lu target=%u memory=%u noncontinuable=%u module=%s infoCount=%lu info0=0x%llX info1=0x%llX stack=%s",
@@ -823,6 +920,24 @@ namespace
             static_cast<unsigned long long>(e.exception_info_count > 0 ? e.exception_info[0] : 0),
             static_cast<unsigned long long>(e.exception_info_count > 1 ? e.exception_info[1] : 0),
             stackSummary[0] != '\0' ? stackSummary : "none");
+#if defined(_M_X64)
+        BkDbgLog(
+            "[VEH] context rip=0x%llX rsp=0x%llX rbp=0x%llX rax=0x%llX rbx=0x%llX rcx=0x%llX rdx=0x%llX rsi=0x%llX rdi=0x%llX r8=0x%llX r9=0x%llX r10=0x%llX r11=0x%llX r12=0x%llX r13=0x%llX r14=0x%llX r15=0x%llX eflags=0x%llX",
+            static_cast<unsigned long long>(e.rip), static_cast<unsigned long long>(e.rsp),
+            static_cast<unsigned long long>(e.rbp), static_cast<unsigned long long>(e.rax),
+            static_cast<unsigned long long>(e.rbx), static_cast<unsigned long long>(e.rcx),
+            static_cast<unsigned long long>(e.rdx), static_cast<unsigned long long>(e.rsi),
+            static_cast<unsigned long long>(e.rdi), static_cast<unsigned long long>(e.r8),
+            static_cast<unsigned long long>(e.r9), static_cast<unsigned long long>(e.r10),
+            static_cast<unsigned long long>(e.r11), static_cast<unsigned long long>(e.r12),
+            static_cast<unsigned long long>(e.r13), static_cast<unsigned long long>(e.r14),
+            static_cast<unsigned long long>(e.r15), static_cast<unsigned long long>(e.eflags));
+#endif
+
+        if (e.is_noncontinuable)
+        {
+            PublishVehExceptionEvent(channel, e, moduleName);
+        }
     }
 
     static void LowNoise(const bk::BK::Event &e, void *u) noexcept
@@ -847,6 +962,21 @@ namespace
             return true;
         }
 
+        if (e.exception_code != STATUS_GUARD_PAGE_VIOLATION)
+        {
+            char moduleName[96]{};
+            if (e.module_basename_lower[0] != L'\0')
+            {
+                (void)WideCharToMultiByte(CP_UTF8, 0, e.module_basename_lower, -1, moduleName,
+                                          RTL_NUMBER_OF(moduleName), nullptr, nullptr);
+            }
+            else
+            {
+                (void)StringCchCopyA(moduleName, RTL_NUMBER_OF(moduleName), "unknown");
+            }
+            PublishVehExceptionEvent("memory-fault-unhandled", e, moduleName);
+        }
+
         return e.exception_code == STATUS_GUARD_PAGE_VIOLATION;
     }
 
@@ -862,7 +992,7 @@ namespace
         BkDbgLog("BkRuntimePrimeVectoredExceptionHandler: result=%u", ok ? 1u : 0u);
         return ok;
     }
-}
+} // namespace
 
 void BkRuntimePrimeHooks() noexcept
 {

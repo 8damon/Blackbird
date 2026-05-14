@@ -1,13 +1,13 @@
 #include "nt.h"
-#include "runtime_private.h"
 #include "../../include/native_peb.h"
+#include "runtime_private.h"
 
+#include <algorithm>
 #include <atomic>
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <intrin.h>
-#include <algorithm>
 #include <utility>
 
 #pragma intrinsic(_ReturnAddress)
@@ -68,7 +68,7 @@ namespace BK_NT
 
     static bool ShouldEnableNtMemoryHooks() noexcept
     {
-        char value[8]{};
+        char value[16]{};
         static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedAnsiLiteral kEnvName{"BK_NT_HOOK_MEMORY", 0x83u};
         BK_RUNTIME_INTERNAL::Sr71ScopedAnsiLiteral envName(kEnvName);
         DWORD read = GetEnvironmentVariableA(envName.c_str(), value, static_cast<DWORD>(RTL_NUMBER_OF(value)));
@@ -77,7 +77,8 @@ namespace BK_NT
             return false;
         }
 
-        return value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T';
+        return lstrcmpiA(value, "1") == 0 || lstrcmpiA(value, "true") == 0 || lstrcmpiA(value, "yes") == 0 ||
+               lstrcmpiA(value, "on") == 0 || lstrcmpiA(value, "enabled") == 0;
     }
 
     static bool IsNtMemoryHookName(const char *name) noexcept
@@ -1071,10 +1072,9 @@ namespace BK_NT
             AddProtectedRangeInterval(ranges, count, overflow, patchBase, patchBase + modulePatches[i].PatchSize);
         }
 
-        std::sort(ranges, ranges + count, [](const ProtectedRangeInterval &left,
-                                             const ProtectedRangeInterval &right) noexcept {
-            return left.Base < right.Base;
-        });
+        std::sort(ranges, ranges + count,
+                  [](const ProtectedRangeInterval &left, const ProtectedRangeInterval &right) noexcept
+                  { return left.Base < right.Base; });
 
         std::size_t merged = 0;
         for (std::size_t i = 0; i < count; ++i)
@@ -1715,7 +1715,7 @@ namespace BK_NT
 
     static inline void PublishNtEventIfSuccessful(NtHookContext &ctx, NTSTATUS status) noexcept
     {
-        if (!g_ActiveNtCallback || status != STATUS_SUCCESS)
+        if (!g_ActiveNtCallback || status != STATUS_SUCCESS || BkSr71IsInternalCall())
         {
             return;
         }
@@ -1733,7 +1733,7 @@ namespace BK_NT
 
     static inline void PublishNtEventAlways(NtHookContext &ctx, NTSTATUS status) noexcept
     {
-        if (!g_ActiveNtCallback)
+        if (!g_ActiveNtCallback || BkSr71IsInternalCall())
         {
             return;
         }
@@ -3001,7 +3001,7 @@ namespace BK_NT
             return reinterpret_cast<void *>(&NtGetNextThread_Hook);
         return nullptr;
     }
-}
+} // namespace BK_NT
 
 #endif
 

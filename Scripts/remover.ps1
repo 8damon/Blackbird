@@ -99,8 +99,24 @@ function Invoke-BlackbirdRuntimeDisarm {
         return
     }
 
+    $resolvedSensorCorePath = (Resolve-Path -LiteralPath $SensorCorePath -ErrorAction Stop).Path
+    $escapedSensorCorePath = $resolvedSensorCorePath.Replace("'", "''")
+    # Keep J58.dll out of this remover process; Windows will not unload the P/Invoke DLL until process exit.
+    $childBody = @'
+$ErrorActionPreference = "Stop"
+
+function Write-InfoLog {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
+
+    Write-Host ("[info] {0}" -f $Message) -ForegroundColor Gray
+}
+
+try {
     if ($null -eq ("BlackbirdRuntimeDisarmNative" -as [type])) {
-        Add-Type -Language CSharp -TypeDefinition @'
+        Add-Type -Language CSharp -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
 
@@ -121,7 +137,7 @@ public static class BlackbirdRuntimeDisarmNative
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool BkscCloseControlDevice(IntPtr device);
 }
-'@
+"@
     }
 
     $sensorDir = Split-Path -Path $SensorCorePath -Parent
@@ -152,6 +168,25 @@ public static class BlackbirdRuntimeDisarmNative
             [void][BlackbirdRuntimeDisarmNative]::BkscCloseControlDevice($device)
         }
         [void][BlackbirdRuntimeDisarmNative]::SetDllDirectory($null)
+    }
+}
+catch {
+    Write-Host "    Runtime disarm helper failed: $($_.Exception.Message)" -ForegroundColor Yellow
+}
+'@
+
+    $childScript = "`$SensorCorePath = '$escapedSensorCorePath'" + [Environment]::NewLine + $childBody
+    $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($childScript))
+    $powershellPath = Join-Path $env:WINDIR "System32\WindowsPowerShell\v1.0\powershell.exe"
+    if (-not (Test-Path -LiteralPath $powershellPath)) {
+        $powershellPath = "powershell.exe"
+    }
+
+    Write-VerboseLog "Launching isolated runtime disarm helper so J58.dll is not loaded by the remover process."
+    & $powershellPath -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedCommand
+    $helperExitCode = $LASTEXITCODE
+    if ($helperExitCode -ne 0) {
+        Write-Host "    Runtime disarm helper exited with code $helperExitCode; continuing removal." -ForegroundColor Yellow
     }
 }
 
@@ -579,8 +614,6 @@ $activity = "Blackbird removal"
 $driverDst = Join-Path $env:windir ("System32\drivers\" + $DriverName + ".sys")
 $controllerRoot = Join-Path -Path $env:ProgramFiles -ChildPath "Blackbird"
 $controllerDst = Join-Path $controllerRoot "BlackbirdController.exe"
-$netSvcDst = Join-Path $controllerRoot "BlackbirdNetSvc.exe"
-$previewHostDst = Join-Path $controllerRoot "BlackbirdPreviewHost.exe"
 $runnerDst = Join-Path $controllerRoot "BlackbirdRunner.exe"
 $sensorCoreDst = Join-Path $controllerRoot "J58.dll"
 $hookDllDst = Join-Path $controllerRoot "SR71.dll"
@@ -610,12 +643,6 @@ Write-Stage -Index 4 -Total $totalStages -Activity $activity -Status "Deleting c
 if (-not (Wait-UntilFileUnlocked -Path $controllerDst -TimeoutSeconds 20)) {
     throw "$controllerDst is still locked after controller service stop. Reboot then rerun remover."
 }
-if (-not (Wait-UntilFileUnlocked -Path $netSvcDst -TimeoutSeconds 20)) {
-    throw "$netSvcDst is still locked after controller service stop. Reboot then rerun remover."
-}
-if (-not (Wait-UntilFileUnlocked -Path $previewHostDst -TimeoutSeconds 20)) {
-    throw "$previewHostDst is still locked after controller service stop. Reboot then rerun remover."
-}
 if (-not (Wait-UntilFileUnlocked -Path $runnerDst -TimeoutSeconds 20)) {
     throw "$runnerDst is still locked after controller service stop. Reboot then rerun remover."
 }
@@ -632,10 +659,6 @@ Write-Stage -Index 5 -Total $totalStages -Activity $activity -Status "Restoring 
 Restore-BlackbirdCrashDumpSettings
 
 Write-Stage -Index 6 -Total $totalStages -Activity $activity -Status "Removing firewall rules"
-Remove-FirewallRuleIfPresent -DisplayName "Blackbird Operator UDP Discovery"
-Remove-FirewallRuleIfPresent -DisplayName "Blackbird Operator TCP Status"
-Remove-FirewallRuleIfPresent -DisplayName "Blackbird Operator TCP Command"
-Remove-FirewallRuleIfPresent -DisplayName "Blackbird Operator ICMPv4"
 
 Write-Stage -Index 7 -Total $totalStages -Activity $activity -Status "Removal complete"
 Write-VerboseLog "Driver and controller teardown finished"

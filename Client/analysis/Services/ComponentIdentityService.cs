@@ -39,7 +39,7 @@ namespace BlackbirdInterface
                 System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "drivers");
             string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
 
-            return new List<ComponentEntry> {
+            var entries = new List<ComponentEntry> {
                 BuildEntry("Interface", "Analyst interface.", Environment.ProcessPath ?? string.Empty),
                 BuildEntry("SR71",
                            "User-mode sensor injected into targets for NT, Winsock, module, and runtime telemetry.",
@@ -50,15 +50,14 @@ namespace BlackbirdInterface
                     "DllHost",
                     "DLL invocation and instrumentation host used when analyzing DLLs instead of launching EXEs directly.",
                     ResolveDllHostPath(baseDir, pf)),
-                BuildEntry("BKDC", "Disassembly helper used by the analyst interface.", ResolveBkdcPath(baseDir, pf)),
                 BuildEntry("Driver", "Kernel driver and policy enforcement layer.",
                            ResolveServiceBinaryPath("BK", System.IO.Path.Combine(sys32Drivers, "Blackbird.sys"))),
-                BuildEntry(
-                    "Controller",
-                    "Service broker and communication relay between interface, SR71, ETW, and the driver.",
-                    ResolveServiceBinaryPath("BlackbirdController",
-                                             System.IO.Path.Combine(pf, "Blackbird", "BlackbirdController.exe")))
+                BuildEntry("Controller",
+                           "Service broker and communication relay between interface, SR71, ETW, and the driver.",
+                           ResolveServiceBinaryPath("BlackbirdController",
+                                                    System.IO.Path.Combine(pf, "Blackbird", "BlackbirdController.exe")))
             };
+            return entries;
         }
 
         private static ComponentEntry BuildEntry(string name, string description, string path)
@@ -109,17 +108,6 @@ namespace BlackbirdInterface
             {
                 return string.Empty;
             }
-        }
-
-        private static string ResolveBkdcPath(string baseDir, string pf)
-        {
-            string[] candidates = { System.IO.Path.Combine(baseDir, "BKDC.dll"),
-                                    System.IO.Path.Combine(Environment.CurrentDirectory, "BKDC.dll"),
-                                    System.IO.Path.Combine(pf, "Blackbird", "BKDC.dll") };
-            foreach (string c in candidates)
-                if (File.Exists(c))
-                    return c;
-            return System.IO.Path.Combine(baseDir, "BKDC.dll");
         }
 
         private static string ResolveServiceBinaryPath(string serviceName, string fallback)

@@ -20,9 +20,12 @@ namespace BK_RUNTIME_INTERNAL
         inline constexpr DWORD kPicStubAllocationSize = 0x1000u;
         inline constexpr std::uint64_t kTebInstrumentationPreviousPc = 0x2D8u;
         inline constexpr std::uint64_t kTebInstrumentationPreviousSp = 0x2E0u;
+        inline constexpr std::uint64_t kTebInstrumentationCallbackDisabled = 0x2ECu;
         inline constexpr std::uint64_t kTebClientIdUniqueThread = 0x48u;
+        inline constexpr std::uint32_t kPicReturnAbiLegacyTeb = 0u;
         inline constexpr LONG kPicSampleRingMask = 127;
         inline constexpr ULONGLONG kPicPublishMinIntervalMs = 500ull;
+        inline constexpr bool kPicRuntimeDisabledForTest = true;
 
         struct ProcessInstrumentationCallbackInformation
         {
@@ -52,6 +55,11 @@ namespace BK_RUNTIME_INTERNAL
         volatile LONG g_PicWriteSequence = 0;
         volatile LONG g_PicReadSequence = 0;
         volatile LONG g_PicDroppedSamples = 0;
+        volatile LONG g_PicLegacyAbiObserved = 0;
+        volatile LONG g_PicZeroPreviousPcObserved = 0;
+        volatile LONG g_PicLegacyAbiLogged = 0;
+        volatile LONG g_PicZeroPreviousPcLogged = 0;
+        volatile LONG g_PicDisabledLogged = 0;
         PicSample g_PicSamples[kPicSampleRingMask + 1]{};
         PicRange g_PicNtdllRange{};
         PicRange g_PicWin32uRange{};
@@ -134,10 +142,38 @@ namespace BK_RUNTIME_INTERNAL
             }
         }
 
-        extern "C" __declspec(noinline) void Sr71PicCallbackDispatch() noexcept
+        void LogPicAbiObservations() noexcept
         {
-            const std::uint64_t previousPc = __readgsqword(kTebInstrumentationPreviousPc);
-            if (previousPc == 0 || PicAddressIsKnownSystemReturn(previousPc))
+            if (InterlockedCompareExchange(&g_PicLegacyAbiObserved, 0, 0) != 0 &&
+                InterlockedCompareExchange(&g_PicLegacyAbiLogged, 1, 0) == 0)
+            {
+                BkDbgLog("ProcessInstrumentationCallback: observed x64 r10/TEB thunk callback ABI");
+            }
+            if (InterlockedCompareExchange(&g_PicZeroPreviousPcObserved, 0, 0) != 0 &&
+                InterlockedCompareExchange(&g_PicZeroPreviousPcLogged, 1, 0) == 0)
+            {
+                BkDbgLog("ProcessInstrumentationCallback: callback fired without a recoverable previous PC");
+            }
+        }
+
+        extern "C" __declspec(noinline) void Sr71PicCallbackDispatch(std::uint64_t previousPc, std::uint64_t previousSp,
+                                                                     std::uint32_t returnAbi) noexcept
+        {
+            UNREFERENCED_PARAMETER(returnAbi);
+            InterlockedCompareExchange(&g_PicLegacyAbiObserved, 1, 0);
+
+            if (BkSr71IsInternalCall())
+            {
+                return;
+            }
+
+            if (previousPc == 0)
+            {
+                InterlockedCompareExchange(&g_PicZeroPreviousPcObserved, 1, 0);
+                return;
+            }
+
+            if (PicAddressIsKnownSystemReturn(previousPc))
             {
                 return;
             }
@@ -145,7 +181,7 @@ namespace BK_RUNTIME_INTERNAL
             const LONG sequence = _InterlockedIncrement(&g_PicWriteSequence);
             PicSample &slot = g_PicSamples[sequence & kPicSampleRingMask];
             slot.PreviousPc = previousPc;
-            slot.PreviousSp = __readgsqword(kTebInstrumentationPreviousSp);
+            slot.PreviousSp = previousSp;
             slot.ThreadId = __readgsqword(kTebClientIdUniqueThread);
             slot.Sequence = sequence;
         }
@@ -164,18 +200,27 @@ namespace BK_RUNTIME_INTERNAL
                 return false;
             }
 
+            /*
+             * x64 PIC enters with r10 holding the original return PC and rsp
+             * already pointing at the original user stack. The thunk must seed
+             * the TEB previous-PC/SP slots itself before saving registers. This
+             * mirrors the standard PIC thunk shape and avoids guessing that the
+             * callback stack contains a return frame.
+             */
             const std::uint8_t templateBytes[] = {
-                0x9C, 0x50, 0x51, 0x52, 0x53, 0x55, 0x56, 0x57, 0x41, 0x50, 0x41, 0x51, 0x41, 0x52, 0x41,
-                0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x89, 0xE5, 0x48, 0x83, 0xE4,
-                0xF0, 0x48, 0x83, 0xEC, 0x20, 0x48, 0xB8, 0,    0,    0,    0,    0,    0,    0,    0,
-                0xFF, 0xD0, 0x48, 0x89, 0xEC, 0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x41, 0x5B,
-                0x41, 0x5A, 0x41, 0x59, 0x41, 0x58, 0x5F, 0x5E, 0x5D, 0x5B, 0x5A, 0x59, 0x58, 0x9D, 0x65,
-                0x48, 0x8B, 0x24, 0x25, 0xE0, 0x02, 0x00, 0x00, 0x65, 0xFF, 0x24, 0x25, 0xD8, 0x02, 0x00,
-                0x00};
+                0x65, 0x48, 0x89, 0x24, 0x25, 0xE0, 0x02, 0x00, 0x00, 0x65, 0x4C, 0x89, 0x14, 0x25, 0xD8, 0x02, 0x00,
+                0x00, 0x49, 0x89, 0xCA, 0x9C, 0x50, 0x51, 0x52, 0x53, 0x55, 0x56, 0x57, 0x41, 0x50, 0x41, 0x51, 0x41,
+                0x52, 0x41, 0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x89, 0xE5, 0x65, 0xC6, 0x04,
+                0x25, 0xEC, 0x02, 0x00, 0x00, 0x01, 0x65, 0x48, 0x8B, 0x0C, 0x25, 0xD8, 0x02, 0x00, 0x00, 0x65, 0x48,
+                0x8B, 0x14, 0x25, 0xE0, 0x02, 0x00, 0x00, 0x45, 0x31, 0xC0, 0x48, 0x83, 0xE4, 0xF0, 0x48, 0x83, 0xEC,
+                0x20, 0x48, 0xB8, 0,    0,    0,    0,    0,    0,    0,    0,    0xFF, 0xD0, 0x48, 0x89, 0xEC, 0x65,
+                0xC6, 0x04, 0x25, 0xEC, 0x02, 0x00, 0x00, 0x00, 0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x41,
+                0x5B, 0x41, 0x5A, 0x41, 0x59, 0x41, 0x58, 0x5F, 0x5E, 0x5D, 0x5B, 0x5A, 0x59, 0x58, 0x9D, 0x65, 0x48,
+                0x8B, 0x24, 0x25, 0xE0, 0x02, 0x00, 0x00, 0x65, 0xFF, 0x24, 0x25, 0xD8, 0x02, 0x00, 0x00};
             static_assert(sizeof(templateBytes) < kPicStubAllocationSize, "PIC stub must fit in one page.");
 
             std::memcpy(stub, templateBytes, sizeof(templateBytes));
-            *reinterpret_cast<std::uint64_t *>(reinterpret_cast<std::uint8_t *>(stub) + 37u) =
+            *reinterpret_cast<std::uint64_t *>(reinterpret_cast<std::uint8_t *>(stub) + 0x58u) =
                 reinterpret_cast<std::uint64_t>(&Sr71PicCallbackDispatch);
 
             DWORD oldProtect = 0;
@@ -199,6 +244,9 @@ namespace BK_RUNTIME_INTERNAL
             g_PicStub = stub;
             g_PicStubRange.Base = reinterpret_cast<std::uint64_t>(stub);
             g_PicStubRange.End = g_PicStubRange.Base + kPicStubAllocationSize;
+            BkDbgLog("BuildPicCallbackStub: stub=%p dispatch=%p size=0x%lX", g_PicStub,
+                     reinterpret_cast<void *>(&Sr71PicCallbackDispatch),
+                     static_cast<unsigned long>(sizeof(templateBytes)));
             return true;
         }
 
@@ -210,18 +258,20 @@ namespace BK_RUNTIME_INTERNAL
             }
 
             const UINT64 callbackAddress = reinterpret_cast<UINT64>(g_PicStub);
+            BkDbgLog("RegisterPicProtection: begin callback=0x%llX size=0x%lX",
+                     static_cast<unsigned long long>(callbackAddress),
+                     static_cast<unsigned long>(kPicStubAllocationSize));
             if (!BKIPC::RegisterInstrumentationRange(callbackAddress, kPicStubAllocationSize,
-                                                     BK_INSTRUMENTATION_FLAG_PROCESS_CALLBACK,
-                                                     "rt.pic"))
+                                                     BK_INSTRUMENTATION_FLAG_PROCESS_CALLBACK, "rt.pic"))
             {
                 BkRuntimeReportFault(BkRuntimeFaultCode::ProcessInstrumentationCallbackProtectFailed, callbackAddress,
                                      kPicStubAllocationSize);
                 return false;
             }
 
-            if (!BKIPC::RegisterProcessInstrumentationCallback(
-                    callbackAddress, kPicStubAllocationSize,
-                    BK_PROCESS_INSTRUMENTATION_CALLBACK_FLAG_X64 | BK_PROCESS_INSTRUMENTATION_CALLBACK_FLAG_SR71))
+            if (!BKIPC::RegisterProcessInstrumentationCallback(callbackAddress, kPicStubAllocationSize,
+                                                               BK_PROCESS_INSTRUMENTATION_CALLBACK_FLAG_X64 |
+                                                                   BK_PROCESS_INSTRUMENTATION_CALLBACK_FLAG_SR71))
             {
                 BkRuntimeReportFault(BkRuntimeFaultCode::ProcessInstrumentationCallbackProtectFailed, callbackAddress,
                                      kPicStubAllocationSize);
@@ -229,6 +279,9 @@ namespace BK_RUNTIME_INTERNAL
             }
 
             InterlockedExchange(&g_PicProtectRegistered, 1);
+            BkDbgLog("RegisterPicProtection: registered callback=0x%llX size=0x%lX",
+                     static_cast<unsigned long long>(callbackAddress),
+                     static_cast<unsigned long>(kPicStubAllocationSize));
             return true;
         }
 
@@ -266,11 +319,21 @@ namespace BK_RUNTIME_INTERNAL
                    protect == PAGE_EXECUTE_WRITECOPY;
         }
 #endif
-    }
+    } // namespace
 
     bool EnsureProcessInstrumentationCallbackInstalled(bool allowInstallNow) noexcept
     {
 #if defined(_M_X64)
+        UNREFERENCED_PARAMETER(allowInstallNow);
+        if (kPicRuntimeDisabledForTest)
+        {
+            if (InterlockedCompareExchange(&g_PicDisabledLogged, 1, 0) == 0)
+            {
+                BkDbgLog("EnsureProcessInstrumentationCallbackInstalled: disabled for stability test");
+            }
+            return false;
+        }
+
         if (InterlockedCompareExchange(&g_PicInstallState, 0, 0) == 2)
         {
             return true;
@@ -286,6 +349,7 @@ namespace BK_RUNTIME_INTERNAL
             return false;
         }
 
+        BkDbgLog("EnsureProcessInstrumentationCallbackInstalled: begin allowInstallNow=%u", allowInstallNow ? 1u : 0u);
         RefreshPicKnownRanges();
 
         bool ok = false;
@@ -297,8 +361,7 @@ namespace BK_RUNTIME_INTERNAL
             }
             else
             {
-                auto ntSetInformationProcess =
-                    ResolveNtdllExport<NtSetInformationProcessFn>("NtSetInformationProcess");
+                auto ntSetInformationProcess = ResolveNtdllExport<NtSetInformationProcessFn>("NtSetInformationProcess");
                 if (ntSetInformationProcess == nullptr)
                 {
                     BkRuntimeReportFault(BkRuntimeFaultCode::ProcessInstrumentationCallbackInstallFailed, 0);
@@ -310,10 +373,12 @@ namespace BK_RUNTIME_INTERNAL
                     info.Version = kProcessInstrumentationCallbackVersion;
                     info.Callback = g_PicStub;
 
-                    const NTSTATUS status = ntSetInformationProcess(CurrentProcessHandle(),
-                                                                    kProcessInstrumentationCallbackClass, &info,
-                                                                    sizeof(info));
+                    BkDbgLog("EnsureProcessInstrumentationCallbackInstalled: installing callback=%p", g_PicStub);
+                    const NTSTATUS status = ntSetInformationProcess(
+                        CurrentProcessHandle(), kProcessInstrumentationCallbackClass, &info, sizeof(info));
                     ok = NtSucceeded(status);
+                    BkDbgLog("EnsureProcessInstrumentationCallbackInstalled: NtSetInformationProcess status=0x%08lX",
+                             static_cast<unsigned long>(status));
                     if (!ok)
                     {
                         BkRuntimeReportFault(BkRuntimeFaultCode::ProcessInstrumentationCallbackInstallFailed,
@@ -334,6 +399,7 @@ namespace BK_RUNTIME_INTERNAL
         {
             BkDbgLog("EnsureProcessInstrumentationCallbackInstalled: callback=%p", g_PicStub);
         }
+        LogPicAbiObservations();
         return ok;
 #else
         UNREFERENCED_PARAMETER(allowInstallNow);
@@ -344,6 +410,12 @@ namespace BK_RUNTIME_INTERNAL
     void FlushProcessInstrumentationCallbackSamples() noexcept
     {
 #if defined(_M_X64)
+        if (kPicRuntimeDisabledForTest)
+        {
+            return;
+        }
+
+        LogPicAbiObservations();
         RefreshPicKnownRanges();
 
         const LONG writeSequence = InterlockedCompareExchange(&g_PicWriteSequence, 0, 0);
@@ -359,7 +431,8 @@ namespace BK_RUNTIME_INTERNAL
         {
             readSequence += 1;
             PicSample sample = g_PicSamples[readSequence & kPicSampleRingMask];
-            if (sample.Sequence != readSequence || sample.PreviousPc == 0 || PicAddressIsKnownSystemReturn(sample.PreviousPc))
+            if (sample.Sequence != readSequence || sample.PreviousPc == 0 ||
+                PicAddressIsKnownSystemReturn(sample.PreviousPc))
             {
                 continue;
             }
@@ -399,9 +472,14 @@ namespace BK_RUNTIME_INTERNAL
         InterlockedExchange(&g_PicWriteSequence, 0);
         InterlockedExchange(&g_PicReadSequence, 0);
         InterlockedExchange(&g_PicDroppedSamples, 0);
+        InterlockedExchange(&g_PicLegacyAbiObserved, 0);
+        InterlockedExchange(&g_PicZeroPreviousPcObserved, 0);
+        InterlockedExchange(&g_PicLegacyAbiLogged, 0);
+        InterlockedExchange(&g_PicZeroPreviousPcLogged, 0);
+        InterlockedExchange(&g_PicDisabledLogged, 0);
         g_PicLastPublishTick = 0;
         g_PicStub = nullptr;
         g_PicStubRange = {};
 #endif
     }
-}
+} // namespace BK_RUNTIME_INTERNAL

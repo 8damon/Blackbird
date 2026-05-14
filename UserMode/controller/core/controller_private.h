@@ -177,7 +177,11 @@ inline UINT32 ControllerComputeEtwDetectionTraits(_In_ const BKIPC_ETW_EVENT &Ev
     {
         traits |= BKIPC_ETW_TRAIT_HOOK_TAMPER;
     }
-    if (ControllerAsciiContainsInsensitive(Event.DetectionName, "CREDENTIAL_ACCESS"))
+    if (ControllerAsciiContainsInsensitive(Event.DetectionName, "CREDENTIAL_ACCESS") ||
+        ControllerAsciiContainsInsensitive(Event.DetectionName, "CREDENTIAL_STORE") ||
+        ControllerAsciiContainsInsensitive(Event.DetectionName, "DPAPI_UNPROTECT") ||
+        ControllerAsciiContainsInsensitive(Event.DetectionName, "VAULT_SECRET") ||
+        ControllerAsciiContainsInsensitive(Event.DetectionName, "IDENTITY_API"))
     {
         traits |= BKIPC_ETW_TRAIT_CREDENTIAL_ACCESS;
     }
@@ -251,7 +255,8 @@ inline UINT32 ControllerHeurFlagsFromDetectionTraits(_In_ UINT32 traits)
 #define BK_CONTROLLER_HOOK_READY_REQUIRED_MASK BK_CONTROLLER_HOOK_CORE_REQUIRED_MASK
 #define BK_CONTROLLER_DRIVER_STREAM_MASK                                                                  \
     (BK_STREAM_HANDLE | BK_STREAM_MEMORY | BK_STREAM_THREAD | BK_STREAM_FILESYSTEM | BK_STREAM_REGISTRY | \
-     BK_STREAM_TIMING | BK_STREAM_ENTERPRISE)
+     BK_STREAM_TIMING)
+#define BK_CONTROLLER_STREAM_USERMODE_ONLY BK_STREAM_USERMODE_ONLY
 
 enum class BkctlrClientRole : DWORD
 {
@@ -351,18 +356,95 @@ typedef struct _BK_CONTROLLER_CLIENT
     OwnedRanges[BK_CONTROLLER_MAX_OWNED_RANGES];
 } BK_CONTROLLER_CLIENT, *PBK_CONTROLLER_CLIENT;
 
-inline BOOL ControllerIsBlackbirdOwnedAddress(_In_ const BK_CONTROLLER_CLIENT *Client, _In_ UINT64 Address)
+inline BOOL ControllerBlackbirdOwnedRangeIntersects(_In_ const BK_CONTROLLER_CLIENT *Client, _In_ UINT64 Address,
+                                                    _In_ UINT64 Size)
 {
     if (Client == NULL || Address == 0 || Client->OwnedRangeCount == 0)
         return FALSE;
+    if (Size == 0)
+        Size = 1;
+
+    UINT64 end = Address + Size;
+    if (end <= Address)
+        end = ~0ull;
+
     for (DWORD i = 0; i < Client->OwnedRangeCount; ++i)
     {
         const BK_CONTROLLER_OWNED_RANGE *r = &Client->OwnedRanges[i];
         if (r->BaseAddress == 0 || r->RegionSize == 0)
             continue;
-        if (Address >= r->BaseAddress && Address < r->BaseAddress + r->RegionSize)
+
+        UINT64 rangeEnd = r->BaseAddress + r->RegionSize;
+        if (rangeEnd <= r->BaseAddress)
+            rangeEnd = ~0ull;
+
+        if (Address < rangeEnd && end > r->BaseAddress)
             return TRUE;
     }
+    return FALSE;
+}
+
+inline BOOL ControllerIsBlackbirdOwnedAddress(_In_ const BK_CONTROLLER_CLIENT *Client, _In_ UINT64 Address)
+{
+    return ControllerBlackbirdOwnedRangeIntersects(Client, Address, 1);
+}
+
+inline BOOL ControllerEtwEventTouchesBlackbirdOwnedRange(_In_ const BK_CONTROLLER_CLIENT *Client,
+                                                         _In_ const BKIPC_ETW_EVENT *Event)
+{
+    if (Client == NULL || Event == NULL)
+        return FALSE;
+
+    if (ControllerIsBlackbirdOwnedAddress(Client, Event->OriginAddress) ||
+        ControllerIsBlackbirdOwnedAddress(Client, Event->StartAddress) ||
+        ControllerBlackbirdOwnedRangeIntersects(Client, Event->ImageBase, Event->ImageSize) ||
+        ControllerBlackbirdOwnedRangeIntersects(Client, Event->DeepAllocationBase, Event->DeepRegionSize))
+    {
+        return TRUE;
+    }
+
+    const UINT32 stackCount =
+        (Event->StackCount < BKIPC_MAX_ETW_STACK_FRAMES) ? Event->StackCount : BKIPC_MAX_ETW_STACK_FRAMES;
+    for (UINT32 i = 0; i < stackCount; ++i)
+    {
+        if (ControllerIsBlackbirdOwnedAddress(Client, Event->Stack[i]))
+            return TRUE;
+    }
+
+    const UINT32 hookArgCount = (Event->HookArgCount < BKIPC_MAX_HOOK_ARGS) ? Event->HookArgCount : BKIPC_MAX_HOOK_ARGS;
+    for (UINT32 i = 0; i < hookArgCount; ++i)
+    {
+        if (ControllerIsBlackbirdOwnedAddress(Client, Event->HookArgs[i]))
+            return TRUE;
+    }
+
+    return FALSE;
+}
+
+inline BOOL ControllerEtwEventIsBlackbirdOwnedNoise(_In_ const BKIPC_ETW_EVENT *Event)
+{
+    if (Event == NULL)
+        return FALSE;
+
+    const UINT32 traits = ControllerComputeEtwDetectionTraits(*Event);
+    if ((traits & (BKIPC_ETW_TRAIT_HOOK_TAMPER | BKIPC_ETW_TRAIT_CREDENTIAL_ACCESS | BKIPC_ETW_TRAIT_IMAGE_TAMPER)) !=
+        0)
+    {
+        return FALSE;
+    }
+
+    if (Event->Family == BlackbirdIpcEtwFamilyHandle ||
+        ControllerAsciiEqualsInsensitive(Event->ClassName, "DIRECT-SYSCALL-SUSPECT") ||
+        ControllerAsciiEqualsInsensitive(Event->ClassName, "UNKNOWN-ORIGIN") ||
+        ControllerAsciiContainsInsensitive(Event->DetectionName, "DIRECT_SYSCALL") ||
+        ControllerAsciiContainsInsensitive(Event->DetectionName, "DIRECT-SYSCALL") ||
+        ControllerAsciiContainsInsensitive(Event->DetectionName, "ANOMALY_ON_HANDLE_OP") ||
+        ControllerAsciiContainsInsensitive(Event->DetectionName, "SUSPECT_HANDLE_OPERATION") ||
+        (traits & BKIPC_ETW_TRAIT_DIRECT_SYSCALL) != 0 || (Event->Flags & BKIPC_ETW_FLAG_SYSCALL_EXPORT_MISMATCH) != 0)
+    {
+        return TRUE;
+    }
+
     return FALSE;
 }
 

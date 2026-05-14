@@ -1387,7 +1387,6 @@ VOID BkntkiSanitizeProcessInformation(_In_ ULONG SystemInformationClass,
 {
     static const UNICODE_STRING selfHiddenNames[] = {
         RTL_CONSTANT_STRING(L"BlackbirdController.exe"),
-        RTL_CONSTANT_STRING(L"BlackbirdNetSvc.exe"),
     };
     static const UNICODE_STRING antiVirtualizationNames[] = {
         RTL_CONSTANT_STRING(L"vmtoolsd.exe"),
@@ -1830,8 +1829,7 @@ static BOOLEAN BkntkiObjectNameIsProtectedIpc(_In_ PVOID Object)
     if (NT_SUCCESS(status))
     {
         protectedName = BkntkiUnicodeContainsLiteral(&nameInfo->Name, L"BlackbirdHookIngest") ||
-                        BkntkiUnicodeContainsLiteral(&nameInfo->Name, L"BlackbirdController") ||
-                        BkntkiUnicodeContainsLiteral(&nameInfo->Name, L"BlackbirdNetSvc");
+                        BkntkiUnicodeContainsLiteral(&nameInfo->Name, L"BlackbirdController");
     }
 
     ExFreePoolWithTag(nameInfo, 'hNbB');
@@ -2288,13 +2286,10 @@ typedef struct _BK_PROCESS_INSTRUMENTATION_CALLBACK_INFORMATION
     PVOID Callback;
 } BK_PROCESS_INSTRUMENTATION_CALLBACK_INFORMATION, *PBK_PROCESS_INSTRUMENTATION_CALLBACK_INFORMATION;
 
-BOOLEAN BkntkiShouldBlockProcessInstrumentationCallbackSet(_In_ HANDLE ProcessHandle,
-                                                           _In_ PROCESSINFOCLASS ProcessInformationClass,
-                                                           _In_reads_bytes_opt_(ProcessInformationLength)
-                                                               PVOID ProcessInformation,
-                                                           _In_ ULONG ProcessInformationLength,
-                                                           _Out_opt_ UINT32 *TargetProcessId,
-                                                           _Out_opt_ UINT64 *RequestedCallback)
+BOOLEAN BkntkiShouldBlockProcessInstrumentationCallbackSet(
+    _In_ HANDLE ProcessHandle, _In_ PROCESSINFOCLASS ProcessInformationClass,
+    _In_reads_bytes_opt_(ProcessInformationLength) PVOID ProcessInformation, _In_ ULONG ProcessInformationLength,
+    _Out_opt_ UINT32 *TargetProcessId, _Out_opt_ UINT64 *RequestedCallback)
 {
     BK_PROCESS_INSTRUMENTATION_CALLBACK_INFORMATION info;
     UINT32 targetPid = 0;
@@ -2330,7 +2325,8 @@ BOOLEAN BkntkiShouldBlockProcessInstrumentationCallbackSet(_In_ HANDLE ProcessHa
         {
             if (ExGetPreviousMode() != KernelMode)
             {
-                ProbeForRead(ProcessInformation, sizeof(info), __alignof(BK_PROCESS_INSTRUMENTATION_CALLBACK_INFORMATION));
+                ProbeForRead(ProcessInformation, sizeof(info),
+                             __alignof(BK_PROCESS_INSTRUMENTATION_CALLBACK_INFORMATION));
             }
             RtlCopyMemory(&info, ProcessInformation, sizeof(info));
             requested = (UINT64)(ULONG_PTR)info.Callback;

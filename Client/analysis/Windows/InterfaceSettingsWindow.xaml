@@ -15,8 +15,6 @@
     <Grid Margin="12,0,12,12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -29,7 +27,7 @@
                 <TextBlock Text="Interface Settings"
                            FontWeight="SemiBold"
                            FontSize="14"/>
-                <TextBlock Text="Theme mode and analyst shortcuts."
+                <TextBlock Text="Theme, workspace layout, API view behavior, and analyst shortcuts."
                            Foreground="{DynamicResource WinMutedTextBrush}"/>
             </StackPanel>
             <Button DockPanel.Dock="Right"
@@ -40,101 +38,236 @@
                     Click="Close_Click"/>
         </DockPanel>
 
-        <Border Grid.Row="1"
-                BorderBrush="{DynamicResource WinBorderBrush}"
-                BorderThickness="1"
-                Background="{DynamicResource WinPanelBrush}"
-                Padding="12"
-                Margin="0,0,0,10">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="160"/>
-                    <ColumnDefinition Width="220"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
+        <TabControl Grid.Row="1"
+                    x:Name="SettingsTabs">
+            <TabItem Header="Preferences">
+                <Grid Margin="0,10,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
 
-                <TextBlock Grid.Column="0"
-                           Text="Theme"
-                           FontWeight="SemiBold"
-                           VerticalAlignment="Center"/>
+                    <Border Grid.Row="0"
+                            BorderBrush="{DynamicResource WinBorderBrush}"
+                            BorderThickness="1"
+                            Background="{DynamicResource WinPanelBrush}"
+                            Padding="12"
+                            Margin="0,0,0,10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="160"/>
+                                <ColumnDefinition Width="220"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
 
-                <ComboBox x:Name="ThemeModeBox"
-                          Grid.Column="1"
-                          Width="180"
-                          HorizontalAlignment="Left"
-                          SelectionChanged="ThemeModeBox_SelectionChanged">
-                    <ComboBoxItem Tag="Auto" Content="Follow Windows"/>
-                    <ComboBoxItem Tag="Dark" Content="Dark"/>
-                    <ComboBoxItem Tag="Light" Content="Light"/>
-                </ComboBox>
+                            <TextBlock Grid.Column="0"
+                                       Text="Theme"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"/>
 
-                <TextBlock Grid.Column="2"
-                           Margin="12,0,0,0"
-                           Text="Light mode is applied live so open windows and pop-outs update immediately."
-                           Foreground="{DynamicResource WinMutedTextBrush}"
-                           TextWrapping="Wrap"
-                           VerticalAlignment="Center"/>
-            </Grid>
-        </Border>
+                            <ComboBox x:Name="ThemeModeBox"
+                                      Grid.Column="1"
+                                      Width="180"
+                                      HorizontalAlignment="Left"
+                                      SelectionChanged="ThemeModeBox_SelectionChanged">
+                                <ComboBoxItem Tag="Auto" Content="Follow Windows"/>
+                                <ComboBoxItem Tag="Dark" Content="Dark"/>
+                                <ComboBoxItem Tag="Light" Content="Light"/>
+                            </ComboBox>
 
-        <TextBlock Grid.Row="2"
-                   x:Name="CaptureStatusBlock"
-                   Margin="0,0,0,8"
-                   Foreground="{DynamicResource WinMutedTextBrush}"
-                   Text="Select Rebind, then press the new shortcut. Escape cancels. Backspace clears."/>
+                            <TextBlock Grid.Column="2"
+                                       Margin="12,0,0,0"
+                                       Text="Light mode is applied live so open windows and pop-outs update immediately."
+                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
 
-        <DataGrid Grid.Row="3"
-                  x:Name="ShortcutGrid"
-                  AutoGenerateColumns="False"
-                  IsReadOnly="True"
-                  CanUserAddRows="False"
-                  CanUserDeleteRows="False"
-                  CanUserResizeRows="False"
-                  ColumnHeaderHeight="24"
-                  RowHeight="28"
-                  HeadersVisibility="Column"
-                  SelectionMode="Single">
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="Action" Binding="{Binding Label}" Width="220"/>
-                <DataGridTextColumn Header="Shortcut" Binding="{Binding GestureText}" Width="140"/>
-                <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*"/>
-                <DataGridTemplateColumn Header="" Width="88">
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate>
-                            <Button Content="{Binding RebindButtonText}"
-                                    Tag="{Binding}"
-                                    Padding="8,2"
-                                    MinWidth="72"
-                                    Click="RebindShortcut_Click"/>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
-                <DataGridTemplateColumn Header="" Width="72">
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate>
-                            <Button Content="Clear"
-                                    Tag="{Binding}"
-                                    Padding="8,2"
-                                    MinWidth="56"
-                                    Click="ClearShortcut_Click"/>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
-                <DataGridTemplateColumn Header="" Width="72">
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate>
-                            <Button Content="Reset"
-                                    Tag="{Binding}"
-                                    Padding="8,2"
-                                    MinWidth="56"
-                                    Click="ResetShortcut_Click"/>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
-            </DataGrid.Columns>
-        </DataGrid>
+                    <Border Grid.Row="1"
+                            BorderBrush="{DynamicResource WinBorderBrush}"
+                            BorderThickness="1"
+                            Background="{DynamicResource WinPanelBrush}"
+                            Padding="12">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="160"/>
+                                <ColumnDefinition Width="220"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="10"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="4"
+                            <TextBlock Grid.Row="0"
+                                       Grid.Column="0"
+                                       Text="API capture"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"/>
+                            <CheckBox x:Name="AutoSwitchApiViewCheckBox"
+                                      Grid.Row="0"
+                                      Grid.Column="1"
+                                      Content="Open API view for SR71 captures"
+                                      VerticalAlignment="Center"/>
+                            <TextBlock Grid.Row="0"
+                                       Grid.Column="2"
+                                       Margin="12,0,0,0"
+                                       Text="Applies after launch or attach when usermode hooks are enabled."
+                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Center"/>
+
+                            <TextBlock Grid.Row="2"
+                                       Grid.Column="0"
+                                       Text="API layout"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"/>
+                            <ComboBox x:Name="DefaultApiPresentationBox"
+                                      Grid.Row="2"
+                                      Grid.Column="1"
+                                      Width="180"
+                                      HorizontalAlignment="Left">
+                                <ComboBoxItem Tag="CallGraph" Content="Call graph"/>
+                                <ComboBoxItem Tag="ThreadTimeline" Content="Thread timeline"/>
+                            </ComboBox>
+                            <TextBlock Grid.Row="2"
+                                       Grid.Column="2"
+                                       Margin="12,0,0,0"
+                                       Text="Default presentation used when the API view opens."
+                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Workspace">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              Margin="0,10,0,0">
+                    <Border BorderBrush="{DynamicResource WinBorderBrush}"
+                            BorderThickness="1"
+                            Background="{DynamicResource WinPanelBrush}"
+                            Padding="12">
+                        <StackPanel>
+                            <TextBlock Text="Custom workspace"
+                                       FontWeight="SemiBold"/>
+                            <TextBlock Margin="0,4,0,12"
+                                       Text="Choose the panes that should be visible by default. Changes persist with the operator profile."
+                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                       TextWrapping="Wrap"/>
+
+                            <UniformGrid Columns="2">
+                                <CheckBox x:Name="ShowEventsPaneCheckBox"
+                                          Margin="0,0,18,10"
+                                          Content="Events / timeline"/>
+                                <CheckBox x:Name="ShowPerformancePaneCheckBox"
+                                          Margin="0,0,18,10"
+                                          Content="Performance / threads / memory"/>
+                                <CheckBox x:Name="ShowEtwPaneCheckBox"
+                                          Margin="0,0,18,10"
+                                          Content="ETW events"/>
+                                <CheckBox x:Name="ShowDetectionsPaneCheckBox"
+                                          Margin="0,0,18,10"
+                                          Content="Detections"/>
+                                <CheckBox x:Name="ShowFilesystemPaneCheckBox"
+                                          Margin="0,0,18,10"
+                                          Content="Filesystem"/>
+                                <CheckBox x:Name="ShowRegistryPaneCheckBox"
+                                          Margin="0,0,18,10"
+                                          Content="Registry"/>
+                                <CheckBox x:Name="ShowProcessRelationsPaneCheckBox"
+                                          Margin="0,0,18,10"
+                                          Content="Process relations"/>
+                            </UniformGrid>
+
+                            <Border Margin="0,4,0,12"
+                                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                    BorderThickness="0,1,0,0"/>
+
+                            <UniformGrid Columns="2">
+                                <CheckBox x:Name="PerformanceOnTopCheckBox"
+                                          Margin="0,0,18,10"
+                                          Content="Performance pane above events"/>
+                                <CheckBox x:Name="DetectionsOnTopCheckBox"
+                                          Margin="0,0,18,10"
+                                          Content="Detections pane above ETW"/>
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Shortcuts">
+                <Grid Margin="0,10,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0"
+                               x:Name="CaptureStatusBlock"
+                               Margin="0,0,0,8"
+                               Foreground="{DynamicResource WinMutedTextBrush}"
+                               Text="Select Rebind, then press the new shortcut. Escape cancels. Backspace clears."/>
+
+                    <DataGrid Grid.Row="1"
+                              x:Name="ShortcutGrid"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              CanUserResizeRows="False"
+                              ColumnHeaderHeight="24"
+                              RowHeight="28"
+                              HeadersVisibility="Column"
+                              SelectionMode="Single">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Action" Binding="{Binding Label}" Width="220"/>
+                            <DataGridTextColumn Header="Shortcut" Binding="{Binding GestureText}" Width="140"/>
+                            <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*"/>
+                            <DataGridTemplateColumn Header="" Width="88">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="{Binding RebindButtonText}"
+                                                Tag="{Binding}"
+                                                Padding="8,2"
+                                                MinWidth="72"
+                                                Click="RebindShortcut_Click"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="" Width="72">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="Clear"
+                                                Tag="{Binding}"
+                                                Padding="8,2"
+                                                MinWidth="56"
+                                                Click="ClearShortcut_Click"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="" Width="72">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="Reset"
+                                                Tag="{Binding}"
+                                                Padding="8,2"
+                                                MinWidth="56"
+                                                Click="ResetShortcut_Click"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+        <StackPanel Grid.Row="2"
                     Margin="0,12,0,0"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right">

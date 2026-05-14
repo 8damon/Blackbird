@@ -186,13 +186,13 @@ namespace BlackbirdInterface
                 AddLine(capturedStack, "No captured stack frames available.", "note");
             }
 
-            InspectorFieldNode disassembly = AddSection("Disassembly");
-            foreach (string line in SplitLines(EventDetailFormatting.FormatSampleDisassembly(
+            InspectorFieldNode sampleBytes = AddSection("Sample Bytes");
+            foreach (string line in SplitLines(EventDetailFormatting.FormatSampleBytes(
                          evidence.DeepSample, (int)evidence.DeepSampleSize, evidence.OriginAddress, evidence.OriginPath,
                          evidence.DeepAllocationBase, evidence.DeepRegionSize, evidence.DeepRegionProtect,
                          evidence.DeepRegionState, evidence.DeepRegionType)))
             {
-                AddLine(disassembly, line,
+                AddLine(sampleBytes, line,
                         line.StartsWith("summary:", StringComparison.OrdinalIgnoreCase) ? "note" : "line");
             }
 

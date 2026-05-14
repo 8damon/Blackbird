@@ -26,7 +26,32 @@ enum
     ControllerModuleOpCreateJobObjectW = 15,
     ControllerModuleOpOpenJobObjectW = 16,
     ControllerModuleOpAssignProcessToJobObject = 17,
-    ControllerModuleOpSetInformationJobObject = 18
+    ControllerModuleOpSetInformationJobObject = 18,
+    ControllerModuleOpLsaConnectUntrusted = 19,
+    ControllerModuleOpLsaLookupAuthenticationPackage = 20,
+    ControllerModuleOpLsaCallAuthenticationPackage = 21,
+    ControllerModuleOpAcquireCredentialsHandleA = 22,
+    ControllerModuleOpAcquireCredentialsHandleW = 23,
+    ControllerModuleOpInitializeSecurityContextA = 24,
+    ControllerModuleOpInitializeSecurityContextW = 25,
+    ControllerModuleOpAcceptSecurityContext = 26,
+    ControllerModuleOpCredReadA = 27,
+    ControllerModuleOpCredReadW = 28,
+    ControllerModuleOpCredEnumerateA = 29,
+    ControllerModuleOpCredEnumerateW = 30,
+    ControllerModuleOpCredReadDomainCredentialsA = 31,
+    ControllerModuleOpCredReadDomainCredentialsW = 32,
+    ControllerModuleOpLsaOpenPolicy = 33,
+    ControllerModuleOpLsaQueryInformationPolicy = 34,
+    ControllerModuleOpVaultEnumerateVaults = 35,
+    ControllerModuleOpVaultOpenVault = 36,
+    ControllerModuleOpVaultEnumerateItems = 37,
+    ControllerModuleOpVaultGetItem = 38,
+    ControllerModuleOpCryptUnprotectData = 39,
+    ControllerModuleOpNCryptUnprotectSecret = 40,
+    ControllerModuleOpNCryptOpenStorageProvider = 41,
+    ControllerModuleOpNCryptOpenKey = 42,
+    ControllerModuleOpNCryptDecrypt = 43
 };
 
 enum CONTROLLER_IMAGE_TAMPER_KIND
@@ -317,7 +342,7 @@ static BOOL ControllerPidImageNameEquals(_In_ DWORD ProcessId, _In_z_ PCWSTR Exp
     return FALSE;
 }
 
-static BOOL ControllerQueryProcessMemoryBasic(_In_ DWORD ProcessId, _In_ UINT64 Address,
+static BOOL ControllerQueryProcessRegionBasic(_In_ DWORD ProcessId, _In_ UINT64 Address,
                                               _Out_ MEMORY_BASIC_INFORMATION *Mbi)
 {
     HANDLE process;
@@ -358,7 +383,7 @@ static BOOL ControllerFunctionTableBaseLooksAbusive(_In_ DWORD ProcessId, _In_ U
         ZeroMemory(MbiOut, sizeof(*MbiOut));
     }
 
-    queried = ControllerQueryProcessMemoryBasic(ProcessId, BaseAddress, &mbi);
+    queried = ControllerQueryProcessRegionBasic(ProcessId, BaseAddress, &mbi);
     if (!queried)
     {
         if (Reason != NULL && ReasonChars != 0)
@@ -654,8 +679,8 @@ static BOOL ControllerCommandAllowedForRole(_In_ DWORD ClientRole, _In_ UINT32 C
                 Command == BlackbirdIpcCommandRegisterHookPatch ||
                 Command == BlackbirdIpcCommandRegisterProcessInstrumentationCallback);
     case BkctlrClientRoleControl:
-        return (Command != BlackbirdIpcCommandPublishHookEvent &&
-                Command != BlackbirdIpcCommandPublishHookEventBatch && Command != BlackbirdIpcCommandNotifyHookReady &&
+        return (Command != BlackbirdIpcCommandPublishHookEvent && Command != BlackbirdIpcCommandPublishHookEventBatch &&
+                Command != BlackbirdIpcCommandNotifyHookReady &&
                 Command != BlackbirdIpcCommandRegisterInstrumentationRange &&
                 Command != BlackbirdIpcCommandRegisterHookPatch &&
                 Command != BlackbirdIpcCommandRegisterProcessInstrumentationCallback);
@@ -1257,6 +1282,22 @@ static DWORD ControllerClientGetEtwEvent(_Inout_ BK_CONTROLLER_CLIENT *Client, _
     }
 }
 
+static BOOL ControllerHookExceptionIsCrash(_In_ UINT32 ExceptionCode)
+{
+    switch (ExceptionCode)
+    {
+    case 0xC0000005u: // STATUS_ACCESS_VIOLATION
+    case 0xC000001Du: // STATUS_ILLEGAL_INSTRUCTION
+    case 0xC0000094u: // STATUS_INTEGER_DIVIDE_BY_ZERO
+    case 0xC0000096u: // STATUS_PRIVILEGED_INSTRUCTION
+    case 0xC00000FDu: // STATUS_STACK_OVERFLOW
+    case 0xC0000409u: // STATUS_STACK_BUFFER_OVERRUN / fast-fail
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
 static VOID ControllerHookAppendRepeatToReason(_Inout_updates_(ReasonChars) PWSTR Reason, _In_ size_t ReasonChars,
                                                _In_ UINT32 CallerFlags)
 {
@@ -1269,8 +1310,8 @@ static VOID ControllerHookAppendRepeatToReason(_Inout_updates_(ReasonChars) PWST
         return;
     }
 
-    if (wcsstr(Reason, L" repeat=") != NULL ||
-        FAILED(StringCchLengthW(Reason, ReasonChars, &reasonLen)) || reasonLen >= ReasonChars - 1)
+    if (wcsstr(Reason, L" repeat=") != NULL || FAILED(StringCchLengthW(Reason, ReasonChars, &reasonLen)) ||
+        reasonLen >= ReasonChars - 1)
     {
         return;
     }
@@ -1285,7 +1326,6 @@ static VOID ControllerHookAppendRepeatToReason(_Inout_updates_(ReasonChars) PWST
     }
     (void)StringCchCatW(Reason, ReasonChars, suffix);
 }
-
 
 static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Client,
                                               _In_ const BKIPC_HOOK_EVENT *HookEvent)
@@ -1423,8 +1463,7 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
         {
             (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
                                  "PIC_DIRECT_SYSCALL_SUSPECT");
-            (void)StringCchCopyA(mapped.Operation, RTL_NUMBER_OF(mapped.Operation),
-                                 "ProcessInstrumentationCallback");
+            (void)StringCchCopyA(mapped.Operation, RTL_NUMBER_OF(mapped.Operation), "ProcessInstrumentationCallback");
             (void)StringCchPrintfW(mapped.EventName, RTL_NUMBER_OF(mapped.EventName), L"%S", mapped.Operation);
             (void)StringCchCopyA(mapped.ClassName, RTL_NUMBER_OF(mapped.ClassName), "BK Instrument");
             mapped.Severity = 6u;
@@ -1502,6 +1541,52 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
                                    (unsigned long long)((argCount > 2u) ? HookEvent->Args[2] : 0ull));
         }
     }
+    else if (HookEvent->Kind == BlackbirdIpcHookEventExceptionLowNoise ||
+             HookEvent->Kind == BlackbirdIpcHookEventExceptionHighPriv)
+    {
+        UINT32 exceptionCode = (UINT32)(HookEvent->Context0 & 0xFFFFFFFFull);
+        UINT32 exceptionFlags = (UINT32)(HookEvent->Context1 & 0xFFFFFFFFull);
+        UINT64 info0 = HookEvent->Context2;
+        UINT64 info1 = HookEvent->Context3;
+        BOOL crash = ControllerHookExceptionIsCrash(exceptionCode) ||
+                     ((exceptionFlags & EXCEPTION_NONCONTINUABLE) != 0u) ||
+                     (lstrcmpiA(apiName, "UsermodeMemoryFault") == 0);
+        PCSTR opName = (apiName[0] != '\0') ? apiName : "UsermodeException";
+
+        specializedEvent = TRUE;
+        mapped.TargetPid = eventPid;
+        mapped.StartAddress = HookEvent->Caller;
+        mapped.Severity = crash ? 8u : 4u;
+        (void)StringCchCopyA(mapped.Operation, RTL_NUMBER_OF(mapped.Operation), opName);
+        (void)StringCchPrintfW(mapped.EventName, RTL_NUMBER_OF(mapped.EventName), L"%S", opName);
+        (void)StringCchCopyA(mapped.ClassName, RTL_NUMBER_OF(mapped.ClassName),
+                             moduleName[0] != '\0' ? moduleName : "Exception");
+
+        if (exceptionCode == 0xC0000005u)
+        {
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
+                                 "USERMODE_ACCESS_VIOLATION");
+        }
+        else
+        {
+            (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
+                                 crash ? "USERMODE_EXCEPTION_CRASH" : "USERMODE_EXCEPTION");
+        }
+
+        (void)StringCchPrintfW(
+            mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+            L"user-mode exception code=0x%08X flags=0x%08X address=0x%llX module=%S info0=0x%llX info1=0x%llX rip=0x%llX rsp=0x%llX rbp=0x%llX rax=0x%llX rcx=0x%llX rdx=0x%llX r10=0x%llX eflags=0x%llX frames=%lu",
+            exceptionCode, exceptionFlags, (unsigned long long)HookEvent->Caller,
+            moduleName[0] != '\0' ? moduleName : "unknown", (unsigned long long)info0, (unsigned long long)info1,
+            (unsigned long long)((argCount > 0u) ? HookEvent->Args[0] : 0ull),
+            (unsigned long long)((argCount > 1u) ? HookEvent->Args[1] : 0ull),
+            (unsigned long long)((argCount > 2u) ? HookEvent->Args[2] : 0ull),
+            (unsigned long long)((argCount > 3u) ? HookEvent->Args[3] : 0ull),
+            (unsigned long long)((argCount > 4u) ? HookEvent->Args[4] : 0ull),
+            (unsigned long long)((argCount > 5u) ? HookEvent->Args[5] : 0ull),
+            (unsigned long long)((argCount > 6u) ? HookEvent->Args[6] : 0ull),
+            (unsigned long long)((argCount > 7u) ? HookEvent->Args[7] : 0ull), (unsigned long)HookEvent->StackCount);
+    }
     else
     {
         if (HookEvent->Kind == BlackbirdIpcHookEventNt && (lstrcmpiA(apiName, "NtAllocateVirtualMemory") == 0 ||
@@ -1514,8 +1599,7 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
             UINT32 targetPidArg = isAllocateEx ? 7u : 6u;
             UINT64 baseAddressArg = (argCount > 1u) ? HookEvent->Args[1] : 0ull;
             UINT64 regionSizeArg = (argCount > sizeArg) ? HookEvent->Args[sizeArg] : 0ull;
-            UINT32 allocType =
-                (argCount > allocTypeArg) ? (UINT32)(HookEvent->Args[allocTypeArg] & 0xFFFFFFFFull) : 0u;
+            UINT32 allocType = (argCount > allocTypeArg) ? (UINT32)(HookEvent->Args[allocTypeArg] & 0xFFFFFFFFull) : 0u;
             UINT32 protect = (argCount > protectArg) ? (UINT32)(HookEvent->Args[protectArg] & 0xFFFFFFFFull) : 0u;
             UINT32 targetPid = (argCount > targetPidArg && HookEvent->Args[targetPidArg] <= 0xFFFFFFFFull)
                                    ? (UINT32)HookEvent->Args[targetPidArg]
@@ -2276,6 +2360,193 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
                     (unsigned long long)HookEvent->Args[2], (unsigned long long)HookEvent->Args[3]);
                 break;
 
+            case ControllerModuleOpLsaConnectUntrusted:
+            case ControllerModuleOpLsaLookupAuthenticationPackage:
+            case ControllerModuleOpLsaCallAuthenticationPackage:
+            case ControllerModuleOpAcquireCredentialsHandleA:
+            case ControllerModuleOpAcquireCredentialsHandleW:
+            case ControllerModuleOpInitializeSecurityContextA:
+            case ControllerModuleOpInitializeSecurityContextW:
+            case ControllerModuleOpAcceptSecurityContext:
+            case ControllerModuleOpLsaOpenPolicy:
+            case ControllerModuleOpLsaQueryInformationPolicy:
+            {
+                ControllerHookCopyWideSampleToReason(nameBuffer, RTL_NUMBER_OF(nameBuffer), HookEvent->DataSample,
+                                                     sampleSize);
+                mapped.Severity = (moduleOp == ControllerModuleOpLsaCallAuthenticationPackage) ? 3u : 2u;
+                (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
+                                     "USERMODE_IDENTITY_API");
+                if (moduleOp == ControllerModuleOpLsaCallAuthenticationPackage)
+                {
+                    UINT32 submitSize = (UINT32)(HookEvent->Args[2] & 0xFFFFFFFFull);
+                    UINT32 messageType = (UINT32)((HookEvent->Args[2] >> 32u) & 0xFFFFFFFFull);
+                    UINT32 outputSize = (UINT32)(HookEvent->Args[3] & 0xFFFFFFFFull);
+                    UINT32 protocolStatus = (UINT32)((HookEvent->Args[3] >> 32u) & 0xFFFFFFFFull);
+                    (void)StringCchPrintfW(
+                        mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                        L"identity.lsa.call package=%ws packageId=%llu messageType=%lu inputBytes=%lu outputBytes=%lu status=0x%08llX protocolStatus=0x%08X",
+                        (nameBuffer[0] != L'\0') ? nameBuffer : L"Package", (unsigned long long)HookEvent->Args[1],
+                        (unsigned long)messageType, (unsigned long)submitSize, (unsigned long)outputSize,
+                        (unsigned long long)HookEvent->Args[0], (unsigned int)protocolStatus);
+                }
+                else if (moduleOp == ControllerModuleOpLsaLookupAuthenticationPackage)
+                {
+                    (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                           L"identity.lsa.lookup package=%ws packageId=%llu status=0x%08llX",
+                                           (nameBuffer[0] != L'\0') ? nameBuffer : L"Package",
+                                           (unsigned long long)HookEvent->Args[1],
+                                           (unsigned long long)HookEvent->Args[0]);
+                }
+                else if (moduleOp == ControllerModuleOpAcquireCredentialsHandleA ||
+                         moduleOp == ControllerModuleOpAcquireCredentialsHandleW)
+                {
+                    (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                           L"identity.sspi.acquire package=%ws credentialUse=0x%llX status=0x%08llX",
+                                           (nameBuffer[0] != L'\0') ? nameBuffer : L"SSPI",
+                                           (unsigned long long)HookEvent->Args[1],
+                                           (unsigned long long)HookEvent->Args[0]);
+                }
+                else if (moduleOp == ControllerModuleOpInitializeSecurityContextA ||
+                         moduleOp == ControllerModuleOpInitializeSecurityContextW)
+                {
+                    (void)StringCchPrintfW(
+                        mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                        L"identity.sspi.initialize target=%ws contextReq=0x%llX targetDataRep=0x%llX attrs=0x%llX status=0x%08llX",
+                        (nameBuffer[0] != L'\0') ? nameBuffer : L"<none>", (unsigned long long)HookEvent->Args[1],
+                        (unsigned long long)HookEvent->Args[2], (unsigned long long)HookEvent->Args[3],
+                        (unsigned long long)HookEvent->Args[0]);
+                }
+                else if (moduleOp == ControllerModuleOpAcceptSecurityContext)
+                {
+                    (void)StringCchPrintfW(
+                        mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                        L"identity.sspi.accept contextReq=0x%llX targetDataRep=0x%llX attrs=0x%llX status=0x%08llX",
+                        (unsigned long long)HookEvent->Args[1], (unsigned long long)HookEvent->Args[2],
+                        (unsigned long long)HookEvent->Args[3], (unsigned long long)HookEvent->Args[0]);
+                }
+                else if (moduleOp == ControllerModuleOpLsaOpenPolicy)
+                {
+                    (void)StringCchPrintfW(
+                        mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                        L"identity.lsa.policy.open system=%ws desiredAccess=0x%llX handle=0x%llX status=0x%08llX",
+                        (nameBuffer[0] != L'\0') ? nameBuffer : L"<local>", (unsigned long long)HookEvent->Args[1],
+                        (unsigned long long)HookEvent->Args[2], (unsigned long long)HookEvent->Args[0]);
+                }
+                else
+                {
+                    (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                           L"identity.api api=%S subject=%ws class=0x%llX status=0x%08llX", apiName,
+                                           (nameBuffer[0] != L'\0') ? nameBuffer : L"Identity",
+                                           (unsigned long long)HookEvent->Args[1],
+                                           (unsigned long long)HookEvent->Args[0]);
+                }
+                break;
+            }
+
+            case ControllerModuleOpCredReadA:
+            case ControllerModuleOpCredReadW:
+                ControllerHookCopyWideSampleToReason(nameBuffer, RTL_NUMBER_OF(nameBuffer), HookEvent->DataSample,
+                                                     sampleSize);
+                mapped.Severity = 3u;
+                (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
+                                     "CREDENTIAL_STORE_ACCESS");
+                (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                       L"credman.read target=%ws type=%llu flags=0x%llX ok=%llu",
+                                       (nameBuffer[0] != L'\0') ? nameBuffer : L"<none>",
+                                       (unsigned long long)HookEvent->Args[1], (unsigned long long)HookEvent->Args[2],
+                                       (unsigned long long)HookEvent->Args[0]);
+                break;
+
+            case ControllerModuleOpCredEnumerateA:
+            case ControllerModuleOpCredEnumerateW:
+            case ControllerModuleOpCredReadDomainCredentialsA:
+            case ControllerModuleOpCredReadDomainCredentialsW:
+                ControllerHookCopyWideSampleToReason(nameBuffer, RTL_NUMBER_OF(nameBuffer), HookEvent->DataSample,
+                                                     sampleSize);
+                mapped.Severity = 3u;
+                (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
+                                     "CREDENTIAL_STORE_ENUM");
+                (void)StringCchPrintfW(mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                                       L"credman.enumerate filter=%ws flags=0x%llX count=%llu ok=%llu",
+                                       (nameBuffer[0] != L'\0') ? nameBuffer : L"<all>",
+                                       (unsigned long long)HookEvent->Args[1], (unsigned long long)HookEvent->Args[2],
+                                       (unsigned long long)HookEvent->Args[0]);
+                break;
+
+            case ControllerModuleOpVaultEnumerateVaults:
+            case ControllerModuleOpVaultOpenVault:
+            case ControllerModuleOpVaultEnumerateItems:
+            case ControllerModuleOpVaultGetItem:
+                ControllerHookCopyWideSampleToReason(nameBuffer, RTL_NUMBER_OF(nameBuffer), HookEvent->DataSample,
+                                                     sampleSize);
+                mapped.Severity = (moduleOp == ControllerModuleOpVaultGetItem) ? 4u : 3u;
+                (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "VAULT_SECRET_ACCESS");
+                if (moduleOp == ControllerModuleOpVaultGetItem)
+                {
+                    (void)StringCchPrintfW(
+                        mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                        L"vault.get schema=%ws flags=0x%llX vault=0x%llX resource=0x%llX status=0x%08llX",
+                        (nameBuffer[0] != L'\0') ? nameBuffer : L"VaultItem", (unsigned long long)HookEvent->Args[1],
+                        (unsigned long long)HookEvent->Args[2], (unsigned long long)HookEvent->Args[3],
+                        (unsigned long long)HookEvent->Args[0]);
+                }
+                else
+                {
+                    (void)StringCchPrintfW(
+                        mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                        L"vault.access api=%S subject=%ws flags=0x%llX countOrHandle=0x%llX status=0x%08llX", apiName,
+                        (nameBuffer[0] != L'\0') ? nameBuffer : L"Vault", (unsigned long long)HookEvent->Args[1],
+                        (unsigned long long)HookEvent->Args[2], (unsigned long long)HookEvent->Args[0]);
+                }
+                break;
+
+            case ControllerModuleOpCryptUnprotectData:
+            case ControllerModuleOpNCryptUnprotectSecret:
+            case ControllerModuleOpNCryptOpenStorageProvider:
+            case ControllerModuleOpNCryptOpenKey:
+            case ControllerModuleOpNCryptDecrypt:
+                ControllerHookCopyWideSampleToReason(nameBuffer, RTL_NUMBER_OF(nameBuffer), HookEvent->DataSample,
+                                                     sampleSize);
+                mapped.Severity = (moduleOp == ControllerModuleOpNCryptOpenStorageProvider ||
+                                   moduleOp == ControllerModuleOpNCryptOpenKey)
+                                      ? 2u
+                                      : 3u;
+                (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName),
+                                     (moduleOp == ControllerModuleOpCryptUnprotectData ||
+                                      moduleOp == ControllerModuleOpNCryptUnprotectSecret)
+                                         ? "DPAPI_UNPROTECT"
+                                         : "USERMODE_IDENTITY_API");
+                if (moduleOp == ControllerModuleOpCryptUnprotectData)
+                {
+                    UINT32 entropyPresent = (UINT32)(HookEvent->Args[2] & 0xFFFFFFFFull);
+                    UINT32 promptFlags = (UINT32)((HookEvent->Args[2] >> 32u) & 0xFFFFFFFFull);
+                    (void)StringCchPrintfW(
+                        mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                        L"dpapi.unprotect entropy=%u promptFlags=0x%X flags=0x%llX outputBytes=%llu ok=%llu caller=0x%llX",
+                        (unsigned int)entropyPresent, (unsigned int)promptFlags, (unsigned long long)HookEvent->Args[1],
+                        (unsigned long long)HookEvent->Args[3], (unsigned long long)HookEvent->Args[0],
+                        (unsigned long long)HookEvent->Caller);
+                }
+                else if (moduleOp == ControllerModuleOpNCryptUnprotectSecret)
+                {
+                    (void)StringCchPrintfW(
+                        mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                        L"ncrypt.unprotect inputBytes=%llu outputBytes=%llu flags=0x%llX status=0x%08llX caller=0x%llX",
+                        (unsigned long long)HookEvent->Args[2], (unsigned long long)HookEvent->Args[3],
+                        (unsigned long long)HookEvent->Args[1], (unsigned long long)HookEvent->Args[0],
+                        (unsigned long long)HookEvent->Caller);
+                }
+                else
+                {
+                    (void)StringCchPrintfW(
+                        mapped.Reason, RTL_NUMBER_OF(mapped.Reason),
+                        L"ncrypt.api api=%S subject=%ws arg1=0x%llX arg2=0x%llX result=0x%llX status=0x%08llX", apiName,
+                        (nameBuffer[0] != L'\0') ? nameBuffer : L"NCrypt", (unsigned long long)HookEvent->Args[1],
+                        (unsigned long long)HookEvent->Args[2], (unsigned long long)HookEvent->Args[3],
+                        (unsigned long long)HookEvent->Args[0]);
+                }
+                break;
+
             default:
                 (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "USERMODE_MODULE_LOAD");
 
@@ -2433,8 +2704,7 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
             mapped.Flags |= BKIPC_ETW_FLAG_HOOK_CALLER_HAS_NONSYSTEM_DLL;
         if (cf & BK_HOOK_CALLER_FLAG_HAS_OWN_MODULE)
             mapped.Flags |= BKIPC_ETW_FLAG_HOOK_CALLER_HAS_OWN_MODULE;
-        if ((cf & (BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_NO_UNWIND |
-                   BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_DYNAMIC_UNWIND |
+        if ((cf & (BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_NO_UNWIND | BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_DYNAMIC_UNWIND |
                    BK_HOOK_CALLER_FLAG_IMAGE_MISSING_UNWIND_METADATA)) != 0)
             mapped.Flags |= BKIPC_ETW_FLAG_HOOK_CALLER_UNWIND_SUSPECT;
         mapped.Flags |= (cf & (BK_HOOK_CALLER_IMMED_MASK | BK_HOOK_CALLER_DEEP_MASK));
@@ -2454,7 +2724,8 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
         blackbirdOwned = ControllerIsBlackbirdOwnedAddress(Client, HookEvent->Caller);
         LeaveCriticalSection(&Client->Lock);
 
-        if (blackbirdOwned)
+        if (blackbirdOwned && HookEvent->Kind != BlackbirdIpcHookEventExceptionLowNoise &&
+            HookEvent->Kind != BlackbirdIpcHookEventExceptionHighPriv)
         {
             if (launchGateTrap)
             {
@@ -2660,6 +2931,7 @@ static DWORD ControllerClientSetUserHookTarget(_Inout_ BK_CONTROLLER_CLIENT *Cli
     DWORD targetPid = 0;
     BOOL kernelAssured = FALSE;
     BOOL pendingLaunchArmed = FALSE;
+    BOOL userModeOnly = FALSE;
     ULONGLONG analysisSessionId = 0;
     BK_ARM_PENDING_LAUNCH_REQUEST pendingLaunchRequest;
 
@@ -2671,6 +2943,7 @@ static DWORD ControllerClientSetUserHookTarget(_Inout_ BK_CONTROLLER_CLIENT *Cli
     ZeroMemory(Response, sizeof(*Response));
     ZeroMemory(hookDllPath, sizeof(hookDllPath));
     ZeroMemory(&kernelImage, sizeof(kernelImage));
+    userModeOnly = (Request->Flags & BKIPC_USER_HOOK_FLAG_USERMODE_ONLY) != 0;
 
     if (!ControllerInjectionResolveHookDllPath(Request, hookDllPath, RTL_NUMBER_OF(hookDllPath)))
     {
@@ -2761,9 +3034,9 @@ static DWORD ControllerClientSetUserHookTarget(_Inout_ BK_CONTROLLER_CLIENT *Cli
                                                Request->AnalysisSubjectPath);
         LeaveCriticalSection(&Client->Lock);
 
-        if (!ControllerBuildPendingLaunchRequest(Request->ImagePath, Request->AnalysisSubjectKind,
-                                                 Request->AnalysisSubjectPath, BK_CONTROLLER_DRIVER_STREAM_MASK,
-                                                 &pendingLaunchRequest))
+        if (!userModeOnly && !ControllerBuildPendingLaunchRequest(
+                                 Request->ImagePath, Request->AnalysisSubjectKind, Request->AnalysisSubjectPath,
+                                 BK_CONTROLLER_DRIVER_STREAM_MASK, &pendingLaunchRequest))
         {
             EnterCriticalSection(&Client->Lock);
             ControllerClientClearPendingLaunchLocked(Client);
@@ -2771,15 +3044,22 @@ static DWORD ControllerClientSetUserHookTarget(_Inout_ BK_CONTROLLER_CLIENT *Cli
             return ERROR_INVALID_PARAMETER;
         }
 
-        if (ControllerProxyArmPendingLaunch(&pendingLaunchRequest))
+        if (!userModeOnly && ControllerProxyArmPendingLaunch(&pendingLaunchRequest))
         {
             pendingLaunchArmed = TRUE;
         }
-        else
+        else if (!userModeOnly)
         {
             err = GetLastError();
+            if (err == ERROR_DEVICE_NOT_CONNECTED || err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND)
+            {
+                userModeOnly = TRUE;
+                ControllerLog("[IPC][WARN] pending launch driver arm unavailable err=%lu; continuing driverless\n",
+                              err);
+                err = ERROR_SUCCESS;
+            }
         }
-        if (!pendingLaunchArmed)
+        if (!pendingLaunchArmed && !userModeOnly)
         {
             EnterCriticalSection(&Client->Lock);
             ControllerClientClearPendingLaunchLocked(Client);
@@ -2818,12 +3098,15 @@ static DWORD ControllerClientSetUserHookTarget(_Inout_ BK_CONTROLLER_CLIENT *Cli
         }
 
         EnterCriticalSection(&Client->Lock);
-        ControllerClientPrimePendingLaunchPidLocked(Client, targetPid);
+        ControllerClientPrimePendingLaunchPidLocked(
+            Client, targetPid,
+            userModeOnly ? (BK_CONTROLLER_DRIVER_STREAM_MASK | BK_CONTROLLER_STREAM_USERMODE_ONLY)
+                         : BK_CONTROLLER_DRIVER_STREAM_MASK);
         analysisSessionId = ControllerClientBeginAnalysisSessionLocked(Client, targetPid, TRUE);
         LeaveCriticalSection(&Client->Lock);
         ControllerLog("[IPC] analysis session started clientPid=%lu sessionId=%llu rootPid=%lu launchOwned=1 "
-                      "mode=launch\n",
-                      Client->ProcessId, (unsigned long long)analysisSessionId, targetPid);
+                      "mode=launch driverless=%u\n",
+                      Client->ProcessId, (unsigned long long)analysisSessionId, targetPid, userModeOnly ? 1u : 0u);
         (void)ControllerApplyDriverSubscriptionsIfDirty();
         break;
 
@@ -2941,8 +3224,6 @@ static PCSTR ControllerCommandName(_In_ UINT32 Command)
         return "set-qpc-timing-config";
     case BlackbirdIpcCommandGetQpcTimingState:
         return "get-qpc-timing-state";
-    case BlackbirdIpcCommandQueryProcessMemory:
-        return "query-process-memory";
     case BlackbirdIpcCommandRegisterInstrumentationRange:
         return "register-instrumentation-range";
     case BlackbirdIpcCommandRegisterHookPatch:
@@ -2963,7 +3244,6 @@ static BOOL ControllerCommandLogsBegin(_In_ UINT32 Command)
     case BlackbirdIpcCommandSetUserHookTarget:
     case BlackbirdIpcCommandControlProcessExecution:
     case BlackbirdIpcCommandQueryProcessImage:
-    case BlackbirdIpcCommandQueryProcessMemory:
         return TRUE;
     default:
         return FALSE;
@@ -2992,9 +3272,13 @@ static DWORD ControllerHandleClientCommand(_Inout_ BK_CONTROLLER_CLIENT *Client,
             Client->HookReadyTick = GetTickCount64();
         }
         Response->Payload.HandshakeResponse.NegotiatedVersion = BKIPC_VERSION;
-        Response->Payload.HandshakeResponse.Capabilities = BKIPC_CAP_DRIVER_PROXY | BKIPC_CAP_SHARED_RING |
-                                                           BKIPC_CAP_USER_HOOK_INGEST | BKIPC_CAP_USER_HOOK_READY |
-                                                           BKIPC_CAP_DRIVER_DIAGNOSTICS | BKIPC_CAP_QPC_TIMING;
+        Response->Payload.HandshakeResponse.Capabilities =
+            BKIPC_CAP_SHARED_RING | BKIPC_CAP_USER_HOOK_INGEST | BKIPC_CAP_USER_HOOK_READY;
+        if (ControllerProxyDriverConnected())
+        {
+            Response->Payload.HandshakeResponse.Capabilities |=
+                BKIPC_CAP_DRIVER_PROXY | BKIPC_CAP_DRIVER_DIAGNOSTICS | BKIPC_CAP_QPC_TIMING;
+        }
         Response->Payload.HandshakeResponse.ThreatIntelEnabled = 0u;
         Response->Payload.HandshakeResponse.Reserved = 0u;
         break;
@@ -3166,51 +3450,6 @@ static DWORD ControllerHandleClientCommand(_Inout_ BK_CONTROLLER_CLIENT *Client,
         }
         break;
     }
-    case BlackbirdIpcCommandQueryProcessMemory:
-    {
-        HANDLE hClientProc;
-        HANDLE hDupSection = NULL;
-        DWORD bytesRead = 0;
-
-        if (Request->Payload.QueryMemoryRequest.ProcessId == 0 ||
-            Request->Payload.QueryMemoryRequest.RequestedSize == 0)
-        {
-            err = ERROR_INVALID_PARAMETER;
-            break;
-        }
-        if (!ControllerClientCanMonitorPid(Client, Request->Payload.QueryMemoryRequest.ProcessId, NULL, NULL))
-        {
-            err = GetLastError();
-            if (err == ERROR_SUCCESS)
-            {
-                err = ERROR_ACCESS_DENIED;
-            }
-            break;
-        }
-        hClientProc = OpenProcess(PROCESS_DUP_HANDLE, FALSE, Client->ProcessId);
-        if (hClientProc == NULL)
-        {
-            err = GetLastError();
-            break;
-        }
-        if (!ControllerProxyReadProcessMemory(
-                Request->Payload.QueryMemoryRequest.ProcessId, Request->Payload.QueryMemoryRequest.BaseAddress,
-                Request->Payload.QueryMemoryRequest.RequestedSize, hClientProc, &hDupSection, &bytesRead))
-        {
-            err = GetLastError();
-            if (err == ERROR_SUCCESS)
-            {
-                err = ERROR_GEN_FAILURE;
-            }
-            CloseHandle(hClientProc);
-            break;
-        }
-        CloseHandle(hClientProc);
-        Response->Payload.QueryMemoryResponse.Status = 0;
-        Response->Payload.QueryMemoryResponse.BytesRead = bytesRead;
-        Response->Payload.QueryMemoryResponse.SectionHandle = (UINT64)(ULONG_PTR)hDupSection;
-        break;
-    }
     case BlackbirdIpcCommandRegisterHookPatch:
     {
         const BKIPC_REGISTER_HOOK_PATCH_REQUEST *patch = &Request->Payload.RegisterHookPatchRequest;
@@ -3285,8 +3524,8 @@ Complete:
     if (Request->Command != BlackbirdIpcCommandGetEvent && Request->Command != BlackbirdIpcCommandGetEtwEvent &&
         Request->Command != BlackbirdIpcCommandPublishHookEvent &&
         Request->Command != BlackbirdIpcCommandPublishHookEventBatch &&
-        Request->Command != BlackbirdIpcCommandGetStats &&
-        Request->Command != BlackbirdIpcCommandGetHealth && Request->Command != BlackbirdIpcCommandGetDiagnostics &&
+        Request->Command != BlackbirdIpcCommandGetStats && Request->Command != BlackbirdIpcCommandGetHealth &&
+        Request->Command != BlackbirdIpcCommandGetDiagnostics &&
         Request->Command != BlackbirdIpcCommandGetQpcTimingState)
     {
         ControllerLog("[IPC] cmd=%s seq=%lu role=%lu clientPid=%lu session=%lu status=%lu\n",

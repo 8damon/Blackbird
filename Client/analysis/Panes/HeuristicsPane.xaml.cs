@@ -63,25 +63,35 @@ namespace BlackbirdInterface
             DateTime now = item.LastSeenUtc == default ? item.TimestampUtc : item.LastSeenUtc;
             string eventName = string.IsNullOrWhiteSpace(item.EventName) ? "heuristic" : item.EventName;
             string source = string.IsNullOrWhiteSpace(item.Source) ? "unknown" : item.Source;
-            string combinedEvent = NormalizeEventLabel($"{source}/{eventName}");
+            string signal = NormalizeEventLabel(eventName);
             string severity = EventDetailFormatting.SeverityLabel(item.Severity);
-            string detection = string.IsNullOrWhiteSpace(item.DetectionName) ? "heuristic" : item.DetectionName;
-            string actor = ProcessIdentityResolver.Describe(item.ActorPid);
-            string target = ProcessIdentityResolver.Describe(item.TargetPid);
+            string detection =
+                NormalizeDetectionLabel(item.DetectionName, item.ActorPid, item.TargetPid, item.EventName);
+            if (string.IsNullOrWhiteSpace(detection))
+            {
+                return;
+            }
+
+            string actor = FormatProcessIdentity(item.ActorPid);
+            string target = FormatProcessIdentity(item.TargetPid);
             string actorToolTip = ProcessIdentityResolver.HoverText(item.ActorPid);
             string targetToolTip = ProcessIdentityResolver.HoverText(item.TargetPid);
-            string key = $"{combinedEvent}|{severity}|{detection}";
+            string context = BuildOperatorContext(item, signal);
+            string key = $"det|{severity}|{detection}|{item.ActorPid}|{item.TargetPid}";
             int hits = Math.Max(1, item.RepeatCount);
             string detailsText = item.Details;
 
             _state.IncrementRawCount(hits);
 
-            string detailSig = $"{item.ActorPid}|{item.TargetPid}|{item.Reason}";
+            string detailSig = string.IsNullOrWhiteSpace(context) ? signal : context;
 
             if (_state.TryGetRow(key, out GroupedEventRow? existing))
             {
                 existing.LastSeenUtc = now;
                 existing.Hits = Math.Max(1, existing.Hits + hits);
+                existing.Actor = actor;
+                existing.Target = target;
+                existing.ArgumentPreview = Truncate(context, 256);
 
                 bool aggregated = false;
                 if (_state.TryGetDetail(key, detailSig, out GroupedEventDetailRow? matchingDetail))
@@ -94,7 +104,7 @@ namespace BlackbirdInterface
                 if (!aggregated)
                 {
                     var newDetail = new GroupedEventDetailRow { TimestampUtc = now,
-                                                                Event = combinedEvent,
+                                                                Event = signal,
                                                                 Severity = severity,
                                                                 Detection = detection,
                                                                 Source = source,
@@ -124,7 +134,7 @@ namespace BlackbirdInterface
             else
             {
                 var firstDetail = new GroupedEventDetailRow { TimestampUtc = now,
-                                                              Event = combinedEvent,
+                                                              Event = signal,
                                                               Severity = severity,
                                                               Detection = detection,
                                                               Source = source,
@@ -137,9 +147,12 @@ namespace BlackbirdInterface
                                                               ArgumentSummary = detailSig,
                                                               HitCount = hits,
                                                               Details = detailsText };
-                var row = new GroupedEventRow { GroupKey = key,           LastSeenUtc = now,     Event = combinedEvent,
-                                                Severity = severity,      Detection = detection, Hits = hits,
-                                                Details = { firstDetail } };
+                var row = new GroupedEventRow {
+                    GroupKey = key,           LastSeenUtc = now,     Event = signal,
+                    Severity = severity,      Detection = detection, Actor = actor,
+                    Target = target,          Hits = hits,           ArgumentPreview = Truncate(context, 256),
+                    Details = { firstDetail }
+                };
                 _state.TrackRow(row);
                 SyncVisibleRow(row);
             }
@@ -147,7 +160,8 @@ namespace BlackbirdInterface
             _state.EvictOverflow(MaxGroupCount);
         }
 
-        internal IReadOnlyList<GroupedEventRow> SnapshotItems() => _state.SnapshotItems();
+        internal IReadOnlyList<GroupedEventRow>
+        SnapshotItems() => _state.SnapshotItems().Where(MatchesFilter).Select(static x => x.Clone()).ToList();
 
         internal GroupedEventRow? GetSelectedGroupClone() => _state.GetSelectedGroupClone(HeuristicsGrid.SelectedItem);
 
@@ -157,11 +171,22 @@ namespace BlackbirdInterface
                                        {
                                            clone.Hits = Math.Max(1, clone.Hits);
                                            clone.Event = NormalizeEventLabel(clone.Event);
+                                           GroupedEventDetailRow? first = clone.Details.FirstOrDefault();
+                                           clone.Detection =
+                                               NormalizeDetectionLabel(clone.Detection, first?.ActorPid ?? 0,
+                                                                       first?.TargetPid ?? 0, first?.Event);
+                                           if (string.IsNullOrWhiteSpace(clone.Detection))
+                                           {
+                                               clone.GroupKey = $"suppressed:{clone.GroupKey}";
+                                           }
                                            clone.Details = clone.Details.OrderBy(x => x.TimestampUtc).ToList();
                                            for (int i = 0; i < clone.Details.Count; i += 1)
                                            {
                                                clone.Details[i].Event = NormalizeEventLabel(clone.Details[i].Event);
+                                               clone.Details[i].Detection = clone.Detection;
                                            }
+
+                                           RefreshGroupDisplayFields(clone);
 
                                            return clone;
                                        });
@@ -214,6 +239,9 @@ namespace BlackbirdInterface
 
         private bool MatchesFilter(GroupedEventRow row)
         {
+            if (string.IsNullOrWhiteSpace(row.Detection))
+                return false;
+
             if (_focusedPid != 0 &&
                 !row.Details.Any(d => d.ActorPid == (uint)_focusedPid || d.TargetPid == (uint)_focusedPid))
                 return false;
@@ -291,6 +319,86 @@ namespace BlackbirdInterface
             }
 
             return value.Replace('_', ' ').Trim();
+        }
+
+        private static string NormalizeDetectionLabel(string? value, uint actorPid, uint targetPid,
+                                                      string? operation = null)
+        {
+            return OperatorDetectionFormatter.Format(value, actorPid, targetPid, operation);
+        }
+
+        private static string BuildOperatorContext(HeuristicEventView item, string signal)
+        {
+            string reason = CleanOperatorText(item.Reason);
+            if (!string.IsNullOrWhiteSpace(reason))
+            {
+                return reason;
+            }
+
+            string evidence = CleanOperatorText(item.Evidence);
+            if (!string.IsNullOrWhiteSpace(evidence))
+            {
+                return evidence;
+            }
+
+            return signal;
+        }
+
+        private static string CleanOperatorText(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            string text = value.Trim();
+            if (text.StartsWith("reason=", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text["reason=".Length..].Trim();
+            }
+
+            int corrIndex = text.IndexOf("; corrFlags=", StringComparison.OrdinalIgnoreCase);
+            if (corrIndex > 0)
+            {
+                text = text[..corrIndex].Trim();
+            }
+
+            return Truncate(text.Replace("; ", " | "), 512);
+        }
+
+        private static void RefreshGroupDisplayFields(GroupedEventRow row)
+        {
+            GroupedEventDetailRow? latest = row.Details.OrderByDescending(x => x.TimestampUtc).FirstOrDefault();
+            if (latest == null)
+            {
+                return;
+            }
+
+            row.Actor = string.IsNullOrWhiteSpace(row.Actor) ? latest.Actor : row.Actor;
+            row.Target = string.IsNullOrWhiteSpace(row.Target) ? latest.Target : row.Target;
+            row.ArgumentPreview = string.IsNullOrWhiteSpace(row.ArgumentPreview) ? Truncate(latest.ArgumentSummary, 256)
+                                                                                 : row.ArgumentPreview;
+        }
+
+        private static string FormatProcessIdentity(uint pid)
+        {
+            if (pid == 0)
+            {
+                return "-";
+            }
+
+            return OperatorDetectionFormatter.FormatProcessIdentity(pid);
+        }
+
+        private static string Truncate(string? value, int max)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            string text = value.Trim();
+            return text.Length <= max ? text : text[..Math.Max(0, max - 3)] + "...";
         }
 
         private void HeurBtnReorder_Click(object sender, RoutedEventArgs e) => ReorderRequested?.Invoke(this, e);

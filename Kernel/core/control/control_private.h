@@ -126,13 +126,6 @@ HANDLE
 NTAPI
 PsGetThreadProcessId(_In_ PETHREAD Thread);
 
-NTSYSAPI
-NTSTATUS
-NTAPI
-MmCopyVirtualMemory(_In_ PEPROCESS FromProcess, _In_ const VOID *FromAddress, _In_ PEPROCESS ToProcess,
-                    _Out_writes_bytes_(BufferSize) PVOID ToAddress, _In_ SIZE_T BufferSize,
-                    _In_ KPROCESSOR_MODE PreviousMode, _Out_ PSIZE_T NumberOfBytesCopied);
-
 BOOLEAN BkctlModeAllowed(_In_ WDFREQUEST Request);
 ULONG BkctlGetRequestorPid(VOID);
 PCSTR BkctlIoctlName(_In_ ULONG Ioctl);
@@ -180,14 +173,12 @@ NTSTATUS BkctlHandleGetEventIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Reques
 NTSTATUS BkctlHandleGetStatsIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
 NTSTATUS BkctlHandleGetHealthIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
 NTSTATUS BkctlHandleGetDiagnosticsIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
-NTSTATUS BkctlHandleSetEndpointGuardIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
 NTSTATUS BkctlHandleSetPidsIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
 NTSTATUS BkctlHandleArmPendingLaunchIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
 NTSTATUS BkctlHandleQueryProcessImageIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
 NTSTATUS BkctlHandleSetShutdownModeIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
 NTSTATUS BkctlHandleControlExecutionIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
 NTSTATUS BkctlHandleSetRuntimeConfigIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
-NTSTATUS BkctlHandleReadMemoryIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
 NTSTATUS BkctlHandleGetRuntimeConfigIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);
 NTSTATUS BkctlHandleSetQpcTimingConfigIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request);
 NTSTATUS BkctlHandleGetQpcTimingStateIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut);

@@ -15,16 +15,12 @@ BOOLEAN BkcprocIsProtectedPid(_In_ UINT32 ProcessId);
 BOOLEAN BkcprocIsInterfacePid(_In_ UINT32 ProcessId);
 
 BOOLEAN BkcprocIsControllerPid(_In_ UINT32 ProcessId);
-BOOLEAN BkcprocIsNetSvcPid(_In_ UINT32 ProcessId);
 BOOLEAN BkcprocIsControllerReadyPid(_In_ UINT32 ProcessId);
-BOOLEAN BkcprocIsNetSvcReadyPid(_In_ UINT32 ProcessId);
 
 BOOLEAN BkcprocRegisterInterfacePid(_In_ UINT32 ProcessId);
 BOOLEAN BkcprocRegisterControllerPid(_In_ UINT32 ProcessId);
-BOOLEAN BkcprocRegisterNetSvcPid(_In_ UINT32 ProcessId);
 
 BOOLEAN BkcprocMarkControllerReady(_In_ UINT32 ProcessId);
-BOOLEAN BkcprocMarkNetSvcReady(_In_ UINT32 ProcessId);
 
 BOOLEAN BkcprocIsTrustedProtectedCaller(_In_ UINT32 CallerPid, _In_ UINT32 TargetPid);
 

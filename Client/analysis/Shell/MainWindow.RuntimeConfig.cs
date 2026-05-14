@@ -100,6 +100,5 @@ namespace BlackbirdInterface
                 $"Runtime config applied: effective={DescribeRuntimeFlags(config.EffectiveFlags)} mode={DescribeRuntimeMode(config.Mode)}");
             return true;
         }
-
     }
 }

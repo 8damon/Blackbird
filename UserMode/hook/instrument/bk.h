@@ -45,6 +45,27 @@ namespace bk::BK
         USHORT stack_frame_count{};
         void *stack[kMaxStackFrames]{};
 
+#if defined(_M_X64)
+        std::uint64_t rip{};
+        std::uint64_t rsp{};
+        std::uint64_t rbp{};
+        std::uint64_t rax{};
+        std::uint64_t rbx{};
+        std::uint64_t rcx{};
+        std::uint64_t rdx{};
+        std::uint64_t rsi{};
+        std::uint64_t rdi{};
+        std::uint64_t r8{};
+        std::uint64_t r9{};
+        std::uint64_t r10{};
+        std::uint64_t r11{};
+        std::uint64_t r12{};
+        std::uint64_t r13{};
+        std::uint64_t r14{};
+        std::uint64_t r15{};
+        std::uint64_t eflags{};
+#endif
+
         bool is_target_module{};
         bool is_memory_fault{};
         bool is_noncontinuable{};
@@ -73,7 +94,7 @@ namespace bk::BK
 
         bool swallow_non_target_exceptions = false;
     };
-}
+} // namespace bk::BK
 using BkBlackbirdEvent = bk::BK::Event;
 using BkBlackbirdTelemetryArguments = bk::BK::TelemetryArguments;
 using BkBlackbirdTelemetryFn = bk::BK::TelemetryFn;

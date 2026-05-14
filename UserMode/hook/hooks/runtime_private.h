@@ -302,4 +302,4 @@ namespace BK_RUNTIME_INTERNAL
     bool LaunchGatePrepare() noexcept;
     void LaunchGateRelease() noexcept;
     void LaunchGateShutdown() noexcept;
-}
+} // namespace BK_RUNTIME_INTERNAL

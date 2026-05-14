@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 
 namespace BlackbirdInterface
 {
@@ -667,11 +668,7 @@ namespace BlackbirdInterface
 
             try
             {
-                CaptureLoadedWorkspace workspace =
-                    await RunSessionStorageOperationAsync(merge ? "Importing session..." : "Opening session...",
-                                                          () => Task.Run(() => SessionFileStorage.LoadWorkspace(path)));
-                RegisterTemporaryWorkspace(workspace);
-                await ApplyWorkspaceArchiveAsync(workspace, merge);
+                await LoadAndApplySessionArchiveWithProgressAsync(path, merge);
                 if (!merge)
                 {
                     _sessionFilePath = path;
@@ -686,6 +683,86 @@ namespace BlackbirdInterface
                 return ex.Message.Contains("manifest not found", StringComparison.OrdinalIgnoreCase)
                            ? "Capture archive is invalid or incomplete."
                            : ex.Message;
+            }
+        }
+
+        private async Task LoadAndApplySessionArchiveWithProgressAsync(string path, bool merge)
+        {
+            string fileName = Path.GetFileName(path);
+            string fileDetail = $"{fileName} ({FormatCaptureArchiveSize(path)})";
+            string statusText = merge ? "Importing session..." : "Opening session...";
+            Cursor? previousCursor = Mouse.OverrideCursor;
+            string previousStatus = StatusBlock.Text;
+            var loading = new LoadingWindow { WindowStartupLocation = WindowStartupLocation.CenterOwner };
+            if (IsVisible)
+            {
+                loading.Owner = this;
+            }
+
+            double progress = 8;
+            var timer = new DispatcherTimer(DispatcherPriority.Background,
+                                            Dispatcher) { Interval = TimeSpan.FromMilliseconds(220) };
+            timer.Tick += (_, __) =>
+            {
+                progress = Math.Min(72, progress + Math.Max(1.0, (72 - progress) * 0.12));
+                loading.SetProgress(progress, "Loading capture archive...", fileDetail);
+            };
+
+            try
+            {
+                Mouse.OverrideCursor = Cursors.Wait;
+                StatusBlock.Text = statusText;
+                loading.SetProgress(progress, statusText, fileDetail);
+                loading.Show();
+                timer.Start();
+                await Task.Yield();
+
+                CaptureLoadedWorkspace workspace = await Task.Run(() => SessionFileStorage.LoadWorkspace(path));
+
+                timer.Stop();
+                loading.SetProgress(78, "Applying capture archive...", "Rebuilding panes and indexed telemetry.");
+                RegisterTemporaryWorkspace(workspace);
+                await ApplyWorkspaceArchiveAsync(workspace, merge);
+                loading.SetProgress(100, "Capture ready", "Interface updated.");
+                await Task.Delay(150);
+            }
+            finally
+            {
+                timer.Stop();
+                if (loading.IsVisible)
+                {
+                    loading.Close();
+                }
+                Mouse.OverrideCursor = previousCursor;
+                if (string.Equals(StatusBlock.Text, statusText, StringComparison.Ordinal))
+                {
+                    StatusBlock.Text = previousStatus;
+                }
+            }
+        }
+
+        private static string FormatCaptureArchiveSize(string path)
+        {
+            try
+            {
+                long bytes = new FileInfo(path).Length;
+                if (bytes >= 1024L * 1024L * 1024L)
+                {
+                    return $"{bytes / (1024.0 * 1024.0 * 1024.0):0.0} GB";
+                }
+                if (bytes >= 1024L * 1024L)
+                {
+                    return $"{bytes / (1024.0 * 1024.0):0.0} MB";
+                }
+                if (bytes >= 1024L)
+                {
+                    return $"{bytes / 1024.0:0.0} KB";
+                }
+                return $"{bytes} B";
+            }
+            catch
+            {
+                return "size unavailable";
             }
         }
 

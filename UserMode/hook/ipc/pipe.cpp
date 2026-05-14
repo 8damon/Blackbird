@@ -20,8 +20,7 @@ namespace BKIPC
         BK_RUNTIME_INTERNAL::Sr71ScopedAnsiLiteral outputDebugEnv(kOutputDebugEnv);
         DWORD read = GetEnvironmentVariableA(outputDebugEnv.c_str(), value, static_cast<DWORD>(RTL_NUMBER_OF(value)));
         bool enabled = read > 0 && read < RTL_NUMBER_OF(value) &&
-                       (value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' ||
-                        value[0] == 'T');
+                       (value[0] == '1' || value[0] == 'y' || value[0] == 'Y' || value[0] == 't' || value[0] == 'T');
         InterlockedCompareExchange(&state, enabled ? 2 : 1, 0);
         return enabled;
     }
@@ -53,6 +52,8 @@ namespace BKIPC
     static SRWLOCK g_pipeLock = SRWLOCK_INIT;
     static volatile LONG g_sequence = 1;
     static bool g_handshakeComplete = false;
+    static volatile LONG g_lastConnectStage = 0;
+    static volatile LONG g_lastConnectError = ERROR_SUCCESS;
 
     static constexpr LONG kAsyncPoolSize = 4096;
 
@@ -71,6 +72,23 @@ namespace BKIPC
     static volatile LONG g_asyncDropped = 0;
     static constexpr DWORD kPipeCancelDrainTimeoutMs = 250;
     static constexpr DWORD kAsyncPublishTimeoutMs = 750;
+
+    enum PipeConnectStage : DWORD
+    {
+        PipeConnectStageNone = 0,
+        PipeConnectStageWaitNamedPipe = 1,
+        PipeConnectStageCreateFile = 2,
+        PipeConnectStageTransfer = 3,
+        PipeConnectStageHandshake = 4,
+        PipeConnectStageAsyncPublisher = 5,
+        PipeConnectStageConnected = 6,
+    };
+
+    static void RecordConnectStatus(DWORD stage, DWORD error) noexcept
+    {
+        InterlockedExchange(&g_lastConnectStage, static_cast<LONG>(stage));
+        InterlockedExchange(&g_lastConnectError, static_cast<LONG>(error));
+    }
 
     static bool TransactCommandLocked(UINT32 command, const void *payload, size_t payloadSize,
                                       BKIPC_PACKET *outResponse);
@@ -153,8 +171,8 @@ namespace BKIPC
 
     static bool EnsurePipeOpenLocked(DWORD timeoutMs)
     {
-        static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedWideLiteral kHookPipeName{
-            L"\\.\pipe\BlackbirdHookIngest", 0x173u};
+        static constexpr BK_RUNTIME_INTERNAL::Sr71EncodedWideLiteral kHookPipeName{L"\\\\.\\pipe\\BlackbirdHookIngest",
+                                                                                   0x173u};
 
         if (g_pipeHandle != nullptr && g_pipeHandle != INVALID_HANDLE_VALUE)
         {
@@ -164,7 +182,9 @@ namespace BKIPC
         BK_RUNTIME_INTERNAL::Sr71ScopedWideLiteral hookPipeName(kHookPipeName);
         if (!WaitNamedPipeW(hookPipeName.c_str(), timeoutMs))
         {
-            PipeDebugLog("EnsurePipeOpenLocked: WaitNamedPipe failed timeoutMs=%lu gle=%lu", timeoutMs, GetLastError());
+            DWORD gle = GetLastError();
+            RecordConnectStatus(PipeConnectStageWaitNamedPipe, gle);
+            PipeDebugLog("EnsurePipeOpenLocked: WaitNamedPipe failed timeoutMs=%lu gle=%lu", timeoutMs, gle);
             return false;
         }
 
@@ -173,7 +193,9 @@ namespace BKIPC
 
         if (hPipe == INVALID_HANDLE_VALUE)
         {
-            PipeDebugLog("EnsurePipeOpenLocked: CreateFile failed gle=%lu", GetLastError());
+            DWORD gle = GetLastError();
+            RecordConnectStatus(PipeConnectStageCreateFile, gle);
+            PipeDebugLog("EnsurePipeOpenLocked: CreateFile failed gle=%lu", gle);
             return false;
         }
 
@@ -181,6 +203,7 @@ namespace BKIPC
         (void)SetNamedPipeHandleState(hPipe, &mode, nullptr, nullptr);
         g_pipeHandle = hPipe;
         g_handshakeComplete = false;
+        RecordConnectStatus(PipeConnectStageConnected, ERROR_SUCCESS);
         PipeDebugLog("EnsurePipeOpenLocked: connected");
         return true;
     }
@@ -253,14 +276,18 @@ namespace BKIPC
         DWORD bytesRead = 0;
         if (!PipeTransferExactLocked((void *)&request, (DWORD)sizeof(request), true, timeoutMs, &bytesWritten))
         {
-            PipeDebugLog("SendPacketLocked: write failed cmd=%lu gle=%lu", request.Command, GetLastError());
+            DWORD gle = GetLastError();
+            RecordConnectStatus(PipeConnectStageTransfer, gle);
+            PipeDebugLog("SendPacketLocked: write failed cmd=%lu gle=%lu", request.Command, gle);
             ClosePipeLocked();
             return false;
         }
 
         if (!PipeTransferExactLocked(&response, (DWORD)sizeof(response), false, timeoutMs, &bytesRead))
         {
-            PipeDebugLog("SendPacketLocked: read failed cmd=%lu gle=%lu bytesRead=%lu", request.Command, GetLastError(),
+            DWORD gle = GetLastError();
+            RecordConnectStatus(PipeConnectStageTransfer, gle);
+            PipeDebugLog("SendPacketLocked: read failed cmd=%lu gle=%lu bytesRead=%lu", request.Command, gle,
                          bytesRead);
             ClosePipeLocked();
             return false;
@@ -270,6 +297,7 @@ namespace BKIPC
             response.PacketType != BlackbirdIpcPacketResponse || response.Command != request.Command ||
             response.Sequence != request.Sequence)
         {
+            RecordConnectStatus(PipeConnectStageTransfer, ERROR_INVALID_DATA);
             PipeDebugLog("SendPacketLocked: protocol mismatch cmd=%lu respCmd=%lu respType=%lu seq=%lu respSeq=%lu",
                          request.Command, response.Command, response.PacketType, request.Sequence, response.Sequence);
             ClosePipeLocked();
@@ -299,12 +327,15 @@ namespace BKIPC
 
         if (!SendPacketLocked(request, response, timeoutMs))
         {
+            RecordConnectStatus(PipeConnectStageHandshake, GetLastError());
             PipeDebugLog("EnsureHandshakeLocked: send failed");
             return false;
         }
 
         if (response.Status != ERROR_SUCCESS || response.Payload.HandshakeResponse.NegotiatedVersion != BKIPC_VERSION)
         {
+            RecordConnectStatus(PipeConnectStageHandshake,
+                                response.Status == ERROR_SUCCESS ? ERROR_REVISION_MISMATCH : response.Status);
             PipeDebugLog("EnsureHandshakeLocked: negotiation failed status=%lu version=%lu", response.Status,
                          response.Payload.HandshakeResponse.NegotiatedVersion);
             ClosePipeLocked();
@@ -312,6 +343,7 @@ namespace BKIPC
         }
 
         g_handshakeComplete = true;
+        RecordConnectStatus(PipeConnectStageConnected, ERROR_SUCCESS);
         PipeDebugLog("EnsureHandshakeLocked: success caps=0x%08lX", response.Payload.HandshakeResponse.Capabilities);
         return true;
     }
@@ -443,6 +475,7 @@ namespace BKIPC
         if (InterlockedCompareExchange(&g_asyncRunning, 0, 0) == 0)
         {
             PipeDebugLog("Initialize: async publisher unavailable");
+            RecordConnectStatus(PipeConnectStageAsyncPublisher, ERROR_NOT_READY);
             if (g_asyncSignal)
             {
                 CloseHandle(g_asyncSignal);
@@ -604,6 +637,30 @@ namespace BKIPC
         return false;
     }
 
+    bool PublishHookEventSynchronously(const BKIPC_HOOK_EVENT &eventRecord) noexcept
+    {
+        BkSr71InternalScope _ipc_scope;
+        if (!TryAcquireSRWLockExclusive(&g_pipeLock))
+        {
+            InterlockedIncrement(&g_asyncDropped);
+            return false;
+        }
+        bool ok =
+            TransactCommandLocked(BlackbirdIpcCommandPublishHookEvent, &eventRecord, sizeof(eventRecord), nullptr);
+        ReleaseSRWLockExclusive(&g_pipeLock);
+        return ok;
+    }
+
+    DWORD LastConnectStage() noexcept
+    {
+        return static_cast<DWORD>(InterlockedCompareExchange(&g_lastConnectStage, 0, 0));
+    }
+
+    DWORD LastConnectError() noexcept
+    {
+        return static_cast<DWORD>(InterlockedCompareExchange(&g_lastConnectError, 0, 0));
+    }
+
     UINT32 DrainPendingHookEventsSynchronously(UINT32 maxEvents) noexcept
     {
         UINT32 dispatched = 0;
@@ -749,8 +806,8 @@ namespace BKIPC
 
         bool ok;
         AcquireSRWLockExclusive(&g_pipeLock);
-        ok = TransactCommandLocked(BlackbirdIpcCommandRegisterProcessInstrumentationCallback, &request,
-                                   sizeof(request), nullptr);
+        ok = TransactCommandLocked(BlackbirdIpcCommandRegisterProcessInstrumentationCallback, &request, sizeof(request),
+                                   nullptr);
         ReleaseSRWLockExclusive(&g_pipeLock);
 
         if (!ok)
@@ -809,4 +866,4 @@ namespace BKIPC
         }
         return true;
     }
-}
+} // namespace BKIPC

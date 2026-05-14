@@ -303,7 +303,7 @@ namespace BlackbirdInterface
             if (!string.IsNullOrWhiteSpace(actor) &&
                 string.Equals(actorText, targetText, StringComparison.OrdinalIgnoreCase))
             {
-                targetText = "SELF";
+                targetText = "self";
             }
 
             var sb = new StringBuilder(192);
@@ -555,7 +555,9 @@ namespace BlackbirdInterface
             return normalized.Equals("SR71.dll", StringComparison.OrdinalIgnoreCase) ||
                    normalized.Equals("J58.dll", StringComparison.OrdinalIgnoreCase) ||
                    normalized.Equals("BlackbirdController.exe", StringComparison.OrdinalIgnoreCase) ||
-                   normalized.Equals("BlackbirdInterface.exe", StringComparison.OrdinalIgnoreCase);
+                   normalized.Equals("BlackbirdInterface.exe", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.Equals("BlackbirdRunner.exe", StringComparison.OrdinalIgnoreCase) ||
+                   normalized.Equals("BlackbirdOperator.exe", StringComparison.OrdinalIgnoreCase);
         }
 
         internal static bool IsBlackbirdInternalPath(string? path)
@@ -760,7 +762,7 @@ namespace BlackbirdInterface
                 }
             }
 
-            string displayTarget = string.Equals(actorText, targetText, StringComparison.Ordinal) ? "SELF" : targetText;
+            string displayTarget = string.Equals(actorText, targetText, StringComparison.Ordinal) ? "self" : targetText;
             return rawArgs.Count == 0
                        ? $"{actorText} invokes {api} against {displayTarget}"
                        : $"{actorText} invokes {api} against {displayTarget} ({string.Join(", ", rawArgs)})";
@@ -910,7 +912,7 @@ namespace BlackbirdInterface
                                  BlackbirdNative.HookCallerKindProcessImage => "Process Image",
                                  BlackbirdNative.HookCallerKindOwnModule => "SR71 / Own Module",
                                  BlackbirdNative.HookCallerKindNonSystemDll => "Other DLL",
-                                 _ => "Unknown" };
+                                 _ => "Unresolved Caller" };
         }
 
         internal static string HookComponentLabel(uint flags)
@@ -969,19 +971,18 @@ namespace BlackbirdInterface
 
         internal static string HookTimelineGroup(BrokerEtwEventView view)
         {
-            if (!IsUsermodeSensorTelemetry(view))
+            if (IsKernelHookTelemetry(view) ||
+                (!HasStructuredHookRoute(view) && ReasonContainsToken(view.Reason, "kind", "kernel_ntapi")))
             {
-                return "API Hooks";
+                return "Kernel Hook";
             }
 
-            return view.NotifyClass switch { BlackbirdNative.IpcHookEventNt => "Hook NT",
-                                             BlackbirdNative.IpcHookEventWinsock => "Hook Winsock",
-                                             BlackbirdNative.IpcHookEventKi => "Hook KI",
-                                             BlackbirdNative.IpcHookEventModule => "Hook Module",
-                                             BlackbirdNative.IpcHookEventIntegrity => "Hook Integrity",
-                                             BlackbirdNative.IpcHookEventExceptionLowNoise => "Hook Exceptions",
-                                             BlackbirdNative.IpcHookEventExceptionHighPriv => "Hook Exceptions",
-                                             _ => "API Hooks" };
+            if (IsUsermodeSensorTelemetry(view) || IsUserHookEtwSource(view))
+            {
+                return "Usermode Hook";
+            }
+
+            return "Hook Telemetry";
         }
 
         internal static bool IsApiGraphCandidate(BrokerEtwEventView view)
@@ -1070,7 +1071,7 @@ namespace BlackbirdInterface
             return false;
         }
 
-        internal static string InferSampleDisassembly(byte[]? sample, int sampleSize)
+        internal static string InferSampleBytes(byte[]? sample, int sampleSize)
         {
             if (sample == null || sampleSize <= 0)
             {
@@ -1109,10 +1110,9 @@ namespace BlackbirdInterface
             return "no known syscall/trampoline signature";
         }
 
-        internal static string FormatSampleDisassembly(byte[]? sample, int sampleSize, ulong originAddress = 0,
-                                                       string? modulePath = null, ulong regionBase = 0,
-                                                       ulong regionSize = 0, uint regionProtect = 0,
-                                                       uint regionState = 0, uint regionType = 0)
+        internal static string FormatSampleBytes(byte[]? sample, int sampleSize, ulong originAddress = 0,
+                                                 string? modulePath = null, ulong regionBase = 0, ulong regionSize = 0,
+                                                 uint regionProtect = 0, uint regionState = 0, uint regionType = 0)
         {
             if (sample == null || sampleSize <= 0)
             {
@@ -1170,28 +1170,19 @@ namespace BlackbirdInterface
                     .Append(DescribeMemoryType(regionType))
                     .Append(')');
             }
-            sb.Append('\n').Append("summary: ").Append(InferSampleDisassembly(sample, count));
+            sb.Append('\n').Append("summary: ").Append(InferSampleBytes(sample, count));
 
             int offset = 0;
-            int emitted = 0;
-            const int MaxInstructions = 24;
-            while (offset < count && emitted < MaxInstructions)
+            const int BytesPerLine = 16;
+            const int MaxLines = 8;
+            for (int emitted = 0; offset < count && emitted < MaxLines; emitted += 1)
             {
-                int length;
-                string mnemonic;
-                if (!TryDecodeX64Instruction(sample, count, offset, out length, out mnemonic))
-                {
-                    length = 1;
-                    mnemonic = $"db 0x{sample[offset]:X2}";
-                }
-
+                int length = Math.Min(BytesPerLine, count - offset);
                 string bytes = FormatSampleBytes(sample, offset, length);
                 string address = originAddress != 0 ? $"0x{(originAddress + (ulong)offset):X}" : $"+0x{offset:X2}";
 
-                sb.Append('\n').Append(address).Append(": ").Append(bytes.PadRight(24)).Append(' ').Append(mnemonic);
-
+                sb.Append('\n').Append(address).Append(": ").Append(bytes);
                 offset += length;
-                emitted += 1;
             }
 
             if (offset < count)
@@ -1221,140 +1212,6 @@ namespace BlackbirdInterface
             }
 
             return sb.ToString();
-        }
-
-        private static string FormatRelativeTarget(int offset, int instructionLength, int displacement)
-        {
-            int target = offset + instructionLength + displacement;
-            return target >= 0 ? $"+0x{target:X}" : $"-0x{(-target):X}";
-        }
-
-        private static bool TryDecodeX64Instruction(byte[] sample, int count, int offset, out int length,
-                                                    out string mnemonic)
-        {
-            length = 0;
-            mnemonic = string.Empty;
-
-            if (offset < 0 || offset >= count)
-            {
-                return false;
-            }
-
-            int remaining = count - offset;
-            byte b0 = sample[offset];
-
-            if (remaining >= 11 && b0 == 0x4C && sample[offset + 1] == 0x8B && sample[offset + 2] == 0xD1 &&
-                sample[offset + 3] == 0xB8 && sample[offset + 8] == 0x0F && sample[offset + 9] == 0x05 &&
-                sample[offset + 10] == 0xC3)
-            {
-                uint syscallId = (uint)(sample[offset + 4] | (sample[offset + 5] << 8) | (sample[offset + 6] << 16) |
-                                        (sample[offset + 7] << 24));
-                length = 11;
-                mnemonic = $"mov r10, rcx; mov eax, 0x{syscallId:X}; syscall; ret";
-                return true;
-            }
-
-            if (remaining >= 4 && b0 == 0xF3 && sample[offset + 1] == 0x0F && sample[offset + 2] == 0x1E &&
-                sample[offset + 3] == 0xFA)
-            {
-                length = 4;
-                mnemonic = "endbr64";
-                return true;
-            }
-
-            if (remaining >= 3 && b0 == 0x4C && sample[offset + 1] == 0x8B && sample[offset + 2] == 0xD1)
-            {
-                length = 3;
-                mnemonic = "mov r10, rcx";
-                return true;
-            }
-
-            if (remaining >= 5 && b0 == 0xB8)
-            {
-                uint imm = (uint)(sample[offset + 1] | (sample[offset + 2] << 8) | (sample[offset + 3] << 16) |
-                                  (sample[offset + 4] << 24));
-                length = 5;
-                mnemonic = $"mov eax, 0x{imm:X}";
-                return true;
-            }
-
-            if (remaining >= 2 && b0 == 0x0F && sample[offset + 1] == 0x05)
-            {
-                length = 2;
-                mnemonic = "syscall";
-                return true;
-            }
-
-            if (remaining >= 7 && b0 == 0x48 && sample[offset + 1] == 0x8D && sample[offset + 2] == 0x05)
-            {
-                int rel = BitConverter.ToInt32(sample, offset + 3);
-                length = 7;
-                mnemonic =
-                    $"lea rax, [rip{(rel >= 0 ? "+" : "-")}0x{Math.Abs(rel):X}] ; -> {FormatRelativeTarget(offset, length, rel)}";
-                return true;
-            }
-
-            if (remaining >= 6 && b0 == 0xFF && sample[offset + 1] == 0x25)
-            {
-                int rel = BitConverter.ToInt32(sample, offset + 2);
-                length = 6;
-                mnemonic =
-                    $"jmp qword ptr [rip{(rel >= 0 ? "+" : "-")}0x{Math.Abs(rel):X}] ; -> {FormatRelativeTarget(offset, length, rel)}";
-                return true;
-            }
-
-            if (remaining >= 5 && b0 == 0xE9)
-            {
-                int rel = BitConverter.ToInt32(sample, offset + 1);
-                length = 5;
-                mnemonic = $"jmp {FormatRelativeTarget(offset, length, rel)}";
-                return true;
-            }
-
-            if (remaining >= 2 && b0 == 0xEB)
-            {
-                int rel = (sbyte)sample[offset + 1];
-                length = 2;
-                mnemonic = $"jmp short {FormatRelativeTarget(offset, length, rel)}";
-                return true;
-            }
-
-            if (remaining >= 4 && b0 == 0x48 && sample[offset + 1] == 0x83 && sample[offset + 2] == 0xEC)
-            {
-                length = 4;
-                mnemonic = $"sub rsp, 0x{sample[offset + 3]:X2}";
-                return true;
-            }
-
-            if (remaining >= 4 && b0 == 0x48 && sample[offset + 1] == 0x83 && sample[offset + 2] == 0xC4)
-            {
-                length = 4;
-                mnemonic = $"add rsp, 0x{sample[offset + 3]:X2}";
-                return true;
-            }
-
-            if (b0 == 0xC3)
-            {
-                length = 1;
-                mnemonic = "ret";
-                return true;
-            }
-
-            if (b0 == 0x90)
-            {
-                length = 1;
-                mnemonic = "nop";
-                return true;
-            }
-
-            if (b0 == 0xCC)
-            {
-                length = 1;
-                mnemonic = "int3";
-                return true;
-            }
-
-            return false;
         }
 
         private static string DescribeByBits(uint flags, IReadOnlyList<(uint Bit, string Name)> table)

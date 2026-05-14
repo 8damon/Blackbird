@@ -1,3 +1,4 @@
+using BlackbirdInterface.Capture;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -12,7 +13,7 @@ namespace BlackbirdInterface
 
         private void InitializeSignatureIntelSubsystem()
         {
-            DiagnosticsState.SetValue("Signature Intel", "Enabled memory=off page=off hash=on");
+            DiagnosticsState.SetValue("Signature Intel", "Enabled memory=on page=on hash=on");
             _signatureIntel = new SignatureIntelService(
                 findings =>
                 {
@@ -25,6 +26,12 @@ namespace BlackbirdInterface
                                                       {
                                                           if (Dispatcher.HasShutdownStarted || findings.Count == 0)
                                                           {
+                                                              return;
+                                                          }
+
+                                                          if (_captureProjection != null)
+                                                          {
+                                                              _captureProjection.ObserveHeuristics(findings);
                                                               return;
                                                           }
 
@@ -47,6 +54,9 @@ namespace BlackbirdInterface
                                            DispatcherPriority.Background);
                 },
                 message => OutputCapture.AppendLine(message));
+            _signatureIntel.Configure(
+                new SignatureIntelOptions(Enabled: _signatureIntelEnabled, MemoryScan: _signatureIntelMemoryScanEnabled,
+                                          PageScan: _signatureIntelPageScanEnabled, HashScan: _signatureIntelEnabled));
         }
 
         private void DisposeSignatureIntelSubsystem()
@@ -89,11 +99,20 @@ namespace BlackbirdInterface
             }
 
             string subject = ExtractSignatureIntelRuleName(evidence, detection);
-            string operation = engine.Equals("SIGMA", StringComparison.OrdinalIgnoreCase)                ? "Event Match"
+            string operation = engine.Equals("Strings", StringComparison.OrdinalIgnoreCase)
+                                   ? (evidence.IndexOf("newSincePrevious=0", StringComparison.OrdinalIgnoreCase) >= 0
+                                          ? "Memory-Disk Diff"
+                                          : "New Memory Strings")
+                               : engine.Equals("SIGMA", StringComparison.OrdinalIgnoreCase) ? "Event Match"
+                               : evidence.IndexOf("scope=process-memory", StringComparison.OrdinalIgnoreCase) >= 0
+                                   ? "Process Memory Match"
                                : evidence.IndexOf("scope=page", StringComparison.OrdinalIgnoreCase) >= 0 ? "Page Match"
                                : evidence.IndexOf("scope=memory", StringComparison.OrdinalIgnoreCase) >= 0
                                    ? "Memory Match"
                                    : "File Match";
+            string detail = engine.Equals("Strings", StringComparison.OrdinalIgnoreCase) ? evidence
+                            : string.IsNullOrWhiteSpace(finding.Reason) ? evidence
+                                                                                         : finding.Reason;
 
             string key = BuildExtendedActivityKey(
                 engine, FormatApiProcessLabel(finding.ActorPid),
@@ -105,17 +124,18 @@ namespace BlackbirdInterface
                 existing.Hits = Math.Max(1, existing.Hits + Math.Max(1, finding.RepeatCount));
                 existing.LastSeenUtc = finding.LastSeenUtc;
                 existing.LastSeenLabel = FormatApiRelativeAge(finding.LastSeenUtc);
-                existing.DetailLabel = string.IsNullOrWhiteSpace(finding.Reason) ? evidence : finding.Reason;
+                existing.DetailLabel = detail;
                 return true;
             }
 
-            _extendedRowsByKey[key] = new ExtendedActivityRowSnapshot {
+            _extendedRowsByKey[key] = new ExtendedActivityRowSnapshot
+            {
                 TypeLabel = engine,
                 ActorLabel = FormatApiProcessLabel(finding.ActorPid),
                 TargetLabel = FormatApiProcessLabel(finding.TargetPid != 0 ? finding.TargetPid : finding.ActorPid),
                 SubjectLabel = subject,
                 OperationLabel = operation,
-                DetailLabel = string.IsNullOrWhiteSpace(finding.Reason) ? evidence : finding.Reason,
+                DetailLabel = detail,
                 LastSeenUtc = finding.LastSeenUtc,
                 LastSeenLabel = FormatApiRelativeAge(finding.LastSeenUtc),
                 Hits = Math.Max(1, finding.RepeatCount)
@@ -138,12 +158,18 @@ namespace BlackbirdInterface
                 return "YARA";
             }
 
+            if (detection.StartsWith("MEMORY_STRING_DIFF", StringComparison.OrdinalIgnoreCase) ||
+                evidence.IndexOf("engine=string-diff", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return "Strings";
+            }
+
             return evidence.IndexOf("rule=", StringComparison.OrdinalIgnoreCase) >= 0 ? "Rules" : string.Empty;
         }
 
         private static string ExtractSignatureIntelRuleName(string evidence, string detection)
         {
-            string[] tokens = new[] { "sigma_id=", "rule=", "path=", "origin=" };
+            string[] tokens = new[] { "sigma_id=", "rule=", "image=", "path=", "origin=" };
             foreach (string token in tokens)
             {
                 int start = evidence.IndexOf(token, StringComparison.OrdinalIgnoreCase);
@@ -172,7 +198,8 @@ namespace BlackbirdInterface
         private void OpenSignatureIntelRulesWindow()
         {
             var window = new SignatureIntelRulesWindow(_signatureIntel,
-                                                       message => OutputCapture.AppendLine(message)) { Owner = this };
+                                                       message => OutputCapture.AppendLine(message))
+            { Owner = this };
             window.Show();
         }
 
@@ -188,11 +215,21 @@ namespace BlackbirdInterface
                 _signatureIntel.QueueFileScan(imagePath, (uint)pid, (uint)pid, "Interface", "SessionStart",
                                               "root-target");
             }
+
+            _signatureIntel.QueueProcessMemoryScan((uint)pid, (uint)pid, (uint)pid, "Interface", "SessionStart",
+                                                   "root-process-memory", force: true);
         }
 
         private IReadOnlyList<HeuristicEventView> QueueSignatureIntelForView(BrokerEtwEventView view)
         {
-            if (_signatureIntel == null || !_signatureIntelEnabled)
+            if (_signatureIntel == null || !_signatureIntelEnabled || IsBlackbirdOwnEvent(view) ||
+                HasFailedHookStatus(view))
+            {
+                return Array.Empty<HeuristicEventView>();
+            }
+            if (_captureProjection?.ExecutionPhase.IsPreResume == true &&
+                TouchesCurrentTrackedTarget(view.ActorPid, view.TargetPid, view.ProcessPid, view.EventProcessId,
+                                            view.CallerPid, view.ExplicitTargetPid))
             {
                 return Array.Empty<HeuristicEventView>();
             }
@@ -212,6 +249,14 @@ namespace BlackbirdInterface
                 _signatureIntel.QueueFileScan(targetImage, view.ActorPid, view.TargetPid, view.Source,
                                               string.IsNullOrWhiteSpace(view.EventName) ? "TargetPid" : view.EventName,
                                               "target-process");
+            }
+
+            if (_signatureIntelMemoryScanEnabled &&
+                ShouldQueueProcessMemoryScan(view, out uint memoryScanPid, out string memoryScanTrigger))
+            {
+                _signatureIntel.QueueProcessMemoryScan(
+                    memoryScanPid, view.ActorPid, memoryScanPid, view.Source,
+                    string.IsNullOrWhiteSpace(view.EventName) ? "ProcessMemory" : view.EventName, memoryScanTrigger);
             }
 
             int sampleSize = (int)Math.Min(view.DeepSampleSize, (uint)(view.DeepSample?.Length ?? 0));
@@ -238,6 +283,16 @@ namespace BlackbirdInterface
                 return eventRuleFindings;
             }
 
+            IReadOnlyList<HeuristicEventView> sampleFindings = _signatureIntel.ScanBufferForFindings(
+                view.DeepSample, sampleSize, pageSample, view.OriginPath, view.ActorPid, view.TargetPid, view.Source,
+                string.IsNullOrWhiteSpace(view.EventName) ? "Sample" : view.EventName,
+                pageSample ? "page-sample" : "memory-sample", maxScanBytes: Math.Min(sampleSize, 64 * 1024));
+            if (sampleFindings.Count > 0)
+            {
+                return eventRuleFindings.Count == 0 ? sampleFindings
+                                                    : eventRuleFindings.Concat(sampleFindings).ToList();
+            }
+
             _signatureIntel.QueueSampleScan(view.DeepSample, sampleSize, pageSample, view.OriginPath, view.ActorPid,
                                             view.TargetPid, view.Source,
                                             string.IsNullOrWhiteSpace(view.EventName) ? "Sample" : view.EventName,
@@ -251,8 +306,26 @@ namespace BlackbirdInterface
             {
                 return Array.Empty<HeuristicEventView>();
             }
+            if (_captureProjection?.ExecutionPhase.IsPreResume == true &&
+                TouchesCurrentTrackedTarget(record.CallerPid, record.TargetPid, record.ProcessPid,
+                                            record.FileProcessPid, record.RegistryProcessPid))
+            {
+                return Array.Empty<HeuristicEventView>();
+            }
 
             return _signatureIntel.EvaluateEventRules(record);
+        }
+
+        private bool TouchesCurrentTrackedTarget(params uint[] pids)
+        {
+            int currentPid = _currentSession?.Pid ?? TryGetPid();
+            if (currentPid <= 0)
+            {
+                return false;
+            }
+
+            uint target = unchecked((uint)currentPid);
+            return pids.Any(pid => pid == target);
         }
 
         private static bool TryResolveProcessImagePath(uint pid, out string imagePath)
@@ -274,6 +347,75 @@ namespace BlackbirdInterface
                 return false;
             }
         }
+
+        private static bool ShouldQueueProcessMemoryScan(BrokerEtwEventView view, out uint processPid,
+                                                         out string trigger)
+        {
+            processPid = FirstNonZero(view.TargetPid, view.ExplicitTargetPid, view.ProcessPid, view.EventProcessId,
+                                      view.ActorPid);
+            trigger = string.Empty;
+            if (processPid == 0)
+            {
+                return false;
+            }
+
+            if (HasDetectionTrait(view, BlackbirdNative.IpcEtwTraitDirectSyscall))
+            {
+                trigger = "direct-syscall-process-memory";
+                return true;
+            }
+            if (HasDetectionTrait(view, BlackbirdNative.IpcEtwTraitMemoryWriteVm))
+            {
+                trigger = "memory-write-process";
+                return true;
+            }
+            if (HasDetectionTrait(view, BlackbirdNative.IpcEtwTraitMemoryProtectRx))
+            {
+                trigger = "memory-protect-process";
+                return true;
+            }
+            if (HasDetectionTrait(view, BlackbirdNative.IpcEtwTraitMemoryAllocRw))
+            {
+                trigger = "memory-alloc-process";
+                return true;
+            }
+            if (HasDetectionTrait(view, BlackbirdNative.IpcEtwTraitScanTargetProcess))
+            {
+                trigger = "target-process-memory";
+                return true;
+            }
+
+            bool crossProcess = view.TargetPid != 0 && view.ActorPid != 0 && view.TargetPid != view.ActorPid;
+            if (crossProcess &&
+                (view.Family == BlackbirdNative.IpcEtwFamilyThread ||
+                 view.Family == BlackbirdNative.IpcEtwFamilyApc))
+            {
+                trigger = "remote-exec-process-memory";
+                return true;
+            }
+
+            string detection = view.DetectionName ?? string.Empty;
+            string operation = view.Operation ?? string.Empty;
+            string eventName = view.EventName ?? string.Empty;
+            if (ContainsAnyOrdinalIgnoreCase(detection, "INJECT", "HOLLOW", "UNBACKED", "VM_WRITE",
+                                             "REMOTE_THREAD") ||
+                ContainsAnyOrdinalIgnoreCase(operation, "protect", "alloc", "writevirtualmemory",
+                                             "writeprocessmemory", "mapviewofsection", "queueuserapc",
+                                             "createremotethread") ||
+                ContainsAnyOrdinalIgnoreCase(eventName, "protect", "alloc", "writevirtualmemory",
+                                             "writeprocessmemory", "mapviewofsection", "queueuserapc",
+                                             "createremotethread"))
+            {
+                trigger = "memory-event-process";
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool ContainsAnyOrdinalIgnoreCase(string value, params string[] needles) =>
+            !string.IsNullOrWhiteSpace(value) &&
+            needles.Any(needle => value.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0);
 
         private static bool ShouldQueueTargetProcessScan(BrokerEtwEventView view)
         {

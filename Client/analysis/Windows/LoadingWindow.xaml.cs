@@ -47,9 +47,8 @@ namespace BlackbirdInterface
 
             _timeoutDuration = timeout;
             _timeoutDeadlineUtc = DateTime.UtcNow.Add(timeout);
-            _timeoutTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) {
-                Interval = TimeSpan.FromMilliseconds(250)
-            };
+            _timeoutTimer = new DispatcherTimer(DispatcherPriority.Background,
+                                                Dispatcher) { Interval = TimeSpan.FromMilliseconds(250) };
             _timeoutTimer.Tick += TimeoutTimer_Tick;
             _timeoutTimer.Start();
             UpdateTimeoutText();
@@ -132,10 +131,9 @@ namespace BlackbirdInterface
             int totalSeconds = Math.Max(0, (int)Math.Ceiling(value.TotalSeconds));
             int minutes = totalSeconds / 60;
             int seconds = totalSeconds % 60;
-            return minutes > 0
-                       ? minutes.ToString(CultureInfo.InvariantCulture) + "m " +
-                         seconds.ToString("00", CultureInfo.InvariantCulture) + "s"
-                       : seconds.ToString(CultureInfo.InvariantCulture) + "s";
+            return minutes > 0 ? minutes.ToString(CultureInfo.InvariantCulture) + "m " +
+                                     seconds.ToString("00", CultureInfo.InvariantCulture) + "s"
+                               : seconds.ToString(CultureInfo.InvariantCulture) + "s";
         }
 
         protected override void OnClosed(EventArgs e)

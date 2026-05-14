@@ -10,8 +10,7 @@ typedef struct _MASK_NAME_ENTRY
 
 static const MASK_NAME_ENTRY g_StreamMaskNames[] = {
     {BK_STREAM_HANDLE, "HANDLE"},         {BK_STREAM_MEMORY, "MEMORY"},     {BK_STREAM_THREAD, "THREAD"},
-    {BK_STREAM_FILESYSTEM, "FILESYSTEM"}, {BK_STREAM_REGISTRY, "REGISTRY"}, {BK_STREAM_TIMING, "TIMING"},
-    {BK_STREAM_ENTERPRISE, "ENTERPRISE"}};
+    {BK_STREAM_FILESYSTEM, "FILESYSTEM"}, {BK_STREAM_REGISTRY, "REGISTRY"}, {BK_STREAM_TIMING, "TIMING"}};
 
 static const char *BkchdlClassToString(UINT32 classId)
 {
@@ -48,10 +47,6 @@ static void BkevtTypeToString(UINT32 type, char *output, size_t outputChars)
     else if (type == BlackbirdEventTypeRegistry)
     {
         (void)snprintf(output, outputChars, "REGISTRY");
-    }
-    else if (type == BlackbirdEventTypeEnterprise)
-    {
-        (void)snprintf(output, outputChars, "ENTERPRISE");
     }
     else
     {
@@ -348,54 +343,6 @@ static void BkevtPrintRegistryEvent(const BK_EVENT_RECORD *rec)
     printf("Data   notifyClass=%u type=0x%08X size=%u\n", r->NotifyClass, r->DataType, r->DataSize);
 }
 
-static const char *BkenterpriseOperationToString(UINT32 op)
-{
-    switch (op)
-    {
-    case BkEnterpriseOperationProcessCredentialAccess:
-        return "PROCESS_CREDENTIAL_ACCESS";
-    case BkEnterpriseOperationProcessPrivilegedAccess:
-        return "PROCESS_PRIVILEGED_ACCESS";
-    case BkEnterpriseOperationTokenAccess:
-        return "TOKEN_ACCESS";
-    case BkEnterpriseOperationRegistryCredentialHiveAccess:
-        return "REGISTRY_CREDENTIAL_HIVE";
-    case BkEnterpriseOperationRegistryLsaPolicyAccess:
-        return "REGISTRY_LSA_POLICY";
-    case BkEnterpriseOperationRegistryKerberosNtlmAccess:
-        return "REGISTRY_KERBEROS_NTLM";
-    case BkEnterpriseOperationRegistryServiceConfigAccess:
-        return "REGISTRY_SERVICE_CONFIG";
-    case BkEnterpriseOperationRegistryLpePersistenceAccess:
-        return "REGISTRY_LPE_PERSISTENCE";
-    case BkEnterpriseOperationFileCredentialStoreAccess:
-        return "FILE_CREDENTIAL_STORE";
-    case BkEnterpriseOperationFileDirectoryCredentialAccess:
-        return "FILE_CREDENTIAL_DIRECTORY";
-    case BkEnterpriseOperationFileDriverArtifactAccess:
-        return "FILE_DRIVER_ARTIFACT";
-    case BkEnterpriseOperationNetworkAdProtocolConnect:
-        return "NETWORK_AD_PROTOCOL";
-    default:
-        return "UNKNOWN";
-    }
-}
-
-static void BkevtPrintEnterpriseEvent(const BK_EVENT_RECORD *rec)
-{
-    const BK_ENTERPRISE_EVENT *e = &rec->Data.Enterprise;
-
-    printf("[IOCTL][ENTERPRISE] op=%s(%u) actor=%llu tid=%llu target=%llu targetTid=%llu flags=0x%08X\n",
-           BkenterpriseOperationToString(e->Operation), e->Operation, (unsigned long long)e->ProcessId,
-           (unsigned long long)e->ThreadId, (unsigned long long)e->TargetProcessId,
-           (unsigned long long)e->TargetThreadId, e->Flags);
-    printf("Access desired=0x%08X granted=0x%08X status=0x%08X subOp=%u\n", e->DesiredAccess, e->GrantedAccess,
-           e->Status, e->SubOperation);
-    printf("Obj    object=0x%llX aux0=0x%llX aux1=0x%llX proto=%u lport=%u rport=%u\n",
-           (unsigned long long)e->ObjectAddress, (unsigned long long)e->Aux0, (unsigned long long)e->Aux1, e->Protocol,
-           e->LocalPort, e->RemotePort);
-}
-
 static void BkevtPrintHeader(const BK_EVENT_RECORD *rec)
 {
     char typeName[32];
@@ -432,10 +379,6 @@ void BkevtPrinterPrintRecord(const BK_EVENT_RECORD *rec)
     else if (rec->Header.Type == BlackbirdEventTypeRegistry)
     {
         BkevtPrintRegistryEvent(rec);
-    }
-    else if (rec->Header.Type == BlackbirdEventTypeEnterprise)
-    {
-        BkevtPrintEnterpriseEvent(rec);
     }
     else
     {

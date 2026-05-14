@@ -44,9 +44,13 @@ VOID ControllerClientArmPendingLaunchLocked(_Inout_ BK_CONTROLLER_CLIENT *Client
     Client->PendingLaunchArmedTick = GetTickCount64();
 }
 
-VOID ControllerClientPrimePendingLaunchPidLocked(_Inout_ BK_CONTROLLER_CLIENT *Client, _In_ DWORD ProcessId)
+VOID ControllerClientPrimePendingLaunchPidLocked(_Inout_ BK_CONTROLLER_CLIENT *Client, _In_ DWORD ProcessId,
+                                                 _In_ DWORD StreamMask)
 {
     DWORD i;
+    DWORD effectiveStreamMask =
+        (StreamMask & BK_CONTROLLER_DRIVER_STREAM_MASK) != 0 ? StreamMask : BK_CONTROLLER_DRIVER_STREAM_MASK;
+    BOOL usesDriver = (effectiveStreamMask & BK_CONTROLLER_STREAM_USERMODE_ONLY) == 0;
 
     if (Client == NULL || ProcessId == 0)
     {
@@ -61,7 +65,7 @@ VOID ControllerClientPrimePendingLaunchPidLocked(_Inout_ BK_CONTROLLER_CLIENT *C
     {
         if (Client->Subscriptions[i].ProcessId == ProcessId)
         {
-            Client->Subscriptions[i].StreamMask |= BK_CONTROLLER_DRIVER_STREAM_MASK;
+            Client->Subscriptions[i].StreamMask |= effectiveStreamMask;
             if (Client->Subscriptions[i].Dynamic)
             {
                 Client->Subscriptions[i].Dynamic = FALSE;
@@ -69,7 +73,10 @@ VOID ControllerClientPrimePendingLaunchPidLocked(_Inout_ BK_CONTROLLER_CLIENT *C
                 Client->Subscriptions[i].SourceProcessId = 0;
                 Client->Subscriptions[i].LastSeenTick = 0;
             }
-            ControllerMarkDriverSubscriptionsDirty();
+            if (usesDriver)
+            {
+                ControllerMarkDriverSubscriptionsDirty();
+            }
             return;
         }
     }
@@ -80,13 +87,16 @@ VOID ControllerClientPrimePendingLaunchPidLocked(_Inout_ BK_CONTROLLER_CLIENT *C
     }
 
     Client->Subscriptions[Client->SubscriptionCount].ProcessId = ProcessId;
-    Client->Subscriptions[Client->SubscriptionCount].StreamMask = BK_CONTROLLER_DRIVER_STREAM_MASK;
+    Client->Subscriptions[Client->SubscriptionCount].StreamMask = effectiveStreamMask;
     Client->Subscriptions[Client->SubscriptionCount].Dynamic = FALSE;
     Client->Subscriptions[Client->SubscriptionCount].SourceProcessId = 0;
     Client->Subscriptions[Client->SubscriptionCount].Depth = 0;
     Client->Subscriptions[Client->SubscriptionCount].LastSeenTick = 0;
     Client->SubscriptionCount += 1;
-    ControllerMarkDriverSubscriptionsDirty();
+    if (usesDriver)
+    {
+        ControllerMarkDriverSubscriptionsDirty();
+    }
 }
 
 static VOID ControllerNormalizePathForCompare(_In_z_ const WCHAR *Input, _Out_writes_z_(OutputChars) WCHAR *Output,

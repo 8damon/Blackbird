@@ -59,24 +59,23 @@ namespace BK_RUNTIME_INTERNAL
                 module = GetModuleHandleW(L"kernel32.dll");
             }
 
-            auto fn = module != nullptr
-                          ? reinterpret_cast<SetProcessValidCallTargetsFn>(
-                                GetProcAddress(module, "SetProcessValidCallTargets"))
-                          : nullptr;
+            auto fn = module != nullptr ? reinterpret_cast<SetProcessValidCallTargetsFn>(
+                                              GetProcAddress(module, "SetProcessValidCallTargets"))
+                                        : nullptr;
             g_SetCfgTargets = fn;
             InterlockedExchange(&g_SetCfgTargetsState, fn != nullptr ? 2 : 1);
             return fn;
         }
 
-        bool ApplyCallTargetFlags(SetProcessValidCallTargetsFn fn, void *pageBase, SIZE_T pageSize,
-                                  ULONG_PTR offset, ULONG_PTR flags) noexcept
+        bool ApplyCallTargetFlags(SetProcessValidCallTargetsFn fn, void *pageBase, SIZE_T pageSize, ULONG_PTR offset,
+                                  ULONG_PTR flags) noexcept
         {
             CFG_CALL_TARGET_INFO info{};
             info.Offset = offset;
             info.Flags = flags;
             return fn(GetCurrentProcess(), pageBase, pageSize, 1, &info) != FALSE;
         }
-    }
+    } // namespace
 
     Sr71ControlFlowPolicy QueryCurrentProcessControlFlowPolicy() noexcept
     {
@@ -102,11 +101,12 @@ namespace BK_RUNTIME_INTERNAL
             InterlockedExchange(&g_CfgPolicyState, ok ? 2 : 1);
             state = ok ? 2 : 1;
 
-            BkDbgLog("QueryCurrentProcessControlFlowPolicy: ok=%u flags=0x%08lX cfg=%u strict=%u xfg=%u audit=%u gle=%lu",
-                     ok ? 1u : 0u, static_cast<unsigned long>(g_CfgPolicyFlags),
-                     ok && policy.EnableControlFlowGuard ? 1u : 0u, ok && policy.StrictMode ? 1u : 0u,
-                     ok && policy.EnableXfg ? 1u : 0u, ok && policy.EnableXfgAuditMode ? 1u : 0u,
-                     static_cast<unsigned long>(lastError));
+            BkDbgLog(
+                "QueryCurrentProcessControlFlowPolicy: ok=%u flags=0x%08lX cfg=%u strict=%u xfg=%u audit=%u gle=%lu",
+                ok ? 1u : 0u, static_cast<unsigned long>(g_CfgPolicyFlags),
+                ok && policy.EnableControlFlowGuard ? 1u : 0u, ok && policy.StrictMode ? 1u : 0u,
+                ok && policy.EnableXfg ? 1u : 0u, ok && policy.EnableXfgAuditMode ? 1u : 0u,
+                static_cast<unsigned long>(lastError));
         }
 
         Sr71ControlFlowPolicy result{};
@@ -147,8 +147,8 @@ namespace BK_RUNTIME_INTERNAL
         }
 
         const bool imageTarget = (mbi.Type == MEM_IMAGE);
-        const bool wantsXfg = mode == Sr71CfgCallTargetMode::CfgAndXfgWhenEnabled &&
-                              (policy.XfgEnabled || policy.XfgAuditMode);
+        const bool wantsXfg =
+            mode == Sr71CfgCallTargetMode::CfgAndXfgWhenEnabled && (policy.XfgEnabled || policy.XfgAuditMode);
         const bool requiresXfg = mode == Sr71CfgCallTargetMode::CfgAndXfgWhenEnabled && policy.XfgEnabled;
         if (imageTarget && !wantsXfg)
         {
@@ -210,10 +210,10 @@ namespace BK_RUNTIME_INTERNAL
             }
         }
 
-        BkDbgLog("RegisterControlFlowGuardCallTarget: failed target=%p page=%p offset=0x%llX flags=0x%llX gle=%lu tag=%s",
-                 targetAddress, pageBase, static_cast<unsigned long long>(offset),
-                 static_cast<unsigned long long>(flags), static_cast<unsigned long>(firstError),
-                 tag != nullptr ? tag : "<null>");
+        BkDbgLog(
+            "RegisterControlFlowGuardCallTarget: failed target=%p page=%p offset=0x%llX flags=0x%llX gle=%lu tag=%s",
+            targetAddress, pageBase, static_cast<unsigned long long>(offset), static_cast<unsigned long long>(flags),
+            static_cast<unsigned long>(firstError), tag != nullptr ? tag : "<null>");
         BkRuntimeReportFault(BkRuntimeFaultCode::ControlFlowCallTargetRegisterFailed,
                              reinterpret_cast<std::uint64_t>(targetAddress), firstError);
         return false;
@@ -227,4 +227,4 @@ namespace BK_RUNTIME_INTERNAL
         InterlockedExchange(&g_SetCfgTargetsState, 0);
         g_SetCfgTargets = nullptr;
     }
-}
+} // namespace BK_RUNTIME_INTERNAL

@@ -205,8 +205,8 @@ VOID BkapcRecordThreadHandleIntent(_In_ HANDLE CallerPid, _In_ HANDLE TargetPid,
         if (hasSetContext && hasMemoryIntent)
         {
             BketwLogDetectionEvent(
-                "REMOTE_APC_CREATION_SUSPECT", hasSuspendResume ? 6u : 5u, CallerPid, TargetPid, intentFlags,
-                intentAccessMask, intentAgeMs,
+                "REMOTE_APC_CREATION", hasSuspendResume ? 6u : 5u, CallerPid, TargetPid, intentFlags, intentAccessMask,
+                intentAgeMs,
                 hasSuspendResume
                     ? L"remote thread handle has THREAD_SET_CONTEXT plus suspend/resume after memory intent"
                     : L"remote thread handle has THREAD_SET_CONTEXT after memory intent");

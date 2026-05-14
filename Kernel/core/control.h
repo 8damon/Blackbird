@@ -22,8 +22,6 @@ VOID BkctlPublishFileEvent(_In_ const BK_FILE_EVENT *FileEvent);
 
 VOID BkctlPublishRegistryEvent(_In_ const BK_REGISTRY_EVENT *RegistryEvent);
 
-VOID BkctlPublishEnterpriseEvent(_In_ const BK_ENTERPRISE_EVENT *EnterpriseEvent);
-
 BOOLEAN
 BkctlBindPendingLaunchProcess(_In_ UINT32 ProcessId, _In_opt_ PCUNICODE_STRING ImagePath);
 

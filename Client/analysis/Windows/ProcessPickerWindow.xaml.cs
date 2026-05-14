@@ -63,7 +63,6 @@ namespace BlackbirdInterface
 
         public int SelectedPid { get; private set; }
         public bool UseUsermodeHooks { get; private set; }
-        public bool AutoOpenApiGraphWindow { get; private set; }
         public bool UseEarlyBirdApcLaunch { get; private set; }
         public bool LaunchSelectedImage { get; private set; }
         public string LaunchImagePath { get; private set; } = string.Empty;
@@ -1467,7 +1466,6 @@ namespace BlackbirdInterface
                 SelectedLaunchTargetKind = LaunchTargetKind.Executable;
                 SelectedPid = started.Id;
                 UseUsermodeHooks = false;
-                AutoOpenApiGraphWindow = false;
                 UseEarlyBirdApcLaunch = false;
                 DialogResult = true;
                 Close();
@@ -1480,12 +1478,10 @@ namespace BlackbirdInterface
 
         private void ApplyLaunchHookOptions(bool allowEarlyBird)
         {
-            LaunchHookOptions state =
-                LaunchHookOptions.Capture(UseUsermodeHooksCheckBox?.IsChecked, AutoOpenApiGraphCheckBox?.IsChecked,
-                                          EarlyBirdApcCheckBox?.IsChecked, allowEarlyBird);
+            LaunchHookOptions state = LaunchHookOptions.Capture(UseUsermodeHooksCheckBox?.IsChecked,
+                                                                EarlyBirdApcCheckBox?.IsChecked, allowEarlyBird);
 
             UseUsermodeHooks = state.UseUsermodeHooks;
-            AutoOpenApiGraphWindow = state.AutoOpenApiGraphWindow;
             UseEarlyBirdApcLaunch = state.UseEarlyBirdApcLaunch;
         }
 

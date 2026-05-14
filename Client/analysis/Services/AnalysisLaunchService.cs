@@ -14,12 +14,14 @@ namespace BlackbirdInterface
     {
         private const int MaxControllerLaunchArgumentChars = 2048;
 
-        internal static string ResolveHookDllPath() => Path.Combine(ResolveBaseDirectory(), "SR71.dll");
+        internal static string ResolveHookDllPath() => BlackbirdPackageResolver.ResolveRuntimeFile("SR71.dll");
 
-        internal static string ResolveDllHostPath() => Path.Combine(ResolveBaseDirectory(), "BlackbirdDllHost.exe");
+        internal static string
+        ResolveDllHostPath() => BlackbirdPackageResolver.ResolveRuntimeFile("BlackbirdDllHost.exe");
 
         internal static bool TryLaunchWithUsermodeHooksAndPrepareSession(string imagePath, bool useEarlyBirdApc,
                                                                          LaunchProfile launchProfile,
+                                                                         bool useKernelDriver,
                                                                          out AnalysisLaunchResult? result,
                                                                          out string error)
         {
@@ -50,6 +52,10 @@ namespace BlackbirdInterface
             if (launchProfile.LeaveSuspendedAfterReady)
             {
                 flags |= BlackbirdNative.IpcUserHookFlagDeferredLaunchGateRelease;
+            }
+            if (!useKernelDriver)
+            {
+                flags |= BlackbirdNative.IpcUserHookFlagUsermodeOnly;
             }
 
             BlackbirdBackendSession? preparedSession = null;
@@ -96,8 +102,9 @@ namespace BlackbirdInterface
                     }
 
                     int pid = unchecked((int)response.ProcessId);
-                    preparedSession = BlackbirdBackendSession.StartFromHandle(pid, BlackbirdNative.StreamAll,
-                                                                              useUsermodeHooks: true, control.Handle);
+                    preparedSession =
+                        BlackbirdBackendSession.StartFromHandle(pid, BlackbirdNative.StreamAll, useUsermodeHooks: true,
+                                                                control.Handle, useKernelDriver: useKernelDriver);
                     _ = control.DetachHandle();
 
                     result = new AnalysisLaunchResult { ProcessId = pid, Session = preparedSession };

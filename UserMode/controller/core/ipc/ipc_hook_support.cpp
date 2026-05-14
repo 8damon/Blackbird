@@ -551,9 +551,9 @@ VOID ControllerHookAppendUnwindTraitsToReason(_Inout_updates_(ReasonChars) PWSTR
     WCHAR suffix[160];
     BOOL wroteTrait = FALSE;
 
-    if (Reason == NULL || ReasonChars == 0 || (CallerFlags & (BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_NO_UNWIND |
-                                                               BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_DYNAMIC_UNWIND |
-                                                               BK_HOOK_CALLER_FLAG_IMAGE_MISSING_UNWIND_METADATA)) == 0)
+    if (Reason == NULL || ReasonChars == 0 ||
+        (CallerFlags & (BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_NO_UNWIND | BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_DYNAMIC_UNWIND |
+                        BK_HOOK_CALLER_FLAG_IMAGE_MISSING_UNWIND_METADATA)) == 0)
     {
         return;
     }
@@ -573,14 +573,14 @@ VOID ControllerHookAppendUnwindTraitsToReason(_Inout_updates_(ReasonChars) PWSTR
     }
     if ((CallerFlags & BK_HOOK_CALLER_FLAG_PRIVATE_EXEC_DYNAMIC_UNWIND) != 0)
     {
-        (void)StringCchCatW(suffix, RTL_NUMBER_OF(suffix), wroteTrait ? L",private-exec-dynamic-unwind"
-                                                                      : L"private-exec-dynamic-unwind");
+        (void)StringCchCatW(suffix, RTL_NUMBER_OF(suffix),
+                            wroteTrait ? L",private-exec-dynamic-unwind" : L"private-exec-dynamic-unwind");
         wroteTrait = TRUE;
     }
     if ((CallerFlags & BK_HOOK_CALLER_FLAG_IMAGE_MISSING_UNWIND_METADATA) != 0)
     {
-        (void)StringCchCatW(suffix, RTL_NUMBER_OF(suffix), wroteTrait ? L",image-missing-unwind"
-                                                                      : L"image-missing-unwind");
+        (void)StringCchCatW(suffix, RTL_NUMBER_OF(suffix),
+                            wroteTrait ? L",image-missing-unwind" : L"image-missing-unwind");
     }
 
     (void)StringCchCatW(Reason, ReasonChars, suffix);

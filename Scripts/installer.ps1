@@ -3,8 +3,6 @@ param(
     [string]$ControllerName = "BlackbirdController",
     [string]$DriverSys = "..\blackbird.sys",
     [string]$ControllerExe = "..\BlackbirdController.exe",
-    [string]$NetSvcExe = "",
-    [string]$PreviewHostExe = "",
     [string]$RunnerExe = "",
     [string]$SensorCoreDll = "..\J58.dll",
     [string]$HookDll = "..\SR71.dll",
@@ -14,14 +12,7 @@ param(
     [Alias("av")]
     [switch]$EnableAntiVirtualization,
     [Alias("hide")]
-    [switch]$EnableControllerHiding,
-    [string]$EnrollmentPath = "",
-    [ValidatePattern('^$|^[0-9a-fA-F]{64}$')]
-    [string]$OperatorFingerprint = "",
-    [ValidatePattern('^$|^[0-9a-fA-F]{64}$')]
-    [string]$ExpectedServerOperatorFingerprint = "",
-    [string[]]$OperatorRemoteAddress = @(),
-    [switch]$SkipEnrollmentPrompt
+    [switch]$EnableControllerHiding
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,14 +20,6 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = (Resolve-Path (Join-Path $scriptRoot "..")).Path
 $osVersion = [Environment]::OSVersion.Version
 $osBuild = $osVersion.Build
-$script:OperatorFirewallRemoteAddresses = @()
-
-foreach ($address in @($OperatorRemoteAddress)) {
-    if (-not [string]::IsNullOrWhiteSpace($address) -and $script:OperatorFirewallRemoteAddresses -notcontains $address.Trim()) {
-        $script:OperatorFirewallRemoteAddresses += $address.Trim()
-    }
-}
-
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
         [Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw "Run this script as Administrator."
@@ -85,507 +68,6 @@ function Write-InfoLog {
 function Test-HexFingerprint {
     param([string]$Value)
     return -not [string]::IsNullOrWhiteSpace($Value) -and $Value -match '^[0-9a-fA-F]{64}$'
-}
-
-function Add-OperatorFingerprint {
-    param(
-        [string[]]$Fingerprints,
-        [string]$Candidate
-    )
-
-    if (-not (Test-HexFingerprint $Candidate)) {
-        return $Fingerprints
-    }
-
-    $normalized = $Candidate.ToLowerInvariant()
-    if ($Fingerprints -notcontains $normalized) {
-        $Fingerprints += $normalized
-    }
-    return $Fingerprints
-}
-
-function Get-JsonPropertyValue {
-    param(
-        [Parameter(Mandatory = $true)]
-        $Object,
-        [Parameter(Mandatory = $true)]
-        [string]$Name
-    )
-
-    $property = $Object.PSObject.Properties[$Name]
-    if ($null -eq $property) {
-        return $null
-    }
-
-    return $property.Value
-}
-
-function Convert-BytesToHex {
-    param([byte[]]$Bytes)
-
-    return -join ($Bytes | ForEach-Object { $_.ToString("x2") })
-}
-
-function Get-EnrollmentSignatureMessage {
-    param($Enrollment)
-
-    $fingerprintList = Get-JsonPropertyValue -Object $Enrollment -Name "operatorFingerprints"
-    $fingerprints = @()
-    foreach ($fingerprint in @($fingerprintList)) {
-        $fingerprints += [string]$fingerprint
-    }
-
-    $parts = @(
-        "BLACKBIRD_VM_ENROLLMENT_SIGNATURE_V1",
-        [string](Get-JsonPropertyValue -Object $Enrollment -Name "protocol"),
-        [string](Get-JsonPropertyValue -Object $Enrollment -Name "kind"),
-        [string](Get-JsonPropertyValue -Object $Enrollment -Name "enrollmentId"),
-        [string](Get-JsonPropertyValue -Object $Enrollment -Name "machineName"),
-        [string](Get-JsonPropertyValue -Object $Enrollment -Name "createdUtc"),
-        [string](Get-JsonPropertyValue -Object $Enrollment -Name "operatorFingerprint"),
-        ($fingerprints -join ","),
-        [string](Get-JsonPropertyValue -Object $Enrollment -Name "serverOperatorFingerprint")
-    )
-
-    return ($parts -join "`n")
-}
-
-function Assert-EnrollmentSignature {
-    param(
-        $Enrollment,
-        [string]$ExpectedFingerprint = ""
-    )
-
-    $serverFingerprint = [string](Get-JsonPropertyValue -Object $Enrollment -Name "serverOperatorFingerprint")
-    $publicKeyBase64 = [string](Get-JsonPropertyValue -Object $Enrollment -Name "serverOperatorPublicKey")
-    $algorithm = [string](Get-JsonPropertyValue -Object $Enrollment -Name "signatureAlgorithm")
-    $signatureBase64 = [string](Get-JsonPropertyValue -Object $Enrollment -Name "enrollmentSignature")
-
-    if (-not (Test-HexFingerprint $serverFingerprint) -or
-        [string]::IsNullOrWhiteSpace($publicKeyBase64) -or
-        [string]::IsNullOrWhiteSpace($signatureBase64) -or
-        $algorithm -ne "ECDSA-P256-SHA256-FIXED") {
-        throw "The VM enrollment package is unsigned or uses an unsupported signature format."
-    }
-
-    $normalizedServerFingerprint = $serverFingerprint.ToLowerInvariant()
-    if (-not [string]::IsNullOrWhiteSpace($ExpectedFingerprint) -and
-        $normalizedServerFingerprint -ne $ExpectedFingerprint.ToLowerInvariant()) {
-        throw "The VM enrollment package server fingerprint does not match the expected server fingerprint."
-    }
-
-    try {
-        $publicBytes = [Convert]::FromBase64String($publicKeyBase64)
-        $signatureBytes = [Convert]::FromBase64String($signatureBase64)
-    }
-    catch {
-        throw "The VM enrollment package signature material could not be decoded."
-    }
-
-    $sha256 = [System.Security.Cryptography.SHA256]::Create()
-    try {
-        $actualFingerprint = Convert-BytesToHex -Bytes ($sha256.ComputeHash($publicBytes))
-    }
-    finally {
-        $sha256.Dispose()
-    }
-    if ($actualFingerprint -ne $normalizedServerFingerprint) {
-        throw "The VM enrollment package public key does not match the server fingerprint."
-    }
-
-    $messageBytes = [Text.Encoding]::UTF8.GetBytes((Get-EnrollmentSignatureMessage -Enrollment $Enrollment))
-    $key = $null
-    $ecdsa = $null
-    try {
-        $key = [System.Security.Cryptography.CngKey]::Import(
-            $publicBytes,
-            [System.Security.Cryptography.CngKeyBlobFormat]::EccPublicBlob
-        )
-        $ecdsa = [System.Security.Cryptography.ECDsaCng]::new($key)
-        try {
-            $verified = $ecdsa.VerifyData(
-                $messageBytes,
-                $signatureBytes,
-                [System.Security.Cryptography.HashAlgorithmName]::SHA256
-            )
-        }
-        catch {
-            $ecdsa.HashAlgorithm = [System.Security.Cryptography.CngAlgorithm]::Sha256
-            $verified = $ecdsa.VerifyData($messageBytes, $signatureBytes)
-        }
-    }
-    catch {
-        throw "The VM enrollment package signature could not be verified."
-    }
-    finally {
-        if ($null -ne $ecdsa) { $ecdsa.Dispose() }
-        if ($null -ne $key) { $key.Dispose() }
-    }
-
-    if (-not $verified) {
-        throw "The VM enrollment package signature is invalid."
-    }
-
-    return $normalizedServerFingerprint
-}
-
-function Test-EnrollmentHasAnySignatureFields {
-    param($Enrollment)
-
-    return -not [string]::IsNullOrWhiteSpace([string](Get-JsonPropertyValue -Object $Enrollment -Name "serverOperatorFingerprint")) -or
-        -not [string]::IsNullOrWhiteSpace([string](Get-JsonPropertyValue -Object $Enrollment -Name "serverOperatorPublicKey")) -or
-        -not [string]::IsNullOrWhiteSpace([string](Get-JsonPropertyValue -Object $Enrollment -Name "signatureAlgorithm")) -or
-        -not [string]::IsNullOrWhiteSpace([string](Get-JsonPropertyValue -Object $Enrollment -Name "enrollmentSignature"))
-}
-
-function Test-EnrollmentHasCompleteSignatureFields {
-    param($Enrollment)
-
-    $serverFingerprint = [string](Get-JsonPropertyValue -Object $Enrollment -Name "serverOperatorFingerprint")
-    $publicKeyBase64 = [string](Get-JsonPropertyValue -Object $Enrollment -Name "serverOperatorPublicKey")
-    $algorithm = [string](Get-JsonPropertyValue -Object $Enrollment -Name "signatureAlgorithm")
-    $signatureBase64 = [string](Get-JsonPropertyValue -Object $Enrollment -Name "enrollmentSignature")
-
-    return (Test-HexFingerprint $serverFingerprint) -and
-        -not [string]::IsNullOrWhiteSpace($publicKeyBase64) -and
-        -not [string]::IsNullOrWhiteSpace($signatureBase64) -and
-        $algorithm -eq "ECDSA-P256-SHA256-FIXED"
-}
-
-function Confirm-EnrollmentServerFingerprint {
-    param(
-        $Enrollment,
-        [string]$ExpectedFingerprint = "",
-        [switch]$SkipPrompt
-    )
-
-    if (-not (Test-EnrollmentHasCompleteSignatureFields -Enrollment $Enrollment)) {
-        if ((Test-EnrollmentHasAnySignatureFields -Enrollment $Enrollment) -or
-            -not [string]::IsNullOrWhiteSpace($ExpectedFingerprint)) {
-            throw "The VM enrollment package is unsigned or uses an unsupported signature format."
-        }
-
-        Write-Warning "VM enrollment package is unsigned; trusting the staged operator fingerprint(s) without package-signature verification."
-        return ""
-    }
-
-    $serverFingerprint = Assert-EnrollmentSignature -Enrollment $Enrollment -ExpectedFingerprint $ExpectedFingerprint
-    if (-not [string]::IsNullOrWhiteSpace($ExpectedFingerprint)) {
-        return $serverFingerprint
-    }
-    if ($SkipPrompt) {
-        throw "ExpectedServerOperatorFingerprint is required when installing from an enrollment package without confirmation prompts."
-    }
-
-    Write-Host ""
-    Write-Host "VM enrollment trust"
-    Write-Host "-------------------"
-    Write-Host "Server operator fingerprint:"
-    Write-Host "  $serverFingerprint"
-    Write-Host ""
-    $confirmation = Read-Host "Type the server operator fingerprint to trust this enrollment"
-    if ($confirmation.Trim().ToLowerInvariant() -ne $serverFingerprint) {
-        throw "Server operator fingerprint confirmation did not match."
-    }
-    return $serverFingerprint
-}
-
-function Set-RestrictedBlackbirdAcl {
-    param([string]$TargetPath)
-
-    $item = Get-Item -LiteralPath $TargetPath -Force
-    $acl = Get-Acl -LiteralPath $TargetPath
-    $acl.SetAccessRuleProtection($true, $false)
-    foreach ($rule in @($acl.Access)) {
-        [void]$acl.RemoveAccessRuleAll($rule)
-    }
-
-    $inheritance = [System.Security.AccessControl.InheritanceFlags]::None
-    if ($item.PSIsContainer) {
-        $inheritance = [System.Security.AccessControl.InheritanceFlags]"ContainerInherit, ObjectInherit"
-    }
-    $propagation = [System.Security.AccessControl.PropagationFlags]::None
-    $rights = [System.Security.AccessControl.FileSystemRights]::FullControl
-    $allow = [System.Security.AccessControl.AccessControlType]::Allow
-    $principals = @(
-        (New-Object System.Security.Principal.SecurityIdentifier("S-1-5-18")),
-        (New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-544"))
-    )
-
-    foreach ($principal in $principals) {
-        $accessRule = [System.Security.AccessControl.FileSystemAccessRule]::new(
-            $principal,
-            $rights,
-            $inheritance,
-            $propagation,
-            $allow
-        )
-        [void]$acl.AddAccessRule($accessRule)
-    }
-
-    Set-Acl -LiteralPath $TargetPath -AclObject $acl
-}
-
-function Set-ReadableBlackbirdLogAcl {
-    param([string]$TargetPath)
-
-    $item = Get-Item -LiteralPath $TargetPath -Force
-    $acl = Get-Acl -LiteralPath $TargetPath
-    $acl.SetAccessRuleProtection($true, $false)
-    foreach ($rule in @($acl.Access)) {
-        [void]$acl.RemoveAccessRuleAll($rule)
-    }
-
-    $inheritance = [System.Security.AccessControl.InheritanceFlags]::None
-    if ($item.PSIsContainer) {
-        $inheritance = [System.Security.AccessControl.InheritanceFlags]"ContainerInherit, ObjectInherit"
-    }
-    $propagation = [System.Security.AccessControl.PropagationFlags]::None
-    $allow = [System.Security.AccessControl.AccessControlType]::Allow
-    $fullControlPrincipals = @(
-        (New-Object System.Security.Principal.SecurityIdentifier("S-1-5-18")),
-        (New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-544"))
-    )
-    $readPrincipals = @(
-        (New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-545"))
-    )
-
-    foreach ($principal in $fullControlPrincipals) {
-        $accessRule = [System.Security.AccessControl.FileSystemAccessRule]::new(
-            $principal,
-            [System.Security.AccessControl.FileSystemRights]::FullControl,
-            $inheritance,
-            $propagation,
-            $allow
-        )
-        [void]$acl.AddAccessRule($accessRule)
-    }
-    foreach ($principal in $readPrincipals) {
-        $accessRule = [System.Security.AccessControl.FileSystemAccessRule]::new(
-            $principal,
-            [System.Security.AccessControl.FileSystemRights]"ReadAndExecute, Write",
-            $inheritance,
-            $propagation,
-            $allow
-        )
-        [void]$acl.AddAccessRule($accessRule)
-    }
-
-    Set-Acl -LiteralPath $TargetPath -AclObject $acl
-}
-
-function Protect-BlackbirdNodeStorage {
-    param([string]$Path)
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        return
-    }
-
-    Set-RestrictedBlackbirdAcl -TargetPath $Path
-    Get-ChildItem -LiteralPath $Path -Force -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-        Set-RestrictedBlackbirdAcl -TargetPath $_.FullName
-    }
-
-    $logsPath = Join-Path $Path "logs"
-    New-Item -ItemType Directory -Force -Path $logsPath | Out-Null
-    Set-ReadableBlackbirdLogAcl -TargetPath $logsPath
-    Get-ChildItem -LiteralPath $logsPath -Force -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-        Set-ReadableBlackbirdLogAcl -TargetPath $_.FullName
-    }
-}
-
-function Get-EnrollmentOperatorFingerprints {
-    param($Enrollment)
-
-    $fingerprints = @()
-    $singleFingerprint = Get-JsonPropertyValue -Object $Enrollment -Name "operatorFingerprint"
-    $fingerprintList = Get-JsonPropertyValue -Object $Enrollment -Name "operatorFingerprints"
-
-    if ($singleFingerprint) {
-        $fingerprints = @(Add-OperatorFingerprint -Fingerprints $fingerprints -Candidate ([string]$singleFingerprint))
-    }
-    if ($fingerprintList) {
-        foreach ($candidate in @($fingerprintList)) {
-            $fingerprints = @(Add-OperatorFingerprint -Fingerprints $fingerprints -Candidate ([string]$candidate))
-        }
-    }
-
-    return @($fingerprints)
-}
-
-function Add-FirewallRemoteAddress {
-    param([string]$Candidate)
-
-    if ([string]::IsNullOrWhiteSpace($Candidate)) {
-        return
-    }
-
-    $normalized = $Candidate.Trim()
-    if ($script:OperatorFirewallRemoteAddresses -notcontains $normalized) {
-        $script:OperatorFirewallRemoteAddresses += $normalized
-    }
-}
-
-function Add-EnrollmentFirewallRemoteAddresses {
-    param($Enrollment)
-
-    foreach ($propertyName in @("operatorRemoteAddress", "operatorRemoteAddresses", "allowedOperatorCidrs", "allowedOperatorHosts")) {
-        $value = Get-JsonPropertyValue -Object $Enrollment -Name $propertyName
-        if ($null -eq $value) {
-            continue
-        }
-
-        foreach ($item in @($value)) {
-            Add-FirewallRemoteAddress -Candidate ([string]$item)
-        }
-    }
-}
-
-function Read-EnrollmentDocument {
-    param([string]$Path)
-
-    $raw = Get-Content -Raw -LiteralPath $Path
-    $trimmed = $raw.Trim()
-    if ($trimmed.StartsWith("{")) {
-        return $trimmed | ConvertFrom-Json
-    }
-
-    $lines = $trimmed -split "\r?\n"
-    if ($lines.Count -lt 2 -or $lines[0].Trim() -ne "BLACKBIRD-VM-ENROLLMENT/1") {
-        throw "The VM enrollment package format is not recognized."
-    }
-
-    $encoded = (($lines | Select-Object -Skip 1) -join "").Trim()
-    try {
-        $bytes = [Convert]::FromBase64String($encoded)
-        $json = [Text.Encoding]::UTF8.GetString($bytes)
-        return $json | ConvertFrom-Json
-    }
-    catch {
-        throw "The VM enrollment package could not be decoded."
-    }
-}
-
-function Initialize-NodeOperatorEnrollment {
-    param(
-        [string]$EnrollmentPath,
-        [string]$OperatorFingerprint,
-        [string]$ExpectedServerFingerprint,
-        [switch]$SkipPrompt
-    )
-
-    $resolvedEnrollment = $null
-    $operatorFingerprints = @()
-    $candidatePaths = @()
-    $operatorFingerprints = @(Add-OperatorFingerprint -Fingerprints $operatorFingerprints -Candidate $OperatorFingerprint)
-    if (-not [string]::IsNullOrWhiteSpace($EnrollmentPath)) {
-        $candidatePaths += $EnrollmentPath
-    }
-    $candidatePaths += (Join-Path $scriptRoot "blackbird-vm-enrollment.blackbird")
-    $candidatePaths += (Join-Path $repoRoot "blackbird-vm-enrollment.blackbird")
-    $candidatePaths += (Join-Path $repoRoot "Scripts\blackbird-vm-enrollment.blackbird")
-    $candidatePaths += (Join-Path $scriptRoot "enroll.json")
-    $candidatePaths += (Join-Path $repoRoot "enroll.json")
-
-    foreach ($candidate in $candidatePaths) {
-        if ([string]::IsNullOrWhiteSpace($candidate)) {
-            continue
-        }
-
-        $pathToTry = $candidate
-        if (-not [System.IO.Path]::IsPathRooted($pathToTry)) {
-            $pathToTry = Join-Path $repoRoot $pathToTry
-        }
-
-        $resolved = Resolve-Path -LiteralPath $pathToTry -ErrorAction SilentlyContinue
-        if ($null -ne $resolved) {
-            $resolvedEnrollment = $resolved.Path
-            break
-        }
-    }
-
-    if (-not $resolvedEnrollment) {
-        $packageCandidates = @()
-        $packageCandidates += @(Get-ChildItem -LiteralPath $scriptRoot -Filter "*.blackbird" -File -ErrorAction SilentlyContinue)
-        $packageCandidates += @(Get-ChildItem -LiteralPath $repoRoot -Filter "*.blackbird" -File -ErrorAction SilentlyContinue)
-        $scriptsDir = Join-Path $repoRoot "Scripts"
-        if (Test-Path -LiteralPath $scriptsDir -PathType Container) {
-            $packageCandidates += @(Get-ChildItem -LiteralPath $scriptsDir -Filter "*.blackbird" -File -ErrorAction SilentlyContinue)
-        }
-        if ($packageCandidates.Count -gt 0) {
-            $resolvedEnrollment = $packageCandidates[0].FullName
-        }
-    }
-
-    if ($resolvedEnrollment) {
-        Write-InfoLog "Using VM enrollment file: $resolvedEnrollment"
-        $enrollment = Read-EnrollmentDocument -Path $resolvedEnrollment
-        $confirmedServerFingerprint = Confirm-EnrollmentServerFingerprint `
-            -Enrollment $enrollment `
-            -ExpectedFingerprint $ExpectedServerFingerprint `
-            -SkipPrompt:$SkipPrompt
-        if (-not [string]::IsNullOrWhiteSpace($confirmedServerFingerprint)) {
-            Write-InfoLog "Verified VM enrollment signature for server operator $confirmedServerFingerprint"
-        }
-        else {
-            Write-InfoLog "Using unsigned legacy VM enrollment package"
-        }
-        Add-EnrollmentFirewallRemoteAddresses -Enrollment $enrollment
-        foreach ($fingerprint in @(Get-EnrollmentOperatorFingerprints -Enrollment $enrollment)) {
-            $operatorFingerprints = @(Add-OperatorFingerprint -Fingerprints $operatorFingerprints -Candidate $fingerprint)
-        }
-    }
-
-    if ($operatorFingerprints.Count -eq 0 -and -not $SkipPrompt) {
-        Write-Host ""
-        Write-Host "VM operator trust"
-        Write-Host "-----------------"
-        Write-Host "No valid enrollment fingerprint was found."
-        Write-Host "OperatorFingerprint is not yes/no; it is the 64-character hex fingerprint of the analyst/operator public identity."
-        Write-Host "Enterprise enrollment packages can provision remote command trust for closed node-control builds."
-        Write-Host "Paste the approved operator fingerprint, or press Enter to install without enabling remote command trust."
-        $OperatorFingerprint = Read-Host "Operator fingerprint (64 hex)"
-        $operatorFingerprints = @(Add-OperatorFingerprint -Fingerprints $operatorFingerprints -Candidate $OperatorFingerprint)
-    }
-
-    if ($operatorFingerprints.Count -eq 0) {
-        Write-InfoLog "No valid operator fingerprint supplied. NetSvc secure command registration will remain untrusted until provisioned."
-        return
-    }
-
-    $nodeRoot = Join-Path $env:ProgramData "Blackbird\Node"
-    $trustDir = Join-Path $nodeRoot "trust"
-    $enrollmentDir = Join-Path $nodeRoot "enrollment"
-    New-Item -ItemType Directory -Force -Path $trustDir, $enrollmentDir | Out-Null
-    Protect-BlackbirdNodeStorage -Path $nodeRoot
-
-    foreach ($fingerprint in $operatorFingerprints) {
-        $operatorKey = "HKLM:\SOFTWARE\Blackbird\Node\Trust\Operators\$fingerprint"
-        New-Item -Path $operatorKey -Force | Out-Null
-        New-ItemProperty -Path $operatorKey -Name "Enabled" -PropertyType DWord -Value 1 -Force | Out-Null
-        New-ItemProperty -Path $operatorKey -Name "CreatedUtc" -PropertyType String -Value ([DateTime]::UtcNow.ToString("o")) -Force | Out-Null
-    }
-
-    Set-Content -Path (Join-Path $trustDir "trusted-operator.txt") -Value ($operatorFingerprints -join "`r`n") -NoNewline -Encoding ASCII
-
-    if ($resolvedEnrollment) {
-        ($enrollment | ConvertTo-Json -Depth 4) | Set-Content -Path (Join-Path $enrollmentDir "enroll.json") -Encoding UTF8
-    }
-    else {
-        $enrollment = [ordered]@{
-            protocol = 1
-            enrollmentId = "installer-$([Guid]::NewGuid().ToString('N'))"
-            machineName = $env:COMPUTERNAME
-            createdUtc = ([DateTime]::UtcNow.ToString("o"))
-            operatorFingerprint = $operatorFingerprints[0]
-            operatorFingerprints = @($operatorFingerprints)
-            operatorRemoteAddresses = @($script:OperatorFirewallRemoteAddresses)
-        }
-        ($enrollment | ConvertTo-Json -Depth 4) | Set-Content -Path (Join-Path $enrollmentDir "enroll.json") -Encoding UTF8
-    }
-
-    Write-InfoLog "Provisioned VM operator trust for $($operatorFingerprints.Count) fingerprint(s)"
-    Protect-BlackbirdNodeStorage -Path $nodeRoot
 }
 
 function Format-CommandArgs {
@@ -1233,12 +715,7 @@ $activity = "Blackbird installation"
 Write-Host ""
 Write-Host "Blackbird Installer"
 Write-Host "-------------------"
-
-Initialize-NodeOperatorEnrollment `
-    -EnrollmentPath $EnrollmentPath `
-    -OperatorFingerprint $OperatorFingerprint `
-    -ExpectedServerFingerprint $ExpectedServerOperatorFingerprint `
-    -SkipPrompt:$SkipEnrollmentPrompt
+Write-Host "Edition: Community"
 
 Write-Stage -Index 1 -Total $totalStages -Activity $activity -Status "Removing previous installation"
 $removerScript = Join-Path $scriptRoot "remover.ps1"
@@ -1250,6 +727,7 @@ Write-Stage -Index 2 -Total $totalStages -Activity $activity -Status "Resolving 
 $driverSrc = Resolve-ArtifactPath `
     -PreferredPath $DriverSys `
     -FallbackPaths @(
+        "x64\PublicRelease\blackbird.sys",
         "vcxproj\x64\Debug\blackbird.sys",
         "vcxproj\x64\Release\blackbird.sys",
         "vcxproj\x64\TEMPUS_DEBUG\blackbird.sys",
@@ -1263,6 +741,7 @@ $driverSrc = Resolve-ArtifactPath `
 $controllerSrc = Resolve-ArtifactPath `
     -PreferredPath $ControllerExe `
     -FallbackPaths @(
+        "x64\PublicRelease\BlackbirdController.exe",
         "vcxproj\x64\Debug\BlackbirdController.exe",
         "vcxproj\x64\Release\BlackbirdController.exe",
         "vcxproj\x64\TEMPUS_DEBUG\BlackbirdController.exe",
@@ -1273,56 +752,10 @@ $controllerSrc = Resolve-ArtifactPath `
     ) `
     -Label "Controller .exe"
 
-$netSvcSrc = Resolve-ArtifactPath `
-    -PreferredPath $NetSvcExe `
-    -FallbackPaths @(
-        "Lib\NetworkServiceLayer\target\release\BlackbirdNetSvc.exe",
-        "Lib\NetworkServiceLayer\target\debug\BlackbirdNetSvc.exe",
-        "x64\Release\BlackbirdNetSvc.exe",
-        "vcxproj\x64\Release\BlackbirdNetSvc.exe",
-        "x64\TEMPUS_DEBUG\BlackbirdNetSvc.exe",
-        "vcxproj\x64\TEMPUS_DEBUG\BlackbirdNetSvc.exe",
-        "x64\Debug\BlackbirdNetSvc.exe",
-        "vcxproj\x64\Debug\BlackbirdNetSvc.exe",
-        "BlackbirdNetSvc.exe"
-    ) `
-    -Label "Network service .exe" `
-    -Optional
-
-$previewHostPreferred = $PreviewHostExe
-if ([string]::IsNullOrWhiteSpace($previewHostPreferred)) {
-    $previewHostPreferred = Resolve-SiblingArtifactPath `
-        -SiblingOf $netSvcSrc `
-        -FileName "BlackbirdPreviewHost.exe" `
-        -Label "Preview host .exe"
-}
-
-$previewHostSrc = Resolve-ArtifactPath `
-    -PreferredPath $previewHostPreferred `
-    -FallbackPaths @(
-        "Lib\NetworkServiceLayer\target\release\BlackbirdPreviewHost.exe",
-        "Lib\NetworkServiceLayer\target\debug\BlackbirdPreviewHost.exe",
-        "x64\Release\BlackbirdPreviewHost.exe",
-        "vcxproj\x64\Release\BlackbirdPreviewHost.exe",
-        "x64\TEMPUS_DEBUG\BlackbirdPreviewHost.exe",
-        "vcxproj\x64\TEMPUS_DEBUG\BlackbirdPreviewHost.exe",
-        "x64\Debug\BlackbirdPreviewHost.exe",
-        "vcxproj\x64\Debug\BlackbirdPreviewHost.exe",
-        "BlackbirdPreviewHost.exe"
-    ) `
-    -Label "Preview host .exe" `
-    -Optional
-
-if (-not $previewHostSrc) {
-    $previewHostSrc = Resolve-SiblingArtifactPath `
-        -SiblingOf $netSvcSrc `
-        -FileName "BlackbirdPreviewHost.exe" `
-        -Label "Preview host .exe"
-}
-
 $runnerSrc = Resolve-ArtifactPath `
     -PreferredPath $RunnerExe `
     -FallbackPaths @(
+        "x64\PublicRelease\BlackbirdRunner.exe",
         "x64\Release\BlackbirdRunner.exe",
         "vcxproj\x64\Release\BlackbirdRunner.exe",
         "x64\Release\net9.0-windows\BlackbirdRunner.exe",
@@ -1337,13 +770,10 @@ $runnerSrc = Resolve-ArtifactPath `
     -Label "Runner .exe" `
     -Optional
 
-if ($netSvcSrc -and -not $previewHostSrc) {
-    throw "Network service build was found, but BlackbirdPreviewHost.exe was not. Build/copy the preview host next to BlackbirdNetSvc.exe before installing."
-}
-
 $sensorCoreSrc = Resolve-ArtifactPath `
     -PreferredPath $SensorCoreDll `
     -FallbackPaths @(
+        "x64\PublicRelease\J58.dll",
         "vcxproj\x64\Debug\J58.dll",
         "vcxproj\x64\Release\J58.dll",
         "vcxproj\x64\TEMPUS_DEBUG\J58.dll",
@@ -1357,6 +787,7 @@ $sensorCoreSrc = Resolve-ArtifactPath `
 $hookDllSrc = Resolve-ArtifactPath `
     -PreferredPath $HookDll `
     -FallbackPaths @(
+        "x64\PublicRelease\SR71.dll",
         "vcxproj\x64\Debug\SR71.dll",
         "vcxproj\x64\Release\SR71.dll",
         "vcxproj\x64\TEMPUS_DEBUG\SR71.dll",
@@ -1373,24 +804,12 @@ $hookDllSrc = Resolve-ArtifactPath `
 $driverDst = Join-Path $env:windir "System32\drivers\blackbird.sys"
 $controllerDir = Join-Path $env:ProgramFiles "Blackbird"
 $controllerDst = Join-Path $controllerDir "BlackbirdController.exe"
-$netSvcDst = Join-Path $controllerDir "BlackbirdNetSvc.exe"
-$previewHostDst = Join-Path $controllerDir "BlackbirdPreviewHost.exe"
 $runnerDst = Join-Path $controllerDir "BlackbirdRunner.exe"
 $sensorCoreDst = Join-Path $controllerDir "J58.dll"
 $hookDllDst = Join-Path $controllerDir "SR71.dll"
 
 Write-InfoLog "Driver source: $driverSrc"
 Write-InfoLog "Controller source: $controllerSrc"
-if ($netSvcSrc) {
-    Write-InfoLog "Network service source: $netSvcSrc"
-} else {
-    Write-InfoLog "Network service source: optional component absent"
-}
-if ($previewHostSrc) {
-    Write-InfoLog "Preview host source: $previewHostSrc"
-} else {
-    Write-InfoLog "Preview host source: optional component absent"
-}
 if ($runnerSrc) {
     Write-InfoLog "Runner source: $runnerSrc"
 } else {
@@ -1403,12 +822,6 @@ Write-Stage -Index 3 -Total $totalStages -Activity $activity -Status "Stopping e
 Invoke-Sc -Arguments @("stop", $ControllerName) -AllowedExitCodes @(0, 1060, 1062)
 if (-not (Wait-UntilFileUnlocked -Path $controllerDst -TimeoutSeconds 20)) {
     throw "$controllerDst is still locked after controller service stop. Reboot then rerun installer."
-}
-if ($netSvcSrc -and -not (Wait-UntilFileUnlocked -Path $netSvcDst -TimeoutSeconds 20)) {
-    throw "$netSvcDst is still locked after controller service stop. Reboot then rerun installer."
-}
-if ($previewHostSrc -and -not (Wait-UntilFileUnlocked -Path $previewHostDst -TimeoutSeconds 20)) {
-    throw "$previewHostDst is still locked after controller service stop. Reboot then rerun installer."
 }
 if ($runnerSrc -and -not (Wait-UntilFileUnlocked -Path $runnerDst -TimeoutSeconds 20)) {
     throw "$runnerDst is still locked after controller service stop. Reboot then rerun installer."
@@ -1462,12 +875,6 @@ Copy-Item -LiteralPath $hookDllSrc -Destination $hookDllDst -Force
 
 Assert-PathExists -Path $driverDst -Label "Installed driver"
 Assert-PathExists -Path $controllerDst -Label "Installed controller"
-if ($netSvcSrc) {
-    Assert-PathExists -Path $netSvcDst -Label "Installed network service"
-}
-if ($previewHostSrc) {
-    Assert-PathExists -Path $previewHostDst -Label "Installed preview host"
-}
 if ($runnerSrc) {
     Assert-PathExists -Path $runnerDst -Label "Installed runner"
 }
@@ -1517,16 +924,6 @@ Write-Stage -Index 6 -Total $totalStages -Activity $activity -Status "Configurin
 Ensure-BlackbirdCrashDumpSettings
 
 Write-Stage -Index 7 -Total $totalStages -Activity $activity -Status "Configuring firewall rules"
-$firewallRemoteAddress = @($script:OperatorFirewallRemoteAddresses)
-if ($firewallRemoteAddress.Count -eq 0) {
-    $firewallRemoteAddress = @("LocalSubnet")
-    Write-Warning "No operator firewall remote address was supplied by -OperatorRemoteAddress or enrollment metadata; using LocalSubnet."
-}
-Write-InfoLog "Firewall remote address scope: $($firewallRemoteAddress -join ', ')"
-Ensure-FirewallRulePresent -DisplayName "Blackbird Operator UDP Discovery" -Protocol UDP -LocalPort "49371" -RemoteAddress $firewallRemoteAddress
-Ensure-FirewallRulePresent -DisplayName "Blackbird Operator TCP Status" -Protocol TCP -LocalPort "49372" -RemoteAddress $firewallRemoteAddress
-Ensure-FirewallRulePresent -DisplayName "Blackbird Operator TCP Command" -Protocol TCP -LocalPort "49373" -RemoteAddress $firewallRemoteAddress
-Ensure-FirewallRulePresent -DisplayName "Blackbird Operator ICMPv4" -Protocol ICMPv4 -IcmpType "8" -RemoteAddress $firewallRemoteAddress
 
 Write-Stage -Index 8 -Total $totalStages -Activity $activity -Status "Starting driver"
 $driverRecovered = $false

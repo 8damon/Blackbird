@@ -103,7 +103,6 @@ extern "C"
     BKSC_API BOOL BkscRegisterHookPatch(_In_ HANDLE Device, _In_ const BK_REGISTER_HOOK_PATCH_REQUEST *Request);
     BKSC_API BOOL BkscRegisterProcessInstrumentationCallback(
         _In_ HANDLE Device, _In_ const BK_REGISTER_PROCESS_INSTRUMENTATION_CALLBACK_REQUEST *Request);
-    BKSC_API BOOL BkscSetEndpointGuard(_In_ HANDLE Device, _In_ const BK_ENDPOINT_GUARD_REQUEST *Request);
     BKSC_API BOOL BkscSetUserHookTarget(_In_ HANDLE Device, _In_ DWORD Mode, _In_ DWORD ProcessId, _In_ DWORD Flags,
                                         _In_opt_z_ PCWSTR ImagePath, _In_ DWORD AnalysisSubjectKind,
                                         _In_opt_z_ PCWSTR AnalysisSubjectPath, _In_opt_z_ PCWSTR HookDllPath,
@@ -114,9 +113,6 @@ extern "C"
                                         _Out_opt_ BKIPC_SET_USER_HOOK_TARGET_RESPONSE *Response);
     BKSC_API BOOL BkscSetShutdownMode(_In_ HANDLE Device);
     BKSC_API BOOL BkscControlProcessExecution(_In_ HANDLE Device, _In_ DWORD ProcessId, _In_ BOOL Suspend);
-    BKSC_API BOOL BkscQueryProcessMemory(_In_ HANDLE Device, _In_ DWORD ProcessId, _In_ UINT64 BaseAddress,
-                                         _In_ DWORD RequestedSize, _Out_writes_bytes_(*BytesRead) PVOID Buffer,
-                                         _In_ DWORD BufferSize, _Out_ DWORD *BytesRead);
     BKSC_API BOOL BkscGetEtwEvent(_In_ HANDLE Device, _Out_ BKIPC_ETW_EVENT *Event, _In_ DWORD TimeoutMs);
     BKSC_API DWORD BkscParseStreamMaskA(_In_z_ const char *Text);
 

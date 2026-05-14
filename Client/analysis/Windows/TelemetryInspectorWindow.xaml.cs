@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -18,6 +19,7 @@ namespace BlackbirdInterface
                                                              "Low", "Info",     "Unknown" };
 
         private readonly ObservableCollection<GroupedEventRow> _groups = new();
+        private readonly ObservableCollection<GroupedEventRow> _detectionRows = new();
         private readonly ObservableCollection<InspectorEventTreeNode> _eventNodes = new();
         private readonly ObservableCollection<InspectorFieldNode> _fieldNodes = new();
         private readonly Func<uint, uint, IoctlParsedEvent?>? _handleEvidenceResolver;
@@ -26,6 +28,7 @@ namespace BlackbirdInterface
         private int _severityFilterIndex;
         private string _selectedRawText = string.Empty;
         private string? _preferredGroupKey;
+        private readonly bool _detectionInspector;
 
         private TelemetryInspectorWindow(string title, string subtitle, IEnumerable<GroupedEventRow> groups,
                                          GroupedEventRow? selectedGroup,
@@ -35,12 +38,20 @@ namespace BlackbirdInterface
             WindowThemeHelper.WireThemeAwareTitleBar(this);
 
             Title = string.IsNullOrWhiteSpace(title) ? "Telemetry Inspector" : title.Trim();
+            _detectionInspector = Title.Contains("Detection", StringComparison.OrdinalIgnoreCase) ||
+                                  Title.Contains("Heuristic", StringComparison.OrdinalIgnoreCase);
             HeaderBlock.Text = Title;
             SummaryBlock.Text = string.IsNullOrWhiteSpace(subtitle) ? "No telemetry available" : subtitle.Trim();
             _handleEvidenceResolver = handleEvidenceResolver;
 
             EventTreeView.ItemsSource = _eventNodes;
+            DetectionGrid.ItemsSource = _detectionRows;
             FieldsTreeView.ItemsSource = _fieldNodes;
+            if (_detectionInspector)
+            {
+                EventTreeView.Visibility = Visibility.Collapsed;
+                DetectionGrid.Visibility = Visibility.Visible;
+            }
 
             foreach (GroupedEventRow row in groups.Select(x => x.Clone())
                          .OrderByDescending(x => x.LastSeenUtc)
@@ -104,6 +115,11 @@ namespace BlackbirdInterface
 
             foreach (GroupedEventRow row in _groups)
             {
+                if (_detectionInspector && string.IsNullOrWhiteSpace(row.Detection))
+                {
+                    continue;
+                }
+
                 if (!selectedSeverity.Equals("All", StringComparison.OrdinalIgnoreCase) &&
                     !row.Severity.Equals(selectedSeverity, StringComparison.OrdinalIgnoreCase))
                 {
@@ -124,14 +140,22 @@ namespace BlackbirdInterface
         private void RebuildEventTree()
         {
             _eventNodes.Clear();
+            _detectionRows.Clear();
 
             foreach (GroupedEventRow group in GetVisibleGroups())
             {
+                if (_detectionInspector)
+                {
+                    _detectionRows.Add(group);
+                }
+
                 var groupNode = new InspectorEventTreeNode {
                     Group = group,
                     Title = string.IsNullOrWhiteSpace(group.Detection) ? group.Event : group.Detection,
-                    Subtitle = string.IsNullOrWhiteSpace(group.Detection) ? group.Severity
-                                                                          : $"{group.Event} | {group.Severity}",
+                    Subtitle = _detectionInspector
+                                   ? BuildDetectionGroupSubtitle(group)
+                                   : (string.IsNullOrWhiteSpace(group.Detection) ? group.Severity
+                                                                                 : $"{group.Event} | {group.Severity}"),
                     RightLabel = $"{Math.Max(1, group.Details.Count == 0 ? group.Hits : group.Details.Count)}x",
                     IsExpanded = string.Equals(group.GroupKey, _preferredGroupKey, StringComparison.Ordinal),
                     AccentBrush = SeverityAccentBrush(group.Severity),
@@ -145,9 +169,10 @@ namespace BlackbirdInterface
                     groupNode.Children.Add(new InspectorEventTreeNode {
                         Group = group, Detail = detail,
                         Title = string.IsNullOrWhiteSpace(detail.Detection) ? detail.Event : detail.Detection,
-                        Subtitle = string.IsNullOrWhiteSpace(detail.ArgumentSummary)
-                                       ? $"{detail.Event} | {detail.Actor} -> {detail.Target}"
-                                       : $"{detail.Event} | {detail.ArgumentSummary}",
+                        Subtitle = _detectionInspector ? BuildDetectionDetailSubtitle(detail)
+                                                       : (string.IsNullOrWhiteSpace(detail.ArgumentSummary)
+                                                              ? $"{detail.Event} | {detail.Actor} -> {detail.Target}"
+                                                              : $"{detail.Event} | {detail.ArgumentSummary}"),
                         RightLabel =
                             detail.TimestampUtc == default ? "-" : detail.TimestampUtc.ToString("HH:mm:ss.fff"),
                         IsLeaf = true, AccentBrush = SeverityAccentBrush(detail.Severity),
@@ -162,6 +187,29 @@ namespace BlackbirdInterface
 
         private void SelectInitialNode()
         {
+            if (_detectionInspector)
+            {
+                GroupedEventRow? selectedGroup = null;
+                if (!string.IsNullOrWhiteSpace(_preferredGroupKey))
+                {
+                    selectedGroup = _detectionRows.FirstOrDefault(
+                        x => string.Equals(x.GroupKey, _preferredGroupKey, StringComparison.Ordinal));
+                }
+
+                selectedGroup ??= _detectionRows.FirstOrDefault();
+                if (selectedGroup == null)
+                {
+                    DetectionGrid.SelectedItem = null;
+                    UpdateSelectedGroup(null);
+                    return;
+                }
+
+                DetectionGrid.SelectedItem = selectedGroup;
+                DetectionGrid.ScrollIntoView(selectedGroup);
+                UpdateSelectedGroup(selectedGroup);
+                return;
+            }
+
             InspectorEventTreeNode? selectedNode = null;
 
             if (!string.IsNullOrWhiteSpace(_preferredGroupKey))
@@ -218,6 +266,37 @@ namespace BlackbirdInterface
             UpdateSelectedNode(e.NewValue as InspectorEventTreeNode);
         }
 
+        private void DetectionGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            if (_detectionInspector)
+            {
+                UpdateSelectedGroup(DetectionGrid.SelectedItem as GroupedEventRow);
+            }
+        }
+
+        private void UpdateSelectedGroup(GroupedEventRow? group)
+        {
+            if (group == null)
+            {
+                SelectionBlock.Text = "-";
+                SelectionTimeBlock.Text = "-";
+                DetailCountBlock.Text = "0 occurrences shown";
+                UpdateSelectedDetail(null);
+                return;
+            }
+
+            _preferredGroupKey = group.GroupKey;
+            SelectionBlock.Text = string.IsNullOrWhiteSpace(group.Detection) ? group.Event : group.Detection;
+            SelectionTimeBlock.Text = group.LastSeenUtc == default ? "-" : group.LastSeenUtc.ToString("HH:mm:ss.fff");
+            int count = Math.Max(1, group.Details.Count == 0 ? group.Hits : group.Details.Count);
+            DetailCountBlock.Text = $"{count} evidence row{(count == 1 ? string.Empty : "s")} shown";
+            GroupedEventDetailRow? detail =
+                group.Details.Select(x => x.Clone()).OrderByDescending(x => x.TimestampUtc).FirstOrDefault();
+            UpdateSelectedDetail(detail);
+        }
+
         private void UpdateSelectedNode(InspectorEventTreeNode? node)
         {
             if (node == null)
@@ -240,7 +319,10 @@ namespace BlackbirdInterface
             {
                 _preferredGroupKey = group.GroupKey;
                 SelectionBlock.Text =
-                    string.IsNullOrWhiteSpace(group.Detection) ? group.Event : $"{group.Detection} / {group.Event}";
+                    _detectionInspector
+                        ? (string.IsNullOrWhiteSpace(group.Detection) ? group.Event : group.Detection)
+                        : (string.IsNullOrWhiteSpace(group.Detection) ? group.Event
+                                                                      : $"{group.Detection} / {group.Event}");
                 SelectionTimeBlock.Text =
                     group.LastSeenUtc == default ? "-" : group.LastSeenUtc.ToString("HH:mm:ss.fff");
                 DetailCountBlock.Text =
@@ -278,14 +360,14 @@ namespace BlackbirdInterface
                 _selectedHandleEvidence = _handleEvidenceResolver(actorPid, targetPid);
             }
 
-            string disassembly = BuildDisassemblyText(detail, parsed, _selectedHandleEvidence);
+            string sampleBytesText = BuildSampleBytesText(detail, parsed, _selectedHandleEvidence);
             List<InspectorStackRow> stackRows = BuildStackRows(parsed, _selectedHandleEvidence);
-            BuildFieldTree(detail, parsed, actorPid, targetPid, stackRows, disassembly, _selectedRawText,
+            BuildFieldTree(detail, parsed, actorPid, targetPid, stackRows, sampleBytesText, _selectedRawText,
                            _selectedHandleEvidence != null);
         }
 
         private void BuildFieldTree(GroupedEventDetailRow detail, Dictionary<string, string> parsed, uint actorPid,
-                                    uint targetPid, IReadOnlyList<InspectorStackRow> stackRows, string disassembly,
+                                    uint targetPid, IReadOnlyList<InspectorStackRow> stackRows, string sampleBytesText,
                                     string rawText, bool hasHandleEvidence)
         {
             _fieldNodes.Clear();
@@ -318,20 +400,33 @@ namespace BlackbirdInterface
             }
 
             InspectorFieldNode selection = AddSection("Selected Occurrence");
-            AddLine(selection, $"{detail.Detection} / {detail.Event}", "note");
+            AddLine(selection, _detectionInspector ? detail.Detection : $"{detail.Detection} / {detail.Event}", "note");
             AddPair(selection, "Timestamp", detail.TimestampUtc == default ? "-" : detail.TimestampUtc.ToString("O"));
             AddPair(selection, "Severity", detail.Severity);
-            AddPair(selection, "Source", detail.Source);
             AddPair(selection, "Actor", detail.Actor);
             AddPair(selection, "Target", detail.Target);
             AddPair(selection, "Actor PID", actorPid == 0 ? "-" : actorPid.ToString(CultureInfo.InvariantCulture));
             AddPair(selection, "Target PID", targetPid == 0 ? "-" : targetPid.ToString(CultureInfo.InvariantCulture));
-            AddPair(selection, "Argument Summary", detail.ArgumentSummary);
+            AddPair(selection, _detectionInspector ? "Context" : "Argument Summary", detail.ArgumentSummary);
             if (detail.HitCount > 1)
             {
                 AddPair(selection, "Occurrences", detail.HitCount.ToString(CultureInfo.InvariantCulture));
             }
             AddPair(selection, "Correlated Handle Evidence", hasHandleEvidence ? "Available" : "None");
+
+            if (_detectionInspector)
+            {
+                InspectorFieldNode telemetry = AddSection("Telemetry Context", false);
+                AddPair(telemetry, "Sensor", detail.Source);
+                AddPair(telemetry, "Signal", detail.Event);
+                AddPair(telemetry, "Actor PID", actorPid == 0 ? "-" : actorPid.ToString(CultureInfo.InvariantCulture));
+                AddPair(telemetry, "Target PID",
+                        targetPid == 0 ? "-" : targetPid.ToString(CultureInfo.InvariantCulture));
+            }
+            else
+            {
+                AddPair(selection, "Source", detail.Source);
+            }
 
             foreach (string category in parsed.Keys.Select(CategoryForKey)
                          .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -361,10 +456,10 @@ namespace BlackbirdInterface
                 }
             }
 
-            InspectorFieldNode disassemblySection = AddSection("Disassembly");
-            foreach (string line in SplitLines(disassembly))
+            InspectorFieldNode sampleBytesSection = AddSection("Sample Bytes");
+            foreach (string line in SplitLines(sampleBytesText))
             {
-                AddLine(disassemblySection, line,
+                AddLine(sampleBytesSection, line,
                         line.StartsWith("summary:", StringComparison.OrdinalIgnoreCase) ? "note" : "line");
             }
 
@@ -434,6 +529,59 @@ namespace BlackbirdInterface
             return rows;
         }
 
+        private static string BuildDetectionGroupSubtitle(GroupedEventRow group)
+        {
+            string actor =
+                !string.IsNullOrWhiteSpace(group.Actor)
+                    ? group.Actor
+                    : group.Details.OrderByDescending(x => x.TimestampUtc).FirstOrDefault()?.Actor ?? string.Empty;
+            string target =
+                !string.IsNullOrWhiteSpace(group.Target)
+                    ? group.Target
+                    : group.Details.OrderByDescending(x => x.TimestampUtc).FirstOrDefault()?.Target ?? string.Empty;
+            string context =
+                !string.IsNullOrWhiteSpace(group.ArgumentPreview)
+                    ? group.ArgumentPreview
+                    : group.Details.OrderByDescending(x => x.TimestampUtc).FirstOrDefault()?.ArgumentSummary ??
+                          string.Empty;
+
+            var parts = new List<string>(4);
+            if (!string.IsNullOrWhiteSpace(group.Severity))
+            {
+                parts.Add(group.Severity);
+            }
+            if (!string.IsNullOrWhiteSpace(actor) || !string.IsNullOrWhiteSpace(target))
+            {
+                parts.Add($"{FirstNonBlank(actor, "-")} -> {FirstNonBlank(target, "-")}");
+            }
+            if (!string.IsNullOrWhiteSpace(context))
+            {
+                parts.Add(context);
+            }
+
+            return string.Join(" | ", parts);
+        }
+
+        private static string BuildDetectionDetailSubtitle(GroupedEventDetailRow detail)
+        {
+            var parts = new List<string>(4);
+            if (!string.IsNullOrWhiteSpace(detail.Severity))
+            {
+                parts.Add(detail.Severity);
+            }
+            parts.Add($"{FirstNonBlank(detail.Actor, "-")} -> {FirstNonBlank(detail.Target, "-")}");
+            if (!string.IsNullOrWhiteSpace(detail.ArgumentSummary))
+            {
+                parts.Add(detail.ArgumentSummary);
+            }
+
+            return string.Join(" | ", parts);
+        }
+
+        private static string FirstNonBlank(string value, string fallback) => string.IsNullOrWhiteSpace(value)
+                                                                                  ? fallback
+                                                                                  : value.Trim();
+
         private static void AppendHandleFrames(List<InspectorStackRow> rows, ulong[]? frames, uint count, string notes,
                                                ref int index)
         {
@@ -456,12 +604,12 @@ namespace BlackbirdInterface
             }
         }
 
-        private string BuildDisassemblyText(GroupedEventDetailRow detail, Dictionary<string, string> parsed,
+        private string BuildSampleBytesText(GroupedEventDetailRow detail, Dictionary<string, string> parsed,
                                             IoctlParsedEvent? evidence)
         {
             if (evidence != null)
             {
-                return EventDetailFormatting.FormatSampleDisassembly(
+                return EventDetailFormatting.FormatSampleBytes(
                     evidence.DeepSample, (int)evidence.DeepSampleSize, evidence.OriginAddress, evidence.OriginPath,
                     evidence.DeepAllocationBase, evidence.DeepRegionSize, evidence.DeepRegionProtect,
                     evidence.DeepRegionState, evidence.DeepRegionType);
@@ -480,9 +628,8 @@ namespace BlackbirdInterface
                     ? originPath
                     : detail.Target;
 
-                return EventDetailFormatting.FormatSampleDisassembly(sample, sample.Length, origin, modulePath,
-                                                                     regionBase, regionSize, regionProtect, regionState,
-                                                                     regionType);
+                return EventDetailFormatting.FormatSampleBytes(sample, sample.Length, origin, modulePath, regionBase,
+                                                               regionSize, regionProtect, regionState, regionType);
             }
 
             if (parsed.TryGetValue("reason", out string? reason) && !string.IsNullOrWhiteSpace(reason))

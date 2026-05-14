@@ -3,8 +3,6 @@ param(
     [string]$ControllerName = "BlackbirdController",
     [string]$DriverSys = "",
     [string]$ControllerExe = "",
-    [string]$NetSvcExe = "",
-    [string]$PreviewHostExe = "",
     [string]$RunnerExe = "",
     [string]$SensorCoreDll = "",
     [string]$HookDll = "",
@@ -605,6 +603,7 @@ $activity = "Blackbird debug invoke (Tempest)"
 Write-Host ""
 Write-Host "Blackbird Debug Invoke - Tempest" -ForegroundColor Magenta
 Write-Host "---------------------------------" -ForegroundColor DarkMagenta
+Write-Host "  Edition=Community" -ForegroundColor DarkMagenta
 Write-Host "  DebugFlags=1  DebugMode=1  Controller in console" -ForegroundColor DarkMagenta
 Write-Host ""
 
@@ -619,6 +618,7 @@ Write-Stage -Index 2 -Total $totalStages -Activity $activity -Status "Resolving 
 $driverSrc = Resolve-ArtifactPath `
     -PreferredPath $DriverSys `
     -FallbackPaths @(
+        "x64\PublicRelease\blackbird.sys",
         "vcxproj\x64\Debug\blackbird.sys",
         "vcxproj\x64\TEMPUS_DEBUG\blackbird.sys",
         "vcxproj\x64\Release\blackbird.sys",
@@ -632,6 +632,7 @@ $driverSrc = Resolve-ArtifactPath `
 $controllerSrc = Resolve-ArtifactPath `
     -PreferredPath $ControllerExe `
     -FallbackPaths @(
+        "x64\PublicRelease\BlackbirdController.exe",
         "vcxproj\x64\Debug\BlackbirdController.exe",
         "vcxproj\x64\TEMPUS_DEBUG\BlackbirdController.exe",
         "vcxproj\x64\Release\BlackbirdController.exe",
@@ -642,56 +643,10 @@ $controllerSrc = Resolve-ArtifactPath `
     ) `
     -Label "Controller .exe"
 
-$netSvcSrc = Resolve-ArtifactPath `
-    -PreferredPath $NetSvcExe `
-    -FallbackPaths @(
-        "Lib\NetworkServiceLayer\target\release\BlackbirdNetSvc.exe",
-        "Lib\NetworkServiceLayer\target\debug\BlackbirdNetSvc.exe",
-        "x64\Release\BlackbirdNetSvc.exe",
-        "vcxproj\x64\Release\BlackbirdNetSvc.exe",
-        "x64\TEMPUS_DEBUG\BlackbirdNetSvc.exe",
-        "vcxproj\x64\TEMPUS_DEBUG\BlackbirdNetSvc.exe",
-        "x64\Debug\BlackbirdNetSvc.exe",
-        "vcxproj\x64\Debug\BlackbirdNetSvc.exe",
-        "BlackbirdNetSvc.exe"
-    ) `
-    -Label "Network service .exe" `
-    -Optional
-
-$previewHostPreferred = $PreviewHostExe
-if ([string]::IsNullOrWhiteSpace($previewHostPreferred)) {
-    $previewHostPreferred = Resolve-SiblingArtifactPath `
-        -SiblingOf $netSvcSrc `
-        -FileName "BlackbirdPreviewHost.exe" `
-        -Label "Preview host .exe"
-}
-
-$previewHostSrc = Resolve-ArtifactPath `
-    -PreferredPath $previewHostPreferred `
-    -FallbackPaths @(
-        "Lib\NetworkServiceLayer\target\release\BlackbirdPreviewHost.exe",
-        "Lib\NetworkServiceLayer\target\debug\BlackbirdPreviewHost.exe",
-        "x64\Release\BlackbirdPreviewHost.exe",
-        "vcxproj\x64\Release\BlackbirdPreviewHost.exe",
-        "x64\TEMPUS_DEBUG\BlackbirdPreviewHost.exe",
-        "vcxproj\x64\TEMPUS_DEBUG\BlackbirdPreviewHost.exe",
-        "x64\Debug\BlackbirdPreviewHost.exe",
-        "vcxproj\x64\Debug\BlackbirdPreviewHost.exe",
-        "BlackbirdPreviewHost.exe"
-    ) `
-    -Label "Preview host .exe" `
-    -Optional
-
-if (-not $previewHostSrc) {
-    $previewHostSrc = Resolve-SiblingArtifactPath `
-        -SiblingOf $netSvcSrc `
-        -FileName "BlackbirdPreviewHost.exe" `
-        -Label "Preview host .exe"
-}
-
 $runnerSrc = Resolve-ArtifactPath `
     -PreferredPath $RunnerExe `
     -FallbackPaths @(
+        "x64\PublicRelease\BlackbirdRunner.exe",
         "x64\Debug\BlackbirdRunner.exe",
         "vcxproj\x64\Debug\BlackbirdRunner.exe",
         "x64\Debug\net9.0-windows\BlackbirdRunner.exe",
@@ -706,13 +661,10 @@ $runnerSrc = Resolve-ArtifactPath `
     -Label "Runner .exe" `
     -Optional
 
-if ($netSvcSrc -and -not $previewHostSrc) {
-    throw "Network service build was found, but BlackbirdPreviewHost.exe was not. Build/copy the preview host next to BlackbirdNetSvc.exe before installing."
-}
-
 $sensorCoreSrc = Resolve-ArtifactPath `
     -PreferredPath $SensorCoreDll `
     -FallbackPaths @(
+        "x64\PublicRelease\J58.dll",
         "vcxproj\x64\Debug\J58.dll",
         "vcxproj\x64\TEMPUS_DEBUG\J58.dll",
         "vcxproj\x64\Release\J58.dll",
@@ -726,6 +678,7 @@ $sensorCoreSrc = Resolve-ArtifactPath `
 $hookDllSrc = Resolve-ArtifactPath `
     -PreferredPath $HookDll `
     -FallbackPaths @(
+        "x64\PublicRelease\SR71.dll",
         "vcxproj\x64\Debug\SR71.dll",
         "vcxproj\x64\TEMPUS_DEBUG\SR71.dll",
         "vcxproj\x64\Release\SR71.dll",
@@ -742,24 +695,12 @@ $hookDllSrc = Resolve-ArtifactPath `
 $driverDst = Join-Path $env:windir "System32\drivers\blackbird.sys"
 $controllerDir = Join-Path $env:ProgramFiles "Blackbird"
 $controllerDst = Join-Path $controllerDir "BlackbirdController.exe"
-$netSvcDst = Join-Path $controllerDir "BlackbirdNetSvc.exe"
-$previewHostDst = Join-Path $controllerDir "BlackbirdPreviewHost.exe"
 $runnerDst = Join-Path $controllerDir "BlackbirdRunner.exe"
 $sensorCoreDst = Join-Path $controllerDir "J58.dll"
 $hookDllDst = Join-Path $controllerDir "SR71.dll"
 
 Write-DebugLog "Driver source:     $driverSrc"
 Write-DebugLog "Controller source: $controllerSrc"
-if ($netSvcSrc) {
-    Write-DebugLog "NetSvc source:     $netSvcSrc"
-} else {
-    Write-DebugLog "NetSvc source:     optional component absent"
-}
-if ($previewHostSrc) {
-    Write-DebugLog "PreviewHost source: $previewHostSrc"
-} else {
-    Write-DebugLog "PreviewHost source: optional component absent"
-}
 if ($runnerSrc) {
     Write-DebugLog "Runner source:     $runnerSrc"
 } else {
@@ -787,12 +728,6 @@ if (-not (Wait-UntilFileUnlocked -Path $driverDst -TimeoutSeconds 20)) {
 if (-not (Wait-UntilFileUnlocked -Path $controllerDst -TimeoutSeconds 20)) {
     throw "$controllerDst is still locked. Kill any running BlackbirdController process then rerun."
 }
-if ($netSvcSrc -and -not (Wait-UntilFileUnlocked -Path $netSvcDst -TimeoutSeconds 20)) {
-    throw "$netSvcDst is still locked. Kill any running BlackbirdNetSvc process then rerun."
-}
-if ($previewHostSrc -and -not (Wait-UntilFileUnlocked -Path $previewHostDst -TimeoutSeconds 20)) {
-    throw "$previewHostDst is still locked. Kill any running BlackbirdPreviewHost process then rerun."
-}
 if ($runnerSrc -and -not (Wait-UntilFileUnlocked -Path $runnerDst -TimeoutSeconds 20)) {
     throw "$runnerDst is still locked. Kill any running BlackbirdRunner process then rerun."
 }
@@ -808,18 +743,6 @@ Write-InfoLog "Copying driver:     $driverSrc -> $driverDst"
 Copy-Item -LiteralPath $driverSrc -Destination $driverDst -Force
 Write-InfoLog "Copying controller: $controllerSrc -> $controllerDst"
 Copy-Item -LiteralPath $controllerSrc -Destination $controllerDst -Force
-if ($netSvcSrc) {
-    Write-InfoLog "Copying NetSvc:     $netSvcSrc -> $netSvcDst"
-    Copy-Item -LiteralPath $netSvcSrc -Destination $netSvcDst -Force
-} else {
-    Write-InfoLog "Skipping optional NetSvc copy"
-}
-if ($previewHostSrc) {
-    Write-InfoLog "Copying PreviewHost: $previewHostSrc -> $previewHostDst"
-    Copy-Item -LiteralPath $previewHostSrc -Destination $previewHostDst -Force
-} else {
-    Write-InfoLog "Skipping optional PreviewHost copy"
-}
 if ($runnerSrc) {
     Write-InfoLog "Copying Runner:     $runnerSrc -> $runnerDst"
     Copy-Item -LiteralPath $runnerSrc -Destination $runnerDst -Force
@@ -954,10 +877,6 @@ Assert-ServiceRunning -ServiceName $DriverName -ExpectedStatePattern "STATE\s*:\
 
 Write-Stage -Index 7 -Total $totalStages -Activity $activity -Status "Configuring firewall and starting controller service"
 
-Ensure-FirewallRulePresent -DisplayName "Blackbird Operator UDP Discovery" -Protocol UDP -LocalPort "49371"
-Ensure-FirewallRulePresent -DisplayName "Blackbird Operator TCP Status"    -Protocol TCP -LocalPort "49372"
-Ensure-FirewallRulePresent -DisplayName "Blackbird Operator TCP Command"   -Protocol TCP -LocalPort "49373"
-Ensure-FirewallRulePresent -DisplayName "Blackbird Operator ICMPv4"        -Protocol ICMPv4 -IcmpType "8"
 
 Invoke-Sc -Arguments @("stop", $ControllerName) -AllowedExitCodes @(0, 1060, 1062)
 Invoke-Sc -Arguments @("delete", $ControllerName) -AllowedExitCodes @(0, 1060)

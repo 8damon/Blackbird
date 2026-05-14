@@ -1579,205 +1579,6 @@ static BOOLEAN BkchdlHandleAccessIsHighRisk(_In_ ACCESS_MASK DesiredAccess, _In_
            ((DesiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS);
 }
 
-static UINT32 BkchdlClassifyEnterpriseTargetName(_In_opt_z_ PCSTR ImageName)
-{
-    UINT32 flags = 0;
-
-    if (ImageName == NULL)
-    {
-        return 0;
-    }
-
-    if (BkchdlAsciiEqualsInsensitive(ImageName, "lsass.exe"))
-    {
-        return BK_ENTERPRISE_FLAG_CREDENTIAL_PROCESS | BK_ENTERPRISE_FLAG_PRIVILEGED_TARGET |
-               BK_ENTERPRISE_FLAG_LSASS_TARGET | BK_ENTERPRISE_FLAG_KERBEROS_NTLM;
-    }
-    if (BkchdlAsciiEqualsInsensitive(ImageName, "lsaiso.exe"))
-    {
-        return BK_ENTERPRISE_FLAG_CREDENTIAL_PROCESS | BK_ENTERPRISE_FLAG_PRIVILEGED_TARGET |
-               BK_ENTERPRISE_FLAG_KERBEROS_NTLM;
-    }
-    if (BkchdlAsciiEqualsInsensitive(ImageName, "winlogon.exe"))
-    {
-        return BK_ENTERPRISE_FLAG_CREDENTIAL_PROCESS | BK_ENTERPRISE_FLAG_PRIVILEGED_TARGET |
-               BK_ENTERPRISE_FLAG_WINLOGON_TARGET;
-    }
-
-    if (BkchdlAsciiEqualsInsensitive(ImageName, "services.exe") ||
-        BkchdlAsciiEqualsInsensitive(ImageName, "wininit.exe") ||
-        BkchdlAsciiEqualsInsensitive(ImageName, "csrss.exe") || BkchdlAsciiEqualsInsensitive(ImageName, "smss.exe"))
-    {
-        flags |= BK_ENTERPRISE_FLAG_PRIVILEGED_TARGET;
-    }
-
-    return flags;
-}
-
-static BOOLEAN BkchdlProcessAccessIsCredentialRelevant(_In_ ACCESS_MASK DesiredAccess)
-{
-    return ((DesiredAccess & (PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_CREATE_THREAD |
-                              PROCESS_DUP_HANDLE | PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION)) !=
-            0) ||
-           ((DesiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS);
-}
-
-static BOOLEAN BkchdlProcessAccessIsPrivilegeRelevant(_In_ ACCESS_MASK DesiredAccess)
-{
-    return ((DesiredAccess & (PROCESS_TERMINATE | PROCESS_CREATE_THREAD | PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
-                              PROCESS_DUP_HANDLE | PROCESS_CREATE_PROCESS | PROCESS_SET_INFORMATION)) != 0) ||
-           ((DesiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS);
-}
-
-static UINT32 BkchdlEnterpriseAccessFlags(_In_ ACCESS_MASK DesiredAccess, _In_ BOOLEAN IsThreadObject,
-                                          _In_ BOOLEAN IsDuplicateOperation)
-{
-    UINT32 flags = IsThreadObject ? BK_ENTERPRISE_FLAG_THREAD_OBJECT : BK_ENTERPRISE_FLAG_PROCESS_OBJECT;
-
-    if (IsDuplicateOperation)
-    {
-        flags |= BK_ENTERPRISE_FLAG_DUPLICATE_HANDLE;
-    }
-    if ((DesiredAccess & PROCESS_VM_READ) != 0)
-    {
-        flags |= BK_ENTERPRISE_FLAG_VM_READ;
-    }
-    if ((DesiredAccess & PROCESS_VM_WRITE) != 0)
-    {
-        flags |= BK_ENTERPRISE_FLAG_VM_WRITE;
-    }
-    if ((DesiredAccess & PROCESS_VM_OPERATION) != 0)
-    {
-        flags |= BK_ENTERPRISE_FLAG_VM_OPERATION;
-    }
-    if ((DesiredAccess & PROCESS_CREATE_THREAD) != 0)
-    {
-        flags |= BK_ENTERPRISE_FLAG_CREATE_THREAD;
-    }
-    if ((DesiredAccess & (PROCESS_QUERY_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION | THREAD_QUERY_INFORMATION |
-                          THREAD_QUERY_LIMITED_INFORMATION)) != 0)
-    {
-        flags |= BK_ENTERPRISE_FLAG_QUERY_ACCESS;
-    }
-    if ((DesiredAccess & (THREAD_SET_CONTEXT | THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME)) != 0)
-    {
-        flags |= BK_ENTERPRISE_FLAG_THREAD_CONTEXT;
-    }
-    if ((DesiredAccess & (PROCESS_TERMINATE | PROCESS_SET_INFORMATION)) != 0)
-    {
-        flags |= BK_ENTERPRISE_FLAG_SET_OR_TERMINATE;
-    }
-
-    return flags;
-}
-
-static BOOLEAN BkchdlProcessEnterpriseCandidate(_In_ PEPROCESS TargetProcess, _In_ HANDLE CallerPid,
-                                                _In_ HANDLE TargetPid, _In_ ACCESS_MASK DesiredAccess)
-{
-    UINT32 targetFlags;
-    PCHAR imageName;
-
-    if (TargetProcess == NULL || CallerPid == TargetPid)
-    {
-        return FALSE;
-    }
-
-    imageName = PsGetProcessImageFileName(TargetProcess);
-    targetFlags = BkchdlClassifyEnterpriseTargetName(imageName);
-    if ((targetFlags & BK_ENTERPRISE_FLAG_CREDENTIAL_PROCESS) != 0)
-    {
-        return BkchdlProcessAccessIsCredentialRelevant(DesiredAccess);
-    }
-    if ((targetFlags & BK_ENTERPRISE_FLAG_PRIVILEGED_TARGET) != 0)
-    {
-        return BkchdlProcessAccessIsPrivilegeRelevant(DesiredAccess);
-    }
-
-    return FALSE;
-}
-
-static VOID BkchdlPublishEnterpriseHandleEvent(_In_ BK_HANDLE_CLASSIFICATION Class, _In_ HANDLE CallerPid,
-                                               _In_ HANDLE CallerTid, _In_ HANDLE TargetPid, _In_ HANDLE TargetTid,
-                                               _In_ UINT64 ObjectAddress, _In_ ACCESS_MASK DesiredAccess,
-                                               _In_ BOOLEAN IsThreadObject, _In_ BOOLEAN IsDuplicateOperation,
-                                               _In_ const BK_HANDLE_TELEMETRY *Telemetry)
-{
-    PEPROCESS targetProcess = NULL;
-    PCHAR imageName;
-    UINT32 targetFlags;
-    UINT32 flags;
-    BK_ENTERPRISE_EVENT event;
-    UINT32 callerPid32 = (UINT32)(ULONG_PTR)CallerPid;
-    UINT32 targetPid32 = (UINT32)(ULONG_PTR)TargetPid;
-
-    if (CallerPid == TargetPid || callerPid32 == 0 || targetPid32 == 0)
-    {
-        return;
-    }
-    if (!BkctlHasPidInterest(callerPid32, targetPid32, BK_STREAM_ENTERPRISE))
-    {
-        return;
-    }
-
-    if (!NT_SUCCESS(PsLookupProcessByProcessId(TargetPid, &targetProcess)))
-    {
-        return;
-    }
-
-    imageName = PsGetProcessImageFileName(targetProcess);
-    targetFlags = BkchdlClassifyEnterpriseTargetName(imageName);
-    if ((targetFlags & BK_ENTERPRISE_FLAG_CREDENTIAL_PROCESS) != 0)
-    {
-        if (!BkchdlProcessAccessIsCredentialRelevant(DesiredAccess))
-        {
-            ObDereferenceObject(targetProcess);
-            return;
-        }
-    }
-    else if ((targetFlags & BK_ENTERPRISE_FLAG_PRIVILEGED_TARGET) != 0)
-    {
-        if (!IsThreadObject && !BkchdlProcessAccessIsPrivilegeRelevant(DesiredAccess))
-        {
-            ObDereferenceObject(targetProcess);
-            return;
-        }
-    }
-    else
-    {
-        ObDereferenceObject(targetProcess);
-        return;
-    }
-
-    flags = BK_ENTERPRISE_FLAG_HIGH_SIGNAL |
-            BkchdlEnterpriseAccessFlags(DesiredAccess, IsThreadObject, IsDuplicateOperation) | targetFlags;
-    if ((targetFlags & BK_ENTERPRISE_FLAG_CREDENTIAL_PROCESS) != 0)
-    {
-        flags |= BK_ENTERPRISE_FLAG_CRITICAL;
-    }
-    if (Class == BkchdlHandleDirectSyscallSuspect)
-    {
-        flags |= BK_ENTERPRISE_FLAG_DIRECT_SYSCALL_SUSPECT;
-    }
-
-    RtlZeroMemory(&event, sizeof(event));
-    event.ProcessId = (UINT64)(ULONG_PTR)CallerPid;
-    event.ThreadId = (UINT64)(ULONG_PTR)CallerTid;
-    event.TargetProcessId = (UINT64)(ULONG_PTR)TargetPid;
-    event.TargetThreadId = (UINT64)(ULONG_PTR)TargetTid;
-    event.ObjectAddress = ObjectAddress;
-    event.Aux0 = (Telemetry != NULL) ? (UINT64)(ULONG_PTR)Telemetry->OriginAddress : 0;
-    event.Aux1 = (Telemetry != NULL) ? Telemetry->CaptureFlags : 0;
-    event.Operation = ((targetFlags & BK_ENTERPRISE_FLAG_CREDENTIAL_PROCESS) != 0)
-                          ? BkEnterpriseOperationProcessCredentialAccess
-                          : BkEnterpriseOperationProcessPrivilegedAccess;
-    event.SubOperation = (Class == BkchdlHandleDirectSyscallSuspect) ? BlackbirdHandleClassDirectSyscallSuspect
-                                                                     : BlackbirdHandleClassUnknown;
-    event.Flags = flags;
-    event.DesiredAccess = (UINT32)DesiredAccess;
-    BkctlPublishEnterpriseEvent(&event);
-    ObDereferenceObject(targetProcess);
-}
-
 static UINT32 BkchdlCountHandleAnomalySignals(_In_ BOOLEAN ExecProtect, _In_ BOOLEAN FromSyscallModule,
                                               _In_ const BK_HANDLE_TELEMETRY *Telemetry)
 {
@@ -1845,6 +1646,10 @@ static VOID BkchdlLogHandleTelemetry(_In_ BK_HANDLE_CLASSIFICATION Class, _In_ H
     UINT32 safeFrameCount;
     UINT32 safeFullFrameCount;
     UINT32 safeStackBytes;
+
+    UNREFERENCED_PARAMETER(CallerTid);
+    UNREFERENCED_PARAMETER(TargetTid);
+    UNREFERENCED_PARAMETER(ObjectAddress);
 
     BketwLogHandleEvent(BkchdlClassToString(Class), CallerPid, TargetPid, DesiredAccess, Telemetry->OriginAddress,
                         Telemetry->OriginProtect, ExecProtect, FromNtdll, FromExe,
@@ -1952,7 +1757,7 @@ static VOID BkchdlLogHandleTelemetry(_In_ BK_HANDLE_CLASSIFICATION Class, _In_ H
         (directSyscallEntryAnomaly || anomalySignals >= 2))
     {
         BketwLogDetectionEvent(
-            "DIRECT_SYSCALL_SUSPECT_HANDLE_OPERATION", 5, CallerPid, TargetPid, 0, (UINT32)DesiredAccess, 0,
+            "DIRECT_SYSCALL", 5, CallerPid, TargetPid, 0, (UINT32)DesiredAccess, 0,
             L"high-risk handle operation reached the kernel from outside the expected ntdll syscall export");
     }
 
@@ -2059,9 +1864,6 @@ static VOID BkchdlLogHandleTelemetry(_In_ BK_HANDLE_CLASSIFICATION Class, _In_ H
                                    L"hardware breakpoint register(s) occupied on process making sensitive handle call");
         }
     }
-
-    BkchdlPublishEnterpriseHandleEvent(Class, CallerPid, CallerTid, TargetPid, TargetTid, ObjectAddress, DesiredAccess,
-                                       IsThreadObject, IsDuplicateOperation, Telemetry);
 
     handleStream = BK_STREAM_HANDLE;
     if (memoryRelated)
@@ -2546,7 +2348,6 @@ static OB_PREOP_CALLBACK_STATUS BkchdlProcessPreOperation(_In_ PVOID Registratio
     ULONG fullCopyCount;
     BOOLEAN hasVmWriteOrFull;
     BOOLEAN hasThreadContextAccess;
-    BOOLEAN enterpriseCandidate;
     UINT32 intentFlags;
     UINT32 streamMask;
     UINT32 callerPid32;
@@ -2592,7 +2393,6 @@ static OB_PREOP_CALLBACK_STATUS BkchdlProcessPreOperation(_In_ PVOID Registratio
     sanitizedAccess = desiredAccess;
     hasVmWriteOrFull = FALSE;
     hasThreadContextAccess = FALSE;
-    enterpriseCandidate = FALSE;
     if (OperationInformation->ObjectType == *PsProcessType)
     {
         targetProcess = (PEPROCESS)OperationInformation->Object;
@@ -2603,8 +2403,6 @@ static OB_PREOP_CALLBACK_STATUS BkchdlProcessPreOperation(_In_ PVOID Registratio
                            ((originalDesiredAccess & PROCESS_CREATE_THREAD) != 0) ||
                            ((originalDesiredAccess & PROCESS_DUP_HANDLE) != 0) ||
                            ((originalDesiredAccess & PROCESS_ALL_ACCESS) == PROCESS_ALL_ACCESS);
-        enterpriseCandidate =
-            BkchdlProcessEnterpriseCandidate(targetProcess, PsGetCurrentProcessId(), targetPid, originalDesiredAccess);
     }
     else if (OperationInformation->ObjectType == *PsThreadType)
     {
@@ -2617,7 +2415,6 @@ static OB_PREOP_CALLBACK_STATUS BkchdlProcessPreOperation(_In_ PVOID Registratio
                                  ((originalDesiredAccess & THREAD_GET_CONTEXT) != 0) ||
                                  ((originalDesiredAccess & THREAD_SUSPEND_RESUME) != 0) ||
                                  ((originalDesiredAccess & THREAD_ALL_ACCESS) == THREAD_ALL_ACCESS);
-        enterpriseCandidate = (hasThreadContextAccess && PsGetCurrentProcessId() != targetPid);
     }
     else
     {
@@ -2648,7 +2445,7 @@ static OB_PREOP_CALLBACK_STATUS BkchdlProcessPreOperation(_In_ PVOID Registratio
         }
     }
 
-    if (!hasVmWriteOrFull && !hasThreadContextAccess && !enterpriseCandidate)
+    if (!hasVmWriteOrFull && !hasThreadContextAccess)
     {
         BktmpLeave(BktmpSubsystemHandleMonitor, tempusStartQpc);
         return OB_PREOP_SUCCESS;
@@ -2665,11 +2462,6 @@ static OB_PREOP_CALLBACK_STATUS BkchdlProcessPreOperation(_In_ PVOID Registratio
     {
         streamMask |= BK_STREAM_MEMORY;
     }
-    if (enterpriseCandidate)
-    {
-        streamMask |= BK_STREAM_ENTERPRISE;
-    }
-
     if (!BkctlHasPidInterest(callerPid32, secondaryPid32, streamMask))
     {
         BktmpLeave(BktmpSubsystemHandleMonitor, tempusStartQpc);

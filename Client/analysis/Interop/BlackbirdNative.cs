@@ -20,57 +20,14 @@ namespace BlackbirdInterface
         internal const uint StreamFilesystem = 0x00000008;
         internal const uint StreamRegistry = 0x00000010;
         internal const uint StreamTiming = 0x00000020;
-        internal const uint StreamEnterprise = 0x00000040;
-        internal const uint StreamAll = StreamHandle | StreamMemory | StreamThread | StreamFilesystem | StreamRegistry |
-                                        StreamTiming | StreamEnterprise;
+        internal const uint StreamUsermodeOnly = 0x80000000;
+        internal const uint StreamAll =
+            StreamHandle | StreamMemory | StreamThread | StreamFilesystem | StreamRegistry | StreamTiming;
 
         internal const uint EventTypeHandle = 1;
         internal const uint EventTypeThread = 2;
         internal const uint EventTypeFileSystem = 3;
         internal const uint EventTypeRegistry = 4;
-        internal const uint EventTypeEnterprise = 5;
-
-        internal const uint EnterpriseOperationProcessCredentialAccess = 1;
-        internal const uint EnterpriseOperationProcessPrivilegedAccess = 2;
-        internal const uint EnterpriseOperationTokenAccess = 3;
-        internal const uint EnterpriseOperationRegistryCredentialHiveAccess = 4;
-        internal const uint EnterpriseOperationRegistryLsaPolicyAccess = 5;
-        internal const uint EnterpriseOperationRegistryKerberosNtlmAccess = 6;
-        internal const uint EnterpriseOperationRegistryServiceConfigAccess = 7;
-        internal const uint EnterpriseOperationRegistryLpePersistenceAccess = 8;
-        internal const uint EnterpriseOperationFileCredentialStoreAccess = 9;
-        internal const uint EnterpriseOperationFileDirectoryCredentialAccess = 10;
-        internal const uint EnterpriseOperationFileDriverArtifactAccess = 11;
-        internal const uint EnterpriseOperationNetworkAdProtocolConnect = 12;
-
-        internal const uint EnterpriseFlagHighSignal = 0x00000001;
-        internal const uint EnterpriseFlagCritical = 0x00000002;
-        internal const uint EnterpriseFlagQuery = 0x00000004;
-        internal const uint EnterpriseFlagWrite = 0x00000008;
-        internal const uint EnterpriseFlagCreate = 0x00000010;
-        internal const uint EnterpriseFlagDelete = 0x00000020;
-        internal const uint EnterpriseFlagDuplicateHandle = 0x00000040;
-        internal const uint EnterpriseFlagProcessObject = 0x00000080;
-        internal const uint EnterpriseFlagThreadObject = 0x00000100;
-        internal const uint EnterpriseFlagVmRead = 0x00000200;
-        internal const uint EnterpriseFlagVmWrite = 0x00000400;
-        internal const uint EnterpriseFlagVmOperation = 0x00000800;
-        internal const uint EnterpriseFlagCreateThread = 0x00001000;
-        internal const uint EnterpriseFlagCredentialProcess = 0x00002000;
-        internal const uint EnterpriseFlagPrivilegedTarget = 0x00004000;
-        internal const uint EnterpriseFlagLsassTarget = 0x00008000;
-        internal const uint EnterpriseFlagWinlogonTarget = 0x00010000;
-        internal const uint EnterpriseFlagServiceConfig = 0x00020000;
-        internal const uint EnterpriseFlagSecurityHive = 0x00040000;
-        internal const uint EnterpriseFlagLsaPolicy = 0x00080000;
-        internal const uint EnterpriseFlagKerberosNtlm = 0x00100000;
-        internal const uint EnterpriseFlagCredentialFile = 0x00200000;
-        internal const uint EnterpriseFlagDriverArtifact = 0x00400000;
-        internal const uint EnterpriseFlagAdNetwork = 0x00800000;
-        internal const uint EnterpriseFlagDirectSyscallSuspect = 0x01000000;
-        internal const uint EnterpriseFlagQueryAccess = 0x02000000;
-        internal const uint EnterpriseFlagThreadContext = 0x04000000;
-        internal const uint EnterpriseFlagSetOrTerminate = 0x08000000;
 
         internal const uint FileOperationUnknown = 0;
         internal const uint FileOperationCreate = 1;
@@ -121,9 +78,6 @@ namespace BlackbirdInterface
         internal const uint HealthNtApiMonitorReady = 0x00000800;
         internal const uint HealthAntiTamperReady = 0x00001000;
         internal const uint HealthDiagnosticsReady = 0x00002000;
-        internal const uint HealthEndpointGuardReady = 0x00004000;
-        internal const uint HealthEnterpriseMonitorReady = 0x00008000;
-        internal const uint HealthBugcheckMonitorReady = 0x00010000;
 
         internal const int DiagnosticMaxEvents = 64;
         internal const uint DiagEventInitBegin = 1;
@@ -162,10 +116,6 @@ namespace BlackbirdInterface
         internal const uint DiagComponentNtApiMonitor = 14;
         internal const uint DiagComponentAntiTamper = 15;
         internal const uint DiagComponentDiagnostics = 16;
-        internal const uint DiagComponentWfpEndpointGuard = 17;
-        internal const uint DiagComponentWfpEndpoint = 18;
-        internal const uint DiagComponentEnterpriseMonitor = 19;
-        internal const uint DiagComponentBugcheckMonitor = 20;
 
         internal const uint IpcEtwSourceUnknown = 0;
         internal const uint IpcEtwSourceBlackbird = 1;
@@ -193,6 +143,7 @@ namespace BlackbirdInterface
         internal const uint IpcUserHookTargetLaunch = 2;
         internal const uint IpcUserHookFlagLaunchEarlybirdApc = 0x00000001;
         internal const uint IpcUserHookFlagDeferredLaunchGateRelease = 0x00000002;
+        internal const uint IpcUserHookFlagUsermodeOnly = 0x00000004;
         internal const uint IpcHookEventUnknown = 0;
         internal const uint IpcHookEventNt = 1;
         internal const uint IpcHookEventWinsock = 2;
@@ -727,13 +678,6 @@ namespace BlackbirdInterface
         [return:MarshalAs(UnmanagedType.Bool)]
         internal static extern bool GetQpcTimingState(IntPtr device, out BkQpcTimingState state);
 
-        [DllImport("J58.dll", EntryPoint = "BkscQueryProcessMemory", CallingConvention = CallingConvention.Cdecl,
-                   SetLastError = true)]
-        [return:MarshalAs(UnmanagedType.Bool)]
-        internal static extern bool QueryProcessMemory(IntPtr device, uint processId, ulong baseAddress,
-                                                       uint requestedSize, [Out] byte[] buffer, uint bufferSize,
-                                                       out uint bytesRead);
-
         [DllImport("J58.dll", EntryPoint = "BkscSetUserHookTarget", CallingConvention = CallingConvention.Cdecl,
                    CharSet = CharSet.Unicode, SetLastError = true)]
         [return:MarshalAs(UnmanagedType.Bool)]
@@ -1030,33 +974,6 @@ namespace BlackbirdInterface
                 parsed.RegistrySessionId = ReadU32(buffer, payloadOffset + 36);
                 parsed.RegistryKeyPath = ReadWideFixedString(buffer, payloadOffset + 40, 512);
                 parsed.RegistryValueName = ReadWideFixedString(buffer, payloadOffset + 1064, 128);
-                return true;
-            }
-
-            if (type == EventTypeEnterprise)
-            {
-                const int enterprisePayloadSize = 96;
-                if (bytesRead < payloadOffset + enterprisePayloadSize)
-                {
-                    return false;
-                }
-
-                parsed.EnterpriseProcessPid = ToPid(ReadU64(buffer, payloadOffset + 0));
-                parsed.EnterpriseThreadId = ToPid(ReadU64(buffer, payloadOffset + 8));
-                parsed.EnterpriseTargetProcessPid = ToPid(ReadU64(buffer, payloadOffset + 16));
-                parsed.EnterpriseTargetThreadId = ToPid(ReadU64(buffer, payloadOffset + 24));
-                parsed.EnterpriseObjectAddress = ReadU64(buffer, payloadOffset + 32);
-                parsed.EnterpriseAux0 = ReadU64(buffer, payloadOffset + 40);
-                parsed.EnterpriseAux1 = ReadU64(buffer, payloadOffset + 48);
-                parsed.EnterpriseOperation = ReadU32(buffer, payloadOffset + 56);
-                parsed.EnterpriseSubOperation = ReadU32(buffer, payloadOffset + 60);
-                parsed.EnterpriseFlags = ReadU32(buffer, payloadOffset + 64);
-                parsed.EnterpriseDesiredAccess = ReadU32(buffer, payloadOffset + 68);
-                parsed.EnterpriseGrantedAccess = ReadU32(buffer, payloadOffset + 72);
-                parsed.EnterpriseStatus = ReadU32(buffer, payloadOffset + 76);
-                parsed.EnterpriseProtocol = ReadU32(buffer, payloadOffset + 80);
-                parsed.EnterpriseLocalPort = ReadU32(buffer, payloadOffset + 84);
-                parsed.EnterpriseRemotePort = ReadU32(buffer, payloadOffset + 88);
                 return true;
             }
 

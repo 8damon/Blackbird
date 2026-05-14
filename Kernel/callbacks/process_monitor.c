@@ -17,8 +17,6 @@ static volatile LONG g_BlackbirdInterfaceBootstrapParentPid = 0;
 static volatile LONG64 g_BlackbirdInterfaceBootstrapExpires100ns = 0;
 static volatile ULONG g_BlackbirdControllerPid = 0;
 static volatile LONG g_BlackbirdControllerReady = 0;
-static volatile ULONG g_BlackbirdNetSvcPid = 0;
-static volatile LONG g_BlackbirdNetSvcReady = 0;
 static volatile ULONG g_ServicesPid = 0;
 
 #define BK_LAUNCH_BOOTSTRAP_PID_SLOTS 32
@@ -273,18 +271,6 @@ static VOID BkcprocTrackProtectedPid(_In_ UINT32 ProcessId, _In_reads_z_(ImageCh
         InterlockedExchange((volatile LONG *)&g_BlackbirdControllerPid, (LONG)ProcessId);
         InterlockedExchange(&g_BlackbirdControllerReady, 0);
     }
-    if (BkcprocProcessPathMatchesImage(L"BlackbirdNetSvc.exe", &image))
-    {
-        LONG trackedPid = InterlockedCompareExchange((volatile LONG *)&g_BlackbirdNetSvcPid, 0, 0);
-        LONG ready = InterlockedCompareExchange(&g_BlackbirdNetSvcReady, 0, 0);
-
-        /* Keep the ready NetSvc PID when same-image preview helpers appear. */
-        if (ready == 0 || trackedPid == 0 || (UINT32)trackedPid == ProcessId)
-        {
-            InterlockedExchange((volatile LONG *)&g_BlackbirdNetSvcPid, (LONG)ProcessId);
-            InterlockedExchange(&g_BlackbirdNetSvcReady, 0);
-        }
-    }
     if (BkcprocProcessPathMatchesImage(L"services.exe", &image) && BkcprocProcessPathIsSystem32Image(&image))
     {
         InterlockedExchange((volatile LONG *)&g_ServicesPid, (LONG)ProcessId);
@@ -307,12 +293,6 @@ static VOID BkcprocClearProtectedPid(_In_ UINT32 ProcessId)
     {
         InterlockedCompareExchange((volatile LONG *)&g_BlackbirdControllerPid, 0, (LONG)ProcessId);
         InterlockedExchange(&g_BlackbirdControllerReady, 0);
-    }
-    if ((UINT32)InterlockedCompareExchange((volatile LONG *)&g_BlackbirdNetSvcPid, 0, 0) == ProcessId)
-    {
-        /* Process callbacks must not block on WFP teardown during termination. */
-        InterlockedCompareExchange((volatile LONG *)&g_BlackbirdNetSvcPid, 0, (LONG)ProcessId);
-        InterlockedExchange(&g_BlackbirdNetSvcReady, 0);
     }
     if ((UINT32)InterlockedCompareExchange((volatile LONG *)&g_ServicesPid, 0, 0) == ProcessId)
     {
@@ -689,8 +669,6 @@ BkcprocInitialize(VOID)
     BkcprocClearInterfaceBootstrap();
     InterlockedExchange((volatile LONG *)&g_BlackbirdControllerPid, 0);
     InterlockedExchange(&g_BlackbirdControllerReady, 0);
-    InterlockedExchange((volatile LONG *)&g_BlackbirdNetSvcPid, 0);
-    InterlockedExchange(&g_BlackbirdNetSvcReady, 0);
     RtlZeroMemory((PVOID)g_LaunchBootstrapPids, sizeof(g_LaunchBootstrapPids));
     InterlockedExchange(&g_LaunchBootstrapWriteIndex, -1);
 
@@ -739,8 +717,6 @@ VOID BkcprocUninitialize(VOID)
     BkcprocClearInterfaceBootstrap();
     InterlockedExchange((volatile LONG *)&g_BlackbirdControllerPid, 0);
     InterlockedExchange(&g_BlackbirdControllerReady, 0);
-    InterlockedExchange((volatile LONG *)&g_BlackbirdNetSvcPid, 0);
-    InterlockedExchange(&g_BlackbirdNetSvcReady, 0);
     InterlockedExchange((volatile LONG *)&g_ServicesPid, 0);
     RtlZeroMemory((PVOID)g_LaunchBootstrapPids, sizeof(g_LaunchBootstrapPids));
     InterlockedExchange(&g_LaunchBootstrapWriteIndex, -1);
@@ -773,24 +749,9 @@ BOOLEAN BkcprocIsControllerPid(_In_ UINT32 ProcessId)
     return (UINT32)InterlockedCompareExchange((volatile LONG *)&g_BlackbirdControllerPid, 0, 0) == ProcessId;
 }
 
-BOOLEAN BkcprocIsNetSvcPid(_In_ UINT32 ProcessId)
-{
-    if (ProcessId == 0)
-    {
-        return FALSE;
-    }
-
-    return (UINT32)InterlockedCompareExchange((volatile LONG *)&g_BlackbirdNetSvcPid, 0, 0) == ProcessId;
-}
-
 BOOLEAN BkcprocIsControllerReadyPid(_In_ UINT32 ProcessId)
 {
     return BkcprocIsControllerPid(ProcessId) && InterlockedCompareExchange(&g_BlackbirdControllerReady, 0, 0) != 0;
-}
-
-BOOLEAN BkcprocIsNetSvcReadyPid(_In_ UINT32 ProcessId)
-{
-    return BkcprocIsNetSvcPid(ProcessId) && InterlockedCompareExchange(&g_BlackbirdNetSvcReady, 0, 0) != 0;
 }
 
 BOOLEAN BkcprocRegisterInterfacePid(_In_ UINT32 ProcessId)
@@ -809,11 +770,6 @@ BOOLEAN BkcprocRegisterControllerPid(_In_ UINT32 ProcessId)
                                    &g_BlackbirdControllerReady);
 }
 
-BOOLEAN BkcprocRegisterNetSvcPid(_In_ UINT32 ProcessId)
-{
-    return BkcprocRegisterNamedPid(ProcessId, L"BlackbirdNetSvc.exe", &g_BlackbirdNetSvcPid, &g_BlackbirdNetSvcReady);
-}
-
 BOOLEAN BkcprocIsProtectedPid(_In_ UINT32 ProcessId)
 {
     if (ProcessId == 0)
@@ -829,10 +785,6 @@ BOOLEAN BkcprocIsProtectedPid(_In_ UINT32 ProcessId)
     if (BkrtIsControllerProtectedAccessEnabled())
     {
         if (BkcprocIsControllerReadyPid(ProcessId))
-        {
-            return TRUE;
-        }
-        if (BkcprocIsNetSvcReadyPid(ProcessId))
         {
             return TRUE;
         }
@@ -863,33 +815,10 @@ BOOLEAN BkcprocMarkControllerReady(_In_ UINT32 ProcessId)
     return TRUE;
 }
 
-BOOLEAN BkcprocMarkNetSvcReady(_In_ UINT32 ProcessId)
-{
-    UINT32 trackedPid;
-
-    if (ProcessId == 0)
-    {
-        return FALSE;
-    }
-
-    trackedPid = (UINT32)InterlockedCompareExchange((volatile LONG *)&g_BlackbirdNetSvcPid, 0, 0);
-    if (trackedPid != ProcessId)
-    {
-        if (!BkcprocRegisterNetSvcPid(ProcessId))
-        {
-            return FALSE;
-        }
-    }
-
-    InterlockedExchange(&g_BlackbirdNetSvcReady, 1);
-    return TRUE;
-}
-
 BOOLEAN BkcprocIsTrustedProtectedCaller(_In_ UINT32 CallerPid, _In_ UINT32 TargetPid)
 {
     UINT32 interfacePid;
     UINT32 controllerPid;
-    UINT32 netSvcPid;
     UINT32 servicesPid;
     UINT32 interfaceCreatorPid;
     UINT32 interfaceParentPid;
@@ -906,7 +835,6 @@ BOOLEAN BkcprocIsTrustedProtectedCaller(_In_ UINT32 CallerPid, _In_ UINT32 Targe
 
     interfacePid = (UINT32)InterlockedCompareExchange((volatile LONG *)&g_BlackbirdInterfacePid, 0, 0);
     controllerPid = (UINT32)InterlockedCompareExchange((volatile LONG *)&g_BlackbirdControllerPid, 0, 0);
-    netSvcPid = (UINT32)InterlockedCompareExchange((volatile LONG *)&g_BlackbirdNetSvcPid, 0, 0);
     servicesPid = (UINT32)InterlockedCompareExchange((volatile LONG *)&g_ServicesPid, 0, 0);
     interfaceCreatorPid = (UINT32)InterlockedCompareExchange(&g_BlackbirdInterfaceBootstrapCreatorPid, 0, 0);
     interfaceParentPid = (UINT32)InterlockedCompareExchange(&g_BlackbirdInterfaceBootstrapParentPid, 0, 0);
@@ -942,11 +870,6 @@ BOOLEAN BkcprocIsTrustedProtectedCaller(_In_ UINT32 CallerPid, _In_ UINT32 Targe
     {
         return TRUE;
     }
-    if (CallerPid == controllerPid && TargetPid == netSvcPid)
-    {
-        return TRUE;
-    }
-
     return FALSE;
 }
 

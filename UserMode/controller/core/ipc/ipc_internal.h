@@ -5,7 +5,8 @@
 VOID ControllerClientClearPendingLaunchLocked(_Inout_ BK_CONTROLLER_CLIENT *Client);
 VOID ControllerClientArmPendingLaunchLocked(_Inout_ BK_CONTROLLER_CLIENT *Client, _In_opt_z_ PCWSTR ImagePath,
                                             _In_ DWORD AnalysisSubjectKind, _In_opt_z_ PCWSTR AnalysisSubjectPath);
-VOID ControllerClientPrimePendingLaunchPidLocked(_Inout_ BK_CONTROLLER_CLIENT *Client, _In_ DWORD ProcessId);
+VOID ControllerClientPrimePendingLaunchPidLocked(_Inout_ BK_CONTROLLER_CLIENT *Client, _In_ DWORD ProcessId,
+                                                 _In_ DWORD StreamMask);
 BOOL ControllerBuildPendingLaunchRequest(_In_z_ PCWSTR ImagePath, _In_ DWORD AnalysisSubjectKind,
                                          _In_opt_z_ PCWSTR AnalysisSubjectPath, _In_ DWORD StreamMask,
                                          _Out_ BK_ARM_PENDING_LAUNCH_REQUEST *Request);
@@ -31,10 +32,7 @@ BOOL ControllerProxyRegisterHookPatch(_In_ DWORD ProcessId, _In_ UINT64 PatchAdd
                                       _In_reads_bytes_(OriginalSize) const UINT8 *OriginalBytes,
                                       _In_ UINT32 OriginalSize, _In_ UINT32 Flags, _In_opt_z_ PCSTR Tag);
 BOOL ControllerProxyRegisterProcessInstrumentationCallback(_In_ DWORD ProcessId, _In_ UINT64 CallbackAddress,
-                                                          _In_ UINT64 CallbackSize, _In_ UINT32 Flags);
-BOOL ControllerProxyReadProcessMemory(_In_ DWORD ProcessId, _In_ UINT64 BaseAddress, _In_ DWORD RequestedSize,
-                                      _In_ HANDLE ClientProcessHandle, _Out_ HANDLE *OutDupSectionHandle,
-                                      _Out_ DWORD *OutBytesRead);
+                                                           _In_ UINT64 CallbackSize, _In_ UINT32 Flags);
 DWORD ControllerClientGetStats(_Inout_ BK_CONTROLLER_CLIENT *Client, _Out_ BK_STATS_RESPONSE *Stats);
 VOID ControllerSanitizeAnsiLabel(_In_opt_z_ PCSTR Input, _Out_writes_z_(OutputChars) PSTR Output,
                                  _In_ size_t OutputChars);

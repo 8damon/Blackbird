@@ -267,10 +267,19 @@ namespace BlackbirdInterface
             if (_brushByKey.TryGetValue(laneKey, out var b))
                 return b;
 
+            Color? semantic = SemanticLaneColor(laneKey);
+            if (semantic.HasValue)
+            {
+                var semanticBrush = new SolidColorBrush(semantic.Value);
+                semanticBrush.Freeze();
+                _brushByKey[laneKey] = semanticBrush;
+                return semanticBrush;
+            }
+
             Color[] palette = {
-                Color.FromRgb(0x4C, 0x8F, 0xD2), Color.FromRgb(0x6C, 0xA4, 0xDE), Color.FromRgb(0x8A, 0xB9, 0xE9),
-                Color.FromRgb(0x3E, 0x76, 0xAF), Color.FromRgb(0x58, 0xB6, 0x58), Color.FromRgb(0x7B, 0xC7, 0x7B),
-                Color.FromRgb(0x8D, 0x97, 0xA3), Color.FromRgb(0x6D, 0x7A, 0x84),
+                Color.FromRgb(0xF9, 0x73, 0x73), Color.FromRgb(0xA7, 0x8B, 0xFA), Color.FromRgb(0x22, 0xD3, 0xEE),
+                Color.FromRgb(0xF5, 0x9E, 0x0B), Color.FromRgb(0x34, 0xD3, 0x99), Color.FromRgb(0xF4, 0x72, 0xB6),
+                Color.FromRgb(0xE3, 0xB9, 0x45), Color.FromRgb(0x6D, 0xC9, 0xFF),
             };
 
             int h = laneKey.GetHashCode();
@@ -280,6 +289,30 @@ namespace BlackbirdInterface
             brush.Freeze();
             _brushByKey[laneKey] = brush;
             return brush;
+        }
+
+        private static Color? SemanticLaneColor(string laneKey)
+        {
+            string key = laneKey ?? string.Empty;
+            if (key.Contains("Kernel Hook", StringComparison.OrdinalIgnoreCase))
+                return Color.FromRgb(0xF9, 0x73, 0x73);
+            if (key.Contains("Usermode Hook", StringComparison.OrdinalIgnoreCase))
+                return Color.FromRgb(0xA7, 0x8B, 0xFA);
+            if (key.Contains("Threat Intel", StringComparison.OrdinalIgnoreCase))
+                return Color.FromRgb(0xF4, 0x72, 0xB6);
+            if (key.Contains("Socket", StringComparison.OrdinalIgnoreCase) ||
+                key.Contains("Network", StringComparison.OrdinalIgnoreCase))
+                return Color.FromRgb(0x22, 0xD3, 0xEE);
+            if (key.Contains("Registry", StringComparison.OrdinalIgnoreCase))
+                return Color.FromRgb(0xF5, 0x9E, 0x0B);
+            if (key.Contains("File", StringComparison.OrdinalIgnoreCase))
+                return Color.FromRgb(0x34, 0xD3, 0x99);
+            if (key.Contains("Process", StringComparison.OrdinalIgnoreCase) ||
+                key.Contains("Thread", StringComparison.OrdinalIgnoreCase))
+                return Color.FromRgb(0xE3, 0xB9, 0x45);
+            if (key.Equals("Kernel", StringComparison.OrdinalIgnoreCase))
+                return Color.FromRgb(0xFB, 0x71, 0x71);
+            return null;
         }
 
         protected override void OnMouseEnter(MouseEventArgs e)

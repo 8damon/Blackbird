@@ -12,7 +12,6 @@
 #define HEUR_BEACON_MIN_ITVL_MS 1000u
 #define HEUR_BEACON_MAX_ITVL_MS 300000u
 #define HEUR_BEACON_VAR_THRESH 0.30
-#define HEUR_COOLDOWN_AGG_MS 30000u
 #define HEUR_COOLDOWN_SHELL_MS 20000u
 #define HEUR_COOLDOWN_BEACON_MS 60000u
 #define HEUR_COOLDOWN_DNS_TUNNEL_MS 60000u
@@ -47,8 +46,6 @@ typedef struct _BK_CONTROLLER_PID_LEDGER
     UINT32 BeaconHead;
     UINT32 BeaconCount;
 
-    ULONGLONG LastAggrHighTick;
-    ULONGLONG LastAggrMedTick;
     ULONGLONG LastShellcodeTick;
     ULONGLONG LastBeaconTick;
 
@@ -382,23 +379,8 @@ VOID ControllerHeuristicsObserveEvent(_In_ DWORD Pid, _In_ UINT32 Severity, _In_
     lastLotlLow = ledger->LastLotlLowEmitTick;
     lastLotlHigh = ledger->LastLotlHighEmitTick;
 
-    ULONGLONG lastAggrHigh = ledger->LastAggrHighTick;
-    ULONGLONG lastAggrMed = ledger->LastAggrMedTick;
     ULONGLONG lastShell = ledger->LastShellcodeTick;
     ULONGLONG lastBeacon = ledger->LastBeaconTick;
-
-    if (score >= BK_HEUR_AGGREGATE_HIGH_SCORE && detectionCount >= 2 &&
-        (lolbinCount >= 2 || memoryStageCount >= 2 || networkCount >= 3) &&
-        (now - lastAggrHigh) >= HEUR_COOLDOWN_AGG_MS)
-    {
-        ledger->LastAggrHighTick = now;
-    }
-    else if (score >= BK_HEUR_AGGREGATE_MED_SCORE &&
-             ((detectionCount >= 1 && (lolbinCount >= 2 || networkCount >= 2)) || memoryStageCount >= 2) &&
-             (now - lastAggrMed) >= HEUR_COOLDOWN_AGG_MS)
-    {
-        ledger->LastAggrMedTick = now;
-    }
 
     if (shellcode && (now - lastShell) >= HEUR_COOLDOWN_SHELL_MS)
     {
@@ -424,31 +406,6 @@ VOID ControllerHeuristicsObserveEvent(_In_ DWORD Pid, _In_ UINT32 Severity, _In_
     }
 
     ReleaseSRWLockExclusive(&g_HeurLock);
-
-    if (score >= BK_HEUR_AGGREGATE_HIGH_SCORE && detectionCount >= 2 &&
-        (lolbinCount >= 2 || memoryStageCount >= 2 || networkCount >= 3) &&
-        (now - lastAggrHigh) >= HEUR_COOLDOWN_AGG_MS)
-    {
-        WCHAR reason[256];
-        (void)StringCchPrintfW(
-            reason, RTL_NUMBER_OF(reason),
-            L"pid=%lu rollingScore=%lu highEvidence detections=%lu lolbins=%lu network=%lu memoryStages=%lu",
-            (unsigned long)Pid, (unsigned long)score, (unsigned long)detectionCount, (unsigned long)lolbinCount,
-            (unsigned long)networkCount, (unsigned long)memoryStageCount);
-        HeurEmitDetection(Pid, 7u, "AGGREGATE_THREAT_SIGNAL_HIGH", reason);
-    }
-    else if (score >= BK_HEUR_AGGREGATE_MED_SCORE &&
-             ((detectionCount >= 1 && (lolbinCount >= 2 || networkCount >= 2)) || memoryStageCount >= 2) &&
-             (now - lastAggrMed) >= HEUR_COOLDOWN_AGG_MS)
-    {
-        WCHAR reason[256];
-        (void)StringCchPrintfW(
-            reason, RTL_NUMBER_OF(reason),
-            L"pid=%lu rollingScore=%lu mediumEvidence detections=%lu lolbins=%lu network=%lu memoryStages=%lu",
-            (unsigned long)Pid, (unsigned long)score, (unsigned long)detectionCount, (unsigned long)lolbinCount,
-            (unsigned long)networkCount, (unsigned long)memoryStageCount);
-        HeurEmitDetection(Pid, 5u, "AGGREGATE_THREAT_SIGNAL_MEDIUM", reason);
-    }
 
     if (shellcode && (now - lastShell) >= HEUR_COOLDOWN_SHELL_MS)
     {

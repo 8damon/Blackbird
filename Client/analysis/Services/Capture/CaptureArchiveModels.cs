@@ -21,8 +21,7 @@ namespace BlackbirdInterface.Capture
         ApiGraph = 14,
         ExtendedActivity = 15,
         ThreadStack = 16,
-        Diagnostic = 17,
-        EnterpriseRaw = 18
+        Diagnostic = 17
     }
 
     internal sealed class CaptureLoadedWorkspace

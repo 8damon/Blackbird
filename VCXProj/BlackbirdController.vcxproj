@@ -28,7 +28,7 @@
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <ProjectName>BlackbirdController</ProjectName>
     <TargetName>BlackbirdController</TargetName>
-    <BlackbirdFileDescription>Blackbird service broker and communication relay</BlackbirdFileDescription>
+    <BlackbirdFileDescription>Blackbird Community service broker and communication relay</BlackbirdFileDescription>
     <BlackbirdInternalName>BlackbirdController</BlackbirdInternalName>
     <BlackbirdOriginalFilename>BlackbirdController.exe</BlackbirdOriginalFilename>
   </PropertyGroup>
@@ -219,7 +219,6 @@
     <ClCompile Include="..\UserMode\controller\core\ipc\ipc_shared_ring.cpp" />
     <ClCompile Include="..\UserMode\controller\core\runtime\symbol_service.cpp" />
     <ClCompile Include="..\UserMode\controller\core\runtime\runtime.cpp" />
-    <ClCompile Include="..\UserMode\controller\core\runtime\ns\ns_launcher_public.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\ABI\blackbird_ipc.h" />

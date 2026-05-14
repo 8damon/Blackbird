@@ -136,20 +136,17 @@ namespace
         switch (left.Operation)
         {
         case NtOperation::NtAllocateVirtualMemory:
-            return left.Args[1] == right.Args[1] && left.Args[3] == right.Args[3] &&
-                   left.Args[4] == right.Args[4] && left.Args[5] == right.Args[5] &&
-                   left.Args[6] == right.Args[6];
+            return left.Args[1] == right.Args[1] && left.Args[3] == right.Args[3] && left.Args[4] == right.Args[4] &&
+                   left.Args[5] == right.Args[5] && left.Args[6] == right.Args[6];
         case NtOperation::NtAllocateVirtualMemoryEx:
-            return left.Args[1] == right.Args[1] && left.Args[2] == right.Args[2] &&
-                   left.Args[3] == right.Args[3] && left.Args[4] == right.Args[4] &&
-                   left.Args[7] == right.Args[7];
+            return left.Args[1] == right.Args[1] && left.Args[2] == right.Args[2] && left.Args[3] == right.Args[3] &&
+                   left.Args[4] == right.Args[4] && left.Args[7] == right.Args[7];
         case NtOperation::NtProtectVirtualMemory:
-            return left.Args[1] == right.Args[1] && left.Args[2] == right.Args[2] &&
-                   left.Args[3] == right.Args[3] && left.Args[4] == right.Args[4] &&
-                   left.Args[7] == right.Args[7];
+            return left.Args[1] == right.Args[1] && left.Args[2] == right.Args[2] && left.Args[3] == right.Args[3] &&
+                   left.Args[4] == right.Args[4] && left.Args[7] == right.Args[7];
         case NtOperation::NtWriteVirtualMemory:
-            return left.Args[1] == right.Args[1] && left.Args[3] == right.Args[3] &&
-                   left.Args[5] == right.Args[5] && left.Args[6] == right.Args[6] &&
+            return left.Args[1] == right.Args[1] && left.Args[3] == right.Args[3] && left.Args[5] == right.Args[5] &&
+                   left.Args[6] == right.Args[6] &&
                    BytesEqual(left.DataSample, left.DataSize, right.DataSample, right.DataSize);
         case NtOperation::NtReadVirtualMemory:
             return left.Caller == right.Caller && left.Args[1] == right.Args[1] && left.Args[3] == right.Args[3] &&
@@ -200,7 +197,8 @@ namespace
     {
         return left.Operation == right.Operation && left.ModuleHandle == right.ModuleHandle &&
                left.Caller == right.Caller && CStringsEqual(left.FunctionName, right.FunctionName) &&
-               CStringsEqual(left.SourceModule, right.SourceModule) && ArgsEqual(left.Args, right.Args, RTL_NUMBER_OF(left.Args)) &&
+               CStringsEqual(left.SourceModule, right.SourceModule) &&
+               ArgsEqual(left.Args, right.Args, RTL_NUMBER_OF(left.Args)) &&
                ByteVectorsEqual(left.NameSample, right.NameSample);
     }
 
@@ -270,7 +268,7 @@ namespace
             std::vector<std::uint8_t>().swap(data);
         }
     }
-}
+} // namespace
 
 bool WinsockHookController::s_Initialized = false;
 std::mutex WinsockHookController::s_QueueMutex;

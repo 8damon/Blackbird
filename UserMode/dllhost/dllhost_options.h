@@ -36,4 +36,4 @@ namespace BK::DllHost
 
     void PrintUsage() noexcept;
     bool ParseOptions(int argc, wchar_t **argv, Options &options) noexcept;
-}
+} // namespace BK::DllHost

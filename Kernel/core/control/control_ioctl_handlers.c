@@ -32,17 +32,6 @@ static BOOLEAN BkctlRequestorCanMarkControllerReady(_In_ ULONG RequesterPid, _In
     return (TargetPid != 0 && (RequesterPid == TargetPid || BkcprocIsControllerReadyPid(RequesterPid)));
 }
 
-static UINT32 BkctlEndpointGuardDiagnosticDetail(_In_opt_ const BK_ENDPOINT_GUARD_REQUEST *Request)
-{
-    if (Request == NULL)
-    {
-        return 0;
-    }
-
-    return ((Request->Action & 0x0Fu) << 28) | ((Request->Direction & 0x0Fu) << 24) |
-           ((Request->Protocol & 0xFFu) << 16) | Request->LocalPort;
-}
-
 static UINT32 BkctlBuildHealthMask(VOID)
 {
     UINT32 mask = 0;
@@ -103,18 +92,6 @@ static UINT32 BkctlBuildHealthMask(VOID)
     {
         mask |= BK_HEALTH_DIAGNOSTICS_READY;
     }
-    if (BkwfpEndpointGuardSelfCheck())
-    {
-        mask |= BK_HEALTH_ENDPOINT_GUARD_READY;
-    }
-    if (BkbugSelfCheck())
-    {
-        mask |= BK_HEALTH_BUGCHECK_MONITOR_READY;
-    }
-    if (BkchdlSelfCheck() && BkcregSelfCheck() && BkcfsSelfCheck())
-    {
-        mask |= BK_HEALTH_ENTERPRISE_MONITOR_READY;
-    }
     return mask;
 }
 
@@ -142,9 +119,6 @@ static VOID BkctlPutComponentState(_Inout_ PBK_DIAGNOSTICS_RESPONSE Response, _I
 static VOID BkctlFillComponentDiagnostics(_Inout_ PBK_DIAGNOSTICS_RESPONSE Response, _In_opt_ PBK_CLIENT Client)
 {
     UINT64 subscriptions = 0;
-    UINT64 bugCheckExRoutine = 0;
-    UINT64 bugCheck2Routine = 0;
-    UINT32 enterpriseProducers = 0;
 
     if (Client != NULL)
     {
@@ -186,37 +160,6 @@ static VOID BkctlFillComponentDiagnostics(_Inout_ PBK_DIAGNOSTICS_RESPONSE Respo
                            BK_DIAG_STATE_TAMPER_ACTIVE, BkatGetLastMask(), 5000);
     BkctlPutComponentState(Response, BK_DIAG_COMPONENT_DIAGNOSTICS, BktmpSubsystemDriver, BkdiagSelfCheck(), 0,
                            Response->EventCount, Response->DroppedCount);
-    BkctlPutComponentState(Response, BK_DIAG_COMPONENT_WFP_ENDPOINT_GUARD, BktmpSubsystemDriver,
-                           BkwfpEndpointGuardSelfCheck(), BK_DIAG_STATE_CALLBACK | BK_DIAG_STATE_REGISTERED, 4, 0);
-    BkbugQueryState(&bugCheckExRoutine, &bugCheck2Routine);
-    BkctlPutComponentState(
-        Response, BK_DIAG_COMPONENT_BUGCHECK_MONITOR, BktmpSubsystemDriver, BkbugSelfCheck(),
-        BK_DIAG_STATE_TELEMETRY | BK_DIAG_STATE_FAST_PATH |
-            ((bugCheckExRoutine != 0 || bugCheck2Routine != 0) ? BK_DIAG_STATE_HOOK : BK_DIAG_STATE_POLICY_DISABLED),
-        bugCheckExRoutine, bugCheck2Routine);
-    if (BkchdlSelfCheck())
-    {
-        enterpriseProducers |= BK_ENTERPRISE_PRODUCER_HANDLE;
-    }
-    if (BkcregSelfCheck())
-    {
-        enterpriseProducers |= BK_ENTERPRISE_PRODUCER_REGISTRY;
-    }
-    if (BkcfsSelfCheck())
-    {
-        enterpriseProducers |= BK_ENTERPRISE_PRODUCER_FILESYSTEM;
-    }
-    if (BkwfpEndpointGuardRuntimeActive())
-    {
-        enterpriseProducers |= BK_ENTERPRISE_PRODUCER_WFP_AD;
-    }
-    BkctlPutComponentState(
-        Response, BK_DIAG_COMPONENT_ENTERPRISE_MONITOR, BktmpSubsystemDriver,
-        (enterpriseProducers &
-         (BK_ENTERPRISE_PRODUCER_HANDLE | BK_ENTERPRISE_PRODUCER_REGISTRY | BK_ENTERPRISE_PRODUCER_FILESYSTEM)) ==
-            (BK_ENTERPRISE_PRODUCER_HANDLE | BK_ENTERPRISE_PRODUCER_REGISTRY | BK_ENTERPRISE_PRODUCER_FILESYSTEM),
-        BK_DIAG_STATE_CALLBACK | BK_DIAG_STATE_REGISTERED | BK_DIAG_STATE_TELEMETRY | BK_DIAG_STATE_FAST_PATH,
-        enterpriseProducers, ((UINT64)BK_STREAM_ENTERPRISE << 32) | enterpriseProducers);
 }
 
 static VOID BkctlFillDiagnosticsSnapshot(_Inout_ PBK_DIAGNOSTICS_RESPONSE Response, _In_opt_ PBK_CLIENT Client)
@@ -480,19 +423,9 @@ NTSTATUS BkctlHandleGetHealthIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Reque
     {
         out->HealthMask |= BK_HEALTH_DIAGNOSTICS_READY;
     }
-    if (BkwfpEndpointGuardSelfCheck())
-    {
-        out->HealthMask |= BK_HEALTH_ENDPOINT_GUARD_READY;
-    }
-    if (BkchdlSelfCheck() && BkcregSelfCheck() && BkcfsSelfCheck())
-    {
-        out->HealthMask |= BK_HEALTH_ENTERPRISE_MONITOR_READY;
-    }
     out->TamperMask = BkatGetLastMask();
     out->Reserved0 = BK_HEALTH_BUILD_MAGIC;
-    out->Reserved1 = BkoptEndpointGuardIsCompiled()
-                         ? (BK_HEALTH_FEATURE_ENDPOINT_GUARD_DYNAMIC_ALE | BK_HEALTH_FEATURE_ENDPOINT_GUARD_FILTER_DIAG)
-                         : 0;
+    out->Reserved1 = 0;
     *BytesOut = sizeof(*out);
     return STATUS_SUCCESS;
 }
@@ -525,44 +458,6 @@ NTSTATUS BkctlHandleGetDiagnosticsIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST 
     BkctlFillDiagnosticsSnapshot(out, Client);
     *BytesOut = sizeof(*out);
     return STATUS_SUCCESS;
-}
-
-NTSTATUS BkctlHandleSetEndpointGuardIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request)
-{
-    NTSTATUS status;
-    PBK_ENDPOINT_GUARD_REQUEST in;
-    size_t inSize;
-    ULONG requesterPid;
-
-    UNREFERENCED_PARAMETER(Client);
-
-    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
-    if (!NT_SUCCESS(status))
-    {
-        BkdiagRecord(BktmpSubsystemDriver, BkDiagEventSelfCheckFailed, status, 0, BK_DIAG_FLAG_FAILURE, 0,
-                     BK_DIAG_COMPONENT_WFP_ENDPOINT);
-        return status;
-    }
-    UNREFERENCED_PARAMETER(inSize);
-
-    requesterPid = BkctlGetRequestorPid();
-    status = BkwfpEndpointGuardConfigure(in, requesterPid);
-    if (!NT_SUCCESS(status))
-    {
-        BkdiagRecord(BktmpSubsystemDriver, BkDiagEventSelfCheckFailed, status, 0, BK_DIAG_FLAG_FAILURE,
-                     BkctlEndpointGuardDiagnosticDetail(in), BK_DIAG_COMPONENT_WFP_ENDPOINT);
-        DbgPrintEx(
-            DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-            "BK: endpoint-guard ioctl failed requesterPid=%lu targetPid=%lu action=%lu protocol=%lu localPort=%hu remotePort=%hu status=0x%08X.\n",
-            requesterPid, in->ProcessId, in->Action, in->Protocol, in->LocalPort, in->RemotePort, status);
-    }
-    else
-    {
-        BkdiagRecord(BktmpSubsystemDriver,
-                     in->Action == BK_ENDPOINT_GUARD_ACTION_DISARM ? BkDiagEventDisarmed : BkDiagEventConfirmedOnline,
-                     STATUS_SUCCESS, 0, 0, BkctlEndpointGuardDiagnosticDetail(in), BK_DIAG_COMPONENT_WFP_ENDPOINT);
-    }
-    return status;
 }
 
 NTSTATUS BkctlHandleSetPidsIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request)
@@ -673,7 +568,7 @@ NTSTATUS BkctlHandleArmPendingLaunchIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUES
             return STATUS_INVALID_PARAMETER;
         }
         if ((in->StreamMask & (BK_STREAM_HANDLE | BK_STREAM_MEMORY | BK_STREAM_THREAD | BK_STREAM_FILESYSTEM |
-                               BK_STREAM_REGISTRY | BK_STREAM_TIMING | BK_STREAM_ENTERPRISE)) == 0)
+                               BK_STREAM_REGISTRY | BK_STREAM_TIMING)) == 0)
         {
             return STATUS_INVALID_PARAMETER;
         }
@@ -1115,16 +1010,6 @@ NTSTATUS BkctlHandleMarkControllerReadyIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQ
             return STATUS_NOT_FOUND;
         }
     }
-    else if (BkcprocIsControllerReadyPid(requesterPid))
-    {
-        if (!BkcprocRegisterNetSvcPid(in->ProcessId) || !BkcprocMarkNetSvcReady(in->ProcessId))
-        {
-            DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_WARNING_LEVEL,
-                       "BK: mark-netsvc-ready rejected requesterPid=%lu targetPid=%lu status=STATUS_NOT_FOUND.\n",
-                       requesterPid, in->ProcessId);
-            return STATUS_NOT_FOUND;
-        }
-    }
     else
     {
         return STATUS_ACCESS_DENIED;
@@ -1133,93 +1018,6 @@ NTSTATUS BkctlHandleMarkControllerReadyIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQ
     DbgPrintEx(DPFLTR_IHVDRIVER_ID, DPFLTR_INFO_LEVEL,
                "BK: mark-controller-ready requesterPid=%lu targetPid=%lu status=STATUS_SUCCESS.\n", requesterPid,
                in->ProcessId);
-    return STATUS_SUCCESS;
-}
-
-NTSTATUS BkctlHandleReadMemoryIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Request, _Out_ size_t *BytesOut)
-{
-    NTSTATUS status;
-    PBK_READ_MEMORY_REQUEST in;
-    PBK_READ_MEMORY_RESPONSE out;
-    size_t inSize;
-    size_t outSize;
-    PEPROCESS targetProcess = NULL;
-    SIZE_T bytesCopied = 0;
-    UINT32 readSize;
-    UINT32 targetPid;
-    UINT64 targetBase;
-    ULONG requesterPid;
-
-    UNREFERENCED_PARAMETER(Client);
-
-    *BytesOut = 0;
-
-    if (BkctlIsShutdown())
-    {
-        return STATUS_DEVICE_NOT_READY;
-    }
-
-    status = WdfRequestRetrieveInputBuffer(Request, sizeof(*in), (PVOID *)&in, &inSize);
-    if (!NT_SUCCESS(status))
-    {
-        return status;
-    }
-    UNREFERENCED_PARAMETER(inSize);
-
-    status = WdfRequestRetrieveOutputBuffer(Request, sizeof(*out), (PVOID *)&out, &outSize);
-    if (!NT_SUCCESS(status))
-    {
-        return status;
-    }
-    if (outSize < sizeof(*out))
-    {
-        return STATUS_BUFFER_TOO_SMALL;
-    }
-
-    if (in->ProcessId == 0 || in->BaseAddress == 0 || in->Size == 0)
-    {
-        return STATUS_INVALID_PARAMETER;
-    }
-
-    /* METHOD_BUFFERED: in and out point to the same kernel buffer.
-       Save request fields before RtlZeroMemory corrupts them. */
-    targetPid = in->ProcessId;
-    targetBase = in->BaseAddress;
-    readSize = (in->Size < BK_MAX_MEMORY_READ_BYTES) ? in->Size : BK_MAX_MEMORY_READ_BYTES;
-
-    RtlZeroMemory(out, sizeof(*out));
-    out->ProcessId = targetPid;
-
-    status = PsLookupProcessByProcessId((HANDLE)(ULONG_PTR)targetPid, &targetProcess);
-    if (!NT_SUCCESS(status))
-    {
-        return status;
-    }
-
-    status = MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)targetBase, PsGetCurrentProcess(), out->Data,
-                                 readSize, KernelMode, &bytesCopied);
-    ObDereferenceObject(targetProcess);
-    if (NT_SUCCESS(status) && bytesCopied != 0)
-    {
-        (void)BkntkiOverlayHookPatchBytesForPid(targetPid, targetBase, bytesCopied, out->Data);
-    }
-
-    requesterPid = BkctlGetRequestorPid();
-    DbgPrintEx(
-        DPFLTR_IHVDRIVER_ID, (bytesCopied > 0) ? DPFLTR_INFO_LEVEL : DPFLTR_WARNING_LEVEL,
-        "BK: read-memory requesterPid=%lu targetPid=%lu base=0x%016I64X size=%lu bytesRead=%Iu ntStatus=0x%08X.\n",
-        requesterPid, targetPid, targetBase, readSize, bytesCopied, status);
-
-    if (bytesCopied == 0)
-    {
-        /* Nothing was copied. Return the NTSTATUS directly so DeviceIoControl fails
-           with a Win32 code the caller can map back to a human-readable reason. */
-        return NT_SUCCESS(status) ? STATUS_NO_DATA_DETECTED : status;
-    }
-
-    out->Status = status;
-    out->BytesRead = (UINT32)bytesCopied;
-    *BytesOut = sizeof(*out);
     return STATUS_SUCCESS;
 }
 
@@ -1321,10 +1119,11 @@ NTSTATUS BkctlHandleRegisterProcessInstrumentationCallbackIoctl(_In_ PBK_CLIENT 
         return STATUS_ACCESS_DENIED;
     }
 
-    status = BkntkiRegisterProcessInstrumentationCallback(in->ProcessId, in->CallbackAddress, in->CallbackSize,
-                                                          in->Flags);
-    DbgPrintEx(DPFLTR_IHVDRIVER_ID, NT_SUCCESS(status) ? DPFLTR_INFO_LEVEL : DPFLTR_WARNING_LEVEL,
-               "BK: process-instrumentation-callback register requesterPid=%lu targetPid=%lu callback=0x%016I64X size=0x%016I64X status=0x%08X.\n",
-               requesterPid, in->ProcessId, in->CallbackAddress, in->CallbackSize, status);
+    status =
+        BkntkiRegisterProcessInstrumentationCallback(in->ProcessId, in->CallbackAddress, in->CallbackSize, in->Flags);
+    DbgPrintEx(
+        DPFLTR_IHVDRIVER_ID, NT_SUCCESS(status) ? DPFLTR_INFO_LEVEL : DPFLTR_WARNING_LEVEL,
+        "BK: process-instrumentation-callback register requesterPid=%lu targetPid=%lu callback=0x%016I64X size=0x%016I64X status=0x%08X.\n",
+        requesterPid, in->ProcessId, in->CallbackAddress, in->CallbackSize, status);
     return status;
 }

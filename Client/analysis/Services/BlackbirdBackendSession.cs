@@ -13,6 +13,7 @@ namespace BlackbirdInterface
         private readonly int _targetPid;
         private readonly uint _streamMask;
         private readonly bool _useUsermodeHooks;
+        private readonly bool _useKernelDriver;
         private readonly IntPtr _seedHandle;
         private readonly CancellationTokenSource _cts = new();
 
@@ -55,106 +56,94 @@ namespace BlackbirdInterface
                 {
                     return false;
                 }
-                return BlackbirdNative.ControlProcessExecution(handle, processId, suspend);
+                if (_useKernelDriver && BlackbirdNative.ControlProcessExecution(handle, processId, suspend))
+                {
+                    return true;
+                }
+                if (_useKernelDriver && !IsDriverUnavailableError(Marshal.GetLastWin32Error()))
+                {
+                    return false;
+                }
             }
+
+            return TryControlProcessExecutionUserMode(processId, suspend);
         }
 
-        public (byte[]? Data, string? Error) ReadProcessMemory(uint processId, ulong baseAddress, uint size)
+        internal static bool TryControlProcessExecutionUserMode(uint processId, bool suspend)
         {
-            bool ok;
-            uint bytesRead;
-            IntPtr handle;
+            const uint ProcessSuspendResume = 0x0800;
+            const uint ProcessQueryLimitedInformation = 0x1000;
 
-            lock (_commandLock)
+            if (processId == 0)
             {
-                handle = _controlHandle;
-                if (handle == IntPtr.Zero || handle == new IntPtr(-1))
+                return false;
+            }
+
+            IntPtr processHandle =
+                Kernel32Native.OpenProcess(ProcessSuspendResume | ProcessQueryLimitedInformation, false, processId);
+            if (processHandle == IntPtr.Zero || processHandle == new IntPtr(-1))
+            {
+                int err = Marshal.GetLastWin32Error();
+                DiagnosticsState.SetValue(
+                    "Process Control",
+                    $"UserAPI failed pid={processId} action={(suspend ? "suspend" : "resume")} err={err}");
+                return false;
+            }
+
+            try
+            {
+                int status = suspend ? Kernel32Native.NtSuspendProcess(processHandle)
+                                     : Kernel32Native.NtResumeProcess(processHandle);
+                if (status >= 0)
                 {
-                    string msg = "handle invalid or session not started";
-                    DiagnosticsState.SetValue("Disassembly Read", $"failed pid={processId} — {msg}");
-                    DebugConsoleService.WriteLocal(
-                        $"[DISASM] ReadProcessMemory pid={processId} base=0x{baseAddress:X} — {msg}");
-                    return (null, msg);
+                    DiagnosticsState.SetValue("Process Control",
+                                              $"UserAPI ok pid={processId} action={(suspend ? "suspend" : "resume")}");
+                    return true;
                 }
 
-                uint capped = Math.Min(size, 4096);
-                var buffer = new byte[capped];
-                ok = BlackbirdNative.QueryProcessMemory(handle, processId, baseAddress, capped, buffer, capped,
-                                                        out bytesRead);
-                if (!ok || bytesRead == 0)
-                {
-                    int win32 = Marshal.GetLastWin32Error();
-                    string msg = DescribeReadMemoryError(win32, ok, bytesRead);
-                    DiagnosticsState.SetValue(
-                        "Disassembly Read",
-                        $"failed pid={processId} base=0x{baseAddress:X} win32={win32} — {msg}");
-                    DebugConsoleService.WriteLocal(
-                        $"[DISASM] ReadProcessMemory pid={processId} base=0x{baseAddress:X} size={capped} win32={win32} — {msg}");
-                    return (null, msg);
-                }
-
-                DiagnosticsState.SetValue("Disassembly Read",
-                                          $"ok pid={processId} base=0x{baseAddress:X} bytes={bytesRead}");
-                if (bytesRead == capped)
-                    return (buffer, null);
-                var result = new byte[bytesRead];
-                Array.Copy(buffer, result, (int)bytesRead);
-                return (result, null);
+                DiagnosticsState.SetValue(
+                    "Process Control",
+                    $"UserAPI failed pid={processId} action={(suspend ? "suspend" : "resume")} ntstatus=0x{unchecked((uint)status):X8}");
+                return false;
+            }
+            finally
+            {
+                _ = Kernel32Native.CloseHandle(processHandle);
             }
         }
 
-        private static string DescribeReadMemoryError(int win32, bool callSucceeded, uint bytesRead)
+        private static bool IsDriverUnavailableError(int win32)
         {
-            if (callSucceeded && bytesRead == 0)
-                return "controller returned 0 bytes — region may be uncommitted, reserved, or MmCopyVirtualMemory failed on the kernel side";
-            return win32 switch {
-                0 => "call returned false with no error set",
-                1 =>
-                    "ERROR_INVALID_FUNCTION — controller rejected the command; BlackbirdController.exe may need to be rebuilt with the new IPC command",
-                5 =>
-                    "ERROR_ACCESS_DENIED — controller CanMonitorPid check failed; confirm the target PID is subscribed and session/owner SIDs match",
-                8 =>
-                    "STATUS_NO_MEMORY / ERROR_NOT_ENOUGH_MEMORY — kernel could not allocate resources to complete the copy",
-                11 => "ERROR_BAD_FORMAT — IPC response sequence mismatch; possible concurrent pipe use",
-                50 =>
-                    "ERROR_NOT_SUPPORTED — J58.dll is in service-protocol mode, not client-protocol mode; the session may not have called UseClientProtocol",
-                87 =>
-                    "ERROR_INVALID_PARAMETER — processId=0, size=0, or invalid base address passed to the native call",
-                232 =>
-                    "ERROR_NO_DATA — IOCTL succeeded but driver returned 0 bytes; check controller.log for the kernel NTSTATUS",
-                299 =>
-                    "ERROR_PARTIAL_COPY / STATUS_PARTIAL_COPY — only some pages were readable; region may span a guard page or uncommitted range",
-                487 =>
-                    "ERROR_INVALID_ADDRESS — base address is not within a valid committed region of the target process",
-                998 =>
-                    "ERROR_NOACCESS / STATUS_ACCESS_VIOLATION — page exists but is not readable (guard page, CoW fault, EXECUTE_ONLY, or PAGE_NOACCESS protection)",
-                _ => $"win32={win32} ({new System.ComponentModel.Win32Exception(win32).Message})"
-            };
+            return win32 == BlackbirdNative.ErrorDeviceNotConnected || win32 == BlackbirdNative.ErrorNotSupported ||
+                   win32 == BlackbirdNative.ErrorInvalidFunction || win32 == BlackbirdNative.ErrorBrokenPipe ||
+                   win32 == BlackbirdNative.ErrorOperationAborted || win32 == BlackbirdNative.ErrorNotReady;
         }
 
-        private BlackbirdBackendSession(int targetPid, uint streamMask, bool useUsermodeHooks,
+        private BlackbirdBackendSession(int targetPid, uint streamMask, bool useUsermodeHooks, bool useKernelDriver,
                                         IntPtr seedHandle = default)
         {
             _targetPid = targetPid;
-            _streamMask = streamMask;
+            _streamMask = useKernelDriver ? streamMask : streamMask | BlackbirdNative.StreamUsermodeOnly;
             _useUsermodeHooks = useUsermodeHooks;
+            _useKernelDriver = useKernelDriver;
             _seedHandle = seedHandle;
         }
 
-        public static BlackbirdBackendSession Start(int targetPid, uint streamMask, bool useUsermodeHooks)
+        public static BlackbirdBackendSession Start(int targetPid, uint streamMask, bool useUsermodeHooks,
+                                                    bool useKernelDriver = true)
         {
             if (targetPid <= 0)
             {
                 throw new ArgumentOutOfRangeException(nameof(targetPid));
             }
 
-            var session = new BlackbirdBackendSession(targetPid, streamMask, useUsermodeHooks);
+            var session = new BlackbirdBackendSession(targetPid, streamMask, useUsermodeHooks, useKernelDriver);
             session.StartInternal();
             return session;
         }
 
         public static BlackbirdBackendSession StartFromHandle(int targetPid, uint streamMask, bool useUsermodeHooks,
-                                                              IntPtr controlHandle)
+                                                              IntPtr controlHandle, bool useKernelDriver = true)
         {
             if (targetPid <= 0)
             {
@@ -165,7 +154,8 @@ namespace BlackbirdInterface
                 throw new ArgumentException("Invalid control handle.", nameof(controlHandle));
             }
 
-            var session = new BlackbirdBackendSession(targetPid, streamMask, useUsermodeHooks, controlHandle);
+            var session =
+                new BlackbirdBackendSession(targetPid, streamMask, useUsermodeHooks, useKernelDriver, controlHandle);
             session.StartInternal();
             return session;
         }
@@ -225,27 +215,35 @@ namespace BlackbirdInterface
                 else
                 {
                     _brokerCapabilities &= ~BlackbirdNative.IpcCapSharedRing;
-                    int err =
-                        _sharedRingError == 0 ? BlackbirdNative.ErrorNotSupported : unchecked((int)_sharedRingError);
-                    throw new Win32Exception(err, $"Shared-ring IPC required but unavailable (err={_sharedRingError})");
                 }
 
-                Status?.Invoke($"Session started for PID {_targetPid}");
+                bool driverAvailable = (_brokerCapabilities & BlackbirdNative.IpcCapDriverProxy) != 0;
+                Status?.Invoke(_useKernelDriver && driverAvailable
+                                   ? $"Session started for PID {_targetPid}"
+                                   : $"Driverless session started for PID {_targetPid}");
                 if (_useUsermodeHooks)
                 {
                     Status?.Invoke("Usermode hooks enabled: waiting for hook publisher events.");
                 }
+                if (!_useKernelDriver || !driverAvailable)
+                {
+                    Status?.Invoke("KM driver telemetry unavailable; using SR71, ETW, and user-mode API fallbacks.");
+                }
                 DiagnosticsState.SetValue("Session", $"pid={_targetPid} stream=0x{_streamMask:X8}");
-                DiagnosticsState.SetValue("IPC Mode", "SharedRing+Event");
+                DiagnosticsState.SetValue("IPC Mode", _sharedRingEnabled ? "SharedRing+Event" : "Pipe+Event");
                 DiagnosticsState.SetValue(
                     "IPC Shared Ring",
                     $"enabled={_sharedRingEnabled} ioctl={hasIoctlRing} etw={hasEtwRing} err={_sharedRingError}");
                 DiagnosticsState.SetValue("Interface->Controller IPC", _sharedRingEnabled
                                                                            ? "Ready (shared ring + events)"
-                                                                           : $"Degraded err={_sharedRingError}");
-                DiagnosticsState.SetValue("Controller<->Driver Comms", "Ready");
+                                                                           : "Ready (pipe + events)");
+                DiagnosticsState.SetValue("Controller<->Driver Comms",
+                                          _useKernelDriver && driverAvailable ? "Ready" : "Driverless mode");
+                DiagnosticsState.SetValue(
+                    "KM Driver", _useKernelDriver ? (driverAvailable ? "Enabled" : "Unavailable; driverless fallback")
+                                                  : "Driverless mode");
                 Console.WriteLine(
-                    $"[Session] Started  pid={_targetPid} stream=0x{_streamMask:X8} caps=0x{_brokerCapabilities:X8} sharedRing={_sharedRingEnabled} hooks={_useUsermodeHooks}");
+                    $"[Session] Started  pid={_targetPid} stream=0x{_streamMask:X8} caps=0x{_brokerCapabilities:X8} sharedRing={_sharedRingEnabled} hooks={_useUsermodeHooks} kernelDriver={_useKernelDriver} driverAvailable={driverAvailable}");
 
                 _ioctlTask = Task.Run(() => IoctlPump(_cts.Token));
                 _etwTask = Task.Run(() => EtwPump(_cts.Token));
@@ -449,6 +447,16 @@ namespace BlackbirdInterface
             {
                 if (TryGetStatsSnapshot(out var stats, skipIfBusy: true))
                 {
+                    if (BlackbirdNative.GetBrokerInfo(out uint refreshedCapabilities, out _))
+                    {
+                        _brokerCapabilities = refreshedCapabilities;
+                        if (_sharedRingEnabled)
+                        {
+                            _brokerCapabilities |= BlackbirdNative.IpcCapSharedRing;
+                        }
+                    }
+                    bool driverAvailable =
+                        _useKernelDriver && (_brokerCapabilities & BlackbirdNative.IpcCapDriverProxy) != 0;
                     DateTime now = DateTime.UtcNow;
                     double elapsed = (now - _lastStatsSnapshotUtc).TotalSeconds;
                     if (elapsed <= 0)
@@ -486,7 +494,7 @@ namespace BlackbirdInterface
                     string queueSummary =
                         BuildQueueSummary(stats.SubscriptionCount, stats.QueueDepth, stats.DroppedEvents);
                     DiagnosticsState.SetValue("PID Coverage", pidCoverage);
-                    DiagnosticsState.SetValue("Driver Queue", queueSummary);
+                    DiagnosticsState.SetValue("Driver Queue", driverAvailable ? queueSummary : "Driverless mode");
                     DiagnosticsState.SetValue("SR71 Hook Ready",
                                               BuildHookReadySummary(stats.HookReadyMask, stats.HookReadyRequiredMask));
                     DiagnosticsState.SetValue(
@@ -497,15 +505,22 @@ namespace BlackbirdInterface
                     DiagnosticsState.SetValue("Ntdll Mirror",
                                               BuildNtdllMirrorSummary(stats.DuplicateNtdllMirrorCount,
                                                                       stats.DuplicateNtdllMirrorFailureCount));
-                    DiagnosticsState.SetValue("Controller<->Driver Comms",
-                                              stats.DroppedEvents != 0
-                                                  ? $"DEGRADED depth={stats.QueueDepth} dropped={stats.DroppedEvents}"
-                                                  : $"OK depth={stats.QueueDepth} dropped={stats.DroppedEvents}");
+                    DiagnosticsState.SetValue(
+                        "Controller<->Driver Comms",
+                        driverAvailable ? (stats.DroppedEvents != 0
+                                               ? $"DEGRADED depth={stats.QueueDepth} dropped={stats.DroppedEvents}"
+                                               : $"OK depth={stats.QueueDepth} dropped={stats.DroppedEvents}")
+                                        : "Driverless mode");
                     if (ct.IsCancellationRequested)
                     {
                         break;
                     }
-                    if (TryGetHealthSnapshot(out var health))
+                    if (!driverAvailable)
+                    {
+                        DiagnosticsState.SetValue("Driver Health", "Unavailable (driverless mode)");
+                        DiagnosticsState.SetValue("Driver Diagnostics", "Unavailable (driverless mode)");
+                    }
+                    else if (TryGetHealthSnapshot(out var health))
                     {
                         DiagnosticsState.SetValue("Driver Health", BuildDriverHealthSummary(health.HealthMask));
                         DiagnosticsState.SetValue("Driver Tamper", health.TamperMask == 0
@@ -520,11 +535,11 @@ namespace BlackbirdInterface
                     {
                         break;
                     }
-                    if (TryGetDiagnosticsSnapshot(out var diagnostics))
+                    if (driverAvailable && TryGetDiagnosticsSnapshot(out var diagnostics))
                     {
                         ProcessDriverDiagnostics(diagnostics);
                     }
-                    else
+                    else if (driverAvailable)
                     {
                         DiagnosticsState.SetValue("Driver Diagnostics",
                                                   $"Unavailable err={Marshal.GetLastWin32Error()}");
@@ -559,10 +574,9 @@ namespace BlackbirdInterface
                 DiagnosticsState.SetValue("Session Dispose", "Deferred waiting for pump tasks");
                 Console.WriteLine(
                     $"[Session] Dispose deferred pid={_targetPid} reason=pump-active ioctlDone={_ioctlTask?.IsCompleted ?? true} etwDone={_etwTask?.IsCompleted ?? true} statsDone={_statsTask?.IsCompleted ?? true}");
-                _ = Task.WhenAll(pumpTasks).ContinueWith(_ => FinalizeCleanup("deferred"),
-                                                         CancellationToken.None,
-                                                         TaskContinuationOptions.ExecuteSynchronously,
-                                                         TaskScheduler.Default);
+                _ = Task.WhenAll(pumpTasks).ContinueWith(
+                    _ => FinalizeCleanup("deferred"), CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
                 return;
             }
 
@@ -717,7 +731,7 @@ namespace BlackbirdInterface
             }
             if (diag.EventType == BlackbirdNative.DiagEventDisabledByPolicy)
             {
-                return "Disabled";
+                return (diag.Flags & BlackbirdNative.DiagFlagOptional) != 0 ? "OK" : "Disabled";
             }
             if (diag.EventType == BlackbirdNative.DiagEventOptionalMissingContinuing ||
                 diag.EventType == BlackbirdNative.DiagEventDegradedContinuing)
@@ -770,10 +784,6 @@ namespace BlackbirdInterface
                                         BlackbirdNative.DiagComponentNtApiMonitor => "ntapi-monitor",
                                         BlackbirdNative.DiagComponentAntiTamper => "anti-tamper",
                                         BlackbirdNative.DiagComponentDiagnostics => "diagnostics",
-                                        BlackbirdNative.DiagComponentWfpEndpointGuard => "wfp-endpoint-guard",
-                                        BlackbirdNative.DiagComponentWfpEndpoint => "wfp-endpoint",
-                                        BlackbirdNative.DiagComponentEnterpriseMonitor => "enterprise-monitor",
-                                        BlackbirdNative.DiagComponentBugcheckMonitor => "bugcheck-monitor",
                                         0 => string.Empty,
                                         _ => $"component-{componentId}" };
         }
@@ -912,9 +922,7 @@ namespace BlackbirdInterface
                                   BlackbirdNative.HealthFileSystemMonitorReady |
                                   BlackbirdNative.HealthCorrelationReady | BlackbirdNative.HealthHollowingEngineReady |
                                   BlackbirdNative.HealthNtApiMonitorReady | BlackbirdNative.HealthAntiTamperReady |
-                                  BlackbirdNative.HealthDiagnosticsReady | BlackbirdNative.HealthEndpointGuardReady |
-                                  BlackbirdNative.HealthEnterpriseMonitorReady |
-                                  BlackbirdNative.HealthBugcheckMonitorReady;
+                                  BlackbirdNative.HealthDiagnosticsReady;
 
             uint missing = required & ~mask;
             return missing == 0 ? $"OK mask=0x{mask:X8}" : $"DEGRADED mask=0x{mask:X8} missing=0x{missing:X8}";

@@ -149,4 +149,4 @@ namespace BK_RUNTIME_INTERNAL
         static constexpr Sr71EncodedWideLiteral kName{L"ntdll.dll", 0x0B7u};
         return Sr71ScopedWideLiteral{kName};
     }
-}
+} // namespace BK_RUNTIME_INTERNAL

@@ -86,6 +86,13 @@ BOOL ControllerIsValidStreamMask(_In_ DWORD StreamMask)
 {
     return ((StreamMask & BK_CONTROLLER_DRIVER_STREAM_MASK) != 0);
 }
+
+static BOOL ControllerStreamMaskUsesDriver(_In_ DWORD StreamMask)
+{
+    return ((StreamMask & BK_CONTROLLER_DRIVER_STREAM_MASK) != 0 &&
+            (StreamMask & BK_CONTROLLER_STREAM_USERMODE_ONLY) == 0);
+}
+
 static BOOL ControllerApplyDriverSubscriptionsNow(VOID);
 static BOOL ControllerPruneDynamicSubscriptionsLocked(_Inout_ BK_CONTROLLER_CLIENT *Client, _In_ ULONGLONG NowTick);
 static BOOL ControllerApplyDriverSubscriptionsIfDirtyNow(VOID);
@@ -908,11 +915,6 @@ static BOOL ControllerRecordMatchesSubscription(_In_ const BK_EVENT_RECORD *Reco
         primary = (DWORD)Record->Data.Registry.ProcessId;
         secondary = 0;
     }
-    else if (Record->Header.Type == BlackbirdEventTypeEnterprise)
-    {
-        primary = (DWORD)Record->Data.Enterprise.ProcessId;
-        secondary = (DWORD)Record->Data.Enterprise.TargetProcessId;
-    }
     else
     {
         return FALSE;
@@ -1342,23 +1344,58 @@ BOOL ControllerClientDequeueEtwEventLocked(_Inout_ BK_CONTROLLER_CLIENT *Client,
 
 static BOOL ControllerCollectUnionPidSet(_Out_writes_(BK_MAX_PID_LIST) DWORD *ProcessIds, _Out_ DWORD *ProcessCount)
 {
+    PBK_CONTROLLER_CLIENT client;
     DWORD i;
+    DWORD count = 0;
 
     if (ProcessIds == NULL || ProcessCount == NULL)
     {
         return FALSE;
     }
 
+    ZeroMemory(ProcessIds, sizeof(DWORD) * BK_MAX_PID_LIST);
     EnterCriticalSection(g_ClientListLock.get());
     ControllerRebuildPidIndexLocked(NULL);
-    *ProcessCount = g_PidIndexCount;
-    for (i = 0; i < g_PidIndexCount; ++i)
+    for (client = g_ClientList; client != NULL; client = client->Next)
     {
-        ProcessIds[i] = g_PidIndex[i].ProcessId;
+        EnterCriticalSection(&client->Lock);
+        for (i = 0; i < client->SubscriptionCount; ++i)
+        {
+            DWORD pid = client->Subscriptions[i].ProcessId;
+            DWORD j;
+            BOOL seen = FALSE;
+
+            if (pid == 0 || !ControllerStreamMaskUsesDriver(client->Subscriptions[i].StreamMask))
+            {
+                continue;
+            }
+
+            for (j = 0; j < count; ++j)
+            {
+                if (ProcessIds[j] == pid)
+                {
+                    seen = TRUE;
+                    break;
+                }
+            }
+            if (!seen)
+            {
+                if (count >= BK_MAX_PID_LIST)
+                {
+                    LeaveCriticalSection(&client->Lock);
+                    LeaveCriticalSection(g_ClientListLock.get());
+                    return FALSE;
+                }
+                ProcessIds[count++] = pid;
+            }
+        }
+        LeaveCriticalSection(&client->Lock);
     }
+    *ProcessCount = count;
     LeaveCriticalSection(g_ClientListLock.get());
     return TRUE;
 }
+
 static BOOL ControllerApplyDriverSubscriptionsIfDirtyNow(VOID)
 {
     if (InterlockedCompareExchange(&g_DriverSubscriptionsDirty, 0, 1) == 1)
@@ -1405,10 +1442,25 @@ static BOOL ControllerApplyDriverSubscriptionsNow(VOID)
 
     if (g_DriverHandle == INVALID_HANDLE_VALUE)
     {
-        SetLastError(ERROR_DEVICE_NOT_CONNECTED);
-        ControllerKeepDriverSubscriptionsDirty();
-        ok = FALSE;
-        goto Exit;
+        if (desiredCount == 0)
+        {
+            g_ProgrammedPidCount = 0;
+            ZeroMemory(g_ProgrammedPids, sizeof(g_ProgrammedPids));
+            ControllerSetDriverSubscriptionApplyPhase(BkControllerDriverSubscriptionApplyIdle, desiredCount,
+                                                      (DWORD)g_ProgrammedPidCount, 0);
+            LeaveCriticalSection(g_DriverLock.get());
+            LeaveCriticalSection(g_DriverConfigLock.get());
+            return TRUE;
+        }
+
+        ControllerLog("[DRIVER][INFO] driver unavailable; keeping %lu controller subscription(s) in driverless mode\n",
+                      desiredCount);
+        g_ProgrammedPidCount = 0;
+        ZeroMemory(g_ProgrammedPids, sizeof(g_ProgrammedPids));
+        ControllerSetDriverSubscriptionApplyPhase(BkControllerDriverSubscriptionApplyIdle, desiredCount, 0, 0);
+        LeaveCriticalSection(g_DriverLock.get());
+        LeaveCriticalSection(g_DriverConfigLock.get());
+        return TRUE;
     }
 
     if (desiredCount == 0)
@@ -1576,12 +1628,6 @@ VOID ControllerDispatchDriverRecord(_In_ const BK_EVENT_RECORD *Record)
         sourcePid = (DWORD)Record->Data.Registry.ProcessId;
         targetPid = 0;
         relationMask = 0;
-    }
-    else if (Record->Header.Type == BlackbirdEventTypeEnterprise)
-    {
-        sourcePid = (DWORD)Record->Data.Enterprise.ProcessId;
-        targetPid = (DWORD)Record->Data.Enterprise.TargetProcessId;
-        relationMask = BK_STREAM_ENTERPRISE;
     }
 
     ControllerExpandMonitoringGraph(sourcePid, targetPid, relationMask);

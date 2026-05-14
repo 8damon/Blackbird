@@ -1,5 +1,4 @@
 #include "../controller_private.h"
-#include "ns/ns_launcher.h"
 
 struct ClientConstruct
 {
@@ -163,8 +162,8 @@ static BOOL ControllerDropDriverHandleIfCurrent(_In_ HANDLE LocalHandle, _In_z_ 
     if (dropped)
     {
         ControllerMarkDriverSubscriptionsDirty();
-        ControllerLog("[DRIVER][WARN] dropped driver handle reason=%s err=%lu; controller remains online\n",
-                      Reason, ErrorCode);
+        ControllerLog("[DRIVER][WARN] dropped driver handle reason=%s err=%lu; controller remains online\n", Reason,
+                      ErrorCode);
     }
 
     return dropped;
@@ -369,7 +368,6 @@ static DWORD WINAPI ControllerDriverPumpThreadProc(_In_ LPVOID Context)
                 ControllerTryMarkProtectedReady(localHandle, TRUE);
                 ControllerMarkDriverSubscriptionsDirty();
                 (void)ControllerApplyDriverSubscriptionsIfDirty();
-                ControllerRefreshNetSvcDriverHandle(localHandle, "driver-open");
                 driverOpenFailures = 0;
                 recoverableReadFailures = 0;
                 ZeroMemory(&stats, sizeof(stats));
@@ -422,8 +420,8 @@ static DWORD WINAPI ControllerDriverPumpThreadProc(_In_ LPVOID Context)
                 if (recoverableReadFailures == 1 || (recoverableReadFailures % 20u) == 0)
                 {
                     ControllerLog(
-                        "[DRIVER][WARN] event read failed (%lu), recoverableFailures=%lu; reopening driver path\n",
-                        err, recoverableReadFailures);
+                        "[DRIVER][WARN] event read failed (%lu), recoverableFailures=%lu; reopening driver path\n", err,
+                        recoverableReadFailures);
                 }
                 (void)ControllerDropDriverHandleIfCurrent(localHandle, "event-read-recoverable", err);
                 Sleep(ControllerDriverPumpBackoffMs(recoverableReadFailures));
@@ -606,7 +604,6 @@ static BOOL ControllerShouldForwardEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_
             (strstr(detectionName, "NON_IMAGE_EXECUTABLE_REGION") != NULL) ||
             (strstr(detectionName, "CREDENTIAL_ACCESS_LSASS_HANDLE") != NULL) ||
             (strstr(detectionName, "REGISTRY_LSA_PACKAGE_WRITE") != NULL) ||
-            (strstr(detectionName, "AGGREGATE_THREAT_SIGNAL") != NULL) ||
             (strstr(detectionName, "SHELLCODE_STAGE_PATTERN") != NULL) ||
             (strstr(detectionName, "PROCESS_IMAGE_TAMPER") != NULL) ||
             (strstr(detectionName, "PROCESS_IMAGE_GHOSTING") != NULL);
@@ -1847,10 +1844,6 @@ static BOOL ControllerStartCore(VOID)
     }
 
     (void)ControllerStartEtwSession();
-    if (!ControllerStartNetService(g_DriverHandle))
-    {
-        ControllerLog("[NODE][INFO] optional node networking unavailable; controller core continuing\n");
-    }
     ControllerTryMarkProtectedReady(g_DriverHandle, TRUE);
 
     g_DriverPumpThread = CreateThread(NULL, 0, ControllerDriverPumpThreadProc, NULL, 0, NULL);
@@ -2026,7 +2019,6 @@ static VOID ControllerStopCore(VOID)
     }
 
     ControllerStopEtwSession();
-    ControllerStopNetService();
 
     EnterCriticalSection(g_DriverLock.get());
     if (g_DriverHandle != INVALID_HANDLE_VALUE)

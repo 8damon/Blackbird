@@ -315,7 +315,6 @@ static BOOL BkscRegisterSharedChannel(_In_ HANDLE Device, _In_ const BKIPC_OPEN_
 
 #define BKSC_IPC_DEFAULT_TIMEOUT_MS 5000u
 #define BKSC_IPC_LAUNCH_TIMEOUT_MS 30000u
-#define BKSC_IPC_MEMORY_TIMEOUT_MS 10000u
 #define BKSC_IPC_FAST_TIMEOUT_MS 2500u
 #define BKSC_IPC_CANCEL_DRAIN_TIMEOUT_MS 1000u
 
@@ -325,9 +324,8 @@ static DWORD BkscIpcCommandTimeoutMs(_In_ UINT32 Command)
     {
     case BlackbirdIpcCommandSetUserHookTarget:
         return BKSC_IPC_LAUNCH_TIMEOUT_MS;
-    case BlackbirdIpcCommandQueryProcessMemory:
     case BlackbirdIpcCommandControlProcessExecution:
-        return BKSC_IPC_MEMORY_TIMEOUT_MS;
+        return BKSC_IPC_DEFAULT_TIMEOUT_MS;
     case BlackbirdIpcCommandGetStats:
     case BlackbirdIpcCommandGetHealth:
     case BlackbirdIpcCommandGetDiagnostics:
@@ -1380,25 +1378,6 @@ BOOL BkscRegisterProcessInstrumentationCallback(
                            sizeof(*Request), NULL, 0, &bytes, NULL);
 }
 
-BOOL BkscSetEndpointGuard(_In_ HANDLE Device, _In_ const BK_ENDPOINT_GUARD_REQUEST *Request)
-{
-    DWORD bytes = 0;
-
-    if (Device == NULL || Device == INVALID_HANDLE_VALUE || Request == NULL || Request->ProcessId == 0)
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-    if (BkscIsClientProtocol())
-    {
-        SetLastError(ERROR_NOT_SUPPORTED);
-        return FALSE;
-    }
-
-    return DeviceIoControl(Device, (DWORD)IOCTL_BK_SET_ENDPOINT_GUARD, (LPVOID)Request, sizeof(*Request), NULL, 0,
-                           &bytes, NULL);
-}
-
 BOOL BkscSetUserHookTarget(_In_ HANDLE Device, _In_ DWORD Mode, _In_ DWORD ProcessId, _In_ DWORD Flags,
                            _In_opt_z_ PCWSTR ImagePath, _In_ DWORD AnalysisSubjectKind,
                            _In_opt_z_ PCWSTR AnalysisSubjectPath, _In_opt_z_ PCWSTR HookDllPath,
@@ -1565,68 +1544,6 @@ BOOL BkscGetEtwEvent(_In_ HANDLE Device, _Out_ BKIPC_ETW_EVENT *Event, _In_ DWOR
     return FALSE;
 }
 
-BKSC_API BOOL BkscQueryProcessMemory(_In_ HANDLE Device, _In_ DWORD ProcessId, _In_ UINT64 BaseAddress,
-                                     _In_ DWORD RequestedSize, _Out_writes_bytes_(*BytesRead) PVOID Buffer,
-                                     _In_ DWORD BufferSize, _Out_ DWORD *BytesRead)
-{
-    BKIPC_PACKET request;
-    BKIPC_PACKET response;
-    HANDLE hSection;
-    PVOID pView;
-    DWORD toCopy;
-
-    if (Device == NULL || Device == INVALID_HANDLE_VALUE || ProcessId == 0 || RequestedSize == 0 || Buffer == NULL ||
-        BufferSize == 0 || BytesRead == NULL)
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-
-    *BytesRead = 0;
-
-    if (!BkscIsClientProtocol())
-    {
-        SetLastError(ERROR_NOT_SUPPORTED);
-        return FALSE;
-    }
-
-    BkscInitIpcRequest(&request, BlackbirdIpcCommandQueryProcessMemory);
-    request.Payload.QueryMemoryRequest.ProcessId = ProcessId;
-    request.Payload.QueryMemoryRequest.BaseAddress = BaseAddress;
-    request.Payload.QueryMemoryRequest.RequestedSize =
-        (RequestedSize < BK_MAX_MEMORY_READ_BYTES) ? RequestedSize : BK_MAX_MEMORY_READ_BYTES;
-
-    if (!BkscIpcTransact(Device, &request, &response))
-    {
-        return FALSE;
-    }
-
-    if (response.Payload.QueryMemoryResponse.BytesRead == 0 || response.Payload.QueryMemoryResponse.SectionHandle == 0)
-    {
-        SetLastError(ERROR_NO_DATA);
-        return FALSE;
-    }
-
-    hSection = (HANDLE)(ULONG_PTR)response.Payload.QueryMemoryResponse.SectionHandle;
-    toCopy = (response.Payload.QueryMemoryResponse.BytesRead < BufferSize)
-                 ? response.Payload.QueryMemoryResponse.BytesRead
-                 : BufferSize;
-
-    pView = MapViewOfFile(hSection, FILE_MAP_READ, 0, 0, toCopy);
-    if (pView == NULL)
-    {
-        CloseHandle(hSection);
-        return FALSE;
-    }
-
-    CopyMemory(Buffer, pView, toCopy);
-    UnmapViewOfFile(pView);
-    CloseHandle(hSection);
-
-    *BytesRead = toCopy;
-    return TRUE;
-}
-
 DWORD
 BkscParseStreamMaskA(_In_z_ const char *Text)
 {
@@ -1671,10 +1588,6 @@ BkscParseStreamMaskA(_In_z_ const char *Text)
         else if (_stricmp(tok, "timing") == 0 || _stricmp(tok, "qpc") == 0)
         {
             mask |= BK_STREAM_TIMING;
-        }
-        else if (_stricmp(tok, "enterprise") == 0 || _stricmp(tok, "ad") == 0 || _stricmp(tok, "credential") == 0)
-        {
-            mask |= BK_STREAM_ENTERPRISE;
         }
     }
 

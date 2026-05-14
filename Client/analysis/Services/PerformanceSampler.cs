@@ -504,7 +504,6 @@ namespace BlackbirdInterface
             const uint processVmRead = 0x0010;
             const uint processQueryLimited = 0x1000;
             const uint memCommit = 0x1000;
-            const int maxSnapshotRegions = 96;
 
             _ = Kernel32Native.EnableDebugPrivilege(out _);
 
@@ -526,7 +525,6 @@ namespace BlackbirdInterface
                 ulong maxAddress = Environment.Is64BitProcess ? 0x00007FFF_FFFFFFFFul : uint.MaxValue;
                 nuint infoSize = (nuint)Marshal.SizeOf<MEMORY_BASIC_INFORMATION>();
                 var mappedPathCache = new Dictionary<ulong, string>();
-                int snapshotRegions = 0;
 
                 while (address < maxAddress && rows.Count < 1536)
                 {
@@ -567,14 +565,6 @@ namespace BlackbirdInterface
                         }
                         ApplyWorkingSetAttributes(handle, rows[^1]);
                         rows[^1].Category = BuildPageCategory(rows[^1]);
-                        if (snapshotRegions < maxSnapshotRegions &&
-                            ShouldCaptureDisassemblySnapshot(rows[^1]) &&
-                            TryReadMemorySnapshot(handle, rows[^1].BaseAddress, rows[^1].RegionSize, out byte[]? bytes))
-                        {
-                            rows[^1].SnapshotOffset = 0;
-                            rows[^1].SnapshotBytes = bytes;
-                            snapshotRegions += 1;
-                        }
                     }
 
                     ulong next = (ulong)info.BaseAddress + regionSize;
@@ -596,58 +586,6 @@ namespace BlackbirdInterface
             }
 
             return rows.OrderByDescending(x => x.RegionSize).ThenBy(x => x.BaseAddress).Take(768).ToList();
-        }
-
-        private static bool ShouldCaptureDisassemblySnapshot(MemoryPageSample page)
-        {
-            if (page.RegionSize == 0 || page.Sr71Owned)
-            {
-                return false;
-            }
-
-            bool executable = EventDetailFormatting.DescribeMemoryProtection(page.Protect)
-                                  .Contains("EXECUTE", StringComparison.OrdinalIgnoreCase);
-            if (executable)
-            {
-                return true;
-            }
-
-            string category = page.Category ?? string.Empty;
-            return category.Contains("Private", StringComparison.OrdinalIgnoreCase) ||
-                   category.Contains("Unsigned", StringComparison.OrdinalIgnoreCase) ||
-                   category.Contains("Thread Stack", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool TryReadMemorySnapshot(IntPtr processHandle, ulong baseAddress, ulong regionSize,
-                                                  out byte[]? bytes)
-        {
-            bytes = null;
-            int size = (int)Math.Min(regionSize, 4096);
-            if (size <= 0)
-            {
-                return false;
-            }
-
-            byte[] buffer = new byte[size];
-            if (!ReadProcessMemory(processHandle, unchecked((IntPtr)baseAddress), buffer, buffer.Length,
-                                   out IntPtr bytesRead))
-            {
-                return false;
-            }
-
-            int count = (int)Math.Min(bytesRead.ToInt64(), buffer.Length);
-            if (count <= 0)
-            {
-                return false;
-            }
-
-            if (count != buffer.Length)
-            {
-                Array.Resize(ref buffer, count);
-            }
-
-            bytes = buffer;
-            return true;
         }
 
         private static string BuildPageCategory(MemoryPageSample page)
@@ -1152,9 +1090,7 @@ namespace BlackbirdInterface
                                           WorkingSetShared = src.WorkingSetShared,
                                           WorkingSetShareCount = src.WorkingSetShareCount,
                                           WorkingSetLocked = src.WorkingSetLocked,
-                                          WorkingSetLargePage = src.WorkingSetLargePage,
-                                          SnapshotOffset = src.SnapshotOffset,
-                                          SnapshotBytes = src.SnapshotBytes?.ToArray() };
+                                          WorkingSetLargePage = src.WorkingSetLargePage };
         }
 
         private static string FormatBytes(long bytes)

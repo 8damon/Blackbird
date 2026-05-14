@@ -7,6 +7,7 @@
 #include <evntprov.h>
 #include <evntrace.h>
 #include <objbase.h>
+#include <wincrypt.h>
 #include <winternl.h>
 #include <intrin.h>
 
@@ -17,6 +18,30 @@
 #ifndef STATUS_UNSUCCESSFUL
 #define STATUS_UNSUCCESSFUL ((NTSTATUS)0xC0000001L)
 #endif
+
+#ifndef SEC_E_INTERNAL_ERROR
+#define SEC_E_INTERNAL_ERROR ((LONG)0x80090304L)
+#endif
+
+using LSA_HANDLE = HANDLE;
+using PLSA_HANDLE = HANDLE *;
+using LSA_STRING = STRING;
+using PLSA_STRING = PSTRING;
+using LSA_UNICODE_STRING = UNICODE_STRING;
+using PLSA_UNICODE_STRING = PUNICODE_STRING;
+using POLICY_INFORMATION_CLASS = ULONG;
+
+struct LSA_OBJECT_ATTRIBUTES
+{
+    ULONG Length;
+    HANDLE RootDirectory;
+    PLSA_UNICODE_STRING ObjectName;
+    ULONG Attributes;
+    PVOID SecurityDescriptor;
+    PVOID SecurityQualityOfService;
+};
+
+using PLSA_OBJECT_ATTRIBUTES = LSA_OBJECT_ATTRIBUTES *;
 
 namespace
 {
@@ -153,6 +178,34 @@ namespace
     using OpenJobObjectWFn = HANDLE(WINAPI *)(DWORD, BOOL, LPCWSTR);
     using AssignProcessToJobObjectFn = BOOL(WINAPI *)(HANDLE, HANDLE);
     using SetInformationJobObjectFn = BOOL(WINAPI *)(HANDLE, JOBOBJECTINFOCLASS, LPVOID, DWORD);
+    using LsaConnectUntrustedFn = NTSTATUS(WINAPI *)(PHANDLE);
+    using LsaLookupAuthenticationPackageFn = NTSTATUS(WINAPI *)(HANDLE, PLSA_STRING, PULONG);
+    using LsaCallAuthenticationPackageFn = NTSTATUS(WINAPI *)(HANDLE, ULONG, PVOID, ULONG, PVOID *, PULONG, PNTSTATUS);
+    using AcquireCredentialsHandleAFn = LONG(WINAPI *)(LPSTR, LPSTR, ULONG, PLUID, PVOID, PVOID, PVOID, PVOID, PVOID);
+    using AcquireCredentialsHandleWFn = LONG(WINAPI *)(LPWSTR, LPWSTR, ULONG, PLUID, PVOID, PVOID, PVOID, PVOID, PVOID);
+    using InitializeSecurityContextAFn = LONG(WINAPI *)(PVOID, PVOID, LPSTR, ULONG, ULONG, ULONG, PVOID, ULONG, PVOID,
+                                                        PVOID, PULONG, PVOID);
+    using InitializeSecurityContextWFn = LONG(WINAPI *)(PVOID, PVOID, LPWSTR, ULONG, ULONG, ULONG, PVOID, ULONG, PVOID,
+                                                        PVOID, PULONG, PVOID);
+    using AcceptSecurityContextFn = LONG(WINAPI *)(PVOID, PVOID, PVOID, ULONG, ULONG, PVOID, PVOID, PULONG, PVOID);
+    using CredReadAFn = BOOL(WINAPI *)(LPCSTR, DWORD, DWORD, PVOID *);
+    using CredReadWFn = BOOL(WINAPI *)(LPCWSTR, DWORD, DWORD, PVOID *);
+    using CredEnumerateAFn = BOOL(WINAPI *)(LPCSTR, DWORD, DWORD *, PVOID *);
+    using CredEnumerateWFn = BOOL(WINAPI *)(LPCWSTR, DWORD, DWORD *, PVOID *);
+    using CredReadDomainCredentialsAFn = BOOL(WINAPI *)(PVOID, DWORD, DWORD *, PVOID *);
+    using CredReadDomainCredentialsWFn = BOOL(WINAPI *)(PVOID, DWORD, DWORD *, PVOID *);
+    using LsaOpenPolicyFn = NTSTATUS(WINAPI *)(PLSA_UNICODE_STRING, PLSA_OBJECT_ATTRIBUTES, ACCESS_MASK, PLSA_HANDLE);
+    using LsaQueryInformationPolicyFn = NTSTATUS(WINAPI *)(LSA_HANDLE, POLICY_INFORMATION_CLASS, PVOID *);
+    using VaultEnumerateVaultsFn = DWORD(WINAPI *)(DWORD, DWORD *, GUID **);
+    using VaultOpenVaultFn = DWORD(WINAPI *)(const GUID *, DWORD, HANDLE *);
+    using VaultEnumerateItemsFn = DWORD(WINAPI *)(HANDLE, DWORD, DWORD *, PVOID *);
+    using VaultGetItemFn = DWORD(WINAPI *)(HANDLE, const GUID *, PVOID, PVOID, PVOID, HWND, DWORD, PVOID *);
+    using CryptUnprotectDataFn = BOOL(WINAPI *)(DATA_BLOB *, LPWSTR *, DATA_BLOB *, PVOID, CRYPTPROTECT_PROMPTSTRUCT *,
+                                                DWORD, DATA_BLOB *);
+    using NCryptUnprotectSecretFn = LONG(WINAPI *)(PVOID *, DWORD, const BYTE *, ULONG, PVOID, HWND, BYTE **, ULONG *);
+    using NCryptOpenStorageProviderFn = LONG(WINAPI *)(PVOID *, LPCWSTR, DWORD);
+    using NCryptOpenKeyFn = LONG(WINAPI *)(PVOID, PVOID *, LPCWSTR, DWORD, DWORD);
+    using NCryptDecryptFn = LONG(WINAPI *)(PVOID, PBYTE, DWORD, PVOID, PBYTE, DWORD, DWORD *, DWORD);
 
     struct InlineHook
     {
@@ -189,6 +242,31 @@ namespace
     static OpenJobObjectWFn g_OriginalOpenJobObjectW = nullptr;
     static AssignProcessToJobObjectFn g_OriginalAssignProcessToJobObject = nullptr;
     static SetInformationJobObjectFn g_OriginalSetInformationJobObject = nullptr;
+    static LsaConnectUntrustedFn g_OriginalLsaConnectUntrusted = nullptr;
+    static LsaLookupAuthenticationPackageFn g_OriginalLsaLookupAuthenticationPackage = nullptr;
+    static LsaCallAuthenticationPackageFn g_OriginalLsaCallAuthenticationPackage = nullptr;
+    static AcquireCredentialsHandleAFn g_OriginalAcquireCredentialsHandleA = nullptr;
+    static AcquireCredentialsHandleWFn g_OriginalAcquireCredentialsHandleW = nullptr;
+    static InitializeSecurityContextAFn g_OriginalInitializeSecurityContextA = nullptr;
+    static InitializeSecurityContextWFn g_OriginalInitializeSecurityContextW = nullptr;
+    static AcceptSecurityContextFn g_OriginalAcceptSecurityContext = nullptr;
+    static CredReadAFn g_OriginalCredReadA = nullptr;
+    static CredReadWFn g_OriginalCredReadW = nullptr;
+    static CredEnumerateAFn g_OriginalCredEnumerateA = nullptr;
+    static CredEnumerateWFn g_OriginalCredEnumerateW = nullptr;
+    static CredReadDomainCredentialsAFn g_OriginalCredReadDomainCredentialsA = nullptr;
+    static CredReadDomainCredentialsWFn g_OriginalCredReadDomainCredentialsW = nullptr;
+    static LsaOpenPolicyFn g_OriginalLsaOpenPolicy = nullptr;
+    static LsaQueryInformationPolicyFn g_OriginalLsaQueryInformationPolicy = nullptr;
+    static VaultEnumerateVaultsFn g_OriginalVaultEnumerateVaults = nullptr;
+    static VaultOpenVaultFn g_OriginalVaultOpenVault = nullptr;
+    static VaultEnumerateItemsFn g_OriginalVaultEnumerateItems = nullptr;
+    static VaultGetItemFn g_OriginalVaultGetItem = nullptr;
+    static CryptUnprotectDataFn g_OriginalCryptUnprotectData = nullptr;
+    static NCryptUnprotectSecretFn g_OriginalNCryptUnprotectSecret = nullptr;
+    static NCryptOpenStorageProviderFn g_OriginalNCryptOpenStorageProvider = nullptr;
+    static NCryptOpenKeyFn g_OriginalNCryptOpenKey = nullptr;
+    static NCryptDecryptFn g_OriginalNCryptDecrypt = nullptr;
 
     HMODULE WINAPI LoadLibraryAHook(LPCSTR lpLibFileName);
     HMODULE WINAPI LoadLibraryWHook(LPCWSTR lpLibFileName);
@@ -219,6 +297,52 @@ namespace
     HANDLE WINAPI OpenJobObjectWHook(DWORD desiredAccess, BOOL inheritHandle, LPCWSTR name);
     BOOL WINAPI AssignProcessToJobObjectHook(HANDLE job, HANDLE process);
     BOOL WINAPI SetInformationJobObjectHook(HANDLE job, JOBOBJECTINFOCLASS infoClass, LPVOID info, DWORD infoLength);
+    NTSTATUS WINAPI LsaConnectUntrustedHook(PHANDLE lsaHandle);
+    NTSTATUS WINAPI LsaLookupAuthenticationPackageHook(HANDLE lsaHandle, PLSA_STRING packageName,
+                                                       PULONG authenticationPackage);
+    NTSTATUS WINAPI LsaCallAuthenticationPackageHook(HANDLE lsaHandle, ULONG authenticationPackage, PVOID submitBuffer,
+                                                     ULONG submitBufferLength, PVOID *returnBuffer,
+                                                     PULONG returnBufferLength, PNTSTATUS protocolStatus);
+    LONG WINAPI AcquireCredentialsHandleAHook(LPSTR principal, LPSTR package, ULONG credentialUse, PLUID logonId,
+                                              PVOID authData, PVOID getKeyFn, PVOID getKeyArgument, PVOID credential,
+                                              PVOID expiry);
+    LONG WINAPI AcquireCredentialsHandleWHook(LPWSTR principal, LPWSTR package, ULONG credentialUse, PLUID logonId,
+                                              PVOID authData, PVOID getKeyFn, PVOID getKeyArgument, PVOID credential,
+                                              PVOID expiry);
+    LONG WINAPI InitializeSecurityContextAHook(PVOID credential, PVOID context, LPSTR targetName, ULONG contextReq,
+                                               ULONG reserved1, ULONG targetDataRep, PVOID input, ULONG reserved2,
+                                               PVOID newContext, PVOID output, PULONG contextAttr, PVOID expiry);
+    LONG WINAPI InitializeSecurityContextWHook(PVOID credential, PVOID context, LPWSTR targetName, ULONG contextReq,
+                                               ULONG reserved1, ULONG targetDataRep, PVOID input, ULONG reserved2,
+                                               PVOID newContext, PVOID output, PULONG contextAttr, PVOID expiry);
+    LONG WINAPI AcceptSecurityContextHook(PVOID credential, PVOID context, PVOID input, ULONG contextReq,
+                                          ULONG targetDataRep, PVOID newContext, PVOID output, PULONG contextAttr,
+                                          PVOID expiry);
+    BOOL WINAPI CredReadAHook(LPCSTR targetName, DWORD type, DWORD flags, PVOID *credential);
+    BOOL WINAPI CredReadWHook(LPCWSTR targetName, DWORD type, DWORD flags, PVOID *credential);
+    BOOL WINAPI CredEnumerateAHook(LPCSTR filter, DWORD flags, DWORD *count, PVOID *credential);
+    BOOL WINAPI CredEnumerateWHook(LPCWSTR filter, DWORD flags, DWORD *count, PVOID *credential);
+    BOOL WINAPI CredReadDomainCredentialsAHook(PVOID targetInfo, DWORD flags, DWORD *count, PVOID *credential);
+    BOOL WINAPI CredReadDomainCredentialsWHook(PVOID targetInfo, DWORD flags, DWORD *count, PVOID *credential);
+    NTSTATUS WINAPI LsaOpenPolicyHook(PLSA_UNICODE_STRING systemName, PLSA_OBJECT_ATTRIBUTES objectAttributes,
+                                      ACCESS_MASK desiredAccess, PLSA_HANDLE policyHandle);
+    NTSTATUS WINAPI LsaQueryInformationPolicyHook(LSA_HANDLE policyHandle, POLICY_INFORMATION_CLASS informationClass,
+                                                  PVOID *buffer);
+    DWORD WINAPI VaultEnumerateVaultsHook(DWORD flags, DWORD *count, GUID **vaultGuids);
+    DWORD WINAPI VaultOpenVaultHook(const GUID *vaultGuid, DWORD flags, HANDLE *vaultHandle);
+    DWORD WINAPI VaultEnumerateItemsHook(HANDLE vaultHandle, DWORD flags, DWORD *count, PVOID *items);
+    DWORD WINAPI VaultGetItemHook(HANDLE vaultHandle, const GUID *schemaId, PVOID resource, PVOID identity,
+                                  PVOID packageSid, HWND hwndOwner, DWORD flags, PVOID *item);
+    BOOL WINAPI CryptUnprotectDataHook(DATA_BLOB *dataIn, LPWSTR *dataDescription, DATA_BLOB *optionalEntropy,
+                                       PVOID reserved, CRYPTPROTECT_PROMPTSTRUCT *promptStruct, DWORD flags,
+                                       DATA_BLOB *dataOut);
+    LONG WINAPI NCryptUnprotectSecretHook(PVOID *descriptor, DWORD flags, const BYTE *protectedBlob,
+                                          ULONG protectedBlobSize, PVOID memPara, HWND hwnd, BYTE **data,
+                                          ULONG *dataSize);
+    LONG WINAPI NCryptOpenStorageProviderHook(PVOID *provider, LPCWSTR providerName, DWORD flags);
+    LONG WINAPI NCryptOpenKeyHook(PVOID provider, PVOID *key, LPCWSTR keyName, DWORD legacyKeySpec, DWORD flags);
+    LONG WINAPI NCryptDecryptHook(PVOID key, PBYTE input, DWORD inputSize, PVOID paddingInfo, PBYTE output,
+                                  DWORD outputSize, DWORD *resultSize, DWORD flags);
 
     static InlineHook g_Hooks[] = {
         {L"KernelBase.dll",
@@ -392,6 +516,231 @@ namespace
          nullptr,
          {},
          false},
+        {L"sspicli.dll",
+         "LsaConnectUntrusted",
+         "sspicli",
+         reinterpret_cast<void *>(&LsaConnectUntrustedHook),
+         reinterpret_cast<void **>(&g_OriginalLsaConnectUntrusted),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"sspicli.dll",
+         "LsaLookupAuthenticationPackage",
+         "sspicli",
+         reinterpret_cast<void *>(&LsaLookupAuthenticationPackageHook),
+         reinterpret_cast<void **>(&g_OriginalLsaLookupAuthenticationPackage),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"sspicli.dll",
+         "LsaCallAuthenticationPackage",
+         "sspicli",
+         reinterpret_cast<void *>(&LsaCallAuthenticationPackageHook),
+         reinterpret_cast<void **>(&g_OriginalLsaCallAuthenticationPackage),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"sspicli.dll",
+         "AcquireCredentialsHandleA",
+         "sspicli",
+         reinterpret_cast<void *>(&AcquireCredentialsHandleAHook),
+         reinterpret_cast<void **>(&g_OriginalAcquireCredentialsHandleA),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"sspicli.dll",
+         "AcquireCredentialsHandleW",
+         "sspicli",
+         reinterpret_cast<void *>(&AcquireCredentialsHandleWHook),
+         reinterpret_cast<void **>(&g_OriginalAcquireCredentialsHandleW),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"sspicli.dll",
+         "InitializeSecurityContextA",
+         "sspicli",
+         reinterpret_cast<void *>(&InitializeSecurityContextAHook),
+         reinterpret_cast<void **>(&g_OriginalInitializeSecurityContextA),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"sspicli.dll",
+         "InitializeSecurityContextW",
+         "sspicli",
+         reinterpret_cast<void *>(&InitializeSecurityContextWHook),
+         reinterpret_cast<void **>(&g_OriginalInitializeSecurityContextW),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"sspicli.dll",
+         "AcceptSecurityContext",
+         "sspicli",
+         reinterpret_cast<void *>(&AcceptSecurityContextHook),
+         reinterpret_cast<void **>(&g_OriginalAcceptSecurityContext),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"advapi32.dll",
+         "CredReadA",
+         "advapi32",
+         reinterpret_cast<void *>(&CredReadAHook),
+         reinterpret_cast<void **>(&g_OriginalCredReadA),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"advapi32.dll",
+         "CredReadW",
+         "advapi32",
+         reinterpret_cast<void *>(&CredReadWHook),
+         reinterpret_cast<void **>(&g_OriginalCredReadW),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"advapi32.dll",
+         "CredEnumerateA",
+         "advapi32",
+         reinterpret_cast<void *>(&CredEnumerateAHook),
+         reinterpret_cast<void **>(&g_OriginalCredEnumerateA),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"advapi32.dll",
+         "CredEnumerateW",
+         "advapi32",
+         reinterpret_cast<void *>(&CredEnumerateWHook),
+         reinterpret_cast<void **>(&g_OriginalCredEnumerateW),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"advapi32.dll",
+         "CredReadDomainCredentialsA",
+         "advapi32",
+         reinterpret_cast<void *>(&CredReadDomainCredentialsAHook),
+         reinterpret_cast<void **>(&g_OriginalCredReadDomainCredentialsA),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"advapi32.dll",
+         "CredReadDomainCredentialsW",
+         "advapi32",
+         reinterpret_cast<void *>(&CredReadDomainCredentialsWHook),
+         reinterpret_cast<void **>(&g_OriginalCredReadDomainCredentialsW),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"advapi32.dll",
+         "LsaOpenPolicy",
+         "advapi32",
+         reinterpret_cast<void *>(&LsaOpenPolicyHook),
+         reinterpret_cast<void **>(&g_OriginalLsaOpenPolicy),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"advapi32.dll",
+         "LsaQueryInformationPolicy",
+         "advapi32",
+         reinterpret_cast<void *>(&LsaQueryInformationPolicyHook),
+         reinterpret_cast<void **>(&g_OriginalLsaQueryInformationPolicy),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"vaultcli.dll",
+         "VaultEnumerateVaults",
+         "vaultcli",
+         reinterpret_cast<void *>(&VaultEnumerateVaultsHook),
+         reinterpret_cast<void **>(&g_OriginalVaultEnumerateVaults),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"vaultcli.dll",
+         "VaultOpenVault",
+         "vaultcli",
+         reinterpret_cast<void *>(&VaultOpenVaultHook),
+         reinterpret_cast<void **>(&g_OriginalVaultOpenVault),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"vaultcli.dll",
+         "VaultEnumerateItems",
+         "vaultcli",
+         reinterpret_cast<void *>(&VaultEnumerateItemsHook),
+         reinterpret_cast<void **>(&g_OriginalVaultEnumerateItems),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"vaultcli.dll",
+         "VaultGetItem",
+         "vaultcli",
+         reinterpret_cast<void *>(&VaultGetItemHook),
+         reinterpret_cast<void **>(&g_OriginalVaultGetItem),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"crypt32.dll",
+         "CryptUnprotectData",
+         "crypt32",
+         reinterpret_cast<void *>(&CryptUnprotectDataHook),
+         reinterpret_cast<void **>(&g_OriginalCryptUnprotectData),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"ncrypt.dll",
+         "NCryptUnprotectSecret",
+         "ncrypt",
+         reinterpret_cast<void *>(&NCryptUnprotectSecretHook),
+         reinterpret_cast<void **>(&g_OriginalNCryptUnprotectSecret),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"ncrypt.dll",
+         "NCryptOpenStorageProvider",
+         "ncrypt",
+         reinterpret_cast<void *>(&NCryptOpenStorageProviderHook),
+         reinterpret_cast<void **>(&g_OriginalNCryptOpenStorageProvider),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"ncrypt.dll",
+         "NCryptOpenKey",
+         "ncrypt",
+         reinterpret_cast<void *>(&NCryptOpenKeyHook),
+         reinterpret_cast<void **>(&g_OriginalNCryptOpenKey),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"ncrypt.dll",
+         "NCryptDecrypt",
+         "ncrypt",
+         reinterpret_cast<void *>(&NCryptDecryptHook),
+         reinterpret_cast<void **>(&g_OriginalNCryptDecrypt),
+         nullptr,
+         nullptr,
+         {},
+         false},
     };
 
     static const GUID CLSID_WbemLocatorValue = {
@@ -426,8 +775,18 @@ namespace
             return false;
         }
 
-        int chars = StringFromGUID2(*guid, buffer, 32);
-        return chars > 1;
+        __try
+        {
+            int chars = swprintf_s(buffer, 32, L"%08lX-%04hX-%04hX-%02hhX%02hhX-%02hhX%02hhX%02hhX%02hhX",
+                                   static_cast<unsigned long>(guid->Data1), guid->Data2, guid->Data3, guid->Data4[0],
+                                   guid->Data4[1], guid->Data4[2], guid->Data4[3], guid->Data4[4], guid->Data4[5]);
+            return chars > 1;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            buffer[0] = L'\0';
+            return false;
+        }
     }
 
     static void FormatCoInitMode(DWORD coInit, wchar_t buffer[32]) noexcept
@@ -586,6 +945,7 @@ namespace
         if (moduleHandle != nullptr)
         {
             (void)KeRefreshWinsockHooks(moduleHandle);
+            KeRefreshModuleHooks(moduleHandle);
         }
 
         ModuleHookContext context{};
@@ -620,6 +980,305 @@ namespace
             }
         }
         return chars * sizeof(wchar_t);
+    }
+
+    static bool WideContainsInsensitive(const wchar_t *value, const wchar_t *needle) noexcept
+    {
+        if (value == nullptr || needle == nullptr || *needle == L'\0')
+        {
+            return false;
+        }
+
+        std::size_t needleLen = wcslen(needle);
+        for (std::size_t i = 0; value[i] != L'\0'; ++i)
+        {
+            if (_wcsnicmp(value + i, needle, needleLen) == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    static bool LooksSensitiveName(const wchar_t *value) noexcept
+    {
+        return WideContainsInsensitive(value, L"password") || WideContainsInsensitive(value, L"passwd") ||
+               WideContainsInsensitive(value, L"secret") || WideContainsInsensitive(value, L"token") ||
+               WideContainsInsensitive(value, L"cookie") || WideContainsInsensitive(value, L"privatekey");
+    }
+
+    static void CopyRedactedWide(wchar_t buffer[32], LPCWSTR value) noexcept
+    {
+        buffer[0] = L'\0';
+        if (value == nullptr)
+        {
+            return;
+        }
+
+        __try
+        {
+            std::size_t i = 0;
+            for (; i < 31 && value[i] != L'\0'; ++i)
+            {
+                wchar_t ch = value[i];
+                buffer[i] = (ch < 0x20 || ch == L'\x7F') ? L'?' : ch;
+            }
+            buffer[i] = L'\0';
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            CopyLiteralWide(buffer, L"<invalid>");
+        }
+
+        if (LooksSensitiveName(buffer))
+        {
+            CopyLiteralWide(buffer, L"<redacted>");
+        }
+    }
+
+    static void CopyRedactedAnsiToWide(wchar_t buffer[32], LPCSTR value) noexcept
+    {
+        buffer[0] = L'\0';
+        if (value == nullptr)
+        {
+            return;
+        }
+
+        __try
+        {
+            std::size_t i = 0;
+            for (; i < 31 && value[i] != '\0'; ++i)
+            {
+                unsigned char ch = static_cast<unsigned char>(value[i]);
+                buffer[i] = (ch < 0x20 || ch == 0x7F) ? L'?' : static_cast<wchar_t>(ch);
+            }
+            buffer[i] = L'\0';
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            CopyLiteralWide(buffer, L"<invalid>");
+        }
+
+        if (LooksSensitiveName(buffer))
+        {
+            CopyLiteralWide(buffer, L"<redacted>");
+        }
+    }
+
+    static void CopyLsaStringToWide(wchar_t buffer[32], PLSA_STRING value) noexcept
+    {
+        buffer[0] = L'\0';
+        if (value == nullptr)
+        {
+            return;
+        }
+
+        __try
+        {
+            if (value->Buffer == nullptr || value->Length == 0)
+            {
+                return;
+            }
+
+            std::size_t chars = value->Length;
+            if (chars > 31)
+            {
+                chars = 31;
+            }
+            for (std::size_t i = 0; i < chars; ++i)
+            {
+                unsigned char ch = static_cast<unsigned char>(value->Buffer[i]);
+                buffer[i] = (ch < 0x20 || ch == 0x7F) ? L'?' : static_cast<wchar_t>(ch);
+            }
+            buffer[chars] = L'\0';
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            CopyLiteralWide(buffer, L"<invalid>");
+        }
+    }
+
+    static void CopyLsaUnicodeStringToWide(wchar_t buffer[32], PLSA_UNICODE_STRING value) noexcept
+    {
+        buffer[0] = L'\0';
+        if (value == nullptr)
+        {
+            return;
+        }
+
+        __try
+        {
+            if (value->Buffer == nullptr || value->Length == 0)
+            {
+                return;
+            }
+
+            std::size_t chars = value->Length / sizeof(wchar_t);
+            if (chars > 31)
+            {
+                chars = 31;
+            }
+            for (std::size_t i = 0; i < chars; ++i)
+            {
+                wchar_t ch = value->Buffer[i];
+                buffer[i] = (ch < 0x20 || ch == L'\x7F') ? L'?' : ch;
+            }
+            buffer[chars] = L'\0';
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            CopyLiteralWide(buffer, L"<invalid>");
+        }
+
+        if (LooksSensitiveName(buffer))
+        {
+            CopyLiteralWide(buffer, L"<redacted>");
+        }
+    }
+
+    static std::uint32_t SafeReadDword(const DWORD *value) noexcept
+    {
+        if (value == nullptr)
+        {
+            return 0;
+        }
+
+        __try
+        {
+            return *value;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return 0;
+        }
+    }
+
+    static std::uint32_t SafeReadUlong(const ULONG *value) noexcept
+    {
+        if (value == nullptr)
+        {
+            return 0;
+        }
+
+        __try
+        {
+            return *value;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return 0;
+        }
+    }
+
+    static NTSTATUS SafeReadNtStatus(const NTSTATUS *value) noexcept
+    {
+        if (value == nullptr)
+        {
+            return 0;
+        }
+
+        __try
+        {
+            return *value;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return 0;
+        }
+    }
+
+    static void *SafeReadPointer(void *const *value) noexcept
+    {
+        if (value == nullptr)
+        {
+            return nullptr;
+        }
+
+        __try
+        {
+            return *value;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return nullptr;
+        }
+    }
+
+    static std::uint32_t SafeReadFirstU32(const void *buffer, ULONG length) noexcept
+    {
+        if (buffer == nullptr || length < sizeof(std::uint32_t))
+        {
+            return 0;
+        }
+
+        __try
+        {
+            return *reinterpret_cast<const std::uint32_t *>(buffer);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return 0;
+        }
+    }
+
+    static std::uint32_t SafeBlobSize(const DATA_BLOB *blob) noexcept
+    {
+        if (blob == nullptr)
+        {
+            return 0;
+        }
+
+        __try
+        {
+            return blob->cbData;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return 0;
+        }
+    }
+
+    struct LsaPackageCacheEntry
+    {
+        ULONG PackageId;
+        wchar_t Name[32];
+        bool Valid;
+    };
+
+    static SRWLOCK g_LsaPackageCacheLock = SRWLOCK_INIT;
+    static LsaPackageCacheEntry g_LsaPackageCache[16]{};
+    static std::uint32_t g_LsaPackageCacheNext = 0;
+
+    static void StoreLsaPackageName(ULONG packageId, const wchar_t *name) noexcept
+    {
+        if (name == nullptr || name[0] == L'\0')
+        {
+            return;
+        }
+
+        AcquireSRWLockExclusive(&g_LsaPackageCacheLock);
+        std::size_t slot = g_LsaPackageCacheNext % RTL_NUMBER_OF(g_LsaPackageCache);
+        g_LsaPackageCacheNext += 1;
+        g_LsaPackageCache[slot].PackageId = packageId;
+        (void)wcsncpy_s(g_LsaPackageCache[slot].Name, name, _TRUNCATE);
+        g_LsaPackageCache[slot].Valid = true;
+        ReleaseSRWLockExclusive(&g_LsaPackageCacheLock);
+    }
+
+    static void LookupLsaPackageName(ULONG packageId, wchar_t buffer[32]) noexcept
+    {
+        CopyLiteralWide(buffer, L"Package");
+        AcquireSRWLockShared(&g_LsaPackageCacheLock);
+        for (std::size_t i = 0; i < RTL_NUMBER_OF(g_LsaPackageCache); ++i)
+        {
+            if (g_LsaPackageCache[i].Valid && g_LsaPackageCache[i].PackageId == packageId)
+            {
+                (void)wcsncpy_s(buffer, 32, g_LsaPackageCache[i].Name, _TRUNCATE);
+                break;
+            }
+        }
+        ReleaseSRWLockShared(&g_LsaPackageCacheLock);
     }
 
     HMODULE WINAPI LoadLibraryAHook(LPCSTR lpLibFileName)
@@ -959,7 +1618,494 @@ namespace
                            static_cast<std::uint64_t>(ok));
         return ok;
     }
-}
+
+    NTSTATUS WINAPI LsaConnectUntrustedHook(PHANDLE lsaHandle)
+    {
+        if (g_OriginalLsaConnectUntrusted == nullptr)
+        {
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        NTSTATUS status = g_OriginalLsaConnectUntrusted(lsaHandle);
+        wchar_t label[32];
+        CopyLiteralWide(label, L"LsaUntrusted");
+        PublishModuleEvent(ModuleHookOperation::LsaConnectUntrusted, "LsaConnectUntrusted", "sspicli", nullptr, label,
+                           CopyWideLength(label), static_cast<std::uint64_t>(static_cast<ULONG>(status)),
+                           static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(SafeReadPointer(lsaHandle))), 0, 0);
+        return status;
+    }
+
+    NTSTATUS WINAPI LsaLookupAuthenticationPackageHook(HANDLE lsaHandle, PLSA_STRING packageName,
+                                                       PULONG authenticationPackage)
+    {
+        if (g_OriginalLsaLookupAuthenticationPackage == nullptr)
+        {
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        wchar_t package[32];
+        CopyLsaStringToWide(package, packageName);
+        NTSTATUS status = g_OriginalLsaLookupAuthenticationPackage(lsaHandle, packageName, authenticationPackage);
+        ULONG packageId = SafeReadUlong(authenticationPackage);
+        if (status >= 0 && packageId != 0 && package[0] != L'\0')
+        {
+            StoreLsaPackageName(packageId, package);
+        }
+
+        PublishModuleEvent(ModuleHookOperation::LsaLookupAuthenticationPackage, "LsaLookupAuthenticationPackage",
+                           "sspicli", nullptr, package, CopyWideLength(package),
+                           static_cast<std::uint64_t>(static_cast<ULONG>(status)),
+                           static_cast<std::uint64_t>(packageId),
+                           static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(lsaHandle)), 0);
+        return status;
+    }
+
+    NTSTATUS WINAPI LsaCallAuthenticationPackageHook(HANDLE lsaHandle, ULONG authenticationPackage, PVOID submitBuffer,
+                                                     ULONG submitBufferLength, PVOID *returnBuffer,
+                                                     PULONG returnBufferLength, PNTSTATUS protocolStatus)
+    {
+        if (g_OriginalLsaCallAuthenticationPackage == nullptr)
+        {
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        std::uint32_t messageType = SafeReadFirstU32(submitBuffer, submitBufferLength);
+        NTSTATUS status =
+            g_OriginalLsaCallAuthenticationPackage(lsaHandle, authenticationPackage, submitBuffer, submitBufferLength,
+                                                   returnBuffer, returnBufferLength, protocolStatus);
+        ULONG outputLength = SafeReadUlong(returnBufferLength);
+        NTSTATUS protocol = SafeReadNtStatus(protocolStatus);
+        wchar_t package[32];
+        LookupLsaPackageName(authenticationPackage, package);
+        PublishModuleEvent(ModuleHookOperation::LsaCallAuthenticationPackage, "LsaCallAuthenticationPackage", "sspicli",
+                           nullptr, package, CopyWideLength(package),
+                           static_cast<std::uint64_t>(static_cast<ULONG>(status)),
+                           static_cast<std::uint64_t>(authenticationPackage),
+                           (static_cast<std::uint64_t>(messageType) << 32u) | submitBufferLength,
+                           (static_cast<std::uint64_t>(static_cast<ULONG>(protocol)) << 32u) | outputLength);
+        return status;
+    }
+
+    LONG WINAPI AcquireCredentialsHandleAHook(LPSTR principal, LPSTR package, ULONG credentialUse, PLUID logonId,
+                                              PVOID authData, PVOID getKeyFn, PVOID getKeyArgument, PVOID credential,
+                                              PVOID expiry)
+    {
+        if (g_OriginalAcquireCredentialsHandleA == nullptr)
+        {
+            return SEC_E_INTERNAL_ERROR;
+        }
+
+        wchar_t label[32];
+        CopyRedactedAnsiToWide(label, package);
+        LONG status = g_OriginalAcquireCredentialsHandleA(principal, package, credentialUse, logonId, authData,
+                                                          getKeyFn, getKeyArgument, credential, expiry);
+        PublishModuleEvent(ModuleHookOperation::AcquireCredentialsHandleA, "AcquireCredentialsHandleA", "sspicli",
+                           nullptr, label, CopyWideLength(label),
+                           static_cast<std::uint64_t>(static_cast<ULONG>(status)),
+                           static_cast<std::uint64_t>(credentialUse),
+                           static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(principal)), 0);
+        return status;
+    }
+
+    LONG WINAPI AcquireCredentialsHandleWHook(LPWSTR principal, LPWSTR package, ULONG credentialUse, PLUID logonId,
+                                              PVOID authData, PVOID getKeyFn, PVOID getKeyArgument, PVOID credential,
+                                              PVOID expiry)
+    {
+        if (g_OriginalAcquireCredentialsHandleW == nullptr)
+        {
+            return SEC_E_INTERNAL_ERROR;
+        }
+
+        wchar_t label[32];
+        CopyRedactedWide(label, package);
+        LONG status = g_OriginalAcquireCredentialsHandleW(principal, package, credentialUse, logonId, authData,
+                                                          getKeyFn, getKeyArgument, credential, expiry);
+        PublishModuleEvent(ModuleHookOperation::AcquireCredentialsHandleW, "AcquireCredentialsHandleW", "sspicli",
+                           nullptr, label, CopyWideLength(label),
+                           static_cast<std::uint64_t>(static_cast<ULONG>(status)),
+                           static_cast<std::uint64_t>(credentialUse),
+                           static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(principal)), 0);
+        return status;
+    }
+
+    LONG WINAPI InitializeSecurityContextAHook(PVOID credential, PVOID context, LPSTR targetName, ULONG contextReq,
+                                               ULONG reserved1, ULONG targetDataRep, PVOID input, ULONG reserved2,
+                                               PVOID newContext, PVOID output, PULONG contextAttr, PVOID expiry)
+    {
+        if (g_OriginalInitializeSecurityContextA == nullptr)
+        {
+            return SEC_E_INTERNAL_ERROR;
+        }
+
+        wchar_t label[32];
+        CopyRedactedAnsiToWide(label, targetName);
+        LONG status =
+            g_OriginalInitializeSecurityContextA(credential, context, targetName, contextReq, reserved1, targetDataRep,
+                                                 input, reserved2, newContext, output, contextAttr, expiry);
+        PublishModuleEvent(ModuleHookOperation::InitializeSecurityContextA, "InitializeSecurityContextA", "sspicli",
+                           nullptr, label, CopyWideLength(label),
+                           static_cast<std::uint64_t>(static_cast<ULONG>(status)),
+                           static_cast<std::uint64_t>(contextReq), static_cast<std::uint64_t>(targetDataRep),
+                           static_cast<std::uint64_t>(SafeReadUlong(contextAttr)));
+        return status;
+    }
+
+    LONG WINAPI InitializeSecurityContextWHook(PVOID credential, PVOID context, LPWSTR targetName, ULONG contextReq,
+                                               ULONG reserved1, ULONG targetDataRep, PVOID input, ULONG reserved2,
+                                               PVOID newContext, PVOID output, PULONG contextAttr, PVOID expiry)
+    {
+        if (g_OriginalInitializeSecurityContextW == nullptr)
+        {
+            return SEC_E_INTERNAL_ERROR;
+        }
+
+        wchar_t label[32];
+        CopyRedactedWide(label, targetName);
+        LONG status =
+            g_OriginalInitializeSecurityContextW(credential, context, targetName, contextReq, reserved1, targetDataRep,
+                                                 input, reserved2, newContext, output, contextAttr, expiry);
+        PublishModuleEvent(ModuleHookOperation::InitializeSecurityContextW, "InitializeSecurityContextW", "sspicli",
+                           nullptr, label, CopyWideLength(label),
+                           static_cast<std::uint64_t>(static_cast<ULONG>(status)),
+                           static_cast<std::uint64_t>(contextReq), static_cast<std::uint64_t>(targetDataRep),
+                           static_cast<std::uint64_t>(SafeReadUlong(contextAttr)));
+        return status;
+    }
+
+    LONG WINAPI AcceptSecurityContextHook(PVOID credential, PVOID context, PVOID input, ULONG contextReq,
+                                          ULONG targetDataRep, PVOID newContext, PVOID output, PULONG contextAttr,
+                                          PVOID expiry)
+    {
+        if (g_OriginalAcceptSecurityContext == nullptr)
+        {
+            return SEC_E_INTERNAL_ERROR;
+        }
+
+        LONG status = g_OriginalAcceptSecurityContext(credential, context, input, contextReq, targetDataRep, newContext,
+                                                      output, contextAttr, expiry);
+        wchar_t label[32];
+        CopyLiteralWide(label, L"AcceptSecurityContext");
+        PublishModuleEvent(ModuleHookOperation::AcceptSecurityContext, "AcceptSecurityContext", "sspicli", nullptr,
+                           label, CopyWideLength(label), static_cast<std::uint64_t>(static_cast<ULONG>(status)),
+                           static_cast<std::uint64_t>(contextReq), static_cast<std::uint64_t>(targetDataRep),
+                           static_cast<std::uint64_t>(SafeReadUlong(contextAttr)));
+        return status;
+    }
+
+    BOOL WINAPI CredReadAHook(LPCSTR targetName, DWORD type, DWORD flags, PVOID *credential)
+    {
+        if (g_OriginalCredReadA == nullptr)
+        {
+            return FALSE;
+        }
+
+        wchar_t label[32];
+        CopyRedactedAnsiToWide(label, targetName);
+        BOOL ok = g_OriginalCredReadA(targetName, type, flags, credential);
+        PublishModuleEvent(ModuleHookOperation::CredReadA, "CredReadA", "advapi32", nullptr, label,
+                           CopyWideLength(label), static_cast<std::uint64_t>(ok), static_cast<std::uint64_t>(type),
+                           static_cast<std::uint64_t>(flags), 0);
+        return ok;
+    }
+
+    BOOL WINAPI CredReadWHook(LPCWSTR targetName, DWORD type, DWORD flags, PVOID *credential)
+    {
+        if (g_OriginalCredReadW == nullptr)
+        {
+            return FALSE;
+        }
+
+        wchar_t label[32];
+        CopyRedactedWide(label, targetName);
+        BOOL ok = g_OriginalCredReadW(targetName, type, flags, credential);
+        PublishModuleEvent(ModuleHookOperation::CredReadW, "CredReadW", "advapi32", nullptr, label,
+                           CopyWideLength(label), static_cast<std::uint64_t>(ok), static_cast<std::uint64_t>(type),
+                           static_cast<std::uint64_t>(flags), 0);
+        return ok;
+    }
+
+    BOOL WINAPI CredEnumerateAHook(LPCSTR filter, DWORD flags, DWORD *count, PVOID *credential)
+    {
+        if (g_OriginalCredEnumerateA == nullptr)
+        {
+            return FALSE;
+        }
+
+        wchar_t label[32];
+        CopyRedactedAnsiToWide(label, filter);
+        BOOL ok = g_OriginalCredEnumerateA(filter, flags, count, credential);
+        PublishModuleEvent(ModuleHookOperation::CredEnumerateA, "CredEnumerateA", "advapi32", nullptr, label,
+                           CopyWideLength(label), static_cast<std::uint64_t>(ok), static_cast<std::uint64_t>(flags),
+                           static_cast<std::uint64_t>(SafeReadDword(count)), 0);
+        return ok;
+    }
+
+    BOOL WINAPI CredEnumerateWHook(LPCWSTR filter, DWORD flags, DWORD *count, PVOID *credential)
+    {
+        if (g_OriginalCredEnumerateW == nullptr)
+        {
+            return FALSE;
+        }
+
+        wchar_t label[32];
+        CopyRedactedWide(label, filter);
+        BOOL ok = g_OriginalCredEnumerateW(filter, flags, count, credential);
+        PublishModuleEvent(ModuleHookOperation::CredEnumerateW, "CredEnumerateW", "advapi32", nullptr, label,
+                           CopyWideLength(label), static_cast<std::uint64_t>(ok), static_cast<std::uint64_t>(flags),
+                           static_cast<std::uint64_t>(SafeReadDword(count)), 0);
+        return ok;
+    }
+
+    BOOL WINAPI CredReadDomainCredentialsAHook(PVOID targetInfo, DWORD flags, DWORD *count, PVOID *credential)
+    {
+        if (g_OriginalCredReadDomainCredentialsA == nullptr)
+        {
+            return FALSE;
+        }
+
+        BOOL ok = g_OriginalCredReadDomainCredentialsA(targetInfo, flags, count, credential);
+        wchar_t label[32];
+        CopyLiteralWide(label, L"DomainCredentials");
+        PublishModuleEvent(ModuleHookOperation::CredReadDomainCredentialsA, "CredReadDomainCredentialsA", "advapi32",
+                           nullptr, label, CopyWideLength(label), static_cast<std::uint64_t>(ok),
+                           static_cast<std::uint64_t>(flags), static_cast<std::uint64_t>(SafeReadDword(count)), 0);
+        return ok;
+    }
+
+    BOOL WINAPI CredReadDomainCredentialsWHook(PVOID targetInfo, DWORD flags, DWORD *count, PVOID *credential)
+    {
+        if (g_OriginalCredReadDomainCredentialsW == nullptr)
+        {
+            return FALSE;
+        }
+
+        BOOL ok = g_OriginalCredReadDomainCredentialsW(targetInfo, flags, count, credential);
+        wchar_t label[32];
+        CopyLiteralWide(label, L"DomainCredentials");
+        PublishModuleEvent(ModuleHookOperation::CredReadDomainCredentialsW, "CredReadDomainCredentialsW", "advapi32",
+                           nullptr, label, CopyWideLength(label), static_cast<std::uint64_t>(ok),
+                           static_cast<std::uint64_t>(flags), static_cast<std::uint64_t>(SafeReadDword(count)), 0);
+        return ok;
+    }
+
+    NTSTATUS WINAPI LsaOpenPolicyHook(PLSA_UNICODE_STRING systemName, PLSA_OBJECT_ATTRIBUTES objectAttributes,
+                                      ACCESS_MASK desiredAccess, PLSA_HANDLE policyHandle)
+    {
+        if (g_OriginalLsaOpenPolicy == nullptr)
+        {
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        wchar_t label[32];
+        CopyLsaUnicodeStringToWide(label, systemName);
+        NTSTATUS status = g_OriginalLsaOpenPolicy(systemName, objectAttributes, desiredAccess, policyHandle);
+        PublishModuleEvent(ModuleHookOperation::LsaOpenPolicy, "LsaOpenPolicy", "advapi32", nullptr, label,
+                           CopyWideLength(label), static_cast<std::uint64_t>(static_cast<ULONG>(status)),
+                           static_cast<std::uint64_t>(desiredAccess),
+                           static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(SafeReadPointer(policyHandle))), 0);
+        return status;
+    }
+
+    NTSTATUS WINAPI LsaQueryInformationPolicyHook(LSA_HANDLE policyHandle, POLICY_INFORMATION_CLASS informationClass,
+                                                  PVOID *buffer)
+    {
+        if (g_OriginalLsaQueryInformationPolicy == nullptr)
+        {
+            return STATUS_UNSUCCESSFUL;
+        }
+
+        NTSTATUS status = g_OriginalLsaQueryInformationPolicy(policyHandle, informationClass, buffer);
+        wchar_t label[32];
+        CopyLiteralWide(label, L"LsaPolicy");
+        PublishModuleEvent(ModuleHookOperation::LsaQueryInformationPolicy, "LsaQueryInformationPolicy", "advapi32",
+                           nullptr, label, CopyWideLength(label),
+                           static_cast<std::uint64_t>(static_cast<ULONG>(status)),
+                           static_cast<std::uint64_t>(informationClass),
+                           static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(policyHandle)), 0);
+        return status;
+    }
+
+    DWORD WINAPI VaultEnumerateVaultsHook(DWORD flags, DWORD *count, GUID **vaultGuids)
+    {
+        if (g_OriginalVaultEnumerateVaults == nullptr)
+        {
+            return ERROR_INVALID_FUNCTION;
+        }
+
+        DWORD status = g_OriginalVaultEnumerateVaults(flags, count, vaultGuids);
+        wchar_t label[32];
+        CopyLiteralWide(label, L"Vaults");
+        PublishModuleEvent(ModuleHookOperation::VaultEnumerateVaults, "VaultEnumerateVaults", "vaultcli", nullptr,
+                           label, CopyWideLength(label), static_cast<std::uint64_t>(status),
+                           static_cast<std::uint64_t>(flags), static_cast<std::uint64_t>(SafeReadDword(count)), 0);
+        return status;
+    }
+
+    DWORD WINAPI VaultOpenVaultHook(const GUID *vaultGuid, DWORD flags, HANDLE *vaultHandle)
+    {
+        if (g_OriginalVaultOpenVault == nullptr)
+        {
+            return ERROR_INVALID_FUNCTION;
+        }
+
+        DWORD status = g_OriginalVaultOpenVault(vaultGuid, flags, vaultHandle);
+        wchar_t label[32];
+        if (!TryFormatGuid(vaultGuid, label))
+        {
+            CopyLiteralWide(label, L"Vault");
+        }
+        PublishModuleEvent(ModuleHookOperation::VaultOpenVault, "VaultOpenVault", "vaultcli", nullptr, label,
+                           CopyWideLength(label), static_cast<std::uint64_t>(status), static_cast<std::uint64_t>(flags),
+                           static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(SafeReadPointer(vaultHandle))), 0);
+        return status;
+    }
+
+    DWORD WINAPI VaultEnumerateItemsHook(HANDLE vaultHandle, DWORD flags, DWORD *count, PVOID *items)
+    {
+        if (g_OriginalVaultEnumerateItems == nullptr)
+        {
+            return ERROR_INVALID_FUNCTION;
+        }
+
+        DWORD status = g_OriginalVaultEnumerateItems(vaultHandle, flags, count, items);
+        wchar_t label[32];
+        CopyLiteralWide(label, L"VaultItems");
+        PublishModuleEvent(ModuleHookOperation::VaultEnumerateItems, "VaultEnumerateItems", "vaultcli", nullptr, label,
+                           CopyWideLength(label), static_cast<std::uint64_t>(status), static_cast<std::uint64_t>(flags),
+                           static_cast<std::uint64_t>(SafeReadDword(count)),
+                           static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(vaultHandle)));
+        return status;
+    }
+
+    DWORD WINAPI VaultGetItemHook(HANDLE vaultHandle, const GUID *schemaId, PVOID resource, PVOID identity,
+                                  PVOID packageSid, HWND hwndOwner, DWORD flags, PVOID *item)
+    {
+        if (g_OriginalVaultGetItem == nullptr)
+        {
+            return ERROR_INVALID_FUNCTION;
+        }
+
+        DWORD status =
+            g_OriginalVaultGetItem(vaultHandle, schemaId, resource, identity, packageSid, hwndOwner, flags, item);
+        wchar_t label[32];
+        if (!TryFormatGuid(schemaId, label))
+        {
+            CopyLiteralWide(label, L"VaultItem");
+        }
+        PublishModuleEvent(ModuleHookOperation::VaultGetItem, "VaultGetItem", "vaultcli", nullptr, label,
+                           CopyWideLength(label), static_cast<std::uint64_t>(status), static_cast<std::uint64_t>(flags),
+                           static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(vaultHandle)),
+                           static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(resource)));
+        return status;
+    }
+
+    BOOL WINAPI CryptUnprotectDataHook(DATA_BLOB *dataIn, LPWSTR *dataDescription, DATA_BLOB *optionalEntropy,
+                                       PVOID reserved, CRYPTPROTECT_PROMPTSTRUCT *promptStruct, DWORD flags,
+                                       DATA_BLOB *dataOut)
+    {
+        if (g_OriginalCryptUnprotectData == nullptr)
+        {
+            return FALSE;
+        }
+
+        DWORD promptFlags = 0;
+        if (promptStruct != nullptr)
+        {
+            __try
+            {
+                promptFlags = promptStruct->dwPromptFlags;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                promptFlags = 0;
+            }
+        }
+
+        BOOL ok = g_OriginalCryptUnprotectData(dataIn, dataDescription, optionalEntropy, reserved, promptStruct, flags,
+                                               dataOut);
+        wchar_t label[32];
+        CopyLiteralWide(label, L"DPAPI");
+        PublishModuleEvent(ModuleHookOperation::CryptUnprotectData, "CryptUnprotectData", "crypt32", nullptr, label,
+                           CopyWideLength(label), static_cast<std::uint64_t>(ok), static_cast<std::uint64_t>(flags),
+                           (static_cast<std::uint64_t>(promptFlags) << 32u) |
+                               ((optionalEntropy != nullptr && SafeBlobSize(optionalEntropy) != 0) ? 1ull : 0ull),
+                           static_cast<std::uint64_t>(SafeBlobSize(dataOut)));
+        return ok;
+    }
+
+    LONG WINAPI NCryptUnprotectSecretHook(PVOID *descriptor, DWORD flags, const BYTE *protectedBlob,
+                                          ULONG protectedBlobSize, PVOID memPara, HWND hwnd, BYTE **data,
+                                          ULONG *dataSize)
+    {
+        if (g_OriginalNCryptUnprotectSecret == nullptr)
+        {
+            return ERROR_INVALID_FUNCTION;
+        }
+
+        LONG status = g_OriginalNCryptUnprotectSecret(descriptor, flags, protectedBlob, protectedBlobSize, memPara,
+                                                      hwnd, data, dataSize);
+        wchar_t label[32];
+        CopyLiteralWide(label, L"NCryptSecret");
+        PublishModuleEvent(ModuleHookOperation::NCryptUnprotectSecret, "NCryptUnprotectSecret", "ncrypt", nullptr,
+                           label, CopyWideLength(label), static_cast<std::uint64_t>(static_cast<ULONG>(status)),
+                           static_cast<std::uint64_t>(flags), static_cast<std::uint64_t>(protectedBlobSize),
+                           static_cast<std::uint64_t>(SafeReadUlong(dataSize)));
+        return status;
+    }
+
+    LONG WINAPI NCryptOpenStorageProviderHook(PVOID *provider, LPCWSTR providerName, DWORD flags)
+    {
+        if (g_OriginalNCryptOpenStorageProvider == nullptr)
+        {
+            return ERROR_INVALID_FUNCTION;
+        }
+
+        wchar_t label[32];
+        CopyRedactedWide(label, providerName);
+        LONG status = g_OriginalNCryptOpenStorageProvider(provider, providerName, flags);
+        PublishModuleEvent(ModuleHookOperation::NCryptOpenStorageProvider, "NCryptOpenStorageProvider", "ncrypt",
+                           nullptr, label, CopyWideLength(label),
+                           static_cast<std::uint64_t>(static_cast<ULONG>(status)), static_cast<std::uint64_t>(flags),
+                           static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(SafeReadPointer(provider))), 0);
+        return status;
+    }
+
+    LONG WINAPI NCryptOpenKeyHook(PVOID provider, PVOID *key, LPCWSTR keyName, DWORD legacyKeySpec, DWORD flags)
+    {
+        if (g_OriginalNCryptOpenKey == nullptr)
+        {
+            return ERROR_INVALID_FUNCTION;
+        }
+
+        wchar_t label[32];
+        CopyRedactedWide(label, keyName);
+        LONG status = g_OriginalNCryptOpenKey(provider, key, keyName, legacyKeySpec, flags);
+        PublishModuleEvent(ModuleHookOperation::NCryptOpenKey, "NCryptOpenKey", "ncrypt", nullptr, label,
+                           CopyWideLength(label), static_cast<std::uint64_t>(static_cast<ULONG>(status)),
+                           static_cast<std::uint64_t>(legacyKeySpec), static_cast<std::uint64_t>(flags),
+                           static_cast<std::uint64_t>(reinterpret_cast<ULONG_PTR>(SafeReadPointer(key))));
+        return status;
+    }
+
+    LONG WINAPI NCryptDecryptHook(PVOID key, PBYTE input, DWORD inputSize, PVOID paddingInfo, PBYTE output,
+                                  DWORD outputSize, DWORD *resultSize, DWORD flags)
+    {
+        if (g_OriginalNCryptDecrypt == nullptr)
+        {
+            return ERROR_INVALID_FUNCTION;
+        }
+
+        LONG status =
+            g_OriginalNCryptDecrypt(key, input, inputSize, paddingInfo, output, outputSize, resultSize, flags);
+        wchar_t label[32];
+        CopyLiteralWide(label, L"NCryptDecrypt");
+        PublishModuleEvent(ModuleHookOperation::NCryptDecrypt, "NCryptDecrypt", "ncrypt", nullptr, label,
+                           CopyWideLength(label), static_cast<std::uint64_t>(static_cast<ULONG>(status)),
+                           static_cast<std::uint64_t>(flags), static_cast<std::uint64_t>(inputSize),
+                           static_cast<std::uint64_t>(SafeReadDword(resultSize)));
+        return status;
+    }
+} // namespace
 
 bool KeSetModuleHook(ModuleHookCallback callback) noexcept
 {
@@ -1056,6 +2202,65 @@ void KeRemoveModuleHook() noexcept
     }
 
     g_ActiveCallback = nullptr;
+}
+
+void KeRefreshModuleHooks(HMODULE moduleHandle) noexcept
+{
+    if (moduleHandle == nullptr || g_ActiveCallback == nullptr)
+    {
+        return;
+    }
+
+    for (auto &hook : g_Hooks)
+    {
+        if (hook.Installed)
+        {
+            continue;
+        }
+
+        HMODULE expectedModule = GetModuleHandleW(hook.ModuleName);
+        if (expectedModule == nullptr)
+        {
+            continue;
+        }
+
+        ModuleRange moduleRange{};
+        if (!TryResolveModuleImageRange(expectedModule, moduleRange))
+        {
+            continue;
+        }
+
+        FARPROC exportAddress = GetProcAddress(expectedModule, hook.ExportName);
+        if (exportAddress == nullptr)
+        {
+            continue;
+        }
+
+        hook.TargetAddress = reinterpret_cast<void *>(exportAddress);
+        if (!AddressWithinRange(hook.TargetAddress, moduleRange))
+        {
+            hook.TargetAddress = nullptr;
+            continue;
+        }
+
+        void *redirectTarget = nullptr;
+        if (TryDecodeAbsoluteTarget(hook.TargetAddress, redirectTarget) && redirectTarget != nullptr &&
+            !AddressWithinRange(redirectTarget, moduleRange))
+        {
+            hook.TargetAddress = nullptr;
+            continue;
+        }
+
+        if (!InstallInlineHook(hook.TargetAddress, hook.HookEntry, hook.OriginalBytes, &hook.Trampoline))
+        {
+            hook.TargetAddress = nullptr;
+            hook.Trampoline = nullptr;
+            continue;
+        }
+
+        *hook.OriginalFunction = hook.Trampoline;
+        hook.Installed = true;
+    }
 }
 
 bool KeCheckModuleHookIntegrity(std::uint32_t *mismatchCount) noexcept

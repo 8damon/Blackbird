@@ -65,7 +65,7 @@
                     Content="⇅"
                     Width="22"
                     Height="22"
-                    ToolTip="Reorder ETW/Heuristics panes"
+                    ToolTip="Reorder ETW/Detections panes"
                     Click="EtwBtnReorder_Click"/>
             <Button Grid.Column="5"
                     x:Name="EtwBtnFloat"

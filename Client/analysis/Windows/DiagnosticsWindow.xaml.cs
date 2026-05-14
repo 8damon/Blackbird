@@ -134,8 +134,8 @@ namespace BlackbirdInterface
             AddProjected(projected, "API Graph", ResolveFirst(values, "API Graph"));
             AddProjected(projected, "Driver Service", ResolveFirst(values, "Driver Service"));
             AddProjected(projected, "Controller Service", ResolveFirst(values, "Controller Service"));
+            AddProjected(projected, "Virtualization", ResolveFirst(values, "Virtualization"));
             AddProjected(projected, "HookDLL Presence", ResolveHookDllPresence(values));
-            AddProjected(projected, "Disassembly Engine", ResolveFirst(values, "Disassembly Engine"));
             AddProjected(projected, "Last Fault", ResolveFirst(values, "Last Fault"));
             return projected;
         }
@@ -210,6 +210,11 @@ namespace BlackbirdInterface
             }
 
             string? hooks = ResolveFirst(values, "Usermode Hooks");
+            if (IsDisabledStatus(hooks))
+            {
+                return hooks;
+            }
+
             if (IsGoodStatus(hooks))
             {
                 return hooks;
@@ -342,6 +347,11 @@ namespace BlackbirdInterface
         {
             string? value = ResolveFirst(values, "SR71 Hook Ready");
             string? hooks = ResolveFirst(values, "Usermode Hooks", "HookDLL Hooks Set");
+            if (IsDisabledStatus(hooks))
+            {
+                return hooks;
+            }
+
             if (IsGoodStatus(value) || IsBadStatus(value) || IsDisabledStatus(value))
             {
                 return value;
@@ -371,6 +381,12 @@ namespace BlackbirdInterface
         private static string? ResolveSr71Instrumentation(IReadOnlyDictionary<string, string> values)
         {
             string? value = ResolveFirst(values, "SR71 Instrumentation");
+            string? hooks = ResolveFirst(values, "Usermode Hooks", "HookDLL Hooks Set");
+            if (IsDisabledStatus(hooks))
+            {
+                return hooks;
+            }
+
             if (IsGoodStatus(value) || IsBadStatus(value) || IsDisabledStatus(value))
             {
                 return value;
@@ -382,7 +398,6 @@ namespace BlackbirdInterface
             }
 
             string? hookReady = ResolveSr71HookReady(values);
-            string? hooks = ResolveFirst(values, "Usermode Hooks", "HookDLL Hooks Set");
             if (IsGoodStatus(hookReady) || IsGoodStatus(hooks))
             {
                 return "OK observed via SR71 telemetry";
@@ -394,6 +409,11 @@ namespace BlackbirdInterface
         private static string? ResolveHookDllPresence(IReadOnlyDictionary<string, string> values)
         {
             string? hookState = ResolveFirst(values, "Usermode Hooks");
+            if (IsDisabledStatus(hookState))
+            {
+                return hookState;
+            }
+
             if (!string.IsNullOrWhiteSpace(hookState) &&
                 hookState.Contains("Active", StringComparison.OrdinalIgnoreCase))
             {
@@ -543,6 +563,11 @@ namespace BlackbirdInterface
 
         private void AppendDebugConsoleEntry(DebugConsoleEntry entry)
         {
+            if (DebugConsoleService.ShouldDropPreResumeSr71Entry(entry))
+            {
+                return;
+            }
+
             FeedEntryView parsed = FeedEntryView.FromDebugConsole(entry);
             AppendFeedEntry(_outputFeedEntries, parsed, OutputFeedBox);
 
@@ -561,12 +586,14 @@ namespace BlackbirdInterface
         {
             _controllerFeedEntries.Clear();
             ClearFeedBox(ControllerFeedBox);
-            if (!EnsureControllerLogFile())
+            if (!EnsureControllerLogFile(out string prepareError))
             {
+                string message = string.IsNullOrWhiteSpace(prepareError)
+                                     ? "unable to prepare controller log"
+                                     : $"unable to prepare controller log: {prepareError}";
                 AppendFeedEntry(_controllerFeedEntries,
-                                FeedEntryView.Create(DateTime.Now, FeedLevel.Error, "CONTROLLER",
-                                                     "unable to prepare controller log",
-                                                     "CONTROLLER|ERROR|unable to prepare controller log"),
+                                FeedEntryView.Create(DateTime.Now, FeedLevel.Error, "CONTROLLER", message,
+                                                     $"CONTROLLER|ERROR|{message}"),
                                 ControllerFeedBox);
                 return;
             }
@@ -599,19 +626,23 @@ namespace BlackbirdInterface
                 AppendControllerLines(content);
                 _controllerLogOffset = fs.Length;
             }
-            catch
+            catch (Exception ex)
             {
+                bool accessDenied = ex is UnauthorizedAccessException;
+                string message =
+                    accessDenied ? "controller log is not readable by this session; continuing without controller tail"
+                                 : $"unable to read controller log: {ex.Message}";
                 AppendFeedEntry(_controllerFeedEntries,
-                                FeedEntryView.Create(DateTime.Now, FeedLevel.Error, "CONTROLLER",
-                                                     "unable to read controller log",
-                                                     "CONTROLLER|ERROR|unable to read controller log"),
+                                FeedEntryView.Create(DateTime.Now, accessDenied ? FeedLevel.Warning : FeedLevel.Error,
+                                                     "CONTROLLER", message,
+                                                     $"CONTROLLER|{(accessDenied ? "WARNING" : "ERROR")}|{message}"),
                                 ControllerFeedBox);
             }
         }
 
         private void TailControllerLog()
         {
-            if (!EnsureControllerLogFile())
+            if (!EnsureControllerLogFile(out _))
             {
                 return;
             }
@@ -642,22 +673,43 @@ namespace BlackbirdInterface
             }
         }
 
-        private static bool EnsureControllerLogFile()
+        private static bool EnsureControllerLogFile(out string error)
         {
+            error = string.Empty;
             try
             {
                 string? directory = Path.GetDirectoryName(ControllerLogPath);
-                if (!string.IsNullOrWhiteSpace(directory))
+                if (!string.IsNullOrWhiteSpace(directory) && !Directory.Exists(directory))
                 {
-                    Directory.CreateDirectory(directory);
+                    try
+                    {
+                        Directory.CreateDirectory(directory);
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                        return true;
+                    }
                 }
 
-                using FileStream _ = new FileStream(ControllerLogPath, FileMode.OpenOrCreate, FileAccess.ReadWrite,
-                                                    FileShare.ReadWrite | FileShare.Delete);
+                if (!File.Exists(ControllerLogPath))
+                {
+                    try
+                    {
+                        using FileStream _ =
+                            new FileStream(ControllerLogPath, FileMode.OpenOrCreate, FileAccess.ReadWrite,
+                                           FileShare.ReadWrite | FileShare.Delete);
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                        return true;
+                    }
+                }
+
                 return true;
             }
-            catch
+            catch (Exception ex)
             {
+                error = $"{ex.GetType().Name}: {ex.Message}";
                 return false;
             }
         }
@@ -1015,7 +1067,7 @@ namespace BlackbirdInterface
 
                                            "ETW Status" or "Signature Intel" or "Capture Store" or "RuntimeConfig" or
                                            "PID Coverage" or "Driver Queue" or "Tempus" or "API Graph" or
-                                           "Disassembly Engine" or "Last Fault" => DiagnosticsDomain.Capture,
+                                           "Last Fault" => DiagnosticsDomain.Capture,
 
                                            _ => DiagnosticsDomain.Other };
             }
@@ -1047,7 +1099,7 @@ namespace BlackbirdInterface
                                            "API Graph" => 22,
                                            "Driver Service" => 23,
                                            "Controller Service" => 24,
-                                           "Disassembly Engine" => 25,
+                                           "Virtualization" => 25,
                                            "Last Fault" => 26,
                                            _ => 100 };
             }

@@ -1,0 +1,146 @@
+<UserControl x:Class="BlackbirdInterface.ProcessRelationsPane"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource WinPanelBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Background="{DynamicResource ProcessRelationsHeaderBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="160"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       Margin="10,0,8,0"
+                       VerticalAlignment="Center"
+                       FontWeight="SemiBold"
+                       FontSize="12"
+                       Text="Process Relations"/>
+
+            <ComboBox x:Name="RelationFilter"
+                      Grid.Column="1"
+                      Width="152"
+                      Height="24"
+                      Margin="2,4,6,4"
+                      VerticalAlignment="Center"
+                      Background="{DynamicResource WinHeaderBrush}"
+                      BorderBrush="{DynamicResource WinBorderBrush}"
+                      Style="{StaticResource PaneFilterComboStyle}"
+                      ItemContainerStyle="{StaticResource PaneFilterComboItemStyle}"
+                      SelectionChanged="RelationFilter_SelectionChanged">
+                <ComboBoxItem Content="ALL RELATIONS" IsSelected="True"/>
+                <ComboBoxItem Content="PROCESSCREATE"/>
+                <ComboBoxItem Content="THREADCREATE"/>
+                <ComboBoxItem Content="HANDLE"/>
+                <ComboBoxItem Content="HIGH+"/>
+            </ComboBox>
+
+            <Button Grid.Column="2"
+                    x:Name="RelationsBtnInspect"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="↗"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Open relations inspector"
+                    Click="RelationsBtnInspect_Click"/>
+            <Button Grid.Column="3"
+                    x:Name="RelationsBtnClose"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="✕"
+                    Width="22"
+                    Height="22"
+                    Margin="4,4,6,4"
+                    ToolTip="Hide pane"
+                    Click="RelationsBtnClose_Click"/>
+        </Grid>
+
+        <Border Grid.Row="1"
+                Margin="0"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="0">
+            <Grid>
+                <DataGrid x:Name="RelationsGrid"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          BorderThickness="0"
+                          GridLinesVisibility="None"
+                          HorizontalGridLinesBrush="Transparent"
+                          VerticalGridLinesBrush="Transparent"
+                          CanUserResizeRows="False"
+                          ColumnHeaderHeight="24"
+                          RowHeight="22"
+                          ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                          PreviewMouseRightButtonDown="RelationsGrid_PreviewMouseRightButtonDown"
+                          MouseDoubleClick="RelationsGrid_MouseDoubleClick">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Inspect Relation" Click="RelationsContextInspect_Click"/>
+                            <Separator/>
+                            <MenuItem Header="Copy Summary" Click="RelationsContextCopySummary_Click"/>
+                            <MenuItem Header="Copy Details" Click="RelationsContextCopyDetails_Click"/>
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow">
+                            <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Severity}" Value="Critical">
+                                    <Setter Property="Background" Value="#295E1E1E"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Severity}" Value="High">
+                                    <Setter Property="Background" Value="#255A1D1D"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Severity}" Value="Medium">
+                                    <Setter Property="Background" Value="#1F5C3A1A"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Severity}" Value="Low">
+                                    <Setter Property="Background" Value="#1C4C4217"/>
+                                </DataTrigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="#3A4A4A4A"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.RowStyle>
+                    <DataGrid.CellStyle>
+                        <Style TargetType="DataGridCell">
+                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="Background" Value="Transparent"/>
+                        </Style>
+                    </DataGrid.CellStyle>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Event" Width="170" Binding="{Binding Event}"/>
+                        <DataGridTextColumn Header="Severity" Width="76" Binding="{Binding Severity}"/>
+                        <DataGridTextColumn Header="Hits" Width="60" Binding="{Binding Hits}"/>
+                        <DataGridTextColumn Header="Last Seen" Width="82" Binding="{Binding LastSeenUtc, StringFormat={}{0:HH:mm:ss}}"/>
+                        <DataGridTextColumn Header="Detection" Width="*" Binding="{Binding Detection}"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <Border x:Name="NoDataOverlay"
+                        Background="{DynamicResource NoDataOverlayBrush}"
+                        IsHitTestVisible="False"
+                        Visibility="Collapsed">
+                    <TextBlock Text="NO DATA"
+                               FontSize="40"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource WinTextBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Opacity="0.72"/>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

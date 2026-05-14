@@ -1,0 +1,317 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Color x:Key="WinBgColor">#FFF5F3EF</Color>
+    <Color x:Key="WinPanelColor">#FFFDFBF7</Color>
+    <Color x:Key="WinHeaderColor">#FFEAE4DC</Color>
+    <Color x:Key="PaneBorderColor">#FFB8ADA2</Color>
+    <Color x:Key="WinBorderColor">#FFD0C5B9</Color>
+    <Color x:Key="WinSubtleBorderColor">#FFE1D8CF</Color>
+    <Color x:Key="WinTextColor">#FF1F1C18</Color>
+    <Color x:Key="WinMutedTextColor">#FF6E655D</Color>
+    <Color x:Key="WinAccentColor">#FF9A2F23</Color>
+    <Color x:Key="InputHoverBorderColor">#FF8F7F72</Color>
+    <Color x:Key="CommandBarBackgroundColor">#FFF2EEE8</Color>
+    <Color x:Key="CommandBarPanelColor">#FFF8F4EE</Color>
+    <Color x:Key="CommandBarButtonColor">#FFF5F1EA</Color>
+    <Color x:Key="StatusConnectedColor">#FF2D8A4B</Color>
+    <Color x:Key="StatusFailedColor">#FFBC6F1E</Color>
+    <Color x:Key="StatusBarNeutralColor">#FFF0EBE4</Color>
+    <Color x:Key="StatusBarFailedColor">#FFF4E4D6</Color>
+
+    <Color x:Key="EventsHeaderColor">#FFD8D3CC</Color>
+    <Color x:Key="EventsHeaderButtonColor">#FFD8C4AF</Color>
+    <Color x:Key="PerformanceHeaderColor">#FFDCE7DA</Color>
+    <Color x:Key="PerformanceHeaderAccentColor">#FF6C9B63</Color>
+    <Color x:Key="EtwHeaderColor">#FFE7D9C7</Color>
+    <Color x:Key="EtwFeedHeaderColor">#FFE8D3BC</Color>
+    <Color x:Key="EtwTiHeaderColor">#FFE4D0BC</Color>
+    <Color x:Key="HeuristicsHeaderColor">#FFE7D5D5</Color>
+    <Color x:Key="FilesystemHeaderColor">#FFD7E5E1</Color>
+    <Color x:Key="RegistryHeaderColor">#FFE0D9EA</Color>
+    <Color x:Key="ProcessRelationsHeaderColor">#FFE9E2C9</Color>
+    <Color x:Key="MessageBoxBgColor">#FFF8F5F0</Color>
+    <Color x:Key="MessageBoxTextColor">#FF1F1C18</Color>
+    <Color x:Key="MessageBoxMutedTextColor">#FF70685E</Color>
+    <Color x:Key="ProcessRowDefaultForegroundColor">#FF201D18</Color>
+    <Color x:Key="ProcessRowUnsignedBackgroundColor">#33D6A8A8</Color>
+    <Color x:Key="ProcessRowUnsignedBorderColor">#FFB95F5F</Color>
+    <Color x:Key="ProcessRowUnsignedForegroundColor">#FF4D1717</Color>
+    <Color x:Key="ProcessRowAppContainerBackgroundColor">#336B89D8</Color>
+    <Color x:Key="ProcessRowAppContainerBorderColor">#FF6F88D9</Color>
+    <Color x:Key="ProcessRowAppContainerForegroundColor">#FF18213B</Color>
+    <Color x:Key="ProcessRowLowIntegrityBackgroundColor">#33D8C070</Color>
+    <Color x:Key="ProcessRowLowIntegrityBorderColor">#FFB18D31</Color>
+    <Color x:Key="ProcessRowElevatedBackgroundColor">#335D83B4</Color>
+    <Color x:Key="ProcessRowElevatedBorderColor">#FF6286B1</Color>
+    <Color x:Key="ProcessRowSystemBackgroundColor">#22989898</Color>
+    <Color x:Key="ProcessRowSystemBorderColor">#887E7E7E</Color>
+    <Color x:Key="ProcessRowSystemForegroundColor">#FF484848</Color>
+    <Color x:Key="LaneRowEnabledColor">#223EAD59</Color>
+    <Color x:Key="LaneRowDisabledColor">#22C87C7C</Color>
+
+    <Color x:Key="MemoryThreadStackBackgroundColor">#FFE1EEF8</Color>
+    <Color x:Key="MemoryThreadStackForegroundColor">#FF143B5A</Color>
+    <Color x:Key="MemoryHeapBackgroundColor">#FFE7F0DE</Color>
+    <Color x:Key="MemoryHeapForegroundColor">#FF2A5422</Color>
+    <Color x:Key="MemoryAnchorBackgroundColor">#FFF3E5D7</Color>
+    <Color x:Key="MemoryAnchorForegroundColor">#FF6C3E0E</Color>
+    <Color x:Key="MemoryRuntimeBackgroundColor">#FFE7E0F6</Color>
+    <Color x:Key="MemoryRuntimeForegroundColor">#FF4C2F78</Color>
+    <Color x:Key="MemoryPrivateUnsignedBackgroundColor">#FFF4DED0</Color>
+    <Color x:Key="MemoryPrivateUnsignedForegroundColor">#FF6D3411</Color>
+    <Color x:Key="MemoryPrivateExecutableBackgroundColor">#FFF7DDDD</Color>
+    <Color x:Key="MemoryPrivateExecutableForegroundColor">#FF6A1E1E</Color>
+    <Color x:Key="MemoryPrivateBackgroundColor">#FFE2E8F7</Color>
+    <Color x:Key="MemoryPrivateForegroundColor">#FF1E3968</Color>
+    <Color x:Key="MemoryUnsignedBackgroundColor">#FFF5E7CD</Color>
+    <Color x:Key="MemoryUnsignedForegroundColor">#FF6D4E09</Color>
+    <Color x:Key="MemoryImageBackgroundColor">#FFE3F0D8</Color>
+    <Color x:Key="MemoryImageForegroundColor">#FF345E1F</Color>
+    <Color x:Key="MemoryMappedBackgroundColor">#FFE7E1F5</Color>
+    <Color x:Key="MemoryMappedForegroundColor">#FF48346D</Color>
+
+    <SolidColorBrush x:Key="PaneBorderBrush" Color="{StaticResource PaneBorderColor}"/>
+    <SolidColorBrush x:Key="WinBgBrush" Color="{StaticResource WinBgColor}"/>
+    <SolidColorBrush x:Key="WinPanelBrush" Color="{StaticResource WinPanelColor}"/>
+    <SolidColorBrush x:Key="WinHeaderBrush" Color="{StaticResource WinHeaderColor}"/>
+    <SolidColorBrush x:Key="WinBorderBrush" Color="{StaticResource WinBorderColor}"/>
+    <SolidColorBrush x:Key="WinSubtleBorderBrush" Color="{StaticResource WinSubtleBorderColor}"/>
+    <SolidColorBrush x:Key="WinTextBrush" Color="{StaticResource WinTextColor}"/>
+    <SolidColorBrush x:Key="WinMutedTextBrush" Color="{StaticResource WinMutedTextColor}"/>
+    <SolidColorBrush x:Key="WinAccentBrush" Color="{StaticResource WinAccentColor}"/>
+    <SolidColorBrush x:Key="InputHoverBorderBrush" Color="{StaticResource InputHoverBorderColor}"/>
+    <SolidColorBrush x:Key="CommandBarBackgroundBrush" Color="{StaticResource CommandBarBackgroundColor}"/>
+    <SolidColorBrush x:Key="CommandBarPanelBrush" Color="{StaticResource CommandBarPanelColor}"/>
+    <SolidColorBrush x:Key="CommandBarButtonBrush" Color="{StaticResource CommandBarButtonColor}"/>
+    <SolidColorBrush x:Key="StatusConnectedBrush" Color="{StaticResource StatusConnectedColor}"/>
+    <SolidColorBrush x:Key="StatusFailedBrush" Color="{StaticResource StatusFailedColor}"/>
+    <SolidColorBrush x:Key="StatusBarNeutralBrush" Color="{StaticResource StatusBarNeutralColor}"/>
+    <SolidColorBrush x:Key="StatusBarFailedBrush" Color="{StaticResource StatusBarFailedColor}"/>
+    <SolidColorBrush x:Key="EventsHeaderBrush" Color="{StaticResource EventsHeaderColor}"/>
+    <SolidColorBrush x:Key="EventsHeaderButtonBrush" Color="{StaticResource EventsHeaderButtonColor}"/>
+    <SolidColorBrush x:Key="PerformanceHeaderBrush" Color="{StaticResource PerformanceHeaderColor}"/>
+    <SolidColorBrush x:Key="PerformanceHeaderAccentBrush" Color="{StaticResource PerformanceHeaderAccentColor}"/>
+    <SolidColorBrush x:Key="EtwHeaderBrush" Color="{StaticResource EtwHeaderColor}"/>
+    <SolidColorBrush x:Key="EtwFeedHeaderBrush" Color="{StaticResource EtwFeedHeaderColor}"/>
+    <SolidColorBrush x:Key="EtwTiHeaderBrush" Color="{StaticResource EtwTiHeaderColor}"/>
+    <SolidColorBrush x:Key="HeuristicsHeaderBrush" Color="{StaticResource HeuristicsHeaderColor}"/>
+    <SolidColorBrush x:Key="FilesystemHeaderBrush" Color="{StaticResource FilesystemHeaderColor}"/>
+    <SolidColorBrush x:Key="RegistryHeaderBrush" Color="{StaticResource RegistryHeaderColor}"/>
+    <SolidColorBrush x:Key="ProcessRelationsHeaderBrush" Color="{StaticResource ProcessRelationsHeaderColor}"/>
+    <SolidColorBrush x:Key="MessageBoxBgBrush" Color="{StaticResource MessageBoxBgColor}"/>
+    <SolidColorBrush x:Key="MessageBoxTextBrush" Color="{StaticResource MessageBoxTextColor}"/>
+    <SolidColorBrush x:Key="MessageBoxMutedTextBrush" Color="{StaticResource MessageBoxMutedTextColor}"/>
+    <SolidColorBrush x:Key="ProcessRowDefaultForegroundBrush" Color="{StaticResource ProcessRowDefaultForegroundColor}"/>
+    <SolidColorBrush x:Key="ProcessRowUnsignedBackgroundBrush" Color="{StaticResource ProcessRowUnsignedBackgroundColor}"/>
+    <SolidColorBrush x:Key="ProcessRowUnsignedBorderBrush" Color="{StaticResource ProcessRowUnsignedBorderColor}"/>
+    <SolidColorBrush x:Key="ProcessRowUnsignedForegroundBrush" Color="{StaticResource ProcessRowUnsignedForegroundColor}"/>
+    <SolidColorBrush x:Key="ProcessRowAppContainerBackgroundBrush" Color="{StaticResource ProcessRowAppContainerBackgroundColor}"/>
+    <SolidColorBrush x:Key="ProcessRowAppContainerBorderBrush" Color="{StaticResource ProcessRowAppContainerBorderColor}"/>
+    <SolidColorBrush x:Key="ProcessRowAppContainerForegroundBrush" Color="{StaticResource ProcessRowAppContainerForegroundColor}"/>
+    <SolidColorBrush x:Key="ProcessRowLowIntegrityBackgroundBrush" Color="{StaticResource ProcessRowLowIntegrityBackgroundColor}"/>
+    <SolidColorBrush x:Key="ProcessRowLowIntegrityBorderBrush" Color="{StaticResource ProcessRowLowIntegrityBorderColor}"/>
+    <SolidColorBrush x:Key="ProcessRowElevatedBackgroundBrush" Color="{StaticResource ProcessRowElevatedBackgroundColor}"/>
+    <SolidColorBrush x:Key="ProcessRowElevatedBorderBrush" Color="{StaticResource ProcessRowElevatedBorderColor}"/>
+    <SolidColorBrush x:Key="ProcessRowSystemBackgroundBrush" Color="{StaticResource ProcessRowSystemBackgroundColor}"/>
+    <SolidColorBrush x:Key="ProcessRowSystemBorderBrush" Color="{StaticResource ProcessRowSystemBorderColor}"/>
+    <SolidColorBrush x:Key="ProcessRowSystemForegroundBrush" Color="{StaticResource ProcessRowSystemForegroundColor}"/>
+    <SolidColorBrush x:Key="LaneRowEnabledBrush" Color="{StaticResource LaneRowEnabledColor}"/>
+    <SolidColorBrush x:Key="LaneRowDisabledBrush" Color="{StaticResource LaneRowDisabledColor}"/>
+
+    <SolidColorBrush x:Key="MemoryThreadStackBackgroundBrush" Color="{StaticResource MemoryThreadStackBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryThreadStackForegroundBrush" Color="{StaticResource MemoryThreadStackForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryHeapBackgroundBrush" Color="{StaticResource MemoryHeapBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryHeapForegroundBrush" Color="{StaticResource MemoryHeapForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryAnchorBackgroundBrush" Color="{StaticResource MemoryAnchorBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryAnchorForegroundBrush" Color="{StaticResource MemoryAnchorForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryRuntimeBackgroundBrush" Color="{StaticResource MemoryRuntimeBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryRuntimeForegroundBrush" Color="{StaticResource MemoryRuntimeForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryPrivateUnsignedBackgroundBrush" Color="{StaticResource MemoryPrivateUnsignedBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryPrivateUnsignedForegroundBrush" Color="{StaticResource MemoryPrivateUnsignedForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryPrivateExecutableBackgroundBrush" Color="{StaticResource MemoryPrivateExecutableBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryPrivateExecutableForegroundBrush" Color="{StaticResource MemoryPrivateExecutableForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryPrivateBackgroundBrush" Color="{StaticResource MemoryPrivateBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryPrivateForegroundBrush" Color="{StaticResource MemoryPrivateForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryUnsignedBackgroundBrush" Color="{StaticResource MemoryUnsignedBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryUnsignedForegroundBrush" Color="{StaticResource MemoryUnsignedForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryImageBackgroundBrush" Color="{StaticResource MemoryImageBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryImageForegroundBrush" Color="{StaticResource MemoryImageForegroundColor}"/>
+    <SolidColorBrush x:Key="MemoryMappedBackgroundBrush" Color="{StaticResource MemoryMappedBackgroundColor}"/>
+    <SolidColorBrush x:Key="MemoryMappedForegroundBrush" Color="{StaticResource MemoryMappedForegroundColor}"/>
+
+    <SolidColorBrush x:Key="ExplorerPreviewBackgroundBrush" Color="#FFF1ECE4"/>
+    <SolidColorBrush x:Key="ExplorerOverlayBrush" Color="#CCF5F0EA"/>
+    <SolidColorBrush x:Key="NoDataOverlayBrush" Color="#80F0EBE4"/>
+
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#FFFDFBF7"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#FF1F1C18"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#FFCFDCEE"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FF102235"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="#FFF3EFE8"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#FF1F1C18"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlLightBrushKey}" Color="#FFFBF7F1"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlLightLightBrushKey}" Color="#FFFFFFFF"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlDarkBrushKey}" Color="#FFE0D6CC"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlDarkDarkBrushKey}" Color="#FFD2C7BC"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuBrushKey}" Color="#FFF7F2EB"/>
+    <SolidColorBrush x:Key="{x:Static SystemColors.MenuTextBrushKey}" Color="#FF1F1C18"/>
+
+    <FontFamily x:Key="AppUiFontFamily">Segoe UI Variable Text, Segoe UI, Aptos</FontFamily>
+    <FontFamily x:Key="AppMonoFontFamily">Cascadia Mono, Cascadia Code, Consolas</FontFamily>
+
+    <Style TargetType="Window">
+        <Setter Property="Background" Value="{StaticResource WinBgBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource WinTextBrush}"/>
+        <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/>
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display"/>
+        <Setter Property="UseLayoutRounding" Value="True"/>
+        <Setter Property="SnapsToDevicePixels" Value="True"/>
+    </Style>
+
+    <Style TargetType="Control">
+        <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/>
+    </Style>
+
+    <Style TargetType="ToolTip">
+        <Setter Property="Background" Value="{StaticResource WinPanelBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource WinTextBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource WinBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="6"/>
+    </Style>
+
+    <Style TargetType="Button">
+        <Setter Property="Background" Value="{StaticResource WinHeaderBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource WinTextBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource WinBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="10,4"/>
+        <Setter Property="Margin" Value="4,0"/>
+        <Setter Property="MinWidth" Value="70"/>
+        <Setter Property="MinHeight" Value="24"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="0">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Margin="{TemplateBinding Padding}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Background" Value="#FFF1E7DA"/>
+                            <Setter Property="BorderBrush" Value="#FF8F7F72"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter Property="Background" Value="#FFE7DDD0"/>
+                            <Setter Property="BorderBrush" Value="{StaticResource WinAccentBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="CheckBox">
+        <Setter Property="Foreground" Value="{StaticResource WinTextBrush}"/>
+        <Setter Property="Margin" Value="0"/>
+        <Setter Property="Padding" Value="0,1,0,1"/>
+        <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <BulletDecorator Background="Transparent" SnapsToDevicePixels="True">
+                        <BulletDecorator.Bullet>
+                            <Border x:Name="CheckBorder"
+                                    Width="16"
+                                    Height="16"
+                                    Margin="0,0,12,0"
+                                    VerticalAlignment="Center"
+                                    Background="#FFF8F3EC"
+                                    BorderBrush="{StaticResource WinBorderBrush}"
+                                    BorderThickness="1">
+                                <Path x:Name="CheckMark"
+                                      Width="9"
+                                      Height="7"
+                                      Stretch="Fill"
+                                      Stroke="{StaticResource WinTextBrush}"
+                                      StrokeThickness="1.6"
+                                      Data="M 0 3.5 L 3 6.5 L 9 0.5"
+                                      Visibility="Collapsed"/>
+                            </Border>
+                        </BulletDecorator.Bullet>
+                        <ContentPresenter VerticalAlignment="Center"
+                                          Margin="0,1,0,0"
+                                          RecognizesAccessKey="True"/>
+                    </BulletDecorator>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="CheckBorder" Property="BorderBrush" Value="{StaticResource WinAccentBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="CheckBorder" Property="Background" Value="#FFF4E8DA"/>
+                            <Setter TargetName="CheckBorder" Property="BorderBrush" Value="{StaticResource WinAccentBrush}"/>
+                            <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.55"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ProgressBar">
+        <Setter Property="Background" Value="#FFEAE3D8"/>
+        <Setter Property="Foreground" Value="#FF4C8E67"/>
+        <Setter Property="BorderBrush" Value="#FFC3B7A8"/>
+        <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+
+    <Style TargetType="ToggleButton">
+        <Setter Property="Background" Value="{StaticResource WinHeaderBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource WinTextBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource WinBorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="10,4"/>
+        <Setter Property="Margin" Value="4,0"/>
+        <Setter Property="MinWidth" Value="70"/>
+        <Setter Property="MinHeight" Value="24"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="ToggleRoot"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="0">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Margin="{TemplateBinding Padding}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="ToggleRoot" Property="Background" Value="#FFF1E7DA"/>
+                            <Setter TargetName="ToggleRoot" Property="BorderBrush" Value="#FF8F7F72"/>
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="ToggleRoot" Property="Background" Value="#FFE7DDD0"/>
+                            <Setter TargetName="ToggleRoot" Property="BorderBrush" Value="{StaticResource WinAccentBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.5"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>

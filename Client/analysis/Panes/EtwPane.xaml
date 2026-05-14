@@ -1,0 +1,141 @@
+<UserControl x:Class="BlackbirdInterface.EtwPane"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource WinPanelBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Background="{DynamicResource EtwHeaderBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="156"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Column="0"
+                       Margin="10,0,8,0"
+                       VerticalAlignment="Center"
+                       FontWeight="SemiBold"
+                       FontSize="12"
+                       Text="ETW Feed"/>
+
+            <TextBlock x:Name="SummaryBlock"
+                       Grid.Column="1"
+                       Margin="0,0,8,0"
+                       VerticalAlignment="Center"
+                       Visibility="Collapsed"
+                       Foreground="{DynamicResource WinMutedTextBrush}"
+                       Text="No ETW events yet"/>
+
+            <ComboBox x:Name="FeedFilter"
+                      Grid.Column="2"
+                      Width="148"
+                      Height="24"
+                      Margin="2,4,6,4"
+                      VerticalAlignment="Center"
+                      Background="{DynamicResource WinHeaderBrush}"
+                      BorderBrush="{DynamicResource WinBorderBrush}"
+                      Style="{StaticResource PaneFilterComboStyle}"
+                      ItemContainerStyle="{StaticResource PaneFilterComboItemStyle}"
+                      SelectionChanged="FeedFilter_SelectionChanged">
+                <ComboBoxItem Content="ALL FEEDS" IsSelected="True"/>
+                <ComboBoxItem Content="THREATINTEL"/>
+                <ComboBoxItem Content="DETECTION"/>
+                <ComboBoxItem Content="PROCESS/THREAD"/>
+            </ComboBox>
+
+            <Button Grid.Column="3"
+                    x:Name="EtwBtnInspect"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="↗"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Open ETW inspector"
+                    Click="EtwBtnInspect_Click"/>
+            <Button Grid.Column="4"
+                    x:Name="EtwBtnReorder"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="⇅"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Reorder ETW/Detections panes"
+                    Click="EtwBtnReorder_Click"/>
+            <Button Grid.Column="5"
+                    x:Name="EtwBtnFloat"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="⧉"
+                    Width="22"
+                    Height="22"
+                    ToolTip="Float / re-dock pane"
+                    Click="EtwBtnFloat_Click"/>
+            <Button Grid.Column="6"
+                    x:Name="EtwBtnClose"
+                    Style="{DynamicResource PaneIconButtonStyle}"
+                    Content="✕"
+                    Width="22"
+                    Height="22"
+                    Margin="4,4,6,4"
+                    ToolTip="Hide pane"
+                    Click="EtwBtnClose_Click"/>
+        </Grid>
+
+        <Border Grid.Row="1"
+                Margin="0"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="0">
+            <Grid>
+                <DataGrid x:Name="EventsGrid"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          BorderThickness="0"
+                          GridLinesVisibility="None"
+                          HorizontalGridLinesBrush="Transparent"
+                          VerticalGridLinesBrush="Transparent"
+                          CanUserResizeRows="False"
+                          ColumnHeaderHeight="24"
+                          RowHeight="22"
+                          ScrollViewer.VerticalScrollBarVisibility="Hidden"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                          PreviewMouseRightButtonDown="EventsGrid_PreviewMouseRightButtonDown"
+                          MouseDoubleClick="EventsGrid_MouseDoubleClick">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Inspect Group" Click="EventsContextInspect_Click"/>
+                            <Separator/>
+                            <MenuItem Header="Copy Summary" Click="EventsContextCopySummary_Click"/>
+                            <MenuItem Header="Copy Details" Click="EventsContextCopyDetails_Click"/>
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Event" Width="260" Binding="{Binding Event}"/>
+                        <DataGridTextColumn Header="Severity" Width="92" Binding="{Binding Severity}"/>
+                        <DataGridTextColumn Header="Hits" Width="72" Binding="{Binding Hits}"/>
+                        <DataGridTextColumn Header="Detection" Width="*" Binding="{Binding Detection}"/>
+                        <DataGridTextColumn Header="Arguments" Width="280" Binding="{Binding ArgumentPreview}"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <Border x:Name="NoDataOverlay"
+                        Background="{DynamicResource NoDataOverlayBrush}"
+                        IsHitTestVisible="False"
+                        Visibility="Collapsed">
+                    <TextBlock Text="NO DATA"
+                               FontSize="40"
+                               FontWeight="Bold"
+                               Foreground="{DynamicResource WinTextBrush}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Opacity="0.72"/>
+                </Border>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>
+

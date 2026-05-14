@@ -1,0 +1,375 @@
+<Window x:Class="BlackbirdInterface.DiagnosticsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Diagnostics"
+        Height="900"
+        Width="1600"
+        MinHeight="760"
+        MinWidth="1360"
+        WindowState="Maximized"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="CanResize"
+        Background="{DynamicResource WinBgBrush}">
+
+    <Window.Resources>
+        <DataTemplate x:Key="DiagnosticCardTemplate">
+            <Border Margin="0,0,0,10"
+                    Padding="12,10"
+                    BorderThickness="1"
+                    BorderBrush="{Binding BorderBrush}"
+                    Background="{Binding Background}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0"
+                            Width="9"
+                            Height="9"
+                            Margin="0,5,10,0"
+                            VerticalAlignment="Top"
+                            CornerRadius="4.5"
+                            Background="{Binding StatusDotBrush}"/>
+                    <StackPanel Grid.Column="1">
+                        <DockPanel LastChildFill="False">
+                            <TextBlock DockPanel.Dock="Left"
+                                       Text="{Binding Key}"
+                                       FontSize="12"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource WinTextBrush}"/>
+                            <Border DockPanel.Dock="Right"
+                                    Padding="7,2"
+                                    Margin="8,0,0,0"
+                                    BorderBrush="{Binding BorderBrush}"
+                                    BorderThickness="1"
+                                    Background="#22000000">
+                                <TextBlock Text="{Binding StatusLabel}"
+                                           FontSize="10"
+                                           FontWeight="SemiBold"
+                                           Foreground="{Binding Foreground}"/>
+                            </Border>
+                        </DockPanel>
+                        <TextBlock Text="{Binding DomainLabel}"
+                                   Margin="0,4,0,0"
+                                   FontSize="10"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                        <TextBlock Text="{Binding Value}"
+                                   Margin="0,6,0,0"
+                                   FontSize="13"
+                                   TextWrapping="Wrap"
+                                   Foreground="{Binding Foreground}"/>
+                        <TextBlock Margin="0,6,0,0"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"
+                                   Text="{Binding Guidance}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <Style x:Key="BoardColumnBorderStyle" TargetType="Border">
+            <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Background" Value="#FF101010"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+
+        <Style x:Key="BoardColumnHeaderStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource WinSubtleBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="Padding" Value="12,10"/>
+        </Style>
+
+        <Style x:Key="FeedRichTextBoxStyle" TargetType="RichTextBox">
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="#FF101010"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="IsDocumentEnabled" Value="True"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="HorizontalScrollBarVisibility" Value="Auto"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="14,0,14,14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Background="{DynamicResource WinHeaderBrush}"
+                Padding="12,8"
+                Margin="0,0,0,12"
+                MouseLeftButtonDown="Root_MouseLeftButtonDown">
+            <DockPanel LastChildFill="False">
+                <StackPanel DockPanel.Dock="Left"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center">
+                    <TextBlock Text="Diagnostics"
+                               FontSize="15"
+                               FontWeight="SemiBold"/>
+                    <Border Margin="12,0,0,0"
+                            Padding="10,3"
+                            BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                            BorderThickness="1"
+                            Background="{DynamicResource WinPanelBrush}">
+                        <TextBlock x:Name="TargetBlock"
+                                   VerticalAlignment="Center"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                    </Border>
+                </StackPanel>
+                <Button DockPanel.Dock="Right"
+                        Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
+                        Content="&#xE8BB;"
+                        Tag="Close"
+                        ToolTip="Close"
+                        Click="Close_Click"/>
+            </DockPanel>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.05*"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="1.05*"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="1.05*"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="1.05*"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="1.5*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Style="{StaticResource BoardColumnBorderStyle}">
+                <DockPanel LastChildFill="True">
+                    <Border DockPanel.Dock="Top" Style="{StaticResource BoardColumnHeaderStyle}">
+                        <TextBlock Text="Problems" FontSize="13" FontWeight="SemiBold"/>
+                    </Border>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12,12,12,2">
+                        <ItemsControl x:Name="ProblemItemsControl"
+                                      ItemTemplate="{StaticResource DiagnosticCardTemplate}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+
+            <Border Grid.Column="2" Style="{StaticResource BoardColumnBorderStyle}">
+                <DockPanel LastChildFill="True">
+                    <Border DockPanel.Dock="Top" Style="{StaticResource BoardColumnHeaderStyle}">
+                        <TextBlock Text="Disabled" FontSize="13" FontWeight="SemiBold"/>
+                    </Border>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12,12,12,2">
+                        <ItemsControl x:Name="DisabledItemsControl"
+                                      ItemTemplate="{StaticResource DiagnosticCardTemplate}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+
+            <Border Grid.Column="4" Style="{StaticResource BoardColumnBorderStyle}">
+                <DockPanel LastChildFill="True">
+                    <Border DockPanel.Dock="Top" Style="{StaticResource BoardColumnHeaderStyle}">
+                        <TextBlock Text="Degraded / Review" FontSize="13" FontWeight="SemiBold"/>
+                    </Border>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12,12,12,2">
+                        <ItemsControl x:Name="DegradedItemsControl"
+                                      ItemTemplate="{StaticResource DiagnosticCardTemplate}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+
+            <Border Grid.Column="6" Style="{StaticResource BoardColumnBorderStyle}">
+                <DockPanel LastChildFill="True">
+                    <Border DockPanel.Dock="Top" Style="{StaticResource BoardColumnHeaderStyle}">
+                        <TextBlock Text="Healthy" FontSize="13" FontWeight="SemiBold"/>
+                    </Border>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12,12,12,2">
+                        <ItemsControl x:Name="HealthyItemsControl"
+                                      ItemTemplate="{StaticResource DiagnosticCardTemplate}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+
+            <Border Grid.Column="8" Style="{StaticResource BoardColumnBorderStyle}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="12"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0" Style="{StaticResource BoardColumnHeaderStyle}">
+                            <DockPanel>
+                                <TextBlock Text="Runtime Feeds" FontSize="13" FontWeight="SemiBold"/>
+                                <Button DockPanel.Dock="Right"
+                                        Content="Clear"
+                                        Padding="10,2"
+                                        Height="24"
+                                        Click="Clear_Click"/>
+                            </DockPanel>
+                        </Border>
+                        <TabControl Grid.Row="1"
+                                    Background="{DynamicResource WinPanelBrush}"
+                                    BorderThickness="0">
+                            <TabItem Header="Output Feed">
+                                <RichTextBox x:Name="OutputFeedBox"
+                                             Style="{StaticResource FeedRichTextBoxStyle}"/>
+                            </TabItem>
+                            <TabItem Header="Target Feed">
+                                <RichTextBox x:Name="TargetFeedBox"
+                                             Style="{StaticResource FeedRichTextBoxStyle}"/>
+                            </TabItem>
+                            <TabItem Header="Exceptions">
+                                <RichTextBox x:Name="ExceptionsFeedBox"
+                                             Style="{StaticResource FeedRichTextBoxStyle}"/>
+                            </TabItem>
+                            <TabItem Header="Components">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <Border Grid.Row="0"
+                                            Padding="10,6"
+                                            Background="{DynamicResource WinHeaderBrush}"
+                                            BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                            BorderThickness="0,0,0,1">
+                                        <DockPanel LastChildFill="True">
+                                            <Button DockPanel.Dock="Right"
+                                                    Content="Refresh"
+                                                    Padding="10,2"
+                                                    Height="22"
+                                                    Margin="6,0,0,0"
+                                                    Click="RefreshComponents_Click"/>
+                                            <Button DockPanel.Dock="Right"
+                                                    Content="Copy"
+                                                    Padding="10,2"
+                                                    Height="22"
+                                                    Click="CopyComponents_Click"/>
+                                            <TextBlock Text="Build identity — version and SHA-256 for each installed component."
+                                                       FontSize="10"
+                                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                                       VerticalAlignment="Center"/>
+                                        </DockPanel>
+                                    </Border>
+                                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl x:Name="ComponentItemsControl" Padding="10,8,10,8">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Margin="0,0,0,5"
+                                                            Padding="10,7"
+                                                            BorderThickness="1"
+                                                            BorderBrush="{Binding BorderBrush}"
+                                                            Background="{Binding Background}">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="80"/>
+                                                                <ColumnDefinition Width="190"/>
+                                                                <ColumnDefinition Width="100"/>
+                                                                <ColumnDefinition Width="140"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Grid.Column="0"
+                                                                       Text="{Binding Name}"
+                                                                       FontWeight="SemiBold"
+                                                                       FontSize="12"
+                                                                       Foreground="{Binding Foreground}"
+                                                                       VerticalAlignment="Center"/>
+                                                            <TextBlock Grid.Column="1"
+                                                                       Text="{Binding Description}"
+                                                                       FontSize="10"
+                                                                       TextWrapping="Wrap"
+                                                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                                                       VerticalAlignment="Center"/>
+                                                            <TextBlock Grid.Column="2"
+                                                                       Text="{Binding Version}"
+                                                                       FontSize="11"
+                                                                       FontFamily="{DynamicResource AppMonoFontFamily}"
+                                                                       Foreground="{Binding Foreground}"
+                                                                       VerticalAlignment="Center"/>
+                                                            <TextBlock Grid.Column="3"
+                                                                       Text="{Binding HashShort}"
+                                                                       FontSize="11"
+                                                                       FontFamily="{DynamicResource AppMonoFontFamily}"
+                                                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                                                       VerticalAlignment="Center"
+                                                                       ToolTip="{Binding HashFull}"/>
+                                                            <TextBlock Grid.Column="4"
+                                                                       Text="{Binding Path}"
+                                                                       FontSize="10"
+                                                                       FontFamily="{DynamicResource AppMonoFontFamily}"
+                                                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                                                       VerticalAlignment="Center"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       ToolTip="{Binding Path}"/>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Grid>
+                            </TabItem>
+                        </TabControl>
+                    </Grid>
+
+                    <Grid Grid.Row="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0" Style="{StaticResource BoardColumnHeaderStyle}">
+                            <DockPanel>
+                                <TextBlock Text="Controller Log" FontSize="13" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="ControllerLogPathBlock"
+                                           Margin="10,0,0,0"
+                                           Foreground="{DynamicResource WinMutedTextBrush}"
+                                           FontSize="10"
+                                           VerticalAlignment="Center"/>
+                            </DockPanel>
+                        </Border>
+                        <RichTextBox Grid.Row="1"
+                                     x:Name="ControllerFeedBox"
+                                     Style="{StaticResource FeedRichTextBoxStyle}"/>
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

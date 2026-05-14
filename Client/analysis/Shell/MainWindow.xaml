@@ -1,0 +1,2054 @@
+<Window x:Class="BlackbirdInterface.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:BlackbirdInterface"
+        xmlns:pane="clr-namespace:BlackbirdInterface;assembly=BlackbirdInterface"
+        Title="Blackbird Community | Idle"
+        Height="908"
+        Width="1494"
+        MinHeight="760"
+        MinWidth="1220"
+        WindowState="Maximized"
+        Background="{DynamicResource WinBgBrush}"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.Resources>
+        <Style x:Key="ProcessTabStripStyle" TargetType="TabControl">
+            <Setter Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="ClipToBounds" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="0"
+                                ClipToBounds="True">
+                            <TabPanel IsItemsHost="True"
+                                      Margin="2,0,2,0"
+                                      ClipToBounds="True"
+                                      Background="{TemplateBinding Background}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CommandBarButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="{DynamicResource CommandBarButtonBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="Margin" Value="2,1"/>
+            <Setter Property="MinWidth" Value="64"/>
+            <Setter Property="MinHeight" Value="24"/>
+        </Style>
+
+        <Style x:Key="CommandBarPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource CommandBarButtonStyle}">
+            <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource WinSubtleBorderBrush}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+
+        <Style x:Key="CommandBarAccentButtonStyle" TargetType="Button" BasedOn="{StaticResource CommandBarButtonStyle}">
+            <Setter Property="Background" Value="{DynamicResource PerformanceHeaderBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource PerformanceHeaderAccentBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+
+        <Style x:Key="CommandBarIconButtonStyle" TargetType="Button" BasedOn="{StaticResource CommandBarButtonStyle}">
+            <Setter Property="MinWidth" Value="86"/>
+            <Setter Property="Padding" Value="8,4"/>
+        </Style>
+
+        <Style x:Key="CommandBarSectionDividerStyle" TargetType="Border">
+            <Setter Property="Width" Value="1"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Margin" Value="10,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Background" Value="{DynamicResource WinSubtleBorderBrush}"/>
+        </Style>
+
+        <Style x:Key="CommandBarGlyphHostStyle" TargetType="Border">
+            <Setter Property="Width" Value="14"/>
+            <Setter Property="Height" Value="14"/>
+            <Setter Property="Margin" Value="0,0,7,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Background" Value="{DynamicResource WinTextBrush}"/>
+        </Style>
+
+        <Style x:Key="CommandBarWhiteGlyphHostStyle" TargetType="Border">
+            <Setter Property="Width" Value="16"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Margin" Value="0,0,7,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Background" Value="{DynamicResource WinTextBrush}"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
+
+        <Style x:Key="CommandBarToolbarImageStyle" TargetType="Image">
+            <Setter Property="Width" Value="15"/>
+            <Setter Property="Height" Value="15"/>
+            <Setter Property="Margin" Value="0,0,7,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Opacity" Value="0.98"/>
+            <Setter Property="RenderOptions.BitmapScalingMode" Value="HighQuality"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
+
+        <Style x:Key="ToolbarOpenWindowComboStyle" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource WinSubtleBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid SnapsToDevicePixels="True">
+                            <Border x:Name="OuterBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="24"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <ContentPresenter Margin="6,0,4,0"
+                                                      VerticalAlignment="Center"
+                                                      HorizontalAlignment="Left"
+                                                      Content="{TemplateBinding SelectionBoxItem}"
+                                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                      ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"/>
+
+                                    <ToggleButton x:Name="DropDownToggle"
+                                                  Grid.Column="1"
+                                                  Focusable="False"
+                                                  ClickMode="Press"
+                                                  BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                  BorderThickness="1,0,0,0"
+                                                  Background="{DynamicResource WinHeaderBrush}"
+                                                  IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                        <Path Width="8"
+                                              Height="5"
+                                              Stretch="Fill"
+                                              Fill="{DynamicResource WinTextBrush}"
+                                              Data="M 0 0 L 4 5 L 8 0 Z"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                                    </ToggleButton>
+                                </Grid>
+                            </Border>
+
+                            <Popup x:Name="PART_Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="None">
+                                <Border x:Name="DropDownBorder"
+                                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                        Background="{DynamicResource WinPanelBrush}"
+                                        BorderBrush="{DynamicResource WinBorderBrush}"
+                                        BorderThickness="1">
+                                    <ScrollViewer Margin="0"
+                                                  Background="{DynamicResource WinPanelBrush}"
+                                                  SnapsToDevicePixels="True">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="OuterBorder" Property="BorderBrush" Value="{DynamicResource InputHoverBorderBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CommandRibbonTabItemStyle" TargetType="TabItem">
+            <Setter Property="Foreground" Value="{DynamicResource WinMutedTextBrush}"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="14,6,14,5"/>
+            <Setter Property="Margin" Value="0,0,2,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Grid SnapsToDevicePixels="True">
+                            <Border x:Name="TabBackground"
+                                    Background="Transparent"
+                                    CornerRadius="2"/>
+                            <Border x:Name="Underline"
+                                    Height="2"
+                                    VerticalAlignment="Bottom"
+                                    Margin="10,0,10,0"
+                                    Background="{DynamicResource WinAccentBrush}"
+                                    Opacity="0"
+                                    RenderTransformOrigin="0.5,0.5">
+                                <Border.RenderTransform>
+                                    <ScaleTransform ScaleX="0.4"/>
+                                </Border.RenderTransform>
+                            </Border>
+                            <ContentPresenter ContentSource="Header"
+                                              RecognizesAccessKey="True"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TabBackground" Property="Background" Value="{DynamicResource WinPanelBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabBackground" Property="Background" Value="{DynamicResource WinPanelBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard FillBehavior="HoldEnd">
+                                            <DoubleAnimation Storyboard.TargetName="Underline"
+                                                             Storyboard.TargetProperty="Opacity"
+                                                             To="1"
+                                                             Duration="0:0:0.14"/>
+                                            <DoubleAnimation Storyboard.TargetName="Underline"
+                                                             Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleX)"
+                                                             To="1"
+                                                             Duration="0:0:0.14">
+                                                <DoubleAnimation.EasingFunction>
+                                                    <QuadraticEase EasingMode="EaseOut"/>
+                                                </DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard FillBehavior="Stop">
+                                            <DoubleAnimation Storyboard.TargetName="Underline"
+                                                             Storyboard.TargetProperty="Opacity"
+                                                             To="0"
+                                                             Duration="0:0:0.1"/>
+                                            <DoubleAnimation Storyboard.TargetName="Underline"
+                                                             Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleX)"
+                                                             To="0.4"
+                                                             Duration="0:0:0.1"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="StatusLinkButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="4,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="{DynamicResource WinMutedTextBrush}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Margin="{TemplateBinding Padding}"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="TopTimeTravelTrackButtonStyle" TargetType="RepeatButton">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border Background="{DynamicResource WinHeaderBrush}"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="TopTimeTravelThumbStyle" TargetType="Thumb">
+            <Setter Property="Width" Value="8"/>
+            <Setter Property="Height" Value="14"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border Background="{DynamicResource WinTextBrush}"
+                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                BorderThickness="1"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="TopTimeTravelSliderStyle" TargetType="Slider">
+            <Setter Property="Height" Value="18"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid VerticalAlignment="Center">
+                            <Track x:Name="PART_Track"
+                                   IsDirectionReversed="False">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Style="{StaticResource TopTimeTravelTrackButtonStyle}"/>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource TopTimeTravelThumbStyle}"/>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Style="{StaticResource TopTimeTravelTrackButtonStyle}"/>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+        <Grid x:Name="RootGrid" Background="{DynamicResource WinBgBrush}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="0"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Visibility="Collapsed">
+            <Border x:Name="ProcessStateBadge"
+                    BorderBrush="Transparent"
+                    BorderThickness="0"
+                    Background="Transparent"
+                    HorizontalAlignment="Left"
+                    Visibility="Collapsed">
+                <TextBlock x:Name="ProcessStateBlock"
+                           Text="Disconnected"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource WinMutedTextBrush}"/>
+            </Border>
+        </Grid>
+
+        <Border Grid.Row="1"
+                Background="{DynamicResource CommandBarBackgroundBrush}"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <Border Grid.Row="0"
+                        Visibility="Collapsed"
+                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                        BorderThickness="0,0,0,1"
+                        Padding="4,0">
+                    <Menu>
+                        <MenuItem Header="File">
+                            <MenuItem Header="Open Session..." Click="OpenSession_Click"/>
+                            <MenuItem Header="Import Session..." Click="ImportSession_Click"/>
+                            <MenuItem Header="Save Session As..." Click="SaveSessionAs_Click"/>
+                            <MenuItem Header="Export Session..." Click="ExportSession_Click"/>
+                            <MenuItem Header="Export Detections..." Click="ExportDetections_Click"/>
+                        </MenuItem>
+                        <MenuItem Header="Home">
+                            <MenuItem Header="Select Target..." Click="FindProcess_Click"/>
+                            <MenuItem Header="Connect" Click="Connect_Click"/>
+                            <MenuItem Header="Launch" Click="Launch_Click"/>
+                            <Separator/>
+                            <MenuItem Header="Preflight" Click="Preflight_Click"/>
+                            <MenuItem Header="Driver Start" Click="DriverStart_Click"/>
+                            <MenuItem Header="Driver Stop" Click="DriverStop_Click"/>
+                            <MenuItem Header="Controller Restart" Click="ControllerRestart_Click"/>
+                        </MenuItem>
+                        <MenuItem Header="View">
+                            <MenuItem Header="Main View" Click="MainView_Click"/>
+                            <MenuItem Header="API View" Click="ApiView_Click"/>
+                            <MenuItem Header="Extended View" Click="ExtendedView_Click"/>
+                            <MenuItem Header="Diagnostics" Click="Diagnostics_Click"/>
+                            <MenuItem Header="Rules Intel" Click="SignatureIntelRules_Click"/>
+                            <MenuItem Header="Child Process View" Click="ChildProcessView_Click"/>
+                        </MenuItem>
+                    </Menu>
+                </Border>
+
+                <Grid Grid.Row="1" Margin="6,4,6,6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0"
+                            BorderBrush="{DynamicResource WinBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="0"
+                            Background="{DynamicResource CommandBarPanelBrush}">
+                        <Grid>
+                        <TabControl Background="Transparent"
+                                    BorderThickness="0"
+                                    Padding="0"
+                                    SelectedIndex="0">
+                            <TabControl.Template>
+                                <ControlTemplate TargetType="TabControl">
+                                    <Grid Background="{TemplateBinding Background}">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="*"/>
+                                        </Grid.RowDefinitions>
+                                        <TabPanel Grid.Row="0"
+                                                  IsItemsHost="True"
+                                                  HorizontalAlignment="Left"
+                                                  Background="Transparent"/>
+                                        <ContentPresenter Grid.Row="1"
+                                                          x:Name="PART_SelectedContentHost"
+                                                          ContentSource="SelectedContent"
+                                                          Margin="{TemplateBinding Padding}"/>
+                                    </Grid>
+                                </ControlTemplate>
+                            </TabControl.Template>
+                            <TabControl.Resources>
+                                <Style TargetType="TabItem" BasedOn="{StaticResource CommandRibbonTabItemStyle}"/>
+                            </TabControl.Resources>
+
+                            <TabItem Header="Home">
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Padding="2,0">
+                                    <StackPanel Orientation="Horizontal" Margin="8,6,8,6">
+                                        <Button x:Name="TargetCommandButton"
+                                                Style="{DynamicResource CommandBarIconButtonStyle}"
+                                                Click="FindProcess_Click"
+                                                ToolTip="Select or attach to a target process">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border x:Name="TargetCommandGlyph"
+                                                        Width="14"
+                                                        Height="14"
+                                                        Margin="0,0,7,0"
+                                                        Background="#FF101010"
+                                                        VerticalAlignment="Center">
+                                                    <Border.OpacityMask>
+                                                        <ImageBrush ImageSource="pack://application:,,,/BlackbirdInterface;component/resources/target.png" Stretch="Uniform"/>
+                                                    </Border.OpacityMask>
+                                                </Border>
+                                                <TextBlock Text="Target"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Border Style="{StaticResource CommandBarSectionDividerStyle}"/>
+                                        <Button x:Name="PauseCommandButton"
+                                                Style="{DynamicResource CommandBarIconButtonStyle}"
+                                                Click="Suspend_Click"
+                                                ToolTip="Suspend the attached target">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border x:Name="PauseCommandGlyph"
+                                                        Width="14"
+                                                        Height="14"
+                                                        Margin="0,0,7,0"
+                                                        Background="#FF7C7C7C"
+                                                        VerticalAlignment="Center">
+                                                    <Border.OpacityMask>
+                                                        <ImageBrush ImageSource="pack://application:,,,/BlackbirdInterface;component/resources/pause.png" Stretch="Uniform"/>
+                                                    </Border.OpacityMask>
+                                                </Border>
+                                                <TextBlock Text="Suspend"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="ResumeCommandButton"
+                                                Style="{DynamicResource CommandBarIconButtonStyle}"
+                                                Click="Resume_Click"
+                                                ToolTip="Resume a paused target">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border x:Name="ResumeCommandGlyph"
+                                                        Width="14"
+                                                        Height="14"
+                                                        Margin="0,0,7,0"
+                                                        Background="#FF7C7C7C"
+                                                        VerticalAlignment="Center">
+                                                    <Border.OpacityMask>
+                                                        <ImageBrush ImageSource="pack://application:,,,/BlackbirdInterface;component/resources/play.png" Stretch="Uniform"/>
+                                                    </Border.OpacityMask>
+                                                </Border>
+                                                <TextBlock Text="Go"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="TerminateCommandButton"
+                                                Style="{DynamicResource CommandBarIconButtonStyle}"
+                                                Click="TerminateTarget_Click"
+                                                ToolTip="Terminate the attached target and stop live capture">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Border x:Name="TerminateCommandGlyph"
+                                                        Width="14"
+                                                        Height="14"
+                                                        Margin="0,0,7,0"
+                                                        Background="#FF7C7C7C"
+                                                        VerticalAlignment="Center">
+                                                    <Border.OpacityMask>
+                                                        <ImageBrush ImageSource="pack://application:,,,/BlackbirdInterface;component/resources/stop.png" Stretch="Uniform"/>
+                                                    </Border.OpacityMask>
+                                                </Border>
+                                                <TextBlock Text="Stop"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Border Style="{StaticResource CommandBarSectionDividerStyle}"/>
+                                        <Button x:Name="KernelHooksToggleButton"
+                                                Style="{DynamicResource CommandBarButtonStyle}"
+                                                Click="KernelHooks_Click"
+                                                ToolTip="Toggle kernel NTAPI hooks armed or disarmed. Anti-virtualization masking requires hooks to be armed.">
+                                            <TextBlock x:Name="KernelHooksToggleLabel"
+                                                       Text="Hooks ARMED"
+                                                       VerticalAlignment="Center"/>
+                                        </Button>
+                                        <Button x:Name="InterfaceSettingsButton"
+                                                Style="{DynamicResource CommandBarButtonStyle}"
+                                                Margin="8,0,0,0"
+                                                Click="InterfaceSettings_Click"
+                                                ToolTip="Open interface preferences, workspace layout, and shortcut rebinding.">
+                                            <TextBlock Text="Settings"
+                                                       VerticalAlignment="Center"/>
+                                        </Button>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </TabItem>
+
+                            <TabItem Header="View">
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Padding="2,0">
+                                    <StackPanel Orientation="Horizontal" Margin="8,6,8,6">
+                                        <TextBlock Text="Open Window"
+                                                   Margin="0,0,8,0"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                        <ComboBox x:Name="ToolbarViewMenu"
+                                                  Style="{StaticResource ToolbarOpenWindowComboStyle}"
+                                                  Width="184"
+                                                  Height="24"
+                                                  Margin="0,0,6,0"
+                                                  VerticalAlignment="Center"
+                                                  DropDownOpened="ToolbarViewMenu_DropDownOpened"
+                                                  SelectionChanged="ToolbarViewMenu_SelectionChanged"
+                                                  SelectedIndex="0">
+                                            <ComboBoxItem Content="Open Window..."/>
+                                            <ComboBoxItem Content="Events Pane" Tag="events"/>
+                                            <ComboBoxItem Content="Performance Pane" Tag="performance"/>
+                                            <ComboBoxItem Content="ETW Pane" Tag="etw"/>
+                                            <ComboBoxItem Content="Detections Pane" Tag="heuristics"/>
+                                            <ComboBoxItem Content="Filesystem Pane" Tag="filesystem"/>
+                                            <ComboBoxItem Content="Process Relations Pane" Tag="process-relations"/>
+                                            <ComboBoxItem Content="Operator Case" Tag="operator-case"/>
+                                            <ComboBoxItem Content="Event Log Window" Tag="event-log"/>
+                                            <ComboBoxItem Content="ETW Inspector" Tag="inspector-etw"/>
+                                            <ComboBoxItem Content="Detections Inspector" Tag="inspector-heuristics"/>
+                                            <ComboBoxItem Content="Filesystem Inspector" Tag="inspector-filesystem"/>
+                                            <ComboBoxItem Content="Process Relations Inspector" Tag="inspector-relations"/>
+                                            <ComboBoxItem Content="Diagnostics Window" Tag="diagnostics"/>
+                                            <ComboBoxItem Content="Rules Intel" Tag="signature-intel-rules"/>
+                                            <ComboBoxItem Content="Child Process Graph" Tag="child-process-graph"/>
+                                        </ComboBox>
+                                        <ComboBox x:Name="LayoutsComboBox"
+                                                  Width="130"
+                                                  Height="24"
+                                                  Margin="0,0,6,0"
+                                                  VerticalAlignment="Center"
+                                                  Style="{StaticResource ToolbarOpenWindowComboStyle}"
+                                                  SelectionChanged="LayoutsComboBox_SelectionChanged"
+                                                  SelectedIndex="0">
+                                            <ComboBoxItem Content="Layouts..."/>
+                                            <ComboBoxItem Content="Simple" Tag="layout-simple"/>
+                                            <ComboBoxItem Content="Advanced" Tag="layout-advanced"/>
+                                        </ComboBox>
+                                        <Border Style="{StaticResource CommandBarSectionDividerStyle}"/>
+                                        <Button x:Name="MainViewButton"
+                                                Style="{DynamicResource CommandBarButtonStyle}"
+                                                Content="Main"
+                                                Click="MainView_Click"/>
+                                        <Button x:Name="ApiViewButton"
+                                                Style="{DynamicResource CommandBarButtonStyle}"
+                                                Content="API"
+                                                Click="ApiView_Click"/>
+                                        <Button x:Name="ExtendedViewButton"
+                                                Style="{DynamicResource CommandBarButtonStyle}"
+                                                Content="Extended"
+                                                Click="ExtendedView_Click"/>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Diagnostics" Click="Diagnostics_Click"/>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Rules Intel" Click="SignatureIntelRules_Click"/>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Operator Case" Click="OperatorCase_Click"/>
+                                        <Button Style="{DynamicResource CommandBarButtonStyle}" Content="Child Process View" Click="ChildProcessView_Click"/>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </TabItem>
+
+                            <TabItem x:Name="TimeTravelTab" Header="Time Travel">
+                                <Grid>
+                                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Padding="2,0">
+                                        <StackPanel Orientation="Horizontal" Margin="8,6,8,6">
+                                            <TextBlock Text="Timeline"
+                                                       Margin="0,0,8,0"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                            <Slider x:Name="TopTimeTravelSlider"
+                                                    Style="{StaticResource TopTimeTravelSliderStyle}"
+                                                    Minimum="0"
+                                                    Maximum="1"
+                                                    Value="0"
+                                                    TickFrequency="1"
+                                                    IsSnapToTickEnabled="False"
+                                                    Width="420"
+                                                    Margin="0,0,8,0"
+                                                    VerticalAlignment="Center"
+                                                    ValueChanged="TopTimeTravelSlider_ValueChanged"/>
+                                            <Border Style="{StaticResource CommandBarSectionDividerStyle}"/>
+                                            <Button Content="-10s"
+                                                    Style="{DynamicResource CommandBarButtonStyle}"
+                                                    Click="TopTimeTravelBack10_Click"/>
+                                            <Button Content="-1s"
+                                                    Style="{DynamicResource CommandBarButtonStyle}"
+                                                    Click="TopTimeTravelBack1_Click"/>
+                                            <Button Content="+1s"
+                                                    Style="{DynamicResource CommandBarButtonStyle}"
+                                                    Click="TopTimeTravelForward1_Click"/>
+                                            <Button Content="+10s"
+                                                    Style="{DynamicResource CommandBarButtonStyle}"
+                                                    Click="TopTimeTravelForward10_Click"/>
+                                            <Border Style="{StaticResource CommandBarSectionDividerStyle}"/>
+                                            <TextBlock x:Name="TopTimeTravelRangeBlock"
+                                                       Text="--:--:--- --:--:--"
+                                                       Margin="10,0,0,0"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                    <Border x:Name="TimeTravelLiveNotice"
+                                            Background="{DynamicResource CommandBarPanelBrush}"
+                                            Visibility="Visible">
+                                        <TextBlock Text="Time Travel is available after the target process has stopped."
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                    </Border>
+                                </Grid>
+                            </TabItem>
+
+                            <TabItem Header="Session">
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Padding="2,0">
+                                    <StackPanel Orientation="Horizontal" Margin="8,6,8,6">
+                                        <Button Style="{DynamicResource CommandBarIconButtonStyle}" Click="OpenSession_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Open"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Style="{DynamicResource CommandBarIconButtonStyle}" Click="ImportSession_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Import"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Border Style="{StaticResource CommandBarSectionDividerStyle}"/>
+                                        <Button Style="{DynamicResource CommandBarIconButtonStyle}" Click="SaveSessionAs_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Save"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Style="{DynamicResource CommandBarIconButtonStyle}" Click="ExportSession_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Export"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Style="{DynamicResource CommandBarIconButtonStyle}" Click="ExportDetections_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Export Detections"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </TabItem>
+                        </TabControl>
+                        </Grid>
+                    </Border>
+
+                    <Grid Grid.Row="1" Margin="2,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0"
+                                    Orientation="Horizontal"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center">
+                            <TextBox x:Name="PidBox" Visibility="Collapsed"/>
+                            <Button Style="{DynamicResource CommandBarAccentButtonStyle}"
+                                    Content="New Tab"
+                                    Click="NewProcessTab_Click"/>
+                            <TabControl x:Name="ProcessTabs"
+                                        Margin="6,0,0,0"
+                                        HorizontalAlignment="Left"
+                                        VerticalAlignment="Center"
+                                        Style="{DynamicResource ProcessTabStripStyle}"
+                                        BorderThickness="0"
+                                        Background="Transparent"
+                                        SelectionChanged="ProcessTabs_SelectionChanged">
+                                <TabControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <DockPanel LastChildFill="True">
+                                            <TextBlock Text="{Binding Title}"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,6,0"
+                                                       MaxWidth="200"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <Button Content="x"
+                                                    DockPanel.Dock="Right"
+                                                    Width="16"
+                                                    Height="16"
+                                                    Padding="0"
+                                                    Margin="0"
+                                                    MinWidth="16"
+                                                    MinHeight="16"
+                                                    Tag="{Binding}"
+                                                    Click="CloseProcessTab_Click"/>
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </TabControl.ItemTemplate>
+                            </TabControl>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center">
+                            <Border Background="{Binding ElementName=ProcessStateBadge, Path=Background}"
+                                    BorderBrush="{Binding ElementName=ProcessStateBadge, Path=BorderBrush}"
+                                    BorderThickness="1"
+                                    Padding="9,3"
+                                    Margin="0,0,8,0"
+                                    CornerRadius="0">
+                                <TextBlock Text="{Binding ElementName=ProcessStateBlock, Path=Text}"
+                                           Foreground="{Binding ElementName=ProcessStateBlock, Path=Foreground}"
+                                           FontWeight="SemiBold"
+                                           FontSize="11"/>
+                            </Border>
+
+                            <Border BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                    BorderThickness="1"
+                                    Padding="8,3"
+                                    Margin="0,0,8,0"
+                                    Background="{DynamicResource WinPanelBrush}">
+                                <TextBlock x:Name="StatusBlock"
+                                           Text="Status: Disconnected"
+                                           VerticalAlignment="Center"
+                                           FontSize="11"
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource WinMutedTextBrush}"/>
+                            </Border>
+                            <Border BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                    BorderThickness="1"
+                                    Padding="8,3"
+                                    Background="{DynamicResource WinPanelBrush}">
+                                <TextBlock x:Name="RangeBlock"
+                                           Text="Window:"
+                                           VerticalAlignment="Center"
+                                           FontSize="11"
+                                           TextTrimming="CharacterEllipsis"
+                                           Foreground="{DynamicResource WinMutedTextBrush}"/>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="2"
+                x:Name="ProcessSelectorBarBorder"
+                Background="{DynamicResource CommandBarBackgroundBrush}"
+                BorderBrush="{DynamicResource WinBorderBrush}"
+                BorderThickness="0,0,0,1"
+                Visibility="Collapsed">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Disabled"
+                          Height="28">
+                <StackPanel x:Name="ProcessSelectorBarPanel"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="4,0">
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <Grid Grid.Row="3" Margin="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="250" MinWidth="220"/>
+                <ColumnDefinition Width="2"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0"
+                    BorderBrush="{DynamicResource WinBorderBrush}"
+                    BorderThickness="1,1,0,1"
+                    Background="{DynamicResource WinPanelBrush}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="28"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0"
+                            Background="{DynamicResource WinHeaderBrush}"
+                            BorderBrush="{DynamicResource WinBorderBrush}"
+                            BorderThickness="0,0,0,1"
+                            Padding="8,0">
+                        <TextBlock Text="GRAPH EXPLORER"
+                                   VerticalAlignment="Center"
+                                   FontWeight="SemiBold"
+                                   FontSize="11"
+                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                    </Border>
+
+                    <ListBox Grid.Row="1"
+                             x:Name="GraphExplorer"
+                             Background="{DynamicResource WinPanelBrush}"
+                             Style="{DynamicResource ExplorerListStyle}"
+                             ItemContainerStyle="{DynamicResource ExplorerItemStyle}"
+                             SelectionMode="Single"
+                             PreviewMouseLeftButtonUp="GraphExplorer_PreviewMouseLeftButtonUp">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{Binding AccentBrush}"
+                                        BorderThickness="1"
+                                        Height="96"
+                                        Background="{DynamicResource WinPanelBrush}">
+                                    <Grid>
+                                        <Grid.Style>
+                                            <Style TargetType="Grid">
+                                                <Setter Property="Opacity" Value="0.35"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsEnabled}" Value="True">
+                                                        <Setter Property="Opacity" Value="1"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Grid.Style>
+
+                                        <Rectangle Fill="{DynamicResource ExplorerPreviewBackgroundBrush}"/>
+
+                                        <local:SparklinePreviewControl Margin="6"
+                                                                       Values="{Binding PreviewValues}"
+                                                                       Stroke="{Binding AccentBrush}"/>
+
+                                        <Border x:Name="NoDataBadge"
+                                                Margin="6"
+                                                Background="{DynamicResource NoDataOverlayBrush}"
+                                                Visibility="Collapsed">
+                                            <TextBlock Text="NO DATA"
+                                                       FontWeight="Bold"
+                                                       FontSize="18"
+                                                       Opacity="0.72"
+                                                       Foreground="{DynamicResource WinTextBrush}"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"/>
+                                        </Border>
+
+                                        <Border HorizontalAlignment="Left"
+                                                VerticalAlignment="Top"
+                                                Margin="8,8,0,0"
+                                                Background="{DynamicResource ExplorerOverlayBrush}"
+                                                Padding="6,2">
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       FontWeight="SemiBold"
+                                                       FontSize="12"/>
+                                        </Border>
+
+                                        <Border x:Name="DetailsBadge"
+                                                Margin="6,0,6,6"
+                                                VerticalAlignment="Bottom"
+                                                Background="{DynamicResource ExplorerOverlayBrush}"
+                                                Padding="6,3"
+                                                Visibility="Collapsed">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding DetailPrimary}"
+                                                           FontSize="10"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding DetailSecondary}"
+                                                           FontSize="10"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                </Border>
+
+                                <DataTemplate.Triggers>
+                                    <DataTrigger Binding="{Binding HasData}" Value="False">
+                                        <Setter TargetName="NoDataBadge" Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding ShowDetails}" Value="True">
+                                        <Setter TargetName="DetailsBadge" Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsEnabled}" Value="False">
+                                        <Setter TargetName="DetailsBadge" Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </DataTemplate.Triggers>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Border>
+
+            <GridSplitter Grid.Column="1"
+                          Width="2"
+                          Background="{DynamicResource WinSubtleBorderBrush}"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Stretch"/>
+
+            <Grid Grid.Column="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition x:Name="IntelligenceSplitterColumn" Width="2"/>
+                    <ColumnDefinition x:Name="IntelligenceColumn" Width="560"/>
+                </Grid.ColumnDefinitions>
+
+                <Grid Grid.Column="0">
+                    <Grid x:Name="DockGrid">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="4*"/>
+                            <RowDefinition Height="2"/>
+                            <RowDefinition Height="5*"/>
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" x:Name="EventsPaneRow">
+                            <Border x:Name="EventsDockBorder"
+                                    BorderBrush="{DynamicResource PaneBorderBrush}"
+                                    BorderThickness="1,1,1,0"
+                                    Background="{DynamicResource WinPanelBrush}">
+                                <local:EventsPane x:Name="EventsPaneHost"/>
+                            </Border>
+
+                            <Border x:Name="CollapsedEventsBar"
+                                    Visibility="Collapsed"
+                                    Height="28"
+                                    VerticalAlignment="Top"
+                                    Background="{DynamicResource EventsHeaderBrush}"
+                                    BorderBrush="{DynamicResource PaneBorderBrush}"
+                                    BorderThickness="1"
+                                    MouseLeftButtonUp="CollapsedEventsBar_MouseLeftButtonUp">
+                                <Grid>
+                                    <TextBlock Text="Events (collapsed)"
+                                               Margin="10,0,0,0"
+                                               VerticalAlignment="Center"
+                                               FontWeight="SemiBold"/>
+                                    <TextBlock Text="Click to open"
+                                               Margin="0,0,10,0"
+                                               VerticalAlignment="Center"
+                                               HorizontalAlignment="Right"
+                                               Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <GridSplitter Grid.Row="1"
+                                      x:Name="DockSplitter"
+                                      Height="2"
+                                      Background="{DynamicResource WinSubtleBorderBrush}"
+                                      HorizontalAlignment="Stretch"
+                                      ShowsPreview="True"/>
+
+                        <Grid Grid.Row="2" x:Name="PerformancePaneRow">
+                            <Border x:Name="PerformanceDockBorder"
+                                    BorderBrush="{DynamicResource PaneBorderBrush}"
+                                    BorderThickness="1,0,1,1"
+                                    Background="{DynamicResource WinPanelBrush}">
+                                <local:PerformancePane x:Name="PerformancePaneHost"/>
+                            </Border>
+
+                            <Border x:Name="CollapsedPerformanceBar"
+                                    Visibility="Collapsed"
+                                    Height="28"
+                                    VerticalAlignment="Top"
+                                    Background="{DynamicResource PerformanceHeaderBrush}"
+                                    BorderBrush="{DynamicResource PaneBorderBrush}"
+                                    BorderThickness="1"
+                                    MouseLeftButtonUp="CollapsedPerformanceBar_MouseLeftButtonUp">
+                                <Grid>
+                                    <TextBlock Text="Performance (collapsed)"
+                                               Margin="10,0,0,0"
+                                               VerticalAlignment="Center"
+                                               FontWeight="SemiBold"/>
+                                    <TextBlock Text="Click to open"
+                                               Margin="0,0,10,0"
+                                               VerticalAlignment="Center"
+                                               HorizontalAlignment="Right"
+                                               Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                </Grid>
+                            </Border>
+                        </Grid>
+
+                        <Border x:Name="DockPreviewTop"
+                                Grid.Row="0"
+                                Visibility="Collapsed"
+                                IsHitTestVisible="False"
+                                Margin="6"
+                                BorderThickness="2"
+                                BorderBrush="#CC9A9A9A"
+                                Background="#22363636"/>
+
+                        <Border x:Name="DockPreviewBottom"
+                                Grid.Row="2"
+                                Visibility="Collapsed"
+                                IsHitTestVisible="False"
+                                Margin="6"
+                                BorderThickness="2"
+                                BorderBrush="#CC9A9A9A"
+                                Background="#22363636"/>
+                    </Grid>
+
+                    <Border Grid.Row="1"
+                            x:Name="ApiViewBorder"
+                            Visibility="Collapsed"
+                            BorderBrush="{DynamicResource PaneBorderBrush}"
+                            BorderThickness="1"
+                            Background="{DynamicResource WinPanelBrush}">
+                        <Grid Margin="8">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0"
+                                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                    BorderThickness="0,0,0,1"
+                                    Background="{DynamicResource WinHeaderBrush}"
+                                    Padding="8,4"
+                                    Margin="0,0,0,8">
+                                <DockPanel LastChildFill="False">
+                                    <ComboBox x:Name="ApiViewModeBox"
+                                              DockPanel.Dock="Right"
+                                              Width="148"
+                                              Height="24"
+                                              Margin="12,0,0,0"
+                                              VerticalAlignment="Center"
+                                              SelectionChanged="ApiViewMode_Changed"
+                                              Style="{StaticResource ToolbarOpenWindowComboStyle}">
+                                        <ComboBoxItem Content="Call Graph"/>
+                                        <ComboBoxItem Content="Thread Timeline"/>
+                                    </ComboBox>
+                                    <TextBlock Text="API View"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="ApiViewSummaryBlock"
+                                               Margin="14,0,0,0"
+                                               VerticalAlignment="Center"
+                                               FontWeight="SemiBold"
+                                               Text="No API data yet"/>
+                                </DockPanel>
+                            </Border>
+
+                            <Grid Grid.Row="1">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1.8*"/>
+                                    <ColumnDefinition Width="8"/>
+                                    <ColumnDefinition Width="2.0*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Border Grid.Column="0"
+                                        BorderBrush="{DynamicResource WinBorderBrush}"
+                                        BorderThickness="1"
+                                        Background="{DynamicResource WinPanelBrush}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="*"/>
+                                        </Grid.RowDefinitions>
+
+                                        <Border Grid.Row="0"
+                                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                BorderThickness="0,0,0,1"
+                                                Background="{DynamicResource WinHeaderBrush}"
+                                                Padding="8,4">
+                                            <DockPanel LastChildFill="False">
+                                                <TextBlock Text="API Calls"
+                                                           FontWeight="SemiBold"
+                                                           VerticalAlignment="Center"/>
+                                                <ToggleButton x:Name="FiltersToggle"
+                                                              DockPanel.Dock="Right"
+                                                              Content="Filters"
+                                                              IsChecked="False"
+                                                              Height="22"
+                                                              Padding="10,2"
+                                                              FontSize="11"
+                                                              VerticalAlignment="Center"/>
+                                            </DockPanel>
+                                        </Border>
+
+                                        <Border Grid.Row="1"
+                                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                BorderThickness="0,0,0,1"
+                                                Background="{DynamicResource WinHeaderBrush}"
+                                                Padding="8,6">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsChecked, ElementName=FiltersToggle}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <Grid>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+                                                <UniformGrid Grid.Row="0" Columns="6">
+                                                    <StackPanel Margin="0,0,8,6">
+                                                        <TextBlock Text="Call"
+                                                                   Margin="0,0,0,3"
+                                                                   FontSize="10"
+                                                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                        <TextBox x:Name="ApiFilterCallBox"
+                                                                 Height="24"
+                                                                 Tag="e.g. NtWriteVirtualMemory"
+                                                                 Style="{StaticResource FilterInputStyle}"
+                                                                 TextChanged="ApiViewTextFilter_Changed"/>
+                                                    </StackPanel>
+                                                    <StackPanel Margin="0,0,8,6">
+                                                        <TextBlock Text="Action"
+                                                                   Margin="0,0,0,3"
+                                                                   FontSize="10"
+                                                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                        <TextBox x:Name="ApiFilterActionBox"
+                                                                 Height="24"
+                                                                 Tag="decoded action text"
+                                                                 Style="{StaticResource FilterInputStyle}"
+                                                                 TextChanged="ApiViewTextFilter_Changed"/>
+                                                    </StackPanel>
+                                                    <StackPanel Margin="0,0,8,6">
+                                                        <TextBlock Text="Sensor"
+                                                                   Margin="0,0,0,3"
+                                                                   FontSize="10"
+                                                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                        <ComboBox x:Name="ApiFilterSensorBox"
+                                                                  Height="24"
+                                                                  Style="{StaticResource PaneFilterComboStyle}"
+                                                                  ItemContainerStyle="{StaticResource PaneFilterComboItemStyle}"
+                                                                  SelectionChanged="ApiViewSelectionFilter_Changed">
+                                                            <ComboBoxItem Content="All Sensors" IsSelected="True"/>
+                                                            <ComboBoxItem Content="Usermode Hook"/>
+                                                            <ComboBoxItem Content="Kernel Hook"/>
+                                                            <ComboBoxItem Content="Unclassified"/>
+                                                        </ComboBox>
+                                                    </StackPanel>
+                                                    <StackPanel Margin="0,0,8,6">
+                                                        <TextBlock Text="Origin"
+                                                                   Margin="0,0,0,3"
+                                                                   FontSize="10"
+                                                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                        <ComboBox x:Name="ApiFilterOriginBox"
+                                                                  Height="24"
+                                                                  Style="{StaticResource PaneFilterComboStyle}"
+                                                                  ItemContainerStyle="{StaticResource PaneFilterComboItemStyle}"
+                                                                  SelectionChanged="ApiViewSelectionFilter_Changed">
+                                                            <ComboBoxItem Content="All Origins" IsSelected="True"/>
+                                                            <ComboBoxItem Content="Process Image"/>
+                                                            <ComboBoxItem Content="Other DLL"/>
+                                                            <ComboBoxItem Content="Unbacked / Shellcode"/>
+                                                            <ComboBoxItem Content="System DLL Chain"/>
+                                                            <ComboBoxItem Content="Unresolved Caller"/>
+                                                        </ComboBox>
+                                                    </StackPanel>
+                                                    <StackPanel Margin="0,0,8,6">
+                                                        <TextBlock Text="Caller"
+                                                                   Margin="0,0,0,3"
+                                                                   FontSize="10"
+                                                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                        <TextBox x:Name="ApiFilterCallerBox"
+                                                                 Height="24"
+                                                                 Tag="PID or process name"
+                                                                 Style="{StaticResource FilterInputStyle}"
+                                                                 TextChanged="ApiViewTextFilter_Changed"/>
+                                                    </StackPanel>
+                                                    <StackPanel Margin="0,0,0,6">
+                                                        <TextBlock Text="Target"
+                                                                   Margin="0,0,0,3"
+                                                                   FontSize="10"
+                                                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                        <TextBox x:Name="ApiFilterTargetBox"
+                                                                 Height="24"
+                                                                 Tag="PID or process name"
+                                                                 Style="{StaticResource FilterInputStyle}"
+                                                                 TextChanged="ApiViewTextFilter_Changed"/>
+                                                    </StackPanel>
+                                                </UniformGrid>
+                                                <UniformGrid Grid.Row="1" Columns="5" Margin="0,4,0,0">
+                                                    <StackPanel Margin="0,0,8,0">
+                                                        <TextBlock Text="Thread"
+                                                                   Margin="0,0,0,3"
+                                                                   FontSize="10"
+                                                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                        <TextBox x:Name="ApiFilterThreadBox"
+                                                                 Height="24"
+                                                                 Tag="thread ID"
+                                                                 Style="{StaticResource FilterInputStyle}"
+                                                                 TextChanged="ApiViewTextFilter_Changed"/>
+                                                    </StackPanel>
+                                                    <StackPanel Margin="0,0,8,0">
+                                                        <TextBlock Text="Region"
+                                                                   Margin="0,0,0,3"
+                                                                   FontSize="10"
+                                                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                        <TextBox x:Name="ApiFilterRegionBox"
+                                                                 Height="24"
+                                                                 Tag="base address"
+                                                                 Style="{StaticResource FilterInputStyle}"
+                                                                 TextChanged="ApiViewTextFilter_Changed"/>
+                                                    </StackPanel>
+                                                    <StackPanel Margin="0,0,8,0">
+                                                        <TextBlock Text="Protect"
+                                                                   Margin="0,0,0,3"
+                                                                   FontSize="10"
+                                                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                        <TextBox x:Name="ApiFilterProtectBox"
+                                                                 Height="24"
+                                                                 Tag="e.g. PAGE_EXECUTE_RW"
+                                                                 Style="{StaticResource FilterInputStyle}"
+                                                                 TextChanged="ApiViewTextFilter_Changed"/>
+                                                    </StackPanel>
+                                                    <StackPanel Margin="0,0,8,0">
+                                                        <TextBlock Text="Min Hits"
+                                                                   Margin="0,0,0,3"
+                                                                   FontSize="10"
+                                                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                        <TextBox x:Name="ApiFilterMinHitsBox"
+                                                                 Height="24"
+                                                                 Tag="number"
+                                                                 Style="{StaticResource FilterInputStyle}"
+                                                                 TextChanged="ApiViewTextFilter_Changed"/>
+                                                    </StackPanel>
+                                                    <StackPanel Margin="0,14,0,0"
+                                                                VerticalAlignment="Bottom">
+                                                        <Button Content="Clear Filters"
+                                                                Height="24"
+                                                                Style="{DynamicResource CommandBarButtonStyle}"
+                                                                Click="ApiViewClearFilters_Click"/>
+                                                    </StackPanel>
+                                                </UniformGrid>
+                                            </Grid>
+                                        </Border>
+
+                                        <DataGrid Grid.Row="2"
+                                              x:Name="ApiViewDataGrid"
+                                              Style="{StaticResource AppDataGridStyle}"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              CanUserReorderColumns="False"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="34"
+                                              RowDetailsVisibilityMode="VisibleWhenSelected"
+                                              BorderThickness="0"
+                                              GridLinesVisibility="None"
+                                              SelectionChanged="ApiViewDataGrid_SelectionChanged">
+                                        <DataGrid.RowStyle>
+                                            <Style TargetType="{x:Type DataGridRow}" BasedOn="{StaticResource AppDataGridRowStyle}">
+                                                <Setter Property="Background" Value="{Binding RowBackground}"/>
+                                                <Setter Property="Margin" Value="0"/>
+                                                <Setter Property="Padding" Value="0"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                                                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter Property="Background" Value="{Binding RowBackground}"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="{Binding RowBackground}"/>
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </DataGrid.RowStyle>
+                                        <DataGrid.CellStyle>
+                                            <Style TargetType="{x:Type DataGridCell}" BasedOn="{StaticResource AppDataGridCellStyle}">
+                                                <Setter Property="Background" Value="Transparent"/>
+                                                <Setter Property="BorderBrush" Value="{DynamicResource WinSubtleBorderBrush}"/>
+                                                <Setter Property="Padding" Value="0"/>
+                                                <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter Property="Background" Value="Transparent"/>
+                                                        <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </DataGrid.CellStyle>
+                                        <DataGrid.RowDetailsTemplate>
+                                            <DataTemplate>
+                                                <Border Visibility="{Binding ThreadDetailsVisibility}"
+                                                        Margin="28,0,8,8"
+                                                        Padding="8,6"
+                                                        Background="{DynamicResource WinPanelBrush}"
+                                                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                        BorderThickness="1">
+                                                    <ItemsControl ItemsSource="{Binding ThreadDetails}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Grid Margin="0,2">
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="82"/>
+                                                                        <ColumnDefinition Width="1.05*"/>
+                                                                        <ColumnDefinition Width="1.05*"/>
+                                                                        <ColumnDefinition Width="2.4*"/>
+                                                                        <ColumnDefinition Width="58"/>
+                                                                        <ColumnDefinition Width="112"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Text="{Binding ThreadLabel}"
+                                                                               FontFamily="{DynamicResource AppMonoFontFamily}"
+                                                                               FontWeight="SemiBold"/>
+                                                                    <TextBlock Grid.Column="1"
+                                                                               Text="{Binding SourceLabel}"
+                                                                               TextTrimming="CharacterEllipsis"/>
+                                                                    <TextBlock Grid.Column="2"
+                                                                               Text="{Binding TargetLabel}"
+                                                                               TextTrimming="CharacterEllipsis"/>
+                                                                    <TextBlock Grid.Column="3"
+                                                                               Text="{Binding ArgumentSummary}"
+                                                                               Foreground="{DynamicResource WinMutedTextBrush}"
+                                                                               TextTrimming="CharacterEllipsis"/>
+                                                                    <TextBlock Grid.Column="4"
+                                                                               Text="{Binding Hits}"
+                                                                               HorizontalAlignment="Right"
+                                                                               FontFamily="{DynamicResource AppMonoFontFamily}"/>
+                                                                    <TextBlock Grid.Column="5"
+                                                                               Text="{Binding LastSeen}"
+                                                                               HorizontalAlignment="Right"
+                                                                               Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </Border>
+                                            </DataTemplate>
+                                        </DataGrid.RowDetailsTemplate>
+                                        <DataGrid.Columns>
+                                            <DataGridTemplateColumn Header="Call" Width="2.25*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Margin="8,0" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding ApiName}"
+                                                                       FontWeight="SemiBold"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock Text="{Binding ThreadSummary}"
+                                                                       Margin="0,1,0,0"
+                                                                       FontSize="10"
+                                                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                                                       Visibility="{Binding ThreadDetailsVisibility}"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                            <DataGridTemplateColumn Header="Sensor" Width="122">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <Border Background="Transparent"
+                                                                BorderThickness="0"
+                                                                Padding="6,0"
+                                                                Margin="0">
+                                                            <TextBlock Text="{Binding SensorLabel}"
+                                                                       Foreground="{DynamicResource WinTextBrush}"
+                                                                       FontWeight="SemiBold"
+                                                                       VerticalAlignment="Center"
+                                                                       TextAlignment="Center"/>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                            <DataGridTemplateColumn Header="Origin" Width="136">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <Border Background="{Binding CallerOriginBackground}"
+                                                                BorderBrush="{Binding RowBorderBrush}"
+                                                                BorderThickness="1"
+                                                                Padding="6,1"
+                                                                Margin="4,2">
+                                                            <TextBlock Text="{Binding CallerOriginLabel}"
+                                                                       Foreground="{Binding CallerOriginForeground}"
+                                                                       FontWeight="SemiBold"
+                                                                       VerticalAlignment="Center"
+                                                                       TextAlignment="Center"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                            <DataGridTextColumn Header="Caller" Width="96" Binding="{Binding SourceLabel}"/>
+                                            <DataGridTextColumn Header="Target" Width="110" Binding="{Binding TargetLabel}"/>
+                                            <DataGridTextColumn Header="Thread" Width="86" Binding="{Binding ThreadLabel}"/>
+                                            <DataGridTextColumn Header="Hits" Width="58" Binding="{Binding Hits}"/>
+                                            <DataGridTextColumn Header="Last Seen" Width="110" Binding="{Binding LastSeen}"/>
+                                        </DataGrid.Columns>
+                                        </DataGrid>
+                                    </Grid>
+                                </Border>
+
+                                <Border Grid.Column="2"
+                                        BorderBrush="{DynamicResource WinBorderBrush}"
+                                        BorderThickness="1"
+                                        Background="{DynamicResource WinPanelBrush}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="1.1*"/>
+                                            <RowDefinition Height="8"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="*"/>
+                                        </Grid.RowDefinitions>
+
+                                        <Border Grid.Row="0"
+                                                Background="{DynamicResource WinHeaderBrush}"
+                                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                BorderThickness="0,0,0,1"
+                                                Padding="8,4">
+                                            <TextBlock Text="Call Graph" FontWeight="SemiBold"/>
+                                        </Border>
+
+                                        <ScrollViewer Grid.Row="1"
+                                                      HorizontalScrollBarVisibility="Auto"
+                                                      VerticalScrollBarVisibility="Auto"
+                                                      Background="{DynamicResource WinPanelBrush}">
+                                            <Canvas x:Name="ApiViewGraphCanvas"
+                                                    Width="540"
+                                                    Height="240"
+                                                    Background="{DynamicResource WinPanelBrush}"/>
+                                        </ScrollViewer>
+
+                                        <Border Grid.Row="3"
+                                                Margin="0,0,0,0"
+                                                Background="{DynamicResource WinHeaderBrush}"
+                                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                BorderThickness="0,1,0,1"
+                                                Padding="8,4">
+                                            <TextBlock Text="Selected Call (Decoded)" FontWeight="SemiBold"/>
+                                        </Border>
+
+                                        <StackPanel Grid.Row="4" Margin="8,6,8,4">
+                                            <TextBlock x:Name="ApiViewSelectedTitleBlock"
+                                                       FontWeight="SemiBold"
+                                                       Text="No selection"/>
+                                            <TextBlock x:Name="ApiViewSelectedMetaBlock"
+                                                       Margin="0,3,0,0"
+                                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                                       Text="Select a row to inspect decoded details"/>
+                                        </StackPanel>
+
+                                        <Border Grid.Row="5"
+                                                Margin="8,0,8,8"
+                                                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                BorderThickness="1"
+                                                Background="{DynamicResource WinPanelBrush}">
+                                            <Grid Margin="10">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+                                                <Grid Grid.Row="0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="1.7*"/>
+                                                        <ColumnDefinition Width="10"/>
+                                                        <ColumnDefinition Width="1*"/>
+                                                        <ColumnDefinition Width="10"/>
+                                                        <ColumnDefinition Width="1*"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <Border Grid.Column="0"
+                                                            BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                            BorderThickness="1"
+                                                            Background="{DynamicResource WinHeaderBrush}"
+                                                            Padding="8,6">
+                                                        <StackPanel>
+                                                            <TextBlock Text="Action" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                            <TextBlock x:Name="ApiViewSelectedActionValue" Margin="0,2,0,0" FontWeight="SemiBold" Text=""/>
+                                                        </StackPanel>
+                                                    </Border>
+
+                                                    <Border Grid.Column="2"
+                                                            BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                            BorderThickness="1"
+                                                            Background="{DynamicResource WinHeaderBrush}"
+                                                            Padding="8,6">
+                                                            <StackPanel>
+                                                                <TextBlock Text="Sensor" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                                <TextBlock x:Name="ApiViewSelectedSensorValue" Margin="0,2,0,0" FontWeight="SemiBold" Text=""/>
+                                                            </StackPanel>
+                                                        </Border>
+
+                                                    <Border Grid.Column="4"
+                                                            BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                            BorderThickness="1"
+                                                            Background="{DynamicResource WinHeaderBrush}"
+                                                            Padding="8,6">
+                                                        <StackPanel>
+                                                            <TextBlock Text="Origin" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                            <TextBlock x:Name="ApiViewSelectedOriginValue" Margin="0,2,0,0" FontWeight="SemiBold" Text=""/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </Grid>
+
+                                                <UniformGrid Grid.Row="1" Columns="4" Margin="0,10,0,0">
+                                                    <Border Margin="0,0,8,8" Padding="8,6" BorderBrush="{DynamicResource WinSubtleBorderBrush}" BorderThickness="1" Background="{DynamicResource WinHeaderBrush}">
+                                                        <StackPanel>
+                                                            <TextBlock Text="Caller" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                            <TextBlock x:Name="ApiViewSelectedSourceValue" Margin="0,2,0,0" FontWeight="SemiBold" Text=""/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <Border Margin="0,0,8,8" Padding="8,6" BorderBrush="{DynamicResource WinSubtleBorderBrush}" BorderThickness="1" Background="{DynamicResource WinHeaderBrush}">
+                                                        <StackPanel>
+                                                            <TextBlock Text="Target" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                            <TextBlock x:Name="ApiViewSelectedTargetValue" Margin="0,2,0,0" FontWeight="SemiBold" Text=""/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <Border Margin="0,0,8,8" Padding="8,6" BorderBrush="{DynamicResource WinSubtleBorderBrush}" BorderThickness="1" Background="{DynamicResource WinHeaderBrush}">
+                                                        <StackPanel>
+                                                            <TextBlock Text="Thread" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                            <TextBlock x:Name="ApiViewSelectedThreadValue" Margin="0,2,0,0" FontWeight="SemiBold" Text=""/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <Border Margin="0,0,0,8" Padding="8,6" BorderBrush="{DynamicResource WinSubtleBorderBrush}" BorderThickness="1" Background="{DynamicResource WinHeaderBrush}">
+                                                        <StackPanel>
+                                                            <TextBlock Text="Hits" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                            <TextBlock x:Name="ApiViewSelectedHitsValue" Margin="0,2,0,0" FontWeight="SemiBold" Text=""/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <Border Margin="0,0,8,0" Padding="8,6" BorderBrush="{DynamicResource WinSubtleBorderBrush}" BorderThickness="1" Background="{DynamicResource WinHeaderBrush}">
+                                                        <StackPanel>
+                                                            <TextBlock x:Name="ApiViewSelectedField2Label" Text="Context" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                            <TextBlock x:Name="ApiViewSelectedSizeValue" Margin="0,2,0,0" FontFamily="{DynamicResource AppMonoFontFamily}" FontWeight="SemiBold" Text=""/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <Border Margin="0,0,0,0" Padding="8,6" BorderBrush="{DynamicResource WinSubtleBorderBrush}" BorderThickness="1" Background="{DynamicResource WinHeaderBrush}">
+                                                        <StackPanel>
+                                                            <TextBlock x:Name="ApiViewSelectedField4Label" Text="Flags" Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                            <TextBlock x:Name="ApiViewSelectedProtectValue" Margin="0,2,0,0" FontWeight="SemiBold" Text=""/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </UniformGrid>
+
+                                                <Border Grid.Row="2"
+                                                        Margin="0,10,0,0"
+                                                        Padding="8,6"
+                                                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                        BorderThickness="1"
+                                                        Background="{DynamicResource WinHeaderBrush}">
+                                                    <StackPanel>
+                                                        <TextBlock Text="Frames / Call Chain"
+                                                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                        <TextBox x:Name="ApiViewSelectedFramesValue"
+                                                                 Margin="0,6,0,0"
+                                                                 Height="56"
+                                                                 BorderThickness="0"
+                                                                 Background="Transparent"
+                                                                 Foreground="{DynamicResource WinTextBrush}"
+                                                                 IsReadOnly="True"
+                                                                 TextWrapping="Wrap"
+                                                                 AcceptsReturn="True"
+                                                                 VerticalScrollBarVisibility="Auto"/>
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <Border Grid.Row="3"
+                                                        Margin="0,10,0,0"
+                                                        Padding="8,6"
+                                                        BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                                        BorderThickness="1"
+                                                        Background="{DynamicResource WinHeaderBrush}">
+                                                    <StackPanel>
+                                                        <TextBlock Text="Decoded Detail / Arguments"
+                                                                   Foreground="{DynamicResource WinMutedTextBrush}"/>
+                                                        <TextBox x:Name="ApiViewSelectedDetailValue"
+                                                                 Margin="0,6,0,0"
+                                                                 Height="132"
+                                                                 BorderThickness="0"
+                                                                 Background="Transparent"
+                                                                 Foreground="{DynamicResource WinTextBrush}"
+                                                                 IsReadOnly="True"
+                                                                 TextWrapping="Wrap"
+                                                                 AcceptsReturn="True"
+                                                                 VerticalScrollBarVisibility="Auto"/>
+                                                    </StackPanel>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Row="1"
+                            x:Name="ExtendedViewBorder"
+                            Visibility="Collapsed"
+                            BorderBrush="{DynamicResource PaneBorderBrush}"
+                            BorderThickness="1"
+                            Background="{DynamicResource WinPanelBrush}">
+                        <Grid Margin="8">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0"
+                                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                                    BorderThickness="0,0,0,1"
+                                    Background="{DynamicResource WinHeaderBrush}"
+                                    Padding="8,4"
+                                    Margin="0,0,0,8">
+                                <DockPanel LastChildFill="False">
+                                    <TextBlock Text="Extended View"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center"/>
+                                    <TextBlock x:Name="ExtendedViewSummaryBlock"
+                                               Margin="14,0,0,0"
+                                               VerticalAlignment="Center"
+                                               FontWeight="SemiBold"
+                                               Text="No extended activity yet"/>
+                                </DockPanel>
+                            </Border>
+
+                            <TabControl Grid.Row="1"
+                                        Background="Transparent"
+                                        BorderThickness="0">
+                                <TabItem Header="All">
+                                    <DataGrid x:Name="ExtendedViewDataGrid"
+                                              Style="{StaticResource AppDataGridStyle}"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              CanUserReorderColumns="False"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="26"
+                                              BorderThickness="0"
+                                              GridLinesVisibility="None"
+                                              PreviewMouseRightButtonDown="ExtendedActivityGrid_PreviewMouseRightButtonDown">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Copy Summary" Click="ExtendedActivityCopySummary_Click"/>
+                                                <MenuItem Header="Copy Details" Click="ExtendedActivityCopyDetails_Click"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Type" Width="176" Binding="{Binding TypeLabel}"/>
+                                            <DataGridTextColumn Header="Actor" Width="96" Binding="{Binding ActorLabel}"/>
+                                            <DataGridTextColumn Header="Target" Width="104" Binding="{Binding TargetLabel}"/>
+                                            <DataGridTextColumn Header="Subject" Width="180" Binding="{Binding SubjectLabel}"/>
+                                            <DataGridTextColumn Header="Operation" Width="176" Binding="{Binding OperationLabel}"/>
+                                            <DataGridTextColumn Header="Last Seen" Width="120" Binding="{Binding LastSeenLabel}"/>
+                                            <DataGridTextColumn Header="Hits" Width="60" Binding="{Binding Hits}"/>
+                                            <DataGridTemplateColumn Header="Detail" Width="*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding DetailLabel}"
+                                                                   Margin="8,0"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                                <TabItem Header="Capabilities">
+                                    <DataGrid x:Name="ExtendedCapabilitiesDataGrid"
+                                              Style="{StaticResource AppDataGridStyle}"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              CanUserReorderColumns="False"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="26"
+                                              BorderThickness="0"
+                                              GridLinesVisibility="None"
+                                              PreviewMouseRightButtonDown="ExtendedActivityGrid_PreviewMouseRightButtonDown">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Copy Summary" Click="ExtendedActivityCopySummary_Click"/>
+                                                <MenuItem Header="Copy Details" Click="ExtendedActivityCopyDetails_Click"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Type" Width="176" Binding="{Binding TypeLabel}"/>
+                                            <DataGridTextColumn Header="Actor" Width="96" Binding="{Binding ActorLabel}"/>
+                                            <DataGridTextColumn Header="Target" Width="104" Binding="{Binding TargetLabel}"/>
+                                            <DataGridTextColumn Header="Capability" Width="180" Binding="{Binding SubjectLabel}"/>
+                                            <DataGridTextColumn Header="State" Width="176" Binding="{Binding OperationLabel}"/>
+                                            <DataGridTextColumn Header="Last Seen" Width="120" Binding="{Binding LastSeenLabel}"/>
+                                            <DataGridTextColumn Header="Hits" Width="60" Binding="{Binding Hits}"/>
+                                            <DataGridTemplateColumn Header="Evidence" Width="*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding DetailLabel}"
+                                                                   Margin="8,0"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                                <TabItem Header="COM / WMI">
+                                    <DataGrid x:Name="ExtendedComDataGrid"
+                                              Style="{StaticResource AppDataGridStyle}"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              CanUserReorderColumns="False"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="26"
+                                              BorderThickness="0"
+                                              GridLinesVisibility="None"
+                                              PreviewMouseRightButtonDown="ExtendedActivityGrid_PreviewMouseRightButtonDown">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Copy Summary" Click="ExtendedActivityCopySummary_Click"/>
+                                                <MenuItem Header="Copy Details" Click="ExtendedActivityCopyDetails_Click"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Type" Width="176" Binding="{Binding TypeLabel}"/>
+                                            <DataGridTextColumn Header="Actor" Width="96" Binding="{Binding ActorLabel}"/>
+                                            <DataGridTextColumn Header="Target" Width="104" Binding="{Binding TargetLabel}"/>
+                                            <DataGridTextColumn Header="Subject" Width="180" Binding="{Binding SubjectLabel}"/>
+                                            <DataGridTextColumn Header="Operation" Width="176" Binding="{Binding OperationLabel}"/>
+                                            <DataGridTextColumn Header="Last Seen" Width="120" Binding="{Binding LastSeenLabel}"/>
+                                            <DataGridTextColumn Header="Hits" Width="60" Binding="{Binding Hits}"/>
+                                            <DataGridTemplateColumn Header="Detail" Width="*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding DetailLabel}"
+                                                                   Margin="8,0"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                                <TabItem Header="ETW">
+                                    <DataGrid x:Name="ExtendedEtwDataGrid"
+                                              Style="{StaticResource AppDataGridStyle}"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              CanUserReorderColumns="False"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="26"
+                                              BorderThickness="0"
+                                              GridLinesVisibility="None"
+                                              PreviewMouseRightButtonDown="ExtendedActivityGrid_PreviewMouseRightButtonDown">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Copy Summary" Click="ExtendedActivityCopySummary_Click"/>
+                                                <MenuItem Header="Copy Details" Click="ExtendedActivityCopyDetails_Click"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Type" Width="176" Binding="{Binding TypeLabel}"/>
+                                            <DataGridTextColumn Header="Actor" Width="96" Binding="{Binding ActorLabel}"/>
+                                            <DataGridTextColumn Header="Target" Width="104" Binding="{Binding TargetLabel}"/>
+                                            <DataGridTextColumn Header="Subject" Width="180" Binding="{Binding SubjectLabel}"/>
+                                            <DataGridTextColumn Header="Operation" Width="176" Binding="{Binding OperationLabel}"/>
+                                            <DataGridTextColumn Header="Last Seen" Width="120" Binding="{Binding LastSeenLabel}"/>
+                                            <DataGridTextColumn Header="Hits" Width="60" Binding="{Binding Hits}"/>
+                                            <DataGridTemplateColumn Header="Detail" Width="*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding DetailLabel}"
+                                                                   Margin="8,0"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                                <TabItem Header="Jobs">
+                                    <DataGrid x:Name="ExtendedJobDataGrid"
+                                              Style="{StaticResource AppDataGridStyle}"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              CanUserReorderColumns="False"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="26"
+                                              BorderThickness="0"
+                                              GridLinesVisibility="None"
+                                              PreviewMouseRightButtonDown="ExtendedActivityGrid_PreviewMouseRightButtonDown">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Copy Summary" Click="ExtendedActivityCopySummary_Click"/>
+                                                <MenuItem Header="Copy Details" Click="ExtendedActivityCopyDetails_Click"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Type" Width="176" Binding="{Binding TypeLabel}"/>
+                                            <DataGridTextColumn Header="Actor" Width="96" Binding="{Binding ActorLabel}"/>
+                                            <DataGridTextColumn Header="Target" Width="104" Binding="{Binding TargetLabel}"/>
+                                            <DataGridTextColumn Header="Subject" Width="180" Binding="{Binding SubjectLabel}"/>
+                                            <DataGridTextColumn Header="Operation" Width="176" Binding="{Binding OperationLabel}"/>
+                                            <DataGridTextColumn Header="Last Seen" Width="120" Binding="{Binding LastSeenLabel}"/>
+                                            <DataGridTextColumn Header="Hits" Width="60" Binding="{Binding Hits}"/>
+                                            <DataGridTemplateColumn Header="Detail" Width="*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding DetailLabel}"
+                                                                   Margin="8,0"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                                <TabItem Header="Rules">
+                                    <DataGrid x:Name="ExtendedYaraDataGrid"
+                                              Style="{StaticResource AppDataGridStyle}"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              CanUserReorderColumns="False"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="26"
+                                              BorderThickness="0"
+                                              GridLinesVisibility="None"
+                                              PreviewMouseRightButtonDown="ExtendedActivityGrid_PreviewMouseRightButtonDown">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Copy Summary" Click="ExtendedActivityCopySummary_Click"/>
+                                                <MenuItem Header="Copy Details" Click="ExtendedActivityCopyDetails_Click"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Type" Width="176" Binding="{Binding TypeLabel}"/>
+                                            <DataGridTextColumn Header="Actor" Width="96" Binding="{Binding ActorLabel}"/>
+                                            <DataGridTextColumn Header="Target" Width="104" Binding="{Binding TargetLabel}"/>
+                                            <DataGridTextColumn Header="Subject" Width="180" Binding="{Binding SubjectLabel}"/>
+                                            <DataGridTextColumn Header="Operation" Width="176" Binding="{Binding OperationLabel}"/>
+                                            <DataGridTextColumn Header="Last Seen" Width="120" Binding="{Binding LastSeenLabel}"/>
+                                            <DataGridTextColumn Header="Hits" Width="60" Binding="{Binding Hits}"/>
+                                            <DataGridTemplateColumn Header="Detail" Width="*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding DetailLabel}"
+                                                                   Margin="8,0"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                                <TabItem Header="Strings">
+                                    <DataGrid x:Name="ExtendedStringsDataGrid"
+                                              Style="{StaticResource AppDataGridStyle}"
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserAddRows="False"
+                                              CanUserDeleteRows="False"
+                                              CanUserReorderColumns="False"
+                                              CanUserResizeRows="False"
+                                              ColumnHeaderHeight="24"
+                                              RowHeight="26"
+                                              BorderThickness="0"
+                                              GridLinesVisibility="None"
+                                              PreviewMouseRightButtonDown="ExtendedActivityGrid_PreviewMouseRightButtonDown">
+                                        <DataGrid.ContextMenu>
+                                            <ContextMenu>
+                                                <MenuItem Header="Copy Summary" Click="ExtendedActivityCopySummary_Click"/>
+                                                <MenuItem Header="Copy Details" Click="ExtendedActivityCopyDetails_Click"/>
+                                            </ContextMenu>
+                                        </DataGrid.ContextMenu>
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Type" Width="136" Binding="{Binding TypeLabel}"/>
+                                            <DataGridTextColumn Header="Actor" Width="96" Binding="{Binding ActorLabel}"/>
+                                            <DataGridTextColumn Header="Target" Width="104" Binding="{Binding TargetLabel}"/>
+                                            <DataGridTextColumn Header="Image" Width="220" Binding="{Binding SubjectLabel}"/>
+                                            <DataGridTextColumn Header="Operation" Width="156" Binding="{Binding OperationLabel}"/>
+                                            <DataGridTextColumn Header="Last Seen" Width="120" Binding="{Binding LastSeenLabel}"/>
+                                            <DataGridTextColumn Header="Hits" Width="60" Binding="{Binding Hits}"/>
+                                            <DataGridTemplateColumn Header="String Diff" Width="*">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding DetailLabel}"
+                                                                   Margin="8,0"
+                                                                   VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                            </TabControl>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <GridSplitter Grid.Column="1"
+                              x:Name="IntelligenceSplitter"
+                              Width="2"
+                              Background="{DynamicResource WinSubtleBorderBrush}"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch"/>
+
+                <Grid Grid.Column="2" x:Name="IntelligenceDock">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="2"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="2"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="2"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="2"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0"
+                            x:Name="EtwDockBorder"
+                            BorderBrush="{DynamicResource WinBorderBrush}"
+                            BorderThickness="1,1,1,0"
+                            Background="{DynamicResource WinPanelBrush}">
+                        <local:EtwPane x:Name="EtwPaneHost"/>
+                    </Border>
+
+                    <GridSplitter Grid.Row="1"
+                                  Height="2"
+                                  Background="{DynamicResource WinSubtleBorderBrush}"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch"/>
+
+                    <Border Grid.Row="2"
+                            x:Name="HeuristicsDockBorder"
+                            BorderBrush="{DynamicResource WinBorderBrush}"
+                            BorderThickness="1,0,1,0"
+                            Background="{DynamicResource WinPanelBrush}">
+                        <local:HeuristicsPane x:Name="HeuristicsPaneHost"/>
+                    </Border>
+
+                    <GridSplitter Grid.Row="3"
+                                  Height="2"
+                                  Background="{DynamicResource WinSubtleBorderBrush}"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch"/>
+
+                    <Border Grid.Row="4"
+                            x:Name="FilesystemDockBorder"
+                            BorderBrush="{DynamicResource WinBorderBrush}"
+                            BorderThickness="1,0,1,0"
+                            Background="{DynamicResource WinPanelBrush}">
+                        <local:FilesystemPane x:Name="FilesystemPaneHost"/>
+                    </Border>
+
+                    <GridSplitter Grid.Row="5"
+                                  Height="2"
+                                  Background="{DynamicResource WinSubtleBorderBrush}"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch"/>
+
+                    <Border Grid.Row="6"
+                            x:Name="RegistryDockBorder"
+                            BorderBrush="{DynamicResource WinBorderBrush}"
+                            BorderThickness="1,0,1,0"
+                            Background="{DynamicResource WinPanelBrush}">
+                        <local:RegistryPane x:Name="RegistryPaneHost"/>
+                    </Border>
+
+                    <GridSplitter Grid.Row="7"
+                                  Height="2"
+                                  Background="{DynamicResource WinSubtleBorderBrush}"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Stretch"/>
+
+                    <Border Grid.Row="8"
+                            x:Name="ProcessRelationsDockBorder"
+                            BorderBrush="{DynamicResource WinBorderBrush}"
+                            BorderThickness="1,0,1,1"
+                            Background="{DynamicResource WinPanelBrush}">
+                        <local:ProcessRelationsPane x:Name="ProcessRelationsPaneHost"/>
+                    </Border>
+                </Grid>
+            </Grid>
+        </Grid>
+
+        <Border x:Name="SwitchToastBorder"
+                Grid.Row="0"
+                Grid.RowSpan="4"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Padding="28,14"
+                CornerRadius="4"
+                Background="#CC101010"
+                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                BorderThickness="1"
+                IsHitTestVisible="False"
+                Opacity="0"
+                Visibility="Collapsed">
+            <TextBlock x:Name="SwitchToastText"
+                       FontSize="16"
+                       FontWeight="SemiBold"
+                       Foreground="{DynamicResource WinTextBrush}"
+                       TextAlignment="Center"/>
+        </Border>
+
+    </Grid>
+</Window>
+
+

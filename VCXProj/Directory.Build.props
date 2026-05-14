@@ -1,0 +1,28 @@
+<Project>
+  <PropertyGroup Label="BlackbirdEdition">
+    <BlackbirdEdition>Community</BlackbirdEdition>
+    <BlackbirdEditionDefine>BLACKBIRD_COMMUNITY</BlackbirdEditionDefine>
+    <BlackbirdProductName Condition="'$(BlackbirdProductName)'==''">Blackbird Community</BlackbirdProductName>
+    <BlackbirdManifestIdentityPrefix Condition="'$(BlackbirdManifestIdentityPrefix)'==''">Blackbird.Community</BlackbirdManifestIdentityPrefix>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
+    <DefineConstants>$(DefineConstants);$(BlackbirdEditionDefine)</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'BlackbirdInterface'">
+    <BaseIntermediateOutputPath>..\x64\obj\BlackbirdInterface\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'BlackbirdOperator'">
+    <BaseIntermediateOutputPath>..\x64\obj\BlackbirdOperator\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+
+  <Target Name="BlackbirdCompileWin32Resource"
+          BeforeTargets="CoreCompile"
+          Condition="'$(BlackbirdWin32ResourceSource)' != ''">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\Scripts\Compile-Win32Resource.ps1&quot; -Source &quot;$(MSBuildProjectDirectory)\$(BlackbirdWin32ResourceSource)&quot; -Output &quot;$(MSBuildProjectDirectory)\$(BlackbirdWin32ResourceOutput)&quot;" />
+  </Target>
+</Project>

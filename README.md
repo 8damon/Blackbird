@@ -1,5 +1,6 @@
 <h1 align="center">BLACKBIRD COMMUNITY</h1>
-<p align="center"><b>Community edition of the Blackbird real-time malware analysis platform (RTMA), software reverse-engineering (SRE) suite and Intrusion Detection System (IDS).</b></p>
+
+<p align="center"><b>A powerful, instrumentable, real-time malware analysis platform (RTMA), software reverse-engineering (SRE) suite and Intrusion Detection System (IDS).</b></p>
 
 <p align="center">
   <a href="https://titansoftwork.com/capability/blackbird/download/">
@@ -31,28 +32,19 @@ A virtual machine on Windows 10 22H2 or higher, 64-bit.
 
 ## FEATURES
 
-- Fully fledged analysis interface
-- Kernel-backed
-- Integrated heuristics & detections
-- Detailed overview and inspection of process-activity
-- WPA-like event-viewing graph
-- Target execution control
-- Target API hooking
-- API call analyzer & graph
-- API call argument observation
-- Full symbol resolution
-- Thread & Thread-stack analyzers
-- Process memory attribution telemetry
-- Registry activity overview
-- File activity overview
-- Process-relations & child processes overview
-- Handles overview
-- Network overview
-- ETW overview
-- COM overview
-- Performance analytics
-- Configurable/importable local rules with SIEM detection exports
-- Diagnostics suite
+- Full local analysis interface for malware detonation, reverse engineering, and triage
+- Kernel-backed capture for process, thread, image, handle, memory, registry, filesystem, network, ETW, and timing telemetry
+- Target launch and attach workflows for EXE and DLL subjects, including suspended launch, deferred resume, and execution control
+- SR71 usermode instrumentation with launch-gate readiness, hook-health reporting, stack capture, and hook-integrity diagnostics
+- Usermode API telemetry for NT, module, and Winsock activity, with API call graphs, argument observation, caller attribution, and symbol resolution
+- Memory attribution for allocation, protection, write, section-map, unmap, and thread-execution evidence
+- Memory behavior detections for executable allocation, remote memory activity, repeated protection flips, high-entropy regions, and unpacking/packer indicators
+- Integrated heuristics and detection views with process relations, child process tracking, handles, registry, file, network, ETW, COM, and performance panes
+- Thread and thread-stack analyzers with observed hook stacks and fallback stack snapshots where available
+- Rules Intel for local Sigma/YARA-style rules, including file, page, memory-sample, and process-memory YARA scans
+- Automatic Signature Intel enrichment on launch, memory events, direct-syscall traits, page samples, and target-process scan triggers
+- Session capture archives (`.bkcap`) with detection export formats for JSON Lines, Splunk HEC JSON, Elastic ECS NDJSON, CEF, and CSV
+- Local diagnostics and preflight checks for controller, driver, hook DLL, hook ingest, ETW, service state, and runtime integrity
 
 Community includes the shared local capture and detection pipeline. Enterprise
 adds BlackbirdVisor/hypervisor control, NetSvc/server orchestration, the full
@@ -81,21 +73,6 @@ Clone Blackbird:
 ``git clone https://github.com/8damon/Blackbird``
 
 Open the ``Blackbird.slnx`` file & select ``Release`` & build.
-
-## KNOWN ISSUES
-
-- Rules Intel supports local rule evaluation, MITRE attribution where available, and memory/page sample scanning in the analysis interface. External third-party rule packs are not part of the public tree until reviewed.
-
-- Some executables when launched present with `ERROR_BAD_IMPERSONATION_LEVEL (1346)`, this is a known bug and the root cause is being identified.
-
-- "Uplink Failed" / "Service Not Found", this is due to you not running the installer script `Scripts\IsolatedInstaller.ps1`, which installs and starts the driver and controller services.
-
-- Memory attribution is heuristic when direct allocator telemetry is unavailable. Thread execution through a region is shown as an ownership clue, not definitive ownership proof.
-
-- Raw telemetry can appear before a protected launch is resumed. Detection
-  promotion is gated until resume so SR71 staging, launch-gate/TLS traps, OS
-  broker startup, console setup, and WER activity do not appear as target-authored
-  injection.
 
 > [!NOTE]
 > Some instability or unexpected behavior may occur due to the low-level nature of the platform. This is expected during development.

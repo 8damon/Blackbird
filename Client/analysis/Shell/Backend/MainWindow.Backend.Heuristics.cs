@@ -241,7 +241,17 @@ namespace BlackbirdInterface
                     return null;
                 }
 
+                if (!TryBuildRequiredStackEvidence(view, "ANTI_DEBUG_PROCESS_QUERY", out string stackEvidence,
+                                                   out _))
+                {
+                    return null;
+                }
+
                 string evidence = $"{apiName} {className} actor={actor} target={target}";
+                if (!string.IsNullOrWhiteSpace(stackEvidence))
+                {
+                    evidence = $"{evidence}; {stackEvidence}";
+                }
                 return BuildAntiAnalysisFinding(
                     view.TimestampUtc, actor, target, "ANTI_DEBUG_PROCESS_QUERY", 6, "UserHook/AntiAnalysis", apiName,
                     $"queried anti-debug process information class {className} (0x{infoClass:X})", evidence);
@@ -254,7 +264,17 @@ namespace BlackbirdInterface
                                                 "class", "a0", "c0");
                 if (infoClass == 35)
                 {
+                    if (!TryBuildRequiredStackEvidence(view, "ANTI_DEBUG_KERNEL_DEBUGGER_QUERY",
+                                                       out string stackEvidence, out _))
+                    {
+                        return null;
+                    }
+
                     string evidence = $"{apiName} SystemKernelDebuggerInformation actor={actor}";
+                    if (!string.IsNullOrWhiteSpace(stackEvidence))
+                    {
+                        evidence = $"{evidence}; {stackEvidence}";
+                    }
                     return BuildAntiAnalysisFinding(
                         view.TimestampUtc, actor, target, "ANTI_DEBUG_KERNEL_DEBUGGER_QUERY", 6,
                         "UserHook/AntiAnalysis", apiName,
@@ -263,7 +283,17 @@ namespace BlackbirdInterface
 
                 if (infoClass == 76)
                 {
+                    if (!TryBuildRequiredStackEvidence(view, "ANTI_VM_FIRMWARE_TABLE_QUERY",
+                                                       out string stackEvidence, out _))
+                    {
+                        return null;
+                    }
+
                     string evidence = $"{apiName} SystemFirmwareTableInformation actor={actor}";
+                    if (!string.IsNullOrWhiteSpace(stackEvidence))
+                    {
+                        evidence = $"{evidence}; {stackEvidence}";
+                    }
                     return BuildAntiAnalysisFinding(
                         view.TimestampUtc, actor, target, "ANTI_VM_FIRMWARE_TABLE_QUERY", 5, "UserHook/AntiAnalysis",
                         apiName, "queried firmware tables commonly used for hypervisor/vendor checks", evidence);

@@ -51,7 +51,11 @@ enum class ModuleHookOperation : std::uint32_t
     NCryptUnprotectSecret = 40,
     NCryptOpenStorageProvider = 41,
     NCryptOpenKey = 42,
-    NCryptDecrypt = 43
+    NCryptDecrypt = 43,
+    CfAbortOperation = 44,
+    CfRegisterSyncRoot = 45,
+    CfConnectSyncRoot = 46,
+    CfCreatePlaceholders = 47
 };
 
 struct ModuleHookContext

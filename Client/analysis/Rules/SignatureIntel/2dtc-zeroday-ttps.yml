@@ -1,0 +1,245 @@
+title: 2Dtc Cloud Files Policy Registry Link Abuse
+id: blackbird.sigma.2dtc.cloudfiles_policy_link_abuse
+status: experimental
+description: Cloud Files policy registry paths were modified in a way associated with abort-hydration registry-link privilege escalation chains.
+logsource:
+  product: windows
+  category: registry_set
+detection:
+  selection_cloudfiles:
+    TargetObject|contains:
+      - '\Software\Policies\Microsoft\CloudFiles\BlockedApps'
+      - '\Software\Policies\Microsoft\CloudFiles\SymbolicLinkValue'
+  selection_policy_system:
+    TargetObject|contains:
+      - '\Software\Microsoft\Windows\CurrentVersion\Policies\System\DisableLockWorkstation'
+  condition: selection_cloudfiles or selection_policy_system
+level: critical
+tags:
+  - attack.privilege_escalation
+  - attack.defense_evasion
+  - attack.t1068
+  - attack.t1112
+---
+title: 2Dtc DEFAULT Volatile Environment WER Hijack
+id: blackbird.sigma.2dtc.default_volatile_environment_windir_hijack
+status: experimental
+description: The DEFAULT profile Volatile Environment windir value or a temp-backed fake WER path was observed.
+logsource:
+  product: windows
+detection:
+  selection_registry:
+    TargetObject|contains:
+      - '\Registry\User\.DEFAULT\Volatile Environment\windir'
+      - '\.DEFAULT\Volatile Environment\windir'
+  selection_wermgr_image:
+    Image|contains:
+      - '\Temp\'
+      - '\AppData\Local\Temp\'
+    Image|endswith:
+      - '\System32\wermgr.exe'
+  selection_wermgr_command:
+    CommandLine|contains:
+      - '\System32\wermgr.exe'
+      - 'MiniPlasmaWERPipe'
+  condition: selection_registry or selection_wermgr_image or selection_wermgr_command
+level: critical
+tags:
+  - attack.privilege_escalation
+  - attack.persistence
+  - attack.t1068
+  - attack.t1574
+---
+title: 2Dtc Cloud Files Sync Root Placeholder Staging
+id: blackbird.sigma.2dtc.cloudfiles_syncroot_placeholder_staging
+status: experimental
+description: Cloud Files sync-root and placeholder APIs were used in a chain commonly surrounding RedSun-style Defender rewrite abuse.
+logsource:
+  product: windows
+detection:
+  selection_api:
+    ApiName|contains:
+      - 'CfRegisterSyncRoot'
+      - 'CfConnectSyncRoot'
+      - 'CfCreatePlaceholders'
+  selection_text:
+    '*|contains':
+      - 'CfRegisterSyncRoot'
+      - 'CfConnectSyncRoot'
+      - 'CfCreatePlaceholders'
+      - 'SERIOUSLYMSFT'
+  condition: selection_api or selection_text
+level: high
+tags:
+  - attack.defense_evasion
+  - attack.privilege_escalation
+  - attack.t1106
+  - attack.t1574
+---
+title: 2Dtc Defender Signature Update RPC Abuse
+id: blackbird.sigma.2dtc.defender_signature_update_rpc_abuse
+status: experimental
+description: Defender signature update RPC or object-manager staging names associated with BlueHammer-style update path redirection were observed.
+logsource:
+  product: windows
+detection:
+  selection_rpc_endpoint:
+    '*|contains':
+      - 'IMpService77BDAF73-B396-481F-9042-AD358843EC24'
+      - 'ServerMpUpdateEngineSignature'
+      - 'WDUpdateDirectory'
+  selection_alpc:
+    ApiName|contains:
+      - 'NtAlpcConnectPort'
+      - 'NtConnectPort'
+    '*|contains':
+      - 'IMpService'
+  condition: selection_rpc_endpoint or selection_alpc
+level: critical
+tags:
+  - attack.defense_evasion
+  - attack.privilege_escalation
+  - attack.t1106
+  - attack.t1562.001
+---
+title: 2Dtc Defender Definition VDM Tampering
+id: blackbird.sigma.2dtc.defender_definition_vdm_tampering
+status: experimental
+description: File activity targeted Microsoft Defender definition update VDM/LKG assets.
+logsource:
+  product: windows
+  category: file_event
+detection:
+  selection_definition_vdm:
+    TargetFilename|re: '\\ProgramData\\Microsoft\\Windows Defender\\Definition Updates\\.*\\(mpavbase|mpasbase|mpengine|[^\\]+\.vdm|[^\\]+\.lkg)'
+  selection_mrt:
+    TargetFilename|contains:
+      - '\Windows\System32\MRT\'
+  condition: selection_definition_vdm or selection_mrt
+level: high
+tags:
+  - attack.defense_evasion
+  - attack.t1562.001
+---
+title: 2Dtc Suspicious Cloud Filter Or Defender FSCTL Chain
+id: blackbird.sigma.2dtc.suspicious_cloudfilter_defender_fsctl_chain
+status: experimental
+description: Oplock, reparse-point, or Cloud Filter FSCTL activity was observed around privileged file or cloud placeholder manipulation.
+logsource:
+  product: windows
+detection:
+  selection_api:
+    ApiName|contains:
+      - 'NtFsControlFile'
+      - 'NtDeviceIoControlFile'
+  selection_fsctl_text:
+    '*|contains':
+      - 'FSCTL_REQUEST_BATCH_OPLOCK'
+      - 'FSCTL_REQUEST_OPLOCK'
+      - 'FSCTL_SET_REPARSE_POINT'
+      - 'FSCTL_CLOUD'
+      - 'CldFlt'
+      - 'cldflt'
+  condition: selection_api and selection_fsctl_text
+level: high
+tags:
+  - attack.defense_evasion
+  - attack.privilege_escalation
+  - attack.t1106
+  - attack.t1574.011
+---
+title: 2Dtc System32 Tiering Engine Service Overwrite
+id: blackbird.sigma.2dtc.system32_tiering_engine_service_overwrite
+status: experimental
+description: File activity targeted the TieringEngineService binary path used by RedSun-style Defender cloud-tag rewrite chains.
+logsource:
+  product: windows
+  category: file_event
+detection:
+  selection_tiering:
+    TargetFilename|endswith:
+      - '\Windows\System32\TieringEngineService.exe'
+  condition: selection_tiering
+level: critical
+tags:
+  - attack.privilege_escalation
+  - attack.t1068
+  - attack.t1574.011
+---
+title: 2Dtc Volume Shadow Copy Device Access
+id: blackbird.sigma.2dtc.volume_shadow_copy_device_access
+status: experimental
+description: Direct access to HarddiskVolumeShadowCopy device paths was observed from the analyzed process.
+logsource:
+  product: windows
+detection:
+  selection_vss:
+    '*|contains':
+      - '\Device\HarddiskVolumeShadowCopy'
+      - 'GLOBALROOT\Device\HarddiskVolumeShadowCopy'
+  condition: selection_vss
+level: high
+tags:
+  - attack.credential_access
+  - attack.defense_evasion
+  - attack.t1006
+---
+title: 2Dtc CTFMON Object Manager Section Link Abuse
+id: blackbird.sigma.2dtc.ctfmon_object_manager_section_link_abuse
+status: experimental
+description: CTFMON object-manager section/link names associated with GreenPlasma-style arbitrary section creation were observed.
+logsource:
+  product: windows
+detection:
+  selection_ctfmon:
+    '*|contains':
+      - 'CTF.AsmListCache.FMPWinlogon'
+      - 'CTFMON_DEAD'
+  condition: selection_ctfmon
+level: high
+tags:
+  - attack.privilege_escalation
+  - attack.t1068
+  - attack.t1106
+---
+title: 2Dtc YellowKey WinRE FsTx Artifact Staging
+id: blackbird.sigma.2dtc.yellowkey_winre_fstx_artifact_staging
+status: experimental
+description: FsTx recovery artifacts were staged under System Volume Information, matching the YellowKey BitLocker bypass artifact pattern.
+logsource:
+  product: windows
+  category: file_event
+detection:
+  selection_fstx:
+    TargetFilename|contains:
+      - '\System Volume Information\FsTx\'
+      - '\FsTxLogs\FsTxKtmLog'
+      - '\FsTxTemp\'
+  condition: selection_fstx
+level: high
+tags:
+  - attack.defense_evasion
+  - attack.t1006
+---
+title: 2Dtc RedSun Tiering Engine COM Launch
+id: blackbird.sigma.2dtc.redsun_tiering_engine_com_launch
+status: experimental
+description: The Tiering Engine COM class or payload name used by RedSun-style chains was observed.
+logsource:
+  product: windows
+detection:
+  selection_com_guid:
+    ApiName|contains:
+      - 'CoCreateInstance'
+    '*|contains':
+      - '50d185b9-fff3-4656-92c7-e4018da4361d'
+  selection_tiering_text:
+    '*|contains':
+      - 'TieringEngineService.exe'
+      - 'REDSUN'
+  condition: selection_com_guid or selection_tiering_text
+level: high
+tags:
+  - attack.execution
+  - attack.privilege_escalation
+  - attack.t1559.001

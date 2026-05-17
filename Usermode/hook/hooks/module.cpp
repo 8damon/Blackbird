@@ -206,6 +206,10 @@ namespace
     using NCryptOpenStorageProviderFn = LONG(WINAPI *)(PVOID *, LPCWSTR, DWORD);
     using NCryptOpenKeyFn = LONG(WINAPI *)(PVOID, PVOID *, LPCWSTR, DWORD, DWORD);
     using NCryptDecryptFn = LONG(WINAPI *)(PVOID, PBYTE, DWORD, PVOID, PBYTE, DWORD, DWORD *, DWORD);
+    using CfAbortOperationFn = DWORD(WINAPI *)(DWORD, PVOID, DWORD);
+    using CfRegisterSyncRootFn = HRESULT(WINAPI *)(LPCWSTR, const void *, const void *, DWORD);
+    using CfConnectSyncRootFn = HRESULT(WINAPI *)(LPCWSTR, const void *, void *, DWORD, void *);
+    using CfCreatePlaceholdersFn = HRESULT(WINAPI *)(LPCWSTR, void *, DWORD, DWORD, DWORD *);
 
     struct InlineHook
     {
@@ -267,6 +271,10 @@ namespace
     static NCryptOpenStorageProviderFn g_OriginalNCryptOpenStorageProvider = nullptr;
     static NCryptOpenKeyFn g_OriginalNCryptOpenKey = nullptr;
     static NCryptDecryptFn g_OriginalNCryptDecrypt = nullptr;
+    static CfAbortOperationFn g_OriginalCfAbortOperation = nullptr;
+    static CfRegisterSyncRootFn g_OriginalCfRegisterSyncRoot = nullptr;
+    static CfConnectSyncRootFn g_OriginalCfConnectSyncRoot = nullptr;
+    static CfCreatePlaceholdersFn g_OriginalCfCreatePlaceholders = nullptr;
 
     HMODULE WINAPI LoadLibraryAHook(LPCSTR lpLibFileName);
     HMODULE WINAPI LoadLibraryWHook(LPCWSTR lpLibFileName);
@@ -343,6 +351,13 @@ namespace
     LONG WINAPI NCryptOpenKeyHook(PVOID provider, PVOID *key, LPCWSTR keyName, DWORD legacyKeySpec, DWORD flags);
     LONG WINAPI NCryptDecryptHook(PVOID key, PBYTE input, DWORD inputSize, PVOID paddingInfo, PBYTE output,
                                   DWORD outputSize, DWORD *resultSize, DWORD flags);
+    DWORD WINAPI CfAbortOperationHook(DWORD processId, PVOID unknown, DWORD flags);
+    HRESULT WINAPI CfRegisterSyncRootHook(LPCWSTR syncRootPath, const void *registration, const void *policies,
+                                          DWORD registerFlags);
+    HRESULT WINAPI CfConnectSyncRootHook(LPCWSTR syncRootPath, const void *callbackTable, void *callbackContext,
+                                         DWORD connectFlags, void *connectionKey);
+    HRESULT WINAPI CfCreatePlaceholdersHook(LPCWSTR baseDirectoryPath, void *placeholderArray, DWORD placeholderCount,
+                                            DWORD createFlags, DWORD *entriesProcessed);
 
     static InlineHook g_Hooks[] = {
         {L"KernelBase.dll",
@@ -737,6 +752,42 @@ namespace
          "ncrypt",
          reinterpret_cast<void *>(&NCryptDecryptHook),
          reinterpret_cast<void **>(&g_OriginalNCryptDecrypt),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"cldapi.dll",
+         "CfAbortOperation",
+         "cldapi",
+         reinterpret_cast<void *>(&CfAbortOperationHook),
+         reinterpret_cast<void **>(&g_OriginalCfAbortOperation),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"cldapi.dll",
+         "CfRegisterSyncRoot",
+         "cldapi",
+         reinterpret_cast<void *>(&CfRegisterSyncRootHook),
+         reinterpret_cast<void **>(&g_OriginalCfRegisterSyncRoot),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"cldapi.dll",
+         "CfConnectSyncRoot",
+         "cldapi",
+         reinterpret_cast<void *>(&CfConnectSyncRootHook),
+         reinterpret_cast<void **>(&g_OriginalCfConnectSyncRoot),
+         nullptr,
+         nullptr,
+         {},
+         false},
+        {L"cldapi.dll",
+         "CfCreatePlaceholders",
+         "cldapi",
+         reinterpret_cast<void *>(&CfCreatePlaceholdersHook),
+         reinterpret_cast<void **>(&g_OriginalCfCreatePlaceholders),
          nullptr,
          nullptr,
          {},

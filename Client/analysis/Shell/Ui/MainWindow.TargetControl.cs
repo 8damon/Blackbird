@@ -144,15 +144,14 @@ namespace BlackbirdInterface
                     continue;
                 }
 
-                if (current == null || !current.Contains("TAMPERED", StringComparison.OrdinalIgnoreCase))
-                {
-                    DiagnosticsState.SetValue(key, "INACTIVE (target suspended)");
-                }
+                DiagnosticsState.SetValue(
+                    key,
+                    "Awaiting target resume (pre-arm; SR71 injected but integrity verdicts are deferred until user code runs)");
             }
             if (DiagnosticsState.GetValue("Usermode Hooks")?.Contains("Disabled", StringComparison.OrdinalIgnoreCase) !=
                 true)
             {
-                DiagnosticsState.SetValue("Usermode Hooks", "INACTIVE (target suspended)");
+                DiagnosticsState.SetValue("Usermode Hooks", "Awaiting target resume (pre-arm)");
             }
         }
 
@@ -161,15 +160,18 @@ namespace BlackbirdInterface
             foreach (string key in _integrityDiagnosticKeys)
             {
                 string? current = DiagnosticsState.GetValue(key);
-                if (current != null && current.Contains("INACTIVE", StringComparison.OrdinalIgnoreCase))
+                if (current != null &&
+                    (current.Contains("INACTIVE", StringComparison.OrdinalIgnoreCase) ||
+                     current.Contains("pre-arm", StringComparison.OrdinalIgnoreCase)))
                 {
-                    DiagnosticsState.SetValue(key, "INACTIVE (resuming)");
+                    DiagnosticsState.SetValue(key, "Awaiting SR71 telemetry (target resumed)");
                 }
             }
-            if (DiagnosticsState.GetValue("Usermode Hooks")?.Contains("INACTIVE", StringComparison.OrdinalIgnoreCase) ==
-                true)
+            string? usermodeHooks = DiagnosticsState.GetValue("Usermode Hooks");
+            if (usermodeHooks?.Contains("INACTIVE", StringComparison.OrdinalIgnoreCase) == true ||
+                usermodeHooks?.Contains("pre-arm", StringComparison.OrdinalIgnoreCase) == true)
             {
-                DiagnosticsState.SetValue("Usermode Hooks", "INACTIVE (resuming)");
+                DiagnosticsState.SetValue("Usermode Hooks", "Awaiting SR71 telemetry (target resumed)");
             }
         }
 

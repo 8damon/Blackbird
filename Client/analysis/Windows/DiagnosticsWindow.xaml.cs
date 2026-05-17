@@ -33,6 +33,7 @@ namespace BlackbirdInterface
         private readonly ObservableCollection<FeedEntryView> _exceptionFeedEntries = new();
         private readonly ObservableCollection<FeedEntryView> _controllerFeedEntries = new();
         private readonly ObservableCollection<ComponentEntryView> _componentEntries = new();
+        private readonly ObservableCollection<ArchitectureLayerView> _architectureLayers = new();
         private long _controllerLogOffset;
 
         public DiagnosticsWindow(int pid)
@@ -47,6 +48,7 @@ namespace BlackbirdInterface
             DegradedItemsControl.ItemsSource = _degradedEntries;
             HealthyItemsControl.ItemsSource = _healthyEntries;
             ComponentItemsControl.ItemsSource = _componentEntries;
+            ArchitectureLayersControl.ItemsSource = _architectureLayers;
             LoadOutputSnapshot();
             RefreshState();
             _ = LoadComponentIdentityAsync();
@@ -103,6 +105,7 @@ namespace BlackbirdInterface
             ReplaceCollection(_disabledEntries, views.Where(x => x.StateGroup == DiagnosticsStateGroup.Disabled));
             ReplaceCollection(_degradedEntries, views.Where(x => x.StateGroup == DiagnosticsStateGroup.Degraded));
             ReplaceCollection(_healthyEntries, views.Where(x => x.StateGroup == DiagnosticsStateGroup.Healthy));
+            ReplaceCollection(_architectureLayers, BuildArchitectureLayers(values));
         }
 
         private static List<DiagnosticsStateEntry> BuildSubsystemEntries(IReadOnlyDictionary<string, string> values)
@@ -126,6 +129,7 @@ namespace BlackbirdInterface
             AddProjected(projected, "PID Coverage", ResolveFirst(values, "PID Coverage"));
             AddProjected(projected, "Driver Queue", ResolveFirst(values, "Driver Queue"));
             AddProjected(projected, "Driver Health", ResolveFirst(values, "Driver Health"));
+            AddProjected(projected, "Driver Components", ResolveFirst(values, "Driver Components"));
             AddProjected(projected, "Driver Tamper", ResolveDriverTamper(values));
             AddProjected(projected, "SR71 Hook Ready", ResolveSr71HookReady(values));
             AddProjected(projected, "SR71 Instrumentation", ResolveSr71Instrumentation(values));
@@ -357,6 +361,13 @@ namespace BlackbirdInterface
                 return value;
             }
 
+            if (!string.IsNullOrWhiteSpace(value) &&
+                (value.Contains("missingNames=", StringComparison.OrdinalIgnoreCase) ||
+                 value.Contains("present=", StringComparison.OrdinalIgnoreCase)))
+            {
+                return value;
+            }
+
             if (IsGoodStatus(hooks))
             {
                 return "OK observed via SR71 telemetry";
@@ -452,12 +463,32 @@ namespace BlackbirdInterface
 
             return value.Contains("TAMPERED", StringComparison.OrdinalIgnoreCase) ||
                    value.Contains("FAILED", StringComparison.OrdinalIgnoreCase) ||
-                   value.Contains("MISSING", StringComparison.OrdinalIgnoreCase) ||
+                   ContainsStatusWord(value, "MISSING") ||
                    value.Contains("OPEN FAILED", StringComparison.OrdinalIgnoreCase) ||
                    value.Contains("TIMED OUT", StringComparison.OrdinalIgnoreCase) ||
                    value.Contains("STOPPED", StringComparison.OrdinalIgnoreCase) ||
                    value.Contains("ERROR", StringComparison.OrdinalIgnoreCase) ||
                    value.Contains("ACCESS DENIED", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool ContainsStatusWord(string value, string word)
+        {
+            int index = value.IndexOf(word, StringComparison.OrdinalIgnoreCase);
+            while (index >= 0)
+            {
+                bool beforeOk = index == 0 || !char.IsLetterOrDigit(value[index - 1]);
+                int after = index + word.Length;
+                bool afterOk = after >= value.Length ||
+                               (!char.IsLetterOrDigit(value[after]) && value[after] != '=');
+                if (beforeOk && afterOk)
+                {
+                    return true;
+                }
+
+                index = value.IndexOf(word, index + word.Length, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
         }
 
         private static bool IsDisabledStatus(string? value)
@@ -829,6 +860,111 @@ namespace BlackbirdInterface
                    entry.Message.IndexOf("veh-exception", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private void DiagnosticCard_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ClickCount < 2 || (sender as FrameworkElement)?.Tag is not DiagnosticsEntryView view)
+            {
+                return;
+            }
+
+            e.Handled = true;
+            Dictionary<string, string> values =
+                DiagnosticsState.SnapshotEntries()
+                    .Where(x => !string.IsNullOrWhiteSpace(x.Key))
+                    .GroupBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.Last().Value, StringComparer.OrdinalIgnoreCase);
+            MessageBox.Show(this, BuildDiagnosticDetail(view, values), $"{view.Key} diagnostics",
+                            MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private static string BuildDiagnosticDetail(DiagnosticsEntryView view,
+                                                    IReadOnlyDictionary<string, string> values)
+        {
+            var sb = new StringBuilder(1024);
+            sb.AppendLine(view.Key);
+            sb.AppendLine($"Status: {view.StatusLabel}");
+            sb.AppendLine($"Domain: {view.DomainLabel}");
+            sb.AppendLine($"Summary: {view.Value}");
+            sb.AppendLine($"Guidance: {view.Guidance}");
+            AppendEvidenceTokens(sb, view.Value);
+
+            var related = RelatedDiagnostics(view.Key, values).ToList();
+            if (related.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("Related state:");
+                foreach (KeyValuePair<string, string> item in related)
+                {
+                    sb.AppendLine($"- {item.Key}: {item.Value}");
+                }
+            }
+
+            if (view.Value.Contains("preArm=true", StringComparison.OrdinalIgnoreCase))
+            {
+                sb.AppendLine();
+                sb.AppendLine("Interpretation: SR71 is injected while the target is still suspended. Integrity verdicts are deferred until the first post-resume user-mode telemetry.");
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+
+        private static void AppendEvidenceTokens(StringBuilder sb, string value)
+        {
+            string[] tokens = (value ?? string.Empty).Split(';', StringSplitOptions.RemoveEmptyEntries);
+            if (tokens.Length <= 1)
+            {
+                return;
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("Evidence:");
+            foreach (string token in tokens.Skip(1))
+            {
+                sb.AppendLine($"- {token.Trim()}");
+            }
+        }
+
+        private static IEnumerable<KeyValuePair<string, string>> RelatedDiagnostics(
+            string key,
+            IReadOnlyDictionary<string, string> values)
+        {
+            string[] relatedKeys =
+                key switch {
+                    "Driver Health" or "Driver Components" or "Driver Tamper" or "Kernel Hooks" or
+                        "Driver Queue" => new[] { "Driver Health", "Driver Components", "Driver Tamper",
+                                                  "Kernel Hooks", "Driver Queue", "Controller<->Driver Comms" },
+                    "SR71 Hook Ready" or "SR71 Instrumentation" or "HookDLL Hooks Set" or
+                        "HookDLL->Controller IPC" => new[] { "SR71 Hook Ready", "SR71 Instrumentation",
+                                                              "Usermode Hooks", "HookDLL Hooks Set",
+                                                              "HookDLL->Controller IPC", "HookDLL Presence" },
+                    "Hook Integrity" or "AMSI Integrity" or "ETW Integrity" => new[] { "Hook Integrity",
+                                                                                        "AMSI Integrity",
+                                                                                        "ETW Integrity",
+                                                                                        "SR71 Hook Ready",
+                                                                                        "Usermode Hooks" },
+                    _ => new[] { key }
+                };
+
+            foreach (string relatedKey in relatedKeys)
+            {
+                if (values.TryGetValue(relatedKey, out string? value) && !string.IsNullOrWhiteSpace(value))
+                {
+                    yield return new KeyValuePair<string, string>(relatedKey, value);
+                }
+            }
+
+            if (key.StartsWith("Driver", StringComparison.OrdinalIgnoreCase) ||
+                key.Equals("Kernel Hooks", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (KeyValuePair<string, string> item in values
+                             .Where(x => x.Key.StartsWith("Driver Component:", StringComparison.OrdinalIgnoreCase))
+                             .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    yield return item;
+                }
+            }
+        }
+
         private void Root_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             WindowChromeBehavior.HandleRootDragMove(this, e);
@@ -844,6 +980,94 @@ namespace BlackbirdInterface
             return state switch { DiagnosticsStateGroup.Problem => 0, DiagnosticsStateGroup.Disabled => 1,
                                   DiagnosticsStateGroup.Degraded => 2,
                                   _ => 3 };
+        }
+
+        private static IReadOnlyList<ArchitectureLayerView> BuildArchitectureLayers(
+            IReadOnlyDictionary<string, string> values)
+        {
+            return new[] {
+                ArchitectureLayerView.From(
+                    "Operator Surface",
+                    "The WPF analyst interface and local state used to control the current capture.",
+                    new[] {
+                        Component(values, "Interface", "Interface->Controller IPC", "Connectivity"),
+                        Component(values, "Controller", "Controller Service"),
+                        Component(values, "Runtime Config", "RuntimeConfig"),
+                        Component(values, "Capture Store", "Capture Store")
+                    }),
+                ArchitectureLayerView.From(
+                    "Local Transport",
+                    "Named-pipe IPC, hook ingest, driver proxy, and access-control boundary.",
+                    new[] {
+                        Component(values, "Interface IPC", "Interface->Controller IPC", "Connectivity"),
+                        Component(values, "Hook IPC", "HookDLL->Controller IPC"),
+                        Component(values, "Driver Proxy", "Controller<->Driver Comms", "DriverProxy"),
+                        Component(values, "DACLs", "DACLs")
+                    }),
+                ArchitectureLayerView.From(
+                    "SR71 Target Runtime",
+                    "Injected user-mode runtime, hook readiness, integrity verdicts, and ntdll mirror state.",
+                    new[] {
+                        Component(values, "Hook DLL", "HookDLL Presence", "Hook DLL", "HookDLL"),
+                        Component(values, "Ready Mask", "SR71 Hook Ready"),
+                        Component(values, "Instrumentation", "SR71 Instrumentation"),
+                        Component(values, "Hook Integrity", "Hook Integrity"),
+                        Component(values, "AMSI", "AMSI Integrity"),
+                        Component(values, "ETW Patch", "ETW Integrity"),
+                        Component(values, "Ntdll Mirror", "Ntdll Mirror")
+                    }),
+                ArchitectureLayerView.From(
+                    "Kernel Driver",
+                    "Driver service, callback registration, hook surface, queueing, and component diagnostics.",
+                    new[] {
+                        Component(values, "Driver Service", "Driver Service"),
+                        Component(values, "Health Mask", "Driver Health"),
+                        Component(values, "Components", "Driver Components"),
+                        Component(values, "Tamper Mask", "Driver Tamper"),
+                        Component(values, "Kernel Hooks", "Kernel Hooks"),
+                        Component(values, "Queue", "Driver Queue")
+                    }),
+                ArchitectureLayerView.From(
+                    "Telemetry And Analysis",
+                    "ETW feeds, signature intelligence, graph enrichment, timing, and virtualization context.",
+                    new[] {
+                        Component(values, "ETW", "ETW Status"),
+                        Component(values, "Signature Intel", "Signature Intel"),
+                        Component(values, "PID Coverage", "PID Coverage"),
+                        Component(values, "API Graph", "API Graph"),
+                        Component(values, "Tempus", "Tempus"),
+                        Component(values, "Virtualization", "Virtualization", "Hypervisor", "BlackbirdVisor")
+                    })
+            };
+        }
+
+        private static ArchitectureComponentView Component(IReadOnlyDictionary<string, string> values, string name,
+                                                           string key, params string[] aliases)
+        {
+            string? value = ResolveArchitectureValue(values, key, aliases);
+            string effectiveValue = string.IsNullOrWhiteSpace(value) ? "No data" : value.Trim();
+            DiagnosticsEntryView diagnostic =
+                DiagnosticsEntryView.From(new DiagnosticsStateEntry { Key = key, Value = effectiveValue });
+            return ArchitectureComponentView.From(name, key, effectiveValue, diagnostic);
+        }
+
+        private static string? ResolveArchitectureValue(IReadOnlyDictionary<string, string> values, string key,
+                                                        params string[] aliases)
+        {
+            if (values.TryGetValue(key, out string? value) && !string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+
+            foreach (string alias in aliases)
+            {
+                if (values.TryGetValue(alias, out value) && !string.IsNullOrWhiteSpace(value))
+                {
+                    return value;
+                }
+            }
+
+            return null;
         }
 
         private enum DiagnosticsDomain
@@ -880,6 +1104,133 @@ namespace BlackbirdInterface
             Warning,
             Error,
             Critical
+        }
+
+        private sealed class ArchitectureLayerView
+        {
+            public string Name { get; init; } = string.Empty;
+            public string Description { get; init; } = string.Empty;
+            public IReadOnlyList<ArchitectureComponentView> Components { get; init; } =
+                Array.Empty<ArchitectureComponentView>();
+            public string StateLabel { get; init; } = string.Empty;
+            public Brush Background { get; init; } = Brushes.Transparent;
+            public Brush BorderBrush { get; init; } = Brushes.Transparent;
+            public Brush Foreground { get; init; } = Brushes.White;
+
+            internal static ArchitectureLayerView From(string name, string description,
+                                                       IReadOnlyList<ArchitectureComponentView> components)
+            {
+                DiagnosticsStatusKind kind = AggregateKind(components);
+                return new ArchitectureLayerView { Name = name,
+                                                   Description = description,
+                                                   Components = components,
+                                                   StateLabel =
+                                                       kind switch {
+                                                           DiagnosticsStatusKind.Good => "Healthy",
+                                                           DiagnosticsStatusKind.Disabled => "Disabled",
+                                                           DiagnosticsStatusKind.Error => "Error",
+                                                           DiagnosticsStatusKind.Critical => "Critical",
+                                                           DiagnosticsStatusKind.Warning => "Review",
+                                                           _ => "Unknown"
+                                                       },
+                                                   Background = BackgroundFor(kind),
+                                                   BorderBrush = BorderFor(kind),
+                                                   Foreground = ForegroundFor(kind) };
+            }
+
+            private static DiagnosticsStatusKind AggregateKind(IReadOnlyList<ArchitectureComponentView> components)
+            {
+                if (components.Any(x => x.StatusKind == DiagnosticsStatusKind.Critical))
+                {
+                    return DiagnosticsStatusKind.Critical;
+                }
+                if (components.Any(x => x.StatusKind == DiagnosticsStatusKind.Error))
+                {
+                    return DiagnosticsStatusKind.Error;
+                }
+                if (components.Any(x => x.StatusKind is DiagnosticsStatusKind.Warning or DiagnosticsStatusKind.Neutral))
+                {
+                    return DiagnosticsStatusKind.Warning;
+                }
+                if (components.Count > 0 && components.All(x => x.StatusKind == DiagnosticsStatusKind.Disabled))
+                {
+                    return DiagnosticsStatusKind.Disabled;
+                }
+                if (components.Any(x => x.StatusKind == DiagnosticsStatusKind.Disabled))
+                {
+                    return DiagnosticsStatusKind.Warning;
+                }
+
+                return DiagnosticsStatusKind.Good;
+            }
+        }
+
+        private sealed class ArchitectureComponentView
+        {
+            public string Name { get; init; } = string.Empty;
+            public string Key { get; init; } = string.Empty;
+            public string Value { get; init; } = string.Empty;
+            public string Detail { get; init; } = string.Empty;
+            public DiagnosticsStatusKind StatusKind { get; init; }
+            public Brush Background { get; init; } = Brushes.Transparent;
+            public Brush BorderBrush { get; init; } = Brushes.Transparent;
+            public Brush Foreground { get; init; } = Brushes.White;
+            public Brush StatusDotBrush { get; init; } = Brushes.Gray;
+
+            internal static ArchitectureComponentView From(string name, string key, string value,
+                                                           DiagnosticsEntryView diagnostic)
+            {
+                return new ArchitectureComponentView { Name = name,
+                                                       Key = key,
+                                                       Value = CompactArchitectureValue(value),
+                                                       Detail = $"{key}: {value}",
+                                                       StatusKind = diagnostic.StatusKind,
+                                                       Background = BackgroundFor(diagnostic.StatusKind),
+                                                       BorderBrush = BorderFor(diagnostic.StatusKind),
+                                                       Foreground = ForegroundFor(diagnostic.StatusKind),
+                                                       StatusDotBrush = BorderFor(diagnostic.StatusKind) };
+            }
+
+            private static string CompactArchitectureValue(string value)
+            {
+                string text = string.IsNullOrWhiteSpace(value) ? "No data" : value.Trim();
+                return text.Length <= 88 ? text : text[..85] + "...";
+            }
+        }
+
+        private static Brush BackgroundFor(DiagnosticsStatusKind kind)
+        {
+            return kind == DiagnosticsStatusKind.Neutral
+                       ? new SolidColorBrush(Color.FromRgb(0x05, 0x05, 0x05))
+                       : new SolidColorBrush(Color.FromRgb(0x00, 0x00, 0x00));
+        }
+
+        private static Brush BorderFor(DiagnosticsStatusKind kind)
+        {
+            return kind switch { DiagnosticsStatusKind.Good => new SolidColorBrush(Color.FromRgb(0x4D, 0xC2, 0x74)),
+                                 DiagnosticsStatusKind.Disabled =>
+                                     new SolidColorBrush(Color.FromRgb(0x7E, 0x87, 0x91)),
+                                 DiagnosticsStatusKind.Warning =>
+                                     new SolidColorBrush(Color.FromRgb(0xE3, 0xB9, 0x45)),
+                                 DiagnosticsStatusKind.Error =>
+                                     new SolidColorBrush(Color.FromRgb(0xDF, 0x63, 0x63)),
+                                 DiagnosticsStatusKind.Critical =>
+                                     new SolidColorBrush(Color.FromRgb(0xFF, 0x66, 0x99)),
+                                 _ => new SolidColorBrush(Color.FromRgb(0x5C, 0x66, 0x73)) };
+        }
+
+        private static Brush ForegroundFor(DiagnosticsStatusKind kind)
+        {
+            return kind switch { DiagnosticsStatusKind.Good => new SolidColorBrush(Color.FromRgb(0xBE, 0xF7, 0xCD)),
+                                 DiagnosticsStatusKind.Disabled =>
+                                     new SolidColorBrush(Color.FromRgb(0xD2, 0xD8, 0xDE)),
+                                 DiagnosticsStatusKind.Warning =>
+                                     new SolidColorBrush(Color.FromRgb(0xF7, 0xE6, 0xA6)),
+                                 DiagnosticsStatusKind.Error =>
+                                     new SolidColorBrush(Color.FromRgb(0xFF, 0xC5, 0xC5)),
+                                 DiagnosticsStatusKind.Critical =>
+                                     new SolidColorBrush(Color.FromRgb(0xFF, 0xC8, 0xDB)),
+                                 _ => new SolidColorBrush(Color.FromRgb(0xEC, 0xF0, 0xF3)) };
         }
 
         private sealed class DiagnosticsEntryView
@@ -923,17 +1274,9 @@ namespace BlackbirdInterface
                                                   DiagnosticsDomain.Capture => "Telemetry path",
                                                   _ => "Other" },
                     Guidance = BuildGuidance(kind, domain),
-                    Background = kind switch { DiagnosticsStatusKind.Good =>
-                                                   new SolidColorBrush(Color.FromArgb(0x56, 0x13, 0x4A, 0x24)),
-                                               DiagnosticsStatusKind.Disabled =>
-                                                   new SolidColorBrush(Color.FromArgb(0x40, 0x22, 0x26, 0x2D)),
-                                               DiagnosticsStatusKind.Warning =>
-                                                   new SolidColorBrush(Color.FromArgb(0x56, 0x5E, 0x49, 0x12)),
-                                               DiagnosticsStatusKind.Error =>
-                                                   new SolidColorBrush(Color.FromArgb(0x56, 0x5E, 0x1E, 0x1E)),
-                                               DiagnosticsStatusKind.Critical =>
-                                                   new SolidColorBrush(Color.FromArgb(0x66, 0x55, 0x11, 0x2A)),
-                                               _ => new SolidColorBrush(Color.FromArgb(0x30, 0x20, 0x26, 0x2D)) },
+                    Background = kind == DiagnosticsStatusKind.Neutral
+                                     ? new SolidColorBrush(Color.FromRgb(0x05, 0x05, 0x05))
+                                     : new SolidColorBrush(Color.FromRgb(0x00, 0x00, 0x00)),
                     BorderBrush =
                         kind switch {
                             DiagnosticsStatusKind.Good => new SolidColorBrush(Color.FromRgb(0x4D, 0xC2, 0x74)),
@@ -1003,7 +1346,7 @@ namespace BlackbirdInterface
                 }
 
                 if (text.Contains("FAILED", StringComparison.OrdinalIgnoreCase) ||
-                    text.Contains("MISSING", StringComparison.OrdinalIgnoreCase) ||
+                    DiagnosticsWindow.ContainsStatusWord(text, "MISSING") ||
                     text.Contains("OPEN FAILED", StringComparison.OrdinalIgnoreCase) ||
                     text.Contains("TIMED OUT", StringComparison.OrdinalIgnoreCase) ||
                     text.Contains("STOPPED", StringComparison.OrdinalIgnoreCase) ||
@@ -1061,7 +1404,8 @@ namespace BlackbirdInterface
                                                DiagnosticsDomain.Hooks,
 
                                            "Hook Integrity" or "AMSI Integrity" or "ETW Integrity" or "DACLs" or
-                                           "Driver Health" or "Driver Tamper" => DiagnosticsDomain.Integrity,
+                                           "Driver Health" or "Driver Components" or "Driver Tamper" =>
+                                               DiagnosticsDomain.Integrity,
 
                                            "Driver Service" or "Controller Service" => DiagnosticsDomain.Services,
 
@@ -1091,16 +1435,17 @@ namespace BlackbirdInterface
                                            "PID Coverage" => 14,
                                            "Driver Queue" => 15,
                                            "Driver Health" => 16,
-                                           "Driver Tamper" => 17,
-                                           "SR71 Hook Ready" => 18,
-                                           "SR71 Instrumentation" => 19,
-                                           "Ntdll Mirror" => 20,
-                                           "Tempus" => 21,
-                                           "API Graph" => 22,
-                                           "Driver Service" => 23,
-                                           "Controller Service" => 24,
-                                           "Virtualization" => 25,
-                                           "Last Fault" => 26,
+                                           "Driver Components" => 17,
+                                           "Driver Tamper" => 18,
+                                           "SR71 Hook Ready" => 19,
+                                           "SR71 Instrumentation" => 20,
+                                           "Ntdll Mirror" => 21,
+                                           "Tempus" => 22,
+                                           "API Graph" => 23,
+                                           "Driver Service" => 24,
+                                           "Controller Service" => 25,
+                                           "Virtualization" => 26,
+                                           "Last Fault" => 27,
                                            _ => 100 };
             }
         }

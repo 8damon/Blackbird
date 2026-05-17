@@ -919,14 +919,11 @@ namespace BlackbirdInterface
         {
             uint component =
                 (flags & BlackbirdNative.HookCallerComponentMask) >> (int)BlackbirdNative.HookCallerComponentShift;
-            return component switch { BlackbirdNative.HookComponentRuntime => "SR71 Runtime",
-                                      BlackbirdNative.HookComponentWinsock => "SR71 Winsock",
+            return component switch { BlackbirdNative.HookComponentWinsock => "SR71 Winsock",
                                       BlackbirdNative.HookComponentNt => "SR71 NT",
                                       BlackbirdNative.HookComponentKi => "SR71 KI",
                                       BlackbirdNative.HookComponentModule => "SR71 Module",
                                       BlackbirdNative.HookComponentIntegrity => "SR71 Integrity",
-                                      BlackbirdNative.HookComponentLaunchGate => "SR71 Launch Gate",
-                                      BlackbirdNative.HookComponentIpc => "SR71 IPC",
                                       _ => string.Empty };
         }
 

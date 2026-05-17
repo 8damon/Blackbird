@@ -305,7 +305,8 @@ namespace BlackbirdInterface
                                                     : "Kernel subsystem readiness is unavailable in driverless mode.");
                 if (report.DriverProxyOk && BlackbirdNative.GetHealth(control.Handle, out var health, out _))
                 {
-                    DiagnosticsState.SetValue("Driver Health", $"mask=0x{health.HealthMask:X8}");
+                    DiagnosticsState.SetValue("Driver Health",
+                                              BlackbirdBackendSession.BuildDriverHealthSummary(health.HealthMask));
                     DiagnosticsState.SetValue("Driver Tamper", health.TamperMask == 0
                                                                    ? "OK mask=0x00000000"
                                                                    : $"DEGRADED mask=0x{health.TamperMask:X8}");

@@ -179,6 +179,23 @@ namespace BlackbirdInterface
             return false;
         }
 
+        private bool IsSr71PreResumeDiagnosticWindow(BrokerEtwEventView view)
+        {
+            if (!_sr71PreResumeDropArmed || _sr71PreResumeDropPid <= 0)
+            {
+                return false;
+            }
+
+            DateTime eventUtc = view.TimestampUtc == default ? DateTime.UtcNow : view.TimestampUtc;
+            if (_sr71PreResumeDropUntilUtc.HasValue && eventUtc >= _sr71PreResumeDropUntilUtc.Value)
+            {
+                return false;
+            }
+
+            uint pid = unchecked((uint)_sr71PreResumeDropPid);
+            return _targetExecutionSuspended && IsSr71PreResumeSource(view) && TouchesSr71PreResumePid(view, pid);
+        }
+
         private void PublishHeuristicViaProjection(ICollection<HeuristicEventView> fallback,
                                                    HeuristicEventView? finding)
         {
@@ -333,29 +350,41 @@ namespace BlackbirdInterface
                 }
                 if (IsHookTamperDetection(view))
                 {
-                    DiagnosticsState.SetValue("Hook Integrity", "TAMPERED");
+                    DiagnosticsState.SetValue(
+                        "Hook Integrity",
+                        IsSr71PreResumeDiagnosticWindow(view)
+                            ? BuildPreResumeIntegrityStatus(view)
+                            : BuildIntegrityDiagnosticStatus("TAMPERED", view));
                 }
                 else if (detection.Equals("USERMODE_HOOK_INTEGRITY_OK", StringComparison.OrdinalIgnoreCase))
                 {
-                    DiagnosticsState.SetValue("Hook Integrity", "OK");
+                    DiagnosticsState.SetValue("Hook Integrity", BuildIntegrityDiagnosticStatus("OK", view));
                     MarkSr71HookReadyFromTelemetry();
                 }
                 if (detection.Equals("AMSI_PATCH_TAMPERED", StringComparison.OrdinalIgnoreCase))
                 {
-                    DiagnosticsState.SetValue("AMSI Integrity", "TAMPERED");
+                    DiagnosticsState.SetValue(
+                        "AMSI Integrity",
+                        IsSr71PreResumeDiagnosticWindow(view)
+                            ? BuildPreResumeIntegrityStatus(view)
+                            : BuildIntegrityDiagnosticStatus("TAMPERED", view));
                 }
                 else if (detection.Equals("AMSI_PATCH_OK", StringComparison.OrdinalIgnoreCase))
                 {
-                    DiagnosticsState.SetValue("AMSI Integrity", "OK");
+                    DiagnosticsState.SetValue("AMSI Integrity", BuildIntegrityDiagnosticStatus("OK", view));
                     MarkSr71HookReadyFromTelemetry();
                 }
                 if (detection.Equals("ETW_PATCH_TAMPERED", StringComparison.OrdinalIgnoreCase))
                 {
-                    DiagnosticsState.SetValue("ETW Integrity", "TAMPERED");
+                    DiagnosticsState.SetValue(
+                        "ETW Integrity",
+                        IsSr71PreResumeDiagnosticWindow(view)
+                            ? BuildPreResumeIntegrityStatus(view)
+                            : BuildIntegrityDiagnosticStatus("TAMPERED", view));
                 }
                 else if (detection.Equals("ETW_PATCH_OK", StringComparison.OrdinalIgnoreCase))
                 {
-                    DiagnosticsState.SetValue("ETW Integrity", "OK");
+                    DiagnosticsState.SetValue("ETW Integrity", BuildIntegrityDiagnosticStatus("OK", view));
                     MarkSr71HookReadyFromTelemetry();
                 }
 
@@ -604,11 +633,12 @@ namespace BlackbirdInterface
                 DiagnosticsState.SetValue("HookDLL->Controller IPC", "Ready (SR71 telemetry)");
                 DiagnosticsState.SetValue("HookDLL Hooks Set", $"OK ({kind})");
                 MarkSr71HookReadyFromTelemetry();
-                if (ShouldPromoteIntegrityStatus(DiagnosticsState.GetValue("Hook Integrity")))
+                bool preResume = IsSr71PreResumeDiagnosticWindow(view);
+                if (!preResume && ShouldPromoteIntegrityStatus(DiagnosticsState.GetValue("Hook Integrity")))
                 {
                     DiagnosticsState.SetValue("Hook Integrity", "OK");
                 }
-                if (ShouldPromoteIntegrityStatus(DiagnosticsState.GetValue("AMSI Integrity")))
+                if (!preResume && ShouldPromoteIntegrityStatus(DiagnosticsState.GetValue("AMSI Integrity")))
                 {
                     DiagnosticsState.SetValue("AMSI Integrity", "OK");
                 }
@@ -632,11 +662,12 @@ namespace BlackbirdInterface
                 DiagnosticsState.SetValue("HookDLL->Controller IPC", "Ready (SR71 telemetry)");
                 DiagnosticsState.SetValue("HookDLL Hooks Set", $"OK ({kind})");
                 MarkSr71HookReadyFromTelemetry();
-                if (ShouldPromoteIntegrityStatus(DiagnosticsState.GetValue("Hook Integrity")))
+                bool preResume = IsSr71PreResumeDiagnosticWindow(view);
+                if (!preResume && ShouldPromoteIntegrityStatus(DiagnosticsState.GetValue("Hook Integrity")))
                 {
                     DiagnosticsState.SetValue("Hook Integrity", "OK");
                 }
-                if (ShouldPromoteIntegrityStatus(DiagnosticsState.GetValue("AMSI Integrity")))
+                if (!preResume && ShouldPromoteIntegrityStatus(DiagnosticsState.GetValue("AMSI Integrity")))
                 {
                     DiagnosticsState.SetValue("AMSI Integrity", "OK");
                 }
@@ -674,6 +705,45 @@ namespace BlackbirdInterface
             {
                 DiagnosticsState.SetValue("SR71 Instrumentation", "OK observed via SR71 telemetry");
             }
+        }
+
+        private static string BuildPreResumeIntegrityStatus(BrokerEtwEventView view)
+        {
+            string evidence = BuildIntegrityDiagnosticStatus("Awaiting target resume", view);
+            return $"{evidence}; preArm=true; action=defer-integrity-verdict";
+        }
+
+        private static string BuildIntegrityDiagnosticStatus(string state, BrokerEtwEventView view)
+        {
+            string api = !string.IsNullOrWhiteSpace(view.Operation) ? view.Operation : view.EventName;
+            var parts = new List<string>(10) {
+                state,
+                $"detection={CleanDiagnosticValue(view.DetectionName)}",
+                $"event={CleanDiagnosticValue(view.EventName)}",
+                $"api={CleanDiagnosticValue(api)}",
+                $"pid={view.ProcessPid}",
+                $"actor={view.ActorPid}",
+                $"target={view.TargetPid}",
+                $"notify={view.NotifyClass}",
+                $"flags=0x{view.Flags:X8}",
+                $"corr=0x{view.CorrelationFlags:X8}"
+            };
+            if (!string.IsNullOrWhiteSpace(view.Reason))
+            {
+                parts.Add($"reason={CleanDiagnosticValue(view.Reason)}");
+            }
+            if (!string.IsNullOrWhiteSpace(view.Details))
+            {
+                parts.Add($"details={CleanDiagnosticValue(view.Details)}");
+            }
+
+            return string.Join("; ", parts);
+        }
+
+        private static string CleanDiagnosticValue(string? value)
+        {
+            string text = string.IsNullOrWhiteSpace(value) ? "none" : value.Trim();
+            return text.Replace('\r', ' ').Replace('\n', ' ');
         }
 
         private static void TryAppendObservedModule(BrokerEtwEventView view, List<ModuleInfoRow> rows)
@@ -823,13 +893,106 @@ namespace BlackbirdInterface
                                 new Action(
                                     () =>
                                     {
-                                        PersistThreadStackSnapshot(capturePid, captureTid, string.Empty, task.Result);
+                                        ThreadStackSessionSnapshot snapshot = task.Result;
+                                        PersistThreadStackSnapshot(capturePid, captureTid, string.Empty, snapshot);
+                                        UpdateApiGraphRowsWithFallbackStack(capturePid, captureTid, snapshot);
                                         DebugConsoleService.WriteLocal(
-                                            $"[STACK] captured fallback thread stack pid={capturePid} tid={captureTid} frames={task.Result.Frames.Count}");
+                                            $"[STACK] captured fallback thread stack pid={capturePid} tid={captureTid} frames={snapshot.Frames.Count}");
                                     }),
                                 DispatcherPriority.Background);
                         },
                         TaskScheduler.Default);
+        }
+
+        private void UpdateApiGraphRowsWithFallbackStack(int pid, int tid, ThreadStackSessionSnapshot snapshot)
+        {
+            if (snapshot.Frames.Count == 0)
+            {
+                return;
+            }
+
+            bool updated = false;
+            uint pid32 = unchecked((uint)pid);
+            uint tid32 = unchecked((uint)tid);
+            foreach (ApiCallGraphRowSnapshot row in _apiGraphRowsByKey.Values)
+            {
+                if (row.SourcePid != pid32 || row.ThreadId != tid32)
+                {
+                    continue;
+                }
+
+                string fallback = BuildThreadStackFallbackText(snapshot, row.LastSeenUtc);
+                row.CallChainLabel = MergeThreadStackFallbackText(row.CallChainLabel, fallback);
+                row.DetailFull = MergeThreadStackFallbackText(row.DetailFull, fallback);
+                updated = true;
+            }
+
+            if (updated)
+            {
+                ScheduleApiGraphSnapshot();
+            }
+        }
+
+        private static string MergeThreadStackFallbackText(string? existing, string fallback)
+        {
+            if (string.IsNullOrWhiteSpace(fallback))
+            {
+                return existing ?? string.Empty;
+            }
+            if (string.IsNullOrWhiteSpace(existing))
+            {
+                return fallback;
+            }
+
+            const string marker = "Thread Stack Fallback:";
+            int markerIndex = existing.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (markerIndex < 0)
+            {
+                return $"{existing.TrimEnd()}{Environment.NewLine}{Environment.NewLine}{fallback}";
+            }
+
+            int lineEnd = existing.IndexOf('\n', markerIndex);
+            string before = existing[..markerIndex].TrimEnd();
+            string after = lineEnd >= 0 ? existing[(lineEnd + 1)..].TrimStart('\r', '\n') : string.Empty;
+            if (after.Length == 0)
+            {
+                return before.Length == 0 ? fallback : $"{before}{Environment.NewLine}{fallback}";
+            }
+
+            return before.Length == 0
+                       ? $"{fallback}{Environment.NewLine}{after}"
+                       : $"{before}{Environment.NewLine}{fallback}{Environment.NewLine}{after}";
+        }
+
+        private static string BuildThreadStackFallbackText(ThreadStackSessionSnapshot snapshot, DateTime observedUtc)
+        {
+            double deltaMs = observedUtc == default || snapshot.CapturedAtUtc == default
+                                 ? 0
+                                 : Math.Abs((snapshot.CapturedAtUtc - observedUtc).TotalMilliseconds);
+            var sb = new StringBuilder(512);
+            sb.Append("Thread Stack Fallback: ")
+                .Append(snapshot.Frames.Count.ToString(CultureInfo.InvariantCulture))
+                .Append(" frames from live thread capture, deltaMs=")
+                .Append(deltaMs.ToString("0", CultureInfo.InvariantCulture))
+                .AppendLine();
+
+            int frameCount = Math.Min(12, snapshot.Frames.Count);
+            for (int i = 0; i < frameCount; i += 1)
+            {
+                StackFrameRow frame = snapshot.Frames[i];
+                string label = !string.IsNullOrWhiteSpace(frame.Symbol)    ? frame.Symbol
+                               : !string.IsNullOrWhiteSpace(frame.Address) ? frame.Address
+                                                                           : $"0x{frame.InstructionPointerRaw:X}";
+                if (!string.IsNullOrWhiteSpace(frame.Module) &&
+                    label.IndexOf(frame.Module, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    label = $"{frame.Module}!{label}";
+                }
+
+                sb.Append("  ").Append(i + 1).Append(". ").AppendLine(label);
+            }
+
+            return sb.ToString().TrimEnd();
         }
 
         private static bool ShouldCaptureThreadStackFallback(BrokerEtwEventView view)
@@ -850,6 +1013,9 @@ namespace BlackbirdInterface
                 return false;
             }
 
+            bool kernelNtapi = EventDetailFormatting.IsKernelHookTelemetry(view) ||
+                               (view.Reason?.Contains("kind=kernel_ntapi", StringComparison.OrdinalIgnoreCase) ==
+                                true);
             if (!api.StartsWith("Nt", StringComparison.OrdinalIgnoreCase) &&
                 !api.StartsWith("Zw", StringComparison.OrdinalIgnoreCase) &&
                 !api.StartsWith("Co", StringComparison.OrdinalIgnoreCase) &&
@@ -859,10 +1025,15 @@ namespace BlackbirdInterface
             }
 
             bool highSignal = view.Severity >= 4 || IsDirectSyscallDetection(view) ||
+                              (kernelNtapi && view.Severity >= 2) ||
                               api.Equals("NtMapViewOfSection", StringComparison.OrdinalIgnoreCase) ||
                               api.Equals("ZwMapViewOfSection", StringComparison.OrdinalIgnoreCase) ||
+                              api.Equals("NtAllocateVirtualMemory", StringComparison.OrdinalIgnoreCase) ||
+                              api.Equals("NtAllocateVirtualMemoryEx", StringComparison.OrdinalIgnoreCase) ||
                               api.Equals("NtCreateSection", StringComparison.OrdinalIgnoreCase) ||
                               api.Equals("ZwCreateSection", StringComparison.OrdinalIgnoreCase) ||
+                              api.Equals("NtCreateFile", StringComparison.OrdinalIgnoreCase) ||
+                              api.Equals("NtOpenFile", StringComparison.OrdinalIgnoreCase) ||
                               api.Equals("NtWriteVirtualMemory", StringComparison.OrdinalIgnoreCase) ||
                               api.Equals("NtProtectVirtualMemory", StringComparison.OrdinalIgnoreCase) ||
                               api.Equals("NtCreateThreadEx", StringComparison.OrdinalIgnoreCase);
@@ -921,8 +1092,8 @@ namespace BlackbirdInterface
             };
         }
 
-        private static ThreadStackSessionSnapshot? CreateObservedHookStackSnapshot(BrokerEtwEventView view,
-                                                                                   DateTime capturedUtc)
+        private ThreadStackSessionSnapshot? CreateObservedHookStackSnapshot(BrokerEtwEventView view,
+                                                                            DateTime capturedUtc)
         {
             ulong[] stack = view.Stack ?? Array.Empty<ulong>();
             int count = Math.Min(Math.Min((int)view.StackCount, stack.Length), BlackbirdNative.MaxIpcStackFrames);
@@ -932,26 +1103,67 @@ namespace BlackbirdInterface
             }
 
             Dictionary<string, string> fields = BuildHookFieldMap(view);
+            uint pid = ResolveStackEvidencePid(view);
+            StackModuleRange[] moduleRanges = pid == 0 ? Array.Empty<StackModuleRange>() : GetStackModuleRanges(pid);
+            IntPtr processHandle = IntPtr.Zero;
+            bool closeProcessHandle = false;
             var frames = new List<StackFrameRow>(count);
-            for (int i = 0; i < count; i += 1)
+            try
             {
-                ulong ip = stack[i];
-                if (ip == 0)
+                for (int i = 0; i < count; i += 1)
                 {
-                    continue;
-                }
+                    ulong ip = stack[i];
+                    if (ip == 0)
+                    {
+                        continue;
+                    }
 
-                string symbol = ReadTrimmedField(fields, $"stack{i}Symbol");
-                string path = ReadTrimmedField(fields, $"stack{i}Path");
-                string module = ModuleNameFromPath(path);
-                if (module.Equals("unknown", StringComparison.OrdinalIgnoreCase))
+                    string symbol = ReadTrimmedField(fields, $"stack{i}Symbol");
+                    string path = ReadTrimmedField(fields, $"stack{i}Path");
+                    string module = ModuleNameFromPath(path);
+                    string addressText = $"0x{ip:X}";
+                    if (module.Equals("unknown", StringComparison.OrdinalIgnoreCase))
+                    {
+                        module = ExtractModuleFromSymbol(symbol);
+                    }
+
+                    if (pid != 0)
+                    {
+                        StackFrameEvidence evidence = ResolveStackFrameEvidence(view, pid, ip, i, fields,
+                                                                                moduleRanges, ref processHandle,
+                                                                                ref closeProcessHandle);
+                        if (evidence.Resolved)
+                        {
+                            module = evidence.Module;
+                            path = evidence.Path;
+                            StackModuleRange? displayRange = FindStackModule(moduleRanges, ip);
+                            if (displayRange is StackModuleRange range)
+                            {
+                                addressText = $"{range.Name}+0x{ip - range.Start:X}";
+                            }
+                            if (string.IsNullOrWhiteSpace(symbol) && evidence.IsExecutablePrivateMemory)
+                            {
+                                symbol = $"private-memory!0x{ip:X}";
+                            }
+                        }
+                    }
+
+                    frames.Add(new StackFrameRow {
+                        Index = frames.Count,
+                        Address = addressText,
+                        Module = string.IsNullOrWhiteSpace(module) ? "unknown" : module,
+                        Symbol = string.IsNullOrWhiteSpace(symbol) ? $"0x{ip:X}" : symbol,
+                        InstructionPointerRaw = ip,
+                        IsCurrent = frames.Count == 0
+                    });
+                }
+            }
+            finally
+            {
+                if (closeProcessHandle)
                 {
-                    module = ExtractModuleFromSymbol(symbol);
+                    Kernel32Native.CloseHandle(processHandle);
                 }
-
-                frames.Add(new StackFrameRow { Index = frames.Count, Address = $"0x{ip:X}", Module = module,
-                                               Symbol = string.IsNullOrWhiteSpace(symbol) ? $"0x{ip:X}" : symbol,
-                                               InstructionPointerRaw = ip, IsCurrent = frames.Count == 0 });
             }
 
             if (frames.Count == 0)
@@ -1122,6 +1334,11 @@ namespace BlackbirdInterface
                 return null;
             }
 
+            if (!TryBuildRequiredStackEvidence(view, detection, out string stackEvidence, out _))
+            {
+                return null;
+            }
+
             string reasonText = string.IsNullOrWhiteSpace(view.Reason) ? "<none>" : view.Reason;
             uint sanitizedCorrFlags = view.CorrelationFlags & CorrelationIntentMask;
             string corrFlagsDecoded = EventDetailFormatting.DescribeCorrelationFlags(sanitizedCorrFlags);
@@ -1142,6 +1359,13 @@ namespace BlackbirdInterface
                 {
                     heuristicEvidence = BuildEtwDirectSyscallEvidenceText(view);
                 }
+            }
+            if (!string.IsNullOrWhiteSpace(stackEvidence))
+            {
+                heuristicEvidence = string.IsNullOrWhiteSpace(heuristicEvidence) ||
+                                    heuristicEvidence.Equals("<none>", StringComparison.OrdinalIgnoreCase)
+                                        ? stackEvidence
+                                        : $"{heuristicEvidence}; {stackEvidence}";
             }
 
             string rawCorrFlagsSuffix = view.CorrelationFlags == sanitizedCorrFlags

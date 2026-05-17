@@ -658,6 +658,8 @@ namespace BlackbirdInterface
 
         private void ProcessDriverDiagnostics(BlackbirdNative.BkDiagnosticsResponse diagnostics)
         {
+            PublishDriverComponentDiagnostics(diagnostics);
+
             if (diagnostics.Events is null || diagnostics.EventCount == 0)
             {
                 DiagnosticsState.SetValue("Driver Diagnostics", "OK no events");
@@ -687,6 +689,83 @@ namespace BlackbirdInterface
                     "Driver Diagnostics",
                     $"{DriverDiagnosticState(diag)} lastSeq={diag.Sequence} dropped={diagnostics.DroppedCount}");
                 _lastDriverDiagSequence = Math.Max(_lastDriverDiagSequence, diag.Sequence);
+            }
+        }
+
+        private static void PublishDriverComponentDiagnostics(BlackbirdNative.BkDiagnosticsResponse diagnostics)
+        {
+            if (diagnostics.Components is null || diagnostics.ComponentStateCount == 0)
+            {
+                return;
+            }
+
+            int count = (int)Math.Min(diagnostics.ComponentStateCount, (uint)diagnostics.Components.Length);
+            int degraded = 0;
+            for (int i = 0; i < count; i += 1)
+            {
+                BlackbirdNative.BkDiagnosticComponentState state = diagnostics.Components[i];
+                string name = DriverDiagnosticComponentName(state.ComponentId);
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    name = $"component-{state.ComponentId}";
+                }
+
+                string status = DriverComponentStateLabel(state);
+                if (!status.Equals("OK", StringComparison.OrdinalIgnoreCase) &&
+                    !status.Equals("Disabled", StringComparison.OrdinalIgnoreCase))
+                {
+                    degraded += 1;
+                }
+
+                DiagnosticsState.SetValue(
+                    $"Driver Component:{name}",
+                    $"{status} subsystem={DriverDiagnosticSubsystemName(state.SubsystemId)} component={name} flags=0x{state.Flags:X8} flagsText={BuildComponentFlagText(state.Flags)} status=0x{unchecked((uint)state.Status):X8} detail0=0x{state.Detail0:X} detail1=0x{state.Detail1:X}");
+            }
+
+            DiagnosticsState.SetValue(
+                "Driver Components",
+                degraded == 0 ? $"OK components={count}" : $"DEGRADED components={count} degraded={degraded}");
+        }
+
+        private static string DriverComponentStateLabel(BlackbirdNative.BkDiagnosticComponentState state)
+        {
+            if ((state.Flags & BlackbirdNative.DiagStatePolicyDisabled) != 0)
+            {
+                return "Disabled";
+            }
+            if ((state.Flags & BlackbirdNative.DiagStateDegraded) != 0 || state.Status < 0)
+            {
+                return "DEGRADED";
+            }
+            return (state.Flags & BlackbirdNative.DiagStateOnline) != 0 ? "OK" : "Awaiting";
+        }
+
+        private static string BuildComponentFlagText(uint flags)
+        {
+            var names = new List<string>(8);
+            AddComponentFlag(names, flags, BlackbirdNative.DiagStateOnline, "online");
+            AddComponentFlag(names, flags, BlackbirdNative.DiagStateRegistered, "registered");
+            AddComponentFlag(names, flags, BlackbirdNative.DiagStateArmed, "armed");
+            AddComponentFlag(names, flags, BlackbirdNative.DiagStateCallback, "callback");
+            AddComponentFlag(names, flags, BlackbirdNative.DiagStateHook, "hook");
+            AddComponentFlag(names, flags, BlackbirdNative.DiagStateRequired, "required");
+            AddComponentFlag(names, flags, BlackbirdNative.DiagStateOptional, "optional");
+            AddComponentFlag(names, flags, BlackbirdNative.DiagStateInstalled, "installed");
+            AddComponentFlag(names, flags, BlackbirdNative.DiagStateResolved, "resolved");
+            AddComponentFlag(names, flags, BlackbirdNative.DiagStatePolicyDisabled, "policy-disabled");
+            AddComponentFlag(names, flags, BlackbirdNative.DiagStateDegraded, "degraded");
+            AddComponentFlag(names, flags, BlackbirdNative.DiagStateSanitizes, "sanitizes");
+            AddComponentFlag(names, flags, BlackbirdNative.DiagStateTelemetry, "telemetry");
+            AddComponentFlag(names, flags, BlackbirdNative.DiagStateTamperActive, "tamper-active");
+            AddComponentFlag(names, flags, BlackbirdNative.DiagStateFastPath, "fast-path");
+            return names.Count == 0 ? "none" : string.Join("|", names);
+        }
+
+        private static void AddComponentFlag(ICollection<string> names, uint flags, uint bit, string name)
+        {
+            if ((flags & bit) != 0)
+            {
+                names.Add(name);
             }
         }
 
@@ -889,12 +968,22 @@ namespace BlackbirdInterface
         {
             if (requiredMask == 0)
             {
-                return observedMask == 0 ? "Inactive mask=0x00000000" : $"Active mask=0x{observedMask:X8}";
+                string observedNames = FormatMaskNames(BuildHookReadyMaskLabels(observedMask));
+                return observedMask == 0
+                           ? "Awaiting target resume mask=0x00000000 required=0x00000000 missing=0x00000000"
+                           : $"Active mask=0x{observedMask:X8} required=0x00000000 missing=0x00000000 present={observedNames}";
             }
 
             uint missing = requiredMask & ~observedMask;
-            return missing == 0 ? $"OK mask=0x{observedMask:X8}"
-                                : $"DEGRADED mask=0x{observedMask:X8} missing=0x{missing:X8}";
+            string presentNames = FormatMaskNames(BuildHookReadyMaskLabels(observedMask & requiredMask));
+            string missingNames = FormatMaskNames(BuildHookReadyMaskLabels(missing));
+            if (missing == 0)
+            {
+                return $"OK mask=0x{observedMask:X8} required=0x{requiredMask:X8} missing=0x00000000 present={presentNames}";
+            }
+
+            string state = observedMask == 0 ? "Awaiting target resume" : "Awaiting hook-ready";
+            return $"{state} mask=0x{observedMask:X8} required=0x{requiredMask:X8} missing=0x{missing:X8} missingNames={missingNames} present={presentNames}";
         }
 
         internal static string BuildInstrumentationSummary(uint ranges, uint patches, ulong overlays, ulong deniedReads,
@@ -903,8 +992,11 @@ namespace BlackbirdInterface
             bool hookReady =
                 hookReadyRequiredMask != 0 && (hookReadyMask & hookReadyRequiredMask) == hookReadyRequiredMask;
             bool observedInstrumentation = ranges != 0 || patches != 0 || overlays != 0;
-            string state = observedInstrumentation || hookReady ? "OK" : "Awaiting";
-            return $"{state} ranges={ranges} patches={patches} overlays={overlays} deniedReads={deniedReads}";
+            string state = observedInstrumentation || hookReady
+                               ? "OK"
+                               : hookReadyMask == 0 ? "Awaiting target resume" : "Awaiting hook-ready";
+            return
+                $"{state} ranges={ranges} patches={patches} overlays={overlays} deniedReads={deniedReads} hookMask=0x{hookReadyMask:X8} required=0x{hookReadyRequiredMask:X8}";
         }
 
         private static string BuildNtdllMirrorSummary(ulong mirrored, ulong failed)
@@ -913,7 +1005,7 @@ namespace BlackbirdInterface
             return $"{state} mirrored={mirrored} failures={failed}";
         }
 
-        private static string BuildDriverHealthSummary(uint mask)
+        internal static string BuildDriverHealthSummary(uint mask)
         {
             const uint required = BlackbirdNative.HealthControlReady | BlackbirdNative.HealthEtwReady |
                                   BlackbirdNative.HealthHandleMonitorReady | BlackbirdNative.HealthThreadMonitorReady |
@@ -925,8 +1017,54 @@ namespace BlackbirdInterface
                                   BlackbirdNative.HealthDiagnosticsReady;
 
             uint missing = required & ~mask;
-            return missing == 0 ? $"OK mask=0x{mask:X8}" : $"DEGRADED mask=0x{mask:X8} missing=0x{missing:X8}";
+            string presentNames = FormatMaskNames(BuildDriverHealthMaskLabels(mask & required));
+            string missingNames = FormatMaskNames(BuildDriverHealthMaskLabels(missing));
+            return missing == 0
+                       ? $"OK mask=0x{mask:X8} required=0x{required:X8} missing=0x00000000 present={presentNames}"
+                       : $"DEGRADED mask=0x{mask:X8} required=0x{required:X8} missing=0x{missing:X8} missingNames={missingNames} present={presentNames}";
         }
+
+        private static IReadOnlyList<string> BuildHookReadyMaskLabels(uint mask)
+        {
+            var labels = new List<string>(5);
+            AddMaskLabel(labels, mask, BlackbirdNative.HookReadyIpcConnected, "ipc");
+            AddMaskLabel(labels, mask, BlackbirdNative.HookReadyWinsock, "winsock");
+            AddMaskLabel(labels, mask, BlackbirdNative.HookReadyNt, "nt");
+            AddMaskLabel(labels, mask, BlackbirdNative.HookReadyKi, "ki");
+            AddMaskLabel(labels, mask, BlackbirdNative.HookReadyModule, "module");
+            return labels;
+        }
+
+        private static IReadOnlyList<string> BuildDriverHealthMaskLabels(uint mask)
+        {
+            var labels = new List<string>(14);
+            AddMaskLabel(labels, mask, BlackbirdNative.HealthControlReady, "control");
+            AddMaskLabel(labels, mask, BlackbirdNative.HealthEtwReady, "etw");
+            AddMaskLabel(labels, mask, BlackbirdNative.HealthHandleMonitorReady, "handle");
+            AddMaskLabel(labels, mask, BlackbirdNative.HealthThreadMonitorReady, "thread");
+            AddMaskLabel(labels, mask, BlackbirdNative.HealthProcessMonitorReady, "process");
+            AddMaskLabel(labels, mask, BlackbirdNative.HealthImageMonitorReady, "image");
+            AddMaskLabel(labels, mask, BlackbirdNative.HealthRegistryMonitorReady, "registry");
+            AddMaskLabel(labels, mask, BlackbirdNative.HealthApcMonitorReady, "apc");
+            AddMaskLabel(labels, mask, BlackbirdNative.HealthFileSystemMonitorReady, "filesystem");
+            AddMaskLabel(labels, mask, BlackbirdNative.HealthCorrelationReady, "correlation");
+            AddMaskLabel(labels, mask, BlackbirdNative.HealthHollowingEngineReady, "hollowing");
+            AddMaskLabel(labels, mask, BlackbirdNative.HealthNtApiMonitorReady, "ntapi");
+            AddMaskLabel(labels, mask, BlackbirdNative.HealthAntiTamperReady, "anti-tamper");
+            AddMaskLabel(labels, mask, BlackbirdNative.HealthDiagnosticsReady, "diagnostics");
+            return labels;
+        }
+
+        private static void AddMaskLabel(ICollection<string> labels, uint mask, uint bit, string label)
+        {
+            if ((mask & bit) != 0)
+            {
+                labels.Add(label);
+            }
+        }
+
+        private static string FormatMaskNames(IReadOnlyList<string> labels) =>
+            labels.Count == 0 ? "none" : string.Join("|", labels);
 
         private static string TempusName(int index)
         {

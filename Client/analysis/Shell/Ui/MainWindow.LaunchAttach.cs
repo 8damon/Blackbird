@@ -965,6 +965,7 @@ namespace BlackbirdInterface
                 bool useUsermodeHooks = false;
                 bool autoOpenApiGraph = false;
                 bool useEarlyBirdApcLaunch = false;
+                string selectedAnalysisImagePath = string.Empty;
                 LaunchTargetKind launchTargetKind =
                     picker.LaunchSelectedImage ? picker.SelectedLaunchTargetKind : LaunchTargetKind.Executable;
                 LaunchProfile launchProfile = new();
@@ -1027,6 +1028,7 @@ namespace BlackbirdInterface
                     }
 
                     string launchImagePath = selectedImagePath;
+                    selectedAnalysisImagePath = selectedImagePath;
                     if (launchTargetKind == LaunchTargetKind.Dll)
                     {
                         string dllHostPath = ResolveDllHostPathFromInterfaceDirectory();
@@ -1180,6 +1182,8 @@ namespace BlackbirdInterface
                     return;
                 }
 
+                SymbolContextRegistry.RegisterProcessTarget(selectedPid, selectedAnalysisImagePath,
+                                                            launchProfile.TargetPdbPath);
                 _pendingLaunchOptions = showLaunchOptions;
                 _pendingUseUsermodeHooks = showLaunchOptions && useUsermodeHooks;
                 _pendingAutoOpenApiGraph = showLaunchOptions && autoOpenApiGraph;

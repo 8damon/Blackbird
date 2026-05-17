@@ -1,5 +1,7 @@
+using Microsoft.Win32;
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -239,6 +241,12 @@ namespace BlackbirdInterface
                 }
             }
 
+            if (TargetPdbPathPanel != null)
+            {
+                TargetPdbPathPanel.IsEnabled = launchControlsEnabled;
+                TargetPdbPathPanel.Opacity = launchControlsEnabled ? 1.0 : 0.55;
+            }
+
             if (DllAnalysisPanel != null)
             {
                 DllAnalysisPanel.Visibility = _isDllTarget ? Visibility.Visible : Visibility.Collapsed;
@@ -400,6 +408,8 @@ namespace BlackbirdInterface
                                                      : string.Empty;
             LaunchProfile.EnvironmentOverridesText =
                 _isLaunchTarget ? (EnvironmentOverridesTextBox?.Text ?? string.Empty) : string.Empty;
+            LaunchProfile.TargetPdbPath = _isLaunchTarget ? (TargetPdbPathTextBox?.Text?.Trim() ?? string.Empty)
+                                                          : string.Empty;
             bool driverEnabled = UseKernelDriverCheckBox?.IsChecked == true;
             bool hooksEnabled = UseUsermodeHooksCheckBox?.IsChecked == true;
             bool kernelHooksEnabled = driverEnabled && EnableKernelHooksCheckBox?.IsChecked == true;
@@ -444,6 +454,18 @@ namespace BlackbirdInterface
             if (!_isLaunchTarget)
             {
                 return true;
+            }
+
+            if (LaunchProfile.TargetPdbPath.IndexOf('\0') >= 0)
+            {
+                error = "Target PDB path cannot contain NUL characters.";
+                return false;
+            }
+
+            if (LaunchProfile.HasTargetPdbPath && !File.Exists(LaunchProfile.TargetPdbPath))
+            {
+                error = $"Target PDB file does not exist: {LaunchProfile.TargetPdbPath}";
+                return false;
             }
 
             if (!_isDllTarget && LaunchProfile.CommandLineArguments.IndexOf('\0') >= 0)
@@ -584,6 +606,28 @@ namespace BlackbirdInterface
 
             ParentPidTextBox.Text = shellPid.ToString();
             ParentPidTextBox.ToolTip = $"Default PPID spoof target: {DescribeProcess(shellPid)}";
+        }
+
+        private void BrowseTargetPdb_Click(object sender, RoutedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            var dialog = new OpenFileDialog {
+                Filter = "Program database (*.pdb)|*.pdb|All files (*.*)|*.*",
+                CheckFileExists = true,
+                Multiselect = false
+            };
+            if (dialog.ShowDialog(this) == true)
+            {
+                TargetPdbPathTextBox.Text = dialog.FileName;
+            }
+        }
+
+        private void ClearTargetPdb_Click(object sender, RoutedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            TargetPdbPathTextBox.Text = string.Empty;
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)

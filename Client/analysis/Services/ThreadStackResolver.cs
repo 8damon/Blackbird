@@ -16,6 +16,14 @@ namespace BlackbirdInterface
         private const uint PROCESS_QUERY_INFORMATION = 0x0400;
         private const uint PROCESS_VM_READ = 0x0010;
 
+        private const uint MEM_COMMIT = 0x00001000;
+        private const uint PAGE_GUARD = 0x00000100;
+        private const uint PAGE_NOACCESS = 0x00000001;
+        private const uint PAGE_EXECUTE = 0x00000010;
+        private const uint PAGE_EXECUTE_READ = 0x00000020;
+        private const uint PAGE_EXECUTE_READWRITE = 0x00000040;
+        private const uint PAGE_EXECUTE_WRITECOPY = 0x00000080;
+
         private const uint CONTEXT_AMD64 = 0x00100000;
         private const uint CONTEXT_CONTROL = CONTEXT_AMD64 | 0x00000001;
         private const uint CONTEXT_INTEGER = CONTEXT_AMD64 | 0x00000002;
@@ -29,13 +37,15 @@ namespace BlackbirdInterface
         private const uint SYMOPT_UNDNAME = 0x00000002;
         private const uint SYMOPT_DEFERRED_LOADS = 0x00000004;
         private const uint SYMOPT_LOAD_LINES = 0x00000010;
+        private const int ManualStackScanBytes = 64 * 1024;
 
         private static readonly FunctionTableAccessRoutine64 s_functionTableAccess = SymFunctionTableAccess64;
         private static readonly GetModuleBaseRoutine64 s_getModuleBase = SymGetModuleBase64;
         private static readonly object s_dbgHelpLock = new();
 
         public static bool AutomaticFallbackCaptureEnabled =>
-            IsTruthyEnvironmentValue(Environment.GetEnvironmentVariable("BK_UI_LIVE_THREAD_STACK_FALLBACK"));
+            !IsFalseyEnvironmentValue(Environment.GetEnvironmentVariable("BK_UI_LIVE_THREAD_STACK_FALLBACK")) &&
+            !IsTruthyEnvironmentValue(Environment.GetEnvironmentVariable("BK_UI_DISABLE_LIVE_THREAD_STACK_FALLBACK"));
 
         public static ThreadStackResolveResult Resolve(int pid, int tid, string state)
         {
@@ -51,7 +61,7 @@ namespace BlackbirdInterface
             IntPtr hThread = IntPtr.Zero;
             bool closeProcess = false;
             bool threadSuspended = false;
-            bool symbolsReady = false;
+            bool dbgHelpReady = false;
             bool processMemoryAvailable = false;
             string note = string.Empty;
 
@@ -128,21 +138,31 @@ namespace BlackbirdInterface
                 }
 
                 var moduleRanges = BuildModuleRanges(pid);
+                SymbolSettings symbolSettings = SymbolSettingsStore.LoadSymbolSettings();
+                bool symbolNamesEnabled = symbolSettings.EnablePdbResolution;
                 List<StackFrameRow> frames;
                 lock (s_dbgHelpLock)
                 {
-                    SymSetOptions(SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES);
-                    symbolsReady = SymInitialize(hProcess, null, true);
+                    uint options = SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS;
+                    if (symbolNamesEnabled)
+                    {
+                        options |= SYMOPT_LOAD_LINES;
+                    }
+
+                    SymSetOptions(options);
+                    dbgHelpReady = SymInitialize(hProcess, symbolSettings.BuildDbgHelpSearchPath(symbolNamesEnabled),
+                                                 true);
                     try
                     {
-                        frames = WalkFrames(hProcess, hThread, ref context, moduleRanges, symbolsReady);
+                        frames = WalkFrames(hProcess, hThread, ref context, moduleRanges, dbgHelpReady,
+                                            symbolNamesEnabled, pid, stackBase, stackTop);
                     }
                     finally
                     {
-                        if (symbolsReady)
+                        if (dbgHelpReady)
                         {
                             _ = SymCleanup(hProcess);
-                            symbolsReady = false;
+                            dbgHelpReady = false;
                         }
                     }
                 }
@@ -161,7 +181,7 @@ namespace BlackbirdInterface
                     _ = ResumeThread(hThread);
                 if (hThread != IntPtr.Zero)
                     _ = Kernel32Native.CloseHandle(hThread);
-                if (symbolsReady)
+                if (dbgHelpReady)
                 {
                     lock (s_dbgHelpLock)
                     {
@@ -215,6 +235,15 @@ namespace BlackbirdInterface
                                                          value.Equals("on", StringComparison.OrdinalIgnoreCase));
         }
 
+        private static bool IsFalseyEnvironmentValue(string? value)
+        {
+            return !string.IsNullOrWhiteSpace(value) && (value.Equals("0", StringComparison.OrdinalIgnoreCase) ||
+                                                         value.Equals("false", StringComparison.OrdinalIgnoreCase) ||
+                                                         value.Equals("no", StringComparison.OrdinalIgnoreCase) ||
+                                                         value.Equals("off", StringComparison.OrdinalIgnoreCase) ||
+                                                         value.Equals("disabled", StringComparison.OrdinalIgnoreCase));
+        }
+
         private static void TryReadThreadMetadata(IntPtr hProcess, IntPtr hThread, out ulong tebAddress,
                                                   out ulong stackBase, out ulong stackTop, out ushort? tebFlags)
         {
@@ -265,7 +294,9 @@ namespace BlackbirdInterface
         }
 
         private static List<StackFrameRow> WalkFrames(IntPtr hProcess, IntPtr hThread, ref CONTEXT64 context,
-                                                      List<ModuleRange> modules, bool symbolsReady)
+                                                      List<ModuleRange> modules, bool dbgHelpReady,
+                                                      bool symbolNamesEnabled, int pid, ulong stackBase,
+                                                      ulong stackLimit)
         {
             var rows = new List<StackFrameRow>();
 
@@ -274,7 +305,7 @@ namespace BlackbirdInterface
                                            AddrStack = new ADDRESS64 { Offset = context.Rsp, Mode = AddrModeFlat },
                                            Params = new ulong[4], Reserved = new ulong[3] };
 
-            AddFrameRow(rows, hProcess, context.Rip, context.Rbp, modules, symbolsReady);
+            AddFrameRow(rows, hProcess, context.Rip, context.Rbp, modules, dbgHelpReady, symbolNamesEnabled, pid);
             ulong lastAddress = context.Rip;
 
             for (int i = 0; i < MaxFrames; i++)
@@ -294,28 +325,152 @@ namespace BlackbirdInterface
                     break;
                 }
 
-                AddFrameRow(rows, hProcess, addr, frame.AddrFrame.Offset, modules, symbolsReady);
+                AddFrameRow(rows, hProcess, addr, frame.AddrFrame.Offset, modules, dbgHelpReady,
+                            symbolNamesEnabled, pid);
                 lastAddress = addr;
+            }
+
+            if (rows.Count < 8)
+            {
+                AppendManualStackScanRows(rows, hProcess, context.Rsp, stackBase, stackLimit, modules, dbgHelpReady,
+                                          symbolNamesEnabled, pid);
             }
 
             return rows;
         }
 
+        private static void AppendManualStackScanRows(List<StackFrameRow> rows, IntPtr hProcess, ulong stackPointer,
+                                                      ulong stackBase, ulong stackLimit, List<ModuleRange> modules,
+                                                      bool dbgHelpReady, bool symbolNamesEnabled, int pid)
+        {
+            if (hProcess == IntPtr.Zero || stackPointer == 0 || rows.Count >= MaxFrames)
+            {
+                return;
+            }
+
+            ulong scanStart = stackPointer & ~7UL;
+            ulong scanEnd = scanStart + ManualStackScanBytes;
+            if (scanEnd < scanStart)
+            {
+                scanEnd = ulong.MaxValue;
+            }
+            if (stackLimit != 0 && stackBase != 0 && stackLimit < stackBase)
+            {
+                if (scanStart < stackLimit)
+                {
+                    scanStart = stackLimit;
+                }
+                if (scanEnd > stackBase)
+                {
+                    scanEnd = stackBase;
+                }
+            }
+            if (scanEnd <= scanStart)
+            {
+                return;
+            }
+
+            byte[] buffer = new byte[4096];
+            for (ulong address = scanStart; address + sizeof(ulong) <= scanEnd && rows.Count < MaxFrames;)
+            {
+                int toRead = (int)Math.Min((ulong)buffer.Length, scanEnd - address);
+                if (toRead < sizeof(ulong))
+                {
+                    break;
+                }
+
+                if (!ReadProcessMemory(hProcess, (IntPtr)unchecked((long)address), buffer, toRead,
+                                       out IntPtr bytesReadPtr))
+                {
+                    address += 0x1000;
+                    continue;
+                }
+
+                long bytesRead = bytesReadPtr.ToInt64();
+                if (bytesRead < sizeof(ulong))
+                {
+                    address += 0x1000;
+                    continue;
+                }
+
+                int usable = (int)Math.Min(bytesRead, toRead);
+                for (int offset = 0; offset + sizeof(ulong) <= usable && rows.Count < MaxFrames; offset += sizeof(ulong))
+                {
+                    ulong candidate = BitConverter.ToUInt64(buffer, offset);
+                    if (candidate == 0 || ContainsFrame(rows, candidate) ||
+                        !LooksLikeExecutableInstructionPointer(hProcess, candidate, modules))
+                    {
+                        continue;
+                    }
+
+                    AddFrameRow(rows, hProcess, candidate, address + (uint)offset, modules, dbgHelpReady,
+                                symbolNamesEnabled, pid);
+                }
+
+                address += (ulong)usable;
+            }
+        }
+
+        private static bool ContainsFrame(List<StackFrameRow> rows, ulong address)
+        {
+            for (int i = 0; i < rows.Count; i += 1)
+            {
+                if (rows[i].InstructionPointerRaw == address)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool LooksLikeExecutableInstructionPointer(IntPtr hProcess, ulong address,
+                                                                  List<ModuleRange> modules)
+        {
+            if (address < 0x10000 || address >= 0x0000800000000000UL)
+            {
+                return false;
+            }
+
+            if (FindModule(modules, address) != null)
+            {
+                return true;
+            }
+
+            UIntPtr infoSize = (UIntPtr)Marshal.SizeOf<Kernel32Native.MemoryBasicInformation64>();
+            UIntPtr result = Kernel32Native.VirtualQueryEx(hProcess, (IntPtr)unchecked((long)address), out var mbi,
+                                                           infoSize);
+            if (result == UIntPtr.Zero || mbi.State != MEM_COMMIT)
+            {
+                return false;
+            }
+
+            uint protect = mbi.Protect & 0xFFu;
+            if ((mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0)
+            {
+                return false;
+            }
+
+            return protect is PAGE_EXECUTE or PAGE_EXECUTE_READ or PAGE_EXECUTE_READWRITE or PAGE_EXECUTE_WRITECOPY;
+        }
+
         private static void AddFrameRow(List<StackFrameRow> rows, IntPtr hProcess, ulong address, ulong framePointer,
-                                        List<ModuleRange> modules, bool symbolsReady)
+                                        List<ModuleRange> modules, bool dbgHelpReady, bool symbolNamesEnabled,
+                                        int pid)
         {
             if (address == 0 || rows.Count >= MaxFrames)
             {
                 return;
             }
 
-            ResolveFrame(hProcess, address, modules, symbolsReady, out var module, out var symbol,
+            ResolveFrame(hProcess, address, modules, dbgHelpReady, symbolNamesEnabled, pid, out var module, out var symbol,
                          out var displayAddress);
             rows.Add(new StackFrameRow { Index = rows.Count, Address = displayAddress, Module = module, Symbol = symbol,
                                          InstructionPointerRaw = address, FramePointerRaw = framePointer });
         }
 
-        private static void ResolveFrame(IntPtr hProcess, ulong address, List<ModuleRange> modules, bool symbolsReady,
+        private static void ResolveFrame(IntPtr hProcess, ulong address, List<ModuleRange> modules, bool dbgHelpReady,
+                                         bool symbolNamesEnabled, int pid,
                                          out string module, out string symbol, out string displayAddress)
         {
             ModuleRange? moduleRange = FindModule(modules, address);
@@ -323,13 +478,21 @@ namespace BlackbirdInterface
             displayAddress = FormatAddress(moduleRange, address);
             symbol = displayAddress;
 
-            if (!symbolsReady)
+            if (!symbolNamesEnabled)
                 return;
 
-            if (TryResolveSymbol(hProcess, address, out var symText))
+            if (dbgHelpReady && TryResolveSymbol(hProcess, address, out var symText))
+            {
                 symbol = symText;
+            }
+            else if (moduleRange is ModuleRange range &&
+                     ResxSymbolService.TryResolveSymbol(pid, range.Path, range.Name, address - range.Start,
+                                                        out string resxSymbol))
+            {
+                symbol = resxSymbol;
+            }
 
-            if (TryResolveLine(hProcess, address, out var fileLine))
+            if (dbgHelpReady && TryResolveLine(hProcess, address, out var fileLine))
                 symbol = $"{symbol} ({fileLine})";
         }
 
@@ -408,7 +571,16 @@ namespace BlackbirdInterface
                 {
                     ulong start = (ulong)m.BaseAddress.ToInt64();
                     ulong end = start + (ulong)m.ModuleMemorySize;
-                    list.Add(new ModuleRange(m.ModuleName, start, end));
+                    string path = string.Empty;
+                    try
+                    {
+                        path = m.FileName;
+                    }
+                    catch
+                    {
+                    }
+
+                    list.Add(new ModuleRange(m.ModuleName, path, start, end));
                 }
             }
             catch
@@ -418,7 +590,7 @@ namespace BlackbirdInterface
             return list.OrderBy(x => x.Start).ToList();
         }
 
-        private readonly record struct ModuleRange(string Name, ulong Start, ulong End);
+        private readonly record struct ModuleRange(string Name, string Path, ulong Start, ulong End);
 
         [StructLayout(LayoutKind.Sequential)]
         private struct ADDRESS64

@@ -108,6 +108,11 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
+    <None Include="..\x64\$(Configuration)\RESX.dll" Condition="Exists('..\x64\$(Configuration)\RESX.dll')">
+      <Link>RESX.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
     <None Include="..\x64\$(Configuration)\BlackbirdDllHost.exe" Condition="Exists('..\x64\$(Configuration)\BlackbirdDllHost.exe')">
       <Link>BlackbirdDllHost.exe</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

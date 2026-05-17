@@ -284,6 +284,33 @@
                                              ToolTip="Arguments passed after the executable path. Preserve your own quoting, for example: --profile &quot;lab one&quot;"/>
                                 </Grid>
 
+                                <Grid x:Name="TargetPdbPathPanel"
+                                      Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="170"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="80"/>
+                                        <ColumnDefinition Width="72"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Target PDB"/>
+                                    <TextBox x:Name="TargetPdbPathTextBox"
+                                             Grid.Column="1"
+                                             MinWidth="240"
+                                             HorizontalAlignment="Stretch"
+                                             FontFamily="{DynamicResource AppMonoFontFamily}"/>
+                                    <Button Grid.Column="2"
+                                            Margin="8,0,0,0"
+                                            Content="Browse"
+                                            Height="26"
+                                            Click="BrowseTargetPdb_Click"/>
+                                    <Button Grid.Column="3"
+                                            Margin="8,0,0,0"
+                                            Content="Clear"
+                                            Height="26"
+                                            Click="ClearTargetPdb_Click"/>
+                                </Grid>
+
                                 <Grid Margin="0,8,0,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="170"/>

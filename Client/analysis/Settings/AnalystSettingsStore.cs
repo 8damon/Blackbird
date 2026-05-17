@@ -10,6 +10,7 @@ namespace BlackbirdInterface
         private const string ThemeValueName = "ThemeMode";
         private const string ShortcutKeyPath = RootKeyPath + @"\Shortcuts";
         private const string PreferencesKeyPath = RootKeyPath + @"\Preferences";
+        private const string SymbolsKeyPath = RootKeyPath + @"\Symbols";
 
         internal static UiThemeMode LoadThemeMode()
         {
@@ -161,6 +162,16 @@ namespace BlackbirdInterface
             }
         }
 
+        internal static SymbolSettings LoadSymbolSettings()
+        {
+            return SymbolSettingsStore.LoadSymbolSettings();
+        }
+
+        internal static void SaveSymbolSettings(SymbolSettings settings)
+        {
+            SymbolSettingsStore.SaveSymbolSettings(settings);
+        }
+
         private static bool ReadBool(RegistryKey key, string name, bool fallback)
         {
             object? value = key.GetValue(name);
@@ -174,6 +185,28 @@ namespace BlackbirdInterface
         {
             string? value = key.GetValue(name) as string;
             return NormalizeApiPresentation(string.IsNullOrWhiteSpace(value) ? fallback : value);
+        }
+
+        private static string ReadRawString(RegistryKey key, string name, string fallback)
+        {
+            string? value = key.GetValue(name) as string;
+            return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+        }
+
+        private static string[] ReadStringArray(RegistryKey key, string name)
+        {
+            object? value = key.GetValue(name);
+            if (value is string[] values)
+            {
+                return values;
+            }
+
+            if (value is string single && !string.IsNullOrWhiteSpace(single))
+            {
+                return single.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            }
+
+            return Array.Empty<string>();
         }
 
         private static void WriteBool(RegistryKey key, string name, bool value)

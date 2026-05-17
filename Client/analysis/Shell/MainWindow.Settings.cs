@@ -33,11 +33,13 @@ namespace BlackbirdInterface
         private readonly Dictionary<string, string> _shortcutBindings = new(StringComparer.OrdinalIgnoreCase);
         private readonly List<InputBinding> _managedShortcutBindings = new();
         private InterfacePreferences _interfacePreferences = InterfacePreferences.Defaults();
+        private SymbolSettings _symbolSettings = SymbolSettings.Defaults();
         private InterfaceSettingsWindow? _interfaceSettingsWindow;
 
         private void InitializeInterfaceSettings()
         {
             _interfacePreferences = AnalystSettingsStore.LoadInterfacePreferences();
+            _symbolSettings = AnalystSettingsStore.LoadSymbolSettings();
             EnsureShortcutCommands();
             LoadShortcutBindings();
             ApplyShortcutBindings();
@@ -45,7 +47,7 @@ namespace BlackbirdInterface
         }
 
         internal void ApplyInterfaceSettings(UiThemeMode mode, IReadOnlyDictionary<string, string> bindings,
-                                             InterfacePreferences preferences)
+                                             InterfacePreferences preferences, SymbolSettings symbolSettings)
         {
             App.SetThemeMode(mode);
 
@@ -65,6 +67,7 @@ namespace BlackbirdInterface
             AnalystSettingsStore.SaveShortcutBindings(_shortcutBindings);
             ApplyShortcutBindings();
             ApplyInterfacePreferences(preferences, persist: true);
+            ApplySymbolSettings(symbolSettings, persist: true);
         }
 
         private void OpenInterfaceSettings()
@@ -93,7 +96,8 @@ namespace BlackbirdInterface
                         ? gesture
                         : definition.DefaultGestureText
                 }),
-                SnapshotCurrentInterfacePreferences())
+                SnapshotCurrentInterfacePreferences(),
+                _symbolSettings.Clone())
             {
                 Owner = this
             };
@@ -278,6 +282,16 @@ namespace BlackbirdInterface
         {
             _interfacePreferences = SnapshotCurrentInterfacePreferences();
             AnalystSettingsStore.SaveInterfacePreferences(_interfacePreferences);
+        }
+
+        private void ApplySymbolSettings(SymbolSettings settings, bool persist)
+        {
+            _symbolSettings = (settings ?? SymbolSettings.Defaults()).Clone();
+            ResxSymbolService.ClearCaches();
+            if (persist)
+            {
+                AnalystSettingsStore.SaveSymbolSettings(_symbolSettings);
+            }
         }
     }
 }

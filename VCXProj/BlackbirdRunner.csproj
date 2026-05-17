@@ -91,6 +91,12 @@
     <Compile Include="..\Client\analysis\Models\LaunchProfile.cs">
       <Link>Shared\Models\LaunchProfile.cs</Link>
     </Compile>
+    <Compile Include="..\Client\analysis\Settings\SymbolSettings.cs">
+      <Link>Shared\Settings\SymbolSettings.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Settings\SymbolSettingsStore.cs">
+      <Link>Shared\Settings\SymbolSettingsStore.cs</Link>
+    </Compile>
     <Compile Include="..\Client\analysis\Models\PerformanceSample.cs">
       <Link>Shared\Models\PerformanceSample.cs</Link>
     </Compile>
@@ -139,6 +145,12 @@
     <Compile Include="..\Client\analysis\Services\ProcessCapabilityCatalog.cs">
       <Link>Shared\Services\ProcessCapabilityCatalog.cs</Link>
     </Compile>
+    <Compile Include="..\Client\analysis\Services\ResxNative.cs">
+      <Link>Shared\Services\ResxNative.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\ResxSymbolService.cs">
+      <Link>Shared\Services\ResxSymbolService.cs</Link>
+    </Compile>
     <Compile Include="..\Client\analysis\Services\RuntimeConfigService.cs">
       <Link>Shared\Services\RuntimeConfigService.cs</Link>
     </Compile>
@@ -150,6 +162,9 @@
     </Compile>
     <Compile Include="..\Client\analysis\Services\SessionFileStorage.cs">
       <Link>Shared\Services\SessionFileStorage.cs</Link>
+    </Compile>
+    <Compile Include="..\Client\analysis\Services\SymbolContextRegistry.cs">
+      <Link>Shared\Services\SymbolContextRegistry.cs</Link>
     </Compile>
     <Compile Include="..\Client\analysis\Services\SignatureIntelService.cs">
       <Link>Shared\Services\SignatureIntelService.cs</Link>
@@ -184,6 +199,11 @@
     </None>
     <None Include="..\Client\analysis\Rules\SignatureIntel\**\*">
       <Link>Rules\SignatureIntel\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Include="..\x64\$(Configuration)\RESX.dll" Condition="Exists('..\x64\$(Configuration)\RESX.dll')">
+      <Link>RESX.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>

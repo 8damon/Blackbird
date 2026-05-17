@@ -46,6 +46,7 @@ namespace BlackbirdInterface
         public LaunchTargetKind TargetKind { get; set; } = LaunchTargetKind.Executable;
         public string AnalysisSubjectPath { get; set; } = string.Empty;
         public string AnalysisHostPath { get; set; } = string.Empty;
+        public string TargetPdbPath { get; set; } = string.Empty;
         public string CommandLineArguments { get; set; } = string.Empty;
         public string WorkingDirectory { get; set; } = string.Empty;
         public string EnvironmentOverridesText { get; set; } = string.Empty;
@@ -74,6 +75,7 @@ namespace BlackbirdInterface
         public bool HasEnvironmentOverrides => !string.IsNullOrWhiteSpace(EnvironmentOverridesText);
         public bool HasCommandLineArguments => !string.IsNullOrWhiteSpace(CommandLineArguments);
         public bool HasWorkingDirectory => !string.IsNullOrWhiteSpace(WorkingDirectory);
+        public bool HasTargetPdbPath => !string.IsNullOrWhiteSpace(TargetPdbPath);
         public bool HasAnalysisSubject =>
             TargetKind == LaunchTargetKind.Dll && !string.IsNullOrWhiteSpace(AnalysisSubjectPath);
         public bool HasParentProcess => ParentProcessId != 0;

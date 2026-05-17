@@ -200,6 +200,120 @@
                 </ScrollViewer>
             </TabItem>
 
+            <TabItem Header="Symbols">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              Margin="0,10,0,0">
+                    <StackPanel>
+                        <Border BorderBrush="{DynamicResource WinBorderBrush}"
+                                BorderThickness="1"
+                                Background="{DynamicResource WinPanelBrush}"
+                                Padding="12"
+                                Margin="0,0,0,10">
+                            <StackPanel>
+                                <CheckBox x:Name="EnablePdbResolutionCheckBox"
+                                          Content="Enable target PDB resolution"/>
+
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="160"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="92"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock VerticalAlignment="Center"
+                                               Text="Symbol cache"/>
+                                    <TextBox x:Name="SymbolCacheDirectoryTextBox"
+                                             Grid.Column="1"
+                                             MinWidth="360"
+                                             FontFamily="{DynamicResource AppMonoFontFamily}"/>
+                                    <Button Grid.Column="2"
+                                            Margin="8,0,0,0"
+                                            Content="Browse"
+                                            Click="BrowseSymbolCache_Click"/>
+                                </Grid>
+
+                                <Grid Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="160"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <CheckBox x:Name="AllowMicrosoftSymbolServerCheckBox"
+                                              Grid.Column="0"
+                                              Content="Microsoft server"/>
+                                    <TextBox x:Name="SymbolServerUrlTextBox"
+                                             Grid.Column="1"
+                                             MinWidth="360"
+                                             FontFamily="{DynamicResource AppMonoFontFamily}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Border Grid.Column="0"
+                                    BorderBrush="{DynamicResource WinBorderBrush}"
+                                    BorderThickness="1"
+                                    Background="{DynamicResource WinPanelBrush}"
+                                    Padding="12">
+                                <DockPanel LastChildFill="True">
+                                    <StackPanel DockPanel.Dock="Top"
+                                                Orientation="Horizontal"
+                                                Margin="0,0,0,8">
+                                        <TextBlock Text="Direct PDB files"
+                                                   FontWeight="SemiBold"
+                                                   VerticalAlignment="Center"/>
+                                        <Button Margin="12,0,0,0"
+                                                Padding="10,2"
+                                                Content="Add"
+                                                Click="AddDirectPdb_Click"/>
+                                        <Button Margin="8,0,0,0"
+                                                Padding="10,2"
+                                                Content="Remove"
+                                                Click="RemoveDirectPdb_Click"/>
+                                    </StackPanel>
+                                    <ListBox x:Name="DirectPdbFilesList"
+                                             MinHeight="220"
+                                             SelectionMode="Extended"
+                                             FontFamily="{DynamicResource AppMonoFontFamily}"/>
+                                </DockPanel>
+                            </Border>
+
+                            <Border Grid.Column="2"
+                                    BorderBrush="{DynamicResource WinBorderBrush}"
+                                    BorderThickness="1"
+                                    Background="{DynamicResource WinPanelBrush}"
+                                    Padding="12">
+                                <DockPanel LastChildFill="True">
+                                    <StackPanel DockPanel.Dock="Top"
+                                                Orientation="Horizontal"
+                                                Margin="0,0,0,8">
+                                        <TextBlock Text="PDB directories"
+                                                   FontWeight="SemiBold"
+                                                   VerticalAlignment="Center"/>
+                                        <Button Margin="12,0,0,0"
+                                                Padding="10,2"
+                                                Content="Add"
+                                                Click="AddPdbDirectory_Click"/>
+                                        <Button Margin="8,0,0,0"
+                                                Padding="10,2"
+                                                Content="Remove"
+                                                Click="RemovePdbDirectory_Click"/>
+                                    </StackPanel>
+                                    <ListBox x:Name="PdbDirectoriesList"
+                                             MinHeight="220"
+                                             SelectionMode="Extended"
+                                             FontFamily="{DynamicResource AppMonoFontFamily}"/>
+                                </DockPanel>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <TabItem Header="Shortcuts">
                 <Grid Margin="0,10,0,0">
                     <Grid.RowDefinitions>

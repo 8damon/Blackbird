@@ -1,3 +1,4 @@
+using Microsoft.Win32;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -14,16 +15,20 @@ namespace BlackbirdInterface
     {
         private readonly MainWindow _host;
         private readonly ObservableCollection<ShortcutBindingRow> _rows = new();
+        private readonly ObservableCollection<string> _directPdbFiles = new();
+        private readonly ObservableCollection<string> _pdbDirectories = new();
         private ShortcutBindingRow? _capturingRow;
 
         public InterfaceSettingsWindow(MainWindow host, UiThemeMode themeMode, IEnumerable<ShortcutBindingRow> rows,
-                                       InterfacePreferences preferences)
+                                       InterfacePreferences preferences, SymbolSettings symbolSettings)
         {
             InitializeComponent();
             _host = host ?? throw new ArgumentNullException(nameof(host));
             WindowThemeHelper.WireThemeAwareTitleBar(this);
 
             ShortcutGrid.ItemsSource = _rows;
+            DirectPdbFilesList.ItemsSource = _directPdbFiles;
+            PdbDirectoriesList.ItemsSource = _pdbDirectories;
             foreach (ShortcutBindingRow row in rows.Select(static row => row.Clone()))
             {
                 _rows.Add(row);
@@ -31,6 +36,7 @@ namespace BlackbirdInterface
 
             SetThemeSelection(themeMode);
             SetPreferenceSelection(preferences);
+            SetSymbolSelection(symbolSettings);
             UpdateCaptureStatus();
         }
 
@@ -99,6 +105,7 @@ namespace BlackbirdInterface
 
             SetThemeSelection(UiThemeMode.Dark);
             SetPreferenceSelection(InterfacePreferences.Defaults());
+            SetSymbolSelection(SymbolSettings.Defaults());
             _capturingRow = null;
             UpdateCaptureStatus();
         }
@@ -174,7 +181,8 @@ namespace BlackbirdInterface
             _host.ApplyInterfaceSettings(GetSelectedThemeMode(),
                                          _rows.ToDictionary(static row => row.Id, static row => row.GestureText,
                                                             StringComparer.OrdinalIgnoreCase),
-                                         GetSelectedPreferences());
+                                         GetSelectedPreferences(),
+                                         GetSelectedSymbolSettings());
         }
 
         private UiThemeMode GetSelectedThemeMode()
@@ -287,6 +295,134 @@ namespace BlackbirdInterface
             }
 
             DefaultApiPresentationBox.SelectedIndex = 0;
+        }
+
+        private SymbolSettings GetSelectedSymbolSettings()
+        {
+            var settings = new SymbolSettings {
+                EnablePdbResolution = EnablePdbResolutionCheckBox?.IsChecked == true,
+                AllowMicrosoftSymbolServer = AllowMicrosoftSymbolServerCheckBox?.IsChecked == true,
+                SymbolServerUrl = SymbolSettings.NormalizeServerUrl(SymbolServerUrlTextBox?.Text),
+                SymbolCacheDirectory = SymbolSettings.NormalizeDirectory(SymbolCacheDirectoryTextBox?.Text,
+                                                                         SymbolSettings.DefaultCacheDirectory())
+            };
+            settings.DirectPdbFiles.AddRange(SymbolSettings.NormalizePaths(_directPdbFiles));
+            settings.PdbDirectories.AddRange(SymbolSettings.NormalizePaths(_pdbDirectories));
+            return settings;
+        }
+
+        private void SetSymbolSelection(SymbolSettings? settings)
+        {
+            SymbolSettings selection = (settings ?? SymbolSettings.Defaults()).Clone();
+            if (EnablePdbResolutionCheckBox != null)
+            {
+                EnablePdbResolutionCheckBox.IsChecked = selection.EnablePdbResolution;
+            }
+            if (AllowMicrosoftSymbolServerCheckBox != null)
+            {
+                AllowMicrosoftSymbolServerCheckBox.IsChecked = selection.AllowMicrosoftSymbolServer;
+            }
+            if (SymbolServerUrlTextBox != null)
+            {
+                SymbolServerUrlTextBox.Text = SymbolSettings.NormalizeServerUrl(selection.SymbolServerUrl);
+            }
+            if (SymbolCacheDirectoryTextBox != null)
+            {
+                SymbolCacheDirectoryTextBox.Text = selection.NormalizedCacheDirectory;
+            }
+
+            _directPdbFiles.Clear();
+            foreach (string path in SymbolSettings.NormalizePaths(selection.DirectPdbFiles))
+            {
+                _directPdbFiles.Add(path);
+            }
+
+            _pdbDirectories.Clear();
+            foreach (string path in SymbolSettings.NormalizePaths(selection.PdbDirectories))
+            {
+                _pdbDirectories.Add(path);
+            }
+        }
+
+        private void AddDirectPdb_Click(object sender, RoutedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            var dialog = new OpenFileDialog {
+                Filter = "Program database (*.pdb)|*.pdb|All files (*.*)|*.*",
+                CheckFileExists = true,
+                Multiselect = true
+            };
+            if (dialog.ShowDialog(this) != true)
+            {
+                return;
+            }
+
+            foreach (string file in dialog.FileNames)
+            {
+                AddUnique(_directPdbFiles, file);
+            }
+        }
+
+        private void RemoveDirectPdb_Click(object sender, RoutedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            RemoveSelectedItems(DirectPdbFilesList, _directPdbFiles);
+        }
+
+        private void AddPdbDirectory_Click(object sender, RoutedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            var dialog = new OpenFolderDialog { Multiselect = false };
+            if (dialog.ShowDialog(this) == true)
+            {
+                AddUnique(_pdbDirectories, dialog.FolderName);
+            }
+        }
+
+        private void RemovePdbDirectory_Click(object sender, RoutedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            RemoveSelectedItems(PdbDirectoriesList, _pdbDirectories);
+        }
+
+        private void BrowseSymbolCache_Click(object sender, RoutedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            var dialog = new OpenFolderDialog { Multiselect = false };
+            if (!string.IsNullOrWhiteSpace(SymbolCacheDirectoryTextBox?.Text))
+            {
+                dialog.InitialDirectory = SymbolCacheDirectoryTextBox.Text.Trim();
+            }
+
+            if (dialog.ShowDialog(this) == true && SymbolCacheDirectoryTextBox != null)
+            {
+                SymbolCacheDirectoryTextBox.Text = dialog.FolderName;
+            }
+        }
+
+        private static void AddUnique(ObservableCollection<string> collection, string path)
+        {
+            string trimmed = (path ?? string.Empty).Trim();
+            if (trimmed.Length == 0 ||
+                collection.Any(existing => string.Equals(existing, trimmed, StringComparison.OrdinalIgnoreCase)))
+            {
+                return;
+            }
+
+            collection.Add(trimmed);
+        }
+
+        private static void RemoveSelectedItems(ListBox listBox, ObservableCollection<string> collection)
+        {
+            foreach (string item in listBox.SelectedItems.Cast<string>().ToList())
+            {
+                collection.Remove(item);
+            }
         }
 
         private void UpdateCaptureStatus()

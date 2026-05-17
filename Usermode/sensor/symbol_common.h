@@ -9,7 +9,7 @@ extern "C"
 {
 #endif
 
-#define BK_DEFAULT_SYMBOL_PATH "srv*C:\\symbols*https://msdl.microsoft.com/download/symbols"
+#define BK_DEFAULT_SYMBOL_PATH "C:\\symbols"
 
     BOOL BksymStartsWithInsensitive(_In_opt_z_ const char *Text, _In_opt_z_ const char *Prefix);
 

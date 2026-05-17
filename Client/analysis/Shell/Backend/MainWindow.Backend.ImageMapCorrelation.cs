@@ -282,7 +282,8 @@ namespace BlackbirdInterface
                                                              string detection, uint severity, string source,
                                                              string eventName, string reason, string evidence)
         {
-            string key = $"{actor}|{target}|{detection}|{evidence}";
+            string keyEvidence = StripStackEvidenceForAggregation(evidence);
+            string key = $"{actor}|{target}|{detection}|{keyEvidence}";
             _antiAnalysisCountByEvidence.TryGetValue(key, out int count);
             count += 1;
             _antiAnalysisCountByEvidence[key] = count;
@@ -302,6 +303,17 @@ namespace BlackbirdInterface
                                             Reason = $"reason={reason}; hits={count}",
                                             Evidence = evidence,
                                             RepeatCount = 1 };
+        }
+
+        private static string StripStackEvidenceForAggregation(string evidence)
+        {
+            if (string.IsNullOrWhiteSpace(evidence))
+            {
+                return string.Empty;
+            }
+
+            int stackEvidenceIndex = evidence.IndexOf("; stackEvidence=", StringComparison.OrdinalIgnoreCase);
+            return stackEvidenceIndex > 0 ? evidence[..stackEvidenceIndex] : evidence;
         }
 
         private static bool HasDetectionTrait(BrokerEtwEventView view, uint trait) => (view.DetectionTraits & trait) !=

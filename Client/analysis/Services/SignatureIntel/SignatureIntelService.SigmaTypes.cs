@@ -272,6 +272,9 @@ namespace BlackbirdInterface
                 context.AddCommonFields(view.Source, view.EventName, view.EventId, view.ActorPid, view.TargetPid,
                                         view.ProcessPid, view.ThreadId, view.CommandLine, view.ImagePath,
                                         view.OriginPath, view.Reason, view.DetectionName, view.Operation);
+                context.Add("ApiName", string.IsNullOrWhiteSpace(view.Operation) ? view.EventName : view.Operation);
+                context.Add("ClassName", view.ClassName);
+                context.Add("ArgumentSummary", view.ArgumentSummary);
                 context.Add("Task", view.Task);
                 context.Add("Opcode", view.Opcode);
                 context.Add("Flags", $"0x{view.Flags:X8}");
@@ -287,6 +290,10 @@ namespace BlackbirdInterface
                 context.Add("StartAddress", view.StartAddress == 0 ? string.Empty : $"0x{view.StartAddress:X}");
                 context.Add("ImageLoaded", view.ImagePath);
                 context.Add("TargetObject", CombinePath(view.KeyPath, view.ValueName));
+                context.Add("ObjectName", view.KeyPath);
+                context.Add("Endpoint", view.KeyPath);
+                context.Add("DeviceName", view.OriginPath);
+                context.Add("DriverName", view.ValueName);
                 context.Add("RegistryKey", view.KeyPath);
                 context.Add("RegistryValue", view.ValueName);
                 context.Add("Details", view.Details);
@@ -314,6 +321,8 @@ namespace BlackbirdInterface
                                         string.Empty, eventName);
                 context.Add("DesiredAccess", $"0x{record.DesiredAccess:X8}");
                 context.Add("GrantedAccess", $"0x{record.DesiredAccess:X8}");
+                context.Add("ApiName", eventName);
+                context.Add("ClassName", eventName);
                 context.Add("SourceImage", record.OriginPath);
                 context.Add("Image", record.OriginPath);
                 context.Add(
@@ -329,6 +338,8 @@ namespace BlackbirdInterface
                 context.Add("RegistryValue", record.RegistryValueName);
                 context.Add("FileOperation", $"0x{record.FileOperation:X}");
                 context.Add("RegistryOperation", record.RegistryOperation);
+                context.Add("Operation", record.RegistryOperation);
+                context.Add("Operation", $"0x{record.FileOperation:X}");
                 context.AddIoctlCategories(record);
                 return context;
             }
@@ -419,6 +430,21 @@ namespace BlackbirdInterface
                 {
                     Categories.Add("api_call");
                 }
+                if (view.Family == BlackbirdNative.IpcEtwFamilyIpcIo)
+                {
+                    Categories.Add("ipc_io");
+                    if (view.ClassName.Equals("IOCTL", StringComparison.OrdinalIgnoreCase) ||
+                        view.ClassName.Equals("FSCTL", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Categories.Add("device_control");
+                    }
+                    if (view.ClassName.Equals("ALPC", StringComparison.OrdinalIgnoreCase) ||
+                        view.ClassName.Equals("LPC", StringComparison.OrdinalIgnoreCase) ||
+                        view.ClassName.Equals("RPC", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Categories.Add("ipc_endpoint");
+                    }
+                }
             }
 
             private void AddIoctlCategories(IoctlParsedEvent record)
@@ -437,9 +463,22 @@ namespace BlackbirdInterface
                 else if (record.Type == BlackbirdNative.EventTypeFileSystem)
                 {
                     Categories.Add("file_event");
-                    Categories.Add("file_create");
-                    Categories.Add("file_delete");
-                    Categories.Add("file_change");
+                    switch (record.FileOperation)
+                    {
+                    case BlackbirdNative.FileOperationCreate:
+                        Categories.Add("file_create");
+                        Categories.Add("file_change");
+                        break;
+                    case BlackbirdNative.FileOperationWrite:
+                    case BlackbirdNative.FileOperationSetInformation:
+                    case BlackbirdNative.FileOperationFsControl:
+                        Categories.Add("file_change");
+                        break;
+                    case BlackbirdNative.FileOperationCleanup:
+                    case BlackbirdNative.FileOperationClose:
+                        Categories.Add("file_delete");
+                        break;
+                    }
                 }
                 else if (record.Type == BlackbirdNative.EventTypeRegistry)
                 {

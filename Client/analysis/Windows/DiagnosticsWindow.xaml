@@ -16,9 +16,13 @@
         <DataTemplate x:Key="DiagnosticCardTemplate">
             <Border Margin="0,0,0,10"
                     Padding="12,10"
-                    BorderThickness="1"
+                    BorderThickness="3,0,0,0"
                     BorderBrush="{Binding BorderBrush}"
-                    Background="{Binding Background}">
+                    Background="{Binding Background}"
+                    Cursor="Hand"
+                    Tag="{Binding}"
+                    ToolTip="Double-click for diagnostic evidence"
+                    MouseLeftButtonDown="DiagnosticCard_MouseLeftButtonDown">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
@@ -42,8 +46,8 @@
                                     Padding="7,2"
                                     Margin="8,0,0,0"
                                     BorderBrush="{Binding BorderBrush}"
-                                    BorderThickness="1"
-                                    Background="#22000000">
+                                    BorderThickness="0"
+                                    Background="{x:Null}">
                                 <TextBlock Text="{Binding StatusLabel}"
                                            FontSize="10"
                                            FontWeight="SemiBold"
@@ -258,6 +262,88 @@
                             <TabItem Header="Exceptions">
                                 <RichTextBox x:Name="ExceptionsFeedBox"
                                              Style="{StaticResource FeedRichTextBoxStyle}"/>
+                            </TabItem>
+                            <TabItem Header="Architecture">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled">
+                                    <ItemsControl x:Name="ArchitectureLayersControl"
+                                                  Padding="10,8,10,4">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Margin="0,0,0,8"
+                                                        Padding="10,9"
+                                                        BorderThickness="3,0,0,0"
+                                                        BorderBrush="{Binding BorderBrush}"
+                                                        Background="{Binding Background}">
+                                                    <StackPanel>
+                                                        <DockPanel LastChildFill="True">
+                                                            <Border DockPanel.Dock="Right"
+                                                                    Padding="0"
+                                                                    Margin="8,0,0,0"
+                                                                    BorderBrush="{Binding BorderBrush}"
+                                                                    BorderThickness="0"
+                                                                    Background="{x:Null}">
+                                                                <TextBlock Text="{Binding StateLabel}"
+                                                                           FontSize="10"
+                                                                           FontWeight="SemiBold"
+                                                                           Foreground="{Binding Foreground}"/>
+                                                            </Border>
+                                                            <TextBlock Text="{Binding Name}"
+                                                                       FontSize="12"
+                                                                       FontWeight="SemiBold"
+                                                                       Foreground="{DynamicResource WinTextBrush}"/>
+                                                        </DockPanel>
+                                                        <TextBlock Text="{Binding Description}"
+                                                                   Margin="0,3,0,8"
+                                                                   FontSize="10"
+                                                                   Foreground="{DynamicResource WinMutedTextBrush}"
+                                                                   TextWrapping="Wrap"/>
+                                                        <ItemsControl ItemsSource="{Binding Components}">
+                                                            <ItemsControl.ItemsPanel>
+                                                                <ItemsPanelTemplate>
+                                                                    <WrapPanel/>
+                                                                </ItemsPanelTemplate>
+                                                            </ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Border Width="150"
+                                                                            MinHeight="58"
+                                                                            Margin="0,0,6,6"
+                                                                            Padding="8,6"
+                                                                            BorderThickness="3,0,0,0"
+                                                                            BorderBrush="{Binding BorderBrush}"
+                                                                            Background="{Binding Background}"
+                                                                            ToolTip="{Binding Detail}">
+                                                                        <StackPanel>
+                                                                            <DockPanel LastChildFill="True">
+                                                                                <Border DockPanel.Dock="Left"
+                                                                                        Width="7"
+                                                                                        Height="7"
+                                                                                        Margin="0,3,6,0"
+                                                                                        CornerRadius="3.5"
+                                                                                        Background="{Binding StatusDotBrush}"/>
+                                                                                <TextBlock Text="{Binding Name}"
+                                                                                           FontSize="11"
+                                                                                           FontWeight="SemiBold"
+                                                                                           Foreground="{Binding Foreground}"
+                                                                                           TextTrimming="CharacterEllipsis"/>
+                                                                            </DockPanel>
+                                                                            <TextBlock Text="{Binding Value}"
+                                                                                       Margin="0,4,0,0"
+                                                                                       FontSize="9.5"
+                                                                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                                                                       TextWrapping="Wrap"/>
+                                                                        </StackPanel>
+                                                                    </Border>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
                             </TabItem>
                             <TabItem Header="Components">
                                 <Grid>

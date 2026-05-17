@@ -798,8 +798,14 @@ static BOOL ControllerShouldForwardEtwRecord(_In_ PEVENT_RECORD Record, _In_opt_
 static VOID WINAPI ControllerEtwCallback(_In_ PEVENT_RECORD Record, _In_opt_z_ PCWSTR EventName, _In_opt_ PVOID Context)
 {
     static const PCWSTR stackPropertyNames[BKIPC_MAX_ETW_STACK_FRAMES] = {
-        L"stack0", L"stack1", L"stack2",  L"stack3",  L"stack4",  L"stack5",  L"stack6",  L"stack7",
-        L"stack8", L"stack9", L"stack10", L"stack11", L"stack12", L"stack13", L"stack14", L"stack15"};
+        L"stack0",  L"stack1",  L"stack2",  L"stack3",  L"stack4",  L"stack5",  L"stack6",  L"stack7",
+        L"stack8",  L"stack9",  L"stack10", L"stack11", L"stack12", L"stack13", L"stack14", L"stack15",
+        L"stack16", L"stack17", L"stack18", L"stack19", L"stack20", L"stack21", L"stack22", L"stack23",
+        L"stack24", L"stack25", L"stack26", L"stack27", L"stack28", L"stack29", L"stack30", L"stack31",
+        L"stack32", L"stack33", L"stack34", L"stack35", L"stack36", L"stack37", L"stack38", L"stack39",
+        L"stack40", L"stack41", L"stack42", L"stack43", L"stack44", L"stack45", L"stack46", L"stack47",
+        L"stack48", L"stack49", L"stack50", L"stack51", L"stack52", L"stack53", L"stack54", L"stack55",
+        L"stack56", L"stack57", L"stack58", L"stack59", L"stack60", L"stack61", L"stack62", L"stack63"};
     BKIPC_ETW_EVENT event;
     ULONGLONG processId = 0;
     ULONGLONG threadId = 0;

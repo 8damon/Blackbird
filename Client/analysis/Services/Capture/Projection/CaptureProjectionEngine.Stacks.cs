@@ -114,6 +114,9 @@ namespace BlackbirdInterface.Capture
                 return false;
             }
 
+            bool kernelNtapi = EventDetailFormatting.IsKernelHookTelemetry(view) ||
+                               (view.Reason?.Contains("kind=kernel_ntapi", StringComparison.OrdinalIgnoreCase) ==
+                                true);
             if (!api.StartsWith("Nt", StringComparison.OrdinalIgnoreCase) &&
                 !api.StartsWith("Zw", StringComparison.OrdinalIgnoreCase) &&
                 !api.StartsWith("Co", StringComparison.OrdinalIgnoreCase) &&
@@ -123,10 +126,15 @@ namespace BlackbirdInterface.Capture
             }
 
             bool highSignal = view.Severity >= 4 ||
+                              (kernelNtapi && view.Severity >= 2) ||
                               api.Equals("NtMapViewOfSection", StringComparison.OrdinalIgnoreCase) ||
                               api.Equals("ZwMapViewOfSection", StringComparison.OrdinalIgnoreCase) ||
+                              api.Equals("NtAllocateVirtualMemory", StringComparison.OrdinalIgnoreCase) ||
+                              api.Equals("NtAllocateVirtualMemoryEx", StringComparison.OrdinalIgnoreCase) ||
                               api.Equals("NtCreateSection", StringComparison.OrdinalIgnoreCase) ||
                               api.Equals("ZwCreateSection", StringComparison.OrdinalIgnoreCase) ||
+                              api.Equals("NtCreateFile", StringComparison.OrdinalIgnoreCase) ||
+                              api.Equals("NtOpenFile", StringComparison.OrdinalIgnoreCase) ||
                               api.Equals("NtWriteVirtualMemory", StringComparison.OrdinalIgnoreCase) ||
                               api.Equals("NtProtectVirtualMemory", StringComparison.OrdinalIgnoreCase) ||
                               api.Equals("NtCreateThreadEx", StringComparison.OrdinalIgnoreCase);

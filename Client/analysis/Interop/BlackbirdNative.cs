@@ -62,6 +62,13 @@ namespace BlackbirdInterface
         internal const uint IpcCapUserHookReady = 0x00000020;
         internal const uint IpcCapDriverDiagnostics = 0x00000040;
         internal const uint IpcCapQpcTiming = 0x00000080;
+        internal const uint HookReadyIpcConnected = 0x00000001;
+        internal const uint HookReadyWinsock = 0x00000002;
+        internal const uint HookReadyNt = 0x00000004;
+        internal const uint HookReadyKi = 0x00000008;
+        internal const uint HookReadyModule = 0x00000010;
+        internal const uint HookReadyRequiredMask = HookReadyIpcConnected | HookReadyWinsock | HookReadyNt |
+                                                    HookReadyKi | HookReadyModule;
         internal const uint AnalysisSubjectKindProcess = 0;
         internal const uint AnalysisSubjectKindDll = 1;
         internal const uint HealthControlReady = 0x00000001;
@@ -99,6 +106,21 @@ namespace BlackbirdInterface
         internal const uint DiagFlagPolicy = 0x00000008;
         internal const uint DiagFlagShutdown = 0x00000010;
         internal const uint DiagFlagSelfCheck = 0x00000020;
+        internal const uint DiagStateOnline = 0x00000001;
+        internal const uint DiagStateRegistered = 0x00000002;
+        internal const uint DiagStateArmed = 0x00000004;
+        internal const uint DiagStateCallback = 0x00000008;
+        internal const uint DiagStateHook = 0x00000010;
+        internal const uint DiagStateRequired = 0x00000020;
+        internal const uint DiagStateOptional = 0x00000040;
+        internal const uint DiagStateInstalled = 0x00000080;
+        internal const uint DiagStateResolved = 0x00000100;
+        internal const uint DiagStatePolicyDisabled = 0x00000200;
+        internal const uint DiagStateDegraded = 0x00000400;
+        internal const uint DiagStateSanitizes = 0x00000800;
+        internal const uint DiagStateTelemetry = 0x00001000;
+        internal const uint DiagStateTamperActive = 0x00002000;
+        internal const uint DiagStateFastPath = 0x00004000;
         internal const uint DiagComponentNone = 0;
         internal const uint DiagComponentDriverEntry = 1;
         internal const uint DiagComponentRuntimeConfig = 2;
@@ -185,7 +207,7 @@ namespace BlackbirdInterface
         private const int MaxIpcCommandLineChars = 512;
         private const int MaxIpcKeyPathChars = 512;
         private const int MaxIpcValueNameChars = 256;
-        internal const int MaxIpcStackFrames = 16;
+        internal const int MaxIpcStackFrames = 64;
         private const int MaxIpcDeepSampleBytes = 64;
         private const int MaxIpcHookArgs = 8;
 
@@ -225,11 +247,12 @@ namespace BlackbirdInterface
         internal const uint IpcEtwFlagHookCallerHasUnmapped = 0x00080000;
         internal const uint IpcEtwFlagHookCallerHasProcessImage = 0x00100000;
         internal const uint IpcEtwFlagHookCallerHasNonSystemDll = 0x00200000;
-        internal const uint IpcEtwFlagHookCallerHasOwnModule = 0x04000000;
-        internal const uint IpcEtwFlagHookKernelCaller = 0x00400000;
-        internal const uint IpcEtwFlagHookUserCaller = 0x00800000;
-        internal const uint IpcEtwFlagHookTargetCurrentProcess = 0x01000000;
-        internal const uint IpcEtwFlagHookSectionImage = 0x02000000;
+        internal const uint IpcEtwFlagHookCallerHasOwnModule = 0x00400000;
+        internal const uint IpcEtwFlagHookKernelCaller = 0x00800000;
+        internal const uint IpcEtwFlagHookUserCaller = 0x01000000;
+        internal const uint IpcEtwFlagHookTargetCurrentProcess = 0x02000000;
+        internal const uint IpcEtwFlagHookSectionImage = 0x04000000;
+        internal const uint IpcEtwFlagHookCallerUnwindSuspect = 0x08000000;
         internal const uint IpcEtwTraitMemoryAllocRw = 0x00000001;
         internal const uint IpcEtwTraitMemoryWriteVm = 0x00000002;
         internal const uint IpcEtwTraitMemoryProtectRx = 0x00000004;
@@ -239,13 +262,14 @@ namespace BlackbirdInterface
         internal const uint IpcEtwTraitImageTamper = 0x00000040;
         internal const uint IpcEtwTraitLolbin = 0x00000080;
         internal const uint IpcEtwTraitDetectionClass = 0x00000100;
-        internal const uint IpcEtwTraitDirectSyscall = 0x00000200;
-        internal const uint IpcEtwTraitHookTamper = 0x00000400;
-        internal const uint IpcEtwTraitImageLoad = 0x00000800;
-        internal const uint IpcEtwTraitProcessLaunch = 0x00001000;
-        internal const uint IpcEtwTraitScanImagePath = 0x00002000;
-        internal const uint IpcEtwTraitScanTargetProcess = 0x00004000;
+        internal const uint IpcEtwTraitProcessLaunch = 0x00000200;
+        internal const uint IpcEtwTraitImageLoad = 0x00000400;
+        internal const uint IpcEtwTraitDirectSyscall = 0x00000800;
+        internal const uint IpcEtwTraitHookTamper = 0x00001000;
+        internal const uint IpcEtwTraitScanTargetProcess = 0x00002000;
+        internal const uint IpcEtwTraitScanImagePath = 0x00004000;
         internal const uint IpcEtwTraitBlackbirdOwn = 0x00008000;
+        internal const uint IpcEtwTraitUnwindSuspect = 0x00010000;
         internal const uint HookCallerImmediateShift = 4;
         internal const uint HookCallerImmediateMask = 0x000000F0;
         internal const uint HookCallerDeepOriginShift = 8;
@@ -259,14 +283,11 @@ namespace BlackbirdInterface
         internal const uint HookCallerKindOwnModule = 4;
         internal const uint HookCallerKindNonSystemDll = 5;
         internal const uint HookComponentUnknown = 0;
-        internal const uint HookComponentRuntime = 1;
-        internal const uint HookComponentWinsock = 2;
-        internal const uint HookComponentNt = 3;
-        internal const uint HookComponentKi = 4;
-        internal const uint HookComponentModule = 5;
-        internal const uint HookComponentIntegrity = 6;
-        internal const uint HookComponentLaunchGate = 7;
-        internal const uint HookComponentIpc = 8;
+        internal const uint HookComponentWinsock = 1;
+        internal const uint HookComponentNt = 2;
+        internal const uint HookComponentKi = 3;
+        internal const uint HookComponentModule = 4;
+        internal const uint HookComponentIntegrity = 5;
 
         private static IntPtr ResolveNativeLibrary(string libraryName, Assembly assembly,
                                                    DllImportSearchPath? searchPath)

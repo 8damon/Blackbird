@@ -125,6 +125,7 @@ namespace BlackbirdInterface
             AddProjected(projected, "ETW Integrity", ResolveIntegrityStatus(values, "ETW Integrity"));
             AddProjected(projected, "Signature Intel", ResolveFirst(values, "Signature Intel"));
             AddProjected(projected, "Capture Store", ResolveFirst(values, "Capture Store"));
+            AddProjected(projected, "Telemetry Counters", BuildCounterSummary(values));
             AddProjected(projected, "RuntimeConfig", ResolveFirst(values, "RuntimeConfig"));
             AddProjected(projected, "PID Coverage", ResolveFirst(values, "PID Coverage"));
             AddProjected(projected, "Driver Queue", ResolveFirst(values, "Driver Queue"));
@@ -142,6 +143,16 @@ namespace BlackbirdInterface
             AddProjected(projected, "HookDLL Presence", ResolveHookDllPresence(values));
             AddProjected(projected, "Last Fault", ResolveFirst(values, "Last Fault"));
             return projected;
+        }
+
+        private static string? BuildCounterSummary(IReadOnlyDictionary<string, string> values)
+        {
+            List<string> counters = values
+                                    .Where(x => x.Key.StartsWith("Counter:", StringComparison.OrdinalIgnoreCase))
+                                    .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                                    .Select(x => $"{x.Key["Counter:".Length..]}={x.Value}")
+                                    .ToList();
+            return counters.Count == 0 ? null : $"OK {string.Join(" ", counters)}";
         }
 
         private static void AddProjected(List<DiagnosticsStateEntry> entries, string key, string? value)
@@ -942,6 +953,7 @@ namespace BlackbirdInterface
                                                                                         "ETW Integrity",
                                                                                         "SR71 Hook Ready",
                                                                                         "Usermode Hooks" },
+                    "Telemetry Counters" => new[] { "Telemetry Counters" },
                     _ => new[] { key }
                 };
 
@@ -958,6 +970,16 @@ namespace BlackbirdInterface
             {
                 foreach (KeyValuePair<string, string> item in values
                              .Where(x => x.Key.StartsWith("Driver Component:", StringComparison.OrdinalIgnoreCase))
+                             .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    yield return item;
+                }
+            }
+
+            if (key.Equals("Telemetry Counters", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (KeyValuePair<string, string> item in values
+                             .Where(x => x.Key.StartsWith("Counter:", StringComparison.OrdinalIgnoreCase))
                              .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
                 {
                     yield return item;
@@ -1409,9 +1431,10 @@ namespace BlackbirdInterface
 
                                            "Driver Service" or "Controller Service" => DiagnosticsDomain.Services,
 
-                                           "ETW Status" or "Signature Intel" or "Capture Store" or "RuntimeConfig" or
-                                           "PID Coverage" or "Driver Queue" or "Tempus" or "API Graph" or
-                                           "Last Fault" => DiagnosticsDomain.Capture,
+                                           "ETW Status" or "Signature Intel" or "Capture Store" or
+                                           "Telemetry Counters" or "RuntimeConfig" or "PID Coverage" or
+                                           "Driver Queue" or "Tempus" or "API Graph" or "Last Fault" =>
+                                               DiagnosticsDomain.Capture,
 
                                            _ => DiagnosticsDomain.Other };
             }
@@ -1431,21 +1454,22 @@ namespace BlackbirdInterface
                                            "ETW Integrity" => 10,
                                            "Signature Intel" => 11,
                                            "Capture Store" => 12,
-                                           "RuntimeConfig" => 13,
-                                           "PID Coverage" => 14,
-                                           "Driver Queue" => 15,
-                                           "Driver Health" => 16,
-                                           "Driver Components" => 17,
-                                           "Driver Tamper" => 18,
-                                           "SR71 Hook Ready" => 19,
-                                           "SR71 Instrumentation" => 20,
-                                           "Ntdll Mirror" => 21,
-                                           "Tempus" => 22,
-                                           "API Graph" => 23,
-                                           "Driver Service" => 24,
-                                           "Controller Service" => 25,
-                                           "Virtualization" => 26,
-                                           "Last Fault" => 27,
+                                           "Telemetry Counters" => 13,
+                                           "RuntimeConfig" => 14,
+                                           "PID Coverage" => 15,
+                                           "Driver Queue" => 16,
+                                           "Driver Health" => 17,
+                                           "Driver Components" => 18,
+                                           "Driver Tamper" => 19,
+                                           "SR71 Hook Ready" => 20,
+                                           "SR71 Instrumentation" => 21,
+                                           "Ntdll Mirror" => 22,
+                                           "Tempus" => 23,
+                                           "API Graph" => 24,
+                                           "Driver Service" => 25,
+                                           "Controller Service" => 26,
+                                           "Virtualization" => 27,
+                                           "Last Fault" => 28,
                                            _ => 100 };
             }
         }

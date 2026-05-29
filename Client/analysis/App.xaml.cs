@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
@@ -24,13 +25,15 @@ namespace BlackbirdInterface
 
     public partial class App : Application
     {
-        private const string GettingStartedUrl = "https://titansoftwork.com/blackbird/intro";
+        private const string GettingStartedUrl = "https://titansoftwork.com/docs/blackbird/#intro";
         private static Mutex? _singleInstanceMutex;
         internal static bool IsDarkTheme { get; private set; } = true;
         internal static UiThemeMode CurrentThemeMode { get; private set; } = UiThemeMode.Dark;
         internal static event Action<bool>? ThemeChanged;
 
         private static int _faultHandlerDepth;
+        private static int _edrWarningShown;
+        private static int _vmSafetyWarningShown;
 
         private sealed class StartupIntent
         {
@@ -249,6 +252,7 @@ namespace BlackbirdInterface
             main.Activate();
             await YieldForUiFrameAsync();
             loading.Close();
+            _ = ShowStartupEnvironmentWarningsAsync();
 
             if (!openingSession)
             {
@@ -471,6 +475,122 @@ namespace BlackbirdInterface
             finally
             {
                 System.Threading.Interlocked.Exchange(ref _faultHandlerDepth, 0);
+            }
+        }
+
+        private static async Task ShowStartupEnvironmentWarningsAsync()
+        {
+            await ShowSecurityProductWarningAsync();
+            await Task.Delay(850);
+            await ShowVmSafetyWarningAsync();
+        }
+
+        private static async Task ShowSecurityProductWarningAsync()
+        {
+            if (Interlocked.Exchange(ref _edrWarningShown, 1) != 0)
+            {
+                return;
+            }
+
+            SecurityProductProbeReport report;
+            try
+            {
+                report = await Task.Run(SecurityProductProbe.Run);
+            }
+            catch
+            {
+                return;
+            }
+
+            if (!report.Detected)
+            {
+                DiagnosticsState.SetValue("Security Product Presence", "None detected");
+                return;
+            }
+
+            DiagnosticsState.SetValue("Security Product Presence", report.Summary);
+            DebugConsoleService.WriteLocal($"security products detected: {report.Summary}");
+            try
+            {
+                var window = FaultNotificationWindow.CreateWarning(
+                    "Security product detected",
+                    "Another EDR/AV product appears to be active",
+                    "Blackbird may be unstable, partially blocked, or unable to collect some telemetry correctly while another endpoint security product is present.",
+                    report.BuildDetails());
+                window.Show();
+            }
+            catch
+            {
+            }
+        }
+
+        private static async Task ShowVmSafetyWarningAsync()
+        {
+            if (Interlocked.Exchange(ref _vmSafetyWarningShown, 1) != 0)
+            {
+                return;
+            }
+
+            VmSafetyProbeReport report;
+            try
+            {
+                report = await Task.Run(VmSafetyProbe.Run);
+            }
+            catch (Exception ex)
+            {
+                DiagnosticsState.SetValue("VM Safety", $"Probe failed: {ex.Message}");
+                DebugConsoleService.WriteLocal($"vm safety probe failed: {ex}");
+                OutputCapture.AppendLine($"VM safety probe failed: {ex.Message}");
+                return;
+            }
+
+            DiagnosticsState.SetValue("VM Safety", report.Summary);
+            DiagnosticsState.SetValue("VM Safety Findings",
+                                      report.Findings.Count == 0
+                                          ? "none"
+                                          : string.Join("; ", report.Findings.Take(8)
+                                                              .Select(static x =>
+                                                                          $"[{x.Severity}] {x.Category}: {x.Summary}")));
+            DebugConsoleService.WriteLocal($"vm safety preflight: {report.Summary}");
+            OutputCapture.AppendLine($"VM safety preflight: {report.Summary}");
+            foreach (VmSafetyFinding finding in report.Findings.OrderByDescending(static x => x.Severity).Take(12))
+            {
+                string line = $"VM safety [{finding.Severity}] {finding.Category}: {finding.Summary} ({finding.Evidence})";
+                DebugConsoleService.WriteLocal(line);
+                OutputCapture.AppendLine(line);
+            }
+
+            if (!report.ShouldWarn)
+            {
+                return;
+            }
+
+            if (AnalystSettingsStore.IsVmSafetyWarningIgnored())
+            {
+                DiagnosticsState.SetValue("VM Safety Warning", "Ignored by operator preference");
+                DebugConsoleService.WriteLocal("vm safety warning suppressed by operator preference");
+                OutputCapture.AppendLine("VM safety warning suppressed by operator preference");
+                return;
+            }
+
+            try
+            {
+                var window = FaultNotificationWindow.CreateWarning(
+                    "VM safety warning",
+                    "VM isolation risks detected",
+                    report.BuildToastMessage(),
+                    report.BuildDetails(),
+                    () =>
+                    {
+                        AnalystSettingsStore.SetVmSafetyWarningIgnored(true);
+                        DiagnosticsState.SetValue("VM Safety Warning", "Ignored by operator preference");
+                        DebugConsoleService.WriteLocal("vm safety warning ignored by operator");
+                        OutputCapture.AppendLine("VM safety warning ignored by operator");
+                    });
+                window.Show();
+            }
+            catch
+            {
             }
         }
 

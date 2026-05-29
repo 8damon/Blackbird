@@ -74,22 +74,22 @@
         </DataTemplate>
 
         <Style x:Key="BoardColumnBorderStyle" TargetType="Border">
-            <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Background" Value="#FF101010"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>
             <Setter Property="Padding" Value="0"/>
         </Style>
 
         <Style x:Key="BoardColumnHeaderStyle" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource WinHeaderBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource WinSubtleBorderBrush}"/>
-            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="12,10"/>
         </Style>
 
         <Style x:Key="FeedRichTextBoxStyle" TargetType="RichTextBox">
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Background" Value="#FF101010"/>
+            <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
             <Setter Property="Padding" Value="12"/>
             <Setter Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
@@ -108,9 +108,9 @@
         </Grid.RowDefinitions>
 
         <Border Grid.Row="0"
-                BorderBrush="{DynamicResource WinSubtleBorderBrush}"
-                BorderThickness="0,0,0,1"
-                Background="{DynamicResource WinHeaderBrush}"
+                BorderBrush="Transparent"
+                BorderThickness="0"
+                Background="{DynamicResource WinBgBrush}"
                 Padding="12,8"
                 Margin="0,0,0,12"
                 MouseLeftButtonDown="Root_MouseLeftButtonDown">
@@ -123,8 +123,8 @@
                                FontWeight="SemiBold"/>
                     <Border Margin="12,0,0,0"
                             Padding="10,3"
-                            BorderBrush="{DynamicResource WinSubtleBorderBrush}"
-                            BorderThickness="1"
+                            BorderBrush="Transparent"
+                            BorderThickness="0"
                             Background="{DynamicResource WinPanelBrush}">
                         <TextBlock x:Name="TargetBlock"
                                    VerticalAlignment="Center"
@@ -263,6 +263,10 @@
                                 <RichTextBox x:Name="ExceptionsFeedBox"
                                              Style="{StaticResource FeedRichTextBoxStyle}"/>
                             </TabItem>
+                            <TabItem Header="SR71 Map">
+                                <RichTextBox x:Name="SelfMapFeedBox"
+                                             Style="{StaticResource FeedRichTextBoxStyle}"/>
+                            </TabItem>
                             <TabItem Header="Architecture">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto"
                                               HorizontalScrollBarVisibility="Disabled">
@@ -351,11 +355,11 @@
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="*"/>
                                     </Grid.RowDefinitions>
-                                    <Border Grid.Row="0"
-                                            Padding="10,6"
-                                            Background="{DynamicResource WinHeaderBrush}"
-                                            BorderBrush="{DynamicResource WinSubtleBorderBrush}"
-                                            BorderThickness="0,0,0,1">
+                                     <Border Grid.Row="0"
+                                             Padding="10,6"
+                                             Background="{DynamicResource WinHeaderBrush}"
+                                             BorderBrush="Transparent"
+                                             BorderThickness="0">
                                         <DockPanel LastChildFill="True">
                                             <Button DockPanel.Dock="Right"
                                                     Content="Refresh"

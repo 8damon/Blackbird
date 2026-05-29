@@ -13,13 +13,18 @@ namespace BlackbirdInterface
                                             MessageBoxButton buttons = MessageBoxButton.OK,
                                             MessageBoxImage image = MessageBoxImage.None)
         {
+            bool isPreflightDialog = title.Contains("Preflight", StringComparison.OrdinalIgnoreCase);
             var dialog = new Window { Title = title,
-                                      Width = 432,
+                                      Width = isPreflightDialog ? 720 : 432,
                                       SizeToContent = SizeToContent.Height,
                                       MinWidth = 360,
                                       MinHeight = 0,
-                                      MaxWidth = 560,
-                                      MaxHeight = 320,
+                                      MaxWidth = isPreflightDialog
+                                                     ? Math.Min(SystemParameters.WorkArea.Width - 80, 900)
+                                                     : 560,
+                                      MaxHeight = isPreflightDialog
+                                                      ? Math.Min(SystemParameters.WorkArea.Height - 80, 720)
+                                                      : 320,
                                       WindowStartupLocation = owner == null ? WindowStartupLocation.CenterScreen
                                                                             : WindowStartupLocation.CenterOwner,
                                       Owner = owner,
@@ -34,8 +39,8 @@ namespace BlackbirdInterface
             WindowThemeHelper.ApplyTitleBarTheme(dialog, App.IsDarkTheme);
 
             var root = new Border { Background = dialog.Background,
-                                    BorderBrush = GetBrush("WinBorderBrush", Color.FromRgb(0x2B, 0x2B, 0x2B)),
-                                    BorderThickness = new Thickness(1) };
+                                    BorderBrush = Brushes.Transparent,
+                                    BorderThickness = new Thickness(0) };
 
             var layout = new Grid();
             layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -64,11 +69,17 @@ namespace BlackbirdInterface
 
             var messageBlock =
                 new TextBlock { Text = message, TextWrapping = TextWrapping.Wrap,
+                                MaxWidth = isPreflightDialog ? 640 : double.PositiveInfinity,
                                 VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(0, 1, 0, 0),
                                 Foreground = GetBrush("MessageBoxMutedTextBrush", Color.FromRgb(0xB0, 0xB0, 0xB0)) };
 
             var messageScroll =
-                new ScrollViewer { MaxHeight = 150, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                new ScrollViewer { MaxHeight = isPreflightDialog
+                                                    ? Math.Max(260, SystemParameters.WorkArea.Height - 240)
+                                                    : 150,
+                                   VerticalScrollBarVisibility = isPreflightDialog
+                                                                     ? ScrollBarVisibility.Disabled
+                                                                     : ScrollBarVisibility.Auto,
                                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                                    CanContentScroll = false, Content = messageBlock };
             Grid.SetColumn(messageScroll, 1);
@@ -157,8 +168,8 @@ namespace BlackbirdInterface
             WindowThemeHelper.ApplyTitleBarTheme(toast, App.IsDarkTheme);
 
             var shell = new Border { Background = toast.Background,
-                                     BorderBrush = GetBrush("WinBorderBrush", Color.FromRgb(0x2B, 0x2B, 0x2B)),
-                                     BorderThickness = new Thickness(1) };
+                                     BorderBrush = Brushes.Transparent,
+                                     BorderThickness = new Thickness(0) };
 
             var layout = new Grid();
             layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -228,8 +239,8 @@ namespace BlackbirdInterface
         {
             var border =
                 new Border { Background = GetBrush("WinHeaderBrush", Color.FromRgb(0x1B, 0x1B, 0x1B)),
-                             BorderBrush = GetBrush("WinBorderBrush", Color.FromRgb(0x2B, 0x2B, 0x2B)),
-                             BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(10, 6, 6, 6) };
+                             BorderBrush = Brushes.Transparent,
+                             BorderThickness = new Thickness(0), Padding = new Thickness(10, 6, 6, 6) };
 
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -304,16 +315,14 @@ namespace BlackbirdInterface
             var over = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
             over.Setters.Add(
                 new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0xAA, 0x3A, 0x3A))));
-            over.Setters.Add(
-                new Setter(Control.BorderBrushProperty, new SolidColorBrush(Color.FromRgb(0xBC, 0x54, 0x54))));
-            over.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(1)));
+            over.Setters.Add(new Setter(Control.BorderBrushProperty, Brushes.Transparent));
+            over.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
 
             var pressed = new Trigger { Property = ButtonBase.IsPressedProperty, Value = true };
             pressed.Setters.Add(
                 new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0x91, 0x2E, 0x2E))));
-            pressed.Setters.Add(
-                new Setter(Control.BorderBrushProperty, new SolidColorBrush(Color.FromRgb(0xBC, 0x54, 0x54))));
-            pressed.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(1)));
+            pressed.Setters.Add(new Setter(Control.BorderBrushProperty, Brushes.Transparent));
+            pressed.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
 
             template.Triggers.Add(over);
             template.Triggers.Add(pressed);
@@ -376,10 +385,43 @@ namespace BlackbirdInterface
                 new Setter(Control.ForegroundProperty, new SolidColorBrush(Color.FromRgb(0xE6, 0xE6, 0xE6))));
             style.Setters.Add(
                 new Setter(Control.BorderBrushProperty, new SolidColorBrush(Color.FromRgb(0x2B, 0x2B, 0x2B))));
-            style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(1)));
+            style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
             style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(10, 4, 10, 4)));
             style.Setters.Add(new Setter(FrameworkElement.MinWidthProperty, 76d));
             style.Setters.Add(new Setter(FrameworkElement.MinHeightProperty, 24d));
+
+            var template = new ControlTemplate(typeof(Button));
+            var border = new FrameworkElementFactory(typeof(Border));
+            border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
+            border.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Control.BorderBrushProperty));
+            border.SetValue(Border.BorderThicknessProperty,
+                            new TemplateBindingExtension(Control.BorderThicknessProperty));
+
+            var presenter = new FrameworkElementFactory(typeof(ContentPresenter));
+            presenter.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+            presenter.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+            presenter.SetValue(FrameworkElement.MarginProperty, new TemplateBindingExtension(Control.PaddingProperty));
+            presenter.SetValue(System.Windows.Documents.TextElement.ForegroundProperty,
+                               new TemplateBindingExtension(Control.ForegroundProperty));
+            border.AppendChild(presenter);
+            template.VisualTree = border;
+
+            var over = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
+            over.Setters.Add(
+                new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0xF4, 0xF4, 0xF4))));
+            over.Setters.Add(new Setter(Control.ForegroundProperty, new SolidColorBrush(Color.FromRgb(0x11, 0x11, 0x11))));
+            over.Setters.Add(new Setter(Control.BorderBrushProperty, Brushes.Transparent));
+
+            var pressed = new Trigger { Property = ButtonBase.IsPressedProperty, Value = true };
+            pressed.Setters.Add(
+                new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0xE3, 0xE3, 0xE3))));
+            pressed.Setters.Add(
+                new Setter(Control.ForegroundProperty, new SolidColorBrush(Color.FromRgb(0x11, 0x11, 0x11))));
+            pressed.Setters.Add(new Setter(Control.BorderBrushProperty, Brushes.Transparent));
+
+            template.Triggers.Add(over);
+            template.Triggers.Add(pressed);
+            style.Setters.Add(new Setter(Control.TemplateProperty, template));
             return style;
         }
     }

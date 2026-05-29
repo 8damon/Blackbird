@@ -19,19 +19,33 @@
             <Setter Property="Padding" Value="8,4"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="Transparent"/>
-                    <Setter Property="BorderBrush" Value="Transparent"/>
-                </Trigger>
-                <Trigger Property="IsPressed" Value="True">
-                    <Setter Property="Background" Value="Transparent"/>
-                    <Setter Property="BorderBrush" Value="Transparent"/>
-                </Trigger>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Opacity" Value="0.55"/>
-                </Trigger>
-            </Style.Triggers>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"
+                                              Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#FFF4F4F4"/>
+                                <Setter Property="Foreground" Value="#FF111111"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#FFE3E3E3"/>
+                                <Setter Property="Foreground" Value="#FF111111"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style x:Key="ProcessRowStyle"
@@ -74,7 +88,8 @@
                TargetType="ComboBox">
             <Setter Property="Background" Value="{DynamicResource WinPanelBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
-            <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="Padding" Value="6,2"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
             <Setter Property="SnapsToDevicePixels" Value="True"/>
@@ -86,7 +101,7 @@
                                           Style="{DynamicResource PickerComboToggleStyle}"
                                           Background="{TemplateBinding Background}"
                                           BorderBrush="{TemplateBinding BorderBrush}"
-                                          BorderThickness="1"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
                                           Focusable="False"
                                           IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
                                           ClickMode="Press">
@@ -118,9 +133,9 @@
                                    Focusable="False"
                                    IsOpen="{TemplateBinding IsDropDownOpen}"
                                    PopupAnimation="Fade">
-                                <Border Background="{DynamicResource WinPanelBrush}"
-                                        BorderBrush="{DynamicResource WinBorderBrush}"
-                                        BorderThickness="1"
+                                 <Border Background="{DynamicResource WinPanelBrush}"
+                                         BorderBrush="Transparent"
+                                         BorderThickness="0"
                                         SnapsToDevicePixels="True"
                                         MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}">
                                     <ScrollViewer CanContentScroll="True"
@@ -200,6 +215,12 @@
                    Margin="2,0,0,8"
                    LastChildFill="False"
                    MouseLeftButtonDown="Root_MouseLeftButtonDown">
+            <Button DockPanel.Dock="Right"
+                    Style="{DynamicResource SecondaryWindowTitleGlyphButtonStyle}"
+                    Content="&#xE8BB;"
+                    Tag="Close"
+                    ToolTip="Close"
+                    Click="Close_Click"/>
             <TextBlock Text="Display entries matching these conditions:"
                        FontWeight="SemiBold"
                        VerticalAlignment="Center"/>
@@ -220,9 +241,24 @@
                        VerticalAlignment="Center"
                        Foreground="{DynamicResource WinMutedTextBrush}"
                        Margin="0,0,8,0"/>
-            <TextBox Grid.Column="1"
-                     x:Name="QuickSearchBox"
-                     TextChanged="QuickSearchBox_TextChanged"/>
+            <Grid Grid.Column="1">
+                <TextBox x:Name="QuickSearchBox"
+                         Padding="8,3,28,3"
+                         BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                         TextChanged="QuickSearchBox_TextChanged"/>
+                <Button x:Name="ClearQuickSearchButton"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Stretch"
+                        Width="24"
+                        MinWidth="24"
+                        Margin="0"
+                        Padding="0"
+                        Content="x"
+                        FontSize="11"
+                        Style="{DynamicResource PickerFlatButtonStyle}"
+                        ToolTip="Clear search"
+                        Click="ClearQuickSearch_Click"/>
+            </Grid>
 
             <TextBlock Grid.Column="3"
                        Text="Refresh:"

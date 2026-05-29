@@ -522,7 +522,7 @@ namespace BlackbirdInterface
                     }
                     else if (TryGetHealthSnapshot(out var health))
                     {
-                        DiagnosticsState.SetValue("Driver Health", BuildDriverHealthSummary(health.HealthMask));
+                        DiagnosticsState.SetValue("Driver Health", BuildDriverHealthSummary(health));
                         DiagnosticsState.SetValue("Driver Tamper", health.TamperMask == 0
                                                                        ? "OK mask=0x00000000"
                                                                        : $"DEGRADED mask=0x{health.TamperMask:X8}");
@@ -668,9 +668,10 @@ namespace BlackbirdInterface
 
             if (_lastDriverDiagSequence != 0 && diagnostics.OldestSequence > _lastDriverDiagSequence + 1)
             {
+                ulong missed = diagnostics.OldestSequence - (_lastDriverDiagSequence + 1);
                 DiagnosticsState.SetValue(
                     "Driver Diagnostics",
-                    $"DEGRADED missed events last={_lastDriverDiagSequence} oldest={diagnostics.OldestSequence} dropped={diagnostics.DroppedCount}");
+                    $"DEGRADED missedEvents={missed} last={_lastDriverDiagSequence} oldest={diagnostics.OldestSequence} overwrittenTotal={diagnostics.DroppedCount}");
             }
 
             int count = (int)Math.Min(diagnostics.EventCount, (uint)diagnostics.Events.Length);
@@ -687,7 +688,7 @@ namespace BlackbirdInterface
                 DiagnosticsState.SetValue($"Driver:{DriverDiagnosticSubsystemName(diag.SubsystemId)}", summary);
                 DiagnosticsState.SetValue(
                     "Driver Diagnostics",
-                    $"{DriverDiagnosticState(diag)} lastSeq={diag.Sequence} dropped={diagnostics.DroppedCount}");
+                    $"{DriverDiagnosticState(diag)} lastSeq={diag.Sequence} overwrittenTotal={diagnostics.DroppedCount}");
                 _lastDriverDiagSequence = Math.Max(_lastDriverDiagSequence, diag.Sequence);
             }
         }
@@ -1003,6 +1004,11 @@ namespace BlackbirdInterface
         {
             string state = failed == 0 ? "OK" : "DEGRADED";
             return $"{state} mirrored={mirrored} failures={failed}";
+        }
+
+        internal static string BuildDriverHealthSummary(BlackbirdNative.BkHealthResponse health)
+        {
+            return BuildDriverHealthSummary(health.HealthMask);
         }
 
         internal static string BuildDriverHealthSummary(uint mask)

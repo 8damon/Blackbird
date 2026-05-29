@@ -110,8 +110,12 @@ static VOID BkctlPutComponentState(_Inout_ PBK_DIAGNOSTICS_RESPONSE Response, _I
     RtlZeroMemory(state, sizeof(*state));
     state->ComponentId = ComponentId;
     state->SubsystemId = SubsystemId;
-    state->Flags = ExtraFlags | (Online ? BK_DIAG_STATE_ONLINE : BK_DIAG_STATE_DEGRADED);
-    state->Status = Online ? STATUS_SUCCESS : STATUS_DEVICE_NOT_READY;
+    state->Flags = ExtraFlags | (Online ? BK_DIAG_STATE_ONLINE
+                                        : ((ExtraFlags & BK_DIAG_STATE_POLICY_DISABLED) != 0 ? 0
+                                                                                              : BK_DIAG_STATE_DEGRADED));
+    state->Status = Online ? STATUS_SUCCESS
+                           : ((ExtraFlags & BK_DIAG_STATE_POLICY_DISABLED) != 0 ? STATUS_NOT_SUPPORTED
+                                                                                 : STATUS_DEVICE_NOT_READY);
     state->Detail0 = Detail0;
     state->Detail1 = Detail1;
 }
@@ -367,62 +371,7 @@ NTSTATUS BkctlHandleGetHealthIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST Reque
     }
 
     RtlZeroMemory(out, sizeof(*out));
-    if (BkctlSelfCheck())
-    {
-        out->HealthMask |= BK_HEALTH_CONTROL_READY;
-    }
-    if (BketwSelfCheck())
-    {
-        out->HealthMask |= BK_HEALTH_ETW_READY;
-    }
-    if (BkchdlSelfCheck())
-    {
-        out->HealthMask |= BK_HEALTH_HANDLE_MONITOR_READY;
-    }
-    if (BkcthrSelfCheck())
-    {
-        out->HealthMask |= BK_HEALTH_THREAD_MONITOR_READY;
-    }
-    if (BkcprocSelfCheck())
-    {
-        out->HealthMask |= BK_HEALTH_PROCESS_MONITOR_READY;
-    }
-    if (BkcimgSelfCheck())
-    {
-        out->HealthMask |= BK_HEALTH_IMAGE_MONITOR_READY;
-    }
-    if (BkcregSelfCheck())
-    {
-        out->HealthMask |= BK_HEALTH_REGISTRY_MONITOR_READY;
-    }
-    if (BkapcSelfCheck())
-    {
-        out->HealthMask |= BK_HEALTH_APC_MONITOR_READY;
-    }
-    if (BkcfsSelfCheck())
-    {
-        out->HealthMask |= BK_HEALTH_FILESYSTEM_MONITOR_READY;
-    }
-    if (BkcorSelfCheck())
-    {
-        out->HealthMask |= BK_HEALTH_CORRELATION_READY;
-    }
-    if (BkhloEngineSelfCheck())
-    {
-        out->HealthMask |= BK_HEALTH_HOLLOWING_ENGINE_READY;
-    }
-    if (BkntkiMonitorSelfCheck())
-    {
-        out->HealthMask |= BK_HEALTH_NTAPI_MONITOR_READY;
-    }
-    if (BkatSelfCheck())
-    {
-        out->HealthMask |= BK_HEALTH_ANTI_TAMPER_READY;
-    }
-    if (BkdiagSelfCheck())
-    {
-        out->HealthMask |= BK_HEALTH_DIAGNOSTICS_READY;
-    }
+    out->HealthMask = BkctlBuildHealthMask();
     out->TamperMask = BkatGetLastMask();
     out->Reserved0 = BK_HEALTH_BUILD_MAGIC;
     out->Reserved1 = 0;
@@ -435,8 +384,6 @@ NTSTATUS BkctlHandleGetDiagnosticsIoctl(_In_ PBK_CLIENT Client, _In_ WDFREQUEST 
     NTSTATUS status;
     PBK_DIAGNOSTICS_RESPONSE out;
     size_t outSize;
-
-    UNREFERENCED_PARAMETER(Client);
 
     if (BytesOut == NULL)
     {

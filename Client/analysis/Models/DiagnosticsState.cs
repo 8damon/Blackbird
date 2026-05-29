@@ -78,6 +78,13 @@ namespace BlackbirdInterface
                 {
                     entries.Add(new DiagnosticsStateEntry { Key = pair.Key, Value = pair.Value });
                 }
+                foreach (var pair in Counters.OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    entries.Add(new DiagnosticsStateEntry {
+                        Key = $"Counter:{pair.Key}",
+                        Value = pair.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    });
+                }
 
                 return entries;
             }

@@ -86,7 +86,7 @@ namespace BlackbirdInterface
         internal const uint HealthAntiTamperReady = 0x00001000;
         internal const uint HealthDiagnosticsReady = 0x00002000;
 
-        internal const int DiagnosticMaxEvents = 64;
+        internal const int DiagnosticMaxEvents = 256;
         internal const uint DiagEventInitBegin = 1;
         internal const uint DiagEventInitOk = 2;
         internal const uint DiagEventInitFailed = 3;
@@ -222,6 +222,7 @@ namespace BlackbirdInterface
         internal const uint IpcEtwFamilyThreatIntel = 8;
         internal const uint IpcEtwFamilySocket = 9;
         internal const uint IpcEtwFamilyUserHook = 10;
+        internal const uint IpcEtwFamilyIpcIo = 11;
 
         internal const uint IpcEtwFlagHandleExecProtect = 0x00000001;
         internal const uint IpcEtwFlagHandleFromNtdll = 0x00000002;
@@ -806,7 +807,7 @@ namespace BlackbirdInterface
             CheckAbiSize(nameof(BkDiagnosticSanitizerState), Marshal.SizeOf<BkDiagnosticSanitizerState>(), 32,
                          ref error);
             CheckAbiSize(nameof(BkQpcTimingState), Marshal.SizeOf<BkQpcTimingState>(), 88, ref error);
-            CheckAbiSize(nameof(BkDiagnosticsResponse), Marshal.SizeOf<BkDiagnosticsResponse>(), 7360, ref error);
+            CheckAbiSize(nameof(BkDiagnosticsResponse), Marshal.SizeOf<BkDiagnosticsResponse>(), 16576, ref error);
 
             return error;
         }

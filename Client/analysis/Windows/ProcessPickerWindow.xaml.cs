@@ -137,6 +137,21 @@ namespace BlackbirdInterface
             WindowChromeBehavior.HandleRootDragMove(this, e);
         }
 
+        private void Close_Click(object sender, RoutedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            try
+            {
+                DialogResult = false;
+            }
+            catch (InvalidOperationException)
+            {
+                // The selector can be hosted non-modally during diagnostics; closing still means cancel.
+            }
+            Close();
+        }
+
         public void PrimeForFirstShow()
         {
             EnsureInitialListPrepared();
@@ -167,6 +182,19 @@ namespace BlackbirdInterface
         private void Refresh_Click(object sender, RoutedEventArgs e) => RefreshList();
 
         private void QuickSearchBox_TextChanged(object sender, TextChangedEventArgs e) => ApplyFilter();
+
+        private void ClearQuickSearch_Click(object sender, RoutedEventArgs e)
+        {
+            _ = sender;
+            _ = e;
+            if (QuickSearchBox == null)
+            {
+                return;
+            }
+
+            QuickSearchBox.Text = string.Empty;
+            QuickSearchBox.Focus();
+        }
 
         private void FilterValueBox_KeyDown(object sender, KeyEventArgs e)
         {

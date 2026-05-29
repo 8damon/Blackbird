@@ -99,6 +99,8 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="10"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="10"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0"
@@ -136,6 +138,24 @@
                                        Grid.Column="2"
                                        Margin="12,0,0,0"
                                        Text="Default presentation used when the API view opens."
+                                       Foreground="{DynamicResource WinMutedTextBrush}"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Center"/>
+
+                            <TextBlock Grid.Row="4"
+                                       Grid.Column="0"
+                                       Text="Kernel hooks"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"/>
+                            <CheckBox x:Name="KernelHooksArmedCheckBox"
+                                      Grid.Row="4"
+                                      Grid.Column="1"
+                                      Content="Hooks armed"
+                                      VerticalAlignment="Center"/>
+                            <TextBlock Grid.Row="4"
+                                       Grid.Column="2"
+                                       Margin="12,0,0,0"
+                                       Text="Controls runtime NTAPI hook arming for the active capture."
                                        Foreground="{DynamicResource WinMutedTextBrush}"
                                        TextWrapping="Wrap"
                                        VerticalAlignment="Center"/>

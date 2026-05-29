@@ -3,17 +3,17 @@
 
     <Color x:Key="WinBgColor">#FF0C0C0C</Color>
     <Color x:Key="WinPanelColor">#FF121212</Color>
-    <Color x:Key="WinHeaderColor">#FF181818</Color>
-    <Color x:Key="PaneBorderColor">#FF8A8A8A</Color>
-    <Color x:Key="WinBorderColor">#FF2B2B2B</Color>
-    <Color x:Key="WinSubtleBorderColor">#FF4E4E4E</Color>
+    <Color x:Key="WinHeaderColor">#FF141414</Color>
+    <Color x:Key="PaneBorderColor">#FF242424</Color>
+    <Color x:Key="WinBorderColor">#FF242424</Color>
+    <Color x:Key="WinSubtleBorderColor">#FF303030</Color>
     <Color x:Key="WinTextColor">#FFE2E2E2</Color>
     <Color x:Key="WinMutedTextColor">#FFB5B5B5</Color>
     <Color x:Key="WinAccentColor">#FF8E2020</Color>
     <Color x:Key="InputHoverBorderColor">#FFB3B3B3</Color>
-    <Color x:Key="CommandBarBackgroundColor">#FF0B0B0B</Color>
+    <Color x:Key="CommandBarBackgroundColor">#FF0C0C0C</Color>
     <Color x:Key="CommandBarPanelColor">#FF121212</Color>
-    <Color x:Key="CommandBarButtonColor">#FF1A1A1A</Color>
+    <Color x:Key="CommandBarButtonColor">#FF161616</Color>
     <Color x:Key="StatusConnectedColor">#FF59BA59</Color>
     <Color x:Key="StatusFailedColor">#FFE0A144</Color>
     <Color x:Key="StatusBarNeutralColor">#FF111111</Color>
@@ -175,8 +175,8 @@
     <Style TargetType="ToolTip">
         <Setter Property="Background" Value="{StaticResource WinPanelBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource WinTextBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource WinBorderBrush}"/>
-        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="6"/>
     </Style>
 
@@ -184,6 +184,20 @@
         <Setter Property="Foreground" Value="{StaticResource WinTextBrush}"/>
         <Setter Property="FontSize" Value="12"/>
         <Setter Property="VerticalAlignment" Value="Center"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                <Setter Property="Foreground" Value="#FF111111"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding IsPressed, RelativeSource={RelativeSource AncestorType=Button}}" Value="True">
+                <Setter Property="Foreground" Value="#FF111111"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=ToggleButton}}" Value="True">
+                <Setter Property="Foreground" Value="#FF111111"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding IsPressed, RelativeSource={RelativeSource AncestorType=ToggleButton}}" Value="True">
+                <Setter Property="Foreground" Value="#FF111111"/>
+            </DataTrigger>
+        </Style.Triggers>
     </Style>
 
     <Style TargetType="Label">
@@ -211,16 +225,19 @@
                             CornerRadius="0">
                         <ContentPresenter HorizontalAlignment="Center"
                                           VerticalAlignment="Center"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"
                                           Margin="{TemplateBinding Padding}"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-        <Setter Property="Background" Value="#FF242424"/>
-        <Setter Property="BorderBrush" Value="#FFB3B3B3"/>
+                            <Setter Property="Background" Value="#FFF4F4F4"/>
+                            <Setter Property="Foreground" Value="#FF111111"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-        <Setter Property="Background" Value="#FF141414"/>
-        <Setter Property="BorderBrush" Value="{StaticResource WinAccentBrush}"/>
+                            <Setter Property="Background" Value="#FFE3E3E3"/>
+                            <Setter Property="Foreground" Value="#FF111111"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.5"/>
@@ -284,15 +301,15 @@
     <Style TargetType="ProgressBar">
         <Setter Property="Background" Value="#FF101513"/>
         <Setter Property="Foreground" Value="#FF6FD3A8"/>
-        <Setter Property="BorderBrush" Value="#FF29443C"/>
-        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
     </Style>
 
     <Style TargetType="ToggleButton">
         <Setter Property="Background" Value="{StaticResource WinHeaderBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource WinTextBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource WinBorderBrush}"/>
-        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="10,4"/>
         <Setter Property="Margin" Value="4,0"/>
         <Setter Property="MinWidth" Value="70"/>
@@ -306,16 +323,19 @@
                             CornerRadius="0">
                         <ContentPresenter HorizontalAlignment="Center"
                                           VerticalAlignment="Center"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"
                                           Margin="{TemplateBinding Padding}"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="#FF242424"/>
-                            <Setter Property="BorderBrush" Value="#FFB3B3B3"/>
+                            <Setter Property="Background" Value="#FFF4F4F4"/>
+                            <Setter Property="Foreground" Value="#FF111111"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter Property="Background" Value="#FF141414"/>
-                            <Setter Property="BorderBrush" Value="{StaticResource WinAccentBrush}"/>
+                            <Setter Property="Background" Value="#FFE3E3E3"/>
+                            <Setter Property="Foreground" Value="#FF111111"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter Property="Background" Value="#FF181818"/>
@@ -331,7 +351,7 @@
         <Style.Triggers>
             <Trigger Property="IsChecked" Value="True">
                 <Setter Property="Background" Value="#FF141414"/>
-                <Setter Property="BorderBrush" Value="{StaticResource WinAccentBrush}"/>
+                <Setter Property="BorderBrush" Value="Transparent"/>
             </Trigger>
         </Style.Triggers>
     </Style>
@@ -341,7 +361,7 @@
         <Setter Property="MinHeight" Value="22"/>
         <Setter Property="Padding" Value="0"/>
         <Setter Property="Margin" Value="4,3,0,3"/>
-        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="BorderBrush" Value="#00000000"/>
         <Setter Property="Background" Value="#00000000"/>
         <Setter Property="Template">
@@ -351,16 +371,20 @@
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
                             CornerRadius="0">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="#33333333"/>
-                            <Setter Property="BorderBrush" Value="#88AAB2BC"/>
+                            <Setter Property="Background" Value="#FFF4F4F4"/>
+                            <Setter Property="Foreground" Value="#FF111111"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter Property="Background" Value="#66404040"/>
-                            <Setter Property="BorderBrush" Value="{StaticResource WinAccentBrush}"/>
+                            <Setter Property="Background" Value="#FFE3E3E3"/>
+                            <Setter Property="Foreground" Value="#FF111111"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -398,7 +422,7 @@
     <Style x:Key="FilterInputStyle" TargetType="TextBox">
         <Setter Property="Background" Value="#FF151515"/>
         <Setter Property="Foreground" Value="{DynamicResource WinTextBrush}"/>
-        <Setter Property="BorderBrush" Value="{DynamicResource WinBorderBrush}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource WinSubtleBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CaretBrush" Value="{DynamicResource WinTextBrush}"/>
         <Setter Property="SelectionBrush" Value="#66707070"/>
@@ -525,7 +549,7 @@
     <Style TargetType="TextBox">
         <Setter Property="Background" Value="#FF151515"/>
         <Setter Property="Foreground" Value="{StaticResource WinTextBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource WinBorderBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource WinSubtleBorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="6,3"/>
         <Setter Property="Margin" Value="4,0"/>
@@ -653,7 +677,7 @@
         <Setter Property="Background" Value="#FF1B1B1B"/>
         <Setter Property="Foreground" Value="{StaticResource WinTextBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource WinBorderBrush}"/>
-        <Setter Property="BorderThickness" Value="0,0,0,1"/>
+        <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Padding" Value="8,5"/>
     </Style>
@@ -819,7 +843,7 @@
     <Style TargetType="Thumb">
         <Setter Property="Background" Value="#FF6E7781"/>
         <Setter Property="BorderBrush" Value="#FF9AA4AE"/>
-        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Thumb">
@@ -1273,18 +1297,19 @@
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}">
                         <ContentPresenter HorizontalAlignment="Center"
-                                          VerticalAlignment="Center"/>
+                                          VerticalAlignment="Center"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Chrome" Property="Background" Value="#FF2A2A2A"/>
-                            <Setter TargetName="Chrome" Property="BorderBrush" Value="#FF3A3A3A"/>
-                            <Setter TargetName="Chrome" Property="BorderThickness" Value="1"/>
+                            <Setter TargetName="Chrome" Property="Background" Value="#FFF4F4F4"/>
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="Transparent"/>
+                            <Setter Property="Foreground" Value="#FF111111"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="Chrome" Property="Background" Value="#FF1D1D1D"/>
-                            <Setter TargetName="Chrome" Property="BorderBrush" Value="{StaticResource WinAccentBrush}"/>
-                            <Setter TargetName="Chrome" Property="BorderThickness" Value="1"/>
+                            <Setter TargetName="Chrome" Property="Background" Value="#FFE3E3E3"/>
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="Transparent"/>
+                            <Setter Property="Foreground" Value="#FF111111"/>
                         </Trigger>
                         <MultiTrigger>
                             <MultiTrigger.Conditions>
@@ -1292,9 +1317,8 @@
                                 <Condition Property="IsMouseOver" Value="True"/>
                             </MultiTrigger.Conditions>
                             <Setter TargetName="Chrome" Property="Background" Value="#FFAA3A3A"/>
-                            <Setter TargetName="Chrome" Property="BorderBrush" Value="#FFBC5454"/>
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="Transparent"/>
                             <Setter Property="Foreground" Value="#FFF7EDED"/>
-                            <Setter TargetName="Chrome" Property="BorderThickness" Value="1"/>
                         </MultiTrigger>
                         <MultiTrigger>
                             <MultiTrigger.Conditions>
@@ -1302,9 +1326,8 @@
                                 <Condition Property="IsPressed" Value="True"/>
                             </MultiTrigger.Conditions>
                             <Setter TargetName="Chrome" Property="Background" Value="#FF912E2E"/>
-                            <Setter TargetName="Chrome" Property="BorderBrush" Value="#FFBC5454"/>
+                            <Setter TargetName="Chrome" Property="BorderBrush" Value="Transparent"/>
                             <Setter Property="Foreground" Value="#FFF7EDED"/>
-                            <Setter TargetName="Chrome" Property="BorderThickness" Value="1"/>
                         </MultiTrigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.5"/>
@@ -1318,7 +1341,7 @@
     <Style x:Key="SecondaryWindowSurfaceBorderStyle" TargetType="Border">
         <Setter Property="Background" Value="{StaticResource WinPanelBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource WinBorderBrush}"/>
-        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="8"/>
     </Style>
 
@@ -1332,7 +1355,7 @@
     <Style x:Key="SecondaryWindowFilterBarStyle" TargetType="Border">
         <Setter Property="Background" Value="{StaticResource WinPanelBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource WinSubtleBorderBrush}"/>
-        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="8"/>
     </Style>
 

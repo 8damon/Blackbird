@@ -3,6 +3,7 @@
 static volatile LONG g_BkdiagInitialized = 0;
 static UINT64 g_BkdiagQpcFrequency = 1;
 static volatile LONG64 g_BkdiagLastSequence = 0;
+static KSPIN_LOCK g_BkdiagRingLock;
 static BK_DIAGNOSTIC_EVENT g_BkdiagRing[BK_DIAGNOSTIC_MAX_EVENTS];
 
 static ULONGLONG BkdiagQueryQpc(VOID)
@@ -13,7 +14,7 @@ static ULONGLONG BkdiagQueryQpc(VOID)
     return (ULONGLONG)qpc.QuadPart;
 }
 
-static UINT32 BkdiagSaturatingSequenceDelta(_In_ UINT64 Sequence)
+static UINT32 BkdiagSaturatingOverwriteCount(_In_ UINT64 Sequence)
 {
     UINT64 overwritten;
 
@@ -37,6 +38,7 @@ BkdiagInitialize(VOID)
     }
 
     (void)KeQueryPerformanceCounter(&frequency);
+    KeInitializeSpinLock(&g_BkdiagRingLock);
     RtlZeroMemory(g_BkdiagRing, sizeof(g_BkdiagRing));
     g_BkdiagQpcFrequency = frequency.QuadPart > 0 ? (UINT64)frequency.QuadPart : 1;
     InterlockedExchange64(&g_BkdiagLastSequence, 0);
@@ -57,16 +59,16 @@ BkdiagSelfCheck(VOID)
 ULONGLONG
 BkdiagBegin(_In_ UINT32 SubsystemId, _In_ UINT32 EventType, _In_ UINT32 ComponentId)
 {
-    ULONGLONG startQpc;
-
     if (KeGetCurrentIrql() > DISPATCH_LEVEL)
     {
         return 0;
     }
 
-    startQpc = BkdiagQueryQpc();
-    BkdiagRecord(SubsystemId, EventType, STATUS_SUCCESS, 0, 0, 0, ComponentId);
-    return startQpc;
+    UNREFERENCED_PARAMETER(SubsystemId);
+    UNREFERENCED_PARAMETER(EventType);
+    UNREFERENCED_PARAMETER(ComponentId);
+
+    return BkdiagQueryQpc();
 }
 
 VOID BkdiagComplete(_In_ UINT32 SubsystemId, _In_ UINT32 EventType, _In_ NTSTATUS Status, _In_ ULONGLONG StartQpc,
@@ -92,6 +94,7 @@ VOID BkdiagRecord(_In_ UINT32 SubsystemId, _In_ UINT32 EventType, _In_ NTSTATUS 
     UINT64 sequence;
     UINT32 index;
     BK_DIAGNOSTIC_EVENT *slot;
+    KIRQL oldIrql;
 
     if (InterlockedCompareExchange(&g_BkdiagInitialized, 0, 0) == 0)
     {
@@ -112,14 +115,17 @@ VOID BkdiagRecord(_In_ UINT32 SubsystemId, _In_ UINT32 EventType, _In_ NTSTATUS 
     event.DetailCode = DetailCode;
     event.ComponentId = ComponentId;
 
+    KeAcquireSpinLock(&g_BkdiagRingLock, &oldIrql);
     sequence = (UINT64)InterlockedIncrement64(&g_BkdiagLastSequence);
     index = (UINT32)((sequence - 1) % BK_DIAGNOSTIC_MAX_EVENTS);
     slot = &g_BkdiagRing[index];
 
-    (void)InterlockedExchange64((volatile LONG64 *)&slot->Sequence, 0);
+    event.Sequence = sequence;
+    slot->Sequence = 0;
     *slot = event;
     KeMemoryBarrier();
-    (void)InterlockedExchange64((volatile LONG64 *)&slot->Sequence, (LONG64)sequence);
+    slot->Sequence = sequence;
+    KeReleaseSpinLock(&g_BkdiagRingLock, oldIrql);
 }
 
 VOID BkdiagQuery(_Out_ PBK_DIAGNOSTICS_RESPONSE Response)
@@ -132,6 +138,7 @@ VOID BkdiagQuery(_Out_ PBK_DIAGNOSTICS_RESPONSE Response)
     UINT32 copied;
     UINT64 sequence;
     UINT32 index;
+    KIRQL oldIrql;
 
     if (Response == NULL)
     {
@@ -144,6 +151,7 @@ VOID BkdiagQuery(_Out_ PBK_DIAGNOSTICS_RESPONSE Response)
         return;
     }
 
+    KeAcquireSpinLock(&g_BkdiagRingLock, &oldIrql);
     lastSequence = (UINT64)InterlockedCompareExchange64(&g_BkdiagLastSequence, 0, 0);
     nextSequence = lastSequence + 1;
     count = lastSequence > BK_DIAGNOSTIC_MAX_EVENTS ? BK_DIAGNOSTIC_MAX_EVENTS : (UINT32)lastSequence;
@@ -152,33 +160,19 @@ VOID BkdiagQuery(_Out_ PBK_DIAGNOSTICS_RESPONSE Response)
     Response->QpcFrequency = g_BkdiagQpcFrequency;
     Response->OldestSequence = oldestSequence;
     Response->NextSequence = nextSequence;
-    Response->DroppedCount = BkdiagSaturatingSequenceDelta(lastSequence);
+    Response->DroppedCount = BkdiagSaturatingOverwriteCount(lastSequence);
     copied = 0;
     for (i = 0; i < count; ++i)
     {
-        BK_DIAGNOSTIC_EVENT snapshot;
-        volatile LONG64 *slotSequence;
-        LONG64 committedBefore;
-        LONG64 committedAfter;
-
         sequence = oldestSequence + i;
         index = (UINT32)((sequence - 1) % BK_DIAGNOSTIC_MAX_EVENTS);
-        slotSequence = (volatile LONG64 *)&g_BkdiagRing[index].Sequence;
-        committedBefore = InterlockedCompareExchange64(slotSequence, 0, 0);
-        if ((UINT64)committedBefore != sequence)
+        if (g_BkdiagRing[index].Sequence != sequence)
         {
             continue;
         }
 
-        snapshot = g_BkdiagRing[index];
-        KeMemoryBarrier();
-        committedAfter = InterlockedCompareExchange64(slotSequence, 0, 0);
-        if ((UINT64)committedAfter != sequence || snapshot.Sequence != sequence)
-        {
-            continue;
-        }
-
-        Response->Events[copied++] = snapshot;
+        Response->Events[copied++] = g_BkdiagRing[index];
     }
+    KeReleaseSpinLock(&g_BkdiagRingLock, oldIrql);
     Response->EventCount = copied;
 }

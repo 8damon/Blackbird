@@ -1,0 +1,734 @@
+title: BKAES Direct Syscall And NT Stub Reconnaissance
+id: blackbird.sigma.aes.direct_syscall_nt_stub_recon
+status: experimental
+description: Detects Adversary Emulation Suite direct syscall and NT stub extraction surfaces.
+logsource:
+  product: windows
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'DIRECT_SYSCALL'
+      - 'YARA_DIRECT_SYSCALL_STUB'
+      - 'USERMODE_SUSPICIOUS_SYSCALL_STUB'
+      - 'NTDLL_DIRECT_SYSCALL_EXTRACTION'
+  selection_api:
+    ApiName|contains:
+      - 'NtOpenProcess'
+      - 'NtQueryVirtualMemory'
+      - 'NtQuerySystemInformation'
+  selection_stub_text:
+    '*|contains':
+      - 'syscall'
+      - 'NtOpenProcess'
+      - 'NtProtectVirtualMemory'
+      - 'NtQueueApcThread'
+  condition: selection_detection or (selection_api and selection_stub_text)
+level: high
+tags:
+  - attack.defense_evasion
+  - attack.t1497
+  - attack.t1055
+---
+title: BKAES Cross Process Injection Memory Chain
+id: blackbird.sigma.aes.cross_process_injection_memory_chain
+status: experimental
+description: Detects remote allocation, write, protect, and execution staging patterns used by AES injection samples.
+logsource:
+  product: windows
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'SUSPICIOUS_RWX_ALLOCATION'
+      - 'INJECTION_CHAIN_PARTIAL'
+      - 'INJECTION_CHAIN_COMPLETE'
+      - 'CROSS_PROCESS_WRITE_PATTERN'
+      - 'PE_INJECTION_WRITE'
+      - 'SHELLCODE_STAGE_PATTERN'
+  selection_api:
+    ApiName|contains:
+      - 'VirtualAllocEx'
+      - 'WriteProcessMemory'
+      - 'NtWriteVirtualMemory'
+      - 'VirtualProtectEx'
+      - 'NtProtectVirtualMemory'
+      - 'NtAllocateVirtualMemory'
+  selection_injection_text:
+    '*|contains':
+      - 'targetPid'
+      - 'remote='
+      - 'PROCESS_VM_WRITE'
+      - 'PAGE_EXECUTE_READWRITE'
+  condition: selection_detection or (selection_api and selection_injection_text)
+level: high
+tags:
+  - attack.defense_evasion
+  - attack.privilege_escalation
+  - attack.t1055
+---
+title: BKAES Remote Thread DLL Injection
+id: blackbird.sigma.aes.remote_thread_dll_injection
+status: experimental
+description: Detects AES remote thread and LoadLibrary DLL injection behavior.
+logsource:
+  product: windows
+  category: create_remote_thread
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'REMOTE_THREAD_WITH_RECENT_HANDLE_INTENT'
+      - 'REMOTE_THREAD_DLL_INJECTION_CONFIRMED'
+      - 'USERMODE_REMOTE_THREAD_CREATE'
+  selection_api:
+    ApiName|contains:
+      - 'CreateRemoteThread'
+      - 'NtCreateThreadEx'
+  selection_dll:
+    '*|contains':
+      - 'LoadLibraryW'
+      - 'bb_unsigned_plugin.dll'
+  condition: selection_detection or selection_api or selection_dll
+level: high
+tags:
+  - attack.defense_evasion
+  - attack.t1055.001
+---
+title: BKAES APC Injection
+id: blackbird.sigma.aes.apc_injection
+status: experimental
+description: Detects AES APC queueing and APC LoadLibrary injection behavior.
+logsource:
+  product: windows
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'REMOTE_APC_QUEUE_NTAPI'
+      - 'USERMODE_APC_QUEUE_ACTIVITY'
+      - 'REMOTE_APC_CREATION'
+      - 'REMOTE_APC_CREATION_SUSPECT'
+      - 'SUSPICIOUS_APC_ROUTINE'
+      - 'APC_MANUAL_MAP_CONFIRMED'
+      - 'APC_DLL_INJECTION_CONFIRMED'
+  selection_api:
+    ApiName|contains:
+      - 'NtQueueApcThread'
+      - 'QueueUserAPC'
+  selection_text:
+    '*|contains':
+      - 'APC LoadLibrary'
+      - 'remote APC queue'
+      - 'bb_unsigned_plugin.dll'
+  condition: selection_detection or selection_api or selection_text
+level: high
+tags:
+  - attack.defense_evasion
+  - attack.t1055.004
+---
+title: BKAES Thread Context Hijack And Hollowing
+id: blackbird.sigma.aes.thread_context_hijack_hollowing
+status: experimental
+description: Detects AES thread context hijack and hollowing/manual-map mark chain behavior.
+logsource:
+  product: windows
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'THREAD_CONTEXT_HIJACK'
+      - 'THREAD_STACK_PIVOT_HIJACK'
+      - 'HANDLE_HIJACK_THREAD_HANDLE_INTENT'
+      - 'REMOTE_STACK_READ_FROM_THREAD_HANDLE'
+      - 'REMOTE_STACK_WRITE_FROM_THREAD_HANDLE'
+      - 'USERMODE_THREAD_CONTEXT_ACTIVITY'
+      - 'THREAD_HIJACK_INTENT'
+      - 'THREAD_HIJACK_MANUAL_MAP_CONFIRMED'
+      - 'PROCESS_HOLLOWING_MARK_CHAIN'
+      - 'PROCESS_HOLLOWING_UNMAP_REPLACE_CHAIN'
+      - 'PROCESS_HOLLOWING_IMAGE_PRIVATE_COPY_EXEC'
+      - 'POSSIBLE_MANUAL_MAP_OR_HOLLOWING_EXECUTION'
+  selection_api:
+    ApiName|contains:
+      - 'SetThreadContext'
+      - 'NtSetContextThread'
+      - 'GetThreadContext'
+      - 'ResumeThread'
+  selection_text:
+    '*|contains':
+      - 'hollowing'
+      - 'context hijack'
+      - 'thread.stack'
+      - 'stack pivot'
+      - 'Rip'
+      - 'Rsp'
+      - 'EFlags'
+  condition: selection_detection or (selection_api and selection_text)
+level: high
+tags:
+  - attack.defense_evasion
+  - attack.t1055.012
+---
+title: BKAES Section Based Injection
+id: blackbird.sigma.aes.section_based_injection
+status: experimental
+description: Detects executable section creation and mapping into another process.
+logsource:
+  product: windows
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'SECTION_BASED_INJECTION'
+  selection_api:
+    ApiName|contains:
+      - 'NtCreateSection'
+      - 'NtMapViewOfSection'
+  selection_text:
+    '*|contains':
+      - 'PAGE_EXECUTE_READWRITE'
+      - 'PAGE_EXECUTE_READ'
+      - 'section execute map'
+  condition: selection_detection or (selection_api and selection_text)
+level: high
+tags:
+  - attack.defense_evasion
+  - attack.t1055
+---
+title: BKAES SetWindowsHookEx Hook Injection
+id: blackbird.sigma.aes.setwindows_hookex_injection
+status: experimental
+description: Detects Windows hook installation backed by a non-system DLL.
+logsource:
+  product: windows
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'USERMODE_WINDOWS_HOOK_INSTALL'
+  selection_api:
+    ApiName|contains:
+      - 'SetWindowsHookEx'
+  selection_dll:
+    '*|contains':
+      - 'BkaesNoopHookProc'
+      - 'bb_unsigned_plugin.dll'
+      - 'WH_GETMESSAGE'
+  condition: selection_detection or selection_api or selection_dll
+level: high
+tags:
+  - attack.persistence
+  - attack.privilege_escalation
+  - attack.t1055.011
+---
+title: BKAES PPID Spoofing
+id: blackbird.sigma.aes.ppid_spoofing
+status: experimental
+description: Detects parent process spoofing through extended process startup attributes.
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'PARENT_PID_SPOOF_SUSPECT'
+  selection_command:
+    CommandLine|contains:
+      - '--child-sleep'
+  selection_process:
+    Image|contains:
+      - '\bb_det_ppid_spoof.exe'
+  condition: selection_detection or selection_command or selection_process
+level: medium
+tags:
+  - attack.defense_evasion
+  - attack.t1134.004
+---
+title: BKAES LPE Registry Surface
+id: blackbird.sigma.aes.lpe_registry_surface
+status: experimental
+description: Detects LPE-adjacent service, IFEO, Winlogon, and privilege-probe surfaces exercised by AES.
+logsource:
+  product: windows
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'REGISTRY_SERVICE_WRITE'
+      - 'REGISTRY_IFEO_WRITE'
+      - 'REGISTRY_WINLOGON_MODIFY'
+      - 'ENTERPRISE_PROCESS_PRIVILEGED_ACCESS'
+      - 'HIGH_VALUE_REGISTRY_ACTIVITY'
+  selection_lpe_key:
+    TargetObject|contains:
+      - '\Software\BKAES\LPE\System\CurrentControlSet\Services\'
+      - '\Software\BKAES\LPE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\'
+      - '\Software\BKAES\LPE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+  selection_privilege:
+    '*|contains':
+      - 'SeDebugPrivilege'
+      - 'SeImpersonatePrivilege'
+      - 'AdjustTokenPrivileges'
+      - 'services.exe'
+  condition: selection_detection or selection_lpe_key or selection_privilege
+level: high
+tags:
+  - attack.privilege_escalation
+  - attack.t1543.003
+  - attack.t1546.012
+---
+title: BKAES SxS And DLL Search Order Abuse
+id: blackbird.sigma.aes.sxs_dll_search_order_abuse
+status: experimental
+description: Detects side-by-side DLL load abuse, unsigned plugin loads, double extensions, and script engine loads from AES.
+logsource:
+  product: windows
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'IMAGE_LOAD_FROM_USER_WRITABLE_PATH'
+      - 'IMAGE_LOAD_UNSIGNED_NON_SYSTEM'
+      - 'IMAGE_LOAD_DOUBLE_EXTENSION'
+      - 'DLL_SEARCH_ORDER_HIJACK_SUSPECT'
+      - 'SUSPICIOUS_DLL_LOAD_PATH'
+      - 'DLL_SEARCH_ORDER_HIJACK_USERMODE'
+      - 'SCRIPT_ENGINE_LOAD'
+      - 'USERMODE_MODULE_LOAD'
+      - 'FILE_UNSIGNED_EXECUTABLE'
+  selection_module:
+    ImageLoaded|contains:
+      - '\bb_unsigned_plugin.dll'
+      - '\version.dll'
+      - '\invoice.pdf.dll'
+      - '\jscript.dll'
+      - '\scrobj.dll'
+  selection_api_text:
+    '*|contains':
+      - 'LoadLibraryW'
+      - 'LoadLibraryExW'
+      - 'invoice.pdf.dll'
+      - 'definitely_missing_bkaes.dll'
+  selection_double_ext:
+    Image|re: '\\[^\\]+\.(pdf|doc|xls|txt)\.(exe|dll)$'
+  condition: selection_detection or selection_module or selection_api_text or selection_double_ext
+level: high
+tags:
+  - attack.persistence
+  - attack.defense_evasion
+  - attack.t1574.001
+  - attack.t1574.002
+---
+title: BKAES PowerShell And LOLBIN Command Lines
+id: blackbird.sigma.aes.powershell_lolbin_command_lines
+status: experimental
+description: Detects AES PowerShell, script host, certutil, mshta, and rundll32 command-line probes.
+logsource:
+  product: windows
+  category: process_creation
+detection:
+  selection_powershell:
+    Image|endswith:
+      - '\powershell.exe'
+      - '\pwsh.exe'
+  selection_powershell_args:
+    CommandLine|contains:
+      - '-EncodedCommand'
+      - '-ExecutionPolicy Bypass'
+      - 'DownloadString'
+      - 'WebClient'
+      - 'Invoke-Expression'
+      - 'amsiInitFailed'
+      - 'AmsiScanBuffer'
+  selection_lolbin:
+    Image|endswith:
+      - '\certutil.exe'
+      - '\mshta.exe'
+      - '\wscript.exe'
+      - '\cscript.exe'
+      - '\rundll32.exe'
+  selection_lolbin_args:
+    CommandLine|contains:
+      - '-urlcache'
+      - 'http://127.0.0.1:9/'
+      - 'bkaes-script-host-test.js'
+      - 'shell32.dll,Control_RunDLL'
+  selection_detection:
+    DetectionName|contains:
+      - 'POWERSHELL_SUSPICIOUS_INVOCATION'
+      - 'POWERSHELL_OBFUSCATED_CMDLINE'
+      - 'POWERSHELL_DOWNLOAD_CRADLE'
+      - 'POWERSHELL_AMSI_BYPASS'
+      - 'LOLBIN_EXECUTION'
+      - 'LOLBIN_NETWORK_ACTIVITY'
+      - 'SCRIPT_HOST_ABUSE'
+  condition: selection_detection or (selection_powershell and selection_powershell_args) or (selection_lolbin and selection_lolbin_args)
+level: high
+tags:
+  - attack.execution
+  - attack.t1059.001
+  - attack.t1218
+---
+title: BKAES Registry Persistence Surface
+id: blackbird.sigma.aes.registry_persistence_surface
+status: experimental
+description: Detects AES registry persistence writes across Run keys, IFEO, Winlogon, AppInit, BootExecute, services, COM, WMI, scheduled task, Defender exclusions, and LSA packages.
+logsource:
+  product: windows
+  category: registry_set
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'REGISTRY_AUTORUN_WRITE'
+      - 'REGISTRY_IFEO_WRITE'
+      - 'REGISTRY_WINLOGON_MODIFY'
+      - 'REGISTRY_APPINIT_DLL_WRITE'
+      - 'REGISTRY_BOOT_EXECUTE_WRITE'
+      - 'REGISTRY_SERVICE_WRITE'
+      - 'REGISTRY_COM_HIJACK_WRITE'
+      - 'REGISTRY_WMI_PERSISTENCE_WRITE'
+      - 'REGISTRY_SCHEDULED_TASK_WRITE'
+      - 'REGISTRY_SECURITY_BYPASS_WRITE'
+      - 'REGISTRY_LSA_PACKAGE_WRITE'
+  selection_key:
+    TargetObject|contains:
+      - '\CurrentVersion\Run'
+      - '\CurrentVersion\RunOnce'
+      - '\Image File Execution Options\'
+      - '\CurrentVersion\Winlogon'
+      - '\CurrentVersion\Windows\AppInit_DLLs'
+      - '\Control\Session Manager\BootExecute'
+      - '\CurrentControlSet\Services\'
+      - '\Classes\CLSID\'
+      - '\WMI\Security'
+      - '\Schedule\TaskCache\Tree\'
+      - '\Windows Defender\Exclusions\'
+      - '\Control\Lsa\Authentication Packages'
+  condition: selection_detection or selection_key
+level: high
+tags:
+  - attack.persistence
+  - attack.t1547.001
+  - attack.t1546
+---
+title: BKAES Registry And Credential Reconnaissance
+id: blackbird.sigma.aes.registry_credential_recon
+status: experimental
+description: Detects AES registry reconnaissance of credential, LSA, Kerberos, security product, PowerShell policy, LSP, IFEO, Winlogon, services, COM, and script-host keys.
+logsource:
+  product: windows
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'REGISTRY_CREDENTIAL_HIVE_QUERY'
+      - 'REGISTRY_LSA_SECRETS_QUERY'
+      - 'REGISTRY_LSA_CREDENTIALS_QUERY'
+      - 'REGISTRY_KERBEROS_QUERY'
+      - 'REGISTRY_LSA_QUERY'
+      - 'REGISTRY_SECURITY_PRODUCT_QUERY'
+      - 'REGISTRY_POWERSHELL_POLICY_QUERY'
+      - 'REGISTRY_LSP_QUERY'
+      - 'REGISTRY_BOOT_EXECUTE_QUERY'
+      - 'REGISTRY_IFEO_QUERY'
+      - 'REGISTRY_WINLOGON_QUERY'
+      - 'REGISTRY_SERVICE_QUERY'
+      - 'REGISTRY_COM_HIJACK_RECON'
+      - 'REGISTRY_SCRIPT_HOST_QUERY'
+  selection_key:
+    TargetObject|contains:
+      - '\SAM'
+      - '\SECURITY\Policy\Secrets'
+      - '\SECURITY\Lsa\Secrets'
+      - '\SECURITY\Lsa\Credentials'
+      - '\Control\Lsa'
+      - '\Control\Lsa\Kerberos'
+      - '\Services\Kdc'
+      - '\Windows Defender\Exclusions'
+      - '\Policies\Microsoft\Windows\PowerShell'
+      - '\WinSock2\Parameters'
+      - '\Image File Execution Options'
+      - '\Windows Script Host\Settings'
+  condition: selection_detection or selection_key
+level: medium
+tags:
+  - attack.discovery
+  - attack.credential_access
+  - attack.t1012
+---
+title: BKAES Kerberos And Sensitive Credential Handle Probes
+id: blackbird.sigma.aes.kerberos_sensitive_credential_probes
+status: experimental
+description: Detects AES Kerberos package reconnaissance and LSASS/Winlogon credential-handle access probes.
+logsource:
+  product: windows
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'REGISTRY_KERBEROS_QUERY'
+      - 'REGISTRY_LSA_QUERY'
+      - 'REGISTRY_LSA_CREDENTIALS_QUERY'
+      - 'CREDENTIAL_ACCESS_LSASS_HANDLE'
+      - 'CREDENTIAL_ACCESS_LSASS_OPEN'
+      - 'CREDENTIAL_ACCESS_WINLOGON_HANDLE'
+      - 'ENTERPRISE_PROCESS_CREDENTIAL_ACCESS'
+      - 'ENTERPRISE_PROCESS_PRIVILEGED_ACCESS'
+  selection_key:
+    TargetObject|contains:
+      - '\Control\Lsa\Kerberos\Parameters'
+      - '\Services\Kdc\Parameters'
+      - '\Control\Lsa\MSV1_0'
+  selection_process:
+    '*|contains':
+      - 'lsass.exe'
+      - 'winlogon.exe'
+      - 'QuerySecurityPackageInfoW'
+      - 'EnumerateSecurityPackagesW'
+  condition: selection_detection or selection_key or selection_process
+level: high
+tags:
+  - attack.credential_access
+  - attack.t1003.001
+  - attack.t1558
+---
+title: BKAES Security Product And Enterprise Environment Discovery
+id: blackbird.sigma.aes.security_product_enterprise_discovery
+status: experimental
+description: Detects AES Defender, MDE, EDR, enterprise enrollment, geolocation, and domain-discovery probes.
+logsource:
+  product: windows
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'DEFENDER_STATUS_QUERY'
+      - 'MDE_SENSOR_PROBE'
+      - 'CROWDSTRIKE_SENSOR_PROBE'
+      - 'KASPERSKY_SENSOR_PROBE'
+      - 'EDR_AV_PRODUCT_PROBE'
+      - 'GEOLOCATION_CONFIGURATION_QUERY'
+      - 'ENTERPRISE_ENVIRONMENT_DISCOVERY'
+      - 'GEOLOCATION_LOOKUP'
+  selection_registry:
+    TargetObject|contains:
+      - '\Windows Defender\Real-Time Protection'
+      - '\Windows Defender\Signature Updates'
+      - '\Windows Advanced Threat Protection\Status'
+      - '\Microsoft\Sense'
+      - '\CrowdStrike\Falcon Sensor'
+      - '\KasperskyLab\AVP'
+      - '\SentinelOne'
+      - '\CapabilityAccessManager\ConsentStore\location'
+      - '\Microsoft\Enrollments\'
+      - '\Provisioning\OMADM\Accounts'
+      - '\CloudDomainJoin\JoinInfo'
+      - '\Netlogon\Parameters'
+      - '\Tcpip\Parameters'
+  selection_command:
+    CommandLine|contains:
+      - 'Get-MpComputerStatus'
+      - 'Get-MpPreference'
+      - 'root\SecurityCenter2'
+      - 'sc.exe query WinDefend'
+      - 'sc.exe query Sense'
+      - 'sc.exe query CSAgent'
+  selection_domains:
+    '*|contains':
+      - 'api.ipify.org.invalid'
+      - 'ipinfo.io.invalid'
+      - 'enterpriseregistration.windows.net.invalid'
+      - 'enterpriseenrollment.manage.microsoft.com.invalid'
+  condition: selection_detection or selection_registry or selection_command or selection_domains
+level: medium
+tags:
+  - attack.discovery
+  - attack.t1518.001
+---
+title: BKAES Anti Debug And Anti VM Probes
+id: blackbird.sigma.aes.anti_debug_anti_vm_probes
+status: experimental
+description: Detects AES anti-debugging, sandbox-evasion, firmware-table, VM filesystem, and VM registry probes.
+logsource:
+  product: windows
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'ANTI_DEBUG_QUERY'
+      - 'SANDBOX_EVASION_QUERY'
+      - 'ANTI_DEBUG_PROCESS_QUERY'
+      - 'ANTI_DEBUG_KERNEL_DEBUGGER_QUERY'
+      - 'ANTI_VM_FIRMWARE_TABLE_QUERY'
+      - 'ANTI_VM_FILESYSTEM_ARTIFACT_PROBE'
+      - 'ANTI_VM_REGISTRY_ARTIFACT_PROBE'
+  selection_api:
+    ApiName|contains:
+      - 'NtQueryInformationProcess'
+      - 'NtQuerySystemInformation'
+      - 'GetSystemFirmwareTable'
+  selection_artifact:
+    '*|contains':
+      - 'vmmouse.sys'
+      - 'VBoxMouse.sys'
+      - 'VBoxGuest'
+      - 'vmhgfs'
+      - 'qemu-ga'
+      - 'xenservice'
+  condition: selection_detection or selection_api or selection_artifact
+level: medium
+tags:
+  - attack.defense_evasion
+  - attack.discovery
+  - attack.t1497
+---
+title: BKAES Memory Protection Flip And Dynamic Function Table Abuse
+id: blackbird.sigma.aes.memory_protection_dynamic_function_table
+status: experimental
+description: Detects AES memory protection flip, entropy, JIT guard-page, and dynamic function table abuse surfaces.
+logsource:
+  product: windows
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'DYNAMIC_FUNCTION_TABLE_ABUSE'
+      - 'MEMORY_GUARD_NOACCESS_PROTECTION_FLIP'
+      - 'MEMORY_WRITABLE_EXECUTABLE_PROTECTION_FLIP'
+      - 'MEMORY_PROTECTION_FLIP_PATTERN'
+      - 'MEMORY_HIGH_ENTROPY_WRITE_PATTERN'
+      - 'MEMORY_ENTROPY_SHIFT_PATTERN'
+      - 'USERMODE_MEMORY_ACTIVITY'
+  selection_api:
+    ApiName|contains:
+      - 'RtlAddFunctionTable'
+      - 'RtlInstallFunctionTableCallback'
+      - 'RtlDeleteFunctionTable'
+      - 'VirtualProtect'
+      - 'NtProtectVirtualMemory'
+      - 'WriteProcessMemory'
+  selection_text:
+    '*|contains':
+      - 'PAGE_EXECUTE_READWRITE'
+      - 'PAGE_NOACCESS'
+      - 'PAGE_GUARD'
+      - 'high-entropy'
+      - 'XOR'
+  condition: selection_detection or (selection_api and selection_text)
+level: high
+tags:
+  - attack.defense_evasion
+  - attack.t1620
+---
+title: BKAES Network Beaconing And Suspicious Connectivity
+id: blackbird.sigma.aes.network_beaconing_suspicious_connectivity
+status: experimental
+description: Detects AES DNS tunneling-like names, loopback beacon cadence, and suspicious port connectivity.
+logsource:
+  product: windows
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'DNS_TUNNELING_SUSPECT'
+      - 'SUSPICIOUS_PORT_CONNECT'
+      - 'PERIODIC_BEACON_PATTERN'
+      - 'KERNEL_NETWORK_CONNECT'
+      - 'USERMODE_NETWORK_CONNECT'
+      - 'USERMODE_DOMAIN_RESOLUTION'
+  selection_api:
+    ApiName|contains:
+      - 'connect'
+      - 'GetAddrInfoW'
+      - 'getaddrinfo'
+  selection_domain:
+    '*|contains':
+      - 'a8f31c2e74b94d1f9bbca6e071d4bkaes.invalid'
+      - 'bkaes-beacon-7f3b2c9d1a.invalid'
+  selection_ports:
+    '*|contains':
+      - ':4444'
+      - ':3389'
+      - ':5985'
+  condition: selection_detection or selection_domain or (selection_api and selection_ports)
+level: medium
+tags:
+  - attack.command_and_control
+  - attack.t1071
+  - attack.t1572
+---
+title: BKAES COM WMI ETW And Job Object Activity
+id: blackbird.sigma.aes.com_wmi_etw_job_activity
+status: experimental
+description: Detects AES COM initialization, WMI object creation, ETW provider/session control, and job object activity.
+logsource:
+  product: windows
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'USERMODE_COM_INIT'
+      - 'USERMODE_COM_SECURITY_INIT'
+      - 'USERMODE_COM_INSTANCE_CREATE'
+      - 'USERMODE_WMI_ACTIVITY'
+      - 'USERMODE_ETW_PROVIDER_REGISTER'
+      - 'USERMODE_ETW_PROVIDER_UNREGISTER'
+      - 'USERMODE_ETW_SESSION_CONTROL'
+      - 'USERMODE_ETW_SUBSCRIPTION'
+      - 'USERMODE_JOB_OBJECT_ACTIVITY'
+  selection_api:
+    ApiName|contains:
+      - 'CoInitializeEx'
+      - 'CoInitializeSecurity'
+      - 'CoCreateInstance'
+      - 'EventRegister'
+      - 'EventUnregister'
+      - 'StartTraceW'
+      - 'EnableTraceEx2'
+      - 'CreateJobObjectW'
+      - 'SetInformationJobObject'
+  selection_text:
+    '*|contains':
+      - 'BKAES_Benchmark_ETW'
+      - 'BKAES_Benchmark_Job'
+      - 'IWbemLocator'
+  condition: selection_detection or selection_api or selection_text
+level: medium
+tags:
+  - attack.execution
+  - attack.discovery
+  - attack.t1047
+---
+title: BKAES Target Error And Fuzzer Signals
+id: blackbird.sigma.aes.target_error_and_fuzzer_signals
+status: experimental
+description: Tracks AES target exception/nonzero-exit and fuzzing detections that validate Blackbird audit behavior.
+logsource:
+  product: windows
+detection:
+  selection_detection:
+    DetectionName|contains:
+      - 'TARGET_PROCESS_NONZERO_EXIT'
+      - 'TARGET_PROCESS_EXCEPTION'
+      - 'HIGH_VALUE_REGISTRY_ACTIVITY'
+      - 'SCRIPT_ENGINE_LOAD'
+      - 'USERMODE_MODULE_LOAD'
+  selection_sample:
+    Image|contains:
+      - '\bb_fuzz_ntapi_queries.exe'
+      - '\bb_fuzz_registry_paths.exe'
+      - '\bb_fuzz_module_loads.exe'
+      - '\bb_det_target_nonzero_exit.exe'
+      - '\bb_det_target_exception.exe'
+  condition: selection_detection or selection_sample
+level: low
+tags:
+  - attack.discovery
+---
+title: BKAES Sample Execution Marker
+id: blackbird.sigma.aes.sample_execution_marker
+status: experimental
+description: Identifies execution of AES benchmark binaries and helper artifacts for lab audit correlation.
+logsource:
+  product: windows
+detection:
+  selection_process:
+    Image|contains:
+      - '\bb_det_'
+      - '\bb_fuzz_'
+      - '\bb_ok_'
+  selection_helper:
+    '*|contains':
+      - 'bb_unsigned_plugin.dll'
+      - 'invoice.pdf.exe'
+      - 'invoice.pdf.dll'
+      - 'BKAES'
+  condition: selection_process or selection_helper
+level: informational
+tags:
+  - attack.discovery

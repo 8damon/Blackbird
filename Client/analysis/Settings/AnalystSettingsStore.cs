@@ -8,6 +8,7 @@ namespace BlackbirdInterface
     {
         private const string RootKeyPath = @"Software\TITAN Softwork Solutions\BK\Interface";
         private const string ThemeValueName = "ThemeMode";
+        private const string IgnoreVmSafetyWarningValueName = "IgnoreVmSafetyWarning";
         private const string ShortcutKeyPath = RootKeyPath + @"\Shortcuts";
         private const string PreferencesKeyPath = RootKeyPath + @"\Preferences";
         private const string SymbolsKeyPath = RootKeyPath + @"\Symbols";
@@ -36,6 +37,31 @@ namespace BlackbirdInterface
             {
                 using RegistryKey key = Registry.CurrentUser.CreateSubKey(RootKeyPath);
                 key.SetValue(ThemeValueName, mode.ToString(), RegistryValueKind.String);
+            }
+            catch
+            {
+            }
+        }
+
+        internal static bool IsVmSafetyWarningIgnored()
+        {
+            try
+            {
+                using RegistryKey? key = Registry.CurrentUser.OpenSubKey(PreferencesKeyPath);
+                return key != null && ReadBool(key, IgnoreVmSafetyWarningValueName, false);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        internal static void SetVmSafetyWarningIgnored(bool ignored)
+        {
+            try
+            {
+                using RegistryKey key = Registry.CurrentUser.CreateSubKey(PreferencesKeyPath);
+                WriteBool(key, IgnoreVmSafetyWarningValueName, ignored);
             }
             catch
             {

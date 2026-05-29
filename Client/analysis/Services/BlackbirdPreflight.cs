@@ -306,7 +306,7 @@ namespace BlackbirdInterface
                 if (report.DriverProxyOk && BlackbirdNative.GetHealth(control.Handle, out var health, out _))
                 {
                     DiagnosticsState.SetValue("Driver Health",
-                                              BlackbirdBackendSession.BuildDriverHealthSummary(health.HealthMask));
+                                              BlackbirdBackendSession.BuildDriverHealthSummary(health));
                     DiagnosticsState.SetValue("Driver Tamper", health.TamperMask == 0
                                                                    ? "OK mask=0x00000000"
                                                                    : $"DEGRADED mask=0x{health.TamperMask:X8}");
@@ -320,7 +320,7 @@ namespace BlackbirdInterface
                 {
                     DiagnosticsState.SetValue(
                         "Driver Diagnostics",
-                        $"OK events={diagnostics.EventCount} nextSeq={diagnostics.NextSequence} dropped={diagnostics.DroppedCount}");
+                        $"OK events={diagnostics.EventCount} nextSeq={diagnostics.NextSequence} overwrittenTotal={diagnostics.DroppedCount}");
                 }
 
                 if (report.EtwUplinkCapable)

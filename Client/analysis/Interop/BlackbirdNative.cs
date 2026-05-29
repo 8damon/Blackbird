@@ -222,6 +222,7 @@ namespace BlackbirdInterface
         internal const uint IpcEtwFamilyThreatIntel = 8;
         internal const uint IpcEtwFamilySocket = 9;
         internal const uint IpcEtwFamilyUserHook = 10;
+        internal const uint IpcEtwFamilyIpcIo = 11;
 
         internal const uint IpcEtwFlagHandleExecProtect = 0x00000001;
         internal const uint IpcEtwFlagHandleFromNtdll = 0x00000002;

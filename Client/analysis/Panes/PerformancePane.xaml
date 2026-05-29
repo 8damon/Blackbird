@@ -202,6 +202,7 @@
                                 <Button x:Name="NetworkViewSwitchButton"
                                         DockPanel.Dock="Right"
                                         Content="Peers"
+                                        Visibility="Collapsed"
                                         MinWidth="54"
                                         MinHeight="0"
                                         Height="18"

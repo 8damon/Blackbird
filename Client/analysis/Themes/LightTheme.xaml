@@ -4,9 +4,9 @@
     <Color x:Key="WinBgColor">#FFF5F3EF</Color>
     <Color x:Key="WinPanelColor">#FFFDFBF7</Color>
     <Color x:Key="WinHeaderColor">#FFEAE4DC</Color>
-    <Color x:Key="PaneBorderColor">#FFB8ADA2</Color>
-    <Color x:Key="WinBorderColor">#FFD0C5B9</Color>
-    <Color x:Key="WinSubtleBorderColor">#FFE1D8CF</Color>
+    <Color x:Key="PaneBorderColor">#FFE4DDD5</Color>
+    <Color x:Key="WinBorderColor">#FFE2DBD3</Color>
+    <Color x:Key="WinSubtleBorderColor">#FFE9E3DC</Color>
     <Color x:Key="WinTextColor">#FF1F1C18</Color>
     <Color x:Key="WinMutedTextColor">#FF6E655D</Color>
     <Color x:Key="WinAccentColor">#FF9A2F23</Color>
@@ -176,8 +176,8 @@
     <Style TargetType="ToolTip">
         <Setter Property="Background" Value="{StaticResource WinPanelBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource WinTextBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource WinBorderBrush}"/>
-        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="6"/>
     </Style>
 
@@ -199,16 +199,19 @@
                             CornerRadius="0">
                         <ContentPresenter HorizontalAlignment="Center"
                                           VerticalAlignment="Center"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"
                                           Margin="{TemplateBinding Padding}"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter Property="Background" Value="#FFF1E7DA"/>
-                            <Setter Property="BorderBrush" Value="#FF8F7F72"/>
+                            <Setter Property="Background" Value="#FFFFFFFF"/>
+                            <Setter Property="Foreground" Value="#FF111111"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
-                            <Setter Property="Background" Value="#FFE7DDD0"/>
-                            <Setter Property="BorderBrush" Value="{StaticResource WinAccentBrush}"/>
+                            <Setter Property="Background" Value="#FFEFEFEF"/>
+                            <Setter Property="Foreground" Value="#FF111111"/>
+                            <Setter Property="BorderBrush" Value="Transparent"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.5"/>
@@ -272,15 +275,15 @@
     <Style TargetType="ProgressBar">
         <Setter Property="Background" Value="#FFEAE3D8"/>
         <Setter Property="Foreground" Value="#FF4C8E67"/>
-        <Setter Property="BorderBrush" Value="#FFC3B7A8"/>
-        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
     </Style>
 
     <Style TargetType="ToggleButton">
         <Setter Property="Background" Value="{StaticResource WinHeaderBrush}"/>
         <Setter Property="Foreground" Value="{StaticResource WinTextBrush}"/>
-        <Setter Property="BorderBrush" Value="{StaticResource WinBorderBrush}"/>
-        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="10,4"/>
         <Setter Property="Margin" Value="4,0"/>
         <Setter Property="MinWidth" Value="70"/>
@@ -295,16 +298,18 @@
                             CornerRadius="0">
                         <ContentPresenter HorizontalAlignment="Center"
                                           VerticalAlignment="Center"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"
                                           Margin="{TemplateBinding Padding}"/>
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="ToggleRoot" Property="Background" Value="#FFF1E7DA"/>
-                            <Setter TargetName="ToggleRoot" Property="BorderBrush" Value="#FF8F7F72"/>
+                            <Setter TargetName="ToggleRoot" Property="Background" Value="#FFFFFFFF"/>
+                            <Setter Property="Foreground" Value="#FF111111"/>
+                            <Setter TargetName="ToggleRoot" Property="BorderBrush" Value="Transparent"/>
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="ToggleRoot" Property="Background" Value="#FFE7DDD0"/>
-                            <Setter TargetName="ToggleRoot" Property="BorderBrush" Value="{StaticResource WinAccentBrush}"/>
+                            <Setter TargetName="ToggleRoot" Property="BorderBrush" Value="Transparent"/>
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.5"/>

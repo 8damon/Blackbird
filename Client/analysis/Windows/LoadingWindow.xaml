@@ -14,8 +14,8 @@
         <Style x:Key="LoadingProgressBarStyle" TargetType="ProgressBar" BasedOn="{StaticResource {x:Type ProgressBar}}">
             <Setter Property="Background" Value="#FF101513"/>
             <Setter Property="Foreground" Value="#FF6FD3A8"/>
-            <Setter Property="BorderBrush" Value="#FF29443C"/>
-            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
         </Style>
     </Window.Resources>
 
@@ -67,8 +67,8 @@
             <Border Grid.Row="3"
                     Margin="0,8,0,0"
                     Padding="8,6"
-                    BorderThickness="1"
-                    BorderBrush="{DynamicResource WinSubtleBorderBrush}"
+                    BorderThickness="0"
+                    BorderBrush="Transparent"
                     Background="{DynamicResource WinPanelBrush}">
                 <TextBlock x:Name="StepsBlock"
                            FontFamily="{DynamicResource AppMonoFontFamily}"

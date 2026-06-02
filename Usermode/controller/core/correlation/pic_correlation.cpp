@@ -200,10 +200,14 @@ VOID ControllerPicCorrelationApply(_Inout_ BKIPC_ETW_EVENT *Event)
         return;
     }
 
+    if ((Event->Reserved2 & BKIPC_ETW_TRAIT_BLACKBIRD_OWN) != 0 ||
+        ControllerAsciiEqualsInsensitive(Event->DetectionName, "BK_INSTRUMENTATION"))
+    {
+        return;
+    }
+
     ControllerPicCorrelationObserve(Event);
-    if (PicEventIsDirectSyscall(Event) ||
-        ControllerAsciiEqualsInsensitive(Event->DetectionName, "BK_INSTRUMENTATION") ||
-        (Event->Reserved2 & BKIPC_ETW_TRAIT_BLACKBIRD_OWN) != 0)
+    if (PicEventIsDirectSyscall(Event))
     {
         return;
     }

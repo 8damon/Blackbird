@@ -2721,7 +2721,7 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
         BOOL blackbirdOwned = FALSE;
 
         EnterCriticalSection(&Client->Lock);
-        blackbirdOwned = ControllerIsBlackbirdOwnedAddress(Client, HookEvent->Caller);
+        blackbirdOwned = ControllerEtwEventTouchesBlackbirdOwnedRange(Client, &mapped);
         LeaveCriticalSection(&Client->Lock);
 
         if (blackbirdOwned && HookEvent->Kind != BlackbirdIpcHookEventExceptionLowNoise &&
@@ -2733,6 +2733,11 @@ static DWORD ControllerClientPublishHookEvent(_Inout_ BK_CONTROLLER_CLIENT *Clie
             }
 
             mapped.Reserved2 = ControllerComputeEtwDetectionTraits(mapped) | BKIPC_ETW_TRAIT_BLACKBIRD_OWN;
+            if (ControllerEtwEventIsBlackbirdOwnedNoise(&mapped))
+            {
+                return ERROR_SUCCESS;
+            }
+
             mapped.Severity = 1u;
             (void)StringCchCopyA(mapped.DetectionName, RTL_NUMBER_OF(mapped.DetectionName), "BK_INSTRUMENTATION");
             ControllerDispatchEtwEvent(&mapped);

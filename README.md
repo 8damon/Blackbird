@@ -49,11 +49,6 @@ A virtual machine on Windows 10 22H2 or higher, 64-bit.
 - Session capture archives (`.bkcap`) with detection export formats for JSON Lines, Splunk HEC JSON, Elastic ECS NDJSON, CEF, and CSV
 - Local diagnostics and preflight checks for controller, driver, hook DLL, hook ingest, ETW, service state, and runtime integrity
 
-Community includes the shared local capture and detection pipeline. Enterprise
-adds BlackbirdVisor/hypervisor control, NetSvc/server orchestration, the full
-memory inspector and disassembly workbench, WFP callout support, and active
-bugcheck/crash-payload extensions.
-
 ## BUGS & ENHANCEMENTS
 
 Please use [this](https://github.com/users/8damon/projects/3) project board to open issues & enhancements. This also loosely tracks live-development.

@@ -18,6 +18,13 @@
   <img src="https://img.shields.io/badge/-00599C?logo=c%2B%2B&logoColor=white&style=for-the-badge" />
 </p>
 
+<h2 align="center">ROADMAP</h2>
+
+<p align="center">
+  <strong>Current:</strong> Community Preview Beta 2.0<br>
+  <strong>Next public release:</strong> <italic>Early September 2026<italic><br><br>
+</p>
+
 <p align="center">
   <img src="https://titansoftwork.com/content/capabilities/blackbird/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
 </p>

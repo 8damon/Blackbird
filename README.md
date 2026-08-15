@@ -18,6 +18,13 @@
   <img src="https://img.shields.io/badge/-00599C?logo=c%2B%2B&logoColor=white&style=for-the-badge" />
 </p>
 
+<h2 align="center">ROADMAP</h2>
+
+<p align="center">
+  <strong>Current:</strong> Community Preview Beta 2.0<br>
+  <strong>Next public release:</strong> <italic>Early September 2026<italic><br><br>
+</p>
+
 <p align="center">
   <img src="https://ryftenius.com/content/capabilities/blackbird/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
 </p>
@@ -29,30 +36,24 @@
 
 A virtual machine on Windows 10 22H2 or higher, 64-bit.
 
-> [!IMPORTANT]
+> [!WARNING]
 > Blackbird performs kernel-level instrumentation and may affect system stability depending on configuration.
 > Always use it within a controlled virtual machine environment and not on systems containing important data.
+
+> [!IMPORTANT]
+> Blackbird is in early-development. The current state of Blackbird showcases the core system's functionality and implementation. Detection tuning, threat-intel integration, performance improvements and much more are in the works. Blackbird Community (This) is a subset of a larger version of Blackbird, so updates may be delayed.
 
 ## FEATURES
 
 - Full local analysis interface for malware detonation, reverse engineering, and triage
-- Kernel-backed capture for process, thread, image, handle, memory, registry, filesystem, network, ETW, and timing telemetry
+- Kernel capture for process, thread, image, handle, memory, registry, filesystem, network
 - Target launch and attach workflows for EXE and DLL subjects, including suspended launch, deferred resume, and execution control
-- SR71 usermode instrumentation with launch-gate readiness, hook-health reporting, stack capture, and hook-integrity diagnostics
-- Usermode API telemetry for NT, module, and Winsock activity, with API call graphs, argument observation, caller attribution, and symbol resolution
-- Memory attribution for allocation, protection, write, section-map, unmap, and thread-execution evidence
-- Memory behavior detections for executable allocation, remote memory activity, repeated protection flips, high-entropy regions, and unpacking/packer indicators
-- Integrated heuristics and detection views with process relations, child process tracking, handles, registry, file, network, ETW, COM, and performance panes
-- Thread and thread-stack analyzers with observed hook stacks and fallback stack snapshots where available
-- Rules Intel for local Sigma/YARA-style rules, including file, page, memory-sample, and process-memory YARA scans
-- Automatic Signature Intel enrichment on launch, memory events, direct-syscall traits, page samples, and target-process scan triggers
-- Session capture archives (`.bkcap`) with detection export formats for JSON Lines, Splunk HEC JSON, Elastic ECS NDJSON, CEF, and CSV
-- Local diagnostics and preflight checks for controller, driver, hook DLL, hook ingest, ETW, service state, and runtime integrity
-
-Community includes the shared local capture and detection pipeline. Enterprise
-adds BlackbirdVisor/hypervisor control, NetSvc/server orchestration, the full
-memory inspector and disassembly workbench, WFP callout support, and active
-bugcheck/crash-payload extensions.
+- In-process usermode telemetry
+- Memory behaviour & mapping
+- Views for process relations, child process tracking, handles, registry, file, network, ETW, COM and performance
+- Thread stacks
+- QPC timing compensation
+- Offline capture analysis
 
 ## BUGS & ENHANCEMENTS
 

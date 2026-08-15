@@ -12,12 +12,30 @@ namespace BlackbirdInterface
         private int _secondsRemaining = 60;
 
         internal FaultNotificationWindow(string source, Exception? ex)
+            : this($"Blackbird — Unhandled Fault ({source})",
+                   $"⚠  Unhandled fault — interface session continues",
+                   $"{source}  ·  {ex?.GetType().Name ?? "UnknownException"}",
+                   ex?.Message ?? "(no message)",
+                   ex?.ToString() ?? "(no stack trace)",
+                   "Copy trace",
+                   Color.FromRgb(0xDF, 0x63, 0x63),
+                   Color.FromRgb(0xFF, 0xC5, 0xC5))
         {
-            string typeName = ex?.GetType().Name ?? "UnknownException";
-            string shortMsg = ex?.Message ?? "(no message)";
-            string fullTrace = ex?.ToString() ?? "(no stack trace)";
+        }
 
-            Title = $"Blackbird — Unhandled Fault ({source})";
+        internal static FaultNotificationWindow CreateWarning(string title, string header, string message,
+                                                              string details, Action? ignoreAction = null)
+        {
+            return new FaultNotificationWindow($"Blackbird — {title}", $"⚠  {header}", "Environment compatibility",
+                                               message, details, "Copy details", Color.FromRgb(0xD7, 0xA4, 0x3A),
+                                               Color.FromRgb(0xFF, 0xE0, 0x9A), ignoreAction);
+        }
+
+        private FaultNotificationWindow(string title, string header, string context, string message, string fullDetails,
+                                        string copyButtonText, Color accentColor, Color headerColor,
+                                        Action? ignoreAction = null)
+        {
+            Title = title;
             Width = 560;
             SizeToContent = SizeToContent.Height;
             MinHeight = 160;
@@ -31,7 +49,7 @@ namespace BlackbirdInterface
 
             PositionBottomRight();
 
-            var root = new Border { BorderBrush = new SolidColorBrush(Color.FromRgb(0xDF, 0x63, 0x63)),
+            var root = new Border { BorderBrush = new SolidColorBrush(accentColor),
                                     BorderThickness = new Thickness(0, 3, 0, 0),
                                     Background = new SolidColorBrush(Color.FromRgb(0x10, 0x10, 0x10)),
                                     Padding = new Thickness(14, 12, 14, 12) };
@@ -39,18 +57,18 @@ namespace BlackbirdInterface
             var panel = new StackPanel { Orientation = Orientation.Vertical };
 
             var headerPanel = new DockPanel { LastChildFill = true, Margin = new Thickness(0, 0, 0, 8) };
-            var headerLabel = new TextBlock { Text = $"⚠  Unhandled fault — interface session continues",
+            var headerLabel = new TextBlock { Text = header,
                                               FontWeight = FontWeights.SemiBold, FontSize = 13,
-                                              Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xC5, 0xC5)) };
+                                              Foreground = new SolidColorBrush(headerColor) };
             DockPanel.SetDock(headerLabel, Dock.Left);
             headerPanel.Children.Add(headerLabel);
             panel.Children.Add(headerPanel);
 
-            panel.Children.Add(new TextBlock { Text = $"{source}  ·  {typeName}", FontSize = 11,
+            panel.Children.Add(new TextBlock { Text = context, FontSize = 11,
                                                Foreground = new SolidColorBrush(Color.FromRgb(0x9A, 0xA5, 0xB4)),
                                                Margin = new Thickness(0, 0, 0, 6) });
 
-            panel.Children.Add(new TextBlock { Text = shortMsg, FontSize = 12,
+            panel.Children.Add(new TextBlock { Text = message, FontSize = 12,
                                                Foreground = new SolidColorBrush(Color.FromRgb(0xEA, 0xEA, 0xEA)),
                                                TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 10) });
 
@@ -61,11 +79,11 @@ namespace BlackbirdInterface
                                                  Foreground = new SolidColorBrush(Color.FromRgb(0x6A, 0x74, 0x82)),
                                                  Margin = new Thickness(0, 0, 12, 0) };
 
-            var copyButton = BuildButton("Copy trace", () =>
+            var copyButton = BuildButton(copyButtonText, () =>
                                                        {
                                                            try
                                                            {
-                                                               Clipboard.SetText(fullTrace);
+                                                               Clipboard.SetText(fullDetails);
                                                            }
                                                            catch
                                                            {
@@ -76,6 +94,14 @@ namespace BlackbirdInterface
 
             buttonRow.Children.Add(autoCloseLabel);
             buttonRow.Children.Add(copyButton);
+            if (ignoreAction != null)
+            {
+                buttonRow.Children.Add(BuildButton("Ignore", () =>
+                                                              {
+                                                                  ignoreAction();
+                                                                  Close();
+                                                              }));
+            }
             buttonRow.Children.Add(dismissButton);
             panel.Children.Add(buttonRow);
 

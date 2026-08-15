@@ -6,7 +6,7 @@ namespace BlackbirdInterface
 {
     internal static class AnalystSettingsStore
     {
-        private const string RootKeyPath = @"Software\TITAN Softwork Solutions\BK\Interface";
+        private const string RootKeyPath = @"Software\RYFTENIUS\BK\Interface";
         private const string ThemeValueName = "ThemeMode";
         private const string ShortcutKeyPath = RootKeyPath + @"\Shortcuts";
         private const string PreferencesKeyPath = RootKeyPath + @"\Preferences";

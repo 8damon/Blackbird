@@ -17,7 +17,7 @@
 #endif
 
 #ifndef BK_COMPANY_NAME
-#define BK_COMPANY_NAME "TITAN Softwork Solutions"
+#define BK_COMPANY_NAME "RYFTENIUS"
 #endif
 
 #ifndef BK_INTERNAL_NAME

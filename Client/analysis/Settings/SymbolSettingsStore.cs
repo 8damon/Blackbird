@@ -5,7 +5,7 @@ namespace BlackbirdInterface
 {
     internal static class SymbolSettingsStore
     {
-        private const string RootKeyPath = @"Software\TITAN Softwork Solutions\BK\Interface";
+        private const string RootKeyPath = @"Software\RYFTENIUS\BK\Interface";
         private const string SymbolsKeyPath = RootKeyPath + @"\Symbols";
 
         internal static SymbolSettings LoadSymbolSettings()

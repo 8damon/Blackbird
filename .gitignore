@@ -54,7 +54,7 @@ codex-build/
 *.key
 *.pvk
 *.snk
-TITAN Softwork Solutions.pfx
+RYFTENIUS.pfx
 
 # Website documentation is published from the website pipeline, not the
 # Community source repo.

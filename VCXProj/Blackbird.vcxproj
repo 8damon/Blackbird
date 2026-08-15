@@ -92,7 +92,7 @@
   <PropertyGroup>
     <SignMode>TestSign</SignMode>
     <CertificateStoreName>My</CertificateStoreName>
-    <SubjectName>TITAN Softwork Solutions</SubjectName>
+    <SubjectName>RYFTENIUS</SubjectName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>

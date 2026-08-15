@@ -24,7 +24,7 @@ namespace BlackbirdInterface
 
     public partial class App : Application
     {
-        private const string GettingStartedUrl = "https://titansoftwork.com/blackbird/intro";
+        private const string GettingStartedUrl = "https://ryftenius.com/blackbird/intro";
         private static Mutex? _singleInstanceMutex;
         internal static bool IsDarkTheme { get; private set; } = true;
         internal static UiThemeMode CurrentThemeMode { get; private set; } = UiThemeMode.Dark;

@@ -50,7 +50,7 @@ HKR,"Instances\%BlackbirdInstanceName%","Altitude",0x00000000,%BlackbirdInstance
 HKR,"Instances\%BlackbirdInstanceName%","Flags",0x00010001,%BlackbirdInstanceFlags%
 
 [Strings]
-ManufacturerName = "TITAN Softwork Solutions"
+ManufacturerName = "RYFTENIUS"
 DiskName = "BLACKBIRD Installation Disk"
 BLACKBIRD.SVCDESC = "BLACKBIRD Service"
 BlackbirdInstanceName = "Blackbird Default"

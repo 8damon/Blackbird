@@ -3,10 +3,10 @@
 <p align="center"><b>A powerful, instrumentable, real-time malware analysis platform, software reverse-engineering suite & IDS.</b></p>
 
 <p align="center">
-  <a href="https://titansoftwork.com/capability/blackbird/download/">
+  <a href="https://ryftenius.com/capability/blackbird/download/">
     <img src="https://img.shields.io/badge/Download-3C8D40?style=for-the-badge&logo=microsoft&logoColor=white" />
   </a>
-  <a href="https://titansoftwork.com/blackbird">
+  <a href="https://ryftenius.com/blackbird">
     <img src="https://img.shields.io/badge/Website-0A0A0A?style=for-the-badge&logo=google-chrome&logoColor=white" />
   </a>
   <a href="https://github.com/users/8damon/projects/3/views/1">
@@ -26,10 +26,10 @@
 </p>
 
 <p align="center">
-  <img src="https://titansoftwork.com/content/capabilities/blackbird/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
+  <img src="https://ryftenius.com/content/capabilities/blackbird/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
 </p>
 <p align="center">
-  <img src="https://titansoftwork.com/content/capabilities/blackbird/MAIN_ALT.png" width="980" alt="Blackbird main interface" />
+  <img src="https://ryftenius.com/content/capabilities/blackbird/MAIN_ALT.png" width="980" alt="Blackbird main interface" />
 </p>
 
 ## REQUIREMENTS
@@ -64,7 +64,7 @@ Please use [this](https://github.com/users/8damon/projects/3) project board to o
 The public local-stack introduction, installation, architecture, security notes,
 and UI manual are provided here:
 
-- [Blackbird Docs](https://docs.titansoftwork.com/blackbird/)
+- [Blackbird Docs](https://docs.ryftenius.com/blackbird/)
 
 Session archives are stored as `.bkcap` (SQLite + LZ4). Detections can be exported as SIEM JSON Lines, Splunk HEC JSON, Elastic ECS NDJSON, CEF, or CSV. Detection reference scenarios are in `DetectionExamples.exe`.
 

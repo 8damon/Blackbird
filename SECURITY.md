@@ -6,8 +6,8 @@
 
 We take security seriously and maintain a formal threat model (STRIDE-based) and an adapted Microsoft SDL process.
 
-- [Threat Model (STRIDE per component, trust boundaries, residual risks)](https://docs.titansoftwork.com/blackbird/#security/threat-model)
-- [Secure Development Lifecycle (SDL) assessment and action items](https://docs.titansoftwork.com/blackbird/#security/sdl)
+- [Threat Model (STRIDE per component, trust boundaries, residual risks)](https://docs.ryftenius.com/blackbird/#security/threat-model)
+- [Secure Development Lifecycle (SDL) assessment and action items](https://docs.ryftenius.com/blackbird/#security/sdl)
 
 ## Supported Versions
 
@@ -20,7 +20,7 @@ See the [Releases page](https://github.com/8damon/blackbird/releases) for versio
 If you discover a potential security vulnerability in Blackbird (kernel driver, usermode components, IPC, operator protocol, or deployment model), please report it **privately** so we can investigate and coordinate disclosure.
 
 **Preferred reporting method:**  
-Email us at **[security@titansoftwork.com](mailto:security@titansoftwork.com)**.
+Email us at **[security@ryftenius.com](mailto:security@ryftenius.com)**.
 
 Please include as much of the following as possible:
 
@@ -28,7 +28,7 @@ Please include as much of the following as possible:
 - Affected component(s) and version(s)
 - Steps to reproduce
 - Any proof-of-concept or logs (avoid sending full exploits in the initial email if possible)
-- Reference to relevant parts of the [threat model](https://docs.titansoftwork.com/blackbird/#security/threat-model) or [SDL](https://docs.titansoftwork.com/blackbird/#security/sdl) if applicable
+- Reference to relevant parts of the [threat model](https://docs.ryftenius.com/blackbird/#security/threat-model) or [SDL](https://docs.ryftenius.com/blackbird/#security/sdl) if applicable
 
 We also support **GitHub Private Vulnerability Reporting** (recommended for researchers who prefer the GitHub interface). This creates a private draft security advisory that only repository maintainers can see.
 

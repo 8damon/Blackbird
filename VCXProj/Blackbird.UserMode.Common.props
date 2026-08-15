@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Label="BlackbirdUserModeIdentity">
-    <BlackbirdCompanyName Condition="'$(BlackbirdCompanyName)'==''">TITAN Softwork Solutions</BlackbirdCompanyName>
+    <BlackbirdCompanyName Condition="'$(BlackbirdCompanyName)'==''">RYFTENIUS</BlackbirdCompanyName>
     <BlackbirdProductName Condition="'$(BlackbirdProductName)'==''">Blackbird Community</BlackbirdProductName>
     <BlackbirdFileDescription Condition="'$(BlackbirdFileDescription)'==''">Blackbird Community user-mode component</BlackbirdFileDescription>
     <BlackbirdInternalName Condition="'$(BlackbirdInternalName)'==''">Blackbird</BlackbirdInternalName>
@@ -11,11 +11,11 @@
     <BlackbirdManifestPath>$(IntDir)$(TargetName).Blackbird.UserMode.manifest</BlackbirdManifestPath>
     <BlackbirdVersionRcPath>$(MSBuildThisFileDirectory)Blackbird.Version.rc</BlackbirdVersionRcPath>
     <BlackbirdSignEnabled Condition="'$(BlackbirdSignEnabled)'==''">false</BlackbirdSignEnabled>
-    <BlackbirdSignSubjectName>TITAN Softwork Solutions</BlackbirdSignSubjectName>
+    <BlackbirdSignSubjectName>RYFTENIUS</BlackbirdSignSubjectName>
     <BlackbirdSignStoreName>My</BlackbirdSignStoreName>
     <BlackbirdSignThumbprint Condition="'$(BlackbirdSignThumbprint)'==''">$(BK_SIGN_THUMBPRINT)</BlackbirdSignThumbprint>
     <BlackbirdSignToolPath>signtool.exe</BlackbirdSignToolPath>
-    <BlackbirdSignPfxPath Condition="'$(BlackbirdSignPfxPath)'==''">$(MSBuildThisFileDirectory)..\TITAN Softwork Solutions.pfx</BlackbirdSignPfxPath>
+    <BlackbirdSignPfxPath Condition="'$(BlackbirdSignPfxPath)'==''">$(MSBuildThisFileDirectory)..\RYFTENIUS.pfx</BlackbirdSignPfxPath>
     <BlackbirdSignPfxPassword Condition="'$(BlackbirdSignPfxPassword)'==''">$(BK_SIGN_PFX_PASSWORD)</BlackbirdSignPfxPassword>
     <BlackbirdSignCommand>"$(BlackbirdSignToolPath)" sign /fd SHA256 /s "$(BlackbirdSignStoreName)" /n "$(BlackbirdSignSubjectName)" "$(TargetPath)"</BlackbirdSignCommand>
     <BlackbirdSignCommand Condition="'$(BlackbirdSignThumbprint)'!=''">"$(BlackbirdSignToolPath)" sign /fd SHA256 /s "$(BlackbirdSignStoreName)" /sha1 "$(BlackbirdSignThumbprint)" "$(TargetPath)"</BlackbirdSignCommand>

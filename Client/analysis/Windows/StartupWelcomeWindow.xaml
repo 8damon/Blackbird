@@ -244,10 +244,6 @@
                     BorderBrush="{DynamicResource InputHoverBorderBrush}"
                     Foreground="{DynamicResource WinTextBrush}"
                     Click="Launch_Click"/>
-            <Button Margin="0,0,8,0"
-                    Content="Getting Started"
-                    Height="34"
-                    Click="GettingStarted_Click"/>
             <Button Content="Open Session"
                     Height="34"
                     Click="OpenTraceFile_Click"/>

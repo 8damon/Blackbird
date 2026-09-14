@@ -8,8 +8,7 @@ namespace BlackbirdInterface
     {
         None,
         Launch,
-        OpenFile,
-        GettingStarted
+        OpenFile
     }
 
     public partial class StartupWelcomeWindow : Window
@@ -247,13 +246,6 @@ namespace BlackbirdInterface
         private void Launch_Click(object sender, RoutedEventArgs e)
         {
             SelectedAction = StartupWelcomeAction.Launch;
-            DialogResult = true;
-            Close();
-        }
-
-        private void GettingStarted_Click(object sender, RoutedEventArgs e)
-        {
-            SelectedAction = StartupWelcomeAction.GettingStarted;
             DialogResult = true;
             Close();
         }

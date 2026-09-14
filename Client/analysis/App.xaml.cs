@@ -25,7 +25,6 @@ namespace BlackbirdInterface
 
     public partial class App : Application
     {
-        private const string GettingStartedUrl = "https://ryftenius.com/docs/blackbird/#intro";
         private static Mutex? _singleInstanceMutex;
         internal static bool IsDarkTheme { get; private set; } = true;
         internal static UiThemeMode CurrentThemeMode { get; private set; } = UiThemeMode.Dark;
@@ -831,24 +830,7 @@ namespace BlackbirdInterface
                     }
                     break;
                 }
-                case StartupWelcomeAction.GettingStarted:
-                    OpenGettingStartedLink(welcome);
-                    break;
                 }
-            }
-        }
-
-        private static void OpenGettingStartedLink(Window owner)
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo { FileName = GettingStartedUrl, UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                ThemedMessageBox.Show(owner,
-                                      $"Failed to open Getting Started.\n\n{ex.Message}\n\nURL: {GettingStartedUrl}",
-                                      "Getting Started", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

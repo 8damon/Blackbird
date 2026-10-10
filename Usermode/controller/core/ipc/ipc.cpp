@@ -112,6 +112,10 @@ static ULONGLONG ControllerClientBeginAnalysisSessionLocked(_Inout_ BK_CONTROLLE
         Client->AnalysisSessionId = ControllerNextAnalysisSessionId();
         Client->AnalysisStartedTick = GetTickCount64();
         Client->AnalysisLaunchOwned = FALSE;
+        if (Client->AnalysisUserHookTargetProcessId != RootProcessId)
+        {
+            Client->AnalysisUserHookTargetProcessId = 0;
+        }
     }
 
     Client->AnalysisRootProcessId = RootProcessId;
@@ -158,6 +162,7 @@ static BOOL ControllerClientStopAnalysisLocked(_Inout_ BK_CONTROLLER_CLIENT *Cli
     Client->AnalysisRootProcessId = 0;
     Client->AnalysisLaunchOwned = FALSE;
     Client->AnalysisActive = FALSE;
+    Client->AnalysisUserHookTargetProcessId = 0;
     Client->AnalysisStartedTick = 0;
     Client->OwnedRangeCount = 0;
     ZeroMemory(Client->OwnedRanges, sizeof(Client->OwnedRanges));
@@ -863,6 +868,175 @@ static BOOL ControllerClientCanMonitorPid(_In_ const BK_CONTROLLER_CLIENT *Clien
     }
 
     return TRUE;
+}
+
+static DWORD ControllerLaunchIntegrityRid(_In_ UINT32 IntegrityLevel)
+{
+    switch (IntegrityLevel)
+    {
+    case BK_LAUNCH_INTEGRITY_UNTRUSTED:
+        return SECURITY_MANDATORY_UNTRUSTED_RID;
+    case BK_LAUNCH_INTEGRITY_LOW:
+        return SECURITY_MANDATORY_LOW_RID;
+    case BK_LAUNCH_INTEGRITY_MEDIUM:
+        return SECURITY_MANDATORY_MEDIUM_RID;
+    case BK_LAUNCH_INTEGRITY_HIGH:
+        return SECURITY_MANDATORY_HIGH_RID;
+    case BK_LAUNCH_INTEGRITY_SYSTEM:
+        return SECURITY_MANDATORY_SYSTEM_RID;
+    default:
+        return 0;
+    }
+}
+
+_Success_(return) static BOOL ControllerQueryPipeClientSecurityContext(_In_ const BK_CONTROLLER_CLIENT *Client,
+                                                                       _Out_ DWORD *IntegrityRid,
+                                                                       _Out_ BOOL *IsLocalSystem)
+{
+    HANDLE token = NULL;
+    PTOKEN_MANDATORY_LABEL label = NULL;
+    PTOKEN_USER tokenUser = NULL;
+    DWORD tokenBytes = 0;
+    DWORD err = ERROR_SUCCESS;
+    BOOL reverted = FALSE;
+
+    if (Client == NULL || Client->Pipe == NULL || Client->Pipe == INVALID_HANDLE_VALUE || IntegrityRid == NULL ||
+        IsLocalSystem == NULL)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    *IntegrityRid = 0;
+    *IsLocalSystem = FALSE;
+    if (!ImpersonateNamedPipeClient(Client->Pipe))
+    {
+        return FALSE;
+    }
+    if (!OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &token))
+    {
+        err = GetLastError();
+    }
+    reverted = RevertToSelf();
+    if (!reverted)
+    {
+        err = GetLastError();
+    }
+    if (token == NULL || !reverted)
+    {
+        if (token != NULL)
+        {
+            CloseHandle(token);
+        }
+        SetLastError(err == ERROR_SUCCESS ? ERROR_NO_TOKEN : err);
+        return FALSE;
+    }
+
+    (void)GetTokenInformation(token, TokenIntegrityLevel, NULL, 0, &tokenBytes);
+    if (tokenBytes == 0 || GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+    {
+        err = GetLastError();
+        CloseHandle(token);
+        SetLastError(err == ERROR_SUCCESS ? ERROR_BAD_LENGTH : err);
+        return FALSE;
+    }
+
+    label = (PTOKEN_MANDATORY_LABEL)calloc(1, tokenBytes);
+    if (label == NULL)
+    {
+        CloseHandle(token);
+        SetLastError(ERROR_OUTOFMEMORY);
+        return FALSE;
+    }
+    if (!GetTokenInformation(token, TokenIntegrityLevel, label, tokenBytes, &tokenBytes) ||
+        !IsValidSid(label->Label.Sid) || *GetSidSubAuthorityCount(label->Label.Sid) == 0)
+    {
+        err = GetLastError();
+        free(label);
+        CloseHandle(token);
+        SetLastError(err == ERROR_SUCCESS ? ERROR_INVALID_SID : err);
+        return FALSE;
+    }
+
+    *IntegrityRid =
+        *GetSidSubAuthority(label->Label.Sid, *GetSidSubAuthorityCount(label->Label.Sid) - 1);
+    free(label);
+
+    tokenBytes = 0;
+    (void)GetTokenInformation(token, TokenUser, NULL, 0, &tokenBytes);
+    if (tokenBytes == 0 || GetLastError() != ERROR_INSUFFICIENT_BUFFER)
+    {
+        err = GetLastError();
+        CloseHandle(token);
+        SetLastError(err == ERROR_SUCCESS ? ERROR_BAD_LENGTH : err);
+        return FALSE;
+    }
+    tokenUser = (PTOKEN_USER)calloc(1, tokenBytes);
+    if (tokenUser == NULL)
+    {
+        CloseHandle(token);
+        SetLastError(ERROR_OUTOFMEMORY);
+        return FALSE;
+    }
+    if (!GetTokenInformation(token, TokenUser, tokenUser, tokenBytes, &tokenBytes) ||
+        !IsValidSid(tokenUser->User.Sid))
+    {
+        err = GetLastError();
+        free(tokenUser);
+        CloseHandle(token);
+        SetLastError(err == ERROR_SUCCESS ? ERROR_INVALID_SID : err);
+        return FALSE;
+    }
+    *IsLocalSystem = IsWellKnownSid(tokenUser->User.Sid, WinLocalSystemSid);
+    free(tokenUser);
+    CloseHandle(token);
+    return TRUE;
+}
+
+static DWORD ControllerAuthorizeLaunchRequest(_In_ const BK_CONTROLLER_CLIENT *Client,
+                                              _In_ const BKIPC_SET_USER_HOOK_TARGET_REQUEST *Request)
+{
+    DWORD callerIntegrityRid = 0;
+    DWORD requestedIntegrityRid = 0;
+    BOOL callerIsLocalSystem = FALSE;
+
+    if (Client == NULL || Request == NULL)
+    {
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    if (Request->IntegrityLevel != BK_LAUNCH_INTEGRITY_DEFAULT)
+    {
+        requestedIntegrityRid = ControllerLaunchIntegrityRid(Request->IntegrityLevel);
+        if (requestedIntegrityRid == 0)
+        {
+            return ERROR_INVALID_PARAMETER;
+        }
+    }
+
+    if (requestedIntegrityRid != 0 || Request->InheritHandles != 0)
+    {
+        if (!ControllerQueryPipeClientSecurityContext(Client, &callerIntegrityRid, &callerIsLocalSystem))
+        {
+            DWORD err = GetLastError();
+            return err == ERROR_SUCCESS ? ERROR_ACCESS_DENIED : err;
+        }
+        if ((requestedIntegrityRid != 0 && requestedIntegrityRid > callerIntegrityRid) ||
+            (Request->IntegrityLevel == BK_LAUNCH_INTEGRITY_SYSTEM && !callerIsLocalSystem) ||
+            (Request->InheritHandles != 0 && !callerIsLocalSystem))
+        {
+            return ERROR_ACCESS_DENIED;
+        }
+    }
+
+    if (Request->ParentProcessId != 0 &&
+        !ControllerClientCanMonitorPid(Client, Request->ParentProcessId, NULL, NULL))
+    {
+        DWORD err = GetLastError();
+        return err == ERROR_SUCCESS ? ERROR_ACCESS_DENIED : err;
+    }
+
+    return ERROR_SUCCESS;
 }
 
 static DWORD ControllerClientSubscribe(_Inout_ BK_CONTROLLER_CLIENT *Client, _In_ const BK_SUBSCRIBE_REQUEST *Request)
@@ -3001,6 +3175,15 @@ static DWORD ControllerClientSetUserHookTarget(_Inout_ BK_CONTROLLER_CLIENT *Cli
         break;
 
     case BlackbirdIpcUserHookTargetLaunch:
+        err = ControllerAuthorizeLaunchRequest(Client, Request);
+        if (err != ERROR_SUCCESS)
+        {
+            ControllerLog(
+                "[IPC][WARN] launch authorization denied clientPid=%lu integrity=%lu parentPid=%lu inheritHandles=%u err=%lu\n",
+                Client->ProcessId, Request->IntegrityLevel, Request->ParentProcessId,
+                Request->InheritHandles != 0 ? 1u : 0u, err);
+            return err;
+        }
         if (Request->ImagePath[0] == L'\0' || !ControllerInjectionPathPointsToFile(Request->ImagePath))
         {
             return ERROR_FILE_NOT_FOUND;
@@ -3175,6 +3358,10 @@ static DWORD ControllerClientSetUserHookTarget(_Inout_ BK_CONTROLLER_CLIENT *Cli
                              Request->AnalysisSubjectPath);
     }
 
+    EnterCriticalSection(&Client->Lock);
+    Client->AnalysisUserHookTargetProcessId = targetPid;
+    LeaveCriticalSection(&Client->Lock);
+
     return ERROR_SUCCESS;
 }
 
@@ -3330,12 +3517,27 @@ static DWORD ControllerHandleClientCommand(_Inout_ BK_CONTROLLER_CLIENT *Client,
         }
         break;
     case BlackbirdIpcCommandControlProcessExecution:
-        if (Request->Payload.ControlProcessExecutionRequest.ProcessId == 0)
+    {
+        const DWORD processId = Request->Payload.ControlProcessExecutionRequest.ProcessId;
+        BOOL ownsTarget = FALSE;
+        if (processId == 0)
         {
             err = ERROR_INVALID_PARAMETER;
             break;
         }
-        if (!ControllerProxyControlProcessExecution(Request->Payload.ControlProcessExecutionRequest.ProcessId,
+
+        EnterCriticalSection(&Client->Lock);
+        ownsTarget = (Client->AnalysisUserHookTargetProcessId == processId);
+        LeaveCriticalSection(&Client->Lock);
+        if (!ownsTarget)
+        {
+            ControllerLog("[IPC][WARN] process execution control denied clientPid=%lu targetPid=%lu\n",
+                          Client->ProcessId, processId);
+            err = ERROR_ACCESS_DENIED;
+            break;
+        }
+
+        if (!ControllerProxyControlProcessExecution(processId,
                                                     Request->Payload.ControlProcessExecutionRequest.Suspend != 0))
         {
             err = GetLastError();
@@ -3345,6 +3547,7 @@ static DWORD ControllerHandleClientCommand(_Inout_ BK_CONTROLLER_CLIENT *Client,
             }
         }
         break;
+    }
     case BlackbirdIpcCommandSetRuntimeConfig:
         if (!ControllerProxySetRuntimeConfig(Request->Payload.SetRuntimeConfigRequest.Flags,
                                              Request->Payload.SetRuntimeConfigRequest.Mask))

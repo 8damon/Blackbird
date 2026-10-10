@@ -344,6 +344,7 @@ typedef struct _BK_CONTROLLER_CLIENT
     DWORD AnalysisRootProcessId;
     BOOL AnalysisLaunchOwned;
     BOOL AnalysisActive;
+    DWORD AnalysisUserHookTargetProcessId;
     ULONGLONG AnalysisStartedTick;
     volatile LONG HookReadyMask;
     ULONGLONG HookReadyTick;

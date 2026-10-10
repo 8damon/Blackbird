@@ -220,11 +220,42 @@ DWORD ControllerClientOpenSharedRing(_Inout_ BK_CONTROLLER_CLIENT *Client,
     return ERROR_SUCCESS;
 }
 
+_Success_(return) static BOOL ControllerCheckTokenMembershipSid(_In_ HANDLE Token, _In_ PSID Sid,
+                                                               _Out_ BOOL *IsMember)
+{
+    HANDLE impersonationToken = NULL;
+    BOOL isMember = FALSE;
+
+    if (Token == NULL || Token == INVALID_HANDLE_VALUE || Sid == NULL || IsMember == NULL || !IsValidSid(Sid))
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    *IsMember = FALSE;
+    if (!DuplicateToken(Token, SecurityIdentification, &impersonationToken))
+    {
+        return FALSE;
+    }
+
+    if (!CheckTokenMembership(impersonationToken, Sid, &isMember))
+    {
+        DWORD err = GetLastError();
+        CloseHandle(impersonationToken);
+        SetLastError(err);
+        return FALSE;
+    }
+
+    CloseHandle(impersonationToken);
+    *IsMember = isMember;
+    return TRUE;
+}
+
 _Success_(return) static BOOL ControllerCheckTokenMembershipRid(_In_ HANDLE Token, _In_ DWORD Rid, _Out_ BOOL *IsMember)
 {
     SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
     PSID sid = NULL;
-    BOOL isMember = FALSE;
+    BOOL ok = FALSE;
 
     if (Token == NULL || Token == INVALID_HANDLE_VALUE || IsMember == NULL)
     {
@@ -238,24 +269,18 @@ _Success_(return) static BOOL ControllerCheckTokenMembershipRid(_In_ HANDLE Toke
         return FALSE;
     }
 
-    if (!CheckTokenMembership(Token, sid, &isMember))
-    {
-        DWORD err = GetLastError();
-        FreeSid(sid);
-        SetLastError(err);
-        return FALSE;
-    }
-
+    ok = ControllerCheckTokenMembershipSid(Token, sid, IsMember);
+    DWORD err = ok ? ERROR_SUCCESS : GetLastError();
     FreeSid(sid);
-    *IsMember = isMember;
-    return TRUE;
+    SetLastError(err);
+    return ok;
 }
 
 _Success_(return) static BOOL ControllerCheckTokenIsLocalSystem(_In_ HANDLE Token, _Out_ BOOL *IsSystem)
 {
     SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
     PSID systemSid = NULL;
-    BOOL isSystem = FALSE;
+    BOOL ok = FALSE;
 
     if (Token == NULL || Token == INVALID_HANDLE_VALUE || IsSystem == NULL)
     {
@@ -269,17 +294,11 @@ _Success_(return) static BOOL ControllerCheckTokenIsLocalSystem(_In_ HANDLE Toke
         return FALSE;
     }
 
-    if (!CheckTokenMembership(Token, systemSid, &isSystem))
-    {
-        DWORD err = GetLastError();
-        FreeSid(systemSid);
-        SetLastError(err);
-        return FALSE;
-    }
-
+    ok = ControllerCheckTokenMembershipSid(Token, systemSid, IsSystem);
+    DWORD err = ok ? ERROR_SUCCESS : GetLastError();
     FreeSid(systemSid);
-    *IsSystem = isSystem;
-    return TRUE;
+    SetLastError(err);
+    return ok;
 }
 
 BOOL ControllerClientIsPrivileged(_In_ const BK_CONTROLLER_CLIENT *Client, _Out_ BOOL *IsPrivileged)

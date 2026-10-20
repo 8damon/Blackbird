@@ -1,82 +1,15 @@
-<h1 align="center">BLACKBIRD</h1>
+Hi, It's been a while...
 
-<p align="center"><b>A powerful, instrumentable, real-time malware analysis platform, software reverse-engineering suite & IDS.</b></p>
+***Blackbird*** is currently going through extensive development and has no planned release date (hopefully Q1-Q2 2027). This communtiy repository is going to be re-designed into a blackbird capture file `(.bkcap)` offline analysis tool & SIEM. There are no planned future releases for the live analysis platform that are going to be open-source.
 
-<p align="center">
-  <a href="https://ryftenius.com/capability/blackbird/download/">
-    <img src="https://img.shields.io/badge/Download-3C8D40?style=for-the-badge&logo=microsoft&logoColor=white" />
-  </a>
-  <a href="https://ryftenius.com/blackbird">
-    <img src="https://img.shields.io/badge/Website-0A0A0A?style=for-the-badge&logo=google-chrome&logoColor=white" />
-  </a>
-  <a href="https://github.com/users/8damon/projects/3/views/1">
-    <img src="https://img.shields.io/badge/Project%20Board-6B7280?style=for-the-badge&logo=githubprojects&logoColor=white" />
-  </a>
-  <img src="https://img.shields.io/badge/.NET-512BD4?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/KMDF-000000?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/-00599C?logo=c&logoColor=white&style=for-the-badge" />
-  <img src="https://img.shields.io/badge/-00599C?logo=c%2B%2B&logoColor=white&style=for-the-badge" />
-</p>
+The closed-source, proper version of Blackbird (approximately ~9 months ahead of this current version), is going to be released as a product for Malware Analysts's, Security Analysts, and Reverse-engineer's to use to analyze a binary's full, system-wide behaviour using hypervisor-backed infrastructure. The goal & intention of Blackbird is to provide a modular, configurable malware-analysis platform that can in real-time modify itself to avoid being detected by malware, pick up on specific detections, and synthetically transform the malware's view of the operating system.
 
-<h2 align="center">ROADMAP</h2>
+Blackbird is not going to be web-based, like for example VirusTotal, or ANY.RUN. It is also not going to be a DBI, or Disassembler, I do not claim that. Blackbird is explicitly designed and targets advanced persistent thread (APT) malware, and aggressive malicious samples that will not be picked up on, or will intentionally evade generic virus analyzers and EDR. Blackbird also plans to provide the most in-depth view of the processes execution as possible, tracing everything from the lowest level Native-API usage, to Networking. 
 
-<p align="center">
-  <strong>Current:</strong> Community Preview Beta 2.0<br>
-  <strong>Next public release:</strong> <italic>Early September 2026<italic><br><br>
-</p>
+What sets Blackbird apart from an EDR/AV? ; Targeting. EDR & AV products must constantly balance system performance & detection value, they run in consumer, or enterprise systems which require high-performance and low-noise. Since Blackbird is intended to be used in controlled-labs, it is designed for sole-process targeting, meaning the entire system will target all sensors for the malicious sample, all child-processes and relevant processes to said sample.
 
-<p align="center">
-  <img src="https://ryftenius.com/content/capabilities/blackbird/MAIN_INTERFACE.png" width="980" alt="Blackbird main interface" />
-</p>
-<p align="center">
-  <img src="https://ryftenius.com/content/capabilities/blackbird/MAIN_ALT.png" width="980" alt="Blackbird main interface" />
-</p>
+Now that's a lot of talk, so how much of this is actually implemented? Well, from what my team can confidently say and provide, about 80%. The hypervisor has been rigirously tested again and again across multiple differnet systems (Intel, on KVM/QEMU), and according to our current benchmarks (approximate) the hypervisor slows down system performance by 3-15% dependant on system-load. Detections have been worked on for months, and we can confidently say that the [Adversary Emulation Suite](https://github.com/Ryftenius/Blackbird-Adversary-Emulation-Suite) (AES) Breach & Attack Simulation, is passing all required detections, while producing no noise/overflow detections. Blackbird is now entering the extended testing phase where it will be tested on real-world malware, normal applications, and will be put into real MA's & SOC's workflows. The best way to put it would be saying that the underlying infrastructure is concrete and the rest is tuning, packaging, security, UX and performance improvements.
 
-## REQUIREMENTS
+We are also planning to set up a public event where select security researchers & VR's will receive a up-to-date version of Blackbird & conduct a pentest, this will be hosted live on [Ryftenius](https://ryftenius.com/) and the results will be displayed publicly, and credit researchers. Alongside this we are also planning to release live videos, benchmarks & detection results on the latest malicious samples.
 
-A virtual machine on Windows 10 22H2 or higher, 64-bit.
-
-> [!WARNING]
-> Blackbird performs kernel-level instrumentation and may affect system stability depending on configuration.
-> Always use it within a controlled virtual machine environment and not on systems containing important data.
-
-> [!IMPORTANT]
-> Blackbird is in early-development. The current state of Blackbird showcases the core system's functionality and implementation. Detection tuning, threat-intel integration, performance improvements and much more are in the works. Blackbird Community (This) is a subset of a larger version of Blackbird, so updates may be delayed.
-
-## FEATURES
-
-- Full local analysis interface for malware detonation, reverse engineering, and triage
-- Kernel capture for process, thread, image, handle, memory, registry, filesystem, network
-- Target launch and attach workflows for EXE and DLL subjects, including suspended launch, deferred resume, and execution control
-- In-process usermode telemetry
-- Memory behaviour & mapping
-- Views for process relations, child process tracking, handles, registry, file, network, ETW, COM and performance
-- Thread stacks
-- QPC timing compensation
-- Offline capture analysis
-
-## BUGS & ENHANCEMENTS
-
-Please use [this](https://github.com/users/8damon/projects/3) project board to open issues & enhancements. This also loosely tracks live-development.
-
-## DOCUMENTATION
-
-The public local-stack introduction, installation, architecture, security notes,
-and UI manual are provided here:
-
-- [Blackbird Docs](https://docs.ryftenius.com/blackbird/)
-
-Session archives are stored as `.bkcap` (SQLite + LZ4). Detections can be exported as SIEM JSON Lines, Splunk HEC JSON, Elastic ECS NDJSON, CEF, or CSV. Detection reference scenarios are in `DetectionExamples.exe`.
-
-## COMPILATION
-
-You need **Visual Studio 2022+** with **Windows Driver Kit (WDK)** and **.NET (Desktop Development)**.
-
-Clone Blackbird:
-
-``git clone https://github.com/8damon/Blackbird``
-
-Open the ``Blackbird.slnx`` file & select ``Release`` & build.
-
-> [!NOTE]
-> Some instability or unexpected behavior may occur due to the low-level nature of the platform. This is expected during development.
+> The pentest will be a two phase attack simulation. Phase 1 will be attempting to find any LPE, RCE or DoS vulnerabilities within Blackbird. Phase 2 will be trying to find any observability gaps within Blackbird that would expose its presence within the system.

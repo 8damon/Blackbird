@@ -13,3 +13,5 @@ Now that's a lot of talk, so how much of this is actually implemented? Well, fro
 We are also planning to set up a public event where select security researchers & VR's will receive a up-to-date version of Blackbird & conduct a pentest, this will be hosted live on [Ryftenius](https://ryftenius.com/) and the results will be displayed publicly, and credit researchers. Alongside this we are also planning to release live videos, benchmarks & detection results on the latest malicious samples.
 
 > The pentest will be a two phase attack simulation. Phase 1 will be attempting to find any LPE, RCE or DoS vulnerabilities within Blackbird. Phase 2 will be trying to find any observability gaps within Blackbird that would expose its presence within the system.
+
+If you'd like early updates, pre-release news or invitations to events, sign up here: [Blackbird Newsletter](https://ryftenius.com/Blackbird/subscribe/)

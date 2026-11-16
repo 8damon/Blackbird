@@ -1,5 +1,12 @@
 Hi, It's been a while...
 
+*Here are some previews from 11/17/2026 (latest). Everything in the attachments shown is real data produced by Blackbird and synthesized by Blackbird's infrastructure. This is a pre-alpha version of Blackbird.*
+
+<img width="2243" height="1354" alt="brave-SIKU_D17-M11-Y2026_7bad78788" src="https://github.com/user-attachments/assets/fb2ec324-6f73-4053-a5b7-3c43b5f4b014" />
+<img width="2243" height="1354" alt="brave-SIKU_D17-M11-Y2026_2aa3dd4ee" src="https://github.com/user-attachments/assets/cf6dfde4-b07c-49d1-85d2-e1d6d6e47a65" />
+<img width="2243" height="1354" alt="brave-SIKU_D17-M11-Y2026_e86d4003b" src="https://github.com/user-attachments/assets/0738f9c2-e381-4eb7-a59a-cf4620ec03c1" />
+<img width="2243" height="1354" alt="brave-SIKU_D17-M11-Y2026_bc7cd33f2" src="https://github.com/user-attachments/assets/366887ec-3b0e-4e3c-b525-b45630b2ea33" />
+
 ***Blackbird*** is currently going through extensive development and has no planned release date (hopefully Q1-Q2 2027). This community repository is going to be re-designed into a blackbird capture file `(.bkcap)` offline analysis tool & SIEM. There are no planned future releases for the live analysis platform that are going to be open-source.
 
 The closed-source, proper version of Blackbird (approximately ~9 months ahead of this current version), is going to be released as a product for Malware Analysts's, Security Analysts, and Reverse-engineer's to use to analyze a binary's full, system-wide behaviour using hypervisor-backed infrastructure. The goal & intention of Blackbird is to provide a modular, configurable malware-analysis platform that can in real-time modify itself to avoid being detected by malware, pick up on specific detections, and synthetically transform the malware's view of the operating system.

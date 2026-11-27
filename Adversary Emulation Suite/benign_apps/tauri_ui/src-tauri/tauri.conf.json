@@ -1,0 +1,12 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "BKAES Benign Tauri UI",
+  "version": "1.0.0",
+  "identifier": "local.blackbird.aes.benign-tauri-ui",
+  "build": { "frontendDist": "../src" },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [{ "title": "BKAES Normal Tauri Dashboard", "width": 720, "height": 480, "resizable": true }]
+  },
+  "bundle": { "active": false }
+}

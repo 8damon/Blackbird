@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32"><Configuration>Debug</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>18.0</VCProjectVersion>
+    <Keyword>MakeFileProj</Keyword>
+    <ProjectGuid>{AAC92C28-FB51-4070-8E03-C2E89B385B29}</ProjectGuid>
+    <RootNamespace>AESSamplesInjection</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <BkaesSampleCategory>injection</BkaesSampleCategory>
+    <BkaesControlFlowGuard>Off</BkaesControlFlowGuard>
+  </PropertyGroup>
+  <Import Project="AES.SampleCategory.Project.props" />
+  <ItemGroup>
+    <ClCompile Include="..\injection\*.cpp" />
+    <ClCompile Include="..\sxs\bkaes_unsigned_plugin.cpp" />
+    <ClCompile Include="..\common\*.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\common\*.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

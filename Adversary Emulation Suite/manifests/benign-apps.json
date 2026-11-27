@@ -1,0 +1,86 @@
+{
+  "schema": 2,
+  "suite": "Blackbird benign application noise audit",
+  "cases": [
+    {
+      "id": "ok_c_native",
+      "kind": "benign",
+      "source": { "type": "binary", "path": "x64/Release/bb_ok_c_native.exe" },
+      "launch": { "scanSeconds": 8 },
+      "expected": {
+        "required": [],
+        "forbidden": [{ "detection": "*", "minSeverity": "Medium" }]
+      }
+    },
+    {
+      "id": "ok_cpp_ui",
+      "kind": "benign",
+      "source": { "type": "binary", "path": "x64/Release/bb_ok_cpp_ui.exe" },
+      "launch": {
+        "scanSeconds": 10,
+        "requiresInteractiveSession": true
+      },
+      "expected": {
+        "required": [],
+        "forbidden": [{ "detection": "*", "minSeverity": "Medium" }]
+      }
+    },
+    {
+      "id": "ok_go_worker",
+      "kind": "benign",
+      "source": { "type": "binary", "path": "x64/Release/bb_ok_go_worker.exe" },
+      "launch": { "scanSeconds": 10 },
+      "expected": {
+        "required": [],
+        "forbidden": [{ "detection": "*", "minSeverity": "Medium" }]
+      }
+    },
+    {
+      "id": "ok_rust_native",
+      "kind": "benign",
+      "source": { "type": "binary", "path": "x64/Release/bb_ok_rust_native.exe" },
+      "launch": { "scanSeconds": 8 },
+      "expected": {
+        "required": [],
+        "forbidden": [{ "detection": "*", "minSeverity": "Medium" }]
+      }
+    },
+    {
+      "id": "ok_rust_axum_ui",
+      "kind": "benign",
+      "source": { "type": "binary", "path": "x64/Release/bb_ok_rust_axum_ui.exe" },
+      "launch": { "scanSeconds": 12 },
+      "expected": {
+        "required": [],
+        "forbidden": [{ "detection": "*", "minSeverity": "Medium" }]
+      }
+    },
+    {
+      "id": "ok_electron_ui",
+      "kind": "benign",
+      "source": { "type": "binary", "path": "x64/Release/bb_ok_electron_launcher.exe" },
+      "launch": {
+        "workingDirectory": "x64/Release/benign_electron",
+        "scanSeconds": 14,
+        "requiresInteractiveSession": true
+      },
+      "expected": {
+        "required": [],
+        "forbidden": [{ "detection": "*", "minSeverity": "Medium" }]
+      }
+    },
+    {
+      "id": "ok_tauri_ui",
+      "kind": "benign",
+      "source": { "type": "binary", "path": "x64/Release/bb_ok_tauri_ui.exe" },
+      "launch": {
+        "scanSeconds": 12,
+        "requiresInteractiveSession": true
+      },
+      "expected": {
+        "required": [],
+        "forbidden": [{ "detection": "*", "minSeverity": "Medium" }]
+      }
+    }
+  ]
+}

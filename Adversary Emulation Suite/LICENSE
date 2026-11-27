@@ -1,0 +1,54 @@
+Copyright (c) 2026 RYFTENIUS / 8damon
+
+Required Notice: Copyright (c) 2026 RYFTENIUS / 8damon
+
+# Blackbird Adversary Emulation Suite DSGL License
+
+This software is DSGL code: Defensive Security Guardrails License code.
+
+The Blackbird Adversary Emulation Suite is an extension of Blackbird. It is provided only to test, validate, and
+improve Blackbird's defensive telemetry, detection, and audit capabilities in authorized environments. It is not
+licensed as dual-use code and is not licensed for any purpose outside that defensive Blackbird validation scope.
+
+This suite inherits and is constrained by the Blackbird Community license terms, including the PolyForm
+Noncommercial 1.0.0 license and the Blackbird Defensive Use Addendum. If any term below appears to conflict with
+or broaden the Blackbird Community license, the narrower defensive-use limitation controls.
+
+## Permitted Purpose
+
+You may use, study, modify, and share this software only for noncommercial, authorized, lawful, defensive testing
+of Blackbird. Permitted uses include Blackbird detection engineering, sensor validation, lab regression testing,
+defensive education, incident-response lab validation, and audit-manifest verification.
+
+## Prohibited Use
+
+You may not use, modify, distribute, operate, publish, or derive from this software for:
+
+- unauthorized access to, monitoring of, control of, persistence on, interference with, or collection from any
+  third-party system, account, network, device, service, or data;
+- offensive cyber operations, intrusion campaigns, command and control, malware development, payload development,
+  credential theft, data theft, extortion, destructive activity, or deployment against systems without explicit
+  authorization;
+- developing, testing, validating, or improving evasion, stealth, persistence, bypass, anti-analysis, loader,
+  dropper, implant, remote-access, or post-exploitation capabilities for unauthorized activity;
+- representing this suite as a general adversary-emulation framework, red-team toolkit, malware testbed, or
+  dual-use security product independent of Blackbird defensive validation;
+- redistributing generated executables, DLLs, symbols, logs, intermediates, or Visual Studio local workspace
+  state as source artifacts.
+
+## No Operational Authorization
+
+Possession of this software does not grant authorization to test any system, bypass any control, collect any data,
+or run any emulation outside an environment where you have explicit permission. You are responsible for complying
+with all laws, sanctions, export-control rules, procurement rules, organizational policies, and authorization
+boundaries.
+
+## Notices
+
+You must preserve this license, the required notice above, and the defensive-use limitations when sharing copies
+or derivative works.
+
+## No Warranty
+
+As far as the law allows, this software is provided as is, without warranty or condition, and the licensor will not
+be liable for damages arising from the software or these terms.

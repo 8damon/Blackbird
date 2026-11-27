@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <OutDir>$(MSBuildThisFileDirectory)..\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(MSBuildThisFileDirectory)..\$(Platform)\$(Configuration)\obj\$(ProjectName)\</IntDir>
+    <BkaesControlFlowGuard Condition="'$(BkaesControlFlowGuard)'==''">Auto</BkaesControlFlowGuard>
+    <NMakeOutput>$(OutDir)</NMakeOutput>
+    <NMakeBuildCommandLine>powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\Build.ps1&quot; -Category $(BkaesSampleCategory) -Configuration $(Configuration) -Platform $(Platform) -OutDir &quot;$(OutDir).&quot; -ControlFlowGuard $(BkaesControlFlowGuard) -InstructionSet Native</NMakeBuildCommandLine>
+    <NMakeReBuildCommandLine>powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\Build.ps1&quot; -Category $(BkaesSampleCategory) -Configuration $(Configuration) -Platform $(Platform) -OutDir &quot;$(OutDir).&quot; -ControlFlowGuard $(BkaesControlFlowGuard) -InstructionSet Native -Clean</NMakeReBuildCommandLine>
+    <NMakeCleanCommandLine>powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)..\Build.ps1&quot; -Category $(BkaesSampleCategory) -Configuration $(Configuration) -Platform $(Platform) -OutDir &quot;$(OutDir).&quot; -ControlFlowGuard $(BkaesControlFlowGuard) -InstructionSet Native -CleanOnly</NMakeCleanCommandLine>
+    <NMakeIncludeSearchPath>$(MSBuildThisFileDirectory)..\common;$(MSBuildThisFileDirectory)..\include;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <NMakePreprocessorDefinitions>_DEBUG;UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'!='Debug'">
+    <NMakePreprocessorDefinitions>NDEBUG;UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>
+  </PropertyGroup>
+</Project>

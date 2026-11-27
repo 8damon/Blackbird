@@ -5,7 +5,7 @@
 
 **Hypervisor-backed malware analysis & intelligence**
 
-![Status](https://img.shields.io/badge/STATUS-PRE--ALPHA-8957e5?style=for-the-badge)
+![Status](https://img.shields.io/badge/STATUS-ALPHA-8957e5?style=for-the-badge)
 ![Development](https://img.shields.io/badge/DEVELOPMENT-ACTIVE-238636?style=for-the-badge)
 ![Roadmap](https://img.shields.io/badge/ROADMAP-2027-1f6feb?style=for-the-badge)
 
@@ -14,7 +14,7 @@
 <a href="#the-future-of-blackbird">Development</a> ·
 <a href="#blackbird-in-action">Research</a> ·
 <a href="#community-playground">Community</a> ·
-<a href="#pre-alpha-previews">Previews</a> ·
+<a href="#alpha-previews">Previews</a> ·
 <a href="#the-live-analysis-platform">Live Analysis</a> ·
 <a href="#current-development-progress">Progress</a> ·
 <a href="#public-security-assessment">Security Assessment</a>
@@ -65,14 +65,14 @@ using controlled test samples.
 
 ---
 
-## Pre-alpha previews
+## Alpha previews
 
 A first look at what I've been working on.
 
 <div align="center">
 
 ![SIEM](https://img.shields.io/badge/SIEM-v0.4.2%20%2F%20v0.5.3-B22222?style=flat-square)
-![Build](https://img.shields.io/badge/BUILD-PRE--ALPHA-242424?style=flat-square)
+![Build](https://img.shields.io/badge/BUILD-ALPHA-242424?style=flat-square)
 ![Preview](https://img.shields.io/badge/PREVIEW-NOVEMBER%202026-242424?style=flat-square)
 
 <br>
@@ -95,7 +95,7 @@ A first look at what I've been working on.
 > exception of the network intelligence preview, which
 > uses synthetic data while the interface is in development.
 >
-> These screenshots represent pre-alpha builds of Blackbird.
+> These screenshots represent alpha builds of Blackbird.
 > Interfaces and functionality are subject to change.
 
 ### Investigation Workspace
@@ -313,7 +313,7 @@ overhead of **3–15%**, depending on system load.
 | Preliminary hypervisor overhead | ~3–15% |
 | Tested CPU architecture | Intel |
 | Tested virtualisation environment | KVM/QEMU |
-| Development stage | Pre-alpha / extended testing |
+| Development stage | Alpha / extended testing |
 | Release target | Q1–Q2 2027 (tentative) |
 
 <sub>These are preliminary internal development figures.
@@ -323,12 +323,15 @@ production benchmarks.</sub>
 
 ### Detection validation
 
-Detections have been worked on for months, and we can
-confidently say that our
-[Adversary Emulation Suite](https://github.com/Ryftenius/Blackbird-Adversary-Emulation-Suite)
-(AES), our Breach & Attack Simulation suite, is currently
-passing all required detections without producing unwanted
-detection noise or overflow within the tested scenarios.
+The [Adversary Emulation Suite](./Adversary%20Emulation%20Suite/)
+in this repository is the public-facing subset we use to tune
+and test Blackbird detections. Its bounded sample programs
+exercise sensor coverage and rule behaviour, while the benign
+application corpus helps measure false-positive noise. Build
+instructions and use limits are in the [suite README](./Adversary%20Emulation%20Suite/README.md).
+
+Within the scenarios tested so far, the suite passes the
+required detections without unwanted detection noise or overflow.
 
 Blackbird is now entering its extended testing phase,
 where it will be evaluated against real-world malware,
@@ -404,7 +407,7 @@ newsletter.
 
 <a href="https://ryftenius.com/">Ryftenius</a> ·
 <a href="https://ryftenius.com/insight/usermode_injection_dead/">Technical Research</a> ·
-<a href="https://github.com/Ryftenius/Blackbird-Adversary-Emulation-Suite">Adversary Emulation Suite</a>
+<a href="./Adversary%20Emulation%20Suite/">Adversary Emulation Suite</a>
 
 <br><br>
 

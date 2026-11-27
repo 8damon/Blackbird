@@ -1,0 +1,22 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="AES.vcxproj" Id="a0c9b4bd-2a8b-42c6-9fff-ea4a74dc9cd8" />
+  <Project Path="AES.Samples.Apc.vcxproj" Id="e5df40f3-d4cd-4929-bc75-4695ad949b77" />
+  <Project Path="AES.Samples.Beacons.vcxproj" Id="d303551d-5e4a-41a7-8ca0-6ce43c5e7f85" />
+  <Project Path="AES.Samples.Benign.vcxproj" Id="b5c21b8e-96d7-4b17-9e68-b1526b300c94" />
+  <Project Path="AES.Samples.Hollowing.vcxproj" Id="dcf60eeb-ceac-441e-a759-164f96f54b17" />
+  <Project Path="AES.Samples.Injection.vcxproj" Id="aac92c28-fb51-4070-8e03-c2e89b385b29" />
+  <Project Path="AES.Samples.Kerberos.vcxproj" Id="2d8bf3a2-d3a7-4888-861a-cfa4e0d96d1b" />
+  <Project Path="AES.Samples.Lotl.vcxproj" Id="62266ecc-1469-4a7b-9d3f-9b8bbf778a01" />
+  <Project Path="AES.Samples.Lpe.vcxproj" Id="95b802cf-907e-4561-8973-9f0c15c6228b" />
+  <Project Path="AES.Samples.Memory.vcxproj" Id="270b5ed8-7756-4bdd-b488-eb03a42dc458" />
+  <Project Path="AES.Samples.Network.vcxproj" Id="e5387784-5377-497e-bbbe-e2885e942798" />
+  <Project Path="AES.Samples.Process.vcxproj" Id="0f0bcec2-2347-489d-b9bf-2557094ad79a" />
+  <Project Path="AES.Samples.Registry.vcxproj" Id="9c3ced14-8af3-4533-86aa-d33a7b9d5498" />
+  <Project Path="AES.Samples.Service.vcxproj" Id="2aa6898a-9398-4224-aa75-0bfc3e33f9fa" />
+  <Project Path="AES.Samples.Sxs.vcxproj" Id="bf617176-dbb7-420b-985b-19c93dc14807" />
+  <Project Path="AES.Samples.Syscall.vcxproj" Id="645d1e0c-bb3e-4efe-84c2-6801d1168c36" />
+</Solution>

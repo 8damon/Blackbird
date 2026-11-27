@@ -1,0 +1,7 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Normal Electron Dashboard</title>
+<style>body{font:16px system-ui;margin:0;background:#111827;color:#e5edf8}header{padding:24px;background:#192235}main{padding:28px}.card{max-width:560px;padding:24px;border:1px solid #33445f;border-radius:12px;background:#172033}.ok{color:#7ee2a8}output{font-size:28px}</style></head>
+<body><header>BKAES benign Electron workload</header><main><section class="card"><h1>Invoice calculator</h1><p>144 + 233</p><output id="total">calculating...</output><p id="status">checking local service...</p></section></main>
+<script>
+(async()=>{const summary=await window.normalApi.summary();const response=await fetch(`http://127.0.0.1:${summary.port}/api/status`);const state=await response.json();const total=144+233;document.getElementById('total').textContent=total;document.getElementById('status').className='ok';document.getElementById('status').textContent=`${state.state} on ${summary.platform}/${summary.arch}`;await window.normalApi.complete({total,serverState:state.state})})().catch(error=>{document.getElementById('status').textContent=error.message});
+</script></body></html>

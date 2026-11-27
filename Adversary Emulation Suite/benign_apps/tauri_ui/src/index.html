@@ -1,0 +1,7 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Normal Tauri Dashboard</title>
+<style>body{font:15px system-ui;background:#0f172a;color:#e2e8f0;padding:30px}.panel{padding:24px;border:1px solid #334155;border-radius:12px;background:#172033}.ok{color:#86efac}</style></head>
+<body><div class="panel"><h1>Local budget calculator</h1><label>Hours <input id="hours" value="7"></label> <label>Rate <input id="rate" value="42"></label><button id="run">Calculate</button><h2 id="result">ready</h2><p class="ok">Local WebView UI, no external network</p></div>
+<script>
+const invoke=window.__TAURI__.core.invoke;async function calculate(){const hours=Number(document.getElementById('hours').value);const rate=Number(document.getElementById('rate').value);const result=await invoke('calculate',{hours,rate});document.getElementById('result').textContent=`Total: ${result}`;}document.getElementById('run').addEventListener('click',calculate);calculate();
+</script></body></html>

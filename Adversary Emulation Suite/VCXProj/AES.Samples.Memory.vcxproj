@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32"><Configuration>Debug</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32"><Configuration>Release</Configuration><Platform>Win32</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>18.0</VCProjectVersion>
+    <Keyword>MakeFileProj</Keyword>
+    <ProjectGuid>{270B5ED8-7756-4BDD-B488-EB03A42DC458}</ProjectGuid>
+    <RootNamespace>AESSamplesMemory</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <BkaesSampleCategory>mem</BkaesSampleCategory>
+    <BkaesControlFlowGuard>Off</BkaesControlFlowGuard>
+  </PropertyGroup>
+  <Import Project="AES.SampleCategory.Project.props" />
+  <ItemGroup>
+    <ClCompile Include="..\mem\*.cpp" />
+    <ClCompile Include="..\common\*.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\common\*.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
